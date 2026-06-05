@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "eggsearch CLI: metasearch MCP server (doctor, search, providers, mcp stdio)"
+repository.workspace = true
+homepage = "https://github.com/anomalyco/eggsearch"
+description = "eggsearch CLI: metasearch MCP server for AI agents"
+keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
+categories = ["command-line-utilities", "web-programming"]
 
 [[bin]]
 name = "eggsearch"
@@ -15,9 +19,9 @@ default = ["metasearch"]
 metasearch = ["eggsearch-mcp/metasearch", "eggsearch-meta/metasearch"]
 
 [dependencies]
-eggsearch-core = { path = "../eggsearch-core" }
-eggsearch-meta = { path = "../eggsearch-meta" }
-eggsearch-mcp = { path = "../eggsearch-mcp" }
+eggsearch-core = { path = "../eggsearch-core", version = "0.1.0" }
+eggsearch-meta = { path = "../eggsearch-meta", version = "0.1.0" }
+eggsearch-mcp = { path = "../eggsearch-mcp", version = "0.1.0" }
 
 tokio = { workspace = true }
 clap = { workspace = true }

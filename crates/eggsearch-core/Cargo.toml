@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage = "https://github.com/anomalyco/eggsearch"
 description = "Core types, source card model, and configuration for eggsearch"
+keywords = ["search", "mcp", "metasearch", "source-card"]
+categories = ["web-programming"]
 
 [dependencies]
 serde = { workspace = true }

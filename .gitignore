@@ -1,4 +1,17 @@
-target
-**/*.rs.bk
+# Build artifacts
+target/
+
+# Editor
+*.rs.bk
 Cargo.lock.bak
+.vscode/
+.idea/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Temp
+*.swp
+*.swo
+*~
