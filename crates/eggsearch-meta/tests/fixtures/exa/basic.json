@@ -1,0 +1,29 @@
+{
+  "requestId": "0d1c2b3a-1234-5678-9abc-def012345678",
+  "resolvedSearchType": "neural",
+  "results": [
+    {
+      "id": "https://tokio.rs/",
+      "title": "Tokio - An asynchronous runtime for Rust",
+      "url": "https://tokio.rs/",
+      "publishedDate": "2024-01-15T00:00:00.000Z",
+      "author": null,
+      "text": "Tokio is an asynchronous runtime for the Rust programming language, providing the building blocks for writing network applications.",
+      "image": null,
+      "favicon": null,
+      "score": 0.987
+    },
+    {
+      "id": "https://github.com/tokio-rs/tokio",
+      "title": "tokio-rs/tokio - GitHub",
+      "url": "https://github.com/tokio-rs/tokio",
+      "publishedDate": "2024-02-03T00:00:00.000Z",
+      "author": null,
+      "text": "A runtime for writing reliable asynchronous applications with Rust.",
+      "image": null,
+      "favicon": null,
+      "score": 0.91
+    }
+  ],
+  "searchTime": 0.832
+}

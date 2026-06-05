@@ -1245,11 +1245,45 @@ Phase 3 (Local index) — done:
 - CLI `index add <path>`, `index search <query>`, `index stats`.
 - Hard invariant enforced: `local_search` never performs network I/O.
 
-Phase 4 (Optional providers) — deferred:
-- Provider registry exposes the trait; SearXNG / Brave / Tavily / Exa
-  can be added as `Arc<dyn SearchProvider>` impls without touching
-  existing code. Default-mode configuration (`searxng.enabled = false`,
-  `brave.enabled = false`) is already in `AppConfig::default()`.
+Phase 4 (Optional providers) — done:
+- `SearxngProvider` (no API key, `base_url` required) — uses SearXNG's
+  documented JSON output. Recognizes the HTML fallback when JSON is
+  disabled on the upstream and emits a clear warning naming
+  `search.formats` in `settings.yml`.
+- `BraveProvider` (API key) — `X-Subscription-Token` header,
+  configurable `api_key_env` (defaults to `BRAVE_SEARCH_API_KEY`).
+- `TavilyProvider` (API key) — POST JSON body, `api_key_env` defaults to
+  `TAVILY_API_KEY`. Date parser handles both `YYYY-MM-DD` and RFC3339.
+- `ExaProvider` (API key) — POST JSON body, `x-api-key` header,
+  `api_key_env` defaults to `EXA_API_KEY`.
+- All four providers implement `eggsearch_core::SearchProvider`, never
+  panic on malformed upstream, emit warnings on suspicious / empty
+  parses, and never log the API key (a `***XXXX` masked form is used in
+  error messages instead).
+- Default config map extended with `tavily` and `exa` (both
+  `enabled = false`); `searxng` / `brave` were already in the default
+  map from Phase 0.
+- `ProviderRegistry::from_config(config, include_mock)` is the new
+  config-driven constructor. It walks the providers map, builds each
+  enabled provider, and returns `(Self, RegistryDiagnostics)` where
+  diagnostics record `Loaded` / `Misconfigured` / `Disabled` per
+  provider with a clear error message (e.g. "environment variable
+  'BRAVE_SEARCH_API_KEY' is not set or unreadable"). Misconfigured
+  providers are skipped, not fatal: the rest of the registry still
+  loads so the MCP server can start.
+- `ServerState` now holds an `Arc<RegistryDiagnostics>` and exposes it
+  for diagnostics surfacing; it is no longer tied to the hard-coded
+  `with_default_providers()` set.
+- `eggsearch doctor` output now includes `provider_diagnostics` and
+  adds a `provider_reachable:<id>` check for SearXNG (best-effort,
+  1.5 s timeout) using the configured `base_url`. API-key providers
+  are reported as present/absent via the `api_key_env` check in
+  `eggsearch providers` (not probed over the network).
+- New CLI subcommand `eggsearch providers` (text or `--json`) prints
+  per-provider status, including `base_url`, `api_key_env`,
+  `api_key_present`, and a structured `message` for misconfigured
+  providers. The process exits with code 1 if any provider is
+  misconfigured, so shell scripts can rely on it.
 
 Phase 5 (Codegg integration) — out of scope:
 - Lives in the Codegg repo. eggsearch's stable JSON shape and rmcp
@@ -1259,11 +1293,22 @@ Phase 5 (Codegg integration) — out of scope:
 ### Verification
 
 - `cargo build --release` — succeeds.
-- `cargo test` — 45/45 pass (16 core, 9+3 fetch, 4 local, 5 mcp, 8 meta).
-- `eggsearch doctor` — `healthy: true`, all 5 checks pass.
-- `eggsearch search "hello" --provider mock` — 3 source cards.
-- `eggsearch index add <dir>` + `eggsearch index search "axum middleware"`
-  — 1 hit, 2 docs in index.
+- `cargo test` — 100/100 pass (17 core, 9+3 fetch, 4 local, 8 mcp,
+  48+6+5 meta). Net +55 tests since the previous log entry.
+- `eggsearch doctor` (default config) — `healthy: true`, all 5
+  checks pass, `provider_diagnostics` reports 4 loaded and 4 disabled
+  providers.
+- `eggsearch doctor --config <misconfigured.toml>` — `healthy: false`,
+  exit code 1, `provider_reachable:searxng` check surfaces unreachable
+  `base_url` with the actual reqwest error.
+- `eggsearch providers` (default config) — text table of 4 loaded
+  providers; exit 0.
+- `eggsearch providers --config <brave-and-tavily-enabled.toml>` — exit
+  1, two rows show `status=misconfigured` with the exact env-var name
+  the user must populate.
+- `eggsearch search "hello" --provider mock` — 3 source cards via the
+  still-functional mock provider path (the CLI now opt-ins the mock
+  provider onto a one-off registry when `--provider mock` is given).
 - `eggsearch mcp stdio` over a JSON-RPC stream — `initialize` succeeds
   with `serverInfo.name = "eggsearch"`; `tools/list` returns all four
   tools with full JSON schemas; `tools/call local_search` round-trips
@@ -1287,4 +1332,25 @@ Phase 5 (Codegg integration) — out of scope:
   layer: it is the responsibility of the host (e.g. Codegg) to
   mediate confirmation. eggsearch trusts the host in `Ask` mode and
   allows live tools.
+- The Phase 4 registry now drives the default provider set rather
+  than the hard-coded `with_default_providers()` list. The mock
+  provider is opt-in: the CLI's `eggsearch search --provider mock`
+  registers it on a one-off registry so `--provider mock` keeps
+  working in offline test scripts, but it is never part of the
+  default MCP server's provider set. This matches the plan's
+  treatment of mock as a test-only fallback.
+- Tavily was implemented first because its API key lives in the
+  request body (no header), which made it easy to test in isolation
+  without extra plumbing. Exa follows the standard `x-api-key` header
+  pattern. The two providers share no code because their request
+  shapes differ (POST + JSON body for both, but the key placement is
+  different), and a shared trait would have added abstraction without
+  reuse.
+- SearXNG reachability is probed with a short (1.5 s) GET against the
+  configured `base_url`; the upstream may return any 2xx/3xx, the
+  exact JSON-disabled check happens at search time. API-key
+  providers are not probed over the network — they require a key we
+  don't have, and a network probe would not actually validate
+  credentials. The `providers` CLI surfaces `api_key_present`
+  instead, which is a more honest signal.
 

@@ -1,0 +1,47 @@
+{
+  "query": "rust async runtime",
+  "number_of_results": 3,
+  "results": [
+    {
+      "url": "https://tokio.rs/",
+      "title": "Tokio - An asynchronous runtime for Rust",
+      "content": "A platform for writing asynchronous applications with the Rust programming language.",
+      "engine": "google",
+      "parsed_url": ["https", "tokio", "rs", "/", "", "", "", "", "", "", "", "", ""],
+      "template": "default.html",
+      "engines": ["google"],
+      "positions": [1, 0],
+      "score": 0.97,
+      "category": "general"
+    },
+    {
+      "url": "https://async.rs/",
+      "title": "Async - Rust asynchronous programming foundations",
+      "content": "Documentation for the Rust async ecosystem including Tokio, async-std, and futures.",
+      "engine": "bing",
+      "parsed_url": ["https", "async", "rs", "/", "", "", "", "", "", "", "", "", ""],
+      "template": "default.html",
+      "engines": ["bing"],
+      "positions": [1, 1],
+      "score": 0.85,
+      "category": "general"
+    },
+    {
+      "url": "https://docs.rs/tokio/latest/tokio/",
+      "title": "tokio - Rust",
+      "content": "A runtime for writing reliable asynchronous applications with Rust, providing the building blocks for writing network applications.",
+      "engine": "duckduckgo",
+      "parsed_url": ["https", "docs", "rs", "/tokio/latest/tokio/", "", "", "", "", "", "", "", "", ""],
+      "template": "default.html",
+      "engines": ["duckduckgo"],
+      "positions": [2, 0],
+      "score": 0.73,
+      "category": "general"
+    }
+  ],
+  "answers": [],
+  "corrections": [],
+  "infoboxes": [],
+  "suggestions": [],
+  "unresponsive_engines": []
+}

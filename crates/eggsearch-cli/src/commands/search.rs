@@ -6,6 +6,7 @@ use eggsearch_core::provider::SearchContext;
 use eggsearch_core::query::SearchQuery;
 use eggsearch_core::rank::reciprocal_rank_fusion;
 use eggsearch_fetch::FetchProvider;
+use eggsearch_meta::providers::MockProvider;
 use eggsearch_mcp::ServerState;
 use std::sync::Arc;
 
@@ -17,7 +18,21 @@ pub async fn run(
     as_json: bool,
     fetch_top_n: usize,
 ) -> Result<()> {
-    let state = Arc::new(ServerState::build(cfg.clone())?);
+    let mut state = ServerState::build(cfg.clone())?;
+
+    // The mock provider is opt-in for the CLI search command — it is
+    // not part of the config-driven registry. If the user explicitly
+    // asks for it, register it on a one-off registry so the rest of
+    // the search path doesn't change.
+    if let Some(p) = provider {
+        if p == "mock" {
+            let mut reg = (*state.providers).clone();
+            reg.register(std::sync::Arc::new(MockProvider::demo()));
+            state.providers = std::sync::Arc::new(reg);
+        }
+    }
+
+    let state = Arc::new(state);
     let providers: Vec<String> = provider
         .map(|p| vec![p.to_string()])
         .unwrap_or_default();

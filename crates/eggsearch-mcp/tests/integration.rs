@@ -1,14 +1,23 @@
-use eggsearch_core::config::{AppConfig, Mode};
+use eggsearch_core::config::{AppConfig, Mode, ProviderConfig};
+use eggsearch_meta::registry::DiagnosticStatus;
 use eggsearch_mcp::{EggsearchServer, ServerState};
 use rmcp::ServerHandler;
 use std::sync::Arc;
 use tempfile::tempdir;
 
 fn build_test_state(mode: Mode) -> (tempfile::TempDir, Arc<ServerState>) {
+    build_test_state_with(mode, |_| {})
+}
+
+fn build_test_state_with<F>(mode: Mode, mut f: F) -> (tempfile::TempDir, Arc<ServerState>)
+where
+    F: FnMut(&mut AppConfig),
+{
     let dir = tempdir().unwrap();
     let mut cfg = AppConfig::default();
     cfg.search.mode = mode;
     cfg.search.local.index_dir = dir.path().to_path_buf();
+    f(&mut cfg);
     let state = Arc::new(ServerState::build(cfg).unwrap());
     (dir, state)
 }
@@ -87,4 +96,97 @@ async fn local_search_blocked_when_mode_off() {
     )
     .await;
     assert!(res.is_err());
+}
+
+#[test]
+fn server_state_collects_provider_diagnostics() {
+    let (_dir, state) = build_test_state_with(Mode::default(), |cfg| {
+        cfg.search.providers.insert(
+            "searxng".into(),
+            ProviderConfig {
+                enabled: true,
+                ..Default::default()
+            },
+        );
+        cfg.search.providers.insert(
+            "brave".into(),
+            ProviderConfig {
+                enabled: true,
+                api_key_env: Some("EGGSEARCH_TEST_BRAVE_MCP".into()),
+                ..Default::default()
+            },
+        );
+    });
+    let diags = &state.diagnostics.diagnostics;
+    let searxng = diags.iter().find(|d| d.id == "searxng").unwrap();
+    assert_eq!(searxng.status, DiagnosticStatus::Misconfigured);
+    assert!(searxng
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("base_url"));
+    let brave = diags.iter().find(|d| d.id == "brave").unwrap();
+    assert_eq!(brave.status, DiagnosticStatus::Misconfigured);
+    assert!(brave
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("EGGSEARCH_TEST_BRAVE_MCP"));
+    // Misconfigured providers must NOT be in the loaded list.
+    assert!(!state.diagnostics.loaded.iter().any(|p| p == "searxng"));
+    assert!(!state.diagnostics.loaded.iter().any(|p| p == "brave"));
+    // But the no-key providers should still load.
+    for id in ["duckduckgo_html", "wikipedia", "crates_io", "docs_rs"] {
+        assert!(
+            state.diagnostics.loaded.iter().any(|p| p == id),
+            "expected {id} to be loaded, got {:?}",
+            state.diagnostics.loaded
+        );
+    }
+}
+
+#[test]
+fn server_state_with_searxng_base_url_loads_it() {
+    let (_dir, state) = build_test_state_with(Mode::default(), |cfg| {
+        cfg.search.providers.insert(
+            "searxng".into(),
+            ProviderConfig {
+                enabled: true,
+                base_url: Some("http://127.0.0.1:8080".into()),
+                ..Default::default()
+            },
+        );
+    });
+    assert!(state.diagnostics.loaded.iter().any(|p| p == "searxng"));
+    let searxng = state
+        .diagnostics
+        .diagnostics
+        .iter()
+        .find(|d| d.id == "searxng")
+        .unwrap();
+    assert_eq!(searxng.status, DiagnosticStatus::Loaded);
+}
+
+#[test]
+fn default_providers_appear_in_diagnostics() {
+    // Regression: the default config registers 8 known provider ids.
+    let (_dir, state) = build_test_state(Mode::default());
+    let ids: std::collections::BTreeSet<&str> = state
+        .diagnostics
+        .diagnostics
+        .iter()
+        .map(|d| d.id.as_str())
+        .collect();
+    for expected in [
+        "duckduckgo_html",
+        "wikipedia",
+        "crates_io",
+        "docs_rs",
+        "searxng",
+        "brave",
+        "tavily",
+        "exa",
+    ] {
+        assert!(ids.contains(expected), "missing provider id {expected} in diagnostics");
+    }
 }

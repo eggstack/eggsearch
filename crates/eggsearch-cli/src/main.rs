@@ -57,6 +57,11 @@ enum Commands {
         #[command(subcommand)]
         cmd: McpCmd,
     },
+    /// Show provider configuration and status.
+    Providers {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -110,6 +115,7 @@ async fn main() -> Result<()> {
         Commands::Mcp { cmd } => match cmd {
             McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
         },
+        Commands::Providers { json } => commands::providers::run(&cfg, json).await,
     }
 }
 

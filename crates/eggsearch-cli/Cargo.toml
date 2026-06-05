@@ -29,3 +29,4 @@ url = { workspace = true }
 chrono = { workspace = true }
 rmcp = { workspace = true }
 futures = { workspace = true }
+reqwest = { workspace = true }

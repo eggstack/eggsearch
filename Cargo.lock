@@ -618,6 +618,7 @@ dependencies = [
  "eggsearch-mcp",
  "eggsearch-meta",
  "futures",
+ "reqwest",
  "rmcp",
  "serde",
  "serde_json",

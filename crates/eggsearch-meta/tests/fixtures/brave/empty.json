@@ -1,0 +1,8 @@
+{
+  "query": "xyzzynoresults",
+  "type": "search",
+  "web": {
+    "type": "search",
+    "results": []
+  }
+}

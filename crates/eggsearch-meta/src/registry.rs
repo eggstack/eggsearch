@@ -4,16 +4,19 @@
 use std::sync::Arc;
 
 use eggsearch_core::{
+    config::{AppConfig, ProviderConfig},
     error::CoreResult,
     provider::{SearchContext, SearchProvider, SearchProviderResponse},
     query::SearchQuery,
 };
 use futures::future::join_all;
+use serde::Serialize;
 use tracing::warn;
 
 use crate::providers::{
-    crates_io::CratesIoProvider, docs_rs::DocsRsProvider, duckduckgo_html::DuckDuckGoHtmlProvider,
-    mock::MockProvider, wikipedia::WikipediaProvider,
+    brave::BraveProvider, crates_io::CratesIoProvider, docs_rs::DocsRsProvider,
+    duckduckgo_html::DuckDuckGoHtmlProvider, exa::ExaProvider, mock::MockProvider,
+    searxng::SearxngProvider, tavily::TavilyProvider, wikipedia::WikipediaProvider,
 };
 
 /// Holds the providers configured for the current server instance.
@@ -64,7 +67,65 @@ impl ProviderRegistry {
         self.providers
             .iter()
             .find(|p| p.id() == id)
-            .map(|p| p.clone())
+            .cloned()
+    }
+
+    /// Build a registry from a config block. The bool controls whether the
+    /// built-in mock provider is also registered (used by tests and the
+    /// default CLI behavior).
+    ///
+    /// Returns the registry along with a per-provider diagnostic report
+    /// that the caller can surface via `eggsearch doctor` / `providers`.
+    /// Misconfigured optional providers are skipped, not fatal: the rest
+    /// of the registry still loads.
+    pub fn from_config(config: &AppConfig, include_mock: bool) -> (Self, RegistryDiagnostics) {
+        let mut r = Self::new();
+        let mut diags: Vec<ProviderDiagnostic> = Vec::new();
+
+        for (id, cfg) in &config.search.providers {
+            if !cfg.enabled {
+                diags.push(ProviderDiagnostic {
+                    id: id.clone(),
+                    enabled: false,
+                    status: DiagnosticStatus::Disabled,
+                    message: None,
+                });
+                continue;
+            }
+            match build_provider(id, cfg) {
+                Ok(provider) => {
+                    r.register(provider);
+                    diags.push(ProviderDiagnostic {
+                        id: id.clone(),
+                        enabled: true,
+                        status: DiagnosticStatus::Loaded,
+                        message: None,
+                    });
+                }
+                Err(e) => {
+                    warn!(provider = %id, "provider misconfigured: {e}");
+                    diags.push(ProviderDiagnostic {
+                        id: id.clone(),
+                        enabled: true,
+                        status: DiagnosticStatus::Misconfigured,
+                        message: Some(e.to_string()),
+                    });
+                }
+            }
+        }
+
+        if include_mock {
+            r.register(Arc::new(MockProvider::demo()));
+        }
+
+        let loaded = r.ids().into_iter().map(|s| s.to_string()).collect();
+        (
+            r,
+            RegistryDiagnostics {
+                diagnostics: diags,
+                loaded,
+            },
+        )
     }
 
     /// Run the query against each enabled provider in parallel, returning
@@ -105,5 +166,71 @@ impl ProviderRegistry {
         });
         let out = join_all(futs).await;
         Ok(out)
+    }
+}
+
+/// Build a single provider by id, returning a structured error if the
+/// config is missing required fields (e.g. SearXNG base_url, API key env).
+fn build_provider(
+    id: &str,
+    cfg: &ProviderConfig,
+) -> eggsearch_core::error::CoreResult<Arc<dyn SearchProvider>> {
+    match id {
+        "duckduckgo_html" => Ok(Arc::new(DuckDuckGoHtmlProvider::new())),
+        "wikipedia" => Ok(Arc::new(WikipediaProvider::new())),
+        "crates_io" => Ok(Arc::new(CratesIoProvider::new())),
+        "docs_rs" => Ok(Arc::new(DocsRsProvider::new())),
+        "searxng" => Ok(Arc::new(SearxngProvider::from_config(cfg)?)),
+        "brave" => Ok(Arc::new(BraveProvider::from_config(cfg)?)),
+        "tavily" => Ok(Arc::new(TavilyProvider::from_config(cfg)?)),
+        "exa" => Ok(Arc::new(ExaProvider::from_config(cfg)?)),
+        // The mock provider is handled separately by `include_mock`.
+        "mock" => Err(eggsearch_core::error::CoreError::Config(
+            "mock provider is not configurable; it is added by the CLI when --include-mock is set"
+                .to_string(),
+        )),
+        other => Err(eggsearch_core::error::CoreError::Config(format!(
+            "unknown provider id '{other}'"
+        ))),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticStatus {
+    /// Provider is enabled and successfully registered.
+    Loaded,
+    /// Provider is enabled but could not be constructed (missing key, etc.).
+    Misconfigured,
+    /// Provider is explicitly disabled in the config.
+    Disabled,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProviderDiagnostic {
+    pub id: String,
+    pub enabled: bool,
+    pub status: DiagnosticStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Default)]
+pub struct RegistryDiagnostics {
+    pub loaded: Vec<String>,
+    pub diagnostics: Vec<ProviderDiagnostic>,
+}
+
+impl RegistryDiagnostics {
+    pub fn healthy(&self) -> bool {
+        self.diagnostics
+            .iter()
+            .all(|d| d.status != DiagnosticStatus::Misconfigured)
+    }
+
+    pub fn misconfigured(&self) -> impl Iterator<Item = &ProviderDiagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|d| d.status == DiagnosticStatus::Misconfigured)
     }
 }

@@ -10,5 +10,8 @@
 pub mod providers;
 pub mod registry;
 
-pub use providers::MockProvider;
-pub use registry::ProviderRegistry;
+pub use providers::{
+    brave::BraveProvider, exa::ExaProvider, searxng::SearxngProvider, tavily::TavilyProvider,
+    MockProvider,
+};
+pub use registry::{ProviderRegistry, RegistryDiagnostics};

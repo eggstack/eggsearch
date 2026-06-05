@@ -6,6 +6,7 @@ use std::sync::Arc;
 use eggsearch_core::config::AppConfig;
 use eggsearch_fetch::{ArtifactStore, FetchCache, ReqwestFetchProvider, RobotsCache};
 use eggsearch_local::LocalCorpus;
+use eggsearch_meta::registry::RegistryDiagnostics;
 use eggsearch_meta::ProviderRegistry;
 use tracing::warn;
 
@@ -14,6 +15,7 @@ use tracing::warn;
 pub struct ServerState {
     pub config: Arc<AppConfig>,
     pub providers: Arc<ProviderRegistry>,
+    pub diagnostics: Arc<RegistryDiagnostics>,
     pub fetch: Arc<ReqwestFetchProvider>,
     pub corpus: Arc<LocalCorpus>,
     pub cache: Arc<FetchCache>,
@@ -33,9 +35,18 @@ impl std::fmt::Debug for ServerState {
 impl ServerState {
     /// Build a new server state, opening the local index and creating
     /// any required directories.
+    ///
+    /// Providers are loaded from the supplied `AppConfig` via
+    /// `ProviderRegistry::from_config` (mock is **not** included by
+    /// default; the CLI's `search` command registers the mock
+    /// explicitly via `--provider mock`). Misconfigured providers are
+    /// skipped and recorded in `diagnostics` so the MCP server can still
+    /// start; the doctor CLI surfaces them.
     pub fn build(config: AppConfig) -> anyhow::Result<Self> {
         let config = Arc::new(config);
-        let providers = Arc::new(ProviderRegistry::with_default_providers());
+        let (registry, diagnostics) = ProviderRegistry::from_config(&config, false);
+        let providers = Arc::new(registry);
+        let diagnostics = Arc::new(diagnostics);
 
         std::fs::create_dir_all(&config.search.cache_dir).ok();
         std::fs::create_dir_all(&config.search.artifact_dir).ok();
@@ -60,6 +71,7 @@ impl ServerState {
         Ok(Self {
             config,
             providers,
+            diagnostics,
             fetch,
             corpus,
             cache,

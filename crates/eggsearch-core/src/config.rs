@@ -226,6 +226,20 @@ pub fn default_providers() -> std::collections::BTreeMap<String, ProviderConfig>
             ..Default::default()
         },
     );
+    m.insert(
+        "tavily".into(),
+        ProviderConfig {
+            enabled: false,
+            ..Default::default()
+        },
+    );
+    m.insert(
+        "exa".into(),
+        ProviderConfig {
+            enabled: false,
+            ..Default::default()
+        },
+    );
     m
 }
 
@@ -247,6 +261,32 @@ mod tests {
         let c = AppConfig::default();
         assert!(c.search.max_results > 0);
         assert!(c.any_provider_enabled());
+    }
+
+    #[test]
+    fn default_providers_lists_all_known_providers() {
+        let c = AppConfig::default();
+        let ids: Vec<&String> = c.search.providers.keys().collect();
+        for expected in [
+            "duckduckgo_html",
+            "wikipedia",
+            "crates_io",
+            "docs_rs",
+            "searxng",
+            "brave",
+            "tavily",
+            "exa",
+        ] {
+            assert!(ids.iter().any(|k| k.as_str() == expected), "missing default provider: {expected}");
+        }
+        // MVP no-key providers should be on by default.
+        assert!(c.search.providers["duckduckgo_html"].enabled);
+        assert!(c.search.providers["wikipedia"].enabled);
+        // Optional API-key / hosted providers should be off by default.
+        assert!(!c.search.providers["searxng"].enabled);
+        assert!(!c.search.providers["brave"].enabled);
+        assert!(!c.search.providers["tavily"].enabled);
+        assert!(!c.search.providers["exa"].enabled);
     }
 
     #[test]
