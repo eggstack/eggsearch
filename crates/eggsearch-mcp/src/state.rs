@@ -6,8 +6,6 @@ use std::time::Duration;
 use eggsearch_core::config::AppConfig;
 use eggsearch_meta::MetadataSearchAdapter;
 
-use crate::tools::ProviderStatusArgs;
-
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
 #[derive(Clone)]
 pub struct ServerState {
@@ -49,11 +47,17 @@ impl ServerState {
             adapter: Arc::new(adapter),
         })
     }
-}
 
-/// No-op retained for API stability; the changeover has no diagnostic
-/// probe paths to run.
-#[allow(dead_code)]
-pub fn _diagnostic_unused() -> ProviderStatusArgs {
-    ProviderStatusArgs { probe: false }
+    /// Build a server state from a pre-constructed adapter. Intended for
+    /// tests and for callers that want to wire custom upstream engines
+    /// (e.g. mocks).
+    pub fn with_adapter(
+        config: AppConfig,
+        adapter: std::sync::Arc<MetadataSearchAdapter>,
+    ) -> Self {
+        Self {
+            config: Arc::new(config),
+            adapter,
+        }
+    }
 }

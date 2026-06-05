@@ -10,7 +10,6 @@ use eggsearch_core::config::Mode;
 use eggsearch_core::WebSearchRequest;
 use eggsearch_meta::response::ProviderStatus;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use crate::policy::{live_allowed, policy_message, Policy};
 use crate::state::ServerState;
@@ -72,15 +71,21 @@ pub async fn run_web_search(
     if effective_providers.is_empty() {
         return Err("no providers are enabled in config".to_string());
     }
-    for p in &effective_providers {
-        if !state.adapter.provider_ids().iter().any(|id| id == p) {
-            warn!(provider = %p, "requested provider is not in adapter");
-        }
+    let (_, unknown) = state.adapter.select_engines(&effective_providers);
+    if !unknown.is_empty() {
+        return Err(format!(
+            "unknown provider id(s): {}",
+            unknown.join(", ")
+        ));
     }
 
     let resp = state
         .adapter
-        .web_search(&req, state.config.search.max_results_cap)
+        .web_search(
+            &req,
+            state.config.search.max_results,
+            state.config.search.max_results_cap,
+        )
         .await;
 
     let mut warnings: Vec<String> = resp

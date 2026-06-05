@@ -10,44 +10,41 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, CoreResult};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     /// All tools disabled.
     Off,
     /// Live metasearch is allowed.
+    #[default]
     Live,
 }
 
-impl Default for Mode {
-    fn default() -> Self {
-        Self::Live
-    }
-}
-
 impl Mode {
-    pub fn from_str(s: &str) -> CoreResult<Self> {
+    /// Parse a mode string. Only `"off"` and `"live"` are accepted; `"ask"`
+    /// is a host-level policy and is not a valid value at this layer.
+    pub fn parse(s: &str) -> CoreResult<Self> {
         match s.to_lowercase().as_str() {
             "off" => Ok(Self::Off),
-            "live" | "ask" | "local_only" | "localonly" | "local" => Ok(Self::Live),
+            "live" => Ok(Self::Live),
             other => Err(CoreError::Config(format!("unknown mode: {other}"))),
         }
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LiveConfig {
-    pub user_agent: String,
-    pub respect_robots_txt: bool,
-}
-
-impl Default for LiveConfig {
-    fn default() -> Self {
-        Self {
-            user_agent: format!("eggsearch/{}", env!("CARGO_PKG_VERSION")),
-            respect_robots_txt: true,
-        }
-    }
+    /// Reserved for future use. The current build does not allow the
+    /// operator to override the upstream HTTP user-agent (the upstream
+    /// crate hard-codes a browser-like agent that upstream providers
+    /// expect).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    /// Reserved for future use. The current build does not fetch URLs,
+    /// so there is nothing to apply a robots policy to. `web_fetch`,
+    /// when added, will enforce this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub respect_robots_txt: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -68,7 +65,8 @@ pub struct SearchSection {
     /// (`duckduckgo`, `brave`, `startpage`, `yahoo`).
     #[serde(default)]
     pub providers: std::collections::BTreeMap<String, bool>,
-    /// Live network configuration.
+    /// Live network configuration. Most fields are reserved for future
+    /// use; see `LiveConfig` docs.
     pub live: LiveConfig,
 }
 
@@ -161,9 +159,22 @@ mod tests {
 
     #[test]
     fn mode_parsing() {
-        assert_eq!(Mode::from_str("off").unwrap(), Mode::Off);
-        assert_eq!(Mode::from_str("live").unwrap(), Mode::Live);
-        assert!(Mode::from_str("nope").is_err());
+        assert_eq!(Mode::parse("off").unwrap(), Mode::Off);
+        assert_eq!(Mode::parse("live").unwrap(), Mode::Live);
+        assert!(Mode::parse("nope").is_err());
+    }
+
+    #[test]
+    fn mode_parsing_rejects_documented_aliases() {
+        // The previous build accepted "ask", "local_only", "localonly",
+        // and "local" as aliases for Live. The current build is strict
+        // and only accepts "off" and "live".
+        for alias in ["ask", "local_only", "localonly", "local"] {
+            assert!(
+                Mode::parse(alias).is_err(),
+                "{alias} should be rejected, was accepted as a Live alias"
+            );
+        }
     }
 
     #[test]

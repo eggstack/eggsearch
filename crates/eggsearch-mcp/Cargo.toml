@@ -9,6 +9,8 @@ description = "MCP server adapter exposing eggsearch metasearch capabilities"
 [features]
 default = ["metasearch"]
 metasearch = ["eggsearch-meta/metasearch"]
+# Pull in the eggsearch-meta mock engines for integration tests.
+mock = ["eggsearch-meta/mock", "metasearch"]
 
 [dependencies]
 eggsearch-core = { path = "../eggsearch-core" }
@@ -31,3 +33,4 @@ tokio = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true }
+eggsearch-meta = { path = "../eggsearch-meta", features = ["mock"] }

@@ -1,6 +1,7 @@
 //! Compact `SourceCard` representation passed to agents.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::result::TrustLevel;
@@ -9,12 +10,15 @@ use crate::result::TrustLevel;
 ///
 /// This is the canonical, provider-agnostic output model. It is deliberately
 /// small: agents should fetch full content via a separate `web_fetch` tool
-/// (deferred to phase 2) rather than rely on snippets.
+/// (deferred) rather than rely on snippets.
 ///
 /// For the MVP, all live web results use `TrustLevel::ExternalUntrusted`.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SourceCard {
-    /// Stable per-response identifier, e.g. `src_001`.
+    /// Per-response identifier, e.g. `src_<uuid>`. Unique within a
+    /// single `web_search` response. Not stable across responses; for
+    /// cross-response dedup, use `source_identity` derived from
+    /// `(url, sorted(providers))`.
     pub id: String,
     /// Result title.
     pub title: String,
@@ -62,6 +66,31 @@ impl SourceCard {
         self.snippet = Some(s.into());
         self
     }
+
+    /// Compute the deterministic cross-response identity for a card
+    /// identified by `(url, providers)`. Two cards with the same URL
+    /// and the same set of contributing engines produce the same
+    /// identity, even across separate `web_search` responses.
+    ///
+    /// The identity is the first 16 hex characters of
+    /// `SHA-256(url || "\0" || sorted_providers.join("\0"))`, prefixed
+    /// with `src_`. Callers (e.g. Codegg) can store these to dedupe
+    /// results across requests.
+    pub fn source_identity(url: &str, providers: &[String]) -> String {
+        let mut sorted: Vec<&str> = providers.iter().map(String::as_str).collect();
+        sorted.sort_unstable();
+        sorted.dedup();
+        let mut hasher = Sha256::new();
+        hasher.update(url.as_bytes());
+        hasher.update([0u8]);
+        for p in &sorted {
+            hasher.update(p.as_bytes());
+            hasher.update([0u8]);
+        }
+        let digest = hasher.finalize();
+        let hex = hex::encode(digest);
+        format!("src_{}", &hex[..16])
+    }
 }
 
 #[cfg(test)]
@@ -96,5 +125,29 @@ mod tests {
         )
         .with_snippet("a snippet");
         assert_eq!(c.snippet.as_deref(), Some("a snippet"));
+    }
+
+    #[test]
+    fn source_identity_is_deterministic_and_provider_order_independent() {
+        let id1 = SourceCard::source_identity(
+            "https://example.com/page",
+            &["duckduckgo".to_string(), "brave".to_string()],
+        );
+        let id2 = SourceCard::source_identity(
+            "https://example.com/page",
+            &["brave".to_string(), "duckduckgo".to_string()],
+        );
+        assert_eq!(id1, id2);
+        assert!(id1.starts_with("src_"));
+        assert_eq!(id1.len(), "src_".len() + 16);
+    }
+
+    #[test]
+    fn source_identity_differs_across_urls_and_providers() {
+        let a = SourceCard::source_identity("https://a.com", &["x".into()]);
+        let b = SourceCard::source_identity("https://b.com", &["x".into()]);
+        let c = SourceCard::source_identity("https://a.com", &["y".into()]);
+        assert_ne!(a, b);
+        assert_ne!(a, c);
     }
 }

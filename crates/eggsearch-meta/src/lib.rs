@@ -8,6 +8,8 @@
 pub mod adapter;
 #[cfg(feature = "metasearch")]
 pub mod engine;
+#[cfg(feature = "mock")]
+pub mod mock;
 pub mod response;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};

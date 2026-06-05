@@ -1,6 +1,6 @@
 //! `eggsearch search`: manual live metasearch via the CLI.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use eggsearch_core::config::AppConfig;
 use eggsearch_core::WebSearchRequest;
 use eggsearch_mcp::ServerState;
@@ -22,9 +22,13 @@ pub async fn run(
         timeout_ms: None,
     };
 
+    if let Err(e) = req.validate(cfg.search.max_query_chars, cfg.search.max_results_cap) {
+        return Err(anyhow!("invalid query: {e}"));
+    }
+
     let resp = state
         .adapter
-        .web_search(&req, cfg.search.max_results_cap)
+        .web_search(&req, cfg.search.max_results, cfg.search.max_results_cap)
         .await;
 
     if as_json {

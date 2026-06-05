@@ -58,15 +58,13 @@ fn classify(err: &metadata_search_engine_rs::error::EngineError) -> ErrorClass {
 }
 
 #[cfg(feature = "metasearch")]
-type Engines = Vec<std::sync::Arc<dyn SearchEngine>>;
-
-#[cfg(not(feature = "metasearch"))]
-type Engines = Vec<()>;
+type EngineList = Vec<std::sync::Arc<dyn SearchEngine>>;
 
 /// Constructed once at server startup. Holds the upstream `SearchEngine`
 /// instances and the effective provider list.
 pub struct MetadataSearchAdapter {
-    engines: Engines,
+    #[cfg(feature = "metasearch")]
+    engines: EngineList,
     provider_ids: Vec<String>,
     /// Hard timeout for the whole `web_search` call, including fan-out.
     global_timeout: Duration,
@@ -125,6 +123,43 @@ impl MetadataSearchAdapter {
         }
     }
 
+    /// Subset of `engines` whose `name()` matches one of the given
+    /// provider ids. Unknown ids are returned in the second tuple slot
+    /// so callers can return a structured error.
+    #[cfg(feature = "metasearch")]
+    pub fn select_engines(
+        &self,
+        provider_ids: &[String],
+    ) -> (Vec<std::sync::Arc<dyn SearchEngine>>, Vec<String>) {
+        if provider_ids.is_empty() {
+            return (self.engines.clone(), Vec::new());
+        }
+        let mut out = Vec::new();
+        let mut unknown = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for id in provider_ids {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            match self.engines.iter().find(|e| e.name() == id.as_str()) {
+                Some(e) => out.push(e.clone()),
+                None => unknown.push(id.clone()),
+            }
+        }
+        (out, unknown)
+    }
+
+    /// Stub for when the `metasearch` feature is off. Returns the
+    /// requested ids as "unknown" so callers can return a structured
+    /// error.
+    #[cfg(not(feature = "metasearch"))]
+    pub fn select_engines(
+        &self,
+        provider_ids: &[String],
+    ) -> (Vec<()>, Vec<String>) {
+        (Vec::new(), provider_ids.to_vec())
+    }
+
     /// List the provider ids that this adapter will query.
     pub fn provider_ids(&self) -> &[String] {
         &self.provider_ids
@@ -151,24 +186,38 @@ impl MetadataSearchAdapter {
     }
 
     /// Run a metasearch query. This is the primary entry point used by
-    /// the MCP `web_search` tool.
+    /// the MCP `web_search` tool. If `req.providers` is non-empty, only
+    /// those engines are queried (and the caller is expected to have
+    /// already rejected unknown ids via `select_engines`).
     #[cfg(feature = "metasearch")]
     pub async fn web_search(
         &self,
         req: &WebSearchRequest,
+        default_max_results: usize,
         max_results_cap: usize,
     ) -> WebSearchResponse {
-        let max_results = req.effective_max_results(10, max_results_cap);
+        let max_results = req.effective_max_results(default_max_results, max_results_cap);
+        let (engines, queried_ids) = if req.providers.is_empty() {
+            (self.engines.clone(), self.provider_ids.clone())
+        } else {
+            let (subset, unknown) = self.select_engines(&req.providers);
+            debug_assert!(
+                unknown.is_empty(),
+                "select_engines returned unknown ids; caller should have rejected these"
+            );
+            let ids = subset.iter().map(|e| e.name().to_string()).collect();
+            (subset, ids)
+        };
         debug!(
             query = %req.query,
-            providers = ?self.provider_ids,
+            providers = ?queried_ids,
             max_results,
             "dispatching metasearch"
         );
 
         let (raw_results, raw_failures) = match tokio::time::timeout(
             self.global_timeout,
-            query_all_engines(&self.engines, &req.query, max_results),
+            query_all_engines(&engines, &req.query, max_results),
         )
         .await
         {
@@ -177,7 +226,7 @@ impl MetadataSearchAdapter {
                 warn!("metasearch global timeout exceeded");
                 (
                     Vec::new(),
-                    self.provider_ids
+                    queried_ids
                         .iter()
                         .map(|id| {
                             (
@@ -213,8 +262,8 @@ impl MetadataSearchAdapter {
             })
             .collect();
 
-        if providers_failed.is_empty() && results.is_empty() {
-            for id in &self.provider_ids {
+        if providers_failed.is_empty() && results.is_empty() && !queried_ids.is_empty() {
+            for id in &queried_ids {
                 providers_failed.push(ProviderFailure {
                     id: id.clone(),
                     error_class: ErrorClass::Timeout.as_str().to_string(),
@@ -247,6 +296,7 @@ impl MetadataSearchAdapter {
     pub async fn web_search(
         &self,
         req: &WebSearchRequest,
+        _default_max_results: usize,
         _max_results_cap: usize,
     ) -> WebSearchResponse {
         WebSearchResponse {
@@ -417,7 +467,7 @@ mod tests {
         ];
         let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
         let req = WebSearchRequest::new("rust axum");
-        let resp = adapter.web_search(&req, 10).await;
+        let resp = adapter.web_search(&req, 10, 10).await;
         assert_eq!(resp.query, "rust axum");
         assert_eq!(resp.mode, "live_metasearch");
         assert_eq!(resp.providers_queried.len(), 2);

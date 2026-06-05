@@ -9,6 +9,8 @@ use metadata_search_engine_rs::engines::{
     build_http_client, BraveEngine, DuckDuckGoEngine, SearchEngine, StartpageEngine, YahooEngine,
 };
 
+type EngineList = Vec<Arc<dyn SearchEngine>>;
+
 /// The set of provider ids that ship with the upstream library and that
 /// eggsearch can enable by default.
 pub const KNOWN_PROVIDERS: &[&str] = &["duckduckgo", "brave", "startpage", "yahoo"];
@@ -31,11 +33,9 @@ pub fn shared_http_client() -> anyhow::Result<Arc<reqwest::Client>> {
 /// Build the default engine set used by the server. Disabled providers
 /// in the config are skipped; unknown ids are reported via the returned
 /// `Vec<String>` of skipped ids.
-pub fn build_default_engines(
-    enabled_providers: &[String],
-) -> anyhow::Result<(Vec<Arc<dyn SearchEngine>>, Vec<String>)> {
+pub fn build_default_engines(enabled_providers: &[String]) -> anyhow::Result<(EngineList, Vec<String>)> {
     let client = shared_http_client()?;
-    let mut engines: Vec<Arc<dyn SearchEngine>> = Vec::new();
+    let mut engines: EngineList = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
 
     for id in enabled_providers {
