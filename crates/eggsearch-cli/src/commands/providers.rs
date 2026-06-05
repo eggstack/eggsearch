@@ -1,8 +1,8 @@
 //! `eggsearch providers`: report provider configuration and status.
 
 use anyhow::Result;
-use eggsearch_core::config::AppConfig;
-use eggsearch_mcp::ServerState;
+use eggsearch::core::config::AppConfig;
+use eggsearch::mcp::ServerState;
 
 pub async fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
     let state = ServerState::build(cfg.clone())?;

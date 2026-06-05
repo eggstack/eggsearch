@@ -6,13 +6,13 @@
 
 use std::sync::Arc;
 
-use eggsearch_core::config::Mode;
-use eggsearch_core::WebSearchRequest;
-use eggsearch_meta::response::ProviderStatus;
+use crate::core::config::Mode;
+use crate::core::WebSearchRequest;
+use crate::meta::response::ProviderStatus;
 use serde::{Deserialize, Serialize};
 
-use crate::policy::{live_allowed, policy_message, Policy};
-use crate::state::ServerState;
+use crate::mcp::policy::{live_allowed, policy_message, Policy};
+use crate::mcp::state::ServerState;
 
 /// Error from a tool call, tagged by whether it reflects bad client
 /// input (`Validation`) or a server-side/runtime issue (`Internal`).
@@ -44,7 +44,7 @@ pub struct WebSearchArgs {
     pub providers: Vec<String>,
     /// Optional safe-search mode.
     #[serde(default)]
-    pub safe_search: Option<eggsearch_core::SafeSearch>,
+    pub safe_search: Option<crate::core::SafeSearch>,
     /// Optional per-request timeout override in milliseconds.
     #[serde(default)]
     pub timeout_ms: Option<u64>,

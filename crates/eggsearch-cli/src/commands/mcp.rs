@@ -1,8 +1,8 @@
 //! `eggsearch mcp stdio`: run the MCP server over stdio.
 
 use anyhow::Result;
-use eggsearch_core::config::AppConfig;
-use eggsearch_mcp::{EggsearchServer, ServerState};
+use eggsearch::core::config::AppConfig;
+use eggsearch::mcp::{EggsearchServer, ServerState};
 use rmcp::ServiceExt;
 use std::sync::Arc;
 use tracing::info;

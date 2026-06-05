@@ -1,7 +1,7 @@
 //! Response types for the metasearch adapter.
 
-use eggsearch_core::SourceCard;
-use eggsearch_core::SearchWarning;
+use crate::core::SourceCard;
+use crate::core::SearchWarning;
 use serde::{Deserialize, Serialize};
 
 /// Status of a single configured provider.
@@ -34,8 +34,11 @@ pub struct ProviderFailure {
 /// Successful response from `MetadataSearchAdapter::web_search`.
 #[derive(Clone, Debug)]
 pub struct WebSearchResponse {
+    /// Echo of the original query.
     pub query: String,
+    /// Mode the adapter ran in (always `"live_metasearch"` for now).
     pub mode: &'static str,
+    /// Deduplicated, ranked source cards.
     pub results: Vec<SourceCard>,
     /// All provider ids that were queried.
     pub providers_queried: Vec<String>,

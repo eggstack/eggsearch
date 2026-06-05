@@ -2,19 +2,23 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CoreError, CoreResult};
+use crate::core::error::{CoreError, CoreResult};
 
 /// Safe-search mode. Mapped to per-engine filters by the adapter.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SafeSearch {
+    /// No safe-search filtering.
     Off,
+    /// Default moderate filtering.
     #[default]
     Moderate,
+    /// Strict filtering.
     Strict,
 }
 
 impl SafeSearch {
+    /// Stable lowercase string form (`"off"`, `"moderate"`, `"strict"`).
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Off => "off",
@@ -45,6 +49,22 @@ pub struct WebSearchRequest {
 
 impl WebSearchRequest {
     /// Build a request with the given query, applying defaults.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eggsearch::core::WebSearchRequest;
+    ///
+    /// let mut req = WebSearchRequest::new("rust axum middleware");
+    /// req.max_results = Some(10);
+    /// req.providers = vec!["duckduckgo".to_string()];
+    /// req.timeout_ms = Some(8_000);
+    ///
+    /// // Validate against the server's limits before dispatching.
+    /// req.validate(512, 50).expect("request is valid");
+    /// assert_eq!(req.query, "rust axum middleware");
+    /// assert_eq!(req.max_results, Some(10));
+    /// ```
     pub fn new<Q: Into<String>>(query: Q) -> Self {
         Self {
             query: query.into(),

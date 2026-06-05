@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::result::TrustLevel;
+use crate::core::result::TrustLevel;
 
 /// A single normalized result returned to MCP callers.
 ///
@@ -40,6 +40,26 @@ pub struct SourceCard {
 impl SourceCard {
     /// Build a fresh `SourceCard` with the given title, url, providers, score,
     /// and trust label. A unique id of the form `src_<uuid>` is generated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eggsearch::core::{SourceCard, TrustLevel};
+    ///
+    /// let card = SourceCard::new(
+    ///     "tower-http - Rust",
+    ///     "https://docs.rs/tower-http",
+    ///     vec!["duckduckgo".to_string(), "brave".to_string()],
+    ///     Some(0.0327),
+    ///     TrustLevel::ExternalUntrusted,
+    /// )
+    /// .with_snippet("Middleware and utilities for HTTP clients and servers.");
+    ///
+    /// assert_eq!(card.title, "tower-http - Rust");
+    /// assert!(card.id.starts_with("src_"));
+    /// assert!(!card.fetched);
+    /// assert!(card.snippet.is_some());
+    /// ```
     pub fn new(
         title: impl Into<String>,
         url: impl Into<String>,
@@ -59,6 +79,8 @@ impl SourceCard {
         }
     }
 
+    /// Attach a snippet to this card. Convenience for the
+    /// `SourceCard::new(...).with_snippet(...)` builder pattern.
     pub fn with_snippet(mut self, s: impl Into<String>) -> Self {
         self.snippet = Some(s.into());
         self

@@ -10,8 +10,8 @@ use rmcp::model::{
 };
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
 
-use crate::state::ServerState;
-use crate::tools::{run_provider_status, run_web_search, ProviderStatusArgs, ToolError, WebSearchArgs};
+use crate::mcp::state::ServerState;
+use crate::mcp::tools::{run_provider_status, run_web_search, ProviderStatusArgs, ToolError, WebSearchArgs};
 
 #[derive(Clone)]
 pub struct EggsearchServer {

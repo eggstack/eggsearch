@@ -1,32 +1,69 @@
 [package]
 name = "eggsearch"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-repository.workspace = true
-homepage = "https://github.com/anomalyco/eggsearch"
-description = "eggsearch CLI: metasearch MCP server for AI agents"
+version = "0.1.1"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+description = "Lightweight MCP metasearch server for AI agents"
+repository = "https://github.com/eggstack/eggsearch"
+homepage = "https://github.com/eggstack/eggsearch"
+readme = "../../README.md"
 keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
 categories = ["command-line-utilities", "web-programming"]
+include = [
+    "src/**/*.rs",
+    "src/lib.rs",
+    "src/main.rs",
+    "tests/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "CHANGELOG.md",
+]
+
+[lib]
+name = "eggsearch"
+path = "src/lib.rs"
 
 [[bin]]
 name = "eggsearch"
 path = "src/main.rs"
 
 [features]
-default = ["metasearch"]
-metasearch = ["eggsearch-mcp/metasearch", "eggsearch-meta/metasearch"]
+default = []
+mock = []
 
 [dependencies]
-eggsearch-core = { path = "../eggsearch-core", version = "0.1.0" }
-eggsearch-meta = { path = "../eggsearch-meta", version = "0.1.0" }
-eggsearch-mcp = { path = "../eggsearch-mcp", version = "0.1.0" }
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+rmcp = { version = "1", features = ["server", "transport-io", "macros"] }
+url = { version = "2", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json", "cookies"] }
+scraper = "0.20"
+urlencoding = "2"
+toml = "0.8"
+dirs = "5"
 
-tokio = { workspace = true }
-clap = { workspace = true }
-anyhow = { workspace = true }
-serde_json = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-rmcp = { workspace = true }
+[dev-dependencies]
+pretty_assertions = "1"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"]

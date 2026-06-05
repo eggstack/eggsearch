@@ -1,7 +1,8 @@
 # eggsearch
 
 [![Crates.io](https://img.shields.io/crates/v/eggsearch.svg)](https://crates.io/crates/eggsearch)
-[![License](https://img.shields.io/crates/l/eggsearch.svg)](https://github.com/anomalyco/eggsearch#license)
+[![docs.rs](https://docs.rs/eggsearch/badge.svg)](https://docs.rs/eggsearch)
+[![License](https://img.shields.io/crates/l/eggsearch.svg)](https://github.com/eggstack/eggsearch#license)
 
 A lightweight MCP (Model Context Protocol) **metasearch** server for AI agents.
 
@@ -151,14 +152,19 @@ yahoo      = true
 | `timeout_ms` | `8000` | Global timeout for the search fan-out. |
 | `default_providers` | `["duckduckgo", "startpage", "yahoo"]` | Used when client omits `providers`. |
 
-## Workspace Layout
+## Project Structure
 
 ```
-crates/
-  eggsearch-core/     Core types, SourceCard, config, URL normalization
-  eggsearch-meta/     MetadataSearchAdapter with vendored search engines
-  eggsearch-mcp/      MCP server (rmcp): web_search + provider_status tools
-  eggsearch-cli/      CLI binary: doctor, search, providers, mcp stdio
+crates/eggsearch-cli/
+  src/
+    main.rs              # binary entry point
+    lib.rs               # library root (modules: core, meta, mcp)
+    config.rs            # CLI config loader
+    commands/            # subcommands: doctor, search, providers, mcp
+    core/                # SourceCard, AppConfig, error, query types
+    meta/                # MetadataSearchAdapter + vendored engines
+    mcp/                 # MCP server (rmcp): web_search + provider_status
+  tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 
 ## MCP Client Integration
@@ -195,7 +201,7 @@ to use the tools safely.
 ## Search Engines
 
 The HTML scraping engines for DuckDuckGo, Brave, Startpage, and Yahoo are
-vendored in `crates/eggsearch-meta/src/engines/`, originally from
+vendored in `src/meta/engines/`, originally from
 [`metadata-search-engine-rs`](https://crates.io/crates/metadata-search-engine-rs)
 by [MikeLuu99/searxng-rust](https://github.com/MikeLuu99/searxng-rust).
 The RRF aggregation logic and URL normalizer are also vendored.
@@ -207,16 +213,15 @@ selector changes.
 ## Testing
 
 ```bash
-cargo test --workspace --all-features
+cargo test --all-features
 ```
 
-Mock engines (`crates/eggsearch-meta/src/mock.rs`) let integration tests
-exercise happy path, partial failure, all-fail, global timeout, and
-provider override paths without any network access. Vendored engine
-tests (`crates/eggsearch-meta/src/engines/`) verify HTML parsing
-against inline fixtures.
+Mock engines (`src/meta/mock.rs`) let integration tests exercise happy
+path, partial failure, all-fail, global timeout, and provider override
+paths without any network access. Vendored engine tests
+(`src/meta/engines/`) verify HTML parsing against inline fixtures.
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT License](LICENSE-MIT) at your option.
+Licensed under either of [Apache License, Version 2.0](https://github.com/eggstack/eggsearch/blob/main/crates/eggsearch-cli/LICENSE-APACHE) or
+[MIT License](https://github.com/eggstack/eggsearch/blob/main/crates/eggsearch-cli/LICENSE-MIT) at your option.

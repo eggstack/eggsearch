@@ -8,6 +8,8 @@ eggsearch is a lightweight MCP (Model Context Protocol) metasearch server for AI
 
 ## Build & Test Commands
 
+All commands are run from `crates/eggsearch-cli/`.
+
 ```bash
 # Build (debug)
 cargo build
@@ -16,58 +18,60 @@ cargo build
 cargo build --release
 
 # Run all tests (unit + integration)
-cargo test --workspace --all-features
-
-# Run tests for a specific crate
-cargo test -p eggsearch-core
-cargo test -p eggsearch-meta
-cargo test -p eggsearch-mcp --all-features
+cargo test --all-features
 
 # Clippy (must pass before committing)
-cargo clippy --workspace --all-features
+cargo clippy --all-features -- -D warnings
 
 # Check compilation only
 cargo check --all-features
 
 # Dry-run publish check
-cargo publish --dry-run -p eggsearch-core
+cargo publish --dry-run
 ```
 
-## Workspace Structure
+## Project Structure
+
+The eggsearch crate is a single library + binary. Submodules live under `src/`:
 
 ```
-crates/
-  eggsearch-core/     Core types, config, URL normalization, error types
-  eggsearch-meta/     MetadataSearchAdapter with vendored search engines
-  eggsearch-mcp/      MCP server (rmcp): web_search + provider_status tools
-  eggsearch-cli/      CLI binary: doctor, search, providers, mcp stdio
+crates/eggsearch-cli/
+  src/
+    main.rs              # binary entry point (clap, tokio main)
+    lib.rs               # library root, re-exports core/meta/mcp
+    config.rs            # CLI config loader
+    commands/            # subcommands: doctor, search, providers, mcp
+    core/                # SourceCard, AppConfig, error, query types
+    meta/                # MetadataSearchAdapter + vendored engines
+    mcp/                 # MCP server (rmcp): web_search + provider_status
+  tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 
 ## Key Conventions
 
 ### Feature Flags
-- `metasearch` (default): enables the real search engine backend
-- `mock`: enables mock engines for testing without network access
-- All integration tests in `eggsearch-mcp/tests/` use `#[cfg(feature = "mock")]` for test-only mock engines
+- `mock` (opt-in): enables the test-only mock engine harness in `meta::mock`
+- The previous `metasearch` feature is gone; the metasearch code is always compiled
+- Integration tests use `#[cfg(feature = "mock")]` and are run via `cargo test --features mock`
 
 ### Error Handling
-- `eggsearch-core` defines `CoreError` and `CoreResult<T>` using `thiserror`
-- `eggsearch-meta` adapter returns `WebSearchResponse` (never errors; partial failures are soft)
-- `eggsearch-mcp` tools return `Result<serde_json::Value, String>` for MCP error mapping
+- `core` defines `CoreError` and `CoreResult<T>` using `thiserror`
+- `meta` adapter returns `WebSearchResponse` (never errors; partial failures are soft)
+- `mcp` tools return `Result<serde_json::Value, String>` for MCP error mapping
 
 ### Testing
 - Unit tests live in `#[cfg(test)] mod tests` at the bottom of each source file
-- Integration tests live in `crates/eggsearch-mcp/tests/integration.rs`
-- Mock engines are in `crates/eggsearch-meta/src/mock.rs` (feature-gated behind `mock`)
+- Integration tests live in `crates/eggsearch-cli/tests/integration.rs`
+- Mock engines are in `src/meta/mock.rs` (feature-gated behind `mock`)
 - The `MockEngine` struct supports success, failure, and hang (timeout) scenarios
-- Vendored engine tests (HTML parsing) are in `crates/eggsearch-meta/src/engines/`
+- Vendored engine tests (HTML parsing) are in `src/meta/engines/`
 - Tests must not require network access — all use mock engines
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
 - Tools: `web_search` (live metasearch) and `provider_status` (diagnostic)
 - Transport: stdio only (no HTTP/SSE)
-- Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `server.rs`
+- Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 
 ### Configuration
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
@@ -83,7 +87,7 @@ crates/
 
 ## Vendored Search Engines
 
-The HTML scraping engines in `eggsearch-meta/src/engines/` are vendored from
+The HTML scraping engines in `src/meta/engines/` are vendored from
 [`metadata-search-engine-rs`](https://crates.io/crates/metadata-search-engine-rs)
 (original source: [MikeLuu99/searxng-rust](https://github.com/MikeLuu99/searxng-rust)).
 
@@ -102,14 +106,13 @@ The `scraper` crate is used for HTML parsing.
 
 ## Publishing to crates.io
 
-Each sub-crate can be published independently. The publish order is:
-1. `eggsearch-core` (no internal dependencies)
-2. `eggsearch-meta` (depends on eggsearch-core)
-3. `eggsearch-mcp` (depends on eggsearch-core + eggsearch-meta)
-4. `eggsearch` (the CLI binary, depends on all three)
+eggsearch is published as a single crate. Before publishing:
 
-Before publishing, ensure:
-- `cargo clippy --workspace --all-features` is clean
-- `cargo test --workspace --all-features` passes
-- Version numbers in workspace Cargo.toml are bumped
-- CHANGELOG is updated (if one exists)
+- `cargo clippy --all-features -- -D warnings` is clean
+- `cargo test --all-features` passes (114 tests)
+- `cargo publish --dry-run` succeeds
+- The version in `crates/eggsearch-cli/Cargo.toml` is bumped
+- `CHANGELOG.md` is updated
+
+The crates.io package includes the README, LICENSE files, and CHANGELOG via
+the `include` field in `Cargo.toml`.

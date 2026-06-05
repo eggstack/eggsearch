@@ -1,5 +1,5 @@
 //! Core types, source card model, configuration, and error types
-//! for eggsearch. This crate is intentionally independent of any MCP,
+//! for eggsearch. This module is intentionally independent of any MCP,
 //! HTTP, or search-engine implementation.
 
 pub mod config;

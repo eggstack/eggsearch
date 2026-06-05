@@ -4,14 +4,15 @@
 //! pull in this code by default.
 
 #![cfg(feature = "mock")]
+#![allow(missing_docs)]
 
 use std::future::pending;
 use std::sync::Arc;
 
-use crate::engines::BoxFuture;
-use crate::engines::error::EngineError;
-use crate::engines::models::SearchResult;
-use crate::engines::SearchEngine;
+use crate::meta::engines::BoxFuture;
+use crate::meta::engines::error::EngineError;
+use crate::meta::engines::models::SearchResult;
+use crate::meta::engines::SearchEngine;
 
 /// A canned upstream result. Construct with `MockResult::new(...)`
 /// and optionally `.with_snippet(...)`.

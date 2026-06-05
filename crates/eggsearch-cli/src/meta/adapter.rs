@@ -5,30 +5,37 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use eggsearch_core::SearchWarning;
-use eggsearch_core::SourceCard;
-use eggsearch_core::TrustLevel;
-use eggsearch_core::WebSearchRequest;
+use crate::core::SearchWarning;
+use crate::core::SourceCard;
+use crate::core::TrustLevel;
+use crate::core::WebSearchRequest;
 use tracing::{debug, warn};
 
-use crate::engines::error::EngineError;
-use crate::engines::models::{AggregatedResult, SearchResult};
-use crate::engines::{build_http_client, SearchEngine};
-use crate::response::{ProviderFailure, ProviderStatus, WebSearchResponse};
+use crate::meta::engines::error::EngineError;
+use crate::meta::engines::models::{AggregatedResult, SearchResult};
+use crate::meta::engines::{build_http_client, SearchEngine};
+use crate::meta::response::{ProviderFailure, ProviderStatus, WebSearchResponse};
 
 /// Coarse error class for provider failures. Exposed via `provider_status`
 /// and the `web_search` tool's `providers_failed` field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ErrorClass {
+    /// The engine did not respond within the per-engine timeout.
     Timeout,
+    /// The engine responded with a non-2xx HTTP status.
     HttpStatus,
+    /// The engine responded but the HTML could not be parsed.
     ParseError,
+    /// A network-level error (DNS, TLS, connection reset, etc.).
     NetworkError,
+    /// The engine returned HTTP 429 (rate-limited).
     RateLimited,
+    /// Unclassified failure.
     Unknown,
 }
 
 impl ErrorClass {
+    /// Stable snake-case string form.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Timeout => "timeout",
@@ -334,7 +341,7 @@ pub fn provider_kind(id: &str) -> (&'static str, bool) {
 pub fn build_default_engines(
     enabled_providers: &[String],
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
-    use crate::engines::{
+    use crate::meta::engines::{
         BraveEngine, DuckDuckGoEngine, StartpageEngine, YahooEngine,
     };
 
@@ -383,7 +390,7 @@ fn aggregate_rrf(
             let rank = index + 1;
             let rrf_score = 1.0 / (RRF_K + rank as f64);
 
-            let key = match crate::engines::normalizer::normalize(&result.url) {
+            let key = match crate::meta::engines::normalizer::normalize(&result.url) {
                 Some(k) => k,
                 None => {
                     debug!(url = %result.url, "skipping result with un-normalizable URL");
@@ -547,7 +554,7 @@ mod tests {
             &'a self,
             _query: &'a str,
             _max_results: usize,
-        ) -> crate::engines::BoxFuture<
+        ) -> crate::meta::engines::BoxFuture<
             'a,
             Result<Vec<SearchResult>, EngineError>,
         > {

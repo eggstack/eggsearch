@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use eggsearch_core::config::AppConfig;
-use eggsearch_meta::MetadataSearchAdapter;
+use crate::core::config::AppConfig;
+use crate::meta::MetadataSearchAdapter;
 
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
 #[derive(Clone)]

@@ -1,6 +1,6 @@
 //! Policy enforcement: gates tool execution based on configured mode.
 
-use eggsearch_core::config::Mode;
+use crate::core::config::Mode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Policy {

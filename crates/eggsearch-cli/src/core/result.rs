@@ -18,6 +18,7 @@ pub enum TrustLevel {
 }
 
 impl TrustLevel {
+    /// Stable snake-case string form (e.g. `"external_untrusted"`).
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ExternalUntrusted => "external_untrusted",
@@ -32,11 +33,14 @@ impl TrustLevel {
 /// errors.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchWarning {
+    /// Stable provider id that emitted the warning.
     pub provider_id: String,
+    /// Human-readable message.
     pub message: String,
 }
 
 impl SearchWarning {
+    /// Construct a new `SearchWarning` from a provider id and message.
     pub fn new(provider_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             provider_id: provider_id.into(),

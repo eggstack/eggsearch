@@ -1,3 +1,9 @@
+//! Vendored HTML search engines for the metasearch adapter. These are
+//! internal implementation details; the public types are re-exported
+//! from [`crate::meta`].
+
+#![allow(missing_docs)]
+
 pub mod brave;
 pub mod duckduckgo;
 pub mod error;

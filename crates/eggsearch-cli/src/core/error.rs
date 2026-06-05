@@ -2,36 +2,52 @@
 
 use thiserror::Error;
 
+/// Errors produced by eggsearch-core operations.
 #[derive(Debug, Error)]
 pub enum CoreError {
+    /// A URL failed to parse or failed URL-based validation.
     #[error("invalid URL: {0}")]
     InvalidUrl(String),
 
+    /// A query failed validation (empty, oversized, or invalid `max_results`).
     #[error("invalid query: {0}")]
     InvalidQuery(String),
 
+    /// The configuration file or values are invalid.
     #[error("config error: {0}")]
     Config(String),
 
+    /// A specific provider failed during a search.
     #[error("provider '{provider}' failed: {message}")]
-    Provider { provider: String, message: String },
+    Provider {
+        /// Stable provider id (e.g. `"duckduckgo"`).
+        provider: String,
+        /// Human-readable detail.
+        message: String,
+    },
 
+    /// An I/O error.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// A JSON serialization error.
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 
+    /// A TOML deserialization error.
     #[error("toml parse error: {0}")]
     TomlDe(#[from] toml::de::Error),
 
+    /// A TOML serialization error.
     #[error("toml serialization error: {0}")]
     TomlSer(String),
 
+    /// A catch-all error for anything not covered above.
     #[error("{0}")]
     Other(String),
 }
 
+/// Convenience alias for `Result<T, CoreError>`.
 pub type CoreResult<T> = Result<T, CoreError>;
 
 #[cfg(test)]

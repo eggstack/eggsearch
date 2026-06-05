@@ -489,64 +489,20 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "eggsearch-core",
- "eggsearch-mcp",
- "eggsearch-meta",
- "rmcp",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "eggsearch-core"
-version = "0.1.0"
-dependencies = [
  "dirs",
  "pretty_assertions",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 1.0.69",
- "toml",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "eggsearch-mcp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "eggsearch-core",
- "eggsearch-meta",
- "pretty_assertions",
- "rmcp",
- "rmcp-macros",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "eggsearch-meta"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "eggsearch-core",
- "pretty_assertions",
  "reqwest",
+ "rmcp",
+ "schemars",
  "scraper",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "toml",
  "tracing",
+ "tracing-subscriber",
  "url",
  "urlencoding",
  "uuid",

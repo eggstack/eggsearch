@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CoreError, CoreResult};
+use crate::core::error::{CoreError, CoreResult};
 
+/// Server operating mode.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -32,6 +33,7 @@ impl Mode {
     }
 }
 
+/// Live network configuration. Most fields are reserved for future use.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LiveConfig {
     /// Reserved for future use. The current build does not allow the
@@ -47,6 +49,7 @@ pub struct LiveConfig {
     pub respect_robots_txt: Option<bool>,
 }
 
+/// The `[search]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
     /// Server mode: `off` or `live`. Defaults to `live`.
@@ -94,8 +97,11 @@ impl Default for SearchSection {
     }
 }
 
+/// Root configuration type. Mirrors the structure of the TOML file
+/// loaded from [`default_config_path`] or a user-supplied path.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AppConfig {
+    /// The `[search]` section.
     #[serde(default)]
     pub search: SearchSection,
 }
@@ -103,6 +109,18 @@ pub struct AppConfig {
 impl AppConfig {
     /// Load a config from the given TOML file path, falling back to defaults
     /// for any missing sections.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eggsearch::core::AppConfig;
+    ///
+    /// // If the file does not exist, defaults are returned silently.
+    /// let cfg = AppConfig::load(std::path::Path::new("/nonexistent/config.toml"))
+    ///     .expect("missing file returns defaults");
+    /// assert_eq!(cfg.search.timeout_ms, 8_000);
+    /// assert!(!cfg.search.default_providers.is_empty());
+    /// ```
     pub fn load(path: &Path) -> CoreResult<Self> {
         if !path.exists() {
             return Ok(Self::default());
@@ -140,6 +158,12 @@ impl AppConfig {
     }
 }
 
+/// Resolve the platform-specific default config path.
+///
+/// Honors `$XDG_CONFIG_HOME` on Linux, `~/Library/Application Support`
+/// on macOS, and `%APPDATA%` on Windows. Falls back to the literal
+/// string `eggsearch.toml` in the current working directory if no
+/// platform config dir is available.
 pub fn default_config_path() -> PathBuf {
     if let Some(dir) = dirs::config_dir() {
         return dir.join("eggsearch").join("config.toml");

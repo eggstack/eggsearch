@@ -39,9 +39,9 @@
 
 use std::sync::Arc;
 
-use eggsearch_core::config::{AppConfig, Mode};
-use eggsearch_mcp::state::ServerState;
-use eggsearch_mcp::tools::{
+use eggsearch::core::config::{AppConfig, Mode};
+use eggsearch::mcp::state::ServerState;
+use eggsearch::mcp::tools::{
     run_provider_status, run_web_search, ProviderStatusArgs, WebSearchArgs,
 };
 use rmcp::ServerHandler;
@@ -49,9 +49,9 @@ use rmcp::ServerHandler;
 #[cfg(feature = "mock")]
 use std::time::Duration;
 #[cfg(feature = "mock")]
-use eggsearch_meta::mock::{mock_engines, MockEngine, MockFailure, MockResult};
+use eggsearch::meta::mock::{mock_engines, MockEngine, MockFailure, MockResult};
 #[cfg(feature = "mock")]
-use eggsearch_meta::MetadataSearchAdapter;
+use eggsearch::meta::MetadataSearchAdapter;
 
 fn state_with_default() -> Arc<ServerState> {
     Arc::new(ServerState::build(AppConfig::default()).expect("default state"))
@@ -99,7 +99,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
 #[test]
 fn mcp_server_get_info() {
     let state = state_with_default();
-    let server = eggsearch_mcp::EggsearchServer::new(state);
+    let server = eggsearch::mcp::EggsearchServer::new(state);
     let info = server.get_info();
     assert_eq!(info.server_info.name, "eggsearch");
     assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
@@ -123,7 +123,7 @@ fn mcp_server_get_info() {
 #[test]
 fn mcp_server_lists_two_tools() {
     let state = state_with_default();
-    let server = eggsearch_mcp::EggsearchServer::new(state);
+    let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     assert!(names.contains(&"web_search".to_string()), "tools: {names:?}");
@@ -540,7 +540,7 @@ async fn web_search_all_providers_fail_returns_error_when_no_results() {
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn provider_status_with_mixed_enabled_disabled() {
-    use eggsearch_core::config::{AppConfig, Mode};
+    use eggsearch::core::config::{AppConfig, Mode};
 
     let engines = vec![
         MockEngine::success("mock_a", vec![]),
@@ -551,11 +551,11 @@ async fn provider_status_with_mixed_enabled_disabled() {
     cfg.search.providers.clear();
     cfg.search.providers.insert("mock_a".to_string(), true);
     cfg.search.providers.insert("mock_b".to_string(), false);
-    let adapter = eggsearch_meta::MetadataSearchAdapter::from_engines(
-        eggsearch_meta::mock::mock_engines(engines),
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        eggsearch::meta::mock::mock_engines(engines),
         Duration::from_secs(5),
     );
-    let state = Arc::new(eggsearch_mcp::state::ServerState::with_adapter(
+    let state = Arc::new(eggsearch::mcp::state::ServerState::with_adapter(
         cfg,
         Arc::new(adapter),
     ));

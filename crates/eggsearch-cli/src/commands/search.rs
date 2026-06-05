@@ -1,9 +1,9 @@
 //! `eggsearch search`: manual live metasearch via the CLI.
 
 use anyhow::{anyhow, Result};
-use eggsearch_core::config::AppConfig;
-use eggsearch_core::WebSearchRequest;
-use eggsearch_mcp::ServerState;
+use eggsearch::core::config::AppConfig;
+use eggsearch::core::WebSearchRequest;
+use eggsearch::mcp::ServerState;
 use std::sync::Arc;
 
 pub async fn run(

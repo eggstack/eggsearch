@@ -1,8 +1,8 @@
 //! `eggsearch doctor`: report environment / configuration status.
 
 use anyhow::Result;
-use eggsearch_core::config::AppConfig;
-use eggsearch_mcp::ServerState;
+use eggsearch::core::config::AppConfig;
+use eggsearch::mcp::ServerState;
 use std::path::PathBuf;
 
 pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>) -> Result<()> {
@@ -10,7 +10,7 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>) -> Result<()> {
 
     let path_display = match config_path {
         Some(p) => p.display().to_string(),
-        None => eggsearch_core::config::default_config_path().display().to_string(),
+        None => eggsearch::core::config::default_config_path().display().to_string(),
     };
 
     let out = serde_json::json!({
