@@ -79,3 +79,66 @@ impl WebSearchRequest {
         self.max_results.unwrap_or(default).clamp(1, cap)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_search_as_str() {
+        assert_eq!(SafeSearch::Off.as_str(), "off");
+        assert_eq!(SafeSearch::Moderate.as_str(), "moderate");
+        assert_eq!(SafeSearch::Strict.as_str(), "strict");
+    }
+
+    #[test]
+    fn safe_search_default_is_moderate() {
+        assert_eq!(SafeSearch::default(), SafeSearch::Moderate);
+    }
+
+    #[test]
+    fn validate_rejects_empty_query() {
+        let req = WebSearchRequest::new("   ");
+        assert!(req.validate(512, 50).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_oversized_query() {
+        let req = WebSearchRequest::new("a".repeat(1000));
+        assert!(req.validate(512, 50).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_results() {
+        let mut req = WebSearchRequest::new("test");
+        req.max_results = Some(0);
+        assert!(req.validate(512, 50).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_oversized_max_results() {
+        let mut req = WebSearchRequest::new("test");
+        req.max_results = Some(100);
+        assert!(req.validate(512, 50).is_err());
+    }
+
+    #[test]
+    fn effective_max_results_defaults() {
+        let req = WebSearchRequest::new("test");
+        assert_eq!(req.effective_max_results(10, 50), 10);
+    }
+
+    #[test]
+    fn effective_max_results_clamps_to_cap() {
+        let mut req = WebSearchRequest::new("test");
+        req.max_results = Some(100);
+        assert_eq!(req.effective_max_results(10, 50), 50);
+    }
+
+    #[test]
+    fn effective_max_results_clamps_to_one() {
+        let mut req = WebSearchRequest::new("test");
+        req.max_results = Some(0);
+        assert_eq!(req.effective_max_results(10, 50), 1);
+    }
+}

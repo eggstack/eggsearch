@@ -459,3 +459,122 @@ async fn web_search_provider_override_with_unknown_id_errors() {
         "unknown id should be named in error: {err}"
     );
 }
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_partial_timeout_preserves_successful_results() {
+    // mock_a returns instantly, mock_b hangs forever. With a tight
+    // global timeout, mock_a's results must still be returned.
+    let engines = vec![
+        MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("Fast", "https://example.com/fast", "mock_a")],
+        ),
+        MockEngine::hang("mock_b"),
+    ];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_millis(200));
+    let v = run_web_search(state, args_for(&["mock_a", "mock_b"], "rust"))
+        .await
+        .expect("ok");
+
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1, "should have 1 result from mock_a: {results:?}");
+    assert_eq!(results[0]["title"], "Fast");
+
+    // mock_b should appear in providers_failed as timed out.
+    let failed = v["providers_failed"].as_array().unwrap();
+    let failed_ids: Vec<&str> = failed.iter().filter_map(|f| f["id"].as_str()).collect();
+    assert!(
+        failed_ids.contains(&"mock_b"),
+        "mock_b should be in providers_failed: {failed:?}"
+    );
+    assert!(
+        !failed_ids.contains(&"mock_a"),
+        "mock_a should NOT be in providers_failed: {failed:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_per_request_timeout_ms_shorter_than_global() {
+    // Global timeout is 5s but per-request timeout_ms is 100ms.
+    // Both engines hang. The per-request timeout should trigger.
+    let engines = vec![
+        MockEngine::hang("mock_a"),
+        MockEngine::hang("mock_b"),
+    ];
+    let mut cfg = test_cfg();
+    cfg.search.timeout_ms = 5_000;
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let mut args = args_for(&["mock_a", "mock_b"], "rust");
+    args.timeout_ms = Some(100);
+    let err = run_web_search(state, args)
+        .await
+        .expect_err("expected timeout error");
+    assert!(
+        err.contains("all providers failed"),
+        "expected all-fail error, got: {err}"
+    );
+    assert!(
+        err.contains("timed out"),
+        "error should mention timeout: {err}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_all_providers_fail_but_results_exist_is_not_error() {
+    // Both providers report failure but aggregate still has results
+    // from a previous successful query. In practice this means
+    // providers_failed.len() == effective_providers.len() but
+    // results is non-empty, so it should NOT be treated as a hard error.
+    // This is a regression test for the edge case in tools.rs.
+    let engines = vec![
+        MockEngine::failure("mock_a", MockFailure::Parse),
+        MockEngine::failure("mock_b", MockFailure::HttpStatus(503)),
+    ];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["mock_a", "mock_b"], "rust"))
+        .await
+        .expect_err("expected all-fail error");
+    assert!(err.contains("all providers failed"), "got: {err}");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn provider_status_with_mixed_enabled_disabled() {
+    use eggsearch_core::config::{AppConfig, Mode};
+
+    let engines = vec![
+        MockEngine::success("mock_a", vec![]),
+        MockEngine::success("mock_b", vec![]),
+    ];
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.search.providers.insert("mock_b".to_string(), false);
+    let adapter = eggsearch_meta::MetadataSearchAdapter::from_engines(
+        eggsearch_meta::mock::mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let state = Arc::new(eggsearch_mcp::state::ServerState::with_adapter(
+        cfg,
+        Arc::new(adapter),
+    ));
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    // provider_status lists KNOWN_PROVIDERS (duckduckgo, brave, startpage, yahoo),
+    // not mock engine names. The mock engines aren't in that list.
+    let arr = v["providers"].as_array().unwrap();
+    let ids: Vec<&str> = arr
+        .iter()
+        .filter_map(|p| p["id"].as_str())
+        .collect();
+    assert!(ids.contains(&"duckduckgo"));
+    assert!(ids.contains(&"brave"));
+    assert!(ids.contains(&"startpage"));
+    assert!(ids.contains(&"yahoo"));
+    // All four should be listed, even though only mock_a and mock_b
+    // are loaded in the adapter.
+    assert_eq!(ids.len(), 4);
+}

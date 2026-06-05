@@ -117,7 +117,7 @@ impl AppConfig {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let text = toml::to_string_pretty(self).map_err(|e| CoreError::Other(e.to_string()))?;
+        let text = toml::to_string_pretty(self).map_err(|e| CoreError::TomlSer(e.to_string()))?;
         std::fs::write(path, text)?;
         Ok(())
     }
@@ -137,12 +137,6 @@ impl AppConfig {
             }
         }
         out
-    }
-
-    /// True if the given provider id is enabled in the config (or if the
-    /// provider is unknown to the config, default to enabled).
-    pub fn provider_enabled(&self, id: &str) -> bool {
-        self.search.providers.get(id).copied().unwrap_or(true)
     }
 }
 
@@ -215,5 +209,36 @@ mod tests {
         let c = AppConfig::default();
         let out = c.resolve_providers(&["brave".into(), "brave".into(), "duckduckgo".into()]);
         assert_eq!(out, vec!["brave".to_string(), "duckduckgo".to_string()]);
+    }
+
+    #[test]
+    fn save_load_round_trip_through_filesystem() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let c = AppConfig::default();
+        c.save(&path).unwrap();
+        let loaded = AppConfig::load(&path).unwrap();
+        assert_eq!(loaded.search.max_results, c.search.max_results);
+        assert_eq!(loaded.search.mode, c.search.mode);
+        assert_eq!(
+            loaded.search.default_providers,
+            c.search.default_providers
+        );
+    }
+
+    #[test]
+    fn load_malformed_toml_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.toml");
+        std::fs::write(&path, "this is not [valid toml").unwrap();
+        let err = AppConfig::load(&path);
+        assert!(err.is_err(), "expected error for malformed TOML");
+    }
+
+    #[test]
+    fn load_missing_file_returns_default() {
+        let path = std::path::Path::new("/nonexistent/path/config.toml");
+        let cfg = AppConfig::load(path).unwrap();
+        assert_eq!(cfg.search.mode, Mode::default());
     }
 }

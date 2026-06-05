@@ -2,6 +2,7 @@
 //! eggsearch and `metadata-search-engine-rs`. Callers receive Codegg-owned
 //! types; upstream types do not leak past this module.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use eggsearch_core::SearchWarning;
@@ -22,7 +23,6 @@ pub enum ErrorClass {
     ParseError,
     NetworkError,
     RateLimited,
-    InvalidQuery,
     Unknown,
 }
 
@@ -34,14 +34,13 @@ impl ErrorClass {
             Self::ParseError => "parse_error",
             Self::NetworkError => "network_error",
             Self::RateLimited => "rate_limited",
-            Self::InvalidQuery => "invalid_query",
             Self::Unknown => "unknown",
         }
     }
 }
 
 #[cfg(feature = "metasearch")]
-use metadata_search_engine_rs::aggregator::{aggregate, query_all_engines};
+use metadata_search_engine_rs::aggregator::aggregate;
 #[cfg(feature = "metasearch")]
 use metadata_search_engine_rs::engines::SearchEngine;
 
@@ -189,6 +188,9 @@ impl MetadataSearchAdapter {
     /// the MCP `web_search` tool. If `req.providers` is non-empty, only
     /// those engines are queried (and the caller is expected to have
     /// already rejected unknown ids via `select_engines`).
+    ///
+    /// Uses per-engine timeouts via `JoinSet` so that a global deadline
+    /// preserves partial results from engines that responded in time.
     #[cfg(feature = "metasearch")]
     pub async fn web_search(
         &self,
@@ -208,38 +210,71 @@ impl MetadataSearchAdapter {
             let ids = subset.iter().map(|e| e.name().to_string()).collect();
             (subset, ids)
         };
+
+        // Per-request timeout override, bounded above by the global timeout.
+        let effective_timeout = match req.timeout_ms {
+            Some(ms) => {
+                let req_timeout = Duration::from_millis(ms);
+                if req_timeout < self.global_timeout {
+                    req_timeout
+                } else {
+                    self.global_timeout
+                }
+            }
+            None => self.global_timeout,
+        };
+
         debug!(
             query = %req.query,
             providers = ?queried_ids,
             max_results,
+            timeout_ms = effective_timeout.as_millis(),
             "dispatching metasearch"
         );
 
-        let (raw_results, raw_failures) = match tokio::time::timeout(
-            self.global_timeout,
-            query_all_engines(&engines, &req.query, max_results),
-        )
-        .await
-        {
-            Ok(t) => t,
-            Err(_) => {
-                warn!("metasearch global timeout exceeded");
-                (
-                    Vec::new(),
-                    queried_ids
-                        .iter()
-                        .map(|id| {
-                            (
-                                id.clone(),
-                                metadata_search_engine_rs::error::EngineError::Timeout {
-                                    engine: "global",
-                                },
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                )
+        // Fan out to engines with per-engine timeout, collecting results
+        // incrementally. When the global deadline hits we keep whatever
+        // arrived and cancel the rest.
+        let mut join_set = tokio::task::JoinSet::new();
+        for engine in &engines {
+            let engine = Arc::clone(engine);
+            let query = req.query.clone();
+            join_set.spawn(async move {
+                let result = engine.search(&query, max_results).await;
+                (engine.name().to_string(), result)
+            });
+        }
+
+        let deadline = tokio::time::Instant::now() + effective_timeout;
+        let mut raw_results: Vec<(String, Vec<metadata_search_engine_rs::models::SearchResult>)> =
+            Vec::new();
+        let mut raw_failures: Vec<(String, metadata_search_engine_rs::error::EngineError)> =
+            Vec::new();
+
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                warn!("metasearch global timeout exceeded with {} engines still pending", join_set.len());
+                break;
             }
-        };
+            match tokio::time::timeout(remaining, join_set.join_next()).await {
+                Ok(Some(Ok((name, Ok(results))))) => {
+                    raw_results.push((name, results));
+                }
+                Ok(Some(Ok((name, Err(err))))) => {
+                    raw_failures.push((name, err));
+                }
+                Ok(Some(Err(join_err))) => {
+                    warn!(?join_err, "engine task panicked");
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    warn!("metasearch global timeout exceeded with {} engines still pending", join_set.len());
+                    break;
+                }
+            }
+        }
+        // JoinSet dropped here cancels any in-flight engine tasks.
 
         let aggregated = aggregate(raw_results.clone(), max_results);
         let results: Vec<SourceCard> = aggregated
@@ -247,12 +282,18 @@ impl MetadataSearchAdapter {
             .filter_map(convert_aggregated)
             .collect();
 
-        let providers_queried: Vec<String> = raw_results
-            .iter()
-            .map(|(id, _)| id.clone())
-            .chain(raw_failures.iter().map(|(id, _)| id.clone()))
-            .collect();
+        // Collect the set of provider ids that already completed (success
+        // or individual failure) so we don't double-count.
+        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (id, _) in &raw_results {
+            accounted.insert(id.clone());
+        }
+        for (id, _) in &raw_failures {
+            accounted.insert(id.clone());
+        }
 
+        // Engines still in the join_set when the deadline hit are
+        // considered timed-out. They were cancelled by the JoinSet drop.
         let mut providers_failed: Vec<ProviderFailure> = raw_failures
             .into_iter()
             .map(|(id, err)| ProviderFailure {
@@ -262,15 +303,17 @@ impl MetadataSearchAdapter {
             })
             .collect();
 
-        if providers_failed.is_empty() && results.is_empty() && !queried_ids.is_empty() {
-            for id in &queried_ids {
+        for id in &queried_ids {
+            if !accounted.contains(id.as_str()) {
                 providers_failed.push(ProviderFailure {
                     id: id.clone(),
                     error_class: ErrorClass::Timeout.as_str().to_string(),
-                    message: "global timeout".to_string(),
+                    message: "provider timed out".to_string(),
                 });
             }
         }
+
+        let providers_queried: Vec<String> = queried_ids;
 
         let warnings: Vec<SearchWarning> = providers_failed
             .iter()
@@ -347,7 +390,6 @@ mod tests {
         assert_eq!(ErrorClass::ParseError.as_str(), "parse_error");
         assert_eq!(ErrorClass::NetworkError.as_str(), "network_error");
         assert_eq!(ErrorClass::RateLimited.as_str(), "rate_limited");
-        assert_eq!(ErrorClass::InvalidQuery.as_str(), "invalid_query");
         assert_eq!(ErrorClass::Unknown.as_str(), "unknown");
     }
 

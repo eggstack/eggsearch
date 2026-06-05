@@ -44,3 +44,27 @@ impl SearchWarning {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trust_level_as_str() {
+        assert_eq!(TrustLevel::ExternalUntrusted.as_str(), "external_untrusted");
+        assert_eq!(TrustLevel::LocalTrusted.as_str(), "local_trusted");
+        assert_eq!(TrustLevel::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn trust_level_default_is_external_untrusted() {
+        assert_eq!(TrustLevel::default(), TrustLevel::ExternalUntrusted);
+    }
+
+    #[test]
+    fn search_warning_new() {
+        let w = SearchWarning::new("brave", "rate limited");
+        assert_eq!(w.provider_id, "brave");
+        assert_eq!(w.message, "rate limited");
+    }
+}

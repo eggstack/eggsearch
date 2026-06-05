@@ -22,8 +22,11 @@ pub enum CoreError {
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 
-    #[error("toml error: {0}")]
-    Toml(#[from] toml::de::Error),
+    #[error("toml parse error: {0}")]
+    TomlDe(#[from] toml::de::Error),
+
+    #[error("toml serialization error: {0}")]
+    TomlSer(String),
 
     #[error("{0}")]
     Other(String),

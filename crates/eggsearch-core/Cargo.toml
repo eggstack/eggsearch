@@ -10,16 +10,13 @@ description = "Core types, source card model, and configuration for eggsearch"
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
-anyhow = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
-chrono = { workspace = true }
 tracing = { workspace = true }
 toml = { workspace = true }
 dirs = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
+tempfile = "3"

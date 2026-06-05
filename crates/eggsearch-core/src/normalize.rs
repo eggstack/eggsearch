@@ -1,57 +1,28 @@
 //! URL canonicalization and tracking parameter stripping.
+//!
+//! The canonicalization logic is currently unused in production code.
+//! The upstream `metadata-search-engine-rs` crate provides its own
+//! URL normalization in `normalizer::normalize`. This module is
+//! retained for potential future use in result deduplication.
 
 use url::Url;
 
-/// Tracking parameters to strip by default. Matching is case-insensitive
-/// and includes the named parameter with any value.
 const TRACKING_PARAMS: &[&str] = &[
-    "utm_source",
-    "utm_medium",
-    "utm_campaign",
-    "utm_term",
-    "utm_content",
-    "utm_id",
-    "utm_name",
-    "utm_brand",
-    "utm_social",
-    "utm_creative_format",
-    "utm_marketing_tactic",
-    "gclid",
-    "gbraid",
-    "wbraid",
-    "fbclid",
-    "msclkid",
-    "dclid",
-    "yclid",
-    "mc_cid",
-    "mc_eid",
-    "igshid",
-    "ref",
-    "ref_src",
-    "ref_url",
-    "source",
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "utm_id", "utm_name", "utm_brand", "utm_social", "utm_creative_format",
+    "utm_marketing_tactic", "gclid", "gbraid", "wbraid", "fbclid", "msclkid",
+    "dclid", "yclid", "mc_cid", "mc_eid", "igshid", "ref", "ref_src",
+    "ref_url", "source",
 ];
 
-/// Canonicalize a URL for dedup and ranking purposes.
-///
-/// - Lowercases scheme and host.
-/// - Removes URL fragments.
-/// - Strips common tracking query parameters.
-/// - Normalizes trailing slashes for non-root paths.
 pub fn canonicalize(input: &str) -> Option<Url> {
     let mut url = Url::parse(input).ok()?;
-
-    // Lowercase scheme + host.
     let scheme = url.scheme().to_lowercase();
     url.set_scheme(&scheme).ok()?;
     if let Some(host) = url.host_str() {
         let _ = url.set_host(Some(&host.to_lowercase()));
     }
-
-    // Strip fragment.
     url.set_fragment(None);
-
-    // Strip tracking params.
     if let Some(query) = url.query().map(|s| s.to_string()) {
         let filtered: Vec<(String, String)> = query
             .split('&')
@@ -66,27 +37,17 @@ pub fn canonicalize(input: &str) -> Option<Url> {
                 }
             })
             .collect();
-
         if filtered.is_empty() {
             url.set_query(None);
         } else {
             let new_query = filtered
                 .into_iter()
-                .map(|(k, v)| {
-                    if v.is_empty() {
-                        k
-                    } else {
-                        format!("{}={}", k, v)
-                    }
-                })
+                .map(|(k, v)| if v.is_empty() { k } else { format!("{}={}", k, v) })
                 .collect::<Vec<_>>()
                 .join("&");
             url.set_query(Some(&new_query));
         }
     }
-
-    // Normalize trailing slash: collapse multiple slashes after path's first char
-    // (avoid touching scheme or empty paths).
     if url.path() != "/" {
         let trimmed = url.path().trim_end_matches('/').to_string();
         if trimmed.is_empty() {
@@ -95,13 +56,7 @@ pub fn canonicalize(input: &str) -> Option<Url> {
             url.set_path(&trimmed);
         }
     }
-
     Some(url)
-}
-
-/// Extract the registrable domain (best-effort). Falls back to the full host.
-pub fn domain_of(url: &Url) -> Option<String> {
-    url.domain().map(|s| s.to_string())
 }
 
 #[cfg(test)]
@@ -146,8 +101,26 @@ mod tests {
     }
 
     #[test]
-    fn domain_of_works() {
-        let u = Url::parse("https://docs.example.com/x").unwrap();
-        assert_eq!(domain_of(&u), Some("docs.example.com".to_string()));
+    fn preserves_encoded_query_values() {
+        let u = canonicalize("https://example.com/search?q=hello+world&lang=en").unwrap();
+        let q = u.query().unwrap();
+        assert!(q.contains("q=hello+world"));
+        assert!(q.contains("lang=en"));
+    }
+
+    #[test]
+    fn drops_all_tracking_params_leaves_clean_url() {
+        let u = canonicalize(
+            "https://example.com/page?utm_source=x&utm_medium=y&fbclid=z&page=1",
+        )
+        .unwrap();
+        assert_eq!(u.query(), Some("page=1"));
+    }
+
+    #[test]
+    fn empty_query_after_filtering_removes_question_mark() {
+        let u = canonicalize("https://example.com/page?utm_source=x").unwrap();
+        assert!(u.query().is_none());
+        assert!(!u.as_str().contains('?'));
     }
 }
