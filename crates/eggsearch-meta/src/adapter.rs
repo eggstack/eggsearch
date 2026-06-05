@@ -1,6 +1,6 @@
-//! `MetadataSearchAdapter`: the metasearch-first boundary between
-//! eggsearch and `metadata-search-engine-rs`. Callers receive Codegg-owned
-//! types; upstream types do not leak past this module.
+//! `MetadataSearchAdapter`: the metasearch-first boundary.
+//! Callers receive eggsearch-owned types; engine types do not leak past
+//! this module.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,7 +11,9 @@ use eggsearch_core::TrustLevel;
 use eggsearch_core::WebSearchRequest;
 use tracing::{debug, warn};
 
-use crate::engine::build_default_engines;
+use crate::engines::error::EngineError;
+use crate::engines::models::{AggregatedResult, SearchResult};
+use crate::engines::{build_http_client, SearchEngine};
 use crate::response::{ProviderFailure, ProviderStatus, WebSearchResponse};
 
 /// Coarse error class for provider failures. Exposed via `provider_status`
@@ -39,14 +41,8 @@ impl ErrorClass {
     }
 }
 
-#[cfg(feature = "metasearch")]
-use metadata_search_engine_rs::aggregator::aggregate;
-#[cfg(feature = "metasearch")]
-use metadata_search_engine_rs::engines::SearchEngine;
-
-#[cfg(feature = "metasearch")]
-fn classify(err: &metadata_search_engine_rs::error::EngineError) -> ErrorClass {
-    use metadata_search_engine_rs::error::EngineError::*;
+fn classify(err: &EngineError) -> ErrorClass {
+    use EngineError::*;
     match err {
         Timeout { .. } => ErrorClass::Timeout,
         BadStatus { status, .. } if *status == 429 => ErrorClass::RateLimited,
@@ -56,13 +52,11 @@ fn classify(err: &metadata_search_engine_rs::error::EngineError) -> ErrorClass {
     }
 }
 
-#[cfg(feature = "metasearch")]
-type EngineList = Vec<std::sync::Arc<dyn SearchEngine>>;
+type EngineList = Vec<Arc<dyn SearchEngine>>;
 
-/// Constructed once at server startup. Holds the upstream `SearchEngine`
+/// Constructed once at server startup. Holds the `SearchEngine`
 /// instances and the effective provider list.
 pub struct MetadataSearchAdapter {
-    #[cfg(feature = "metasearch")]
     engines: EngineList,
     provider_ids: Vec<String>,
     /// Hard timeout for the whole `web_search` call, including fan-out.
@@ -80,7 +74,6 @@ impl std::fmt::Debug for MetadataSearchAdapter {
 
 impl MetadataSearchAdapter {
     /// Build an adapter for the given enabled provider ids.
-    #[cfg(feature = "metasearch")]
     pub fn new(enabled_providers: Vec<String>, global_timeout: Duration) -> anyhow::Result<Self> {
         let (engines, skipped) = build_default_engines(&enabled_providers)?;
         if !skipped.is_empty() {
@@ -99,19 +92,10 @@ impl MetadataSearchAdapter {
         })
     }
 
-    /// Stub for when the `metasearch` feature is off.
-    #[cfg(not(feature = "metasearch"))]
-    pub fn new(_enabled_providers: Vec<String>, _global_timeout: Duration) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!(
-            "metasearch feature is not enabled in this build; MetadataSearchAdapter is unavailable"
-        ))
-    }
-
     /// Build an adapter from an explicit list of `SearchEngine` trait
     /// objects. Used by tests to inject mock engines.
-    #[cfg(feature = "metasearch")]
     pub fn from_engines(
-        engines: Vec<std::sync::Arc<dyn SearchEngine>>,
+        engines: Vec<Arc<dyn SearchEngine>>,
         global_timeout: Duration,
     ) -> Self {
         let provider_ids = engines.iter().map(|e| e.name().to_string()).collect();
@@ -125,11 +109,10 @@ impl MetadataSearchAdapter {
     /// Subset of `engines` whose `name()` matches one of the given
     /// provider ids. Unknown ids are returned in the second tuple slot
     /// so callers can return a structured error.
-    #[cfg(feature = "metasearch")]
     pub fn select_engines(
         &self,
         provider_ids: &[String],
-    ) -> (Vec<std::sync::Arc<dyn SearchEngine>>, Vec<String>) {
+    ) -> (Vec<Arc<dyn SearchEngine>>, Vec<String>) {
         if provider_ids.is_empty() {
             return (self.engines.clone(), Vec::new());
         }
@@ -148,17 +131,6 @@ impl MetadataSearchAdapter {
         (out, unknown)
     }
 
-    /// Stub for when the `metasearch` feature is off. Returns the
-    /// requested ids as "unknown" so callers can return a structured
-    /// error.
-    #[cfg(not(feature = "metasearch"))]
-    pub fn select_engines(
-        &self,
-        provider_ids: &[String],
-    ) -> (Vec<()>, Vec<String>) {
-        (Vec::new(), provider_ids.to_vec())
-    }
-
     /// List the provider ids that this adapter will query.
     pub fn provider_ids(&self) -> &[String] {
         &self.provider_ids
@@ -170,10 +142,10 @@ impl MetadataSearchAdapter {
     pub fn provider_status(&self) -> Vec<ProviderStatus> {
         let enabled: std::collections::BTreeSet<&str> =
             self.provider_ids.iter().map(|s| s.as_str()).collect();
-        crate::engine::KNOWN_PROVIDERS
+        KNOWN_PROVIDERS
             .iter()
             .map(|id| {
-                let (kind, requires_api_key) = crate::engine::provider_kind(id);
+                let (kind, requires_api_key) = provider_kind(id);
                 ProviderStatus {
                     id: (*id).to_string(),
                     enabled: enabled.contains(id),
@@ -191,7 +163,6 @@ impl MetadataSearchAdapter {
     ///
     /// Uses per-engine timeouts via `JoinSet` so that a global deadline
     /// preserves partial results from engines that responded in time.
-    #[cfg(feature = "metasearch")]
     pub async fn web_search(
         &self,
         req: &WebSearchRequest,
@@ -246,15 +217,16 @@ impl MetadataSearchAdapter {
         }
 
         let deadline = tokio::time::Instant::now() + effective_timeout;
-        let mut raw_results: Vec<(String, Vec<metadata_search_engine_rs::models::SearchResult>)> =
-            Vec::new();
-        let mut raw_failures: Vec<(String, metadata_search_engine_rs::error::EngineError)> =
-            Vec::new();
+        let mut raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
+        let mut raw_failures: Vec<(String, EngineError)> = Vec::new();
 
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                warn!("metasearch global timeout exceeded with {} engines still pending", join_set.len());
+                warn!(
+                    "metasearch global timeout exceeded with {} engines still pending",
+                    join_set.len()
+                );
                 break;
             }
             match tokio::time::timeout(remaining, join_set.join_next()).await {
@@ -269,14 +241,17 @@ impl MetadataSearchAdapter {
                 }
                 Ok(None) => break,
                 Err(_) => {
-                    warn!("metasearch global timeout exceeded with {} engines still pending", join_set.len());
+                    warn!(
+                        "metasearch global timeout exceeded with {} engines still pending",
+                        join_set.len()
+                    );
                     break;
                 }
             }
         }
         // JoinSet dropped here cancels any in-flight engine tasks.
 
-        let aggregated = aggregate(raw_results.clone(), max_results);
+        let aggregated = aggregate_rrf(raw_results.clone(), max_results);
         let results: Vec<SourceCard> = aggregated
             .into_iter()
             .filter_map(convert_aggregated)
@@ -334,29 +309,127 @@ impl MetadataSearchAdapter {
             warnings,
         }
     }
+}
 
-    #[cfg(not(feature = "metasearch"))]
-    pub async fn web_search(
-        &self,
-        req: &WebSearchRequest,
-        _default_max_results: usize,
-        _max_results_cap: usize,
-    ) -> WebSearchResponse {
-        WebSearchResponse {
-            query: req.query.clone(),
-            mode: "off",
-            results: Vec::new(),
-            providers_queried: Vec::new(),
-            providers_failed: Vec::new(),
-            warnings: Vec::new(),
-        }
+// ---------------------------------------------------------------------------
+// Engine construction
+// ---------------------------------------------------------------------------
+
+/// The set of provider ids that ship with the vendored engine
+/// implementations and that eggsearch can enable by default.
+pub const KNOWN_PROVIDERS: &[&str] = &["duckduckgo", "brave", "startpage", "yahoo"];
+
+/// Kind of an engine, for `provider_status` reporting.
+pub fn provider_kind(id: &str) -> (&'static str, bool) {
+    match id {
+        "duckduckgo" | "startpage" | "yahoo" => ("html_scrape", false),
+        "brave" => ("html_scrape", true),
+        _other => ("unknown", false),
     }
 }
 
-#[cfg(feature = "metasearch")]
-pub(crate) fn convert_aggregated(
-    a: metadata_search_engine_rs::models::AggregatedResult,
-) -> Option<SourceCard> {
+/// Build the default engine set used by the server.
+pub fn build_default_engines(
+    enabled_providers: &[String],
+) -> anyhow::Result<(EngineList, Vec<String>)> {
+    use crate::engines::{
+        BraveEngine, DuckDuckGoEngine, StartpageEngine, YahooEngine,
+    };
+
+    let client = Arc::new(build_http_client()?);
+    let mut engines: EngineList = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    for id in enabled_providers {
+        match id.as_str() {
+            "duckduckgo" => engines.push(Arc::new(DuckDuckGoEngine {
+                client: client.clone(),
+            })),
+            "brave" => engines.push(Arc::new(BraveEngine {
+                client: client.clone(),
+            })),
+            "startpage" => engines.push(Arc::new(StartpageEngine {
+                client: client.clone(),
+            })),
+            "yahoo" => engines.push(Arc::new(YahooEngine {
+                client: client.clone(),
+            })),
+            other => skipped.push(other.to_string()),
+        }
+    }
+
+    Ok((engines, skipped))
+}
+
+// ---------------------------------------------------------------------------
+// RRF aggregation (vendored from metadata-search-engine-rs)
+// ---------------------------------------------------------------------------
+
+use std::collections::HashMap;
+
+// Standard RRF constant (Cormack et al., 2009).
+const RRF_K: f64 = 60.0;
+
+fn aggregate_rrf(
+    engine_results: Vec<(String, Vec<SearchResult>)>,
+    max_results: usize,
+) -> Vec<AggregatedResult> {
+    let mut map: HashMap<String, AggregatedResult> = HashMap::new();
+
+    for (engine_name, results) in engine_results {
+        for (index, result) in results.into_iter().enumerate() {
+            let rank = index + 1;
+            let rrf_score = 1.0 / (RRF_K + rank as f64);
+
+            let key = match crate::engines::normalizer::normalize(&result.url) {
+                Some(k) => k,
+                None => continue,
+            };
+
+            match map.get_mut(&key) {
+                Some(existing) => {
+                    existing.score += rrf_score;
+                    if !existing.engines.contains(&engine_name) {
+                        existing.engines.push(engine_name.clone());
+                    }
+                    if existing.snippet.is_none() && result.snippet.is_some() {
+                        existing.snippet = result.snippet;
+                    }
+                }
+                None => {
+                    map.insert(
+                        key,
+                        AggregatedResult {
+                            title: result.title,
+                            url: result.url,
+                            snippet: result.snippet,
+                            engines: vec![engine_name.clone()],
+                            score: rrf_score,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    let mut ranked: Vec<AggregatedResult> = map.into_values().collect();
+
+    ranked.sort_unstable_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.title.cmp(&b.title))
+    });
+
+    ranked.truncate(max_results);
+    ranked
+}
+
+// ---------------------------------------------------------------------------
+// Conversion to eggsearch types
+// ---------------------------------------------------------------------------
+
+fn convert_aggregated(a: AggregatedResult) -> Option<SourceCard> {
     if a.url.is_empty() {
         return None;
     }
@@ -379,6 +452,10 @@ pub(crate) fn convert_aggregated(
     Some(card)
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,10 +470,9 @@ mod tests {
         assert_eq!(ErrorClass::Unknown.as_str(), "unknown");
     }
 
-    #[cfg(feature = "metasearch")]
     #[test]
     fn convert_aggregated_maps_fields() {
-        let a = metadata_search_engine_rs::models::AggregatedResult {
+        let a = AggregatedResult {
             title: "Example".to_string(),
             url: "https://example.com/article".to_string(),
             snippet: Some("A short snippet.".to_string()),
@@ -407,16 +483,18 @@ mod tests {
         assert_eq!(c.title, "Example");
         assert_eq!(c.url, "https://example.com/article");
         assert_eq!(c.snippet.as_deref(), Some("A short snippet."));
-        assert_eq!(c.providers, vec!["duckduckgo".to_string(), "brave".to_string()]);
+        assert_eq!(
+            c.providers,
+            vec!["duckduckgo".to_string(), "brave".to_string()]
+        );
         assert_eq!(c.score, Some(0.0327));
         assert_eq!(c.trust, TrustLevel::ExternalUntrusted);
         assert!(!c.fetched);
     }
 
-    #[cfg(feature = "metasearch")]
     #[test]
     fn convert_aggregated_drops_empty_url() {
-        let a = metadata_search_engine_rs::models::AggregatedResult {
+        let a = AggregatedResult {
             title: "t".to_string(),
             url: String::new(),
             snippet: None,
@@ -426,10 +504,9 @@ mod tests {
         assert!(convert_aggregated(a).is_none());
     }
 
-    #[cfg(feature = "metasearch")]
     #[test]
     fn convert_aggregated_drops_invalid_url() {
-        let a = metadata_search_engine_rs::models::AggregatedResult {
+        let a = AggregatedResult {
             title: "t".to_string(),
             url: "not a url".to_string(),
             snippet: None,
@@ -439,10 +516,9 @@ mod tests {
         assert!(convert_aggregated(a).is_none());
     }
 
-    #[cfg(feature = "metasearch")]
     #[test]
     fn convert_aggregated_omits_empty_snippet() {
-        let a = metadata_search_engine_rs::models::AggregatedResult {
+        let a = AggregatedResult {
             title: "t".to_string(),
             url: "https://example.com".to_string(),
             snippet: Some(String::new()),
@@ -453,16 +529,11 @@ mod tests {
         assert!(c.snippet.is_none());
     }
 
-    /// Mock SearchEngine that returns a fixed set of results. Used to
-    /// exercise the full `web_search` -> `aggregate` -> SourceCard path
-    /// without hitting the network.
-    #[cfg(feature = "metasearch")]
     struct MockEngine {
         name: &'static str,
-        results: Vec<metadata_search_engine_rs::models::SearchResult>,
+        results: Vec<SearchResult>,
     }
 
-    #[cfg(feature = "metasearch")]
     impl SearchEngine for MockEngine {
         fn name(&self) -> &'static str {
             self.name
@@ -471,18 +542,17 @@ mod tests {
             &'a self,
             _query: &'a str,
             _max_results: usize,
-        ) -> metadata_search_engine_rs::engines::BoxFuture<
+        ) -> crate::engines::BoxFuture<
             'a,
-            Result<Vec<metadata_search_engine_rs::models::SearchResult>, metadata_search_engine_rs::error::EngineError>,
+            Result<Vec<SearchResult>, EngineError>,
         > {
             let results = self.results.clone();
             Box::pin(async move { Ok(results) })
         }
     }
 
-    #[cfg(feature = "metasearch")]
-    fn mk_result(title: &str, url: &str, engine: &str) -> metadata_search_engine_rs::models::SearchResult {
-        metadata_search_engine_rs::models::SearchResult {
+    fn mk_result(title: &str, url: &str, engine: &str) -> SearchResult {
+        SearchResult {
             title: title.to_string(),
             url: url.to_string(),
             snippet: Some(format!("Snippet for {title}")),
@@ -490,10 +560,8 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "metasearch")]
     #[tokio::test]
     async fn web_search_with_mock_engines_returns_source_cards() {
-        use std::sync::Arc;
         let engines: Vec<Arc<dyn SearchEngine>> = vec![
             Arc::new(MockEngine {
                 name: "duckduckgo",
@@ -507,15 +575,14 @@ mod tests {
                 results: vec![mk_result("A1", "https://a.com/1", "brave")],
             }),
         ];
-        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let adapter =
+            MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
         let req = WebSearchRequest::new("rust axum");
         let resp = adapter.web_search(&req, 10, 10).await;
         assert_eq!(resp.query, "rust axum");
         assert_eq!(resp.mode, "live_metasearch");
         assert_eq!(resp.providers_queried.len(), 2);
         assert!(resp.providers_failed.is_empty());
-        // A1 appears in both engines; deduplication via aggregate
-        // collapses the two results into one card with both providers.
         let a1 = resp
             .results
             .iter()

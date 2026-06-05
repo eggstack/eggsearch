@@ -20,7 +20,7 @@ cargo test --workspace --all-features
 
 # Run tests for a specific crate
 cargo test -p eggsearch-core
-cargo test -p eggsearch-meta --all-features
+cargo test -p eggsearch-meta
 cargo test -p eggsearch-mcp --all-features
 
 # Clippy (must pass before committing)
@@ -38,7 +38,7 @@ cargo publish --dry-run -p eggsearch-core
 ```
 crates/
   eggsearch-core/     Core types, config, URL normalization, error types
-  eggsearch-meta/     MetadataSearchAdapter wrapping metadata-search-engine-rs
+  eggsearch-meta/     MetadataSearchAdapter with vendored search engines
   eggsearch-mcp/      MCP server (rmcp): web_search + provider_status tools
   eggsearch-cli/      CLI binary: doctor, search, providers, mcp stdio
 ```
@@ -46,7 +46,7 @@ crates/
 ## Key Conventions
 
 ### Feature Flags
-- `metasearch` (default): enables the real search engine backend via `metadata-search-engine-rs`
+- `metasearch` (default): enables the real search engine backend
 - `mock`: enables mock engines for testing without network access
 - All integration tests in `eggsearch-mcp/tests/` use `#[cfg(feature = "mock")]` for test-only mock engines
 
@@ -60,6 +60,7 @@ crates/
 - Integration tests live in `crates/eggsearch-mcp/tests/integration.rs`
 - Mock engines are in `crates/eggsearch-meta/src/mock.rs` (feature-gated behind `mock`)
 - The `MockEngine` struct supports success, failure, and hang (timeout) scenarios
+- Vendored engine tests (HTML parsing) are in `crates/eggsearch-meta/src/engines/`
 - Tests must not require network access — all use mock engines
 
 ### MCP Protocol
@@ -78,11 +79,26 @@ crates/
 - `SourceCard` is the primary output type returned by `web_search`
 - Each card has a UUID-based `id` (`src_<uuid>`) unique per response
 - Trust level is always `external_untrusted` for live web results
-- Deduplication happens via URL normalization in the upstream `aggregate()` function
+- Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
 
-## Dependency: metadata-search-engine-rs
+## Vendored Search Engines
 
-eggsearch depends on [`metadata-search-engine-rs`](https://crates.io/crates/metadata-search-engine-rs) which is the published crate from [MikeLuu99/searxng-rust](https://github.com/MikeLuu99/searxng-rust). This provides the HTML scraping engines for DuckDuckGo, Brave, Startpage, and Yahoo, plus the RRF aggregation logic. eggsearch wraps this in `eggsearch-meta::MetadataSearchAdapter` to keep upstream types from leaking into the MCP layer.
+The HTML scraping engines in `eggsearch-meta/src/engines/` are vendored from
+[`metadata-search-engine-rs`](https://crates.io/crates/metadata-search-engine-rs)
+(original source: [MikeLuu99/searxng-rust](https://github.com/MikeLuu99/searxng-rust)).
+
+The vendored code includes:
+- `engines/duckduckgo.rs` — DuckDuckGo HTML scraper
+- `engines/brave.rs` — Brave Search HTML scraper
+- `engines/startpage.rs` — Startpage HTML scraper
+- `engines/yahoo.rs` — Yahoo Search HTML scraper
+- `engines/normalizer.rs` — URL normalization for deduplication
+- `engines/models.rs` — `SearchResult`, `AggregatedResult`
+- `engines/error.rs` — `EngineError` enum
+- `engines/mod.rs` — `SearchEngine` trait, `build_http_client()`, engine construction
+
+When updating engines, check the upstream repo for HTML selector changes.
+The `scraper` crate is used for HTML parsing.
 
 ## Publishing to crates.io
 

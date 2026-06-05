@@ -20,7 +20,8 @@ for the default configuration.
 - Per-request timeout support with partial-result preservation
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
-- 59 fast unit + integration tests, no network required
+- Vendored search engine implementations (no heavyweight upstream deps)
+- 93 fast unit + integration tests, no network required
 
 ## What it is not
 
@@ -156,7 +157,7 @@ yahoo      = true
 ```
 crates/
   eggsearch-core/     Core types, SourceCard, config, URL normalization
-  eggsearch-meta/     MetadataSearchAdapter wrapping metadata-search-engine-rs
+  eggsearch-meta/     MetadataSearchAdapter with vendored search engines
   eggsearch-mcp/      MCP server (rmcp): web_search + provider_status tools
   eggsearch-cli/      CLI binary: doctor, search, providers, mcp stdio
 ```
@@ -192,18 +193,17 @@ to use the tools safely.
   `network_error`, `rate_limited`, `unknown`) and short messages.
 - The server enforces query length and result count caps.
 
-## Upstream Engines
+## Search Engines
 
-The search engines are provided by
-[`metadata-search-engine-rs`](https://crates.io/crates/metadata-search-engine-rs),
-which is the published crate from
-[MikeLuu99/searxng-rust](https://github.com/MikeLuu99/searxng-rust).
-eggsearch wraps this in `MetadataSearchAdapter` to keep upstream types
-from leaking into the MCP layer.
+The HTML scraping engines for DuckDuckGo, Brave, Startpage, and Yahoo are
+vendored in `crates/eggsearch-meta/src/engines/`, originally from
+[`metadata-search-engine-rs`](https://crates.io/crates/metadata-search-engine-rs)
+by [MikeLuu99/searxng-rust](https://github.com/MikeLuu99/searxng-rust).
+The RRF aggregation logic and URL normalizer are also vendored.
 
 HTML provider scraping is inherently fragile. Layout changes upstream may
-break parsing. Parser tests in the upstream library run against saved HTML
-fixtures; live network tests are marked `#[ignore]` by default.
+break parsing. When updating engines, check the upstream repo for HTML
+selector changes.
 
 ## Testing
 
@@ -213,7 +213,9 @@ cargo test --workspace --all-features
 
 Mock engines (`crates/eggsearch-meta/src/mock.rs`) let integration tests
 exercise happy path, partial failure, all-fail, global timeout, and
-provider override paths without any network access.
+provider override paths without any network access. Vendored engine
+tests (`crates/eggsearch-meta/src/engines/`) verify HTML parsing
+against inline fixtures.
 
 ## License
 

@@ -1,20 +1,20 @@
 //! Mock upstream engines for tests.
 //!
 //! Gated behind the `mock` feature so that downstream binaries don't
-//! pull in this code by default. Tests in `eggsearch-mcp` depend on
-//! `eggsearch-meta/mock` to inject deterministic results.
+//! pull in this code by default.
 
 #![cfg(feature = "mock")]
 
 use std::future::pending;
 use std::sync::Arc;
 
-use metadata_search_engine_rs::engines::{BoxFuture, SearchEngine};
-use metadata_search_engine_rs::error::EngineError;
-use metadata_search_engine_rs::models::SearchResult;
+use crate::engines::BoxFuture;
+use crate::engines::error::EngineError;
+use crate::engines::models::SearchResult;
+use crate::engines::SearchEngine;
 
-/// A canned upstream result. Construct with `MockResult::new(...,
-/// ..., ...)` and optionally `.with_snippet(...)`.
+/// A canned upstream result. Construct with `MockResult::new(...)`
+/// and optionally `.with_snippet(...)`.
 #[derive(Clone, Debug)]
 pub struct MockResult {
     pub title: String,
@@ -43,9 +43,7 @@ impl MockResult {
     }
 }
 
-/// Coarse failure kinds the mock engine can produce. Each maps to one
-/// upstream `EngineError` variant. We do not store the upstream error
-/// directly because it isn't `Clone`.
+/// Coarse failure kinds the mock engine can produce.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MockFailure {
     Timeout,
@@ -71,10 +69,7 @@ impl MockFailure {
     }
 }
 
-/// A configurable mock engine. Each search invocation either:
-/// - returns the configured results,
-/// - returns the configured failure, or
-/// - never resolves (used to test the global-timeout path).
+/// A configurable mock engine.
 pub struct MockEngine {
     name: &'static str,
     results: Vec<SearchResult>,
@@ -83,7 +78,6 @@ pub struct MockEngine {
 }
 
 impl MockEngine {
-    /// A mock that always returns the given results.
     pub fn success(name: &'static str, results: Vec<MockResult>) -> Self {
         let rs = results
             .into_iter()
@@ -102,7 +96,6 @@ impl MockEngine {
         }
     }
 
-    /// A mock that always returns the given failure kind.
     pub fn failure(name: &'static str, failure: MockFailure) -> Self {
         Self {
             name,
@@ -112,8 +105,6 @@ impl MockEngine {
         }
     }
 
-    /// A mock whose `search` future never resolves. Used to test the
-    /// global-timeout path in the adapter.
     pub fn hang(name: &'static str) -> Self {
         Self {
             name,
@@ -147,8 +138,7 @@ impl SearchEngine for MockEngine {
     }
 }
 
-/// Convenience: wrap a list of mock engines into `Arc<dyn SearchEngine>`
-/// so callers can pass it to `MetadataSearchAdapter::from_engines`.
+/// Convenience: wrap a list of mock engines into `Arc<dyn SearchEngine>`.
 pub fn mock_engines(engines: Vec<MockEngine>) -> Vec<Arc<dyn SearchEngine>> {
     engines
         .into_iter()

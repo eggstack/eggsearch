@@ -14,8 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AppConfig::save` TOML serialization error now has a dedicated error variant
 
 ### Changed
+- Vendored search engine implementations from `metadata-search-engine-rs` into `eggsearch-meta/src/engines/`
+- Removed `metadata-search-engine-rs` dependency (eliminated 34 transitive deps)
+- Release binary shrunk from 7.3 MB to 6.3 MB (14% reduction)
 - `safe_search` parameter documented as reserved for future use (upstream engines don't support it)
-- Removed unused dependencies (`sha2`, `hex`, `anyhow`, `chrono`) from `eggsearch-core`
+- Removed unused dependencies (`sha2`, `hex`, `anyhow`, `chrono`, `async-trait`) from workspace
+- Added `scraper`, `urlencoding` as direct dependencies of `eggsearch-meta`
 
 ### Removed
 - `source_identity` method from `SourceCard` (dead code, never called in production)

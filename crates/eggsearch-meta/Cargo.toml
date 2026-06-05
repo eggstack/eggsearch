@@ -6,33 +6,30 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage = "https://github.com/anomalyco/eggsearch"
-description = "Metasearch adapter wrapping metadata-search-engine-rs for eggsearch"
-keywords = ["search", "metasearch", "scraping", "searxng"]
+description = "Metasearch adapter with vendored search engines for eggsearch"
+keywords = ["search", "metasearch", "scraping"]
 categories = ["web-programming"]
 
 [features]
 default = ["metasearch"]
-metasearch = ["dep:metadata-search-engine-rs", "dep:reqwest"]
+metasearch = []
 mock = ["metasearch"]
 
 [dependencies]
 eggsearch-core = { path = "../eggsearch-core", version = "0.1.0" }
 
-async-trait = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 url = { workspace = true }
+uuid = { workspace = true }
 tokio = { workspace = true }
-
-# Only required with the `metasearch` feature.
-metadata-search-engine-rs = { workspace = true, optional = true }
-reqwest = { workspace = true, optional = true }
+reqwest = { workspace = true }
+scraper = "0.20"
+urlencoding = "2"
 
 [dev-dependencies]
-async-trait = { workspace = true }
 tokio = { workspace = true }
 pretty_assertions = { workspace = true }
