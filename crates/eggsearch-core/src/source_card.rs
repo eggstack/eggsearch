@@ -110,4 +110,41 @@ mod tests {
         );
         assert!(c.id.starts_with("src_"));
     }
+
+    #[test]
+    fn serde_roundtrip() {
+        let c = SourceCard::new(
+            "Example",
+            "https://example.com",
+            vec!["duckduckgo".to_string(), "brave".to_string()],
+            Some(0.016),
+            TrustLevel::ExternalUntrusted,
+        )
+        .with_snippet("An example snippet.");
+        let json = serde_json::to_string(&c).unwrap();
+        let parsed: SourceCard = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.title, c.title);
+        assert_eq!(parsed.url, c.url);
+        assert_eq!(parsed.providers, c.providers);
+        assert_eq!(parsed.score, c.score);
+        assert_eq!(parsed.trust, c.trust);
+        assert_eq!(parsed.snippet, c.snippet);
+    }
+
+    #[test]
+    fn serde_skips_none_optional_fields() {
+        let c = SourceCard::new(
+            "Example",
+            "https://example.com",
+            vec!["duckduckgo".to_string()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        );
+        let json = serde_json::to_string(&c).unwrap();
+        assert!(!json.contains("\"snippet\":null"));
+        assert!(!json.contains("\"score\":null"));
+        let parsed: SourceCard = serde_json::from_str(&json).unwrap();
+        assert!(parsed.snippet.is_none());
+        assert!(parsed.score.is_none());
+    }
 }

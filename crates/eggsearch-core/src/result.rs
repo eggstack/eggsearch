@@ -67,4 +67,34 @@ mod tests {
         assert_eq!(w.provider_id, "brave");
         assert_eq!(w.message, "rate limited");
     }
+
+    #[test]
+    fn search_warning_serde_roundtrip() {
+        let w = SearchWarning::new("duckduckgo", "timeout after 8s");
+        let json = serde_json::to_string(&w).unwrap();
+        let parsed: SearchWarning = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.provider_id, w.provider_id);
+        assert_eq!(parsed.message, w.message);
+    }
+
+    #[test]
+    fn trust_level_serde_snake_case() {
+        let json = serde_json::to_string(&TrustLevel::ExternalUntrusted).unwrap();
+        assert_eq!(json, "\"external_untrusted\"");
+        let parsed: TrustLevel = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, TrustLevel::ExternalUntrusted);
+    }
+
+    #[test]
+    fn trust_level_all_variants_serde() {
+        for level in [
+            TrustLevel::ExternalUntrusted,
+            TrustLevel::LocalTrusted,
+            TrustLevel::Unknown,
+        ] {
+            let json = serde_json::to_string(&level).unwrap();
+            let parsed: TrustLevel = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, level);
+        }
+    }
 }

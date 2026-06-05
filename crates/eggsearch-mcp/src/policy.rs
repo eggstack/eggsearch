@@ -21,3 +21,32 @@ pub fn policy_message(kind: &str) -> String {
         "Tool '{kind}' is disabled by policy. Set [search].mode = \"live\" in your eggsearch config to enable it."
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_allowed_live_mode() {
+        assert_eq!(live_allowed(Mode::Live), Policy::Allow);
+    }
+
+    #[test]
+    fn live_allowed_off_mode() {
+        assert_eq!(live_allowed(Mode::Off), Policy::Deny);
+    }
+
+    #[test]
+    fn policy_message_web_search() {
+        let msg = policy_message("web_search");
+        assert!(msg.contains("web_search"));
+        assert!(msg.contains("disabled by policy"));
+        assert!(msg.contains("mode = \"live\""));
+    }
+
+    #[test]
+    fn policy_message_provider_status() {
+        let msg = policy_message("provider_status");
+        assert!(msg.contains("provider_status"));
+    }
+}

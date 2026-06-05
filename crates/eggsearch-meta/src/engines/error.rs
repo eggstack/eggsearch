@@ -27,3 +27,47 @@ pub enum EngineError {
         reason: String,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_message() {
+        let err = EngineError::Timeout { engine: "duckduckgo" };
+        assert_eq!(err.to_string(), "engine 'duckduckgo' timed out");
+    }
+
+    #[test]
+    fn bad_status_message() {
+        let err = EngineError::BadStatus {
+            engine: "brave",
+            status: 429,
+        };
+        assert_eq!(err.to_string(), "engine 'brave' returned status 429");
+    }
+
+    #[test]
+    fn parse_failed_message() {
+        let err = EngineError::ParseFailed {
+            engine: "startpage",
+            reason: "missing selector".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("engine 'startpage'"));
+        assert!(s.contains("parse failed"));
+        assert!(s.contains("missing selector"));
+    }
+
+    #[test]
+    fn network_error_message() {
+        let err = EngineError::NetworkError {
+            engine: "yahoo",
+            reason: "connection refused".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("engine 'yahoo'"));
+        assert!(s.contains("network error"));
+        assert!(s.contains("connection refused"));
+    }
+}

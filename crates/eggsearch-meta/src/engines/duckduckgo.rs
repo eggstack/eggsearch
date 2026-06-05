@@ -73,7 +73,9 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
         }
 
         let href = title_el.value().attr("href").unwrap_or("");
-        let url = extract_destination_url(href).unwrap_or_else(|| href.to_string());
+        let Some(url) = extract_destination_url(href) else {
+            continue;
+        };
         if url.is_empty() {
             continue;
         }
@@ -163,5 +165,22 @@ mod tests {
         let results = parse(html, 10).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].snippet.is_none());
+    }
+
+    #[test]
+    fn test_parse_skips_invalid_url() {
+        let html = r#"
+            <div class="result">
+                <a class="result__a" href="/relative/path">Title</a>
+                <a class="result__snippet">Snippet text.</a>
+            </div>
+            <div class="result">
+                <a class="result__a" href="/l/?uddg=https%3A%2F%2Fvalid.com">Valid</a>
+                <a class="result__snippet">Valid snippet.</a>
+            </div>
+        "#;
+        let results = parse(html, 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://valid.com");
     }
 }

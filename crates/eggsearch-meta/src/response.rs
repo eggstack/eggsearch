@@ -2,10 +2,10 @@
 
 use eggsearch_core::SourceCard;
 use eggsearch_core::SearchWarning;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Status of a single configured provider.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProviderStatus {
     /// Stable provider id, e.g. `"duckduckgo"`.
     pub id: String,
@@ -19,8 +19,9 @@ pub struct ProviderStatus {
 }
 
 /// A failure record for a single provider, exposed to the MCP tool.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProviderFailure {
+    /// Stable provider id, e.g. `"duckduckgo"`.
     pub id: String,
     /// Coarse error class: `timeout`, `http_status`, `parse_error`,
     /// `network_error`, `rate_limited`, or `unknown`.
@@ -43,4 +44,39 @@ pub struct WebSearchResponse {
     /// Aggregated warnings (per-provider failures + the standard
     /// "untrusted external content" warning).
     pub warnings: Vec<SearchWarning>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_status_serde_roundtrip() {
+        let status = ProviderStatus {
+            id: "duckduckgo".to_string(),
+            enabled: true,
+            kind: "html_scrape".to_string(),
+            requires_api_key: false,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let parsed: ProviderStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, status.id);
+        assert_eq!(parsed.enabled, status.enabled);
+        assert_eq!(parsed.kind, status.kind);
+        assert_eq!(parsed.requires_api_key, status.requires_api_key);
+    }
+
+    #[test]
+    fn provider_failure_serde_roundtrip() {
+        let failure = ProviderFailure {
+            id: "brave".to_string(),
+            error_class: "timeout".to_string(),
+            message: "request timed out".to_string(),
+        };
+        let json = serde_json::to_string(&failure).unwrap();
+        let parsed: ProviderFailure = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, failure.id);
+        assert_eq!(parsed.error_class, failure.error_class);
+        assert_eq!(parsed.message, failure.message);
+    }
 }

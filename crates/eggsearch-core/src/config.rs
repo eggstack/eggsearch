@@ -241,4 +241,32 @@ mod tests {
         let cfg = AppConfig::load(path).unwrap();
         assert_eq!(cfg.search.mode, Mode::default());
     }
+
+    #[test]
+    fn resolve_providers_empty_override_returns_defaults() {
+        let c = AppConfig::default();
+        let out = c.resolve_providers(&[]);
+        assert_eq!(out, c.search.default_providers);
+    }
+
+    #[test]
+    fn resolve_providers_preserves_order() {
+        let c = AppConfig::default();
+        let out = c.resolve_providers(&["yahoo".into(), "duckduckgo".into()]);
+        assert_eq!(out, vec!["yahoo".to_string(), "duckduckgo".to_string()]);
+    }
+
+    #[test]
+    fn resolve_providers_dedups() {
+        let c = AppConfig::default();
+        let out = c.resolve_providers(&["brave".into(), "brave".into(), "brave".into()]);
+        assert_eq!(out, vec!["brave".to_string()]);
+    }
+
+    #[test]
+    fn resolve_providers_ignores_config_providers_map() {
+        let c = AppConfig::default();
+        let out = c.resolve_providers(&["brave".into()]);
+        assert_eq!(out, vec!["brave".to_string()]);
+    }
 }
