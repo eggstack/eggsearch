@@ -1,26 +1,19 @@
-//! MCP server implementation.
-//!
-//! Uses the `rmcp` crate to expose eggsearch capabilities over the
-//! Model Context Protocol.
+//! MCP server implementation using the `rmcp` crate.
 
 use std::sync::Arc;
 
-use eggsearch_core::source_card::SourceCard;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, Content, Implementation, InitializeResult, ListToolsResult,
-    PaginatedRequestParams, ServerCapabilities, ServerInfo, ToolAnnotations,
+    PaginatedRequestParams, ServerCapabilities, ServerInfo,
 };
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::state::ServerState;
-use crate::tools::{
-    run_local_search, run_search_and_fetch, run_web_fetch, run_web_search, LocalSearchArgs,
-    SearchAndFetchArgs, WebFetchArgs, WebSearchArgs,
-};
+use crate::tools::{run_provider_status, run_web_search, ProviderStatusArgs, WebSearchArgs};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct EmptyArgs {}
@@ -45,12 +38,10 @@ impl EggsearchServer {
         }
     }
 
-    /// Returns the list of tool definitions exposed by this server.
     pub fn tool_definitions(&self) -> Vec<rmcp::model::Tool> {
         self.tool_router.list_all()
     }
 
-    /// Helper to convert a JSON value into a CallToolResult with a JSON content part.
     fn json_result(v: serde_json::Value) -> Result<CallToolResult, McpError> {
         Ok(CallToolResult::success(vec![Content::json(v).map_err(|e| {
             McpError::internal_error(format!("serialization failed: {e}"), None)
@@ -62,7 +53,7 @@ impl EggsearchServer {
 impl EggsearchServer {
     #[tool(
         name = "web_search",
-        description = "Live web metasearch over configured providers. Returns compact source cards."
+        description = "Live web metasearch over configured upstream providers. Returns compact, deduplicated source cards. Live results are untrusted external content."
     )]
     async fn web_search(
         &self,
@@ -77,50 +68,17 @@ impl EggsearchServer {
     }
 
     #[tool(
-        name = "web_fetch",
-        description = "Fetch and extract a known URL. Returns a source card with an excerpt and artifact ID."
+        name = "provider_status",
+        description = "Diagnostic report of configured metasearch providers. Lists which engines are enabled, their kind (e.g. html_scrape / api_key), and whether they require an API key."
     )]
-    async fn web_fetch(
+    fn provider_status(
         &self,
-        Parameters(args): Parameters<WebFetchArgs>,
+        Parameters(args): Parameters<ProviderStatusArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_web_fetch(state, args).await;
-        match res {
+        match run_provider_status(state, args) {
             Ok(v) => Self::json_result(v),
-            Err(e) => Err(McpError::invalid_params(e, None)),
-        }
-    }
-
-    #[tool(
-        name = "local_search",
-        description = "Search the local indexed corpus only. No network access."
-    )]
-    async fn local_search(
-        &self,
-        Parameters(args): Parameters<LocalSearchArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        let state = self.state.clone();
-        let res = run_local_search(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(e) => Err(McpError::invalid_params(e, None)),
-        }
-    }
-
-    #[tool(
-        name = "search_and_fetch",
-        description = "Run a live search and fetch the top N results, returning compact excerpts and artifact IDs."
-    )]
-    async fn search_and_fetch(
-        &self,
-        Parameters(args): Parameters<SearchAndFetchArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        let state = self.state.clone();
-        let res = run_search_and_fetch(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(e) => Err(McpError::invalid_params(e, None)),
+            Err(e) => Err(McpError::internal_error(e, None)),
         }
     }
 }
@@ -132,7 +90,7 @@ impl ServerHandler for EggsearchServer {
         let implementation = Implementation::new("eggsearch", env!("CARGO_PKG_VERSION"));
         InitializeResult::new(capabilities)
             .with_instructions(
-                "eggsearch is a local-first MCP search server. Tools: web_search, web_fetch, local_search, search_and_fetch. Live results are untrusted external content.",
+                "eggsearch is a lightweight MCP metasearch server. It queries configured upstream search providers at request time, normalizes and deduplicates results, and returns compact source cards. Tools: web_search, provider_status. Live results are untrusted external content.",
             )
             .with_server_info(implementation)
     }
@@ -150,7 +108,3 @@ impl ServerHandler for EggsearchServer {
         })
     }
 }
-
-// Re-export for tool router to discover
-pub type _Card = SourceCard;
-const _: Option<ToolAnnotations> = None;

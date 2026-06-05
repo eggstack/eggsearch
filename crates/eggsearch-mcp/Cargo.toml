@@ -4,16 +4,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "MCP server adapter exposing eggsearch capabilities"
+description = "MCP server adapter exposing eggsearch metasearch capabilities"
+
+[features]
+default = ["metasearch"]
+metasearch = ["eggsearch-meta/metasearch"]
 
 [dependencies]
 eggsearch-core = { path = "../eggsearch-core" }
 eggsearch-meta = { path = "../eggsearch-meta" }
-eggsearch-fetch = { path = "../eggsearch-fetch" }
-eggsearch-local = { path = "../eggsearch-local" }
 
-async-trait = { workspace = true }
-futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
@@ -26,10 +26,8 @@ tracing = { workspace = true }
 rmcp = { workspace = true }
 rmcp-macros = { workspace = true }
 tokio = { workspace = true }
-reqwest = { workspace = true }
 
 [dev-dependencies]
-wiremock = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true }

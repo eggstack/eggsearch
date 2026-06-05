@@ -4,11 +4,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Core types, traits, normalization, ranking and source cards for eggsearch"
+description = "Core types, source card model, and configuration for eggsearch"
 
 [dependencies]
-async-trait = { workspace = true }
-futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
@@ -17,12 +15,8 @@ thiserror = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 toml = { workspace = true }
-config = { workspace = true }
 dirs = { workspace = true }
 
 [dev-dependencies]

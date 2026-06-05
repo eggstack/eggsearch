@@ -136,7 +136,6 @@ mod tests {
     fn normalizes_trailing_slash() {
         let u = canonicalize("https://example.com/page/").unwrap();
         assert_eq!(u.path(), "/page");
-        // root should remain "/"
         let root = canonicalize("https://example.com/").unwrap();
         assert_eq!(root.path(), "/");
     }

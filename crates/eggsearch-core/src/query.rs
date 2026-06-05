@@ -1,7 +1,8 @@
-//! Query types accepted by providers and MCP tools.
+//! Query/request types accepted by the MCP `web_search` tool.
 
 use serde::{Deserialize, Serialize};
 
+/// Safe-search mode. Mapped to per-engine filters by the adapter.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SafeSearch {
@@ -11,110 +12,70 @@ pub enum SafeSearch {
     Strict,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Freshness {
-    Day,
-    Week,
-    Month,
-    Year,
-    Any,
-}
-
-impl Default for Freshness {
-    fn default() -> Self {
-        Self::Any
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum SearchCategory {
-    General,
-    Documentation,
-    PackageRegistry,
-    Reference,
-    News,
-}
-
-impl SearchCategory {
+impl SafeSearch {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::General => "general",
-            Self::Documentation => "documentation",
-            Self::PackageRegistry => "package_registry",
-            Self::Reference => "reference",
-            Self::News => "news",
+            Self::Off => "off",
+            Self::Moderate => "moderate",
+            Self::Strict => "strict",
         }
     }
 }
 
-/// A normalized search query shared across providers and tools.
+/// Input shape for the MCP `web_search` tool.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchQuery {
+pub struct WebSearchRequest {
+    /// Search query string. Must be non-empty after trimming.
     pub query: String,
-    pub max_results: usize,
-    pub language: Option<String>,
-    pub region: Option<String>,
-    pub safe_search: SafeSearch,
-    pub freshness: Option<Freshness>,
-    pub include_domains: Vec<String>,
-    pub exclude_domains: Vec<String>,
-    pub categories: Vec<SearchCategory>,
-    /// Optional override of provider IDs to use; empty means "all enabled".
+    /// Maximum number of cards to return. Capped by the server.
+    #[serde(default)]
+    pub max_results: Option<usize>,
+    /// Specific provider IDs to use; empty means "all enabled".
+    #[serde(default)]
     pub providers: Vec<String>,
+    /// Safe-search mode.
+    #[serde(default)]
+    pub safe_search: Option<SafeSearch>,
+    /// Optional per-request timeout in milliseconds.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
 }
 
-impl Default for SearchQuery {
-    fn default() -> Self {
-        Self {
-            query: String::new(),
-            max_results: 8,
-            language: None,
-            region: None,
-            safe_search: SafeSearch::Moderate,
-            freshness: Some(Freshness::Any),
-            include_domains: Vec::new(),
-            exclude_domains: Vec::new(),
-            categories: vec![SearchCategory::General],
-            providers: Vec::new(),
-        }
-    }
-}
-
-impl SearchQuery {
+impl WebSearchRequest {
+    /// Build a request with the given query, applying defaults.
     pub fn new<Q: Into<String>>(query: Q) -> Self {
         Self {
             query: query.into(),
-            ..Self::default()
+            max_results: None,
+            providers: Vec::new(),
+            safe_search: None,
+            timeout_ms: None,
         }
     }
 
-    pub fn with_max_results(mut self, n: usize) -> Self {
-        self.max_results = n;
-        self
-    }
-
-    pub fn with_providers<I, S>(mut self, providers: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        self.providers = providers.into_iter().map(Into::into).collect();
-        self
-    }
-
-    /// Validate the query, returning an error string if invalid.
-    pub fn validate(&self) -> Result<(), String> {
+    /// Validate the request, returning a human-readable error string if invalid.
+    pub fn validate(&self, max_query_chars: usize, max_results_cap: usize) -> Result<(), String> {
         if self.query.trim().is_empty() {
             return Err("query must not be empty".to_string());
         }
-        if self.max_results == 0 {
-            return Err("max_results must be > 0".to_string());
+        if self.query.chars().count() > max_query_chars {
+            return Err(format!(
+                "query must be <= {max_query_chars} characters"
+            ));
         }
-        if self.max_results > 100 {
-            return Err("max_results must be <= 100".to_string());
+        if let Some(n) = self.max_results {
+            if n == 0 {
+                return Err("max_results must be > 0".to_string());
+            }
+            if n > max_results_cap {
+                return Err(format!("max_results must be <= {max_results_cap}"));
+            }
         }
         Ok(())
+    }
+
+    /// Effective max_results, defaulting to the given default.
+    pub fn effective_max_results(&self, default: usize, cap: usize) -> usize {
+        self.max_results.unwrap_or(default).clamp(1, cap)
     }
 }

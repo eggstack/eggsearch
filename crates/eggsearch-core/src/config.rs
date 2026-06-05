@@ -1,4 +1,8 @@
 //! Configuration model and loader for eggsearch.
+//!
+//! The changeover configuration is intentionally minimal: the default
+//! server is a live metasearch-only MCP server. Tantivy and web_fetch
+//! are deferred behind feature flags.
 
 use std::path::{Path, PathBuf};
 
@@ -9,15 +13,15 @@ use crate::error::{CoreError, CoreResult};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
+    /// All tools disabled.
     Off,
-    LocalOnly,
+    /// Live metasearch is allowed.
     Live,
-    Ask,
 }
 
 impl Default for Mode {
     fn default() -> Self {
-        Self::Ask
+        Self::Live
     }
 }
 
@@ -25,42 +29,14 @@ impl Mode {
     pub fn from_str(s: &str) -> CoreResult<Self> {
         match s.to_lowercase().as_str() {
             "off" => Ok(Self::Off),
-            "local_only" | "localonly" | "local" => Ok(Self::LocalOnly),
-            "live" => Ok(Self::Live),
-            "ask" => Ok(Self::Ask),
+            "live" | "ask" | "local_only" | "localonly" | "local" => Ok(Self::Live),
             other => Err(CoreError::Config(format!("unknown mode: {other}"))),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProviderConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub base_url: Option<String>,
-    #[serde(default)]
-    pub api_key_env: Option<String>,
-    #[serde(default)]
-    pub extra: std::collections::BTreeMap<String, String>,
-}
-
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            base_url: None,
-            api_key_env: None,
-            extra: Default::default(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LiveConfig {
-    pub enabled: bool,
-    pub max_concurrency: usize,
-    pub timeout_ms: u64,
     pub user_agent: String,
     pub respect_robots_txt: bool,
 }
@@ -68,9 +44,6 @@ pub struct LiveConfig {
 impl Default for LiveConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
-            max_concurrency: 4,
-            timeout_ms: 8000,
             user_agent: format!("eggsearch/{}", env!("CARGO_PKG_VERSION")),
             respect_robots_txt: true,
         }
@@ -78,44 +51,47 @@ impl Default for LiveConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LocalConfig {
-    pub enabled: bool,
-    pub backend: String,
-    pub index_dir: PathBuf,
-}
-
-impl Default for LocalConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            backend: "tantivy".to_string(),
-            index_dir: default_index_dir(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
+    /// Server mode: `off` or `live`. Defaults to `live`.
     pub mode: Mode,
+    /// Default `max_results` for `web_search` when not specified.
     pub max_results: usize,
-    pub cache_dir: PathBuf,
-    pub artifact_dir: PathBuf,
-    pub live: LiveConfig,
-    pub local: LocalConfig,
+    /// Hard cap on `max_results` from clients.
+    pub max_results_cap: usize,
+    /// Maximum accepted query length in characters.
+    pub max_query_chars: usize,
+    /// Default per-request timeout in milliseconds.
+    pub timeout_ms: u64,
+    /// Default providers to query when none are specified.
+    pub default_providers: Vec<String>,
+    /// Per-provider enable/disable flags. Keys are provider ids
+    /// (`duckduckgo`, `brave`, `startpage`, `yahoo`).
     #[serde(default)]
-    pub providers: std::collections::BTreeMap<String, ProviderConfig>,
+    pub providers: std::collections::BTreeMap<String, bool>,
+    /// Live network configuration.
+    pub live: LiveConfig,
 }
 
 impl Default for SearchSection {
     fn default() -> Self {
+        let mut providers = std::collections::BTreeMap::new();
+        providers.insert("duckduckgo".to_string(), true);
+        providers.insert("brave".to_string(), true);
+        providers.insert("startpage".to_string(), true);
+        providers.insert("yahoo".to_string(), true);
         Self {
             mode: Mode::default(),
-            max_results: 8,
-            cache_dir: default_cache_dir(),
-            artifact_dir: default_artifact_dir(),
+            max_results: 10,
+            max_results_cap: 50,
+            max_query_chars: 512,
+            timeout_ms: 8000,
+            default_providers: vec![
+                "duckduckgo".to_string(),
+                "startpage".to_string(),
+                "yahoo".to_string(),
+            ],
+            providers,
             live: LiveConfig::default(),
-            local: LocalConfig::default(),
-            providers: default_providers(),
         }
     }
 }
@@ -148,9 +124,27 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Returns true if any provider is enabled.
-    pub fn any_provider_enabled(&self) -> bool {
-        self.search.providers.values().any(|p| p.enabled)
+    /// Resolve the effective provider list for a request, given the
+    /// client-supplied override (or empty for "use defaults"). The
+    /// returned list is de-duplicated while preserving input order.
+    pub fn resolve_providers(&self, override_list: &[String]) -> Vec<String> {
+        if override_list.is_empty() {
+            return self.search.default_providers.clone();
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for p in override_list {
+            if seen.insert(p.clone()) {
+                out.push(p.clone());
+            }
+        }
+        out
+    }
+
+    /// True if the given provider id is enabled in the config (or if the
+    /// provider is unknown to the config, default to enabled).
+    pub fn provider_enabled(&self, id: &str) -> bool {
+        self.search.providers.get(id).copied().unwrap_or(true)
     }
 }
 
@@ -161,88 +155,6 @@ pub fn default_config_path() -> PathBuf {
     PathBuf::from("eggsearch.toml")
 }
 
-pub fn default_cache_dir() -> PathBuf {
-    if let Some(dir) = dirs::data_local_dir() {
-        return dir.join("eggsearch").join("cache");
-    }
-    PathBuf::from(".eggsearch/cache")
-}
-
-pub fn default_artifact_dir() -> PathBuf {
-    if let Some(dir) = dirs::data_local_dir() {
-        return dir.join("eggsearch").join("artifacts");
-    }
-    PathBuf::from(".eggsearch/artifacts")
-}
-
-pub fn default_index_dir() -> PathBuf {
-    if let Some(dir) = dirs::data_local_dir() {
-        return dir.join("eggsearch").join("index");
-    }
-    PathBuf::from(".eggsearch/index")
-}
-
-pub fn default_providers() -> std::collections::BTreeMap<String, ProviderConfig> {
-    let mut m = std::collections::BTreeMap::new();
-    m.insert(
-        "duckduckgo_html".into(),
-        ProviderConfig {
-            enabled: true,
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "wikipedia".into(),
-        ProviderConfig {
-            enabled: true,
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "crates_io".into(),
-        ProviderConfig {
-            enabled: true,
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "docs_rs".into(),
-        ProviderConfig {
-            enabled: true,
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "searxng".into(),
-        ProviderConfig {
-            enabled: false,
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "brave".into(),
-        ProviderConfig {
-            enabled: false,
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "tavily".into(),
-        ProviderConfig {
-            enabled: false,
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "exa".into(),
-        ProviderConfig {
-            enabled: false,
-            ..Default::default()
-        },
-    );
-    m
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,8 +163,6 @@ mod tests {
     fn mode_parsing() {
         assert_eq!(Mode::from_str("off").unwrap(), Mode::Off);
         assert_eq!(Mode::from_str("live").unwrap(), Mode::Live);
-        assert_eq!(Mode::from_str("local_only").unwrap(), Mode::LocalOnly);
-        assert_eq!(Mode::from_str("ask").unwrap(), Mode::Ask);
         assert!(Mode::from_str("nope").is_err());
     }
 
@@ -260,33 +170,18 @@ mod tests {
     fn default_config_loads() {
         let c = AppConfig::default();
         assert!(c.search.max_results > 0);
-        assert!(c.any_provider_enabled());
+        assert!(!c.search.default_providers.is_empty());
     }
 
     #[test]
-    fn default_providers_lists_all_known_providers() {
+    fn default_providers_lists_known_engines() {
         let c = AppConfig::default();
-        let ids: Vec<&String> = c.search.providers.keys().collect();
-        for expected in [
-            "duckduckgo_html",
-            "wikipedia",
-            "crates_io",
-            "docs_rs",
-            "searxng",
-            "brave",
-            "tavily",
-            "exa",
-        ] {
-            assert!(ids.iter().any(|k| k.as_str() == expected), "missing default provider: {expected}");
+        for expected in ["duckduckgo", "brave", "startpage", "yahoo"] {
+            assert!(
+                c.search.providers.contains_key(expected),
+                "missing default provider: {expected}"
+            );
         }
-        // MVP no-key providers should be on by default.
-        assert!(c.search.providers["duckduckgo_html"].enabled);
-        assert!(c.search.providers["wikipedia"].enabled);
-        // Optional API-key / hosted providers should be off by default.
-        assert!(!c.search.providers["searxng"].enabled);
-        assert!(!c.search.providers["brave"].enabled);
-        assert!(!c.search.providers["tavily"].enabled);
-        assert!(!c.search.providers["exa"].enabled);
     }
 
     #[test]
@@ -295,5 +190,19 @@ mod tests {
         let text = toml::to_string(&c).unwrap();
         let parsed: AppConfig = toml::from_str(&text).unwrap();
         assert_eq!(parsed.search.max_results, c.search.max_results);
+    }
+
+    #[test]
+    fn resolve_providers_uses_default_when_empty() {
+        let c = AppConfig::default();
+        let out = c.resolve_providers(&[]);
+        assert_eq!(out, c.search.default_providers);
+    }
+
+    #[test]
+    fn resolve_providers_dedupes_override() {
+        let c = AppConfig::default();
+        let out = c.resolve_providers(&["brave".into(), "brave".into(), "duckduckgo".into()]);
+        assert_eq!(out, vec!["brave".to_string(), "duckduckgo".to_string()]);
     }
 }

@@ -4,17 +4,19 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "eggsearch CLI: doctor, search, fetch, index, mcp stdio"
+description = "eggsearch CLI: metasearch MCP server (doctor, search, providers, mcp stdio)"
 
 [[bin]]
 name = "eggsearch"
 path = "src/main.rs"
 
+[features]
+default = ["metasearch"]
+metasearch = ["eggsearch-mcp/metasearch", "eggsearch-meta/metasearch"]
+
 [dependencies]
 eggsearch-core = { path = "../eggsearch-core" }
 eggsearch-meta = { path = "../eggsearch-meta" }
-eggsearch-fetch = { path = "../eggsearch-fetch" }
-eggsearch-local = { path = "../eggsearch-local" }
 eggsearch-mcp = { path = "../eggsearch-mcp" }
 
 tokio = { workspace = true }
@@ -26,7 +28,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
 url = { workspace = true }
-chrono = { workspace = true }
 rmcp = { workspace = true }
 futures = { workspace = true }
-reqwest = { workspace = true }

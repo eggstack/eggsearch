@@ -4,28 +4,30 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Live metasearch providers for eggsearch"
+description = "Metasearch adapter wrapping metadata-search-engine-rs for eggsearch"
+
+[features]
+default = ["metasearch"]
+metasearch = ["dep:metadata-search-engine-rs", "dep:reqwest"]
 
 [dependencies]
 eggsearch-core = { path = "../eggsearch-core" }
 
 async-trait = { workspace = true }
-futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-url = { workspace = true }
-uuid = { workspace = true }
-chrono = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
 tracing = { workspace = true }
-reqwest = { workspace = true }
-scraper = { workspace = true }
-urlencoding = { workspace = true }
+uuid = { workspace = true }
+url = { workspace = true }
+tokio = { workspace = true }
+
+# Only required with the `metasearch` feature.
+metadata-search-engine-rs = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
-wiremock = { workspace = true }
-pretty_assertions = { workspace = true }
+async-trait = { workspace = true }
 tokio = { workspace = true }
+pretty_assertions = { workspace = true }

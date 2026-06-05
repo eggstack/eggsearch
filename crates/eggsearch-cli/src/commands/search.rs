@@ -2,122 +2,65 @@
 
 use anyhow::Result;
 use eggsearch_core::config::AppConfig;
-use eggsearch_core::provider::SearchContext;
-use eggsearch_core::query::SearchQuery;
-use eggsearch_core::rank::reciprocal_rank_fusion;
-use eggsearch_fetch::FetchProvider;
-use eggsearch_meta::providers::MockProvider;
+use eggsearch_core::WebSearchRequest;
 use eggsearch_mcp::ServerState;
 use std::sync::Arc;
 
 pub async fn run(
     cfg: &AppConfig,
     query: &str,
-    provider: Option<&str>,
     max_results: usize,
     as_json: bool,
-    fetch_top_n: usize,
 ) -> Result<()> {
-    let mut state = ServerState::build(cfg.clone())?;
+    let state = Arc::new(ServerState::build(cfg.clone())?);
 
-    // The mock provider is opt-in for the CLI search command — it is
-    // not part of the config-driven registry. If the user explicitly
-    // asks for it, register it on a one-off registry so the rest of
-    // the search path doesn't change.
-    if let Some(p) = provider {
-        if p == "mock" {
-            let mut reg = (*state.providers).clone();
-            reg.register(std::sync::Arc::new(MockProvider::demo()));
-            state.providers = std::sync::Arc::new(reg);
-        }
-    }
+    let req = WebSearchRequest {
+        query: query.to_string(),
+        max_results: Some(max_results),
+        providers: Vec::new(),
+        safe_search: None,
+        timeout_ms: None,
+    };
 
-    let state = Arc::new(state);
-    let providers: Vec<String> = provider
-        .map(|p| vec![p.to_string()])
-        .unwrap_or_default();
-    let mut sq = SearchQuery::new(query);
-    sq.max_results = max_results;
-    sq.providers = providers;
-    let ctx = SearchContext::live();
-    let responses = state.providers.search_all(sq.clone(), ctx).await?;
-    let ranked: Vec<Vec<_>> = responses.iter().map(|r| r.results.clone()).collect();
-    let cards = reciprocal_rank_fusion(&ranked, 60.0, max_results);
-
-    let mut warnings: Vec<String> = Vec::new();
-    for r in &responses {
-        for w in &r.warnings {
-            warnings.push(format!("[{}] {}", w.provider_id, w.message));
-        }
-    }
-
-    if fetch_top_n > 0 {
-        let top_n = fetch_top_n.min(cards.len());
-        for card in cards.iter().take(top_n) {
-            if let Some(url) = &card.url {
-                if let Ok(url) = url::Url::parse(url) {
-                    let req = eggsearch_fetch::FetchRequest {
-                        url,
-                        max_bytes: 2 * 1024 * 1024,
-                        timeout_ms: cfg.search.live.timeout_ms,
-                        extract_mode: eggsearch_fetch::ExtractMode::Readability,
-                        respect_robots_txt: cfg.search.live.respect_robots_txt,
-                    };
-                    match state.fetch.fetch(req).await {
-                        Ok(doc) => {
-                            println!(
-                                "\n# {}\n{}\n[excerpt] {}\n[artifact] {}\n",
-                                doc.title.unwrap_or_else(|| card.title.clone()),
-                                doc.url,
-                                excerpt(&doc.text, 400),
-                                doc.artifact_id,
-                            );
-                        }
-                        Err(e) => {
-                            warnings.push(format!("fetch failed for {}: {e}", card.url.as_deref().unwrap_or("?")));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let resp = state
+        .adapter
+        .web_search(&req, cfg.search.max_results_cap)
+        .await;
 
     if as_json {
         let payload = serde_json::json!({
-            "query": query,
-            "results": cards,
-            "warnings": warnings,
+            "query": resp.query,
+            "mode": resp.mode,
+            "results": resp.results,
+            "providers_queried": resp.providers_queried,
+            "providers_failed": resp.providers_failed,
+            "warnings": resp.warnings.iter().map(|w| format!("[{}] {}", w.provider_id, w.message)).collect::<Vec<_>>(),
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("# Results for '{}' ({} items, {} warnings)", query, cards.len(), warnings.len());
-        for (i, c) in cards.iter().enumerate() {
+        println!(
+            "# Results for '{}' ({} items, {} failed)",
+            query,
+            resp.results.len(),
+            resp.providers_failed.len()
+        );
+        for (i, c) in resp.results.iter().enumerate() {
             let snippet = c.snippet.as_deref().unwrap_or("").replace('\n', " ");
-            let url = c.url.as_deref().unwrap_or("");
-            println!("\n{}. {}\n   {}\n   {}", i + 1, c.title, url, snippet);
+            let providers = c.providers.join(", ");
+            println!("\n{}. {}\n   {}\n   [{}]\n   {}", i + 1, c.title, c.url, providers, snippet);
         }
-        if !warnings.is_empty() {
+        if !resp.warnings.is_empty() {
             println!("\nWarnings:");
-            for w in &warnings {
-                println!("  - {w}");
+            for w in &resp.warnings {
+                println!("  - [{}] {}", w.provider_id, w.message);
+            }
+        }
+        if !resp.providers_failed.is_empty() {
+            println!("\nFailed providers:");
+            for f in &resp.providers_failed {
+                println!("  - {}: {} ({})", f.id, f.message, f.error_class);
             }
         }
     }
     Ok(())
-}
-
-fn excerpt(text: &str, max_chars: usize) -> String {
-    let trimmed = text.trim();
-    if trimmed.chars().count() <= max_chars {
-        return trimmed.to_string();
-    }
-    let mut out = String::new();
-    for (i, c) in trimmed.chars().enumerate() {
-        if i >= max_chars {
-            break;
-        }
-        out.push(c);
-    }
-    out.push('…');
-    out
 }

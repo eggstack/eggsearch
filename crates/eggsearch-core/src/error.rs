@@ -25,9 +25,6 @@ pub enum CoreError {
     #[error("toml error: {0}")]
     Toml(#[from] toml::de::Error),
 
-    #[error("config crate error: {0}")]
-    ConfigCrate(#[from] config::ConfigError),
-
     #[error("{0}")]
     Other(String),
 }

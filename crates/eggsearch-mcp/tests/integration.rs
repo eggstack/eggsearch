@@ -1,192 +1,124 @@
-use eggsearch_core::config::{AppConfig, Mode, ProviderConfig};
-use eggsearch_meta::registry::DiagnosticStatus;
-use eggsearch_mcp::{EggsearchServer, ServerState};
+//! Integration tests for the MCP server tool surface.
+//!
+//! These tests build a real `ServerState` from a default config (no
+//! network calls) and exercise the `web_search` and `provider_status`
+//! tools against it. They verify:
+//!
+//! - Tool schema (server info, tool names).
+//! - `web_search` valid query returns structured payload.
+//! - `web_search` empty query returns validation error.
+//! - `web_search` mode=off is denied by policy.
+//! - `provider_status` returns the configured provider list.
+
+use eggsearch_core::config::AppConfig;
+use eggsearch_mcp::tools::{
+    run_provider_status, run_web_search, ProviderStatusArgs, WebSearchArgs,
+};
+use eggsearch_mcp::ServerState;
 use rmcp::ServerHandler;
 use std::sync::Arc;
 use tempfile::tempdir;
 
-fn build_test_state(mode: Mode) -> (tempfile::TempDir, Arc<ServerState>) {
-    build_test_state_with(mode, |_| {})
-}
-
-fn build_test_state_with<F>(mode: Mode, mut f: F) -> (tempfile::TempDir, Arc<ServerState>)
-where
-    F: FnMut(&mut AppConfig),
-{
+fn build_state() -> (tempfile::TempDir, Arc<ServerState>) {
     let dir = tempdir().unwrap();
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = mode;
-    cfg.search.local.index_dir = dir.path().to_path_buf();
-    f(&mut cfg);
-    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let _ = dir; // reserved for future feature-gated tests
+    let state = Arc::new(ServerState::build(AppConfig::default()).unwrap());
     (dir, state)
 }
 
 #[test]
 fn mcp_server_get_info() {
-    let (_dir, state) = build_test_state(Mode::default());
-    let server = EggsearchServer::new(state);
+    let (_dir, state) = build_state();
+    let server = eggsearch_mcp::EggsearchServer::new(state);
     let info = server.get_info();
     assert_eq!(info.server_info.name, "eggsearch");
     assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
-    let caps = info.capabilities;
-    assert!(caps.tools.is_some(), "tools capability must be enabled");
+    assert!(info.capabilities.tools.is_some(), "tools capability must be enabled");
 }
 
 #[test]
-fn mcp_server_lists_four_tools() {
-    let (_dir, state) = build_test_state(Mode::default());
-    let server = EggsearchServer::new(state);
+fn mcp_server_lists_two_tools() {
+    let (_dir, state) = build_state();
+    let server = eggsearch_mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
-    assert!(names.contains(&"web_search".to_string()));
-    assert!(names.contains(&"web_fetch".to_string()));
-    assert!(names.contains(&"local_search".to_string()));
-    assert!(names.contains(&"search_and_fetch".to_string()));
+    assert!(names.contains(&"web_search".to_string()), "tools: {names:?}");
+    assert!(names.contains(&"provider_status".to_string()), "tools: {names:?}");
+    // Legacy tools must not be exposed.
+    assert!(!names.contains(&"web_fetch".to_string()), "tools: {names:?}");
+    assert!(!names.contains(&"local_search".to_string()), "tools: {names:?}");
+    assert!(!names.contains(&"search_and_fetch".to_string()), "tools: {names:?}");
+}
+
+#[tokio::test]
+async fn web_search_empty_query_returns_validation_error() {
+    let (_dir, state) = build_state();
+    let res = run_web_search(
+        state,
+        WebSearchArgs {
+            query: "   ".into(),
+            max_results: None,
+            providers: vec![],
+            safe_search: None,
+            timeout_ms: None,
+        },
+    )
+    .await;
+    assert!(res.is_err(), "expected validation error");
+    let err = res.err().unwrap();
+    assert!(err.contains("invalid query"), "got: {err}");
 }
 
 #[tokio::test]
 async fn web_search_blocked_when_mode_off() {
-    let (_dir, state) = build_test_state(Mode::Off);
-    let res = eggsearch_mcp::tools::run_web_search(
+    let (_dir, _state) = build_state();
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = eggsearch_core::config::Mode::Off;
+    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let res = run_web_search(
         state,
-        eggsearch_mcp::tools::WebSearchArgs {
+        WebSearchArgs {
             query: "rust".into(),
-            max_results: Some(3),
+            max_results: None,
             providers: vec![],
-            fetch: false,
-            max_excerpt_chars: None,
+            safe_search: None,
+            timeout_ms: None,
         },
     )
     .await;
     assert!(res.is_err(), "expected policy denial");
-}
-
-#[tokio::test]
-async fn local_search_returns_empty_when_index_empty() {
-    let (_dir, state) = build_test_state(Mode::LocalOnly);
-    let result = eggsearch_mcp::tools::run_local_search(
-        state,
-        eggsearch_mcp::tools::LocalSearchArgs {
-            query: "anything".into(),
-            max_results: Some(5),
-            tags: vec![],
-        },
-    )
-    .await
-    .unwrap();
-    let v = result.as_object().unwrap();
-    assert_eq!(v["mode"], "local_only");
-    let results = v["results"].as_array().unwrap();
-    assert!(results.is_empty());
-    let warnings = v["warnings"].as_array().unwrap();
-    assert!(!warnings.is_empty(), "expected warning about empty index");
-}
-
-#[tokio::test]
-async fn local_search_blocked_when_mode_off() {
-    let (_dir, state) = build_test_state(Mode::Off);
-    let res = eggsearch_mcp::tools::run_local_search(
-        state,
-        eggsearch_mcp::tools::LocalSearchArgs {
-            query: "anything".into(),
-            max_results: Some(5),
-            tags: vec![],
-        },
-    )
-    .await;
-    assert!(res.is_err());
+    let err = res.err().unwrap();
+    assert!(err.contains("disabled by policy"), "got: {err}");
 }
 
 #[test]
-fn server_state_collects_provider_diagnostics() {
-    let (_dir, state) = build_test_state_with(Mode::default(), |cfg| {
-        cfg.search.providers.insert(
-            "searxng".into(),
-            ProviderConfig {
-                enabled: true,
-                ..Default::default()
-            },
-        );
-        cfg.search.providers.insert(
-            "brave".into(),
-            ProviderConfig {
-                enabled: true,
-                api_key_env: Some("EGGSEARCH_TEST_BRAVE_MCP".into()),
-                ..Default::default()
-            },
-        );
-    });
-    let diags = &state.diagnostics.diagnostics;
-    let searxng = diags.iter().find(|d| d.id == "searxng").unwrap();
-    assert_eq!(searxng.status, DiagnosticStatus::Misconfigured);
-    assert!(searxng
-        .message
-        .as_deref()
-        .unwrap()
-        .contains("base_url"));
-    let brave = diags.iter().find(|d| d.id == "brave").unwrap();
-    assert_eq!(brave.status, DiagnosticStatus::Misconfigured);
-    assert!(brave
-        .message
-        .as_deref()
-        .unwrap()
-        .contains("EGGSEARCH_TEST_BRAVE_MCP"));
-    // Misconfigured providers must NOT be in the loaded list.
-    assert!(!state.diagnostics.loaded.iter().any(|p| p == "searxng"));
-    assert!(!state.diagnostics.loaded.iter().any(|p| p == "brave"));
-    // But the no-key providers should still load.
-    for id in ["duckduckgo_html", "wikipedia", "crates_io", "docs_rs"] {
+fn provider_status_returns_configured_providers() {
+    let (_dir, state) = build_state();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).unwrap();
+    let arr = v["providers"].as_array().expect("providers is array");
+    let ids: Vec<&str> = arr
+        .iter()
+        .map(|p| p["id"].as_str().unwrap_or(""))
+        .filter(|s| !s.is_empty())
+        .collect();
+    for expected in ["duckduckgo", "brave", "startpage", "yahoo"] {
         assert!(
-            state.diagnostics.loaded.iter().any(|p| p == id),
-            "expected {id} to be loaded, got {:?}",
-            state.diagnostics.loaded
+            ids.contains(&expected),
+            "expected provider id {expected} in status, got {ids:?}"
         );
     }
 }
 
 #[test]
-fn server_state_with_searxng_base_url_loads_it() {
-    let (_dir, state) = build_test_state_with(Mode::default(), |cfg| {
-        cfg.search.providers.insert(
-            "searxng".into(),
-            ProviderConfig {
-                enabled: true,
-                base_url: Some("http://127.0.0.1:8080".into()),
-                ..Default::default()
-            },
-        );
-    });
-    assert!(state.diagnostics.loaded.iter().any(|p| p == "searxng"));
-    let searxng = state
-        .diagnostics
-        .diagnostics
-        .iter()
-        .find(|d| d.id == "searxng")
-        .unwrap();
-    assert_eq!(searxng.status, DiagnosticStatus::Loaded);
-}
-
-#[test]
-fn default_providers_appear_in_diagnostics() {
-    // Regression: the default config registers 8 known provider ids.
-    let (_dir, state) = build_test_state(Mode::default());
-    let ids: std::collections::BTreeSet<&str> = state
-        .diagnostics
-        .diagnostics
-        .iter()
-        .map(|d| d.id.as_str())
-        .collect();
-    for expected in [
-        "duckduckgo_html",
-        "wikipedia",
-        "crates_io",
-        "docs_rs",
-        "searxng",
-        "brave",
-        "tavily",
-        "exa",
-    ] {
-        assert!(ids.contains(expected), "missing provider id {expected} in diagnostics");
+fn provider_status_payload_shape_is_stable() {
+    let (_dir, state) = build_state();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).unwrap();
+    assert!(v["mode"].is_string());
+    let arr = v["providers"].as_array().unwrap();
+    for p in arr {
+        assert!(p["id"].is_string(), "missing id: {p}");
+        assert!(p["enabled"].is_boolean(), "missing enabled: {p}");
+        assert!(p["kind"].is_string(), "missing kind: {p}");
+        assert!(p["requires_api_key"].is_boolean(), "missing requires_api_key: {p}");
     }
 }

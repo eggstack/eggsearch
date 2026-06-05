@@ -1,96 +1,59 @@
 //! Server state: shared state passed to every tool call.
 
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use eggsearch_core::config::AppConfig;
-use eggsearch_fetch::{ArtifactStore, FetchCache, ReqwestFetchProvider, RobotsCache};
-use eggsearch_local::LocalCorpus;
-use eggsearch_meta::registry::RegistryDiagnostics;
-use eggsearch_meta::ProviderRegistry;
-use tracing::warn;
+use eggsearch_meta::MetadataSearchAdapter;
+
+use crate::tools::ProviderStatusArgs;
 
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
 #[derive(Clone)]
 pub struct ServerState {
     pub config: Arc<AppConfig>,
-    pub providers: Arc<ProviderRegistry>,
-    pub diagnostics: Arc<RegistryDiagnostics>,
-    pub fetch: Arc<ReqwestFetchProvider>,
-    pub corpus: Arc<LocalCorpus>,
-    pub cache: Arc<FetchCache>,
-    pub artifacts: Arc<ArtifactStore>,
-    pub robots: Arc<RobotsCache>,
+    pub adapter: Arc<MetadataSearchAdapter>,
 }
 
 impl std::fmt::Debug for ServerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServerState")
             .field("mode", &self.config.search.mode)
-            .field("providers", &self.providers.ids())
+            .field("providers", &self.adapter.provider_ids())
             .finish()
     }
 }
 
 impl ServerState {
-    /// Build a new server state, opening the local index and creating
-    /// any required directories.
+    /// Build a new server state.
     ///
-    /// Providers are loaded from the supplied `AppConfig` via
-    /// `ProviderRegistry::from_config` (mock is **not** included by
-    /// default; the CLI's `search` command registers the mock
-    /// explicitly via `--provider mock`). Misconfigured providers are
-    /// skipped and recorded in `diagnostics` so the MCP server can still
-    /// start; the doctor CLI surfaces them.
+    /// The adapter is constructed from the effective enabled provider
+    /// list, with a hard global timeout equal to the config's
+    /// `timeout_ms`. The MCP server starts and runs without any index
+    /// directory, database, or persistent state.
     pub fn build(config: AppConfig) -> anyhow::Result<Self> {
         let config = Arc::new(config);
-        let (registry, diagnostics) = ProviderRegistry::from_config(&config, false);
-        let providers = Arc::new(registry);
-        let diagnostics = Arc::new(diagnostics);
 
-        std::fs::create_dir_all(&config.search.cache_dir).ok();
-        std::fs::create_dir_all(&config.search.artifact_dir).ok();
-        std::fs::create_dir_all(&config.search.local.index_dir).ok();
+        let enabled: Vec<String> = config
+            .search
+            .providers
+            .iter()
+            .filter_map(|(id, on)| if *on { Some(id.clone()) } else { None })
+            .collect();
 
-        let artifacts = Arc::new(ArtifactStore::new(&config.search.artifact_dir)?);
-        let cache = Arc::new(FetchCache::default());
-        let robots_client = reqwest::Client::builder()
-            .user_agent(config.search.live.user_agent.clone())
-            .build()?;
-        let robots = Arc::new(RobotsCache::new(robots_client));
-        let fetch = Arc::new(ReqwestFetchProvider::new(
-            artifacts.clone(),
-            cache.clone(),
-            robots.clone(),
-        )?);
-
-        let corpus = Arc::new(LocalCorpus::open_or_create(
-            &config.search.local.index_dir,
-        )?);
+        let global_timeout = Duration::from_millis(config.search.timeout_ms);
+        let adapter = MetadataSearchAdapter::new(enabled, global_timeout)?;
 
         Ok(Self {
             config,
-            providers,
-            diagnostics,
-            fetch,
-            corpus,
-            cache,
-            artifacts,
-            robots,
+            adapter: Arc::new(adapter),
         })
-    }
-
-    /// Build with a custom index dir (used for tests).
-    pub fn build_at(config: AppConfig, index_dir: PathBuf) -> anyhow::Result<Self> {
-        let mut cfg = config;
-        cfg.search.local.index_dir = index_dir;
-        Self::build(cfg)
     }
 }
 
+/// No-op retained for API stability; the changeover has no diagnostic
+/// probe paths to run.
 #[allow(dead_code)]
-fn _silence_warn(w: &str) {
-    if w.is_empty() {
-        warn!("");
-    }
+pub fn _diagnostic_unused() -> ProviderStatusArgs {
+    ProviderStatusArgs { probe: false }
 }

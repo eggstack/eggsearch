@@ -3,8 +3,6 @@ resolver = "2"
 members = [
     "crates/eggsearch-core",
     "crates/eggsearch-meta",
-    "crates/eggsearch-fetch",
-    "crates/eggsearch-local",
     "crates/eggsearch-mcp",
     "crates/eggsearch-cli",
 ]
@@ -35,42 +33,29 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
 hex = "0.4"
-base64 = "0.22"
 
 # observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
-# http + parsing
+# http
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json"] }
-scraper = "0.20"
-html2text = "0.13"
-urlencoding = "2"
 
-# local index
-tantivy = "0.22"
-walkdir = "2"
+# metasearch backend
+metadata-search-engine-rs = "0.1"
 
 # cli + config
 clap = { version = "4", features = ["derive"] }
 clap_complete = { version = "4", features = ["unstable-dynamic"] }
 dirs = "5"
 toml = "0.8"
-config = { version = "0.14", default-features = false, features = ["toml"] }
 
 # MCP
 rmcp = { version = "1", features = ["server", "transport-io", "macros"] }
 rmcp-macros = "1"
 
-# time/duration helpers
-humantime = "2"
-
-# error formatting for anyhow
-anyhow_ext = "0.1"
-
 # testing
 wiremock = "0.6"
-insta = { version = "1", features = ["yaml"] }
 pretty_assertions = "1"
 
 [profile.release]

@@ -1,11 +1,9 @@
 //! MCP server adapter for eggsearch.
 //!
-//! Exposes a small set of tools to MCP clients:
+//! Exposes a minimal, stable tool surface:
 //!
-//! - `web_search`     — live metasearch (subject to policy mode).
-//! - `web_fetch`      — fetch and extract a known URL.
-//! - `local_search`   — search the local Tantivy index only (no network).
-//! - `search_and_fetch` — run a search, then fetch the top N results.
+//! - `web_search`     — live metasearch over configured upstream providers.
+//! - `provider_status` — diagnostic report of configured providers.
 
 pub mod policy;
 pub mod server;

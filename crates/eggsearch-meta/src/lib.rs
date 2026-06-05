@@ -1,17 +1,14 @@
-//! Live metasearch providers for eggsearch.
+//! Metasearch adapter wrapping `metadata-search-engine-rs`.
 //!
-//! Each provider implements `eggsearch_core::SearchProvider`. Providers
-//! should:
-//!
-//! - Never panic on malformed upstream HTML.
-//! - Emit parser warnings when suspicious / empty parses occur.
-//! - Return at most `query.max_results` entries.
+//! This crate exposes a thin boundary around the upstream metasearch
+//! library. It does not leak upstream types beyond the `MetadataSearchAdapter`
+//! and the small response/payload types defined here. Callers receive
+//! `eggsearch_core::SourceCard` values.
 
-pub mod providers;
-pub mod registry;
+pub mod adapter;
+#[cfg(feature = "metasearch")]
+pub mod engine;
+pub mod response;
 
-pub use providers::{
-    brave::BraveProvider, exa::ExaProvider, searxng::SearxngProvider, tavily::TavilyProvider,
-    MockProvider,
-};
-pub use registry::{ProviderRegistry, RegistryDiagnostics};
+pub use adapter::{ErrorClass, MetadataSearchAdapter};
+pub use response::{ProviderFailure, ProviderStatus, WebSearchResponse};
