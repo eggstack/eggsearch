@@ -14,6 +14,22 @@ use serde::{Deserialize, Serialize};
 use crate::policy::{live_allowed, policy_message, Policy};
 use crate::state::ServerState;
 
+/// Error from a tool call, tagged by whether it reflects bad client
+/// input (`Validation`) or a server-side/runtime issue (`Internal`).
+#[derive(Debug)]
+pub enum ToolError {
+    Validation(String),
+    Internal(String),
+}
+
+impl std::fmt::Display for ToolError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Validation(msg) | Self::Internal(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebSearchArgs {
     /// Search query string. Must be non-empty.
@@ -47,12 +63,12 @@ pub struct ProviderStatusArgs {
 pub async fn run_web_search(
     state: Arc<ServerState>,
     args: WebSearchArgs,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ToolError> {
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(policy_message("web_search"));
+        return Err(ToolError::Internal(policy_message("web_search")));
     }
 
-    let req = WebSearchRequest {
+    let mut req = WebSearchRequest {
         query: args.query.clone(),
         max_results: args.max_results,
         providers: args.providers.clone(),
@@ -64,20 +80,26 @@ pub async fn run_web_search(
         state.config.search.max_query_chars,
         state.config.search.max_results_cap,
     ) {
-        return Err(format!("invalid query: {e}"));
+        return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
     let effective_providers = state.config.resolve_providers(&args.providers);
     if effective_providers.is_empty() {
-        return Err("no providers are enabled in config".to_string());
+        return Err(ToolError::Internal(
+            "no providers are enabled in config".to_string(),
+        ));
     }
     let (_, unknown) = state.adapter.select_engines(&effective_providers);
     if !unknown.is_empty() {
-        return Err(format!(
+        return Err(ToolError::Validation(format!(
             "unknown provider id(s): {}",
             unknown.join(", ")
-        ));
+        )));
     }
+
+    // Ensure the adapter queries exactly the resolved set, not all
+    // enabled engines (which would differ when providers is empty).
+    req.providers = effective_providers.clone();
 
     let resp = state
         .adapter
@@ -123,18 +145,14 @@ pub async fn run_web_search(
         && !effective_providers.is_empty()
         && resp.results.is_empty()
     {
-        // All providers failed; the changeover §19 acceptance criteria
-        // require a structured error in that case. Return a JSON-shaped
-        // error string instead of a successful payload so the MCP
-        // tool wrapper can report it.
-        return Err(format!(
+        return Err(ToolError::Internal(format!(
             "all providers failed: {}",
             providers_failed
                 .iter()
                 .filter_map(|v| v.get("message").and_then(|m| m.as_str()))
                 .collect::<Vec<_>>()
                 .join("; ")
-        ));
+        )));
     }
 
     Ok(payload)

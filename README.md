@@ -2,7 +2,6 @@
 
 [![Crates.io](https://img.shields.io/crates/v/eggsearch.svg)](https://crates.io/crates/eggsearch)
 [![License](https://img.shields.io/crates/l/eggsearch.svg)](https://github.com/anomalyco/eggsearch#license)
-[![CI](https://github.com/anomalyco/eggsearch/actions/workflows/ci.yml/badge.svg)](https://github.com/anomalyco/eggsearch/actions)
 
 A lightweight MCP (Model Context Protocol) **metasearch** server for AI agents.
 
@@ -21,7 +20,7 @@ for the default configuration.
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 93 fast unit + integration tests, no network required
+- 85 fast unit + integration tests, no network required
 
 ## What it is not
 

@@ -11,13 +11,26 @@ pub async fn run(
     query: &str,
     max_results: usize,
     as_json: bool,
+    providers: &[String],
 ) -> Result<()> {
     let state = Arc::new(ServerState::build(cfg.clone())?);
+
+    let effective_providers = cfg.resolve_providers(providers);
+    if effective_providers.is_empty() {
+        anyhow::bail!("no providers are enabled in config");
+    }
+    let (_, unknown) = state.adapter.select_engines(&effective_providers);
+    if !unknown.is_empty() {
+        anyhow::bail!(
+            "unknown provider id(s): {}",
+            unknown.join(", ")
+        );
+    }
 
     let req = WebSearchRequest {
         query: query.to_string(),
         max_results: Some(max_results),
-        providers: Vec::new(),
+        providers: effective_providers,
         safe_search: None,
         timeout_ms: None,
     };

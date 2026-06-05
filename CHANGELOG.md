@@ -7,18 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-05
+
 ### Fixed
 - Global timeout now preserves partial results from engines that responded in time
 - Per-request `timeout_ms` override is now honored (bounded by global timeout)
 - Duplicate `providers_failed` entries on global timeout eliminated
 - `AppConfig::save` TOML serialization error now has a dedicated error variant
+- Brave provider no longer incorrectly reports `requires_api_key: true`
 
 ### Changed
 - Vendored search engine implementations from `metadata-search-engine-rs` into `eggsearch-meta/src/engines/`
 - Removed `metadata-search-engine-rs` dependency (eliminated 34 transitive deps)
 - Release binary shrunk from 7.3 MB to 6.3 MB (14% reduction)
 - `safe_search` parameter documented as reserved for future use (upstream engines don't support it)
-- Removed unused dependencies (`sha2`, `hex`, `anyhow`, `chrono`, `async-trait`) from workspace
+- Removed unused dependencies (`sha2`, `hex`, `chrono`, `futures`, `clap_complete`, `wiremock`) from workspace
+- Removed unused dependencies (`url`, `uuid`, `chrono`, `thiserror`, `futures`, `dirs`) from sub-crate Cargo.tomls
 - Added `scraper`, `urlencoding` as direct dependencies of `eggsearch-meta`
 
 ### Removed
@@ -26,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `provider_enabled` method from `AppConfig` (dead code, never called)
 - `ErrorClass::InvalidQuery` variant (dead code, never constructed)
 - `domain_of` function from `normalize` module (dead code, never called)
+- Dead `normalize` module from `eggsearch-core` (duplicated `eggsearch-meta`'s normalizer)
 
 ### Added
 - Unit tests for `SafeSearch::as_str`, `TrustLevel::as_str`, `SearchWarning::new`
@@ -34,14 +39,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LICENSE`, `LICENSE-APACHE`, `LICENSE-MIT` files
 - `AGENTS.md` for AI coding agents
 - Publishing metadata (`repository`, `homepage`, `keywords`, `categories`) to all sub-crates
-
-## [0.1.0] - 2025-01-01
-
-### Added
-- Initial release
-- MCP server with `web_search` and `provider_status` tools
-- CLI with `doctor`, `search`, `providers`, and `mcp stdio` commands
-- Support for DuckDuckGo, Brave, Startpage, and Yahoo providers
-- Reciprocal rank fusion for result deduplication
-- Configuration via TOML file
-- Mock engine support for testing

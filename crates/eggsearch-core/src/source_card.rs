@@ -12,7 +12,7 @@ use crate::result::TrustLevel;
 /// (deferred) rather than rely on snippets.
 ///
 /// For the MVP, all live web results use `TrustLevel::ExternalUntrusted`.
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SourceCard {
     /// Per-response identifier, e.g. `src_<uuid>`. Unique within a
     /// single `web_search` response.

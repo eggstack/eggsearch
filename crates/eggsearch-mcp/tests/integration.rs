@@ -155,7 +155,7 @@ async fn web_search_empty_query_returns_validation_error() {
     )
     .await;
     let err = res.expect_err("expected validation error");
-    assert!(err.contains("invalid query"), "got: {err}");
+    assert!(err.to_string().contains("invalid query"), "got: {err}");
 }
 
 #[tokio::test]
@@ -174,8 +174,8 @@ async fn web_search_oversized_query_returns_validation_error() {
     )
     .await;
     let err = res.expect_err("expected validation error");
-    assert!(err.contains("invalid query"), "got: {err}");
-    assert!(err.contains("characters"), "got: {err}");
+    assert!(err.to_string().contains("invalid query"), "got: {err}");
+    assert!(err.to_string().contains("characters"), "got: {err}");
 }
 
 #[tokio::test]
@@ -193,7 +193,7 @@ async fn web_search_zero_max_results_returns_validation_error() {
     )
     .await;
     let err = res.expect_err("expected validation error");
-    assert!(err.contains("max_results must be > 0"), "got: {err}");
+    assert!(err.to_string().contains("max_results must be > 0"), "got: {err}");
 }
 
 #[tokio::test]
@@ -211,7 +211,7 @@ async fn web_search_oversized_max_results_returns_validation_error() {
     )
     .await;
     let err = res.expect_err("expected validation error");
-    assert!(err.contains("max_results must be <="), "got: {err}");
+    assert!(err.to_string().contains("max_results must be <="), "got: {err}");
 }
 
 #[tokio::test]
@@ -229,7 +229,7 @@ async fn web_search_blocked_when_mode_off() {
     )
     .await;
     let err = res.expect_err("expected policy denial");
-    assert!(err.contains("disabled by policy"), "got: {err}");
+    assert!(err.to_string().contains("disabled by policy"), "got: {err}");
 }
 
 #[tokio::test]
@@ -247,8 +247,8 @@ async fn web_search_unknown_provider_returns_error() {
     )
     .await;
     let err = res.expect_err("expected unknown provider error");
-    assert!(err.contains("unknown provider"), "got: {err}");
-    assert!(err.contains("nope"), "got: {err}");
+    assert!(err.to_string().contains("unknown provider"), "got: {err}");
+    assert!(err.to_string().contains("nope"), "got: {err}");
 }
 
 #[test]
@@ -384,7 +384,7 @@ async fn web_search_all_providers_fail_returns_error() {
         .await
         .expect_err("expected all-fail error");
     assert!(
-        err.contains("all providers failed"),
+        err.to_string().contains("all providers failed"),
         "expected all-fail error, got: {err}"
     );
 }
@@ -408,11 +408,11 @@ async fn web_search_global_timeout_returns_all_fail_error() {
         .await
         .expect_err("expected all-fail error after global timeout");
     assert!(
-        err.contains("all providers failed"),
+        err.to_string().contains("all providers failed"),
         "expected all-fail error, got: {err}"
     );
     assert!(
-        err.contains("timed out"),
+        err.to_string().contains("timed out"),
         "error should mention the timeout: {err}"
     );
 }
@@ -453,9 +453,9 @@ async fn web_search_provider_override_with_unknown_id_errors() {
     let err = run_web_search(state, args_for(&["mock_a", "mock_does_not_exist"], "rust"))
         .await
         .expect_err("expected unknown provider error");
-    assert!(err.contains("unknown provider"), "got: {err}");
+    assert!(err.to_string().contains("unknown provider"), "got: {err}");
     assert!(
-        err.contains("mock_does_not_exist"),
+        err.to_string().contains("mock_does_not_exist"),
         "unknown id should be named in error: {err}"
     );
 }
@@ -512,23 +512,20 @@ async fn web_search_per_request_timeout_ms_shorter_than_global() {
         .await
         .expect_err("expected timeout error");
     assert!(
-        err.contains("all providers failed"),
+        err.to_string().contains("all providers failed"),
         "expected all-fail error, got: {err}"
     );
     assert!(
-        err.contains("timed out"),
+        err.to_string().contains("timed out"),
         "error should mention timeout: {err}"
     );
 }
 
 #[cfg(feature = "mock")]
 #[tokio::test]
-async fn web_search_all_providers_fail_but_results_exist_is_not_error() {
-    // Both providers report failure but aggregate still has results
-    // from a previous successful query. In practice this means
-    // providers_failed.len() == effective_providers.len() but
-    // results is non-empty, so it should NOT be treated as a hard error.
-    // This is a regression test for the edge case in tools.rs.
+async fn web_search_all_providers_fail_returns_error_when_no_results() {
+    // Both providers report failure with no results, so the tool
+    // surface returns a structured "all providers failed" error.
     let engines = vec![
         MockEngine::failure("mock_a", MockFailure::Parse),
         MockEngine::failure("mock_b", MockFailure::HttpStatus(503)),
@@ -537,7 +534,7 @@ async fn web_search_all_providers_fail_but_results_exist_is_not_error() {
     let err = run_web_search(state, args_for(&["mock_a", "mock_b"], "rust"))
         .await
         .expect_err("expected all-fail error");
-    assert!(err.contains("all providers failed"), "got: {err}");
+    assert!(err.to_string().contains("all providers failed"), "got: {err}");
 }
 
 #[cfg(feature = "mock")]

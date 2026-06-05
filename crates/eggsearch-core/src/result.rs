@@ -30,7 +30,7 @@ impl TrustLevel {
 /// A warning emitted by a single provider during a search. Provider
 /// failures are non-fatal: they are surfaced as warnings, not raised as
 /// errors.
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchWarning {
     pub provider_id: String,
     pub message: String,

@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::{CoreError, CoreResult};
+
 /// Safe-search mode. Mapped to per-engine filters by the adapter.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -53,22 +55,26 @@ impl WebSearchRequest {
         }
     }
 
-    /// Validate the request, returning a human-readable error string if invalid.
-    pub fn validate(&self, max_query_chars: usize, max_results_cap: usize) -> Result<(), String> {
+    /// Validate the request, returning an error if invalid.
+    pub fn validate(&self, max_query_chars: usize, max_results_cap: usize) -> CoreResult<()> {
         if self.query.trim().is_empty() {
-            return Err("query must not be empty".to_string());
+            return Err(CoreError::InvalidQuery("query must not be empty".into()));
         }
         if self.query.chars().count() > max_query_chars {
-            return Err(format!(
+            return Err(CoreError::InvalidQuery(format!(
                 "query must be <= {max_query_chars} characters"
-            ));
+            )));
         }
         if let Some(n) = self.max_results {
             if n == 0 {
-                return Err("max_results must be > 0".to_string());
+                return Err(CoreError::InvalidQuery(
+                    "max_results must be > 0".into(),
+                ));
             }
             if n > max_results_cap {
-                return Err(format!("max_results must be <= {max_results_cap}"));
+                return Err(CoreError::InvalidQuery(format!(
+                    "max_results must be <= {max_results_cap}"
+                )));
             }
         }
         Ok(())

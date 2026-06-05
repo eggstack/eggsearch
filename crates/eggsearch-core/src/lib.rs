@@ -1,10 +1,9 @@
-//! Core types, source card model, configuration, and URL canonicalization
+//! Core types, source card model, configuration, and error types
 //! for eggsearch. This crate is intentionally independent of any MCP,
 //! HTTP, or search-engine implementation.
 
 pub mod config;
 pub mod error;
-pub mod normalize;
 pub mod query;
 pub mod result;
 pub mod source_card;

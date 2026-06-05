@@ -9,6 +9,7 @@ use super::models::SearchResult;
 const ENGINE: &str = "duckduckgo";
 const DDG_URL: &str = "https://html.duckduckgo.com/html/";
 const TIMEOUT_MS: u64 = 8_000;
+const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 pub async fn search(
     client: &Client,
@@ -33,10 +34,17 @@ pub async fn search(
         });
     }
 
-    let body = response.text().await.map_err(|e| EngineError::Http {
+    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
         engine: ENGINE,
         source: e,
     })?;
+    if bytes.len() > MAX_BODY_BYTES {
+        return Err(EngineError::ParseFailed {
+            engine: ENGINE,
+            reason: format!("response body too large: {} bytes", bytes.len()),
+        });
+    }
+    let body = String::from_utf8_lossy(&bytes).into_owned();
 
     parse(&body, max_results)
 }

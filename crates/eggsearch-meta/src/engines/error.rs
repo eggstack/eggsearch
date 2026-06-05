@@ -20,4 +20,10 @@ pub enum EngineError {
         engine: &'static str,
         reason: String,
     },
+
+    #[error("engine '{engine}' network error: {reason}")]
+    NetworkError {
+        engine: &'static str,
+        reason: String,
+    },
 }

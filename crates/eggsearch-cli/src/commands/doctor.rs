@@ -3,12 +3,18 @@
 use anyhow::Result;
 use eggsearch_core::config::AppConfig;
 use eggsearch_mcp::ServerState;
+use std::path::PathBuf;
 
-pub async fn run(cfg: &AppConfig) -> Result<()> {
+pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>) -> Result<()> {
     let state = ServerState::build(cfg.clone())?;
 
+    let path_display = match config_path {
+        Some(p) => p.display().to_string(),
+        None => eggsearch_core::config::default_config_path().display().to_string(),
+    };
+
     let out = serde_json::json!({
-        "config_path": eggsearch_core::config::default_config_path().display().to_string(),
+        "config_path": path_display,
         "mode": format!("{:?}", cfg.search.mode),
         "providers": state.adapter.provider_ids(),
     });
@@ -19,8 +25,7 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     // and the adapter could be constructed.
     let healthy = !state.adapter.provider_ids().is_empty();
     if !healthy {
-        eprintln!("\nNo providers enabled. Enable at least one in [search].providers.");
-        std::process::exit(1);
+        anyhow::bail!("no providers enabled; enable at least one in [search].providers");
     }
     Ok(())
 }

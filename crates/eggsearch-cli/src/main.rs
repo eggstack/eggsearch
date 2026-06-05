@@ -37,6 +37,9 @@ enum Commands {
         max_results: usize,
         #[arg(long, default_value_t = false)]
         json: bool,
+        /// Specific provider IDs to query (empty = server defaults).
+        #[arg(long, value_delimiter = ',')]
+        providers: Vec<String>,
     },
     /// Run the MCP server.
     Mcp {
@@ -64,12 +67,13 @@ async fn main() -> Result<()> {
     let cfg = config::load(cli.config.as_deref())?;
 
     match cli.command {
-        Commands::Doctor => commands::doctor::run(&cfg).await,
+        Commands::Doctor => commands::doctor::run(&cfg, cli.config.as_ref()).await,
         Commands::Search {
             query,
             max_results,
             json,
-        } => commands::search::run(&cfg, &query, max_results, json).await,
+            providers,
+        } => commands::search::run(&cfg, &query, max_results, json, &providers).await,
         Commands::Mcp { cmd } => match cmd {
             McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
         },

@@ -11,7 +11,7 @@ use rmcp::model::{
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
 
 use crate::state::ServerState;
-use crate::tools::{run_provider_status, run_web_search, ProviderStatusArgs, WebSearchArgs};
+use crate::tools::{run_provider_status, run_web_search, ProviderStatusArgs, ToolError, WebSearchArgs};
 
 #[derive(Clone)]
 pub struct EggsearchServer {
@@ -58,7 +58,8 @@ impl EggsearchServer {
         let res = run_web_search(state, args).await;
         match res {
             Ok(v) => Self::json_result(v),
-            Err(e) => Err(McpError::invalid_params(e, None)),
+            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
+            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
         }
     }
 

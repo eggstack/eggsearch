@@ -48,7 +48,7 @@ fn classify(err: &EngineError) -> ErrorClass {
         BadStatus { status, .. } if *status == 429 => ErrorClass::RateLimited,
         BadStatus { .. } => ErrorClass::HttpStatus,
         ParseFailed { .. } => ErrorClass::ParseError,
-        Http { .. } => ErrorClass::NetworkError,
+        Http { .. } | NetworkError { .. } => ErrorClass::NetworkError,
     }
 }
 
@@ -174,10 +174,12 @@ impl MetadataSearchAdapter {
             (self.engines.clone(), self.provider_ids.clone())
         } else {
             let (subset, unknown) = self.select_engines(&req.providers);
-            debug_assert!(
-                unknown.is_empty(),
-                "select_engines returned unknown ids; caller should have rejected these"
-            );
+            if !unknown.is_empty() {
+                warn!(
+                    ?unknown,
+                    "select_engines returned unknown ids; caller should have rejected these"
+                );
+            }
             let ids = subset.iter().map(|e| e.name().to_string()).collect();
             (subset, ids)
         };
@@ -323,7 +325,7 @@ pub const KNOWN_PROVIDERS: &[&str] = &["duckduckgo", "brave", "startpage", "yaho
 pub fn provider_kind(id: &str) -> (&'static str, bool) {
     match id {
         "duckduckgo" | "startpage" | "yahoo" => ("html_scrape", false),
-        "brave" => ("html_scrape", true),
+        "brave" => ("html_scrape", false),
         _other => ("unknown", false),
     }
 }
@@ -383,7 +385,10 @@ fn aggregate_rrf(
 
             let key = match crate::engines::normalizer::normalize(&result.url) {
                 Some(k) => k,
-                None => continue,
+                None => {
+                    debug!(url = %result.url, "skipping result with un-normalizable URL");
+                    continue;
+                }
             };
 
             match map.get_mut(&key) {

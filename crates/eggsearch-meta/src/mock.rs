@@ -61,7 +61,7 @@ impl MockFailure {
                 engine,
                 reason: "mock parse failure".to_string(),
             },
-            MockFailure::Network => EngineError::ParseFailed {
+            MockFailure::Network => EngineError::NetworkError {
                 engine,
                 reason: "mock network failure".to_string(),
             },

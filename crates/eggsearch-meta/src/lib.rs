@@ -6,7 +6,7 @@
 //! here. Callers receive `eggsearch_core::SourceCard` values.
 
 pub mod adapter;
-pub mod engines;
+pub(crate) mod engines;
 #[cfg(feature = "mock")]
 pub mod mock;
 pub mod response;

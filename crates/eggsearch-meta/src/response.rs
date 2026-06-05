@@ -23,7 +23,7 @@ pub struct ProviderStatus {
 pub struct ProviderFailure {
     pub id: String,
     /// Coarse error class: `timeout`, `http_status`, `parse_error`,
-    /// `network_error`, `rate_limited`, `invalid_query`, or `unknown`.
+    /// `network_error`, `rate_limited`, or `unknown`.
     pub error_class: String,
     /// Human-readable detail. The MCP tool surfaces this in provider
     /// failure metadata; raw HTTP bodies are never included.
