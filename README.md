@@ -30,7 +30,7 @@ for the default configuration.
 - Not a SearXNG replacement with a web UI
 - Not a browser-automation tool
 
-## Quick Start
+## Install
 
 ### Install from crates.io
 
@@ -45,6 +45,14 @@ cargo build --release
 ```
 
 The binary is at `target/release/eggsearch`.
+
+## Quick start
+
+```bash
+eggsearch mcp stdio
+```
+
+## CLI commands
 
 ### Run the MCP server
 

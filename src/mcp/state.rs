@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tracing;
+
 use crate::core::config::AppConfig;
 use crate::meta::MetadataSearchAdapter;
 
@@ -42,6 +44,16 @@ impl ServerState {
         let global_timeout = Duration::from_millis(config.search.timeout_ms);
         let user_agent = Some(config.fetch.user_agent.clone());
         let adapter = MetadataSearchAdapter::new(enabled, global_timeout, user_agent)?;
+
+        let misconfigured = config.misconfigured_default_providers();
+        for id in &misconfigured {
+            tracing::warn!(
+                provider_id = %id,
+                "provider listed in [search].default_providers is not enabled; \
+                 it will be silently skipped. Enable it in [search].providers or \
+                 remove it from default_providers."
+            );
+        }
 
         Ok(Self {
             config,

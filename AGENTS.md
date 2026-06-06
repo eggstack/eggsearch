@@ -4,7 +4,7 @@ This file contains information for AI coding agents working on the eggsearch cod
 
 ## Project Overview
 
-eggsearch is a lightweight MCP (Model Context Protocol) metasearch server for AI agents. It queries upstream search providers (DuckDuckGo, Brave, Startpage, Yahoo), deduplicates results with reciprocal rank fusion, and returns compact source cards via MCP over stdio.
+eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers (DuckDuckGo, Brave, Startpage, Yahoo), deduplicates results with reciprocal rank fusion, returns compact source cards, and also fetches one explicit HTTP(S) URL on demand with bounded text extraction. Transport is MCP over stdio.
 
 ## Build & Test Commands
 
@@ -38,12 +38,13 @@ The eggsearch crate is a single library + binary. Submodules live under `src/`:
 eggsearch/
   src/
     main.rs              # binary entry point (clap, tokio main)
-    lib.rs               # library root, re-exports core/meta/mcp
+    lib.rs               # library root, re-exports core/meta/fetch/mcp
     config.rs            # CLI config loader
-    commands/            # subcommands: doctor, search, providers, mcp
-    core/                # SourceCard, AppConfig, error, query types
+    commands/            # subcommands: doctor, search, providers, mcp, fetch
+    core/                # SourceCard, AppConfig, error, query, fetch types
     meta/                # MetadataSearchAdapter + vendored engines
-    mcp/                 # MCP server (rmcp): web_search + provider_status
+    fetch/               # bounded HTTP(S) URL fetch + HTML extraction
+    mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 
@@ -69,13 +70,14 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch) and `provider_status` (diagnostic)
+- Tools: `web_search` (live metasearch), `web_fetch` (bounded URL fetch), and `provider_status` (diagnostic)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 
 ### Configuration
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
 - `AppConfig` is the root type, contains `SearchSection`
+- `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent)
 - `Mode` enum: `Live` or `Off`
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 
@@ -84,6 +86,7 @@ eggsearch/
 - Each card has a UUID-based `id` (`src_<uuid>`) unique per response
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
+- `WebFetchResponse` is the output type returned by `web_fetch`; trust is always `external_untrusted` for live web content
 
 ## Vendored Search Engines
 

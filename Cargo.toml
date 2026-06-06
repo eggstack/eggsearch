@@ -3,7 +3,7 @@ name = "eggsearch"
 version = "0.1.1"
 edition = "2021"
 rust-version = "1.75"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "Lightweight MCP metasearch server for AI agents"
 repository = "https://github.com/eggstack/eggsearch"
 homepage = "https://github.com/eggstack/eggsearch"
@@ -56,6 +56,7 @@ dirs = "5"
 [dev-dependencies]
 pretty_assertions = "1"
 tempfile = "3"
+httpmock = "0.7"
 
 [profile.release]
 lto = "thin"

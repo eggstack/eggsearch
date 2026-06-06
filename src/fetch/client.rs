@@ -144,3 +144,231 @@ impl FetchClient {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::fetch::ExtractMode;
+    use httpmock::prelude::*;
+    use std::time::Duration;
+
+    fn test_limits() -> FetchLimits {
+        FetchLimits {
+            max_url_len: 8192,
+            max_bytes: 2_000_000,
+            max_chars_default: 12_000,
+            max_chars_cap: 50_000,
+            timeout_ms: 5_000,
+            redirect_limit: 5,
+            allow_private_network: true,
+            allow_localhost: true,
+        }
+    }
+
+    fn test_client() -> FetchClient {
+        FetchClient::new(test_limits(), "eggsearch/test".to_string()).expect("client builds")
+    }
+
+    #[tokio::test]
+    async fn fetch_200_text_html_happy_path() {
+        let server = MockServer::start();
+        let body = b"<!DOCTYPE html><html><head><title>Hi</title></head><body><p>hello world</p></body></html>";
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/page");
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(body);
+        });
+
+        let client = test_client();
+        let resp = client
+            .fetch(&server.url("/page"), None, ExtractMode::Text, false)
+            .await
+            .expect("ok");
+
+        assert_eq!(resp.status, 200);
+        assert!(resp.fetched);
+        assert!(!resp.truncated);
+        assert_eq!(resp.title.as_deref(), Some("Hi"));
+        assert!(resp.text.as_deref().unwrap_or("").contains("hello world"));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn fetch_200_text_plain_happy_path() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/note");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("just plain text here\n");
+        });
+
+        let client = test_client();
+        let resp = client
+            .fetch(&server.url("/note"), None, ExtractMode::Text, false)
+            .await
+            .expect("ok");
+
+        assert_eq!(resp.status, 200);
+        assert!(resp.fetched);
+        assert!(resp.text.as_deref().unwrap_or("").contains("just plain text"));
+    }
+
+    #[tokio::test]
+    async fn fetch_301_redirect_within_limit() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/start");
+            then.status(301).header("location", "/end");
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/end");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("redirected");
+        });
+
+        let client = test_client();
+        let resp = client
+            .fetch(&server.url("/start"), None, ExtractMode::Text, false)
+            .await
+            .expect("ok");
+        assert_eq!(resp.status, 200);
+        assert!(resp.text.as_deref().unwrap_or("").contains("redirected"));
+        assert_ne!(
+            resp.url, resp.final_url,
+            "final_url should differ from url after redirect"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_redirect_loop_exceeds_limit() {
+        let server = MockServer::start();
+        // Build a chain of 10 redirects; the client is configured with redirect_limit = 5.
+        for i in 0..10 {
+            let next = format!("/r/{}", i + 1);
+            server.mock(|when, then| {
+                let path = format!("/r/{}", i);
+                when.method(GET).path(path);
+                then.status(302).header("location", next);
+            });
+        }
+
+        let client = test_client();
+        let result = client
+            .fetch(&server.url("/r/0"), None, ExtractMode::Text, false)
+            .await;
+        assert!(
+            result.is_err(),
+            "expected redirect loop error, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_404_returns_http_status_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/missing");
+            then.status(404);
+        });
+
+        let client = test_client();
+        let err = client
+            .fetch(&server.url("/missing"), None, ExtractMode::Text, false)
+            .await
+            .expect_err("expected error");
+        assert!(
+            matches!(err.kind(), crate::fetch::FetchErrorKind::HttpStatus),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_content_length_above_max_bytes_errors() {
+        let server = MockServer::start();
+        let big = vec![b'x'; 5_000];
+        server.mock(|when, then| {
+            when.method(GET).path("/big");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .header("content-length", &big.len().to_string())
+                .body(&big);
+        });
+
+        let mut limits = test_limits();
+        limits.max_bytes = 1_000; // smaller than the body
+        let client = FetchClient::new(limits, "eggsearch/test".to_string()).expect("client");
+        let result = client
+            .fetch(&server.url("/big"), None, ExtractMode::Text, false)
+            .await;
+
+        // The implementation streams chunks; an oversize body should either
+        // produce a ContentTooLarge error or come back with truncated=true
+        // (the body is truncated to max_bytes rather than errored out).
+        // We accept either behavior; what we must NOT see is a successful
+        // untruncated fetch of the full body.
+        match result {
+            Err(e) => assert!(
+                matches!(
+                    e.kind(),
+                    crate::fetch::FetchErrorKind::ContentTooLarge
+                        | crate::fetch::FetchErrorKind::NetworkError
+                ),
+                "unexpected error: {e:?}"
+            ),
+            Ok(resp) => {
+                assert!(resp.truncated, "expected truncated=true, got: {resp:?}");
+                let len = resp.text.as_deref().unwrap_or("").len();
+                assert!(len <= 1_000, "got text len {len} > max_bytes 1000");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_unsupported_pdf_errors() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/doc.pdf");
+            then.status(200)
+                .header("content-type", "application/pdf")
+                .body("%PDF-1.4 fake");
+        });
+
+        let client = test_client();
+        let err = client
+            .fetch(&server.url("/doc.pdf"), None, ExtractMode::Text, false)
+            .await
+            .expect_err("expected unsupported content type error");
+        assert!(
+            matches!(err.kind(), crate::fetch::FetchErrorKind::UnsupportedContentType),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_slow_response_times_out() {
+        // Use a server that delays 3 seconds; the client is configured with
+        // timeout_ms = 500. We expect a Timeout error.
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/slow");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .delay(Duration::from_secs(3))
+                .body("too late");
+        });
+
+        let mut limits = test_limits();
+        limits.timeout_ms = 500;
+        let client = FetchClient::new(limits, "eggsearch/test".to_string()).expect("client");
+        let result = client
+            .fetch(&server.url("/slow"), None, ExtractMode::Text, false)
+            .await;
+        let err = result.expect_err("expected timeout");
+        assert!(
+            matches!(err.kind(), crate::fetch::FetchErrorKind::Timeout),
+            "got: {err:?}"
+        );
+    }
+}

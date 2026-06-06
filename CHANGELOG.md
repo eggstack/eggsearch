@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `safe_search` parameter now emits a warning when used (not enforced by HTML providers)
-- User-agent is now configurable via `[search.live] user_agent` config
+- User-agent is now configurable via `[fetch] user_agent` config (previously overridden by a hard-coded Mozilla header in the metasearch client; that override is now removed)
 - `resolve_providers()` now validates explicit provider lists against enabled providers
 - `provider_status` remains non-probing (no network access)
 

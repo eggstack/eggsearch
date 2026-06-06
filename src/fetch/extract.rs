@@ -63,6 +63,11 @@ impl<'a> HtmlExtractor<'a> {
     }
 }
 
+const STRIP_TAGS: &[&str] = &[
+    "script", "style", "noscript", "svg", "nav",
+    "footer", "header", "form", "aside",
+];
+
 fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String) {
     for child in element.children() {
         if let Some(text) = child.value().as_text() {
@@ -73,6 +78,9 @@ fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String) {
             }
         } else if let Some(elem) = child.value().as_element() {
             let tag_name = elem.name();
+            if STRIP_TAGS.contains(&tag_name) {
+                continue;
+            }
             let is_block = matches!(
                 tag_name,
                 "p" | "div" | "br" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
@@ -172,5 +180,56 @@ mod tests {
         let warning = WebFetchResponse::untrusted_warning();
         assert!(warning.contains("external_untrusted"));
         assert!(warning.contains("data"));
+    }
+
+    #[test]
+    fn html_strips_script_and_style() {
+        let html = b"<!DOCTYPE html><html><body>\
+            <p>visible</p>\
+            <script>alert('evil');</script>\
+            <style>body{color:red}</style>\
+            <p>after</p>\
+        </body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, text, _) = extractor.extract(1000, false);
+        assert!(text.contains("visible"), "got: {text:?}");
+        assert!(text.contains("after"), "got: {text:?}");
+        assert!(!text.contains("alert"), "script content leaked: {text:?}");
+        assert!(!text.contains("color:red"), "style content leaked: {text:?}");
+        assert!(!text.contains("body{"), "css leaked: {text:?}");
+    }
+
+    #[test]
+    fn html_strips_nav_footer_header_aside() {
+        let html = b"<!DOCTYPE html><html><body>\
+            <header>top chrome</header>\
+            <nav>nav links</nav>\
+            <main><p>main content</p></main>\
+            <aside>sidebar</aside>\
+            <footer>bottom chrome</footer>\
+        </body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, text, _) = extractor.extract(1000, false);
+        assert!(text.contains("main content"), "got: {text:?}");
+        assert!(!text.contains("top chrome"), "header leaked: {text:?}");
+        assert!(!text.contains("nav links"), "nav leaked: {text:?}");
+        assert!(!text.contains("sidebar"), "aside leaked: {text:?}");
+        assert!(!text.contains("bottom chrome"), "footer leaked: {text:?}");
+    }
+
+    #[test]
+    fn html_strips_noscript_and_svg() {
+        let html = b"<!DOCTYPE html><html><body>\
+            <p>before</p>\
+            <noscript>enable js</noscript>\
+            <svg><text>x</text></svg>\
+            <p>after</p>\
+        </body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, text, _) = extractor.extract(1000, false);
+        assert!(text.contains("before"), "got: {text:?}");
+        assert!(text.contains("after"), "got: {text:?}");
+        assert!(!text.contains("enable js"), "noscript leaked: {text:?}");
+        assert!(!text.contains("svg"), "svg leaked: {text:?}");
     }
 }

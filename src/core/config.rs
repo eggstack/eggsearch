@@ -277,6 +277,22 @@ impl AppConfig {
             .collect()
     }
 
+    /// Returns the provider ids listed in `default_providers` that are
+    /// not enabled in `search.providers`. These are silently filtered
+    /// out by `resolve_providers`; operators should be told at startup
+    /// so they can fix the config.
+    pub fn misconfigured_default_providers(&self) -> Vec<String> {
+        let enabled_ids = self.enabled_provider_ids();
+        let enabled: std::collections::BTreeSet<&str> =
+            enabled_ids.iter().map(|s| s.as_str()).collect();
+        self.search
+            .default_providers
+            .iter()
+            .filter(|id| !enabled.contains(id.as_str()))
+            .cloned()
+            .collect()
+    }
+
     /// Returns fetch limits based on config.
     pub fn fetch_limits(&self) -> crate::fetch::limits::FetchLimits {
         crate::fetch::limits::FetchLimits {
@@ -478,5 +494,33 @@ mod tests {
         assert!(ids.contains(&"duckduckgo".to_string()));
         assert!(!ids.contains(&"brave".to_string()));
         assert!(ids.contains(&"startpage".to_string()));
+    }
+
+    #[test]
+    fn misconfigured_default_providers_lists_disabled() {
+        let mut c = AppConfig::default();
+        c.search.providers.insert("duckduckgo".to_string(), true);
+        c.search.providers.insert("brave".to_string(), false);
+        c.search.providers.insert("startpage".to_string(), true);
+        c.search.providers.insert("yahoo".to_string(), false);
+        c.search.default_providers = vec![
+            "duckduckgo".to_string(),
+            "brave".to_string(),
+            "yahoo".to_string(),
+            "ghost".to_string(), // not in the providers map at all
+        ];
+
+        let misconfigured = c.misconfigured_default_providers();
+        assert!(misconfigured.contains(&"brave".to_string()), "got: {misconfigured:?}");
+        assert!(misconfigured.contains(&"yahoo".to_string()), "got: {misconfigured:?}");
+        assert!(misconfigured.contains(&"ghost".to_string()), "got: {misconfigured:?}");
+        assert!(!misconfigured.contains(&"duckduckgo".to_string()), "got: {misconfigured:?}");
+        assert_eq!(misconfigured.len(), 3, "got: {misconfigured:?}");
+    }
+
+    #[test]
+    fn misconfigured_default_providers_empty_when_all_enabled() {
+        let c = AppConfig::default();
+        assert!(c.misconfigured_default_providers().is_empty());
     }
 }
