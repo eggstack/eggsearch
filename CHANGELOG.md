@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `web_fetch` MCP tool and CLI command for fetching one explicit HTTP(S) URL
+- `fetch` config section with limits (timeout_ms, max_bytes, max_chars_default, max_chars_cap)
+- Private-network blocking by default in web_fetch
+- `doctor --probe` for live provider health checks
+- Config validation for provider defaults and enabled/disabled states
+
+### Changed
+- `safe_search` parameter now emits a warning when used (not enforced by HTML providers)
+- User-agent is now configurable via `[search.live] user_agent` config
+- `resolve_providers()` now validates explicit provider lists against enabled providers
+- `provider_status` remains non-probing (no network access)
+
+### Fixed
+- `resolve_providers()` now filters `default_providers` to only enabled providers
+- Provider config errors now return clear validation messages
+
 ## [0.1.1] - 2026-06-05
 
 ### Changed

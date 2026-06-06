@@ -1,7 +1,7 @@
 //! Response types for the metasearch adapter.
 
-use crate::core::SourceCard;
 use crate::core::SearchWarning;
+use crate::core::SourceCard;
 use serde::{Deserialize, Serialize};
 
 /// Status of a single configured provider.

@@ -15,16 +15,12 @@ pub async fn run(
 ) -> Result<()> {
     let state = Arc::new(ServerState::build(cfg.clone())?);
 
-    let effective_providers = cfg.resolve_providers(providers);
-    if effective_providers.is_empty() {
-        anyhow::bail!("no providers are enabled in config");
-    }
+    let effective_providers = cfg
+        .resolve_providers(providers)
+        .map_err(|e| anyhow!("{}", e))?;
     let (_, unknown) = state.adapter.select_engines(&effective_providers);
     if !unknown.is_empty() {
-        anyhow::bail!(
-            "unknown provider id(s): {}",
-            unknown.join(", ")
-        );
+        anyhow::bail!("unknown provider id(s): {}", unknown.join(", "));
     }
 
     let req = WebSearchRequest {
@@ -64,7 +60,14 @@ pub async fn run(
         for (i, c) in resp.results.iter().enumerate() {
             let snippet = c.snippet.as_deref().unwrap_or("").replace('\n', " ");
             let providers = c.providers.join(", ");
-            println!("\n{}. {}\n   {}\n   [{}]\n   {}", i + 1, c.title, c.url, providers, snippet);
+            println!(
+                "\n{}. {}\n   {}\n   [{}]\n   {}",
+                i + 1,
+                c.title,
+                c.url,
+                providers,
+                snippet
+            );
         }
         if !resp.warnings.is_empty() {
             println!("\nWarnings:");

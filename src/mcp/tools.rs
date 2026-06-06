@@ -1,7 +1,8 @@
 //! MCP tool implementations for the metasearch server.
 //!
-//! Two tools are exposed:
+//! Three tools are exposed:
 //! - `web_search`       — live metasearch.
+//! - `web_fetch`        — explicit URL fetch.
 //! - `provider_status`  — diagnostic report of configured providers.
 
 use std::sync::Arc;
@@ -11,6 +12,7 @@ use crate::core::WebSearchRequest;
 use crate::meta::response::ProviderStatus;
 use serde::{Deserialize, Serialize};
 
+use crate::fetch::FetchClient;
 use crate::mcp::policy::{live_allowed, policy_message, Policy};
 use crate::mcp::state::ServerState;
 
@@ -58,6 +60,24 @@ pub struct ProviderStatusArgs {
     pub probe: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WebFetchArgs {
+    /// The URL to fetch. Must be a valid HTTP(S) URL.
+    pub url: String,
+    /// Maximum characters to extract. Defaults to server config.
+    #[serde(default)]
+    pub max_chars: Option<usize>,
+    /// Timeout in milliseconds. Defaults to server config.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    /// Extraction mode: "text" (default), "markdown", "metadata_only".
+    #[serde(default)]
+    pub extract_mode: Option<crate::core::fetch::ExtractMode>,
+    /// Whether to include extracted links. Default false.
+    #[serde(default)]
+    pub include_links: Option<bool>,
+}
+
 /// Run the `web_search` tool against the shared adapter. The response
 /// is serialized as JSON and returned to the MCP caller.
 pub async fn run_web_search(
@@ -83,12 +103,10 @@ pub async fn run_web_search(
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
-    let effective_providers = state.config.resolve_providers(&args.providers);
-    if effective_providers.is_empty() {
-        return Err(ToolError::Internal(
-            "no providers are enabled in config".to_string(),
-        ));
-    }
+    let effective_providers = state
+        .config
+        .resolve_providers(&args.providers)
+        .map_err(|e| ToolError::Internal(format!("provider resolution failed: {}", e)))?;
     let (_, unknown) = state.adapter.select_engines(&effective_providers);
     if !unknown.is_empty() {
         return Err(ToolError::Validation(format!(
@@ -119,6 +137,12 @@ pub async fn run_web_search(
         0,
         "Live web results are untrusted external content.".to_string(),
     );
+
+    if args.safe_search.is_some() {
+        warnings.push(
+            "safe_search is not enforced by current HTML providers; results may include unexpected content".to_string()
+        );
+    }
 
     let providers_failed: Vec<serde_json::Value> = resp
         .providers_failed
@@ -171,9 +195,89 @@ pub fn run_provider_status(
     Ok(payload)
 }
 
+/// Run the `web_fetch` tool.
+pub async fn run_web_fetch(
+    state: Arc<ServerState>,
+    args: WebFetchArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::fetch::ExtractMode;
+
+    if args.url.trim().is_empty() {
+        return Err(ToolError::Validation("url must not be empty".into()));
+    }
+
+    let limits = state.config.fetch_limits();
+    let user_agent = state.config.fetch_user_agent();
+    let client = FetchClient::new(limits, user_agent)
+        .map_err(|e| ToolError::Internal(format!("failed to create fetch client: {e}")))?;
+
+    let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
+
+    let response = client
+        .fetch(
+            &args.url,
+            args.max_chars,
+            extract_mode,
+            args.include_links.unwrap_or(false),
+        )
+        .await;
+
+    match response {
+        Ok(resp) => {
+            let payload = serde_json::json!({
+                "url": resp.url,
+                "final_url": resp.final_url,
+                "title": resp.title,
+                "description": resp.description,
+                "content_type": resp.content_type,
+                "status": resp.status,
+                "fetched": resp.fetched,
+                "truncated": resp.truncated,
+                "trust": "external_untrusted",
+                "text": resp.text,
+                "links": resp.links,
+                "warnings": resp.warnings,
+            });
+            Ok(payload)
+        }
+        Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
+    }
+}
+
 fn mode_str(mode: Mode) -> &'static str {
     match mode {
         Mode::Off => "off",
         Mode::Live => "live",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn safe_search_warning_emitted_when_requested() {
+        use crate::core::config::AppConfig;
+        use crate::mcp::state::ServerState;
+        use std::sync::Arc;
+
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = WebSearchArgs {
+            query: "test query".to_string(),
+            max_results: Some(5),
+            providers: vec![],
+            safe_search: Some(crate::core::SafeSearch::Strict),
+            timeout_ms: None,
+        };
+
+        let result = run_web_search(state, args).await;
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        let warnings = value.get("warnings").unwrap().as_array().unwrap();
+        assert!(warnings
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("safe_search")));
     }
 }

@@ -10,8 +10,8 @@
 //!
 //! - Server `initialize` returns the documented server info and
 //!   capabilities.
-//! - `tools/list` returns exactly `web_search` and `provider_status`
-//!   and never returns the legacy `web_fetch`, `local_search`, or
+//! - `tools/list` returns exactly `web_search`, `web_fetch`, and
+//!   `provider_status` and never returns the legacy `local_search` or
 //!   `search_and_fetch` tools.
 //! - `web_search` happy path returns a structured payload with
 //!   deduplicated cards and the documented trust label.
@@ -47,11 +47,11 @@ use eggsearch::mcp::tools::{
 use rmcp::ServerHandler;
 
 #[cfg(feature = "mock")]
-use std::time::Duration;
-#[cfg(feature = "mock")]
 use eggsearch::meta::mock::{mock_engines, MockEngine, MockFailure, MockResult};
 #[cfg(feature = "mock")]
 use eggsearch::meta::MetadataSearchAdapter;
+#[cfg(feature = "mock")]
+use std::time::Duration;
 
 fn state_with_default() -> Arc<ServerState> {
     Arc::new(ServerState::build(AppConfig::default()).expect("default state"))
@@ -121,18 +121,22 @@ fn mcp_server_get_info() {
 }
 
 #[test]
-fn mcp_server_lists_two_tools() {
+fn mcp_server_lists_three_tools() {
     let state = state_with_default();
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
-    assert!(names.contains(&"web_search".to_string()), "tools: {names:?}");
+    assert!(
+        names.contains(&"web_search".to_string()),
+        "tools: {names:?}"
+    );
+    assert!(names.contains(&"web_fetch".to_string()), "tools: {names:?}");
     assert!(
         names.contains(&"provider_status".to_string()),
         "tools: {names:?}"
     );
     // Legacy tools must not be exposed.
-    for legacy in ["web_fetch", "local_search", "search_and_fetch"] {
+    for legacy in ["local_search", "search_and_fetch"] {
         assert!(
             !names.contains(&legacy.to_string()),
             "legacy tool {legacy} must not be exposed: {names:?}"
@@ -193,7 +197,10 @@ async fn web_search_zero_max_results_returns_validation_error() {
     )
     .await;
     let err = res.expect_err("expected validation error");
-    assert!(err.to_string().contains("max_results must be > 0"), "got: {err}");
+    assert!(
+        err.to_string().contains("max_results must be > 0"),
+        "got: {err}"
+    );
 }
 
 #[tokio::test]
@@ -211,7 +218,10 @@ async fn web_search_oversized_max_results_returns_validation_error() {
     )
     .await;
     let err = res.expect_err("expected validation error");
-    assert!(err.to_string().contains("max_results must be <="), "got: {err}");
+    assert!(
+        err.to_string().contains("max_results must be <="),
+        "got: {err}"
+    );
 }
 
 #[tokio::test]
@@ -299,7 +309,11 @@ async fn web_search_happy_path_dedupes_across_engines() {
         ),
         MockEngine::success(
             "mock_b",
-            vec![MockResult::new("Title A", "https://example.com/a", "mock_b")],
+            vec![MockResult::new(
+                "Title A",
+                "https://example.com/a",
+                "mock_b",
+            )],
         ),
     ];
     let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
@@ -328,10 +342,7 @@ async fn web_search_happy_path_dedupes_across_engines() {
     assert_eq!(a_card["fetched"], false);
 
     // Each card must have a unique id of the form src_<uuid>.
-    let ids: Vec<&str> = results
-        .iter()
-        .filter_map(|c| c["id"].as_str())
-        .collect();
+    let ids: Vec<&str> = results.iter().filter_map(|c| c["id"].as_str()).collect();
     for id in &ids {
         assert!(id.starts_with("src_"), "id format: {id}");
     }
@@ -395,15 +406,8 @@ async fn web_search_global_timeout_returns_all_fail_error() {
     // Both engines hang forever; adapter timeout is 200 ms. With all
     // providers timing out, the tool surface returns a structured
     // "all providers failed" error rather than a soft partial result.
-    let engines = vec![
-        MockEngine::hang("mock_a"),
-        MockEngine::hang("mock_b"),
-    ];
-    let state = state_with_engines(
-        test_cfg(),
-        engines,
-        Duration::from_millis(200),
-    );
+    let engines = vec![MockEngine::hang("mock_a"), MockEngine::hang("mock_b")];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_millis(200));
     let err = run_web_search(state, args_for(&["mock_a", "mock_b"], "rust"))
         .await
         .expect_err("expected all-fail error after global timeout");
@@ -468,7 +472,11 @@ async fn web_search_partial_timeout_preserves_successful_results() {
     let engines = vec![
         MockEngine::success(
             "mock_a",
-            vec![MockResult::new("Fast", "https://example.com/fast", "mock_a")],
+            vec![MockResult::new(
+                "Fast",
+                "https://example.com/fast",
+                "mock_a",
+            )],
         ),
         MockEngine::hang("mock_b"),
     ];
@@ -478,7 +486,11 @@ async fn web_search_partial_timeout_preserves_successful_results() {
         .expect("ok");
 
     let results = v["results"].as_array().unwrap();
-    assert_eq!(results.len(), 1, "should have 1 result from mock_a: {results:?}");
+    assert_eq!(
+        results.len(),
+        1,
+        "should have 1 result from mock_a: {results:?}"
+    );
     assert_eq!(results[0]["title"], "Fast");
 
     // mock_b should appear in providers_failed as timed out.
@@ -499,10 +511,7 @@ async fn web_search_partial_timeout_preserves_successful_results() {
 async fn web_search_per_request_timeout_ms_shorter_than_global() {
     // Global timeout is 5s but per-request timeout_ms is 100ms.
     // Both engines hang. The per-request timeout should trigger.
-    let engines = vec![
-        MockEngine::hang("mock_a"),
-        MockEngine::hang("mock_b"),
-    ];
+    let engines = vec![MockEngine::hang("mock_a"), MockEngine::hang("mock_b")];
     let mut cfg = test_cfg();
     cfg.search.timeout_ms = 5_000;
     let state = state_with_engines(cfg, engines, Duration::from_secs(5));
@@ -534,7 +543,10 @@ async fn web_search_all_providers_fail_returns_error_when_no_results() {
     let err = run_web_search(state, args_for(&["mock_a", "mock_b"], "rust"))
         .await
         .expect_err("expected all-fail error");
-    assert!(err.to_string().contains("all providers failed"), "got: {err}");
+    assert!(
+        err.to_string().contains("all providers failed"),
+        "got: {err}"
+    );
 }
 
 #[cfg(feature = "mock")]
@@ -563,10 +575,7 @@ async fn provider_status_with_mixed_enabled_disabled() {
     // provider_status lists KNOWN_PROVIDERS (duckduckgo, brave, startpage, yahoo),
     // not mock engine names. The mock engines aren't in that list.
     let arr = v["providers"].as_array().unwrap();
-    let ids: Vec<&str> = arr
-        .iter()
-        .filter_map(|p| p["id"].as_str())
-        .collect();
+    let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
     assert!(ids.contains(&"duckduckgo"));
     assert!(ids.contains(&"brave"));
     assert!(ids.contains(&"startpage"));
@@ -574,4 +583,18 @@ async fn provider_status_with_mixed_enabled_disabled() {
     // All four should be listed, even though only mock_a and mock_b
     // are loaded in the adapter.
     assert_eq!(ids.len(), 4);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_fetch_tool_listed() {
+    let state = state_with_default();
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let tools = server.tool_definitions();
+    let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+    assert!(
+        tool_names.contains(&"web_fetch".to_string()),
+        "web_fetch should be in tools list: {:?}",
+        tool_names
+    );
 }

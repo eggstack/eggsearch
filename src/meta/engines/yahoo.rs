@@ -26,7 +26,10 @@ pub async fn search(
     )
     .await
     .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http { engine: ENGINE, source: e })?;
+    .map_err(|e| EngineError::Http {
+        engine: ENGINE,
+        source: e,
+    })?;
 
     if !response.status().is_success() {
         return Err(EngineError::BadStatus {
@@ -87,7 +90,13 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
         let snippet = element
             .select(&snippet_sel)
             .next()
-            .map(|el| el.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" "))
+            .map(|el| {
+                el.text()
+                    .collect::<String>()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
             .filter(|s| !s.is_empty());
 
         results.push(SearchResult {
@@ -138,7 +147,8 @@ mod tests {
 
     #[test]
     fn test_parse_yahoo_url_redirect() {
-        let href = "https://r.search.yahoo.com/_ylt=abc/RU=https%3A%2F%2Fwww.rust-lang.org%2F/RS=xyz";
+        let href =
+            "https://r.search.yahoo.com/_ylt=abc/RU=https%3A%2F%2Fwww.rust-lang.org%2F/RS=xyz";
         assert_eq!(parse_yahoo_url(href), "https://www.rust-lang.org/");
     }
 

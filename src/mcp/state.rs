@@ -40,7 +40,8 @@ impl ServerState {
             .collect();
 
         let global_timeout = Duration::from_millis(config.search.timeout_ms);
-        let adapter = MetadataSearchAdapter::new(enabled, global_timeout)?;
+        let user_agent = Some(config.fetch.user_agent.clone());
+        let adapter = MetadataSearchAdapter::new(enabled, global_timeout, user_agent)?;
 
         Ok(Self {
             config,
@@ -51,10 +52,7 @@ impl ServerState {
     /// Build a server state from a pre-constructed adapter. Intended for
     /// tests and for callers that want to wire custom upstream engines
     /// (e.g. mocks).
-    pub fn with_adapter(
-        config: AppConfig,
-        adapter: std::sync::Arc<MetadataSearchAdapter>,
-    ) -> Self {
+    pub fn with_adapter(config: AppConfig, adapter: std::sync::Arc<MetadataSearchAdapter>) -> Self {
         Self {
             config: Arc::new(config),
             adapter,

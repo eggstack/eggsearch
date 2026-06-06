@@ -18,8 +18,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::{
-    Client,
     header::{self, HeaderMap, HeaderValue},
+    Client,
 };
 
 use self::error::EngineError;
@@ -111,7 +111,7 @@ impl SearchEngine for YahooEngine {
 }
 
 // Mimic a real browser as closely as possible to avoid bot-detection rejections.
-pub fn build_http_client() -> anyhow::Result<Client> {
+pub fn build_http_client(user_agent: Option<&str>) -> anyhow::Result<Client> {
     let mut headers = HeaderMap::new();
 
     headers.insert(
@@ -122,32 +122,20 @@ pub fn build_http_client() -> anyhow::Result<Client> {
              Chrome/124.0.0.0 Safari/537.36",
         ),
     );
-    headers.insert(
-        header::ACCEPT,
-        HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
-    );
-    headers.insert(
-        header::ACCEPT_LANGUAGE,
-        HeaderValue::from_static("en-US,en;q=0.9"),
-    );
-    headers.insert(
-        header::ACCEPT_ENCODING,
-        HeaderValue::from_static("gzip, deflate, br"),
-    );
-    headers.insert("DNT", HeaderValue::from_static("1"));
 
-    headers.insert("Sec-Fetch-Dest", HeaderValue::from_static("document"));
-    headers.insert("Sec-Fetch-Mode", HeaderValue::from_static("navigate"));
-    headers.insert("Sec-Fetch-Site", HeaderValue::from_static("none"));
-    headers.insert("Sec-Fetch-User", HeaderValue::from_static("?1"));
-
-    let client = Client::builder()
+    let builder = Client::builder()
         .default_headers(headers)
         .cookie_store(true)
         .gzip(true)
         .brotli(true)
-        .timeout(Duration::from_secs(20))
-        .build()?;
+        .timeout(Duration::from_secs(20));
+
+    let builder = match user_agent {
+        Some(ua) => builder.user_agent(ua),
+        None => builder,
+    };
+
+    let client = builder.build()?;
 
     Ok(client)
 }

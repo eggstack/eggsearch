@@ -34,7 +34,9 @@ mod tests {
 
     #[test]
     fn timeout_message() {
-        let err = EngineError::Timeout { engine: "duckduckgo" };
+        let err = EngineError::Timeout {
+            engine: "duckduckgo",
+        };
         assert_eq!(err.to_string(), "engine 'duckduckgo' timed out");
     }
 

@@ -17,15 +17,13 @@ pub async fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
     } else {
         println!("Configured providers:");
         for s in &statuses {
-            let key = if s.requires_api_key { " (api key required)" } else { "" };
+            let key = if s.requires_api_key {
+                " (api key required)"
+            } else {
+                ""
+            };
             let enabled = if s.enabled { "on " } else { "off" };
-            println!(
-                "  {} {:<12} kind={:<12}{}",
-                enabled,
-                s.id,
-                s.kind,
-                key
-            );
+            println!("  {} {:<12} kind={:<12}{}", enabled, s.id, s.kind, key);
         }
     }
     Ok(())

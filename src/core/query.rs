@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::core::error::{CoreError, CoreResult};
 
 /// Safe-search mode. Mapped to per-engine filters by the adapter.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum SafeSearch {
     /// No safe-search filtering.
@@ -87,9 +89,7 @@ impl WebSearchRequest {
         }
         if let Some(n) = self.max_results {
             if n == 0 {
-                return Err(CoreError::InvalidQuery(
-                    "max_results must be > 0".into(),
-                ));
+                return Err(CoreError::InvalidQuery("max_results must be > 0".into()));
             }
             if n > max_results_cap {
                 return Err(CoreError::InvalidQuery(format!(

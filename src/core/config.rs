@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use crate::core::error::{CoreError, CoreResult};
 
 /// Server operating mode.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     /// All tools disabled.
@@ -97,6 +99,80 @@ impl Default for SearchSection {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+fn default_fetch_timeout() -> u64 {
+    8000
+}
+fn default_max_bytes() -> usize {
+    2_000_000
+}
+fn default_max_chars_default() -> usize {
+    12000
+}
+fn default_max_chars_cap() -> usize {
+    50000
+}
+fn default_redirect_limit() -> usize {
+    5
+}
+fn default_user_agent() -> String {
+    "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)".to_string()
+}
+
+/// The `[fetch]` section of the eggsearch configuration file.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FetchSection {
+    /// Whether fetch is enabled.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Fetch timeout in milliseconds.
+    #[serde(default = "default_fetch_timeout")]
+    pub timeout_ms: u64,
+    /// Maximum content size in bytes.
+    #[serde(default = "default_max_bytes")]
+    pub max_bytes: usize,
+    /// Default maximum characters to extract.
+    #[serde(default = "default_max_chars_default")]
+    pub max_chars_default: usize,
+    /// Maximum character extraction cap.
+    #[serde(default = "default_max_chars_cap")]
+    pub max_chars_cap: usize,
+    /// Maximum number of redirects.
+    #[serde(default = "default_redirect_limit")]
+    pub redirect_limit: usize,
+    /// Whether to allow private network access.
+    #[serde(default)]
+    pub allow_private_network: bool,
+    /// Whether to allow localhost access.
+    #[serde(default)]
+    pub allow_localhost: bool,
+    /// Default for whether to include links.
+    #[serde(default)]
+    pub include_links_default: bool,
+    /// User agent string for HTTP requests.
+    #[serde(default = "default_user_agent")]
+    pub user_agent: String,
+}
+
+impl Default for FetchSection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            timeout_ms: default_fetch_timeout(),
+            max_bytes: default_max_bytes(),
+            max_chars_default: default_max_chars_default(),
+            max_chars_cap: default_max_chars_cap(),
+            redirect_limit: default_redirect_limit(),
+            allow_private_network: false,
+            allow_localhost: false,
+            include_links_default: false,
+            user_agent: default_user_agent(),
+        }
+    }
+}
+
 /// Root configuration type. Mirrors the structure of the TOML file
 /// loaded from [`default_config_path`] or a user-supplied path.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -104,6 +180,9 @@ pub struct AppConfig {
     /// The `[search]` section.
     #[serde(default)]
     pub search: SearchSection,
+    /// The `[fetch]` section.
+    #[serde(default)]
+    pub fetch: FetchSection,
 }
 
 impl AppConfig {
@@ -140,21 +219,81 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Resolve the effective provider list for a request, given the
-    /// client-supplied override (or empty for "use defaults"). The
-    /// returned list is de-duplicated while preserving input order.
-    pub fn resolve_providers(&self, override_list: &[String]) -> Vec<String> {
+    /// Resolve the effective provider list for a request.
+    /// If override_list is empty, uses default_providers filtered to only enabled.
+    /// If override_list is non-empty, validates explicitly-disabled providers and deduplicates.
+    pub fn resolve_providers(&self, override_list: &[String]) -> CoreResult<Vec<String>> {
+        let enabled_ids: Vec<String> = self.enabled_provider_ids();
+        let enabled: std::collections::BTreeSet<&str> =
+            enabled_ids.iter().map(|s| s.as_str()).collect();
+
         if override_list.is_empty() {
-            return self.search.default_providers.clone();
-        }
-        let mut seen = std::collections::HashSet::new();
-        let mut out = Vec::new();
-        for p in override_list {
-            if seen.insert(p.clone()) {
-                out.push(p.clone());
+            let defaults: Vec<String> = self
+                .search
+                .default_providers
+                .iter()
+                .filter(|id| enabled.contains(id.as_str()))
+                .cloned()
+                .collect();
+            if defaults.is_empty() {
+                return Err(CoreError::Config(
+                    "no default providers are enabled; check [search].providers".into(),
+                ));
             }
+            Ok(defaults)
+        } else {
+            // Dedupe while preserving order
+            let mut seen = std::collections::HashSet::new();
+            let mut deduped = Vec::new();
+            for p in override_list {
+                if seen.insert(p.clone()) {
+                    deduped.push(p.clone());
+                }
+            }
+
+            // Check for explicitly DISABLED providers (config key exists with value false)
+            let explicitly_disabled: Vec<String> = deduped
+                .iter()
+                .filter(|id| self.search.providers.get(*id).is_some_and(|v| !*v))
+                .cloned()
+                .collect();
+            if !explicitly_disabled.is_empty() {
+                return Err(CoreError::Config(format!(
+                    "provider(s) not enabled: {}; enable them in [search].providers or remove them from request",
+                    explicitly_disabled.join(", ")
+                )));
+            }
+            Ok(deduped)
         }
-        out
+    }
+
+    /// Returns provider IDs that are explicitly enabled (value = true) in the providers map.
+    pub fn enabled_provider_ids(&self) -> Vec<String> {
+        self.search
+            .providers
+            .iter()
+            .filter(|(_, enabled)| **enabled)
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    /// Returns fetch limits based on config.
+    pub fn fetch_limits(&self) -> crate::fetch::limits::FetchLimits {
+        crate::fetch::limits::FetchLimits {
+            max_url_len: 8192,
+            max_bytes: self.fetch.max_bytes,
+            max_chars_default: self.fetch.max_chars_default,
+            max_chars_cap: self.fetch.max_chars_cap,
+            timeout_ms: self.fetch.timeout_ms,
+            redirect_limit: self.fetch.redirect_limit,
+            allow_private_network: self.fetch.allow_private_network,
+            allow_localhost: self.fetch.allow_localhost,
+        }
+    }
+
+    /// Returns the configured user agent for fetch.
+    pub fn fetch_user_agent(&self) -> String {
+        self.fetch.user_agent.clone()
     }
 }
 
@@ -224,15 +363,80 @@ mod tests {
     #[test]
     fn resolve_providers_uses_default_when_empty() {
         let c = AppConfig::default();
-        let out = c.resolve_providers(&[]);
+        let out = c.resolve_providers(&[]).unwrap();
         assert_eq!(out, c.search.default_providers);
     }
 
     #[test]
     fn resolve_providers_dedupes_override() {
         let c = AppConfig::default();
-        let out = c.resolve_providers(&["brave".into(), "brave".into(), "duckduckgo".into()]);
+        let out = c
+            .resolve_providers(&["brave".into(), "brave".into(), "duckduckgo".into()])
+            .unwrap();
         assert_eq!(out, vec!["brave".to_string(), "duckduckgo".to_string()]);
+    }
+
+    #[test]
+    fn resolve_providers_filters_to_enabled() {
+        let mut c = AppConfig::default();
+        c.search.providers.insert("duckduckgo".to_string(), true);
+        c.search.providers.insert("brave".to_string(), false);
+        c.search.default_providers = vec!["duckduckgo".to_string(), "brave".to_string()];
+
+        let out = c.resolve_providers(&[]).unwrap();
+        assert_eq!(out, vec!["duckduckgo".to_string()]);
+    }
+
+    #[test]
+    fn resolve_providers_rejects_disabled_in_explicit_list() {
+        let mut c = AppConfig::default();
+        c.search.providers.insert("duckduckgo".to_string(), true);
+        c.search.providers.insert("brave".to_string(), false);
+
+        let result = c.resolve_providers(&["brave".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not enabled"));
+    }
+
+    #[test]
+    fn resolve_providers_empty_when_all_disabled() {
+        let mut c = AppConfig::default();
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+
+        let result = c.resolve_providers(&[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_providers_preserves_order() {
+        let c = AppConfig::default();
+        let out = c
+            .resolve_providers(&["yahoo".into(), "duckduckgo".into()])
+            .unwrap();
+        assert_eq!(out, vec!["yahoo".to_string(), "duckduckgo".to_string()]);
+    }
+
+    #[test]
+    fn resolve_providers_dedups() {
+        let c = AppConfig::default();
+        let out = c
+            .resolve_providers(&["brave".into(), "brave".into(), "brave".into()])
+            .unwrap();
+        assert_eq!(out, vec!["brave".to_string()]);
+    }
+
+    #[test]
+    fn resolve_providers_validates_enabled() {
+        let mut c = AppConfig::default();
+        c.search.providers.insert("duckduckgo".to_string(), true);
+        c.search.providers.insert("brave".to_string(), false);
+
+        let out = c.resolve_providers(&["brave".to_string()]);
+        assert!(out.is_err());
+        assert!(out.unwrap_err().to_string().contains("not enabled"));
     }
 
     #[test]
@@ -244,10 +448,7 @@ mod tests {
         let loaded = AppConfig::load(&path).unwrap();
         assert_eq!(loaded.search.max_results, c.search.max_results);
         assert_eq!(loaded.search.mode, c.search.mode);
-        assert_eq!(
-            loaded.search.default_providers,
-            c.search.default_providers
-        );
+        assert_eq!(loaded.search.default_providers, c.search.default_providers);
     }
 
     #[test]
@@ -267,30 +468,15 @@ mod tests {
     }
 
     #[test]
-    fn resolve_providers_empty_override_returns_defaults() {
-        let c = AppConfig::default();
-        let out = c.resolve_providers(&[]);
-        assert_eq!(out, c.search.default_providers);
-    }
+    fn enabled_provider_ids_returns_only_enabled() {
+        let mut c = AppConfig::default();
+        c.search.providers.insert("duckduckgo".to_string(), true);
+        c.search.providers.insert("brave".to_string(), false);
+        c.search.providers.insert("startpage".to_string(), true);
 
-    #[test]
-    fn resolve_providers_preserves_order() {
-        let c = AppConfig::default();
-        let out = c.resolve_providers(&["yahoo".into(), "duckduckgo".into()]);
-        assert_eq!(out, vec!["yahoo".to_string(), "duckduckgo".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_dedups() {
-        let c = AppConfig::default();
-        let out = c.resolve_providers(&["brave".into(), "brave".into(), "brave".into()]);
-        assert_eq!(out, vec!["brave".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_ignores_config_providers_map() {
-        let c = AppConfig::default();
-        let out = c.resolve_providers(&["brave".into()]);
-        assert_eq!(out, vec!["brave".to_string()]);
+        let ids = c.enabled_provider_ids();
+        assert!(ids.contains(&"duckduckgo".to_string()));
+        assert!(!ids.contains(&"brave".to_string()));
+        assert!(ids.contains(&"startpage".to_string()));
     }
 }

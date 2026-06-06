@@ -9,9 +9,9 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use crate::meta::engines::BoxFuture;
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::SearchResult;
+use crate::meta::engines::BoxFuture;
 use crate::meta::engines::SearchEngine;
 
 /// A canned upstream result. Construct with `MockResult::new(...)`

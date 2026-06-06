@@ -490,6 +490,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "futures",
  "pretty_assertions",
  "reqwest",
  "rmcp",

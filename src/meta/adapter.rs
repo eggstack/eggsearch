@@ -81,8 +81,12 @@ impl std::fmt::Debug for MetadataSearchAdapter {
 
 impl MetadataSearchAdapter {
     /// Build an adapter for the given enabled provider ids.
-    pub fn new(enabled_providers: Vec<String>, global_timeout: Duration) -> anyhow::Result<Self> {
-        let (engines, skipped) = build_default_engines(&enabled_providers)?;
+    pub fn new(
+        enabled_providers: Vec<String>,
+        global_timeout: Duration,
+        user_agent: Option<String>,
+    ) -> anyhow::Result<Self> {
+        let (engines, skipped) = build_default_engines(&enabled_providers, user_agent)?;
         if !skipped.is_empty() {
             warn!(?skipped, "skipped unknown provider ids in config");
         }
@@ -101,10 +105,7 @@ impl MetadataSearchAdapter {
 
     /// Build an adapter from an explicit list of `SearchEngine` trait
     /// objects. Used by tests to inject mock engines.
-    pub fn from_engines(
-        engines: Vec<Arc<dyn SearchEngine>>,
-        global_timeout: Duration,
-    ) -> Self {
+    pub fn from_engines(engines: Vec<Arc<dyn SearchEngine>>, global_timeout: Duration) -> Self {
         let provider_ids = engines.iter().map(|e| e.name().to_string()).collect();
         Self {
             engines,
@@ -301,12 +302,7 @@ impl MetadataSearchAdapter {
 
         let warnings: Vec<SearchWarning> = providers_failed
             .iter()
-            .map(|f| {
-                SearchWarning::new(
-                    f.id.clone(),
-                    format!("[{}] {}", f.error_class, f.message),
-                )
-            })
+            .map(|f| SearchWarning::new(f.id.clone(), format!("[{}] {}", f.error_class, f.message)))
             .collect();
 
         WebSearchResponse {
@@ -340,12 +336,11 @@ pub fn provider_kind(id: &str) -> (&'static str, bool) {
 /// Build the default engine set used by the server.
 pub fn build_default_engines(
     enabled_providers: &[String],
+    user_agent: Option<String>,
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
-    use crate::meta::engines::{
-        BraveEngine, DuckDuckGoEngine, StartpageEngine, YahooEngine,
-    };
+    use crate::meta::engines::{BraveEngine, DuckDuckGoEngine, StartpageEngine, YahooEngine};
 
-    let client = Arc::new(build_http_client()?);
+    let client = Arc::new(build_http_client(user_agent.as_deref())?);
     let mut engines: EngineList = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
 
@@ -554,10 +549,7 @@ mod tests {
             &'a self,
             _query: &'a str,
             _max_results: usize,
-        ) -> crate::meta::engines::BoxFuture<
-            'a,
-            Result<Vec<SearchResult>, EngineError>,
-        > {
+        ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
             let results = self.results.clone();
             Box::pin(async move { Ok(results) })
         }
@@ -587,8 +579,7 @@ mod tests {
                 results: vec![mk_result("A1", "https://a.com/1", "brave")],
             }),
         ];
-        let adapter =
-            MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
         let req = WebSearchRequest::new("rust axum");
         let resp = adapter.web_search(&req, 10, 10).await;
         assert_eq!(resp.query, "rust axum");

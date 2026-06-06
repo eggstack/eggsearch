@@ -29,7 +29,11 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Diagnose configuration and provider status.
-    Doctor,
+    Doctor {
+        /// Probe each provider with a live query.
+        #[arg(long, default_value_t = false)]
+        probe: bool,
+    },
     /// Run a live metasearch and print compact source cards.
     Search {
         query: String,
@@ -51,6 +55,26 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Fetch and extract content from a URL.
+    Fetch {
+        /// The URL to fetch.
+        url: String,
+        /// Maximum characters to extract.
+        #[arg(long)]
+        max_chars: Option<usize>,
+        /// Timeout in milliseconds.
+        #[arg(long)]
+        timeout_ms: Option<u64>,
+        /// Extract metadata only, not body text.
+        #[arg(long)]
+        metadata_only: bool,
+        /// Include extracted links in output.
+        #[arg(long)]
+        links: bool,
+        /// Output as JSON.
+        #[arg(short, long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -67,7 +91,7 @@ async fn main() -> Result<()> {
     let cfg = config::load(cli.config.as_deref())?;
 
     match cli.command {
-        Commands::Doctor => commands::doctor::run(&cfg, cli.config.as_ref()).await,
+        Commands::Doctor { probe } => commands::doctor::run(&cfg, cli.config.as_ref(), probe).await,
         Commands::Search {
             query,
             max_results,
@@ -78,6 +102,25 @@ async fn main() -> Result<()> {
             McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
         },
         Commands::Providers { json } => commands::providers::run(&cfg, json).await,
+        Commands::Fetch {
+            url,
+            max_chars,
+            timeout_ms,
+            metadata_only,
+            links,
+            json,
+        } => {
+            commands::fetch::run(
+                &cfg,
+                &url,
+                max_chars,
+                timeout_ms,
+                metadata_only,
+                links,
+                json,
+            )
+            .await
+        }
     }
 }
 

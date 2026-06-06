@@ -4,12 +4,14 @@
 
 pub mod config;
 pub mod error;
+pub mod fetch;
 pub mod query;
 pub mod result;
 pub mod source_card;
 
 pub use config::{AppConfig, LiveConfig, Mode, SearchSection};
 pub use error::{CoreError, CoreResult};
+pub use fetch::{ExtractMode, ExtractedLink, FetchTrust, WebFetchRequest, WebFetchResponse};
 pub use query::{SafeSearch, WebSearchRequest};
 pub use result::{SearchWarning, TrustLevel};
 pub use source_card::SourceCard;

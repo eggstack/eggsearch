@@ -13,17 +13,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates/eggsearch-cli -> target
       - name: Build (release)
-        working-directory: crates/eggsearch-cli
-        run: cargo build --release --all-features
+        run: cargo build --release
       - name: Test
-        working-directory: crates/eggsearch-cli
         run: cargo test --all-features
       - name: Clippy
-        working-directory: crates/eggsearch-cli
         run: cargo clippy --all-features -- -D warnings
       - name: Publish dry-run
-        working-directory: crates/eggsearch-cli
         run: cargo publish --dry-run

@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 /// Trust label attached to every `SourceCard`. For the MVP, all live web
 /// results are `ExternalUntrusted`. Local-index results (feature-gated
 /// behind `local-index`) may be `LocalTrusted`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustLevel {
     /// Live content fetched from the open web; treat as untrusted.
