@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 description = "Lightweight MCP metasearch server for AI agents"
 repository = "https://github.com/eggstack/eggsearch"
 homepage = "https://github.com/eggstack/eggsearch"
-readme = "../../README.md"
+readme = "./README.md"
 keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
 categories = ["command-line-utilities", "web-programming"]
 include = [
@@ -18,8 +18,6 @@ include = [
     "Cargo.toml",
     "README.md",
     "LICENSE",
-    "LICENSE-APACHE",
-    "LICENSE-MIT",
     "CHANGELOG.md",
 ]
 

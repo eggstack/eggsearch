@@ -155,7 +155,7 @@ yahoo      = true
 ## Project Structure
 
 ```
-crates/eggsearch-cli/
+eggsearch/
   src/
     main.rs              # binary entry point
     lib.rs               # library root (modules: core, meta, mcp)
@@ -223,5 +223,4 @@ paths without any network access. Vendored engine tests
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](https://github.com/eggstack/eggsearch/blob/main/crates/eggsearch-cli/LICENSE-APACHE) or
-[MIT License](https://github.com/eggstack/eggsearch/blob/main/crates/eggsearch-cli/LICENSE-MIT) at your option.
+Licensed under the [MIT License](./LICENSE).

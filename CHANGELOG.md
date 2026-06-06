@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-05
+
+### Changed
+- Bumped version to 0.1.1 to work around crates.io deleted-crate name-reuse cooldown on `eggsearch`
+
 ## [0.1.0] - 2026-06-05
 
 ### Fixed

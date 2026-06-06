@@ -8,7 +8,7 @@ eggsearch is a lightweight MCP (Model Context Protocol) metasearch server for AI
 
 ## Build & Test Commands
 
-All commands are run from `crates/eggsearch-cli/`.
+All commands are run from the project root.
 
 ```bash
 # Build (debug)
@@ -35,7 +35,7 @@ cargo publish --dry-run
 The eggsearch crate is a single library + binary. Submodules live under `src/`:
 
 ```
-crates/eggsearch-cli/
+eggsearch/
   src/
     main.rs              # binary entry point (clap, tokio main)
     lib.rs               # library root, re-exports core/meta/mcp
@@ -61,7 +61,7 @@ crates/eggsearch-cli/
 
 ### Testing
 - Unit tests live in `#[cfg(test)] mod tests` at the bottom of each source file
-- Integration tests live in `crates/eggsearch-cli/tests/integration.rs`
+- Integration tests live in `tests/integration.rs`
 - Mock engines are in `src/meta/mock.rs` (feature-gated behind `mock`)
 - The `MockEngine` struct supports success, failure, and hang (timeout) scenarios
 - Vendored engine tests (HTML parsing) are in `src/meta/engines/`
@@ -111,7 +111,7 @@ eggsearch is published as a single crate. Before publishing:
 - `cargo clippy --all-features -- -D warnings` is clean
 - `cargo test --all-features` passes (114 tests)
 - `cargo publish --dry-run` succeeds
-- The version in `crates/eggsearch-cli/Cargo.toml` is bumped
+- The version in `Cargo.toml` is bumped
 - `CHANGELOG.md` is updated
 
 The crates.io package includes the README, LICENSE files, and CHANGELOG via
