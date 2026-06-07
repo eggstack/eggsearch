@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::error::{CoreError, CoreResult};
 
-/// Safe-search mode. Mapped to per-engine filters by the adapter.
+/// Safe-search mode. Reserved for provider-specific enforcement; the
+/// current HTML providers do not enforce it. When a `web_search`
+/// request supplies this field, the server emits an advisory warning
+/// rather than silently claiming enforcement.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -42,7 +45,10 @@ pub struct WebSearchRequest {
     /// Specific provider IDs to use; empty means "all enabled".
     #[serde(default)]
     pub providers: Vec<String>,
-    /// Safe-search mode.
+    /// Safe-search mode. Reserved for provider-specific enforcement;
+    /// the current HTML providers do not enforce it. The MCP tool
+    /// layer emits an advisory warning on the response when this
+    /// field is supplied.
     #[serde(default)]
     pub safe_search: Option<SafeSearch>,
     /// Optional per-request timeout in milliseconds.

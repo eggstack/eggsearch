@@ -25,6 +25,25 @@ for the default configuration.
 - Vendored search engine implementations (no heavyweight upstream deps)
 - 343 fast tests (no network required)
 
+## Search and fetch workflow
+
+eggsearch exposes two complementary tools with a deliberate split of
+responsibility:
+
+- Use `web_search` to discover candidate sources. It returns compact
+  `SourceCard` results with titles, URLs, short snippets, provider
+  metadata, and a `trust` label of `external_untrusted`. It does
+  **not** fetch full page contents, and it is not a crawler or browser.
+- Use `web_fetch` only for an explicit HTTP(S) URL selected by the user
+  or by a host after reviewing search results. `web_fetch` retrieves
+  one URL, follows a bounded number of validated redirects, extracts
+  bounded text from HTML or plain-text responses, and labels the
+  result as `external_untrusted`. It does not crawl linked pages and
+  does not execute JavaScript.
+
+A third tool, `provider_status`, is a non-probing diagnostic that
+reports which providers are configured, enabled, and available.
+
 ## Install
 
 ### Install from crates.io
@@ -218,12 +237,14 @@ base_url      = "https://api.search.brave.com/res/v1/web/search"
 | Field | Default | Description |
 |-------|---------|-------------|
 | `mode` | `"live"` | `"live"` or `"off"`. When off, `web_search` is denied. |
-| `default_max_results` | `10` | Default number of results per query when `max_results` is omitted. |
-| `max_results_cap` | `50` | Hard cap on `max_results`. |
+| `default_max_results` | `10` | Server-side default number of results when a `web_search` request omits `max_results`. The legacy key `max_results` is still accepted as a backwards-compatible alias. |
+| `max_results_cap` | `50` | Server-enforced upper bound on the effective `max_results` for any single request. |
 | `max_query_chars` | `512` | Maximum query string length. |
 | `timeout_ms` | `8000` | Global timeout for the search fan-out. |
-| `default_providers` | `["duckduckgo", "startpage", "yahoo"]` | Used when client omits `providers`. |
+| `default_providers` | `["duckduckgo", "startpage", "yahoo"]` | Used when a request omits the per-call `providers` list. |
 | `sanitize_output` | `true` | Wrap untrusted text in framing delimiters and emit prompt-injection warnings. |
+
+> `default_max_results` controls the default number of results when a client does not pass `web_search.max_results`. `max_results_cap` is the server-enforced upper bound. The legacy config key `max_results` is still accepted as an alias for `default_max_results`, but new configs should use `default_max_results`. The per-request `web_search.max_results` field is a separate, per-call override that is clamped to `max_results_cap`.
 
 The `[fetch]` section configures the `web_fetch` tool and CLI command:
 
@@ -258,13 +279,14 @@ sanitize_output = true
 
 > **Note.** The `[search].live.user_agent` and `[search].live.respect_robots_txt` config fields are parsed but have no effect in the current build. The vendored HTML engines use a hard-coded browser-like user agent that upstream providers expect. Setting either field logs a startup warning.
 
-> **Private network blocking.** eggsearch validates the initial URL and each
-> redirected URL before fetching. It resolves hostnames before each request
-> and rejects localhost, private, link-local, multicast, documentation, and
-> other blocked address ranges unless explicitly allowed. This mitigates
-> common SSRF and redirect-to-private-network cases, but it is not a
-> complete DNS-rebinding defense because the post-connect peer address is
-> not independently verified.
+> **Private network blocking.** `web_fetch` validates the initial URL and
+> each redirected URL before making a request. It rejects unsupported
+> schemes, embedded credentials, localhost/private-network targets by
+> default, and hostnames that resolve to blocked address ranges
+> during validation. This mitigates common SSRF and
+> redirect-to-private-network cases, but it should not be described
+> as complete DNS-rebinding protection, because the post-connect peer
+> address is not independently verified.
 
 ## Project Structure
 
@@ -422,6 +444,26 @@ and length bound) stays on either way.
 
 ## Search Engines
 
+eggsearch distinguishes three provider concepts that are easy to
+conflate:
+
+- **Known provider IDs** are the identifiers the server understands:
+  `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`,
+  and `brave_api`. Unknown IDs are rejected.
+- **Enabled providers** are the subset of known IDs that the
+  operator has switched on in `[search].providers` (and, for
+  `searxng` and `brave_api`, that also have their required
+  configuration present).
+- **Default providers** are the subset of enabled IDs listed in
+  `[search].default_providers`; they are queried automatically when
+  a `web_search` request omits the `providers` field.
+
+`providers` controls which providers are *available* to the server.
+`default_providers` controls which *enabled* providers are queried
+when a `web_search` request does not specify providers explicitly.
+
+### Engines and adapters
+
 The HTML scraping engines for DuckDuckGo, Brave, Startpage, Yahoo, and
 Mojeek are vendored in `src/meta/engines/`, originally from
 [`metadata-search-engine-rs`](https://crates.io/crates/metadata-search-engine-rs)
@@ -433,12 +475,20 @@ The optional `searxng` adapter is a JSON client for self-hosted
 single request to `<base_url>/search?format=json` and consumes the
 JSON results directly, with no HTML parsing. A single SearXNG
 instance can aggregate many underlying engines (including Qwant,
-Bing, Brave, Marginalia, etc.) from one configuration point.
+Bing, Brave, Marginalia, etc.) from one configuration point. The
+`searxng` provider is only built when both
+`[search].providers.searxng = true` and
+`[search].searxng.enabled = true` with a non-empty
+`[search].searxng.base_url` are set.
 
 The optional `brave_api` adapter is a JSON client for the
 [Brave Search API](https://api.search.brave.com/app/documentation/web-search/get-started).
 It requires an API key, supplied via the env-var named in
-`[search].api.brave].api_key_env`. The adapter is disabled by default.
+`[search].api.brave].api_key_env`. The adapter is disabled by
+default; it is built only when
+`[search].api.brave.enabled = true` and the env var is set.
+
+### Default provider set
 
 The default provider set covers `duckduckgo`, `startpage`, and
 `yahoo` (the engines listed in `[search].default_providers`). `brave`

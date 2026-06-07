@@ -35,8 +35,11 @@ pub struct SourceCard {
     pub score: Option<f64>,
     /// Trust label; for live web results this is `external_untrusted`.
     pub trust: TrustLevel,
-    /// `true` if the underlying content was fetched and cached locally.
-    /// For the MVP this is always `false`.
+    /// Whether the underlying content was fetched. `web_search` is
+    /// discovery-only and always returns cards with `fetched = false`;
+    /// full-page retrieval is handled by the separate `web_fetch`
+    /// tool, which returns its own response type rather than a
+    /// `SourceCard`.
     pub fetched: bool,
     /// What eggsearch did to the title/snippet text on this card
     /// (control-char stripping, length bounding, framing, marker

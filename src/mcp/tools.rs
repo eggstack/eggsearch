@@ -47,7 +47,10 @@ pub struct WebSearchArgs {
     /// configured defaults".
     #[serde(default)]
     pub providers: Vec<String>,
-    /// Optional safe-search mode.
+    /// Optional safe-search mode. Reserved for future use; the
+    /// current HTML providers do not enforce it. Supplying this
+    /// field causes the server to emit an advisory warning on the
+    /// response.
     #[serde(default)]
     pub safe_search: Option<crate::core::SafeSearch>,
     /// Optional per-request timeout override in milliseconds.
@@ -57,8 +60,9 @@ pub struct WebSearchArgs {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderStatusArgs {
-    /// Reserved for future use. The changeover MVP always reports
-    /// configuration only; live network probes are not implemented.
+    /// Reserved for future use. The `provider_status` tool currently
+    /// reports configuration only; live network probes are not
+    /// implemented.
     #[serde(default)]
     pub probe: bool,
 }

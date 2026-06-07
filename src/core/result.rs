@@ -2,9 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Trust label attached to every `SourceCard`. For the MVP, all live web
-/// results are `ExternalUntrusted`. Local-index results (feature-gated
-/// behind `local-index`) may be `LocalTrusted`.
+/// Trust label attached to every `SourceCard`. Live web results are
+/// `ExternalUntrusted`. The `LocalTrusted` variant is reserved for
+/// future local-index results; no current code path produces it.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
 )]
