@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::core::result::TrustLevel;
+use crate::core::sanitize::TrustMarkers;
 
 /// A single normalized result returned to MCP callers.
 ///
@@ -35,6 +36,13 @@ pub struct SourceCard {
     /// `true` if the underlying content was fetched and cached locally.
     /// For the MVP this is always `false`.
     pub fetched: bool,
+    /// What eggsearch did to the title/snippet text on this card
+    /// (control-char stripping, length bounding, framing, marker
+    /// scanning). Default-initialized to a zero record on cards that
+    /// have not yet been sanitized; later pipeline stages replace it
+    /// with the actual counts.
+    #[serde(default)]
+    pub trust_markers: TrustMarkers,
 }
 
 impl SourceCard {
@@ -76,6 +84,7 @@ impl SourceCard {
             score,
             trust,
             fetched: false,
+            trust_markers: TrustMarkers::default(),
         }
     }
 
@@ -83,6 +92,15 @@ impl SourceCard {
     /// `SourceCard::new(...).with_snippet(...)` builder pattern.
     pub fn with_snippet(mut self, s: impl Into<String>) -> Self {
         self.snippet = Some(s.into());
+        self
+    }
+
+    /// Attach `TrustMarkers` describing what eggsearch did to the
+    /// title/snippet text on this card. The pipeline populates this
+    /// after sanitization; the constructor leaves it at
+    /// `TrustMarkers::default()`.
+    pub fn with_trust_markers(mut self, m: TrustMarkers) -> Self {
+        self.trust_markers = m;
         self
     }
 }
@@ -168,5 +186,39 @@ mod tests {
         let parsed: SourceCard = serde_json::from_str(&json).unwrap();
         assert!(parsed.snippet.is_none());
         assert!(parsed.score.is_none());
+    }
+
+    #[test]
+    fn new_card_default_trust_markers_is_zero() {
+        let c = SourceCard::new(
+            "t",
+            "https://example.com",
+            vec!["a".to_string()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        );
+        assert_eq!(c.trust_markers, TrustMarkers::default());
+        assert!(!c.trust_markers.text_sanitized);
+        assert_eq!(c.trust_markers.injection_hits, 0);
+    }
+
+    #[test]
+    fn with_trust_markers_sets_field() {
+        let markers = TrustMarkers {
+            text_sanitized: true,
+            text_truncated: true,
+            text_framed: false,
+            control_chars_removed: 2,
+            injection_hits: 1,
+        };
+        let c = SourceCard::new(
+            "t",
+            "https://example.com",
+            vec!["a".to_string()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        )
+        .with_trust_markers(markers.clone());
+        assert_eq!(c.trust_markers, markers);
     }
 }

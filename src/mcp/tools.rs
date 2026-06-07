@@ -138,6 +138,26 @@ pub async fn run_web_search(
         .iter()
         .map(|w| format!("[{}] {}", w.provider_id, w.message))
         .collect();
+
+    // Per-card prompt-injection marker warnings. These are inserted
+    // at the top of the warnings array (before the generic
+    // "untrusted external content" warning is inserted at index 0
+    // below) so the agent sees them in this order:
+    //   0. "Live web results are untrusted external content."
+    //   1..N. per-card marker warnings (if any)
+    //   N+1... provider-failure warnings
+    //   last. safe_search advisory (if applicable)
+    let mut marker_warnings: Vec<String> = Vec::new();
+    for card in &resp.results {
+        if card.trust_markers.injection_hits > 0 {
+            marker_warnings.push(format!(
+                "possible prompt injection markers detected in card {id}: {n} hit(s)",
+                id = card.id,
+                n = card.trust_markers.injection_hits,
+            ));
+        }
+    }
+    warnings.splice(0..0, marker_warnings);
     warnings.insert(
         0,
         "Live web results are untrusted external content.".to_string(),
@@ -168,6 +188,8 @@ pub async fn run_web_search(
         "providers_queried": resp.providers_queried,
         "providers_failed": providers_failed,
         "warnings": warnings,
+        "trust_markers": serde_json::to_value(&resp.trust_markers)
+            .unwrap_or(serde_json::json!({})),
     });
 
     if providers_failed.len() == effective_providers.len()
@@ -248,6 +270,12 @@ pub async fn run_web_fetch(
 
     match response {
         Ok(resp) => {
+            // `resp.warnings` already contains, in order: extractor
+            // warnings, per-field prompt-injection marker warnings
+            // (when sanitize_output is enabled and Tier 3 fires), and
+            // the standard "untrusted" warning. Pass them through
+            // unchanged; the marker warnings sit visibly between the
+            // extractor warnings and the untrusted advisory.
             let payload = serde_json::json!({
                 "url": resp.url,
                 "final_url": resp.final_url,
@@ -261,6 +289,8 @@ pub async fn run_web_fetch(
                 "text": resp.text,
                 "links": resp.links,
                 "warnings": resp.warnings,
+                "trust_markers": serde_json::to_value(&resp.trust_markers)
+                    .unwrap_or(serde_json::json!({})),
             });
             Ok(payload)
         }
@@ -279,6 +309,7 @@ fn mode_str(mode: Mode) -> &'static str {
 mod tests {
     use super::*;
     use crate::core::config::AppConfig;
+    use crate::core::sanitize::TrustMarkers;
     use crate::mcp::state::ServerState;
     use std::sync::Arc;
 
@@ -302,5 +333,54 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.as_str().unwrap().contains("safe_search")));
+    }
+
+    #[tokio::test]
+    async fn web_search_payload_includes_top_level_trust_markers() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = WebSearchArgs {
+            query: "test".to_string(),
+            max_results: Some(3),
+            providers: vec![],
+            safe_search: None,
+            timeout_ms: None,
+        };
+
+        let result = run_web_search(state, args).await;
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        // The payload must include a top-level `trust_markers` object.
+        let markers = value
+            .get("trust_markers")
+            .expect("trust_markers should be on payload");
+        // It must deserialize back to TrustMarkers (or at least
+        // expose the documented boolean/numeric fields).
+        assert!(markers.get("text_sanitized").is_some());
+        assert!(markers.get("text_truncated").is_some());
+        assert!(markers.get("text_framed").is_some());
+        assert!(markers.get("control_chars_removed").is_some());
+        assert!(markers.get("injection_hits").is_some());
+    }
+
+    #[test]
+    fn trust_markers_payload_shape_matches_struct() {
+        // Sanity: the JSON we emit for `trust_markers` is the same
+        // shape as the TrustMarkers struct, so a host agent can
+        // deserialize it.
+        let m = TrustMarkers {
+            text_sanitized: true,
+            text_truncated: false,
+            text_framed: true,
+            control_chars_removed: 3,
+            injection_hits: 2,
+        };
+        let v = serde_json::to_value(&m).unwrap();
+        assert_eq!(v["text_sanitized"], serde_json::json!(true));
+        assert_eq!(v["text_truncated"], serde_json::json!(false));
+        assert_eq!(v["text_framed"], serde_json::json!(true));
+        assert_eq!(v["control_chars_removed"], serde_json::json!(3));
+        assert_eq!(v["injection_hits"], serde_json::json!(2));
     }
 }

@@ -55,6 +55,23 @@ pub struct LiveConfig {
     pub respect_robots_txt: Option<bool>,
 }
 
+/// Configuration for the optional SearXNG upstream adapter. SearXNG is
+/// disabled by default; when `enabled = true` and `base_url` is set, the
+/// `searxng` provider id becomes available and points at the operator's
+/// self-hosted instance.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SearxngConfig {
+    /// Whether the `searxng` provider is enabled. The provider is only
+    /// built when both this flag and `[search].providers.searxng = true`
+    /// are set and `base_url` is non-empty.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Base URL of the SearXNG instance, e.g. `https://searx.example.org`.
+    /// The trailing slash is optional. The engine appends `/search`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+}
+
 /// The `[search]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
@@ -71,12 +88,24 @@ pub struct SearchSection {
     /// Default providers to query when none are specified.
     pub default_providers: Vec<String>,
     /// Per-provider enable/disable flags. Keys are provider ids
-    /// (`duckduckgo`, `brave`, `startpage`, `yahoo`).
+    /// (`duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`).
     #[serde(default)]
     pub providers: std::collections::BTreeMap<String, bool>,
+    /// Optional SearXNG upstream configuration. Only consulted when
+    /// the `searxng` provider is also enabled in `providers`.
+    #[serde(default)]
+    pub searxng: SearxngConfig,
     /// Live network configuration. Most fields are reserved for future
     /// use; see `LiveConfig` docs.
     pub live: LiveConfig,
+    /// Whether to wrap untrusted search-result text (titles,
+    /// snippets) in `<<<EXTERNAL_UNTRUSTED ...>>>` framing
+    /// delimiters and emit per-response prompt-injection warnings.
+    /// Tier 1 (control-char stripping + length bounding) is always on;
+    /// this flag gates Tier 2 (framing) and Tier 3 (marker scan).
+    /// Default: `true`.
+    #[serde(default = "default_sanitize_output")]
+    pub sanitize_output: bool,
 }
 
 impl Default for SearchSection {
@@ -86,6 +115,8 @@ impl Default for SearchSection {
         providers.insert("brave".to_string(), true);
         providers.insert("startpage".to_string(), true);
         providers.insert("yahoo".to_string(), true);
+        providers.insert("mojeek".to_string(), false);
+        providers.insert("searxng".to_string(), false);
         Self {
             mode: Mode::default(),
             max_results: 10,
@@ -98,7 +129,9 @@ impl Default for SearchSection {
                 "yahoo".to_string(),
             ],
             providers,
+            searxng: SearxngConfig::default(),
             live: LiveConfig::default(),
+            sanitize_output: default_sanitize_output(),
         }
     }
 }
@@ -123,6 +156,9 @@ fn default_redirect_limit() -> usize {
 }
 fn default_user_agent() -> String {
     "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)".to_string()
+}
+fn default_sanitize_output() -> bool {
+    true
 }
 
 /// The `[fetch]` section of the eggsearch configuration file.
@@ -158,6 +194,14 @@ pub struct FetchSection {
     /// User agent string for HTTP requests.
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
+    /// Whether to wrap untrusted fetched text (title, description,
+    /// body) in `<<<EXTERNAL_UNTRUSTED ...>>>` framing delimiters
+    /// and emit per-response prompt-injection warnings. Tier 1
+    /// (control-char stripping + length bounding) is always on; this
+    /// flag gates Tier 2 (framing) and Tier 3 (marker scan).
+    /// Default: `true`.
+    #[serde(default = "default_sanitize_output")]
+    pub sanitize_output: bool,
 }
 
 impl Default for FetchSection {
@@ -173,6 +217,7 @@ impl Default for FetchSection {
             allow_localhost: false,
             include_links_default: false,
             user_agent: default_user_agent(),
+            sanitize_output: default_sanitize_output(),
         }
     }
 }
@@ -409,12 +454,26 @@ mod tests {
     #[test]
     fn default_providers_lists_known_engines() {
         let c = AppConfig::default();
-        for expected in ["duckduckgo", "brave", "startpage", "yahoo"] {
+        for expected in ["duckduckgo", "brave", "startpage", "yahoo", "mojeek", "searxng"] {
             assert!(
                 c.search.providers.contains_key(expected),
                 "missing default provider: {expected}"
             );
         }
+    }
+
+    #[test]
+    fn default_searxng_is_disabled() {
+        let c = AppConfig::default();
+        assert!(!c.search.searxng.enabled);
+        assert!(c.search.searxng.base_url.is_none());
+        assert_eq!(c.search.providers.get("searxng"), Some(&false));
+    }
+
+    #[test]
+    fn default_mojeek_is_disabled() {
+        let c = AppConfig::default();
+        assert_eq!(c.search.providers.get("mojeek"), Some(&false));
     }
 
     #[test]
@@ -632,5 +691,17 @@ mod tests {
         c.search.max_query_chars = 0;
         let err = c.validate().expect_err("expected max_query_chars failure");
         assert!(err.to_string().contains("max_query_chars"), "got: {err}");
+    }
+
+    #[test]
+    fn default_search_section_has_sanitize_output_true() {
+        let c = AppConfig::default();
+        assert!(c.search.sanitize_output);
+    }
+
+    #[test]
+    fn default_fetch_section_has_sanitize_output_true() {
+        let c = AppConfig::default();
+        assert!(c.fetch.sanitize_output);
     }
 }

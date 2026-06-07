@@ -53,7 +53,42 @@ impl ServerState {
 
         let global_timeout = Duration::from_millis(config.search.timeout_ms);
         let user_agent = Some(config.fetch.user_agent.clone());
-        let adapter = MetadataSearchAdapter::new(enabled, global_timeout, user_agent)?;
+
+        let searxng_requested = enabled.iter().any(|id| id == "searxng");
+        let searxng_base_url = config.search.searxng.base_url.clone();
+        let searxng_base_url_is_empty = searxng_base_url
+            .as_deref()
+            .map(str::is_empty)
+            .unwrap_or(true);
+        if searxng_requested
+            && (config.search.searxng.enabled
+                || !searxng_base_url_is_empty)
+        {
+            if !config.search.searxng.enabled {
+                tracing::warn!(
+                    "[search].providers.searxng = true but [search].searxng.enabled = false; \
+                     the searxng provider will be skipped"
+                );
+            } else if searxng_base_url_is_empty {
+                tracing::warn!(
+                    "[search].providers.searxng = true but [search].searxng.base_url is empty; \
+                     the searxng provider will be skipped"
+                );
+            }
+        }
+        let searxng_base_url = if config.search.searxng.enabled {
+            searxng_base_url
+        } else {
+            None
+        };
+
+        let adapter = MetadataSearchAdapter::new(
+            enabled,
+            global_timeout,
+            user_agent,
+            searxng_base_url,
+            config.search.sanitize_output,
+        )?;
 
         let misconfigured = config.misconfigured_default_providers();
         for id in &misconfigured {
@@ -86,7 +121,7 @@ impl ServerState {
         let fetch_client = if config.fetch.enabled {
             let limits = config.fetch_limits();
             let ua = config.fetch_user_agent();
-            match FetchClient::new(limits, ua) {
+            match FetchClient::new(limits, ua, config.fetch.sanitize_output) {
                 Ok(c) => Some(Arc::new(c)),
                 Err(e) => {
                     tracing::warn!(error = %e, "failed to build shared fetch client; web_fetch will fail at call time");
@@ -108,12 +143,18 @@ impl ServerState {
     /// tests and for callers that want to wire custom upstream engines
     /// (e.g. mocks). Builds a `FetchClient` from the config when
     /// `[fetch].enabled = true`; otherwise `fetch_client` is `None`.
+    ///
+    /// The pre-constructed adapter must already have its
+    /// `sanitize_output` flag set (the production default is `true`).
+    /// The `FetchClient` honors `config.fetch.sanitize_output`.
     pub fn with_adapter(config: AppConfig, adapter: std::sync::Arc<MetadataSearchAdapter>) -> Self {
         let config = Arc::new(config);
         let fetch_client = if config.fetch.enabled {
             let limits = config.fetch_limits();
             let ua = config.fetch_user_agent();
-            FetchClient::new(limits, ua).ok().map(Arc::new)
+            FetchClient::new(limits, ua, config.fetch.sanitize_output)
+                .ok()
+                .map(Arc::new)
         } else {
             None
         };

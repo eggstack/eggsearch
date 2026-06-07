@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::core::sanitize::TrustMarkers;
+
 /// Extraction mode for web content.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -59,7 +61,7 @@ pub enum FetchTrust {
 }
 
 /// Response type for the `web_fetch` tool.
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct WebFetchResponse {
     /// Original requested URL.
     pub url: String,
@@ -97,6 +99,13 @@ pub struct WebFetchResponse {
     /// Warning messages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// What eggsearch did to the title/description/text fields on
+    /// this response (control-char stripping, length bounding, framing,
+    /// marker scanning). Default-initialized to a zero record on
+    /// responses that have not yet been sanitized; later pipeline
+    /// stages replace it with the actual counts.
+    #[serde(default)]
+    pub trust_markers: TrustMarkers,
 }
 
 impl WebFetchResponse {

@@ -78,6 +78,7 @@ eggsearch/
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
 - `AppConfig` is the root type, contains `SearchSection`
 - `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent)
+- `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
 - `Mode` enum: `Live` or `Off`
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 
@@ -87,6 +88,39 @@ eggsearch/
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
 - `WebFetchResponse` is the output type returned by `web_fetch`; trust is always `external_untrusted` for live web content
+
+### Prompt-injection Hardening
+- Untrusted text from search and fetch flows through three tiers of
+  defense, defined in `src/core/sanitize.rs`:
+  1. **Tier 1** (always on): `strip_control_chars` removes NUL, CR,
+     ASCII controls, bidi controls, and zero-width chars;
+     `bound_text` clamps titles to 200 chars and snippets to 500.
+  2. **Tier 2** (gated by `sanitize_output`): `frame` wraps the
+     bounded text with `<<<EXTERNAL_UNTRUSTED field=... id=...>>>` /
+     `<<<END>>>` delimiters.
+  3. **Tier 3** (gated by `sanitize_output`): `scan_injection_markers`
+     looks for an allowlisted set of prompt-injection patterns
+     (`ignore_previous`, `disregard_all`, `system_colon`,
+     `assistant_colon`, `im_start`, `im_end`, `chatml_tag`).
+- The `TrustMarkers` struct is the canonical record of what was done
+  to untrusted text in a call (`text_sanitized`, `text_truncated`,
+  `text_framed`, `control_chars_removed`, `injection_hits`). It is
+  per-card on `SourceCard`, per-response on `WebFetchResponse` and
+  `WebSearchResponse`, and rolled up into a top-level `trust_markers`
+  field on every MCP response.
+- All untrusted text from upstream engines **must** flow through
+  `convert_aggregated` (for search, in `src/meta/adapter.rs`) or the
+  `sanitize_field` helper (for fetch, in `src/fetch/client.rs`). Future
+  engines or output fields must respect this — never emit
+  attacker-controlled text directly into a response without routing
+  it through the same sanitization pipeline.
+- `MetadataSearchAdapter::from_engines` defaults `sanitize_output`
+  to `false`. This is intentional, to keep pre-sanitization
+  integration-test assertions stable. Production code paths via
+  `ServerState::build` use `AppConfig.search.sanitize_output`, which
+  defaults to `true`. The `mock` feature exposes
+  `MetadataSearchAdapter::from_engines_with_sanitize(engines, timeout,
+  sanitize_output)` for tests that need to flip the flag explicitly.
 
 ## Vendored Search Engines
 
@@ -99,6 +133,9 @@ The vendored code includes:
 - `engines/brave.rs` — Brave Search HTML scraper
 - `engines/startpage.rs` — Startpage HTML scraper
 - `engines/yahoo.rs` — Yahoo Search HTML scraper
+- `engines/mojeek.rs` — Mojeek HTML scraper (added in 0.2.0)
+- `engines/searxng.rs` — SearXNG JSON client for a self-hosted
+  SearXNG instance (added in 0.2.0)
 - `engines/normalizer.rs` — URL normalization for deduplication
 - `engines/models.rs` — `SearchResult`, `AggregatedResult`
 - `engines/error.rs` — `EngineError` enum
@@ -107,12 +144,20 @@ The vendored code includes:
 When updating engines, check the upstream repo for HTML selector changes.
 The `scraper` crate is used for HTML parsing.
 
+The `searxng` provider is a JSON client, not an HTML scraper: it sends a
+GET to `{base_url}/search?format=json` and deserializes the response
+into `SearchResult` values. The base URL is operator-supplied via
+`[search].searxng.base_url` and the provider is built only when
+`[search].searxng.enabled = true`. This provider is the recommended
+path for operators who want Qwant, Bing, or any other upstream that
+SearXNG can aggregate.
+
 ## Publishing to crates.io
 
 eggsearch is published as a single crate. Before publishing:
 
 - `cargo clippy --all-features -- -D warnings` is clean
-- `cargo test --all-features` passes (114 tests)
+- `cargo test --all-features` passes (260 tests)
 - `cargo publish --dry-run` succeeds
 - The version in `Cargo.toml` is bumped
 - `CHANGELOG.md` is updated

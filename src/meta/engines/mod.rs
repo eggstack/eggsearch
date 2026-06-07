@@ -8,7 +8,9 @@ pub mod brave;
 pub mod duckduckgo;
 pub mod error;
 pub mod models;
+pub mod mojeek;
 pub mod normalizer;
+pub mod searxng;
 pub mod startpage;
 pub mod yahoo;
 
@@ -53,6 +55,15 @@ pub struct StartpageEngine {
 
 pub struct YahooEngine {
     pub client: Arc<Client>,
+}
+
+pub struct MojeekEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct SearxngEngine {
+    pub client: Arc<Client>,
+    pub base_url: String,
 }
 
 impl SearchEngine for DuckDuckGoEngine {
@@ -112,6 +123,45 @@ impl SearchEngine for YahooEngine {
         timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(yahoo::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for MojeekEngine {
+    fn name(&self) -> &'static str {
+        "mojeek"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(mojeek::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for SearxngEngine {
+    fn name(&self) -> &'static str {
+        "searxng"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            searxng::search(
+                &self.client,
+                self.base_url.as_str(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
     }
 }
 

@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-07
+
+### Added
+- Prompt-injection hardening for `web_search` and `web_fetch`:
+  - All untrusted text fields (snippet, title, fetched page text) are
+    stripped of control characters (NUL, CR, ASCII control range,
+    bidi controls, zero-width) and length-bounded (titles 200 chars,
+    snippets 500 chars).
+  - When `[search].sanitize_output` and `[fetch].sanitize_output` are
+    `true` (the default), untrusted text is wrapped with
+    `<<<EXTERNAL_UNTRUSTED field=... id=...>>>` ... `<<<END>>>`
+    framing delimiters so a string-scanning model can see the
+    boundary between the tool's output structure and external content.
+  - When the same flag is `true`, a small allowlisted set of
+    prompt-injection markers (e.g. "ignore previous instructions",
+    ChatML-style tags) is scanned for in untrusted text. Detected
+    markers are surfaced as advisory entries in the response's
+    `warnings` array; the content is still returned.
+  - A new `trust_markers` object on every response summarizes what
+    eggsearch did to the untrusted text in that call: whether it
+    was sanitized, truncated, framed, how many control chars were
+    removed, and how many injection markers were found.
+- `MetadataSearchAdapter` and `FetchClient` constructors take a new
+  `sanitize_output: bool` parameter. `MetadataSearchAdapter::from_engines`
+  defaults the flag to `false` for back-compat with test fixtures.
+- `[search].sanitize_output` (default `true`) and
+  `[fetch].sanitize_output` (default `true`) configuration knobs.
+
+### Notes
+- The new defenses are *defense in depth*; the host's system prompt
+  and instruction-following discipline remain the primary defense.
+- Hosts that need raw, unprocessed text (e.g. they have their own
+  downstream sanitizer) can opt out by setting both flags to
+  `false`. Control-char stripping and length bounding remain on
+  even when the flags are `false`.
+
+## [0.2.0] - 2026-06-07
+
+### Added
+- `mojeek` search engine adapter (HTML scrape). No API key required.
+  Disabled by default; enable with `[search].providers.mojeek = true`.
+- `searxng` search engine adapter. Connects to a self-hosted SearXNG
+  instance over its JSON API (`{base_url}/search?format=json`). Disabled
+  by default. Configure with `[search].searxng].enabled = true` and
+  `[search].searxng.base_url = "https://searx.example.org"`. The
+  `searxng` provider id can be a high-leverage addition because a
+  single SearXNG instance can aggregate many underlying engines
+  (including Qwant, when the instance's admin has enabled it).
+- New `[search].searxng` config section (`enabled`, `base_url`).
+- New fixture-based unit tests for the `mojeek` and `searxng` engines
+  (parse and convert paths, max_results, missing fields, edge cases).
+
+### Notes
+- Qwant was investigated as a direct HTML scrape but is not viable in
+  the current build: `qwant.com` and `lite.qwant.com` are JavaScript
+  shells that load results via authenticated XHR to `api.qwant.com/v3`,
+  and the API returns 403 for unauthenticated requests. Operators who
+  want Qwant coverage should point `searxng.base_url` at a self-hosted
+  SearXNG instance that has the Qwant engine enabled.
+
 ## [0.1.2] - 2026-06-07
 
 ### Added

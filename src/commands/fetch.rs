@@ -33,7 +33,7 @@ pub async fn run(
         limits.timeout_ms = t;
     }
 
-    let client = FetchClient::new(limits, cfg.fetch_user_agent())?;
+    let client = FetchClient::new(limits, cfg.fetch_user_agent(), cfg.fetch.sanitize_output)?;
 
     let extract_mode = if metadata_only {
         ExtractMode::MetadataOnly

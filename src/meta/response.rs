@@ -1,5 +1,6 @@
 //! Response types for the metasearch adapter.
 
+use crate::core::sanitize::TrustMarkers;
 use crate::core::SearchWarning;
 use crate::core::SourceCard;
 use serde::{Deserialize, Serialize};
@@ -32,7 +33,7 @@ pub struct ProviderFailure {
 }
 
 /// Successful response from `MetadataSearchAdapter::web_search`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WebSearchResponse {
     /// Echo of the original query.
     pub query: String,
@@ -47,6 +48,12 @@ pub struct WebSearchResponse {
     /// Aggregated warnings (per-provider failures + the standard
     /// "untrusted external content" warning).
     pub warnings: Vec<SearchWarning>,
+    /// Aggregate `TrustMarkers` rolled up across every `SourceCard`
+    /// in `results` (sum of `control_chars_removed`, sum of
+    /// `injection_hits`, OR of the booleans). Default-initialized to
+    /// a zero record; the adapter populates it after each card is
+    /// sanitized.
+    pub trust_markers: TrustMarkers,
 }
 
 #[cfg(test)]
