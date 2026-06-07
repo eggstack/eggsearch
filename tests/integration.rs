@@ -247,10 +247,7 @@ async fn web_search_oversized_max_results_clamps_and_warns() {
     let has_clamp_warning = warnings
         .iter()
         .any(|w| w.as_str().unwrap_or("").contains("exceeded server cap"));
-    assert!(
-        has_clamp_warning,
-        "expected clamp warning in: {warnings:?}"
-    );
+    assert!(has_clamp_warning, "expected clamp warning in: {warnings:?}");
 }
 
 #[tokio::test]
@@ -1197,5 +1194,9 @@ async fn web_search_request_max_results_overrides_default() {
     args.max_results = Some(3);
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results is array");
-    assert_eq!(results.len(), 3, "request override should use requested count");
+    assert_eq!(
+        results.len(),
+        3,
+        "request override should use requested count"
+    );
 }

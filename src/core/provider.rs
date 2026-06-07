@@ -44,10 +44,8 @@ pub struct ProviderCapabilities {
     pub supports_language: bool,
     /// Provider supports a region / locale parameter.
     pub supports_region: bool,
-    /// Provider supports restricting results to specific domains.
-    pub supports_include_domains: bool,
-    /// Provider supports excluding specific domains from results.
-    pub supports_exclude_domains: bool,
+    /// Provider supports domain include/exclude filters.
+    pub supports_domain_filters: bool,
     /// Provider supports a news-specific category.
     pub supports_news: bool,
 }
@@ -60,8 +58,7 @@ impl ProviderCapabilities {
             supports_freshness: false,
             supports_language: false,
             supports_region: false,
-            supports_include_domains: false,
-            supports_exclude_domains: false,
+            supports_domain_filters: false,
             supports_news: false,
         }
     }
@@ -81,11 +78,8 @@ impl ProviderCapabilities {
         if self.supports_region {
             caps.push("region");
         }
-        if self.supports_include_domains {
-            caps.push("include_domains");
-        }
-        if self.supports_exclude_domains {
-            caps.push("exclude_domains");
+        if self.supports_domain_filters {
+            caps.push("domain_filters");
         }
         if self.supports_news {
             caps.push("news");
@@ -94,6 +88,49 @@ impl ProviderCapabilities {
             "basic".to_string()
         } else {
             caps.join(", ")
+        }
+    }
+
+    /// Check if a specific option is supported by this provider.
+    pub fn supports(&self, option: &CapabilityOption) -> bool {
+        match option {
+            CapabilityOption::SafeSearch => self.supports_safe_search,
+            CapabilityOption::Freshness => self.supports_freshness,
+            CapabilityOption::Language => self.supports_language,
+            CapabilityOption::Region => self.supports_region,
+            CapabilityOption::DomainFilters => self.supports_domain_filters,
+            CapabilityOption::News => self.supports_news,
+        }
+    }
+}
+
+/// Options that can be checked against provider capabilities.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CapabilityOption {
+    /// Safe-search filtering.
+    SafeSearch,
+    /// Freshness / time-range filtering.
+    Freshness,
+    /// Language parameter.
+    Language,
+    /// Region / locale parameter.
+    Region,
+    /// Domain include/exclude filters.
+    DomainFilters,
+    /// News-specific category.
+    News,
+}
+
+impl CapabilityOption {
+    /// Human-readable name for warning messages.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::SafeSearch => "safe_search",
+            Self::Freshness => "freshness",
+            Self::Language => "language",
+            Self::Region => "region",
+            Self::DomainFilters => "domain_filters",
+            Self::News => "news",
         }
     }
 }
@@ -197,8 +234,7 @@ pub fn built_in_provider_descriptor(
                 supports_freshness: true,
                 supports_language: true,
                 supports_region: true,
-                supports_include_domains: false,
-                supports_exclude_domains: false,
+                supports_domain_filters: false,
                 supports_news: true,
             },
         }),
@@ -215,8 +251,7 @@ pub fn built_in_provider_descriptor(
                 supports_freshness: true,
                 supports_language: true,
                 supports_region: true,
-                supports_include_domains: false,
-                supports_exclude_domains: false,
+                supports_domain_filters: false,
                 supports_news: false,
             },
         }),
@@ -255,7 +290,7 @@ mod tests {
         assert!(summary.contains("safe_search"));
         assert!(summary.contains("language"));
         assert!(summary.contains("news"));
-        assert!(!summary.contains("include_domains"));
+        assert!(!summary.contains("domain_filters"));
     }
 
     #[test]
@@ -317,8 +352,7 @@ mod tests {
         assert!(desc.capabilities.supports_freshness);
         assert!(desc.capabilities.supports_language);
         assert!(desc.capabilities.supports_region);
-        assert!(!desc.capabilities.supports_include_domains);
-        assert!(!desc.capabilities.supports_exclude_domains);
+        assert!(!desc.capabilities.supports_domain_filters);
         assert!(!desc.capabilities.supports_news);
     }
 
@@ -331,5 +365,55 @@ mod tests {
         assert!(summary.contains("language"));
         assert!(summary.contains("region"));
         assert!(!summary.contains("news"));
+    }
+
+    #[test]
+    fn capability_option_supports_method() {
+        let caps = ProviderCapabilities {
+            supports_safe_search: true,
+            supports_freshness: false,
+            supports_language: true,
+            supports_region: false,
+            supports_domain_filters: true,
+            supports_news: false,
+        };
+        assert!(caps.supports(&CapabilityOption::SafeSearch));
+        assert!(!caps.supports(&CapabilityOption::Freshness));
+        assert!(caps.supports(&CapabilityOption::Language));
+        assert!(!caps.supports(&CapabilityOption::Region));
+        assert!(caps.supports(&CapabilityOption::DomainFilters));
+        assert!(!caps.supports(&CapabilityOption::News));
+    }
+
+    #[test]
+    fn capability_option_display_names() {
+        assert_eq!(CapabilityOption::SafeSearch.display_name(), "safe_search");
+        assert_eq!(CapabilityOption::Freshness.display_name(), "freshness");
+        assert_eq!(CapabilityOption::Language.display_name(), "language");
+        assert_eq!(CapabilityOption::Region.display_name(), "region");
+        assert_eq!(
+            CapabilityOption::DomainFilters.display_name(),
+            "domain_filters"
+        );
+        assert_eq!(CapabilityOption::News.display_name(), "news");
+    }
+
+    #[test]
+    fn capability_option_supports_none() {
+        let caps = ProviderCapabilities::none();
+        for option in [
+            CapabilityOption::SafeSearch,
+            CapabilityOption::Freshness,
+            CapabilityOption::Language,
+            CapabilityOption::Region,
+            CapabilityOption::DomainFilters,
+            CapabilityOption::News,
+        ] {
+            assert!(
+                !caps.supports(&option),
+                "ProviderCapabilities::none() should not support {}",
+                option.display_name()
+            );
+        }
     }
 }

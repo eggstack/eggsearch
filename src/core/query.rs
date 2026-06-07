@@ -221,4 +221,20 @@ mod tests {
         assert!(!r.clamped);
         assert!(r.warning.is_none());
     }
+
+    #[test]
+    fn resolve_max_results_within_cap_override() {
+        let r = resolve_max_results(Some(30), 10, 50);
+        assert_eq!(r.effective, 30);
+        assert!(!r.clamped);
+        assert!(r.warning.is_none());
+    }
+
+    #[test]
+    fn resolve_max_results_at_cap_no_warning() {
+        let r = resolve_max_results(Some(50), 10, 50);
+        assert_eq!(r.effective, 50);
+        assert!(!r.clamped);
+        assert!(r.warning.is_none());
+    }
 }

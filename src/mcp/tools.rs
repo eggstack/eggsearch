@@ -128,10 +128,7 @@ pub async fn run_web_search(
         state.config.search.max_results_cap,
     );
 
-    let resp = state
-        .adapter
-        .web_search(&req, resolution.effective)
-        .await;
+    let resp = state.adapter.web_search(&req, resolution.effective).await;
 
     let mut warnings: Vec<String> = resp
         .warnings

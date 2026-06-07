@@ -1,8 +1,4 @@
 //! Configuration model and loader for eggsearch.
-//!
-//! The changeover configuration is intentionally minimal: the default
-//! server is a live metasearch-only MCP server. Tantivy and web_fetch
-//! are deferred behind feature flags.
 
 use std::path::{Path, PathBuf};
 
@@ -439,10 +435,15 @@ impl AppConfig {
                 "[search].default_max_results must be > 0".to_string(),
             ));
         }
+        if self.search.max_results_cap == 0 {
+            return Err(CoreError::Config(
+                "[search].max_results_cap must be > 0".to_string(),
+            ));
+        }
         if self.search.max_results_cap < self.search.default_max_results {
             return Err(CoreError::Config(format!(
-                "[search].max_results_cap ({}) must be >= [search].default_max_results ({})",
-                self.search.max_results_cap, self.search.default_max_results
+                "[search].default_max_results ({}) must be <= [search].max_results_cap ({})",
+                self.search.default_max_results, self.search.max_results_cap
             )));
         }
         if self.search.timeout_ms == 0 {
@@ -632,7 +633,10 @@ mod tests {
         let c = AppConfig::default();
         let text = toml::to_string(&c).unwrap();
         let parsed: AppConfig = toml::from_str(&text).unwrap();
-        assert_eq!(parsed.search.default_max_results, c.search.default_max_results);
+        assert_eq!(
+            parsed.search.default_max_results,
+            c.search.default_max_results
+        );
     }
 
     #[test]
@@ -721,7 +725,10 @@ mod tests {
         let c = AppConfig::default();
         c.save(&path).unwrap();
         let loaded = AppConfig::load(&path).unwrap();
-        assert_eq!(loaded.search.default_max_results, c.search.default_max_results);
+        assert_eq!(
+            loaded.search.default_max_results,
+            c.search.default_max_results
+        );
         assert_eq!(loaded.search.mode, c.search.mode);
         assert_eq!(loaded.search.default_providers, c.search.default_providers);
     }
@@ -842,8 +849,13 @@ mod tests {
     fn validate_rejects_zero_default_max_results() {
         let mut c = AppConfig::default();
         c.search.default_max_results = 0;
-        let err = c.validate().expect_err("expected default_max_results failure");
-        assert!(err.to_string().contains("default_max_results"), "got: {err}");
+        let err = c
+            .validate()
+            .expect_err("expected default_max_results failure");
+        assert!(
+            err.to_string().contains("default_max_results"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -852,6 +864,18 @@ mod tests {
         c.search.default_max_results = 50;
         c.search.max_results_cap = 10;
         let err = c.validate().expect_err("expected cap failure");
+        assert!(
+            err.to_string().contains("default_max_results"),
+            "got: {err}"
+        );
+        assert!(err.to_string().contains("max_results_cap"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_results_cap() {
+        let mut c = AppConfig::default();
+        c.search.max_results_cap = 0;
+        let err = c.validate().expect_err("expected max_results_cap failure");
         assert!(err.to_string().contains("max_results_cap"), "got: {err}");
     }
 

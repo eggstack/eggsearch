@@ -25,13 +25,6 @@ for the default configuration.
 - Vendored search engine implementations (no heavyweight upstream deps)
 - 334 fast tests (no network required)
 
-## What it is not
-
-- Not a web crawler
-- Not a local search engine
-- Not a SearXNG replacement with a web UI
-- Not a browser-automation tool
-
 ## Install
 
 ### Install from crates.io

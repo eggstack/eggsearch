@@ -10,9 +10,11 @@ use crate::core::sanitize::TrustMarkers;
 ///
 /// This is the canonical, provider-agnostic output model. It is deliberately
 /// small: agents should fetch full content via a separate `web_fetch` tool
-/// (deferred) rather than rely on snippets.
+/// rather than rely on snippets.
 ///
-/// For the MVP, all live web results use `TrustLevel::ExternalUntrusted`.
+/// `web_search` is discovery-only and returns `SourceCard` values with
+/// `fetched = false`. `web_fetch` returns a separate fetched-document
+/// response for one explicit URL.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SourceCard {
     /// Per-response identifier, e.g. `src_<uuid>`. Unique within a

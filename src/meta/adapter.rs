@@ -6,7 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::core::config::ApiProviderConfig;
-use crate::core::provider::{built_in_provider_descriptor, ProviderDescriptor, KNOWN_PROVIDER_IDS};
+use crate::core::provider::{
+    built_in_provider_descriptor, CapabilityOption, ProviderDescriptor, KNOWN_PROVIDER_IDS,
+};
 use crate::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
@@ -240,6 +242,41 @@ impl MetadataSearchAdapter {
     /// List the provider ids that this adapter will query.
     pub fn provider_ids(&self) -> &[String] {
         &self.provider_ids
+    }
+
+    /// Check whether all queried providers support a given capability
+    /// option. Returns the list of provider ids that do NOT support it.
+    /// When `provider_ids` is empty, checks all enabled providers.
+    pub fn unsupported_providers(
+        &self,
+        provider_ids: &[String],
+        option: &CapabilityOption,
+    ) -> Vec<String> {
+        let to_check: Vec<&str> = if provider_ids.is_empty() {
+            self.provider_ids.iter().map(|s| s.as_str()).collect()
+        } else {
+            provider_ids.iter().map(|s| s.as_str()).collect()
+        };
+
+        let mut unsupported = Vec::new();
+        for id in &to_check {
+            // Build descriptor to check capabilities.
+            // For API providers not in KNOWN_PROVIDER_IDS, skip capability
+            // check (they won't have a descriptor).
+            let configured = if *id == "searxng" {
+                self.searxng_configured
+            } else if let Some(&configured) = self.api_configured.get(*id) {
+                configured
+            } else {
+                true
+            };
+            if let Some(desc) = built_in_provider_descriptor(id, true, false, configured) {
+                if !desc.capabilities.supports(option) {
+                    unsupported.push(id.to_string());
+                }
+            }
+        }
+        unsupported
     }
 
     /// Per-provider status report. Includes both enabled providers in

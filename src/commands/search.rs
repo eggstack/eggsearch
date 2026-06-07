@@ -44,10 +44,7 @@ pub async fn run(
         cfg.search.default_max_results,
         cfg.search.max_results_cap,
     );
-    let resp = state
-        .adapter
-        .web_search(&req, resolution.effective)
-        .await;
+    let resp = state.adapter.web_search(&req, resolution.effective).await;
 
     if as_json {
         let payload = serde_json::json!({
