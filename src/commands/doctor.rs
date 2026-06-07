@@ -32,6 +32,10 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
                 },
                 "capabilities": provider_capability_summary(cfg),
             },
+            "search": {
+                "default_max_results": cfg.search.default_max_results,
+                "max_results_cap": cfg.search.max_results_cap,
+            },
             "searxng": searxng_status(cfg),
             "api_providers": api_credential_status(cfg),
             "fetch": fetch_status(cfg),
@@ -242,7 +246,7 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
         };
 
         let start = std::time::Instant::now();
-        let resp = state.adapter.web_search(&req, 1, 1).await;
+        let resp = state.adapter.web_search(&req, 1).await;
         let elapsed = start.elapsed().as_millis() as u64;
 
         if resp.providers_failed.is_empty() {

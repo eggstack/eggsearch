@@ -18,7 +18,7 @@ pub use provider::{
     built_in_provider_descriptor, ProviderCapabilities, ProviderDescriptor, ProviderKind,
     KNOWN_PROVIDER_IDS,
 };
-pub use query::{SafeSearch, WebSearchRequest};
+pub use query::{resolve_max_results, MaxResultsResolution, SafeSearch, WebSearchRequest};
 pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,

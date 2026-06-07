@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `search.max_results` config field is deprecated in favor of `search.default_max_results`. Old configs using `max_results` are still accepted via a serde alias.
+- MCP request `max_results` is now a per-call final SourceCard count preference. When the request exceeds the server's `max_results_cap`, the response is clamped and a warning is included instead of returning a validation error.
+
+### Added
+- Centralized `resolve_max_results()` function in `core::query` for resolving the effective result count with clamping and warning generation.
+- Warning in `web_search` response when requested `max_results` exceeds configured `max_results_cap`.
+- `search` section in `doctor` output reporting `default_max_results` and `max_results_cap`.
+
 ## [0.3.0] - 2026-06-07
 
 ### Added

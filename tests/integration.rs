@@ -20,8 +20,8 @@
 //! - `web_search` with a query longer than `max_query_chars` returns
 //!   a validation error.
 //! - `web_search` with `max_results = 0` returns a validation error.
-//! - `web_search` with `max_results > cap` returns a validation
-//!   error.
+//! - `web_search` with `max_results > cap` returns a clamp warning
+//!   and uses the cap value.
 //! - `web_search` with an unknown provider id returns an error.
 //! - `web_search` when `mode = "off"` is denied by policy.
 //! - `web_search` with one failing provider returns partial results
@@ -92,7 +92,7 @@ fn test_cfg() -> AppConfig {
     let mut cfg = AppConfig::default();
     cfg.search.timeout_ms = 2_000;
     cfg.search.max_query_chars = 256;
-    cfg.search.max_results = 10;
+    cfg.search.default_max_results = 10;
     cfg.search.max_results_cap = 50;
     // Register mock provider ids so resolve_providers() accepts them.
     cfg.search.providers.insert("mock_a".to_string(), true);
@@ -220,24 +220,36 @@ async fn web_search_zero_max_results_returns_validation_error() {
     );
 }
 
+#[cfg(feature = "mock")]
 #[tokio::test]
-async fn web_search_oversized_max_results_returns_validation_error() {
-    let state = state_with_default();
-    let res = run_web_search(
+async fn web_search_oversized_max_results_clamps_and_warns() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+    )];
+    let mut cfg = test_cfg();
+    cfg.search.max_results_cap = 5; // cap at 5
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let v = run_web_search(
         state,
         WebSearchArgs {
             query: "rust".into(),
-            max_results: Some(10_000),
-            providers: vec![],
+            max_results: Some(100), // request way more than cap
+            providers: vec!["mock_a".into()],
             safe_search: None,
             timeout_ms: None,
         },
     )
-    .await;
-    let err = res.expect_err("expected validation error");
+    .await
+    .expect("should succeed with clamp");
+    // The response should contain a clamp warning
+    let warnings = v["warnings"].as_array().expect("warnings array");
+    let has_clamp_warning = warnings
+        .iter()
+        .any(|w| w.as_str().unwrap_or("").contains("exceeded server cap"));
     assert!(
-        err.to_string().contains("max_results must be <="),
-        "got: {err}"
+        has_clamp_warning,
+        "expected clamp warning in: {warnings:?}"
     );
 }
 
@@ -1140,4 +1152,50 @@ async fn web_search_disabled_provider_in_explicit_request_returns_error() {
         err.to_string().contains("disabled"),
         "error should mention disabled: {err}"
     );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_uses_default_max_results_when_omitted() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new("A", "https://example.com/a", "mock_a"),
+            MockResult::new("B", "https://example.com/b", "mock_a"),
+            MockResult::new("C", "https://example.com/c", "mock_a"),
+        ],
+    )];
+    let mut cfg = test_cfg();
+    cfg.search.default_max_results = 2;
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a"], "rust"))
+        .await
+        .expect("ok");
+    let results = v["results"].as_array().expect("results is array");
+    assert!(
+        results.len() <= 2,
+        "should return at most default_max_results, got: {}",
+        results.len()
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_request_max_results_overrides_default() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new("A", "https://example.com/a", "mock_a"),
+            MockResult::new("B", "https://example.com/b", "mock_a"),
+            MockResult::new("C", "https://example.com/c", "mock_a"),
+        ],
+    )];
+    let mut cfg = test_cfg();
+    cfg.search.default_max_results = 1;
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let mut args = args_for(&["mock_a"], "rust");
+    args.max_results = Some(3);
+    let v = run_web_search(state, args).await.expect("ok");
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(results.len(), 3, "request override should use requested count");
 }

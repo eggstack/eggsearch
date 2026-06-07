@@ -94,8 +94,9 @@ pub struct ApiProviderConfig {
 pub struct SearchSection {
     /// Server mode: `off` or `live`. Defaults to `live`.
     pub mode: Mode,
-    /// Default `max_results` for `web_search` when not specified.
-    pub max_results: usize,
+    /// Default number of results for `web_search` when not specified.
+    #[serde(alias = "max_results")]
+    pub default_max_results: usize,
     /// Hard cap on `max_results` from clients.
     pub max_results_cap: usize,
     /// Maximum accepted query length in characters.
@@ -141,7 +142,7 @@ impl Default for SearchSection {
         providers.insert("searxng".to_string(), false);
         Self {
             mode: Mode::default(),
-            max_results: 10,
+            default_max_results: 10,
             max_results_cap: 50,
             max_query_chars: 512,
             timeout_ms: 8000,
@@ -433,15 +434,15 @@ impl AppConfig {
                 "[fetch].timeout_ms must be > 0".to_string(),
             ));
         }
-        if self.search.max_results == 0 {
+        if self.search.default_max_results == 0 {
             return Err(CoreError::Config(
-                "[search].max_results must be > 0".to_string(),
+                "[search].default_max_results must be > 0".to_string(),
             ));
         }
-        if self.search.max_results_cap < self.search.max_results {
+        if self.search.max_results_cap < self.search.default_max_results {
             return Err(CoreError::Config(format!(
-                "[search].max_results_cap ({}) must be >= [search].max_results ({})",
-                self.search.max_results_cap, self.search.max_results
+                "[search].max_results_cap ({}) must be >= [search].default_max_results ({})",
+                self.search.max_results_cap, self.search.default_max_results
             )));
         }
         if self.search.timeout_ms == 0 {
@@ -590,7 +591,7 @@ mod tests {
     #[test]
     fn default_config_loads() {
         let c = AppConfig::default();
-        assert!(c.search.max_results > 0);
+        assert!(c.search.default_max_results > 0);
         assert!(!c.search.default_providers.is_empty());
     }
 
@@ -631,7 +632,7 @@ mod tests {
         let c = AppConfig::default();
         let text = toml::to_string(&c).unwrap();
         let parsed: AppConfig = toml::from_str(&text).unwrap();
-        assert_eq!(parsed.search.max_results, c.search.max_results);
+        assert_eq!(parsed.search.default_max_results, c.search.default_max_results);
     }
 
     #[test]
@@ -720,7 +721,7 @@ mod tests {
         let c = AppConfig::default();
         c.save(&path).unwrap();
         let loaded = AppConfig::load(&path).unwrap();
-        assert_eq!(loaded.search.max_results, c.search.max_results);
+        assert_eq!(loaded.search.default_max_results, c.search.default_max_results);
         assert_eq!(loaded.search.mode, c.search.mode);
         assert_eq!(loaded.search.default_providers, c.search.default_providers);
     }
@@ -838,17 +839,17 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_zero_max_results() {
+    fn validate_rejects_zero_default_max_results() {
         let mut c = AppConfig::default();
-        c.search.max_results = 0;
-        let err = c.validate().expect_err("expected max_results failure");
-        assert!(err.to_string().contains("max_results"), "got: {err}");
+        c.search.default_max_results = 0;
+        let err = c.validate().expect_err("expected default_max_results failure");
+        assert!(err.to_string().contains("default_max_results"), "got: {err}");
     }
 
     #[test]
-    fn validate_rejects_max_results_cap_below_max_results() {
+    fn validate_rejects_max_results_cap_below_default_max_results() {
         let mut c = AppConfig::default();
-        c.search.max_results = 50;
+        c.search.default_max_results = 50;
         c.search.max_results_cap = 10;
         let err = c.validate().expect_err("expected cap failure");
         assert!(err.to_string().contains("max_results_cap"), "got: {err}");

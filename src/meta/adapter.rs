@@ -289,10 +289,9 @@ impl MetadataSearchAdapter {
     pub async fn web_search(
         &self,
         req: &WebSearchRequest,
-        default_max_results: usize,
-        max_results_cap: usize,
+        effective_max_results: usize,
     ) -> WebSearchResponse {
-        let max_results = req.effective_max_results(default_max_results, max_results_cap);
+        let max_results = effective_max_results;
         let (engines, queried_ids) = if req.providers.is_empty() {
             (self.engines.clone(), self.provider_ids.clone())
         } else {
@@ -880,7 +879,7 @@ mod tests {
         ];
         let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
         let req = WebSearchRequest::new("rust axum");
-        let resp = adapter.web_search(&req, 10, 10).await;
+        let resp = adapter.web_search(&req, 10).await;
         assert_eq!(resp.query, "rust axum");
         assert_eq!(resp.mode, "live_metasearch");
         assert_eq!(resp.providers_queried.len(), 2);

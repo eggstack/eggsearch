@@ -35,13 +35,18 @@ pub async fn run(
         timeout_ms: None,
     };
 
-    if let Err(e) = req.validate(cfg.search.max_query_chars, cfg.search.max_results_cap) {
+    if let Err(e) = req.validate(cfg.search.max_query_chars) {
         return Err(anyhow!("invalid query: {e}"));
     }
 
+    let resolution = eggsearch::core::query::resolve_max_results(
+        req.max_results,
+        cfg.search.default_max_results,
+        cfg.search.max_results_cap,
+    );
     let resp = state
         .adapter
-        .web_search(&req, cfg.search.max_results, cfg.search.max_results_cap)
+        .web_search(&req, resolution.effective)
         .await;
 
     if as_json {

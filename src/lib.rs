@@ -22,7 +22,7 @@
 //! let mut req = WebSearchRequest::new("rust axum middleware");
 //! req.max_results = Some(5);
 //! req.providers = vec!["duckduckgo".to_string(), "brave".to_string()];
-//! req.validate(512, 50).expect("request is valid");
+//! req.validate(512).expect("request is valid");
 //! ```
 
 #![warn(missing_docs)]

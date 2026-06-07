@@ -116,7 +116,7 @@ providers and returns compact `SourceCard` results.
 **Rules:**
 
 - `query` is required and must be non-empty.
-- `max_results` is capped by the server's `max_results_cap` (default 50).
+- `max_results` is an optional per-call final SourceCard count. The server may clamp this to its configured `max_results_cap` (default 50) and return a warning in the response.
 - If `providers` is omitted, the server's configured defaults are used.
 - `timeout_ms` is optional and bounded by the server's global timeout.
 - Partial provider failure is non-fatal: surviving results are returned.
@@ -196,7 +196,7 @@ A minimal example:
 ```toml
 [search]
 mode = "live"
-max_results = 10
+default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
@@ -224,7 +224,7 @@ base_url      = "https://api.search.brave.com/res/v1/web/search"
 | Field | Default | Description |
 |-------|---------|-------------|
 | `mode` | `"live"` | `"live"` or `"off"`. When off, `web_search` is denied. |
-| `max_results` | `10` | Default number of results per query. |
+| `default_max_results` | `10` | Default number of results per query when `max_results` is omitted. |
 | `max_results_cap` | `50` | Hard cap on `max_results`. |
 | `max_query_chars` | `512` | Maximum query string length. |
 | `timeout_ms` | `8000` | Global timeout for the search fan-out. |

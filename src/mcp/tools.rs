@@ -38,8 +38,9 @@ impl std::fmt::Display for ToolError {
 pub struct WebSearchArgs {
     /// Search query string. Must be non-empty.
     pub query: String,
-    /// Maximum number of results to return. Defaults to the server's
-    /// configured `max_results` and capped at `max_results_cap`.
+    /// Maximum number of SourceCards to return. If the request exceeds
+    /// the server's configured cap, the response includes a warning
+    /// and the count is clamped.
     #[serde(default)]
     pub max_results: Option<usize>,
     /// Specific provider IDs to query; empty means "use the server's
@@ -101,10 +102,7 @@ pub async fn run_web_search(
         timeout_ms: args.timeout_ms,
     };
 
-    if let Err(e) = req.validate(
-        state.config.search.max_query_chars,
-        state.config.search.max_results_cap,
-    ) {
+    if let Err(e) = req.validate(state.config.search.max_query_chars) {
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
@@ -124,13 +122,15 @@ pub async fn run_web_search(
     // enabled engines (which would differ when providers is empty).
     req.providers = effective_providers.clone();
 
+    let resolution = crate::core::query::resolve_max_results(
+        req.max_results,
+        state.config.search.default_max_results,
+        state.config.search.max_results_cap,
+    );
+
     let resp = state
         .adapter
-        .web_search(
-            &req,
-            state.config.search.max_results,
-            state.config.search.max_results_cap,
-        )
+        .web_search(&req, resolution.effective)
         .await;
 
     let mut warnings: Vec<String> = resp
@@ -138,6 +138,11 @@ pub async fn run_web_search(
         .iter()
         .map(|w| format!("[{}] {}", w.provider_id, w.message))
         .collect();
+
+    // Add clamp warning if max_results was capped by the server.
+    if let Some(ref w) = resolution.warning {
+        warnings.insert(0, w.clone());
+    }
 
     // Per-card prompt-injection marker warnings. These are inserted
     // at the top of the warnings array (before the generic
