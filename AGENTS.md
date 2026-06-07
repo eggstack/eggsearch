@@ -39,12 +39,36 @@ eggsearch/
   src/
     main.rs              # binary entry point (clap, tokio main)
     lib.rs               # library root, re-exports core/meta/fetch/mcp
-    config.rs            # CLI config loader
+    config.rs            # CLI config loader (thin wrapper around core::config)
     commands/            # subcommands: doctor, search, providers, mcp, fetch
-    core/                # SourceCard, AppConfig, error, query, fetch types
+    core/                # core types and logic
+      mod.rs             # re-exports (AppConfig, WebSearchRequest, etc.)
+      config.rs          # AppConfig, SearchSection, FetchSection, validation
+      error.rs           # CoreError, CoreResult (thiserror)
+      query.rs           # WebSearchRequest, resolve_max_results, MaxResultsResolution
+      result.rs          # SearchWarning, TrustLevel
+      source_card.rs     # SourceCard output type
+      sanitize.rs        # prompt-injection hardening (strip, frame, scan)
+      provider.rs        # ProviderKind, ProviderCapabilities, ProviderDescriptor
+      fetch.rs           # fetch-related types (ExtractMode, WebFetchRequest, etc.)
     meta/                # MetadataSearchAdapter + vendored engines
+      mod.rs             # re-exports
+      adapter.rs         # MetadataSearchAdapter, convert_aggregated, provider_status
+      mock.rs            # MockEngine (feature-gated behind `mock`)
+      response.rs        # WebSearchResponse, ProviderFailure
+      engines/           # vendored search engine implementations
     fetch/               # bounded HTTP(S) URL fetch + HTML extraction
-    mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status
+      mod.rs             # re-exports
+      client.rs          # FetchClient, sanitize_field
+      extract.rs         # HTML/text extraction logic
+      limits.rs          # FetchLimits struct
+      types.rs           # internal fetch types
+    mcp/                 # MCP server (rmcp)
+      mod.rs             # re-exports
+      server.rs          # EggsearchServer, tool_router, EGGSEARCH_INSTRUCTIONS
+      tools.rs           # run_web_search, run_web_fetch, run_provider_status
+      state.rs           # ServerState (Arc<AppConfig> + Arc<MetadataSearchAdapter>)
+      policy.rs          # live_allowed, fetch_allowed, deny messages
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 
@@ -77,11 +101,13 @@ eggsearch/
 ### Configuration
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
 - `AppConfig` is the root type, contains `SearchSection`
-- `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent)
+- `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`
+- `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
 - `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`)
 - `Mode` enum: `Live` or `Off`
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
+- Both `SearchSection` and `FetchSection` have `sanitize_output: bool` (default `true`). When `true`, Tier 2 (framing) and Tier 3 (marker scan) prompt-injection defenses are active. Tier 1 (control-char strip + length bound) is always on.
 
 ### Provider Model
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`
@@ -168,7 +194,7 @@ SearXNG can aggregate.
 eggsearch is published as a single crate. Before publishing:
 
 - `cargo clippy --all-features -- -D warnings` is clean
-- `cargo test --all-features` passes (260 tests)
+- `cargo test --all-features` passes (334 tests)
 - `cargo publish --dry-run` succeeds
 - The version in `Cargo.toml` is bumped
 - `CHANGELOG.md` is updated

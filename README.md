@@ -23,7 +23,7 @@ for the default configuration.
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 250+ fast tests (no network required)
+- 334 fast tests (no network required)
 
 ## What it is not
 
@@ -173,8 +173,8 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
 ### `provider_status`
 
 Diagnostic tool. Reports the configured provider set, whether each
-provider is enabled, its kind (`html_scrape` or `json_api`), and
-whether it requires an API key.
+provider is enabled, its kind (`html_scrape`, `json_api`, or `api_key`),
+and whether it requires an API key.
 
 **Provider states:**
 
@@ -200,6 +200,7 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
+sanitize_output = true
 
 default_providers = ["duckduckgo", "startpage", "yahoo"]
 
@@ -229,6 +230,7 @@ base_url      = "https://api.search.brave.com/res/v1/web/search"
 | `max_query_chars` | `512` | Maximum query string length. |
 | `timeout_ms` | `8000` | Global timeout for the search fan-out. |
 | `default_providers` | `["duckduckgo", "startpage", "yahoo"]` | Used when client omits `providers`. |
+| `sanitize_output` | `true` | Wrap untrusted text in framing delimiters and emit prompt-injection warnings. |
 
 The `[fetch]` section configures the `web_fetch` tool and CLI command:
 
@@ -244,6 +246,7 @@ allow_private_network = false
 allow_localhost = false
 include_links_default = false
 user_agent = "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)"
+sanitize_output = true
 ```
 
 | Field | Default | Description |
@@ -258,6 +261,7 @@ user_agent = "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)"
 | `allow_localhost` | `false` | Allow `127.0.0.1` and `::1` loopback addresses. |
 | `include_links_default` | `false` | Default for `include_links` when the client omits it. |
 | `user_agent` | `eggsearch/0.1 (+https://github.com/eggstack/eggsearch)` | HTTP `User-Agent` header for fetch requests. |
+| `sanitize_output` | `true` | Wrap untrusted fetched text in framing delimiters and emit prompt-injection warnings. |
 
 > **Note.** The `[search].live.user_agent` and `[search].live.respect_robots_txt` config fields are parsed but have no effect in the current build. The vendored HTML engines use a hard-coded browser-like user agent that upstream providers expect. Setting either field logs a startup warning.
 
@@ -280,7 +284,7 @@ eggsearch/
     core/                # SourceCard, AppConfig, error, query types
     fetch/               # HTTP fetch client and HTML extraction
     meta/                # MetadataSearchAdapter + vendored engines
-     mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status
+    mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 
