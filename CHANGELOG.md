@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-07
+
+### Changed
+- Documentation cleanup pass before Codegg integration:
+  - README: added "Search and fetch workflow" section distinguishing `web_search` (discovery) from `web_fetch` (explicit URL)
+  - README: clarified `default_max_results` / `max_results_cap` / per-request `max_results` relationship and legacy `max_results` alias
+  - README: tightened SSRF/DNS-rebinding claims; no longer claims "complete DNS-rebinding defense"
+  - README: restructured "Search Engines" section to distinguish known IDs, enabled providers, and default providers; added build conditions for `searxng` and `brave_api`
+  - `web_search` tool description now lists `brave_api` and marks `safe_search` as reserved
+  - `provider_status` tool description now includes `api_key` as a kind
+  - `SafeSearch` type-level doc and `WebSearchRequest.safe_search` field doc clarified as reserved for future use
+  - `TrustLevel` doc no longer says "For the MVP"; `LocalTrusted` correctly described as reserved
+  - `SourceCard.fetched` field doc no longer says "MVP"; clarifies `web_search` is discovery-only
+  - Removed stale "MVP" wording from `ProviderStatusArgs.probe` doc
+
 ## [0.3.1] - 2026-06-07
 
 ### Changed
