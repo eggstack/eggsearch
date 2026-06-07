@@ -4,7 +4,7 @@ use anyhow::Result;
 use eggsearch::core::config::AppConfig;
 use eggsearch::mcp::ServerState;
 
-pub async fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
+pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
     let state = ServerState::build(cfg.clone())?;
     let statuses = state.adapter.provider_status();
 

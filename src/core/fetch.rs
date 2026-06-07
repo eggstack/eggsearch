@@ -10,7 +10,12 @@ pub enum ExtractMode {
     /// Extract visible text content.
     #[default]
     Text,
-    /// Extract content as Markdown (not implemented in MVP).
+    /// Extract content as Markdown. **Reserved for future implementation:**
+    /// the current `web_fetch` tool rejects this value as a validation
+    /// error. The variant is kept so that incoming requests with
+    /// `extract_mode: "markdown"` deserialize cleanly and produce a
+    /// structured error rather than a schema-rejection at the MCP
+    /// boundary.
     Markdown,
     /// Extract only metadata (title, description, etc.), no body text.
     MetadataOnly,
@@ -73,7 +78,13 @@ pub struct WebFetchResponse {
     pub status: u16,
     /// Whether content was successfully fetched.
     pub fetched: bool,
-    /// Whether content was truncated.
+    /// Whether the body was truncated at the byte-level
+    /// `[fetch].max_bytes` cap. This is **not** the same as the
+    /// character-level `max_chars` cap; the body byte cap is a hard
+    /// socket-side limit, while `max_chars` is a post-extraction text
+    /// length limit that does not flip this flag. `truncated = true`
+    /// means the body was cut off and may be missing the tail of the
+    /// page.
     pub truncated: bool,
     /// Trust label.
     pub trust: FetchTrust,

@@ -1,21 +1,19 @@
 [package]
 name = "eggsearch"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.80"
+authors = ["eggstack"]
 license = "MIT"
 description = "Lightweight MCP metasearch server for AI agents"
 repository = "https://github.com/eggstack/eggsearch"
-homepage = "https://github.com/eggstack/eggsearch"
+homepage = "https://docs.rs/eggsearch"
 readme = "./README.md"
 keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
 categories = ["command-line-utilities", "web-programming"]
 include = [
     "src/**/*.rs",
-    "src/lib.rs",
-    "src/main.rs",
     "tests/**/*.rs",
-    "Cargo.toml",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
@@ -23,7 +21,6 @@ include = [
 
 [lib]
 name = "eggsearch"
-path = "src/lib.rs"
 
 [[bin]]
 name = "eggsearch"
@@ -47,7 +44,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rmcp = { version = "1", features = ["server", "transport-io", "macros"] }
 url = { version = "2", features = ["serde"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json", "cookies"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json"] }
 scraper = "0.20"
 urlencoding = "2"
 toml = "0.8"
@@ -65,5 +62,4 @@ strip = true
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
 targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"]

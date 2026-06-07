@@ -7,7 +7,8 @@
 #![allow(missing_docs)]
 
 use std::future::pending;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::SearchResult;
@@ -76,6 +77,7 @@ pub struct MockEngine {
     results: Vec<SearchResult>,
     failure: Option<MockFailure>,
     hang: bool,
+    timeout_sink: Option<Arc<Mutex<Option<Duration>>>>,
 }
 
 impl MockEngine {
@@ -94,6 +96,7 @@ impl MockEngine {
             results: rs,
             failure: None,
             hang: false,
+            timeout_sink: None,
         }
     }
 
@@ -103,6 +106,7 @@ impl MockEngine {
             results: Vec::new(),
             failure: Some(failure),
             hang: false,
+            timeout_sink: None,
         }
     }
 
@@ -112,6 +116,20 @@ impl MockEngine {
             results: Vec::new(),
             failure: None,
             hang: true,
+            timeout_sink: None,
+        }
+    }
+
+    pub fn record_timeout(
+        name: &'static str,
+        sink: Arc<Mutex<Option<Duration>>>,
+    ) -> Self {
+        Self {
+            name,
+            results: Vec::new(),
+            failure: None,
+            hang: false,
+            timeout_sink: Some(sink),
         }
     }
 }
@@ -125,7 +143,13 @@ impl SearchEngine for MockEngine {
         &'a self,
         _query: &'a str,
         _max_results: usize,
+        timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        if let Some(sink) = &self.timeout_sink {
+            if let Ok(mut g) = sink.lock() {
+                *g = Some(timeout);
+            }
+        }
         Box::pin(async move {
             if self.hang {
                 pending::<()>().await;

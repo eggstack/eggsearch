@@ -1,7 +1,7 @@
 //! `eggsearch search`: manual live metasearch via the CLI.
 
 use anyhow::{anyhow, Result};
-use eggsearch::core::config::AppConfig;
+use eggsearch::core::config::{AppConfig, Mode};
 use eggsearch::core::WebSearchRequest;
 use eggsearch::mcp::ServerState;
 use std::sync::Arc;
@@ -13,6 +13,10 @@ pub async fn run(
     as_json: bool,
     providers: &[String],
 ) -> Result<()> {
+    if cfg.search.mode == Mode::Off {
+        anyhow::bail!("search is disabled by policy; set [search].mode = \"live\" to enable");
+    }
+
     let state = Arc::new(ServerState::build(cfg.clone())?);
 
     let effective_providers = cfg
@@ -83,4 +87,19 @@ pub async fn run(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eggsearch::core::config::{AppConfig, Mode};
+
+    #[tokio::test]
+    async fn run_respects_mode_off() {
+        let mut cfg = AppConfig::default();
+        cfg.search.mode = Mode::Off;
+        let err = run(&cfg, "rust", 10, false, &[]).await.expect_err("expected policy denial");
+        assert!(err.to_string().contains("disabled by policy"), "got: {err}");
+        assert!(err.to_string().contains("[search].mode"), "got: {err}");
+    }
 }

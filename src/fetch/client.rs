@@ -6,7 +6,7 @@ use futures::StreamExt;
 use reqwest::Client;
 
 use super::extract::extract_content;
-use super::limits::{validate_url, FetchLimits};
+use super::limits::{validate_url, validate_url_with_dns, FetchLimits};
 use super::types::FetchError;
 use crate::core::fetch::{ExtractMode, FetchTrust, WebFetchResponse};
 
@@ -51,6 +51,16 @@ impl FetchClient {
     ) -> Result<WebFetchResponse, FetchError> {
         let url = validate_url(url_str, &self.limits)?;
 
+        // Defense-in-depth DNS check. The sync `validate_url` already
+        // blocked obvious local/private literals; this resolves the
+        // host and rejects any address in a blocked range. Note the
+        // TOCTOU window: between this check and the actual HTTP
+        // request, DNS could return a different address. For a single
+        // tenant MCP server with no real-time-critical attack surface
+        // this is acceptable; the same pattern is used by SSRF proxies
+        // that re-resolve per request.
+        let url = validate_url_with_dns(url, &self.limits).await?;
+
         let max_chars = max_chars
             .unwrap_or(self.limits.max_chars_default)
             .min(self.limits.max_chars_cap);
@@ -70,6 +80,17 @@ impl FetchClient {
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
+
+        // Pre-check Content-Length for honest servers. The streaming
+        // body cap below remains the authoritative upper bound for
+        // chunked/encoded responses; this is an early bailout.
+        if let Some(cl_header) = response.headers().get("content-length") {
+            if let Some(content_length) = cl_header.to_str().ok().and_then(|s| s.parse::<usize>().ok()) {
+                if content_length > self.limits.max_bytes {
+                    return Err(FetchError::ContentTooLarge(content_length, self.limits.max_bytes));
+                }
+            }
+        }
 
         if !(200..300).contains(&status) {
             return Err(FetchError::HttpStatus(status, format!("HTTP {}", status)));
@@ -107,26 +128,28 @@ impl FetchClient {
             body.extend_from_slice(&chunk);
         }
 
-        let (title, description, text, links) = if extract_mode == ExtractMode::MetadataOnly {
-            if is_html {
-                let extractor = super::extract::HtmlExtractor::new(&body, &final_url);
-                let (t, d, _, l) = extractor.extract(max_chars, include_links);
-                (t, d, None, l)
+        let (title, description, text, links, extract_warnings) =
+            if extract_mode == ExtractMode::MetadataOnly {
+                if is_html {
+                    let extractor = super::extract::HtmlExtractor::new(&body, &final_url);
+                    let (t, d, _, l, w) = extractor.extract(max_chars, include_links);
+                    (t, d, None, l, w)
+                } else {
+                    (None, None, None, Vec::new(), Vec::new())
+                }
+            } else if is_html {
+                let (t, d, txt, l, w) = extract_content(&body, &final_url, max_chars, include_links);
+                (t, d, Some(txt), l, w)
             } else {
-                (None, None, None, Vec::new())
-            }
-        } else if is_html {
-            let (t, d, txt, l) = extract_content(&body, &final_url, max_chars, include_links);
-            (t, d, Some(txt), l)
-        } else {
-            let text = String::from_utf8_lossy(&body)
-                .chars()
-                .take(max_chars)
-                .collect::<String>();
-            (None, None, Some(text), Vec::new())
-        };
+                let text = String::from_utf8_lossy(&body)
+                    .chars()
+                    .take(max_chars)
+                    .collect::<String>();
+                (None, None, Some(text), Vec::new(), Vec::new())
+            };
 
-        let warnings = vec![WebFetchResponse::untrusted_warning()];
+        let mut warnings = extract_warnings;
+        warnings.push(WebFetchResponse::untrusted_warning());
 
         Ok(WebFetchResponse {
             url: url_str.to_string(),
@@ -323,6 +346,40 @@ mod tests {
                 assert!(len <= 1_000, "got text len {len} > max_bytes 1000");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn fetch_content_length_precheck_short_circuits() {
+        // content-length > max_bytes should produce ContentTooLarge
+        // *without* reading the body. Body length must match the
+        // declared content-length, otherwise hyper rejects the
+        // response at the protocol level.
+        let server = MockServer::start();
+        let body = vec![b'x'; 5_000];
+        server.mock(|when, then| {
+            when.method(GET).path("/declared-huge");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .header("content-length", &body.len().to_string())
+                .body(&body);
+        });
+
+        let mut limits = test_limits();
+        limits.max_bytes = 1_000;
+        let client = FetchClient::new(limits, "eggsearch/test".to_string()).expect("client");
+        let result = client
+            .fetch(
+                &server.url("/declared-huge"),
+                None,
+                ExtractMode::Text,
+                false,
+            )
+            .await;
+        let err = result.expect_err("expected content-too-large error from pre-check");
+        assert!(
+            matches!(err.kind(), crate::fetch::FetchErrorKind::ContentTooLarge),
+            "got: {err:?}"
+        );
     }
 
     #[tokio::test]

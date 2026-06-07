@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
         Commands::Mcp { cmd } => match cmd {
             McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
         },
-        Commands::Providers { json } => commands::providers::run(&cfg, json).await,
+        Commands::Providers { json } => commands::providers::run(&cfg, json),
         Commands::Fetch {
             url,
             max_chars,

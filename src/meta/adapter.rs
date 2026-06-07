@@ -220,8 +220,9 @@ impl MetadataSearchAdapter {
         for engine in &engines {
             let engine = Arc::clone(engine);
             let query = req.query.clone();
+            let engine_timeout = effective_timeout;
             join_set.spawn(async move {
-                let result = engine.search(&query, max_results).await;
+                let result = engine.search(&query, max_results, engine_timeout).await;
                 (engine.name().to_string(), result)
             });
         }
@@ -549,6 +550,7 @@ mod tests {
             &'a self,
             _query: &'a str,
             _max_results: usize,
+            _timeout: std::time::Duration,
         ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
             let results = self.results.clone();
             Box::pin(async move { Ok(results) })

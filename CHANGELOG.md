@@ -7,22 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-07
+
 ### Added
 - `web_fetch` MCP tool and CLI command for fetching one explicit HTTP(S) URL
 - `fetch` config section with limits (timeout_ms, max_bytes, max_chars_default, max_chars_cap)
 - Private-network blocking by default in web_fetch
 - `doctor --probe` for live provider health checks
 - Config validation for provider defaults and enabled/disabled states
+- `authors` field in `Cargo.toml`
+- `[fetch]` config table in `README.md`
 
 ### Changed
 - `safe_search` parameter now emits a warning when used (not enforced by HTML providers)
 - User-agent is now configurable via `[fetch] user_agent` config (previously overridden by a hard-coded Mozilla header in the metasearch client; that override is now removed)
 - `resolve_providers()` now validates explicit provider lists against enabled providers
 - `provider_status` remains non-probing (no network access)
+- `FetchClient` is now constructed once at server startup and reused across MCP calls
+- `AppConfig::validate()` now checks config invariants (e.g. `max_chars_cap >= max_chars_default`)
+- Dead config fields `search.live.user_agent` and `search.live.respect_robots_txt` now warn at startup if set
 
 ### Fixed
 - `resolve_providers()` now filters `default_providers` to only enabled providers
 - Provider config errors now return clear validation messages
+- `web_fetch` MCP tool now respects `[fetch].enabled` config (previously ignored)
+- `web_fetch` MCP tool now returns a validation error for `extract_mode: "markdown"` (not yet implemented) instead of silently treating it as text
+- `web_fetch` MCP tool now honors `[fetch].include_links_default`
+- CLI `search` now respects `[search].mode = "off"`
+- Private-network SSRF gap closed: `web_fetch` now resolves DNS and validates resolved IPs, blocking hostname-based bypasses
+- `max_chars = 0` now returns a validation error instead of returning empty text
+- `web_fetch` now pre-checks `Content-Length` and fails fast for bodies exceeding `max_bytes`
+- Cookie store removed from the metasearch HTTP client (privacy / no longer needed)
+- Engine timeouts are now derived from the per-request `effective_timeout` instead of a hardcoded 8s
+- Non-UTF-8 fetch response bodies now produce a warning instead of silently becoming empty text
 
 ## [0.1.1] - 2026-06-05
 

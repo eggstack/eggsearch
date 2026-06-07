@@ -5,6 +5,12 @@ use eggsearch::core::config::AppConfig;
 use eggsearch::core::fetch::ExtractMode;
 use eggsearch::fetch::FetchClient;
 
+/// CLI display cap for links. Distinct from [`crate::fetch::extract::MAX_LINKS`]
+/// (the in-memory extractor cap) because the CLI is human-facing and only
+/// needs enough links to be useful for a glance at the page; the extractor
+/// returns more so that programmatic consumers can pick from a richer set.
+const CLI_DISPLAY_MAX_LINKS: usize = 20;
+
 pub async fn run(
     cfg: &AppConfig,
     url: &str,
@@ -15,7 +21,11 @@ pub async fn run(
     as_json: bool,
 ) -> Result<()> {
     if !cfg.fetch.enabled {
-        anyhow::bail!("fetch is disabled in config; enable [fetch].enabled to use this command");
+        anyhow::bail!("fetch is disabled in config; set [fetch].enabled = true to enable");
+    }
+
+    if let Some(0) = max_chars {
+        anyhow::bail!("max_chars must be > 0");
     }
 
     let mut limits = cfg.fetch_limits();
@@ -30,6 +40,8 @@ pub async fn run(
     } else {
         ExtractMode::Text
     };
+
+    let include_links = include_links || cfg.fetch.include_links_default;
 
     let response = client
         .fetch(url, max_chars, extract_mode, include_links)
@@ -73,8 +85,12 @@ pub async fn run(
             println!("{}", text);
         }
         if !response.links.is_empty() {
-            println!("\n--- Links ({} links) ---", response.links.len());
-            for link in response.links.iter().take(20) {
+            println!(
+                "\n--- Links ({} links, showing up to {}) ---",
+                response.links.len(),
+                CLI_DISPLAY_MAX_LINKS
+            );
+            for link in response.links.iter().take(CLI_DISPLAY_MAX_LINKS) {
                 println!("  - {}: {}", link.text, link.url);
             }
         }
@@ -87,4 +103,38 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eggsearch::core::config::AppConfig;
+
+    #[tokio::test]
+    async fn run_zero_max_chars_returns_error() {
+        let cfg = AppConfig::default();
+        let err = run(
+            &cfg,
+            "https://example.com",
+            Some(0),
+            None,
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect_err("expected max_chars validation error");
+        assert!(err.to_string().contains("max_chars must be > 0"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn run_disabled_by_config_returns_error() {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.enabled = false;
+        let err = run(&cfg, "https://example.com", None, None, false, false, false)
+            .await
+            .expect_err("expected fetch-disabled error");
+        assert!(err.to_string().contains("disabled"), "got: {err}");
+        assert!(err.to_string().contains("[fetch].enabled"), "got: {err}");
+    }
 }

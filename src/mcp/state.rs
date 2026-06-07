@@ -6,6 +6,7 @@ use std::time::Duration;
 use tracing;
 
 use crate::core::config::AppConfig;
+use crate::fetch::FetchClient;
 use crate::meta::MetadataSearchAdapter;
 
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
@@ -13,6 +14,12 @@ use crate::meta::MetadataSearchAdapter;
 pub struct ServerState {
     pub config: Arc<AppConfig>,
     pub adapter: Arc<MetadataSearchAdapter>,
+    /// Shared HTTP fetch client. `None` when `[fetch].enabled = false`
+    /// or when built via [`ServerState::with_adapter`] (tests, custom
+    /// adapters). The `fetch_allowed` policy check upstream of every
+    /// fetch call should make the `None` case unreachable, but the
+    /// type allows the disabled state for clean error reporting.
+    pub fetch_client: Option<Arc<FetchClient>>,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -20,6 +27,7 @@ impl std::fmt::Debug for ServerState {
         f.debug_struct("ServerState")
             .field("mode", &self.config.search.mode)
             .field("providers", &self.adapter.provider_ids())
+            .field("fetch_enabled", &self.config.fetch.enabled)
             .finish()
     }
 }
@@ -32,6 +40,8 @@ impl ServerState {
     /// `timeout_ms`. The MCP server starts and runs without any index
     /// directory, database, or persistent state.
     pub fn build(config: AppConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let config = Arc::new(config);
 
         let enabled: Vec<String> = config
@@ -55,19 +65,70 @@ impl ServerState {
             );
         }
 
+        if config.search.live.user_agent.is_some() {
+            tracing::warn!(
+                "[search].live.user_agent is reserved for future use and is not yet applied. \
+                 The vendored HTML engines use a hard-coded browser-like user agent."
+            );
+        }
+        if config
+            .search
+            .live
+            .respect_robots_txt
+            .is_some_and(|v| v)
+        {
+            tracing::warn!(
+                "[search].live.respect_robots_txt is reserved for future use and is not yet applied. \
+                 web_fetch does not consult robots.txt in the current build."
+            );
+        }
+
+        let fetch_client = if config.fetch.enabled {
+            let limits = config.fetch_limits();
+            let ua = config.fetch_user_agent();
+            match FetchClient::new(limits, ua) {
+                Ok(c) => Some(Arc::new(c)),
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to build shared fetch client; web_fetch will fail at call time");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             adapter: Arc::new(adapter),
+            fetch_client,
         })
     }
 
     /// Build a server state from a pre-constructed adapter. Intended for
     /// tests and for callers that want to wire custom upstream engines
-    /// (e.g. mocks).
+    /// (e.g. mocks). Builds a `FetchClient` from the config when
+    /// `[fetch].enabled = true`; otherwise `fetch_client` is `None`.
     pub fn with_adapter(config: AppConfig, adapter: std::sync::Arc<MetadataSearchAdapter>) -> Self {
+        let config = Arc::new(config);
+        let fetch_client = if config.fetch.enabled {
+            let limits = config.fetch_limits();
+            let ua = config.fetch_user_agent();
+            FetchClient::new(limits, ua).ok().map(Arc::new)
+        } else {
+            None
+        };
         Self {
-            config: Arc::new(config),
+            config,
             adapter,
+            fetch_client,
         }
+    }
+
+    /// Returns the shared fetch client, if fetch is enabled. Callers
+    /// should already have run the `fetch_allowed` policy check; this
+    /// helper exists for clean error reporting when the client is
+    /// unexpectedly absent.
+    pub fn fetch_client(&self) -> Option<Arc<FetchClient>> {
+        self.fetch_client.clone()
     }
 }

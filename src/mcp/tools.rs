@@ -13,7 +13,9 @@ use crate::meta::response::ProviderStatus;
 use serde::{Deserialize, Serialize};
 
 use crate::fetch::FetchClient;
-use crate::mcp::policy::{live_allowed, policy_message, Policy};
+use crate::mcp::policy::{
+    fetch_allowed, live_allowed, web_fetch_denied_message, web_search_denied_message, Policy,
+};
 use crate::mcp::state::ServerState;
 
 /// Error from a tool call, tagged by whether it reflects bad client
@@ -70,10 +72,13 @@ pub struct WebFetchArgs {
     /// Timeout in milliseconds. Defaults to server config.
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    /// Extraction mode: "text" (default), "markdown", "metadata_only".
+    /// Extraction mode: "text" (default), "metadata_only".
+    /// "markdown" is reserved for a future implementation and is
+    /// currently rejected as a validation error.
     #[serde(default)]
     pub extract_mode: Option<crate::core::fetch::ExtractMode>,
-    /// Whether to include extracted links. Default false.
+    /// Whether to include extracted links. Defaults to the server's
+    /// `[fetch].include_links_default` config value when omitted.
     #[serde(default)]
     pub include_links: Option<bool>,
 }
@@ -85,7 +90,7 @@ pub async fn run_web_search(
     args: WebSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Internal(policy_message("web_search")));
+        return Err(ToolError::Internal(web_search_denied_message()));
     }
 
     let mut req = WebSearchRequest {
@@ -202,23 +207,42 @@ pub async fn run_web_fetch(
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::fetch::ExtractMode;
 
+    if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
+        return Err(ToolError::Internal(web_fetch_denied_message()));
+    }
+
     if args.url.trim().is_empty() {
         return Err(ToolError::Validation("url must not be empty".into()));
     }
 
-    let limits = state.config.fetch_limits();
-    let user_agent = state.config.fetch_user_agent();
-    let client = FetchClient::new(limits, user_agent)
-        .map_err(|e| ToolError::Internal(format!("failed to create fetch client: {e}")))?;
+    if let Some(0) = args.max_chars {
+        return Err(ToolError::Validation(
+            "max_chars must be > 0".to_string(),
+        ));
+    }
 
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
+    if matches!(extract_mode, ExtractMode::Markdown) {
+        return Err(ToolError::Validation(
+            "extract_mode 'markdown' is not yet implemented; use 'text' or 'metadata_only'"
+                .to_string(),
+        ));
+    }
+
+    let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
+        ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
+    })?;
+
+    let include_links = args
+        .include_links
+        .unwrap_or(state.config.fetch.include_links_default);
 
     let response = client
         .fetch(
             &args.url,
             args.max_chars,
             extract_mode,
-            args.include_links.unwrap_or(false),
+            include_links,
         )
         .await;
 
@@ -254,13 +278,12 @@ fn mode_str(mode: Mode) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::AppConfig;
+    use crate::mcp::state::ServerState;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn safe_search_warning_emitted_when_requested() {
-        use crate::core::config::AppConfig;
-        use crate::mcp::state::ServerState;
-        use std::sync::Arc;
-
         let cfg = AppConfig::default();
         let state = Arc::new(ServerState::build(cfg).unwrap());
 

@@ -35,18 +35,22 @@ impl Mode {
     }
 }
 
-/// Live network configuration. Most fields are reserved for future use.
+/// Live network configuration. Both fields are NO-OPs in the current
+/// build: they are parsed from TOML so that operator configs continue
+/// to load, but they are not read by the runtime. Setting them will
+/// emit a `tracing::warn!` at startup and otherwise have no effect.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LiveConfig {
-    /// Reserved for future use. The current build does not allow the
-    /// operator to override the upstream HTTP user-agent (the upstream
-    /// crate hard-codes a browser-like agent that upstream providers
-    /// expect).
+    /// **NO-OP in the current build.** Reserved for future use. The
+    /// vendored HTML engines hard-code a browser-like user agent that
+    /// the upstream providers expect; the operator cannot override it
+    /// from config yet. A warning is logged at startup if this is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
-    /// Reserved for future use. The current build does not fetch URLs,
-    /// so there is nothing to apply a robots policy to. `web_fetch`,
-    /// when added, will enforce this.
+    /// **NO-OP in the current build.** Reserved for future use. The
+    /// `web_fetch` tool does not consult robots.txt; setting this to
+    /// `true` has no effect on fetching behavior. A warning is logged
+    /// at startup if this is set to `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub respect_robots_txt: Option<bool>,
 }
@@ -307,6 +311,51 @@ impl AppConfig {
         }
     }
 
+    /// Validate configuration invariants. Returns `Err` on the first
+    /// violated invariant. The intent is to fail fast on operator
+    /// misconfiguration (e.g. `max_chars_cap < max_chars_default`)
+    /// rather than silently degrading behavior.
+    pub fn validate(&self) -> CoreResult<()> {
+        if self.fetch.max_chars_cap < self.fetch.max_chars_default {
+            return Err(CoreError::Config(format!(
+                "[fetch].max_chars_cap ({}) must be >= [fetch].max_chars_default ({})",
+                self.fetch.max_chars_cap, self.fetch.max_chars_default
+            )));
+        }
+        if self.fetch.max_bytes == 0 {
+            return Err(CoreError::Config(
+                "[fetch].max_bytes must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.timeout_ms == 0 {
+            return Err(CoreError::Config(
+                "[fetch].timeout_ms must be > 0".to_string(),
+            ));
+        }
+        if self.search.max_results == 0 {
+            return Err(CoreError::Config(
+                "[search].max_results must be > 0".to_string(),
+            ));
+        }
+        if self.search.max_results_cap < self.search.max_results {
+            return Err(CoreError::Config(format!(
+                "[search].max_results_cap ({}) must be >= [search].max_results ({})",
+                self.search.max_results_cap, self.search.max_results
+            )));
+        }
+        if self.search.timeout_ms == 0 {
+            return Err(CoreError::Config(
+                "[search].timeout_ms must be > 0".to_string(),
+            ));
+        }
+        if self.search.max_query_chars == 0 {
+            return Err(CoreError::Config(
+                "[search].max_query_chars must be > 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Returns the configured user agent for fetch.
     pub fn fetch_user_agent(&self) -> String {
         self.fetch.user_agent.clone()
@@ -522,5 +571,66 @@ mod tests {
     fn misconfigured_default_providers_empty_when_all_enabled() {
         let c = AppConfig::default();
         assert!(c.misconfigured_default_providers().is_empty());
+    }
+
+    #[test]
+    fn validate_accepts_defaults() {
+        let c = AppConfig::default();
+        assert!(c.validate().is_ok(), "default config should validate: {:?}", c.validate().err());
+    }
+
+    #[test]
+    fn validate_rejects_cap_below_default() {
+        let mut c = AppConfig::default();
+        c.fetch.max_chars_cap = 100;
+        c.fetch.max_chars_default = 12_000;
+        let err = c.validate().expect_err("expected validation failure");
+        assert!(err.to_string().contains("max_chars_cap"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_bytes() {
+        let mut c = AppConfig::default();
+        c.fetch.max_bytes = 0;
+        let err = c.validate().expect_err("expected validation failure");
+        assert!(err.to_string().contains("max_bytes"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_zero_timeouts() {
+        let mut c = AppConfig::default();
+        c.fetch.timeout_ms = 0;
+        let err = c.validate().expect_err("expected fetch timeout failure");
+        assert!(err.to_string().contains("[fetch].timeout_ms"), "got: {err}");
+
+        let mut c2 = AppConfig::default();
+        c2.search.timeout_ms = 0;
+        let err2 = c2.validate().expect_err("expected search timeout failure");
+        assert!(err2.to_string().contains("[search].timeout_ms"), "got: {err2}");
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_results() {
+        let mut c = AppConfig::default();
+        c.search.max_results = 0;
+        let err = c.validate().expect_err("expected max_results failure");
+        assert!(err.to_string().contains("max_results"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_max_results_cap_below_max_results() {
+        let mut c = AppConfig::default();
+        c.search.max_results = 50;
+        c.search.max_results_cap = 10;
+        let err = c.validate().expect_err("expected cap failure");
+        assert!(err.to_string().contains("max_results_cap"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_query_chars() {
+        let mut c = AppConfig::default();
+        c.search.max_query_chars = 0;
+        let err = c.validate().expect_err("expected max_query_chars failure");
+        assert!(err.to_string().contains("max_query_chars"), "got: {err}");
     }
 }

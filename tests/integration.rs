@@ -40,9 +40,11 @@
 use std::sync::Arc;
 
 use eggsearch::core::config::{AppConfig, Mode};
+use eggsearch::core::fetch::ExtractMode;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
-    run_provider_status, run_web_search, ProviderStatusArgs, WebSearchArgs,
+    run_provider_status, run_web_fetch, run_web_search, ProviderStatusArgs, WebFetchArgs,
+    WebSearchArgs,
 };
 use rmcp::ServerHandler;
 
@@ -596,5 +598,171 @@ async fn web_fetch_tool_listed() {
         tool_names.contains(&"web_fetch".to_string()),
         "web_fetch should be in tools list: {:?}",
         tool_names
+    );
+}
+
+fn fetch_disabled_state() -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    Arc::new(ServerState::build(cfg).expect("state with fetch disabled"))
+}
+
+#[tokio::test]
+async fn web_fetch_disabled_by_policy_returns_error() {
+    let state = fetch_disabled_state();
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: "https://example.com/".into(),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected policy denial");
+    assert!(err.to_string().contains("disabled by policy"), "got: {err}");
+    assert!(err.to_string().contains("[fetch].enabled"), "got: {err}");
+    assert!(err.to_string().contains("web_fetch"), "got: {err}");
+}
+
+#[tokio::test]
+async fn web_fetch_rejects_markdown_extract_mode() {
+    let state = state_with_default();
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: "https://example.com/".into(),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: Some(ExtractMode::Markdown),
+            include_links: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected markdown rejection");
+    assert!(err.to_string().contains("markdown"), "got: {err}");
+    assert!(
+        err.to_string().contains("not yet implemented"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_zero_max_chars_returns_validation_error() {
+    let state = state_with_default();
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: "https://example.com/".into(),
+            max_chars: Some(0),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected max_chars validation error");
+    assert!(
+        err.to_string().contains("max_chars must be > 0"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_respects_include_links_default() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head><title>Hi</title></head>\
+                  <body><p>hello</p><a href=\"/path\">Link text</a></body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.include_links_default = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let links = v["links"].as_array().expect("links is array");
+    assert!(
+        !links.is_empty(),
+        "links should be populated when include_links_default = true, got: {v:?}"
+    );
+    let link = &links[0];
+    assert_eq!(link["text"], "Link text");
+    assert!(
+        link["url"]
+            .as_str()
+            .unwrap_or("")
+            .ends_with("/path"),
+        "link url should be resolved, got: {}",
+        link["url"]
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_threads_effective_per_request_timeout() {
+    use std::sync::Mutex;
+
+    let sink: Arc<Mutex<Option<Duration>>> = Arc::new(Mutex::new(None));
+    let engines = vec![MockEngine::record_timeout("mock_a", Arc::clone(&sink))];
+    let mut cfg = test_cfg();
+    cfg.search.timeout_ms = 5_000;
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+
+    let mut args = args_for(&["mock_a"], "rust");
+    args.timeout_ms = Some(3_500);
+    let v = run_web_search(state, args).await.expect("ok");
+    assert!(v["results"].is_array());
+
+    let recorded = sink.lock().unwrap().expect("timeout was recorded");
+    assert_eq!(
+        recorded,
+        Duration::from_millis(3_500),
+        "engine should receive the per-request timeout, got: {recorded:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_uses_global_timeout_when_no_per_request_override() {
+    use std::sync::Mutex;
+
+    let sink: Arc<Mutex<Option<Duration>>> = Arc::new(Mutex::new(None));
+    let engines = vec![MockEngine::record_timeout("mock_a", Arc::clone(&sink))];
+    let mut cfg = test_cfg();
+    cfg.search.timeout_ms = 2_500;
+    let state = state_with_engines(cfg, engines, Duration::from_millis(2_500));
+
+    let _ = run_web_search(state, args_for(&["mock_a"], "rust"))
+        .await
+        .expect("ok");
+
+    let recorded = sink.lock().unwrap().expect("timeout was recorded");
+    assert_eq!(
+        recorded,
+        Duration::from_millis(2_500),
+        "engine should receive the global timeout when no override is set, got: {recorded:?}"
     );
 }

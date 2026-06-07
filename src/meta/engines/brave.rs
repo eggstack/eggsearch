@@ -8,16 +8,16 @@ use super::models::SearchResult;
 
 const ENGINE: &str = "brave";
 const BRAVE_URL: &str = "https://search.brave.com/search";
-const TIMEOUT_MS: u64 = 8_000;
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 pub async fn search(
     client: &Client,
     query: &str,
     max_results: usize,
+    timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
     let response = tokio::time::timeout(
-        Duration::from_millis(TIMEOUT_MS),
+        timeout,
         client.get(BRAVE_URL).query(&[("q", query)]).send(),
     )
     .await

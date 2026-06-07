@@ -1,8 +1,20 @@
 //! HTML content extraction.
 
+use std::borrow::Cow;
+
 use scraper::{Html, Selector};
 
 use crate::core::fetch::ExtractedLink;
+
+/// Maximum number of links the extractor will collect from a single
+/// page. A defensive upper bound to keep response payloads bounded
+/// even for link-heavy pages.
+pub const MAX_LINKS: usize = 100;
+
+/// Non-UTF-8 warning string. Prepended to `WebFetchResponse.warnings`
+/// when the response body cannot be decoded as UTF-8; the extractor
+/// falls back to a lossy decode so partial text is still returned.
+pub const NON_UTF8_WARNING: &str = "body is not valid UTF-8; extraction may be incomplete";
 
 /// HTML content extractor.
 pub struct HtmlExtractor<'a> {
@@ -18,14 +30,31 @@ impl<'a> HtmlExtractor<'a> {
 
     /// Extracts content from the HTML.
     ///
-    /// Returns a tuple of (title, description, body_text, links).
+    /// Returns a tuple of (title, description, body_text, links,
+    /// warnings). The `warnings` vec is empty unless a non-fatal
+    /// condition (e.g. non-UTF-8 body) was encountered.
     pub fn extract(
         &self,
         max_chars: usize,
         include_links: bool,
-    ) -> (Option<String>, Option<String>, String, Vec<ExtractedLink>) {
-        let html_str = std::str::from_utf8(self.html).unwrap_or("");
-        let document = Html::parse_document(html_str);
+    ) -> (
+        Option<String>,
+        Option<String>,
+        String,
+        Vec<ExtractedLink>,
+        Vec<String>,
+    ) {
+        let (html_str, warnings) = match std::str::from_utf8(self.html) {
+            Ok(s) => (Cow::Borrowed(s), Vec::new()),
+            Err(_) => {
+                tracing::warn!("web_fetch body is not valid UTF-8; falling back to lossy decode");
+                (
+                    Cow::Owned(String::from_utf8_lossy(self.html).into_owned()),
+                    vec![NON_UTF8_WARNING.to_string()],
+                )
+            }
+        };
+        let document = Html::parse_document(html_str.as_ref());
 
         let title = Selector::parse("title")
             .ok()
@@ -51,7 +80,6 @@ impl<'a> HtmlExtractor<'a> {
 
         let normalized: String = body_text.split_whitespace().collect::<Vec<_>>().join(" ");
         let truncated_text: String = normalized.chars().take(max_chars).collect();
-        let _was_truncated = normalized.chars().count() > max_chars;
 
         let links = if include_links {
             extract_links(&document, self.base_url)
@@ -59,7 +87,7 @@ impl<'a> HtmlExtractor<'a> {
             Vec::new()
         };
 
-        (title, description, truncated_text, links)
+        (title, description, truncated_text, links, warnings)
     }
 }
 
@@ -117,7 +145,7 @@ fn extract_links(document: &scraper::Html, base_url: &str) -> Vec<ExtractedLink>
                         .map(|u| u.to_string());
                     resolved.map(|url| ExtractedLink { text, url })
                 })
-                .take(100)
+                .take(MAX_LINKS)
                 .collect()
         })
         .unwrap_or_default()
@@ -125,13 +153,19 @@ fn extract_links(document: &scraper::Html, base_url: &str) -> Vec<ExtractedLink>
 
 /// Extracts content from HTML bytes.
 ///
-/// Returns a tuple of (title, description, body_text, links).
+/// Returns a tuple of (title, description, body_text, links, warnings).
 pub fn extract_content(
     html: &[u8],
     base_url: &str,
     max_chars: usize,
     include_links: bool,
-) -> (Option<String>, Option<String>, String, Vec<ExtractedLink>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    String,
+    Vec<ExtractedLink>,
+    Vec<String>,
+) {
     let extractor = HtmlExtractor::new(html, base_url);
     extractor.extract(max_chars, include_links)
 }
@@ -145,7 +179,7 @@ mod tests {
         let html =
             b"<!DOCTYPE html><html><head><title>Test Page</title></head><body></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (title, _, _, _) = extractor.extract(1000, false);
+        let (title, _, _, _, _) = extractor.extract(1000, false);
         assert_eq!(title, Some("Test Page".to_string()));
     }
 
@@ -153,7 +187,7 @@ mod tests {
     fn html_meta_description_extraction() {
         let html = b"<!DOCTYPE html><html><head><meta name=\"description\" content=\"Page description\"></head><body></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, desc, _, _) = extractor.extract(1000, false);
+        let (_, desc, _, _, _) = extractor.extract(1000, false);
         assert_eq!(desc, Some("Page description".to_string()));
     }
 
@@ -161,7 +195,7 @@ mod tests {
     fn html_truncation() {
         let html = b"<!DOCTYPE html><html><body><p>a b c d e f g h i j k l m n o p q r s t u v w x y z</p></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _) = extractor.extract(10, false);
+        let (_, _, text, _, _) = extractor.extract(10, false);
         assert!(text.chars().count() <= 10);
     }
 
@@ -169,7 +203,7 @@ mod tests {
     fn html_relative_link_resolution() {
         let html = b"<!DOCTYPE html><html><body><a href=\"/path\">Link</a></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/base/");
-        let (_, _, _, links) = extractor.extract(1000, true);
+        let (_, _, _, links, _) = extractor.extract(1000, true);
         assert!(!links.is_empty());
         assert_eq!(links[0].url, "https://example.com/path");
     }
@@ -191,7 +225,7 @@ mod tests {
             <p>after</p>\
         </body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _) = extractor.extract(1000, false);
+        let (_, _, text, _, _) = extractor.extract(1000, false);
         assert!(text.contains("visible"), "got: {text:?}");
         assert!(text.contains("after"), "got: {text:?}");
         assert!(!text.contains("alert"), "script content leaked: {text:?}");
@@ -209,7 +243,7 @@ mod tests {
             <footer>bottom chrome</footer>\
         </body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _) = extractor.extract(1000, false);
+        let (_, _, text, _, _) = extractor.extract(1000, false);
         assert!(text.contains("main content"), "got: {text:?}");
         assert!(!text.contains("top chrome"), "header leaked: {text:?}");
         assert!(!text.contains("nav links"), "nav leaked: {text:?}");
@@ -226,10 +260,49 @@ mod tests {
             <p>after</p>\
         </body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _) = extractor.extract(1000, false);
+        let (_, _, text, _, _) = extractor.extract(1000, false);
         assert!(text.contains("before"), "got: {text:?}");
         assert!(text.contains("after"), "got: {text:?}");
         assert!(!text.contains("enable js"), "noscript leaked: {text:?}");
         assert!(!text.contains("svg"), "svg leaked: {text:?}");
+    }
+
+    #[test]
+    fn non_utf8_body_emits_warning_and_decodes_lossy() {
+        // Valid HTML wrapping with invalid UTF-8 bytes in the middle.
+        // The lossy decoder should turn 0xFF 0xFE into U+FFFD
+        // replacement characters, and the surrounding text should
+        // still be extractable.
+        let html: &[u8] =
+            b"<html><body><p>before</p>\xff\xfe<p>after</p></body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (title, _, text, _, warnings) = extractor.extract(1000, false);
+        assert!(
+            warnings.iter().any(|w| w == NON_UTF8_WARNING),
+            "expected non-UTF-8 warning, got: {warnings:?}"
+        );
+        // Surrounding text should still be extractable despite the
+        // invalid bytes.
+        assert!(text.contains("before"), "got: {text:?}");
+        assert!(text.contains("after"), "got: {text:?}");
+        assert!(title.is_none());
+    }
+
+    #[test]
+    fn valid_utf8_body_has_no_warnings() {
+        let html = b"<!DOCTYPE html><html><body><p>hello</p></body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, _, _, warnings) = extractor.extract(1000, false);
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn max_links_constant_is_reasonable() {
+        // Sanity check the constant is set to a reasonable value.
+        assert!(MAX_LINKS >= 1);
+        assert!(MAX_LINKS <= 1000);
     }
 }

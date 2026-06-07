@@ -18,10 +18,11 @@ for the default configuration.
 - Queries DuckDuckGo, Brave, Startpage, and Yahoo (no API keys required for defaults)
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
+- `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 85 fast unit + integration tests, no network required
+- 151 fast tests (126 unit + 21 integration + 4 doc), no network required
 
 ## What it is not
 
@@ -205,6 +206,42 @@ yahoo      = true
 | `max_query_chars` | `512` | Maximum query string length. |
 | `timeout_ms` | `8000` | Global timeout for the search fan-out. |
 | `default_providers` | `["duckduckgo", "startpage", "yahoo"]` | Used when client omits `providers`. |
+
+The `[fetch]` section configures the `web_fetch` tool and CLI command:
+
+```toml
+[fetch]
+enabled = true
+timeout_ms = 8000
+max_bytes = 2000000
+max_chars_default = 12000
+max_chars_cap = 50000
+redirect_limit = 5
+allow_private_network = false
+allow_localhost = false
+include_links_default = false
+user_agent = "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)"
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Whether `web_fetch` is enabled. When `false`, the tool returns a validation error. |
+| `timeout_ms` | `8000` | Request timeout. |
+| `max_bytes` | `2000000` | Maximum response body size in bytes; responses exceeding this are rejected. |
+| `max_chars_default` | `12000` | Default text extraction size when the client omits `max_chars`. |
+| `max_chars_cap` | `50000` | Maximum allowed `max_chars` from a client request. |
+| `redirect_limit` | `5` | Maximum number of HTTP redirects to follow. |
+| `allow_private_network` | `false` | Allow RFC1918 private-network IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7). |
+| `allow_localhost` | `false` | Allow `127.0.0.1` and `::1` loopback addresses. |
+| `include_links_default` | `false` | Default for `include_links` when the client omits it. |
+| `user_agent` | `eggsearch/0.1 (+https://github.com/eggstack/eggsearch)` | HTTP `User-Agent` header for fetch requests. |
+
+> **Private network blocking.** `web_fetch` resolves DNS at fetch time and
+> validates every resolved IP against the same allow/deny rules applied to
+> the URL's host literal. This closes the hostname-based SSRF bypass where
+> a public DNS name (e.g. `evil.example.com`) resolves to a private IP.
+> DNS-rebinding-style attacks are also mitigated by resolving up-front and
+> re-checking the connected address.
 
 ## Project Structure
 

@@ -6,6 +6,7 @@ use eggsearch::mcp::ServerState;
 use std::path::PathBuf;
 
 pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) -> Result<()> {
+    cfg.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
     let state = ServerState::build(cfg.clone())?;
 
     let path_display = match config_path {

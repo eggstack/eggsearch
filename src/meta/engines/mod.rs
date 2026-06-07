@@ -28,10 +28,14 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait SearchEngine: Send + Sync {
     fn name(&self) -> &'static str;
 
+    /// Run a single search query. `timeout` is the per-engine request
+    /// timeout, supplied by the adapter (bounded above by the
+    /// configured global timeout).
     fn search<'a>(
         &'a self,
         query: &'a str,
         max_results: usize,
+        timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
 }
 
@@ -60,8 +64,9 @@ impl SearchEngine for DuckDuckGoEngine {
         &'a self,
         query: &'a str,
         max_results: usize,
+        timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(duckduckgo::search(&self.client, query, max_results))
+        Box::pin(duckduckgo::search(&self.client, query, max_results, timeout))
     }
 }
 
@@ -74,8 +79,9 @@ impl SearchEngine for BraveEngine {
         &'a self,
         query: &'a str,
         max_results: usize,
+        timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(brave::search(&self.client, query, max_results))
+        Box::pin(brave::search(&self.client, query, max_results, timeout))
     }
 }
 
@@ -88,8 +94,9 @@ impl SearchEngine for StartpageEngine {
         &'a self,
         query: &'a str,
         max_results: usize,
+        timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(startpage::search(&self.client, query, max_results))
+        Box::pin(startpage::search(&self.client, query, max_results, timeout))
     }
 }
 
@@ -102,8 +109,9 @@ impl SearchEngine for YahooEngine {
         &'a self,
         query: &'a str,
         max_results: usize,
+        timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(yahoo::search(&self.client, query, max_results))
+        Box::pin(yahoo::search(&self.client, query, max_results, timeout))
     }
 }
 
@@ -114,12 +122,18 @@ const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \
      Chrome/124.0.0.0 Safari/537.36";
 
+/// Build the reqwest client used by the vendored search engines.
+///
+/// We intentionally do **not** enable a cookie store on this client:
+/// a long-lived MCP server should not persist cookies across requests
+/// or across operator sessions. Cookies were historically needed for
+/// certain HTML providers but are no longer required for any of the
+/// vendored engines.
 pub fn build_http_client(user_agent: Option<&str>) -> anyhow::Result<Client> {
     let ua = resolve_user_agent(user_agent);
 
     let builder = Client::builder()
         .user_agent(ua)
-        .cookie_store(true)
         .gzip(true)
         .brotli(true)
         .timeout(Duration::from_secs(20));
