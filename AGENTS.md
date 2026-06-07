@@ -4,7 +4,7 @@ This file contains information for AI coding agents working on the eggsearch cod
 
 ## Project Overview
 
-eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers (DuckDuckGo, Brave, Startpage, Yahoo), deduplicates results with reciprocal rank fusion, returns compact source cards, and also fetches one explicit HTTP(S) URL on demand with bounded text extraction. Transport is MCP over stdio.
+eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers (DuckDuckGo, Brave, Startpage, Yahoo, Mojeek), deduplicates results with reciprocal rank fusion, returns compact source cards, and also fetches one explicit HTTP(S) URL on demand with bounded text extraction. Transport is MCP over stdio.
 
 ## Build & Test Commands
 
@@ -79,8 +79,18 @@ eggsearch/
 - `AppConfig` is the root type, contains `SearchSection`
 - `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
+- `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`)
 - `Mode` enum: `Live` or `Off`
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
+
+### Provider Model
+- `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`
+- `ProviderCapabilities` struct: 7 boolean flags for search option support
+- `ProviderDescriptor` struct: full provider metadata (id, display_name, kind, enabled, default, requires_api_key, configured, capabilities)
+- `built_in_provider_descriptor()` returns descriptors for all known providers
+- `MetadataSearchAdapter::provider_status()` returns `Vec<ProviderDescriptor>`
+- `resolve_providers()` validates explicit provider lists with distinct errors for disabled vs unknown providers
+- API providers use env-var indirection for secrets (`api_key_env` field)
 
 ### Source Cards
 - `SourceCard` is the primary output type returned by `web_search`
@@ -131,6 +141,7 @@ The HTML scraping engines in `src/meta/engines/` are vendored from
 The vendored code includes:
 - `engines/duckduckgo.rs` — DuckDuckGo HTML scraper
 - `engines/brave.rs` — Brave Search HTML scraper
+- `engines/brave_api.rs` — Brave Search API provider (API-key, JSON)
 - `engines/startpage.rs` — Startpage HTML scraper
 - `engines/yahoo.rs` — Yahoo Search HTML scraper
 - `engines/mojeek.rs` — Mojeek HTML scraper (added in 0.2.0)

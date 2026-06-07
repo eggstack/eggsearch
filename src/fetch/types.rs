@@ -17,6 +17,22 @@ pub enum FetchError {
     #[error("private network access blocked: {0}")]
     PrivateNetworkBlocked(String),
 
+    /// Redirect limit exceeded.
+    #[error("redirect limit exceeded: {0} redirects followed")]
+    RedirectLimitExceeded(usize),
+
+    /// Redirect target blocked.
+    #[error("redirect target blocked: {0}")]
+    RedirectTargetBlocked(String),
+
+    /// Invalid redirect location header.
+    #[error("invalid redirect location: {0}")]
+    InvalidRedirectLocation(String),
+
+    /// Embedded credentials in URL.
+    #[error("embedded credentials blocked: {0}")]
+    EmbeddedCredentialsBlocked(String),
+
     /// URL too long.
     #[error("URL too long: {0} bytes (max {1})")]
     UrlTooLong(usize, usize),
@@ -59,6 +75,14 @@ pub enum FetchErrorKind {
     UnsupportedScheme,
     /// Private network blocked error.
     PrivateNetworkBlocked,
+    /// Redirect limit exceeded error.
+    RedirectLimitExceeded,
+    /// Redirect target blocked error.
+    RedirectTargetBlocked,
+    /// Invalid redirect location error.
+    InvalidRedirectLocation,
+    /// Embedded credentials blocked error.
+    EmbeddedCredentialsBlocked,
     /// Timeout error.
     Timeout,
     /// HTTP status error.
@@ -82,6 +106,10 @@ impl FetchError {
             FetchError::InvalidUrl(_) => FetchErrorKind::InvalidUrl,
             FetchError::UnsupportedScheme(_) => FetchErrorKind::UnsupportedScheme,
             FetchError::PrivateNetworkBlocked(_) => FetchErrorKind::PrivateNetworkBlocked,
+            FetchError::RedirectLimitExceeded(_) => FetchErrorKind::RedirectLimitExceeded,
+            FetchError::RedirectTargetBlocked(_) => FetchErrorKind::RedirectTargetBlocked,
+            FetchError::InvalidRedirectLocation(_) => FetchErrorKind::InvalidRedirectLocation,
+            FetchError::EmbeddedCredentialsBlocked(_) => FetchErrorKind::EmbeddedCredentialsBlocked,
             FetchError::UrlTooLong(..) => FetchErrorKind::InvalidUrl,
             FetchError::Timeout(_) => FetchErrorKind::Timeout,
             FetchError::HttpStatus(..) => FetchErrorKind::HttpStatus,
@@ -99,6 +127,10 @@ impl FetchError {
             FetchErrorKind::InvalidUrl => "invalid_url",
             FetchErrorKind::UnsupportedScheme => "unsupported_scheme",
             FetchErrorKind::PrivateNetworkBlocked => "private_network_blocked",
+            FetchErrorKind::RedirectLimitExceeded => "redirect_limit_exceeded",
+            FetchErrorKind::RedirectTargetBlocked => "redirect_target_blocked",
+            FetchErrorKind::InvalidRedirectLocation => "invalid_redirect_location",
+            FetchErrorKind::EmbeddedCredentialsBlocked => "embedded_credentials_blocked",
             FetchErrorKind::Timeout => "timeout",
             FetchErrorKind::HttpStatus => "http_status",
             FetchErrorKind::ContentTooLarge => "content_too_large",

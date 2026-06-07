@@ -69,8 +69,8 @@ enum Commands {
         #[arg(long)]
         metadata_only: bool,
         /// Include extracted links in output.
-        #[arg(long)]
-        links: bool,
+        #[arg(long = "include-links", alias = "links")]
+        include_links: bool,
         /// Output as JSON.
         #[arg(short, long)]
         json: bool,
@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
             max_chars,
             timeout_ms,
             metadata_only,
-            links,
+            include_links,
             json,
         } => {
             commands::fetch::run(
@@ -116,7 +116,7 @@ async fn main() -> Result<()> {
                 max_chars,
                 timeout_ms,
                 metadata_only,
-                links,
+                include_links,
                 json,
             )
             .await

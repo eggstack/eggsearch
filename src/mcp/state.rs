@@ -85,6 +85,8 @@ impl ServerState {
             user_agent,
             searxng_base_url,
             config.search.sanitize_output,
+            config.search.default_providers.clone(),
+            &config.search.api,
         )?;
 
         let misconfigured = config.misconfigured_default_providers();

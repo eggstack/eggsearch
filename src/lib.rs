@@ -5,8 +5,8 @@
 //!
 //! - [`core`]:    source card model, config, error, query types.
 //! - [`meta`]:    metasearch adapter with vendored search engines.
-//! - [`mcp`]:     MCP server (rmcp) exposing `web_search` and
-//!   `provider_status` tools.
+//! - [`mcp`]:     MCP server (rmcp) exposing `web_search`,
+//!   `web_fetch`, and `provider_status` tools.
 //!
 //! The `mock` feature exposes the test-only mock engine harness used by
 //! the integration tests.

@@ -43,12 +43,12 @@ impl Default for FetchLimits {
     }
 }
 
-/// Validates a URL for fetching.
+/// Validates a URL for fetching (sync, shape-level only).
 ///
-/// This is the synchronous, shape-level check: scheme, URL length,
-/// and obvious localhost / private literals in the host string. It
-/// does **not** perform DNS resolution; call [`validate_url_with_dns`]
-/// after this succeeds to close the SSRF gap on resolved addresses.
+/// Performs scheme, URL length, localhost literal, and obvious
+/// private-network literal checks. Does **not** perform DNS
+/// resolution or credential checks — use [`validate_fetch_target`]
+/// for the full validation pipeline.
 pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchError> {
     if url_str.trim().is_empty() {
         return Err(FetchError::InvalidUrl("URL must not be empty".into()));
@@ -128,28 +128,94 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
     Ok(url)
 }
 
-/// Resolve a URL's host to one or more socket addresses and reject
-/// any that fall into a blocked network range.
+/// Full validation of a fetch target: scheme, credentials, localhost,
+/// DNS resolution, and IP-range checks.
 ///
-/// This is the second layer of SSRF defense, run after
-/// [`validate_url`]: the sync check handles URL shape and obvious
-/// literals, this check handles the case where a public-looking
-/// hostname (e.g. `attacker.com`) actually resolves to a private or
-/// loopback address.
+/// This is the single canonical validation function used for both the
+/// initial URL and every redirect target. It performs:
 ///
-/// Note the TOCTOU window between this resolution and the actual
-/// HTTP request. For a single-tenant MCP server that does not
-/// resolve hostnames on a per-request basis on the data path, this
-/// is acceptable; the same pattern is used by SSRF proxies.
-pub async fn validate_url_with_dns(url: Url, limits: &FetchLimits) -> Result<Url, FetchError> {
-    // Nothing to do if both flags grant access.
+/// 1. Scheme check (http/https only)
+/// 2. Embedded credentials rejection
+/// 3. Localhost/literal private-IP rejection (unless `allow_localhost`)
+/// 4. DNS resolution and IP-range validation (unless `allow_private_network`)
+pub async fn validate_fetch_target(url: &Url, limits: &FetchLimits) -> Result<(), FetchError> {
+    // 1. Scheme check
+    match url.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(FetchError::UnsupportedScheme(format!(
+                "scheme '{}' is not supported (only http/https allowed)",
+                other
+            )));
+        }
+    }
+
+    // 2. Embedded credentials
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(FetchError::EmbeddedCredentialsBlocked(format!(
+            "URL contains embedded credentials: {}",
+            url.host_str().unwrap_or("unknown")
+        )));
+    }
+
+    // 3. Localhost / literal private-IP checks
+    if !limits.allow_localhost {
+        if let Some(host) = url.host_str() {
+            let host_lower = host.to_lowercase();
+            if host_lower == "localhost"
+                || host_lower == "127.0.0.1"
+                || host_lower == "::1"
+                || host_lower.starts_with("0.0.0.0")
+            {
+                return Err(FetchError::PrivateNetworkBlocked(format!(
+                    "localhost access is disabled: {}",
+                    host
+                )));
+            }
+        }
+    }
+
+    if !limits.allow_private_network {
+        if let Some(host_str) = url.host_str() {
+            if let Ok(ip) = IpAddr::from_str(host_str) {
+                if ip.is_loopback() {
+                    return Err(FetchError::PrivateNetworkBlocked(format!(
+                        "private IP access is disabled: {}",
+                        ip
+                    )));
+                }
+                if let std::net::IpAddr::V4(ipv4) = ip {
+                    if ipv4.is_private() {
+                        return Err(FetchError::PrivateNetworkBlocked(format!(
+                            "private IP access is disabled: {}",
+                            ip
+                        )));
+                    }
+                }
+            }
+            if host_str.ends_with(".internal")
+                || host_str.ends_with(".private")
+                || host_str.ends_with(".local")
+                || host_str.contains(".lan.")
+                || host_str.starts_with("192.168.")
+                || host_str.starts_with("10.")
+            {
+                return Err(FetchError::PrivateNetworkBlocked(format!(
+                    "private network access is disabled: {}",
+                    host_str
+                )));
+            }
+        }
+    }
+
+    // 4. DNS resolution + IP-range validation
     if limits.allow_private_network && limits.allow_localhost {
-        return Ok(url);
+        return Ok(());
     }
 
     let host = match url.host_str() {
         Some(h) if !h.is_empty() => h.to_string(),
-        _ => return Ok(url),
+        _ => return Ok(()),
     };
 
     let port = url.port_or_known_default().unwrap_or(match url.scheme() {
@@ -183,7 +249,7 @@ pub async fn validate_url_with_dns(url: Url, limits: &FetchLimits) -> Result<Url
         }
     }
 
-    Ok(url)
+    Ok(())
 }
 
 /// Returns true if the given resolved socket address falls into a
@@ -294,7 +360,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_url_with_dns_allows_when_fully_open() {
+    async fn validate_fetch_target_allows_when_fully_open() {
         // When both flags grant access, no DNS work is done and any
         // URL (even an IP literal that would normally be blocked) is
         // allowed. We use a syntactically-valid IP literal to make
@@ -305,17 +371,16 @@ mod tests {
             ..Default::default()
         };
         let url = Url::parse("http://127.0.0.1/").unwrap();
-        let out = validate_url_with_dns(url.clone(), &limits).await.unwrap();
-        assert_eq!(out, url);
+        validate_fetch_target(&url, &limits).await.unwrap();
     }
 
     #[tokio::test]
-    async fn validate_url_with_dns_rejects_loopback_literal() {
+    async fn validate_fetch_target_rejects_loopback_literal() {
         // 127.0.0.1 is a literal; to_socket_addrs should yield a
         // loopback address that is_blocked_address catches.
         let limits = FetchLimits::default();
         let url = Url::parse("http://127.0.0.1:8080/").unwrap();
-        let result = validate_url_with_dns(url, &limits).await;
+        let result = validate_fetch_target(&url, &limits).await;
         assert!(
             matches!(result, Err(FetchError::PrivateNetworkBlocked(_))),
             "expected private network block, got: {result:?}"
@@ -323,10 +388,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_url_with_dns_rejects_link_local_v4() {
+    async fn validate_fetch_target_rejects_link_local_v4() {
         let limits = FetchLimits::default();
         let url = Url::parse("http://169.254.169.254/").unwrap();
-        let result = validate_url_with_dns(url, &limits).await;
+        let result = validate_fetch_target(&url, &limits).await;
         assert!(
             matches!(result, Err(FetchError::PrivateNetworkBlocked(_))),
             "expected link-local block, got: {result:?}"
@@ -334,7 +399,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_url_with_dns_handles_v6_ula_block() {
+    async fn validate_fetch_target_rejects_embedded_credentials() {
+        let limits = FetchLimits::default();
+        let url = Url::parse("http://user:pass@example.com/").unwrap();
+        let result = validate_fetch_target(&url, &limits).await;
+        assert!(
+            matches!(result, Err(FetchError::EmbeddedCredentialsBlocked(_))),
+            "expected embedded credentials block, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_allows_embedded_credentials_when_no_password() {
+        let limits = FetchLimits::default();
+        // username without password is still embedded credentials
+        let url = Url::parse("http://user@example.com/").unwrap();
+        let result = validate_fetch_target(&url, &limits).await;
+        assert!(
+            matches!(result, Err(FetchError::EmbeddedCredentialsBlocked(_))),
+            "expected embedded credentials block, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_handles_v6_ula_block() {
         // Pure unit test: bypass the resolver and check the bit logic.
         let limits = FetchLimits::default();
         let ula: SocketAddr = "[fc00::1]:80".parse().unwrap();
@@ -342,14 +430,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_url_with_dns_handles_v6_link_local_block() {
+    async fn validate_fetch_target_handles_v6_link_local_block() {
         let limits = FetchLimits::default();
         let ll: SocketAddr = "[fe80::1]:80".parse().unwrap();
         assert!(is_blocked_address(ll, &limits));
     }
 
     #[tokio::test]
-    async fn validate_url_with_dns_handles_v4_mapped_v6_block() {
+    async fn validate_fetch_target_handles_v4_mapped_v6_block() {
         let limits = FetchLimits::default();
         let mapped: SocketAddr = "[::ffff:10.0.0.1]:80".parse().unwrap();
         assert!(is_blocked_address(mapped, &limits));

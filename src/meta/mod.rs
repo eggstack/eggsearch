@@ -14,4 +14,4 @@ pub mod mock;
 pub mod response;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};
-pub use response::{ProviderFailure, ProviderStatus, WebSearchResponse};
+pub use response::{ProviderFailure, WebSearchResponse};

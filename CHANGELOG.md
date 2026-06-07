@@ -7,10 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-07
+
 ### Added
-- `AppConfig::validate()` now rejects configurations where `[search].mode` is `"live"` but no providers are enabled in `[search].providers`
+- **Provider capabilities model**: new `ProviderKind`, `ProviderCapabilities`, and `ProviderDescriptor` types. `provider_status` now returns full descriptors with kind, enabled/default/configured state, API-key requirement, and capability flags.
+- **API-backed provider architecture**: new `[search].api` config section for API-key providers. `brave_api` added as reference implementation (disabled by default). Configure with `[search.api.brave] enabled = true, api_key_env = "BRAVE_SEARCH_API_KEY"`.
+- **Fetch redirect hardening**: `web_fetch` now uses a manual redirect loop with per-redirect URL validation. Redirects to localhost, private-network, or credential-bearing URLs are blocked. New error variants: `RedirectLimitExceeded`, `RedirectTargetBlocked`, `InvalidRedirectLocation`, `EmbeddedCredentialsBlocked`.
+- **Config validation improvements**: hard error for unknown provider IDs in config or explicit requests; distinct error message for disabled vs unknown providers; SearXNG base_url validation; API provider credential validation.
+- **CLI `doctor` enhancements**: reports provider capabilities, API credential status (without printing secrets), fetch network policy, and misconfiguration warnings. `--probe` flag for live health checks.
+- **CLI `providers` enhancements**: displays descriptor fields (kind, API key required, configured, capabilities) in a formatted table.
+- **CLI `fetch` enhancements**: `--include-links` flag (renamed from `--links` with backward-compatible alias).
+
+### Changed
+- `MetadataSearchAdapter::provider_status()` now returns `Vec<ProviderDescriptor>` instead of `Vec<ProviderStatus>`.
+- `resolve_providers()` now filters disabled default providers silently and returns distinct errors for disabled vs unknown provider IDs.
+- `AppConfig::validate()` rejects unknown provider IDs in `default_providers` and `providers` map, and validates SearXNG and API provider configs.
 
 ### Notes
+- The `brave_api` provider is opt-in and requires a Brave Search API key via environment variable.
+- All existing HTML scrape providers (duckduckgo, brave, startpage, yahoo, mojeek) are unchanged.
 - This is a polish release. All core features (web_search, web_fetch, provider_status, CLI commands, prompt-injection hardening) were already present in 0.2.1.
 
 ## [0.2.1] - 2026-06-07

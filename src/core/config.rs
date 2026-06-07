@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::core::error::{CoreError, CoreResult};
+use crate::core::provider::KNOWN_PROVIDER_IDS;
 
 /// Server operating mode.
 #[derive(
@@ -72,6 +73,22 @@ pub struct SearxngConfig {
     pub base_url: Option<String>,
 }
 
+/// Configuration for an API-key backed search provider (e.g. Brave
+/// Search API). The key itself is stored in an environment variable;
+/// the config only references the env var name.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ApiProviderConfig {
+    /// Whether this API provider is enabled.
+    pub enabled: bool,
+    /// Name of the environment variable that holds the API key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_env: Option<String>,
+    /// Base URL for the API endpoint. When `None`, a provider-specific
+    /// default is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+}
+
 /// The `[search]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
@@ -95,6 +112,11 @@ pub struct SearchSection {
     /// the `searxng` provider is also enabled in `providers`.
     #[serde(default)]
     pub searxng: SearxngConfig,
+    /// API-key backed provider configurations. Keys are provider ids
+    /// (e.g. `brave_api`). Each entry specifies whether the provider
+    /// is enabled and how to obtain its API key.
+    #[serde(default)]
+    pub api: std::collections::BTreeMap<String, ApiProviderConfig>,
     /// Live network configuration. Most fields are reserved for future
     /// use; see `LiveConfig` docs.
     pub live: LiveConfig,
@@ -130,6 +152,7 @@ impl Default for SearchSection {
             ],
             providers,
             searxng: SearxngConfig::default(),
+            api: std::collections::BTreeMap::new(),
             live: LiveConfig::default(),
             sanitize_output: default_sanitize_output(),
         }
@@ -275,13 +298,27 @@ impl AppConfig {
         let enabled_ids: Vec<String> = self.enabled_provider_ids();
         let enabled: std::collections::BTreeSet<&str> =
             enabled_ids.iter().map(|s| s.as_str()).collect();
+        let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
+        let configured: std::collections::BTreeSet<&str> =
+            self.search.providers.keys().map(|s| s.as_str()).collect();
+        let api_known: std::collections::BTreeSet<&str> =
+            self.search.api.keys().map(|s| s.as_str()).collect();
 
         if override_list.is_empty() {
             let defaults: Vec<String> = self
                 .search
                 .default_providers
                 .iter()
-                .filter(|id| enabled.contains(id.as_str()))
+                .filter(|id| {
+                    let id_str = id.as_str();
+                    if !known.contains(id_str)
+                        && !configured.contains(id_str)
+                        && !api_known.contains(id_str)
+                    {
+                        return false;
+                    }
+                    enabled.contains(id_str) || api_known.contains(id_str)
+                })
                 .cloned()
                 .collect();
             if defaults.is_empty() {
@@ -300,6 +337,25 @@ impl AppConfig {
                 }
             }
 
+            // Check for unknown provider ids (not in KNOWN_PROVIDER_IDS
+            // and not in the config's providers or api map)
+            let unknown: Vec<String> = deduped
+                .iter()
+                .filter(|id| {
+                    let id_str = id.as_str();
+                    !known.contains(id_str)
+                        && !configured.contains(id_str)
+                        && !api_known.contains(id_str)
+                })
+                .cloned()
+                .collect();
+            if !unknown.is_empty() {
+                return Err(CoreError::Config(format!(
+                    "unknown provider id(s): {}",
+                    unknown.join(", ")
+                )));
+            }
+
             // Check for explicitly DISABLED providers (config key exists with value false)
             let explicitly_disabled: Vec<String> = deduped
                 .iter()
@@ -308,7 +364,7 @@ impl AppConfig {
                 .collect();
             if !explicitly_disabled.is_empty() {
                 return Err(CoreError::Config(format!(
-                    "provider(s) not enabled: {}; enable them in [search].providers or remove them from request",
+                    "provider(s) disabled: {}; enable them in [search].providers or remove them from request",
                     explicitly_disabled.join(", ")
                 )));
             }
@@ -398,6 +454,84 @@ impl AppConfig {
                 "[search].max_query_chars must be > 0".to_string(),
             ));
         }
+
+        // Provider validation
+        let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
+
+        // Every default provider must be a known id
+        for id in &self.search.default_providers {
+            if !known.contains(id.as_str()) {
+                return Err(CoreError::Config(format!(
+                    "[search].default_providers contains unknown provider: {id}"
+                )));
+            }
+        }
+
+        // Every key in the providers map must be a known id
+        for id in self.search.providers.keys() {
+            if !known.contains(id.as_str()) {
+                return Err(CoreError::Config(format!(
+                    "[search].providers contains unknown provider: {id}"
+                )));
+            }
+        }
+
+        // SearXNG validation: if enabled, base_url must be non-empty
+        if self.search.searxng.enabled {
+            match self.search.searxng.base_url.as_deref() {
+                None | Some("") => {
+                    return Err(CoreError::Config(
+                        "[search].searxng.enabled is true but [search].searxng.base_url is missing or empty".to_string(),
+                    ));
+                }
+                Some(url) => {
+                    if url::Url::parse(url).is_err() {
+                        return Err(CoreError::Config(format!(
+                            "[search].searxng.base_url is not a valid URL: {url}"
+                        )));
+                    }
+                }
+            }
+        }
+
+        // API provider validation
+        let known_api: std::collections::BTreeSet<&str> = ["brave_api"].into_iter().collect();
+        for (id, api_cfg) in &self.search.api {
+            if !known_api.contains(id.as_str()) {
+                tracing::warn!(
+                    api_provider_id = %id,
+                    "unknown API provider id in [search].api; \
+                     it may be for a future provider"
+                );
+            }
+            if api_cfg.enabled {
+                match api_cfg.api_key_env.as_deref() {
+                    None | Some("") => {
+                        return Err(CoreError::Config(format!(
+                            "[search].api.{id}.enabled is true but [search].api.{id}.api_key_env is missing or empty"
+                        )));
+                    }
+                    Some(env_name) => {
+                        if std::env::var(env_name).is_err() {
+                            tracing::warn!(
+                                api_provider_id = %id,
+                                env_name = %env_name,
+                                "API provider is enabled but its api_key_env variable is not set; \
+                                 the provider will fail at runtime"
+                            );
+                        }
+                    }
+                }
+                if let Some(ref url) = api_cfg.base_url {
+                    if url::Url::parse(url).is_err() {
+                        return Err(CoreError::Config(format!(
+                            "[search].api.{id}.base_url is not a valid URL: {url}"
+                        )));
+                    }
+                }
+            }
+        }
+
         if self.search.mode == Mode::Live {
             let enabled_count = self.search.providers.values().filter(|v| **v).count();
             if enabled_count == 0 {
@@ -535,7 +669,7 @@ mod tests {
 
         let result = c.resolve_providers(&["brave".to_string()]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not enabled"));
+        assert!(result.unwrap_err().to_string().contains("disabled"));
     }
 
     #[test]
@@ -576,7 +710,7 @@ mod tests {
 
         let out = c.resolve_providers(&["brave".to_string()]);
         assert!(out.is_err());
-        assert!(out.unwrap_err().to_string().contains("not enabled"));
+        assert!(out.unwrap_err().to_string().contains("disabled"));
     }
 
     #[test]
@@ -766,5 +900,244 @@ mod tests {
         }
         // mode=off with no providers is fine - no search is attempted
         assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_default_provider() {
+        let mut c = AppConfig::default();
+        c.search
+            .default_providers
+            .push("ghost_provider".to_string());
+        let err = c
+            .validate()
+            .expect_err("expected unknown default provider failure");
+        assert!(
+            err.to_string().contains("unknown provider: ghost_provider"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unknown_provider_in_providers_map() {
+        let mut c = AppConfig::default();
+        c.search
+            .providers
+            .insert("ghost_provider".to_string(), true);
+        let err = c
+            .validate()
+            .expect_err("expected unknown providers map key failure");
+        assert!(
+            err.to_string().contains("unknown provider: ghost_provider"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_searxng_enabled_without_base_url() {
+        let mut c = AppConfig::default();
+        c.search.searxng.enabled = true;
+        c.search.searxng.base_url = None;
+        let err = c
+            .validate()
+            .expect_err("expected searxng without base_url failure");
+        assert!(
+            err.to_string().contains("base_url is missing or empty"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_searxng_enabled_with_empty_base_url() {
+        let mut c = AppConfig::default();
+        c.search.searxng.enabled = true;
+        c.search.searxng.base_url = Some(String::new());
+        let err = c
+            .validate()
+            .expect_err("expected searxng with empty base_url failure");
+        assert!(
+            err.to_string().contains("base_url is missing or empty"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_searxng_enabled_with_invalid_url() {
+        let mut c = AppConfig::default();
+        c.search.searxng.enabled = true;
+        c.search.searxng.base_url = Some("not a url".to_string());
+        let err = c
+            .validate()
+            .expect_err("expected searxng with invalid URL failure");
+        assert!(err.to_string().contains("not a valid URL"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_accepts_searxng_enabled_with_valid_url() {
+        let mut c = AppConfig::default();
+        c.search.searxng.enabled = true;
+        c.search.searxng.base_url = Some("https://searx.example.org".to_string());
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn resolve_providers_rejects_unknown_in_explicit_list() {
+        let c = AppConfig::default();
+        let result = c.resolve_providers(&["ghost_provider".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unknown provider"),);
+    }
+
+    #[test]
+    fn resolve_providers_filters_disabled_default_providers() {
+        let mut c = AppConfig::default();
+        c.search.default_providers = vec!["duckduckgo".to_string(), "brave".to_string()];
+        c.search.providers.insert("brave".to_string(), false);
+
+        let out = c.resolve_providers(&[]).unwrap();
+        assert_eq!(out, vec!["duckduckgo".to_string()]);
+    }
+
+    // -----------------------------------------------------------------------
+    // API provider config tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn default_api_map_is_empty() {
+        let c = AppConfig::default();
+        assert!(c.search.api.is_empty());
+    }
+
+    #[test]
+    fn api_provider_config_serde_roundtrip() {
+        let mut api = std::collections::BTreeMap::new();
+        api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: false,
+                api_key_env: Some("BRAVE_SEARCH_API_KEY".to_string()),
+                base_url: None,
+            },
+        );
+        let mut c = AppConfig::default();
+        c.search.api = api;
+
+        let text = toml::to_string(&c).unwrap();
+        let parsed: AppConfig = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.search.api.len(), 1);
+        let cfg = parsed.search.api.get("brave_api").unwrap();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.api_key_env.as_deref(), Some("BRAVE_SEARCH_API_KEY"));
+    }
+
+    #[test]
+    fn validate_rejects_api_provider_enabled_without_key_env() {
+        let mut c = AppConfig::default();
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: None,
+                base_url: None,
+            },
+        );
+        let err = c
+            .validate()
+            .expect_err("expected api_key_env missing failure");
+        assert!(
+            err.to_string().contains("api_key_env is missing or empty"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_api_provider_enabled_with_empty_key_env() {
+        let mut c = AppConfig::default();
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(String::new()),
+                base_url: None,
+            },
+        );
+        let err = c
+            .validate()
+            .expect_err("expected api_key_env empty failure");
+        assert!(
+            err.to_string().contains("api_key_env is missing or empty"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_api_provider_disabled_without_key_env() {
+        let mut c = AppConfig::default();
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: false,
+                api_key_env: None,
+                base_url: None,
+            },
+        );
+        // Disabled providers don't need a key env
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_api_provider_with_invalid_base_url() {
+        let mut c = AppConfig::default();
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("BRAVE_SEARCH_API_KEY".to_string()),
+                base_url: Some("not a url".to_string()),
+            },
+        );
+        let err = c.validate().expect_err("expected invalid base_url failure");
+        assert!(err.to_string().contains("not a valid URL"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_accepts_api_provider_with_valid_config() {
+        let mut c = AppConfig::default();
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("BRAVE_SEARCH_API_KEY".to_string()),
+                base_url: Some("https://api.search.brave.com/res/v1/web/search".to_string()),
+            },
+        );
+        // Even if the env var isn't set, validate() only warns (doesn't error)
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn resolve_providers_accepts_brave_api_in_explicit_list() {
+        let c = AppConfig::default();
+        // brave_api is in KNOWN_PROVIDER_IDS, so it should be accepted
+        // (not rejected as "unknown provider"). It is NOT in the default
+        // providers map, so it passes through successfully.
+        let result = c.resolve_providers(&["brave_api".to_string()]);
+        assert!(
+            result.is_ok(),
+            "brave_api should be accepted: {:?}",
+            result.err()
+        );
+        assert_eq!(result.unwrap(), vec!["brave_api".to_string()]);
+    }
+
+    #[test]
+    fn api_provider_config_default_values() {
+        let cfg = ApiProviderConfig {
+            enabled: false,
+            api_key_env: None,
+            base_url: None,
+        };
+        assert!(!cfg.enabled);
+        assert!(cfg.api_key_env.is_none());
+        assert!(cfg.base_url.is_none());
     }
 }

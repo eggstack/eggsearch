@@ -5,6 +5,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::core::config::ApiProviderConfig;
+use crate::core::provider::{built_in_provider_descriptor, ProviderDescriptor, KNOWN_PROVIDER_IDS};
 use crate::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
@@ -18,7 +20,7 @@ use tracing::{debug, warn};
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::{AggregatedResult, SearchResult};
 use crate::meta::engines::{build_http_client, SearchEngine};
-use crate::meta::response::{ProviderFailure, ProviderStatus, WebSearchResponse};
+use crate::meta::response::{ProviderFailure, WebSearchResponse};
 
 /// Coarse error class for provider failures. Exposed via `provider_status`
 /// and the `web_search` tool's `providers_failed` field.
@@ -78,6 +80,18 @@ pub struct MetadataSearchAdapter {
     /// length bounding) is always on; this flag gates Tier 2
     /// (framing) and Tier 3 (marker scan).
     sanitize_output: bool,
+    /// Provider ids listed as defaults in the config. Used by
+    /// `provider_status()` to populate the `default` flag on each
+    /// descriptor.
+    default_providers: Vec<String>,
+    /// Whether the SearXNG provider is fully configured (has a
+    /// non-empty `base_url`). Used by `provider_status()` to set
+    /// the `configured` flag on the SearXNG descriptor.
+    searxng_configured: bool,
+    /// Which API providers are configured (have a valid api_key_env
+    /// that resolves at runtime). Used by `provider_status()` to set
+    /// the `configured` flag on API provider descriptors.
+    api_configured: std::collections::BTreeMap<String, bool>,
 }
 
 impl std::fmt::Debug for MetadataSearchAdapter {
@@ -98,6 +112,10 @@ impl MetadataSearchAdapter {
     /// `searxng` provider id (if enabled) is silently skipped; the
     /// caller decides whether that should be a hard error or a warning.
     ///
+    /// `api_providers` contains the API-key backed provider
+    /// configurations. Each enabled entry with a resolvable API key
+    /// env var produces a live engine instance.
+    ///
     /// `sanitize_output` enables Tier 2 (framing) and Tier 3
     /// (prompt-injection marker scanning) on top of the always-on
     /// Tier 1 (control-char stripping + length bounding).
@@ -107,9 +125,16 @@ impl MetadataSearchAdapter {
         user_agent: Option<String>,
         searxng_base_url: Option<String>,
         sanitize_output: bool,
+        default_providers: Vec<String>,
+        api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
     ) -> anyhow::Result<Self> {
-        let (engines, skipped) =
-            build_default_engines(&enabled_providers, user_agent, searxng_base_url)?;
+        let searxng_configured = searxng_base_url.as_deref().is_some_and(|s| !s.is_empty());
+        let (engines, skipped) = build_default_engines(
+            &enabled_providers,
+            user_agent,
+            searxng_base_url,
+            api_providers,
+        )?;
         if !skipped.is_empty() {
             warn!(?skipped, "skipped provider ids in config");
         }
@@ -118,12 +143,27 @@ impl MetadataSearchAdapter {
                 "no engines could be built; check the [search].providers config"
             ));
         }
+
+        // Compute which API providers are configured (have env var set)
+        let mut api_configured = std::collections::BTreeMap::new();
+        for (id, cfg) in api_providers {
+            let configured = cfg.enabled
+                && cfg
+                    .api_key_env
+                    .as_deref()
+                    .is_some_and(|env| std::env::var(env).is_ok());
+            api_configured.insert(id.clone(), configured);
+        }
+
         let provider_ids = engines.iter().map(|e| e.name().to_string()).collect();
         Ok(Self {
             engines,
             provider_ids,
             global_timeout,
             sanitize_output,
+            default_providers,
+            searxng_configured,
+            api_configured,
         })
     }
 
@@ -142,6 +182,9 @@ impl MetadataSearchAdapter {
             provider_ids,
             global_timeout,
             sanitize_output: false,
+            default_providers: Vec::new(),
+            searxng_configured: false,
+            api_configured: std::collections::BTreeMap::new(),
         }
     }
 
@@ -163,6 +206,9 @@ impl MetadataSearchAdapter {
             provider_ids,
             global_timeout,
             sanitize_output,
+            default_providers: Vec::new(),
+            searxng_configured: false,
+            api_configured: std::collections::BTreeMap::new(),
         }
     }
 
@@ -199,21 +245,38 @@ impl MetadataSearchAdapter {
     /// Per-provider status report. Includes both enabled providers in
     /// this adapter and the full set of known provider ids, so callers
     /// can see what is available vs. what is enabled.
-    pub fn provider_status(&self) -> Vec<ProviderStatus> {
+    pub fn provider_status(&self) -> Vec<ProviderDescriptor> {
         let enabled: std::collections::BTreeSet<&str> =
             self.provider_ids.iter().map(|s| s.as_str()).collect();
-        KNOWN_PROVIDERS
+        let defaults: std::collections::BTreeSet<&str> =
+            self.default_providers.iter().map(|s| s.as_str()).collect();
+        let mut descriptors: Vec<ProviderDescriptor> = KNOWN_PROVIDER_IDS
             .iter()
-            .map(|id| {
-                let (kind, requires_api_key) = provider_kind(id);
-                ProviderStatus {
-                    id: (*id).to_string(),
-                    enabled: enabled.contains(id),
-                    kind: kind.to_string(),
-                    requires_api_key,
-                }
+            .filter_map(|id| {
+                let is_enabled = enabled.contains(id);
+                let is_default = defaults.contains(id);
+                let configured = if *id == "searxng" {
+                    self.searxng_configured
+                } else {
+                    // HTML scrape providers are always "configured"
+                    // when known (no extra setup needed).
+                    true
+                };
+                built_in_provider_descriptor(id, is_enabled, is_default, configured)
             })
-            .collect()
+            .collect();
+
+        // Append API provider descriptors
+        for (id, &configured) in &self.api_configured {
+            let is_enabled = enabled.contains(id.as_str());
+            let is_default = defaults.contains(id.as_str());
+            if let Some(desc) = built_in_provider_descriptor(id, is_enabled, is_default, configured)
+            {
+                descriptors.push(desc);
+            }
+        }
+
+        descriptors
     }
 
     /// Run a metasearch query. This is the primary entry point used by
@@ -378,27 +441,6 @@ impl MetadataSearchAdapter {
 // Engine construction
 // ---------------------------------------------------------------------------
 
-/// The set of provider ids that ship with the vendored engine
-/// implementations and that eggsearch can enable by default.
-pub const KNOWN_PROVIDERS: &[&str] = &[
-    "duckduckgo",
-    "brave",
-    "startpage",
-    "yahoo",
-    "mojeek",
-    "searxng",
-];
-
-/// Kind of an engine, for `provider_status` reporting.
-pub fn provider_kind(id: &str) -> (&'static str, bool) {
-    match id {
-        "duckduckgo" | "startpage" | "yahoo" | "mojeek" => ("html_scrape", false),
-        "brave" => ("html_scrape", false),
-        "searxng" => ("json_api", false),
-        _other => ("unknown", false),
-    }
-}
-
 /// Build the default engine set used by the server.
 ///
 /// `searxng_base_url`, when `Some`, is the base URL of a self-hosted
@@ -407,13 +449,19 @@ pub fn provider_kind(id: &str) -> (&'static str, bool) {
 /// `[search].providers`) and supplied a non-empty base URL. A missing or
 /// empty base URL causes the `searxng` id to be reported as skipped and
 /// a warning to be logged at startup by the caller.
+///
+/// `api_providers` contains the API-key backed provider configurations.
+/// Each enabled entry with a resolvable API key env var produces a live
+/// engine instance.
 pub fn build_default_engines(
     enabled_providers: &[String],
     user_agent: Option<String>,
     searxng_base_url: Option<String>,
+    api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
     use crate::meta::engines::{
-        BraveEngine, DuckDuckGoEngine, MojeekEngine, SearxngEngine, StartpageEngine, YahooEngine,
+        BraveApiEngine, BraveEngine, DuckDuckGoEngine, MojeekEngine, SearxngEngine,
+        StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -444,8 +492,36 @@ pub fn build_default_engines(
                 })),
                 None => skipped.push(id.clone()),
             },
+            // API providers are handled below; skip them here.
+            _ if api_providers.contains_key(id) => {}
             other => skipped.push(other.to_string()),
         }
+    }
+
+    // Build API providers
+    for (id, api_cfg) in api_providers {
+        if !api_cfg.enabled {
+            continue;
+        }
+        if !enabled_providers.iter().any(|p| p == id) {
+            continue;
+        }
+        let api_key = match api_cfg
+            .api_key_env
+            .as_deref()
+            .and_then(|env| std::env::var(env).ok())
+        {
+            Some(key) if !key.is_empty() => key,
+            _ => {
+                skipped.push(id.clone());
+                continue;
+            }
+        };
+        engines.push(Arc::new(BraveApiEngine {
+            client: client.clone(),
+            api_key,
+            base_url: api_cfg.base_url.clone(),
+        }));
     }
 
     Ok((engines, skipped))
@@ -829,39 +905,36 @@ mod tests {
 
     #[test]
     fn known_providers_includes_new_ids() {
-        for id in [
-            "duckduckgo",
-            "brave",
-            "startpage",
-            "yahoo",
-            "mojeek",
-            "searxng",
-        ] {
-            assert!(
-                KNOWN_PROVIDERS.contains(&id),
-                "KNOWN_PROVIDERS missing {id}"
-            );
+        for id in crate::core::provider::KNOWN_PROVIDER_IDS {
+            let desc = crate::core::provider::built_in_provider_descriptor(id, true, false, true)
+                .expect("known id should have descriptor");
+            assert_eq!(desc.id, *id);
         }
     }
 
     #[test]
-    fn provider_kind_reports_mojeek_as_html_scrape() {
-        let (kind, requires_key) = provider_kind("mojeek");
-        assert_eq!(kind, "html_scrape");
-        assert!(!requires_key);
+    fn provider_descriptor_mojeek_is_html_scrape() {
+        let desc = crate::core::provider::built_in_provider_descriptor("mojeek", true, false, true)
+            .unwrap();
+        assert_eq!(desc.kind, crate::core::provider::ProviderKind::HtmlScrape);
+        assert!(!desc.requires_api_key);
     }
 
     #[test]
-    fn provider_kind_reports_searxng_as_json_api() {
-        let (kind, requires_key) = provider_kind("searxng");
-        assert_eq!(kind, "json_api");
-        assert!(!requires_key);
+    fn provider_descriptor_searxng_is_json_api() {
+        let desc =
+            crate::core::provider::built_in_provider_descriptor("searxng", true, false, true)
+                .unwrap();
+        assert_eq!(desc.kind, crate::core::provider::ProviderKind::JsonApi);
+        assert!(!desc.requires_api_key);
     }
 
     #[test]
     fn build_default_engines_includes_mojeek() {
         let enabled = vec!["mojeek".to_string()];
-        let (engines, skipped) = build_default_engines(&enabled, None, None).expect("build");
+        let (engines, skipped) =
+            build_default_engines(&enabled, None, None, &std::collections::BTreeMap::new())
+                .expect("build");
         assert!(skipped.is_empty());
         assert_eq!(engines.len(), 1);
         assert_eq!(engines[0].name(), "mojeek");
@@ -874,6 +947,7 @@ mod tests {
             &enabled,
             None,
             Some("https://searx.example.org".to_string()),
+            &std::collections::BTreeMap::new(),
         )
         .expect("build");
         assert!(skipped.is_empty());
@@ -884,7 +958,9 @@ mod tests {
     #[test]
     fn build_default_engines_skips_searxng_without_base_url() {
         let enabled = vec!["searxng".to_string()];
-        let (engines, skipped) = build_default_engines(&enabled, None, None).expect("build");
+        let (engines, skipped) =
+            build_default_engines(&enabled, None, None, &std::collections::BTreeMap::new())
+                .expect("build");
         assert!(engines.is_empty());
         assert_eq!(skipped, vec!["searxng".to_string()]);
     }
@@ -892,8 +968,13 @@ mod tests {
     #[test]
     fn build_default_engines_skips_searxng_with_empty_base_url() {
         let enabled = vec!["searxng".to_string()];
-        let (engines, skipped) =
-            build_default_engines(&enabled, None, Some(String::new())).expect("build");
+        let (engines, skipped) = build_default_engines(
+            &enabled,
+            None,
+            Some(String::new()),
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("build");
         assert!(engines.is_empty());
         assert_eq!(skipped, vec!["searxng".to_string()]);
     }

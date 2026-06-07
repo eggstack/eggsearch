@@ -5,6 +5,7 @@
 pub mod config;
 pub mod error;
 pub mod fetch;
+pub mod provider;
 pub mod query;
 pub mod result;
 pub mod sanitize;
@@ -13,6 +14,10 @@ pub mod source_card;
 pub use config::{AppConfig, LiveConfig, Mode, SearchSection};
 pub use error::{CoreError, CoreResult};
 pub use fetch::{ExtractMode, ExtractedLink, FetchTrust, WebFetchRequest, WebFetchResponse};
+pub use provider::{
+    built_in_provider_descriptor, ProviderCapabilities, ProviderDescriptor, ProviderKind,
+    KNOWN_PROVIDER_IDS,
+};
 pub use query::{SafeSearch, WebSearchRequest};
 pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{

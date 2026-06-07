@@ -2,12 +2,12 @@
 
 use anyhow::Result;
 use eggsearch::core::config::AppConfig;
+use eggsearch::core::provider::KNOWN_PROVIDER_IDS;
 use eggsearch::mcp::ServerState;
 use std::path::PathBuf;
 
 pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) -> Result<()> {
     cfg.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let state = ServerState::build(cfg.clone())?;
 
     let path_display = match config_path {
         Some(p) => p.display().to_string(),
@@ -21,10 +21,25 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
         serde_json::to_string_pretty(&serde_json::json!({
             "config_path": path_display,
             "mode": format!("{:?}", cfg.search.mode),
-            "providers": state.adapter.provider_ids(),
+            "providers": {
+                "enabled": cfg.enabled_provider_ids(),
+                "default": cfg.search.default_providers,
+                "disabled": {
+                    "known": KNOWN_PROVIDER_IDS.iter()
+                        .filter(|id| cfg.search.providers.get(**id).is_some_and(|v| !*v))
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>(),
+                },
+                "capabilities": provider_capability_summary(cfg),
+            },
+            "searxng": searxng_status(cfg),
+            "api_providers": api_credential_status(cfg),
+            "fetch": fetch_status(cfg),
+            "warnings": collect_warnings(cfg),
         }))?
     );
 
+    let state = ServerState::build(cfg.clone())?;
     let healthy = !state.adapter.provider_ids().is_empty();
     if !healthy {
         anyhow::bail!("no providers enabled; enable at least one in [search].providers");
@@ -38,11 +53,183 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
     Ok(())
 }
 
+fn provider_capability_summary(cfg: &AppConfig) -> Vec<serde_json::Value> {
+    use eggsearch::core::provider::built_in_provider_descriptor;
+
+    let mut out = Vec::new();
+    let default_set: std::collections::BTreeSet<&str> = cfg
+        .search
+        .default_providers
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+
+    for id in KNOWN_PROVIDER_IDS {
+        let enabled = cfg.search.providers.get(*id).copied().unwrap_or(false);
+        let is_default = default_set.contains(id);
+        let configured = match *id {
+            "searxng" => {
+                cfg.search.searxng.enabled
+                    && cfg
+                        .search
+                        .searxng
+                        .base_url
+                        .as_deref()
+                        .is_some_and(|u| !u.is_empty())
+            }
+            _ => true,
+        };
+        if let Some(desc) = built_in_provider_descriptor(id, enabled, is_default, configured) {
+            out.push(serde_json::json!({
+                "id": desc.id,
+                "enabled": desc.enabled,
+                "default": desc.default,
+                "kind": provider_kind_str(&desc.kind),
+                "configured": desc.configured,
+                "capabilities": desc.capabilities.summary(),
+            }));
+        }
+    }
+    out
+}
+
+fn provider_kind_str(kind: &eggsearch::core::provider::ProviderKind) -> &'static str {
+    match kind {
+        eggsearch::core::provider::ProviderKind::HtmlScrape => "html_scrape",
+        eggsearch::core::provider::ProviderKind::JsonApi => "json_api",
+        eggsearch::core::provider::ProviderKind::ApiKey => "api_key",
+    }
+}
+
+fn searxng_status(cfg: &AppConfig) -> serde_json::Value {
+    let base_url_valid = cfg
+        .search
+        .searxng
+        .base_url
+        .as_ref()
+        .map(|u| url::Url::parse(u).is_ok())
+        .unwrap_or(false);
+    serde_json::json!({
+        "enabled": cfg.search.searxng.enabled,
+        "base_url_set": cfg.search.searxng.base_url.is_some(),
+        "base_url_valid": base_url_valid,
+    })
+}
+
+fn api_credential_status(cfg: &AppConfig) -> Vec<serde_json::Value> {
+    cfg.search
+        .api
+        .iter()
+        .map(|(id, api_cfg)| {
+            let env_set = api_cfg
+                .api_key_env
+                .as_ref()
+                .map(|env| std::env::var(env).is_ok())
+                .unwrap_or(false);
+            serde_json::json!({
+                "id": id,
+                "enabled": api_cfg.enabled,
+                "api_key_env": api_cfg.api_key_env,
+                "api_key_set": env_set,
+            })
+        })
+        .collect()
+}
+
+fn fetch_status(cfg: &AppConfig) -> serde_json::Value {
+    serde_json::json!({
+        "enabled": cfg.fetch.enabled,
+        "timeout_ms": cfg.fetch.timeout_ms,
+        "max_bytes": cfg.fetch.max_bytes,
+        "max_chars_default": cfg.fetch.max_chars_default,
+        "max_chars_cap": cfg.fetch.max_chars_cap,
+        "redirect_limit": cfg.fetch.redirect_limit,
+        "allow_private_network": cfg.fetch.allow_private_network,
+        "allow_localhost": cfg.fetch.allow_localhost,
+        "include_links_default": cfg.fetch.include_links_default,
+    })
+}
+
+fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // Disabled default providers
+    let disabled_defaults: Vec<String> = cfg
+        .search
+        .default_providers
+        .iter()
+        .filter(|id| cfg.search.providers.get(id.as_str()).is_some_and(|v| !*v))
+        .cloned()
+        .collect();
+    if !disabled_defaults.is_empty() {
+        warnings.push(format!(
+            "default_providers contains disabled provider(s): {}",
+            disabled_defaults.join(", ")
+        ));
+    }
+
+    // SearXNG configured but disabled
+    if cfg.search.searxng.enabled
+        && cfg
+            .search
+            .searxng
+            .base_url
+            .as_deref()
+            .is_some_and(|u| !u.is_empty())
+        && !cfg
+            .search
+            .providers
+            .get("searxng")
+            .copied()
+            .unwrap_or(false)
+    {
+        warnings.push(
+            "[search].searxng is configured but [search].providers.searxng is disabled".to_string(),
+        );
+    }
+
+    // API providers enabled without key
+    for (id, api_cfg) in &cfg.search.api {
+        if api_cfg.enabled {
+            let key_set = api_cfg
+                .api_key_env
+                .as_ref()
+                .map(|env| std::env::var(env).is_ok())
+                .unwrap_or(false);
+            if !key_set {
+                warnings.push(format!(
+                    "API provider '{}' is enabled but its api_key_env is not set",
+                    id
+                ));
+            }
+        }
+    }
+
+    // Fetch policy warnings
+    if !cfg.fetch.allow_private_network && !cfg.fetch.allow_localhost {
+        // This is the secure default; not a warning.
+    } else if cfg.fetch.allow_private_network || cfg.fetch.allow_localhost {
+        let mut parts = Vec::new();
+        if cfg.fetch.allow_private_network {
+            parts.push("allow_private_network=true");
+        }
+        if cfg.fetch.allow_localhost {
+            parts.push("allow_localhost=true");
+        }
+        warnings.push(format!(
+            "fetch network policy is permissive: {}",
+            parts.join(", ")
+        ));
+    }
+
+    warnings
+}
+
 async fn probe_providers(state: &ServerState) -> Result<()> {
     use eggsearch::core::WebSearchRequest;
 
-    let probe_query = "rust programming language";
-    let timeout_per_provider = 5000;
+    let probe_query = "test";
+    let timeout_per_provider = 3000;
 
     let mut all_failed = true;
     for provider_id in state.adapter.provider_ids() {
@@ -59,7 +246,12 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
         let elapsed = start.elapsed().as_millis() as u64;
 
         if resp.providers_failed.is_empty() {
-            println!("  [OK]   {} ({}ms)", provider_id, elapsed);
+            println!(
+                "  [OK]     {} ({}ms, {} result(s))",
+                provider_id,
+                elapsed,
+                resp.results.len()
+            );
             all_failed = false;
         } else {
             let msg = resp
@@ -73,9 +265,15 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
                 .map(|f| f.error_class.as_str())
                 .unwrap_or("unknown");
             println!(
-                "  [FAIL] {} ({}ms) - {}: {}",
+                "  [FAIL]   {} ({}ms) - {}: {}",
                 provider_id, elapsed, class, msg
             );
+            if !resp.results.is_empty() {
+                println!(
+                    "           (returned {} result(s) despite failure)",
+                    resp.results.len()
+                );
+            }
         }
     }
 

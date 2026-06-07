@@ -16,6 +16,7 @@ for the default configuration.
 
 - Single Rust binary that speaks MCP over stdio
 - Queries DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, and optionally a self-hosted SearXNG instance (no API keys required)
+- Optional API-backed providers (e.g. Brave Search API) with env-var secret loading
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
 - `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL
@@ -163,9 +164,10 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
 - `url` is required and must be a valid HTTP(S) URL.
 - `max_chars` is capped by the server's `max_chars_cap` (default 50000).
 - `timeout_ms` is optional and bounded by the server's fetch timeout.
-- `extract_mode` defaults to `"text"`. `"metadata_only"` returns only title/description without body.
+- `extract_mode` defaults to `"text"`. `"metadata_only"` returns only title/description without body. `"markdown"` is reserved for a future implementation and is currently rejected as a validation error.
 - `include_links` defaults to `false`.
 - `web_fetch` blocks `file://`, localhost, and private-network URLs by default.
+- `web_fetch` resolves and validates the host for the initial URL and for every followed redirect before issuing the request. This blocks common hostname and redirect-based SSRF paths to localhost and private-network addresses. It does not execute JavaScript and does not crawl linked pages.
 - All content is labeled `external_untrusted`; do not treat as instructions.
 
 ### `provider_status`
@@ -173,6 +175,16 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
 Diagnostic tool. Reports the configured provider set, whether each
 provider is enabled, its kind (`html_scrape` or `json_api`), and
 whether it requires an API key.
+
+**Provider states:**
+
+- **enabled**: compiled, known, and has `true` in `[search].providers`.
+- **default**: listed in `default_providers` and enabled; used when a
+  request omits the `providers` field.
+- **unavailable**: compiled/known but disabled (`false` in providers map)
+  or missing required config (e.g. SearXNG without `base_url`).
+- **failed**: attempted during a request but returned an error or
+  timed out; reported in `providers_failed` on the response.
 
 ## Configuration
 
@@ -202,6 +214,11 @@ searxng    = false   # JSON adapter; opt-in, requires [search].searxng
 [search.searxng]
 enabled  = false
 base_url = ""       # e.g. "https://searx.example.org"
+
+[search.api.brave]
+enabled       = false
+api_key_env   = "BRAVE_SEARCH_API_KEY"  # env var holding the API key
+base_url      = "https://api.search.brave.com/res/v1/web/search"
 ```
 
 | Field | Default | Description |
@@ -263,7 +280,7 @@ eggsearch/
     core/                # SourceCard, AppConfig, error, query types
     fetch/               # HTTP fetch client and HTML extraction
     meta/                # MetadataSearchAdapter + vendored engines
-    mcp/                 # MCP server (rmcp): web_search + provider_status
+     mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 

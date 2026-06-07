@@ -6,7 +6,7 @@ use futures::StreamExt;
 use reqwest::Client;
 
 use super::extract::extract_content;
-use super::limits::{validate_url, validate_url_with_dns, FetchLimits};
+use super::limits::{validate_fetch_target, validate_url, FetchLimits};
 use super::types::FetchError;
 use crate::core::fetch::{ExtractMode, FetchTrust, WebFetchResponse};
 use crate::core::sanitize::{
@@ -42,7 +42,7 @@ impl FetchClient {
     ) -> anyhow::Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_millis(limits.timeout_ms))
-            .redirect(reqwest::redirect::Policy::limited(limits.redirect_limit))
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent(&user_agent)
             .build()?;
         Ok(Self {
@@ -69,29 +69,88 @@ impl FetchClient {
         extract_mode: ExtractMode,
         include_links: bool,
     ) -> Result<WebFetchResponse, FetchError> {
-        let url = validate_url(url_str, &self.limits)?;
-
-        // Defense-in-depth DNS check. The sync `validate_url` already
-        // blocked obvious local/private literals; this resolves the
-        // host and rejects any address in a blocked range. Note the
-        // TOCTOU window: between this check and the actual HTTP
-        // request, DNS could return a different address. For a single
-        // tenant MCP server with no real-time-critical attack surface
-        // this is acceptable; the same pattern is used by SSRF proxies
-        // that re-resolve per request.
-        let url = validate_url_with_dns(url, &self.limits).await?;
+        // Validate the initial URL (scheme, length, localhost literals,
+        // obvious private-network literals, credentials).
+        let initial_url = validate_url(url_str, &self.limits)?;
 
         let max_chars = max_chars
             .unwrap_or(self.limits.max_chars_default)
             .min(self.limits.max_chars_cap);
 
-        let response = self.client.get(url.clone()).send().await.map_err(|e| {
-            if e.is_timeout() {
-                FetchError::Timeout(self.limits.timeout_ms)
-            } else {
-                FetchError::NetworkError(e.to_string())
+        let mut current_url = initial_url;
+        let mut redirect_count: usize = 0;
+
+        let response = loop {
+            // Full validation: credentials, localhost, DNS resolution, IP checks.
+            validate_fetch_target(&current_url, &self.limits).await?;
+
+            let resp = self
+                .client
+                .get(current_url.clone())
+                .send()
+                .await
+                .map_err(|e| {
+                    if e.is_timeout() {
+                        FetchError::Timeout(self.limits.timeout_ms)
+                    } else {
+                        FetchError::NetworkError(e.to_string())
+                    }
+                })?;
+
+            let status = resp.status().as_u16();
+
+            if (300..400).contains(&status) {
+                let location = resp
+                    .headers()
+                    .get("location")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+
+                let location = match location {
+                    Some(loc) if !loc.is_empty() => loc,
+                    _ => {
+                        return Err(FetchError::InvalidRedirectLocation(format!(
+                            "HTTP {} missing or empty Location header",
+                            status
+                        )));
+                    }
+                };
+
+                // Resolve relative redirects against the current URL.
+                let redirect_url = current_url.join(&location).map_err(|e| {
+                    FetchError::InvalidRedirectLocation(format!(
+                        "failed to resolve redirect location '{}': {}",
+                        location, e
+                    ))
+                })?;
+
+                redirect_count += 1;
+                if redirect_count > self.limits.redirect_limit {
+                    return Err(FetchError::RedirectLimitExceeded(redirect_count - 1));
+                }
+
+                // Validate the redirect target before following.
+                validate_fetch_target(&redirect_url, &self.limits)
+                    .await
+                    .map_err(|e| match e {
+                        FetchError::PrivateNetworkBlocked(reason) => {
+                            FetchError::RedirectTargetBlocked(format!("private network: {reason}"))
+                        }
+                        FetchError::EmbeddedCredentialsBlocked(reason) => {
+                            FetchError::RedirectTargetBlocked(format!("credentials: {reason}"))
+                        }
+                        FetchError::UnsupportedScheme(reason) => {
+                            FetchError::RedirectTargetBlocked(reason)
+                        }
+                        other => FetchError::RedirectTargetBlocked(other.to_string()),
+                    })?;
+
+                current_url = redirect_url;
+                continue;
             }
-        })?;
+
+            break resp;
+        };
 
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
@@ -666,5 +725,325 @@ mod tests {
         // Tier 1 should be reflected on the response.
         assert!(resp.trust_markers.text_sanitized);
         assert!(resp.trust_markers.control_chars_removed >= 1);
+    }
+
+    // --- Redirect and network validation tests ---
+
+    #[tokio::test]
+    async fn fetch_redirect_to_credentials_blocked() {
+        // Redirect to a URL with embedded credentials should be blocked.
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/start");
+            then.status(302)
+                .header("location", "http://user:pass@evil.com/steal");
+        });
+
+        let limits = FetchLimits {
+            allow_private_network: true,
+            allow_localhost: true,
+            ..Default::default()
+        };
+        let client = FetchClient::new(limits, "eggsearch/test".to_string(), false).expect("client");
+        let result = client
+            .fetch(&server.url("/start"), None, ExtractMode::Text, false)
+            .await;
+
+        let err = result.expect_err("expected redirect-target-blocked for credentials");
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::RedirectTargetBlocked
+            ),
+            "got: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("credentials"),
+            "error should mention credentials: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_relative_redirect_resolved_and_followed() {
+        // A relative redirect should be resolved against the current
+        // URL and followed.
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/a");
+            then.status(307).header("location", "/b");
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/b");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("final");
+        });
+
+        let client = test_client();
+        let resp = client
+            .fetch(&server.url("/a"), None, ExtractMode::Text, false)
+            .await
+            .expect("ok");
+        assert_eq!(resp.status, 200);
+        assert!(resp.text.as_deref().unwrap_or("").contains("final"));
+        assert_eq!(resp.final_url, server.url("/b"));
+    }
+
+    #[tokio::test]
+    async fn fetch_redirect_chain_exceeding_limit_rejected() {
+        let server = MockServer::start();
+        // Build 6 redirects; redirect_limit = 5.
+        for i in 0..6 {
+            let next = format!("/chain/{}", i + 1);
+            server.mock(|when, then| {
+                let path = format!("/chain/{}", i);
+                when.method(GET).path(path);
+                then.status(302).header("location", next);
+            });
+        }
+
+        let client = test_client();
+        let result = client
+            .fetch(&server.url("/chain/0"), None, ExtractMode::Text, false)
+            .await;
+
+        let err = result.expect_err("expected RedirectLimitExceeded");
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::RedirectLimitExceeded
+            ),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_missing_location_header_on_redirect_rejected() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/noloc");
+            then.status(301); // No Location header
+        });
+
+        let client = test_client();
+        let result = client
+            .fetch(&server.url("/noloc"), None, ExtractMode::Text, false)
+            .await;
+
+        let err = result.expect_err("expected InvalidRedirectLocation");
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::InvalidRedirectLocation
+            ),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_empty_location_header_on_redirect_rejected() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/emptyloc");
+            then.status(302).header("location", "");
+        });
+
+        let client = test_client();
+        let result = client
+            .fetch(&server.url("/emptyloc"), None, ExtractMode::Text, false)
+            .await;
+
+        let err = result.expect_err("expected InvalidRedirectLocation for empty Location");
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::InvalidRedirectLocation
+            ),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_private_network_initial_url_blocked() {
+        // An initial URL targeting a private IP should be blocked.
+        let limits = FetchLimits {
+            allow_private_network: false,
+            allow_localhost: true,
+            ..Default::default()
+        };
+        let client = FetchClient::new(limits, "eggsearch/test".to_string(), false).expect("client");
+        let result = client
+            .fetch("http://192.168.1.1/secret", None, ExtractMode::Text, false)
+            .await;
+
+        let err = result.expect_err("expected PrivateNetworkBlocked");
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::PrivateNetworkBlocked
+            ),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_localhost_allowed_only_when_permitted() {
+        let limits = FetchLimits {
+            allow_private_network: true,
+            allow_localhost: false,
+            ..Default::default()
+        };
+        let client = FetchClient::new(limits, "eggsearch/test".to_string(), false).expect("client");
+        let result = client
+            .fetch(
+                "http://127.0.0.1:12345/whatever",
+                None,
+                ExtractMode::Text,
+                false,
+            )
+            .await;
+
+        let err = result.expect_err("expected PrivateNetworkBlocked for localhost");
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::PrivateNetworkBlocked
+            ),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_embedded_credentials_in_initial_url_blocked() {
+        let limits = FetchLimits {
+            allow_private_network: true,
+            allow_localhost: true,
+            ..Default::default()
+        };
+        let client = FetchClient::new(limits, "eggsearch/test".to_string(), false).expect("client");
+        let result = client
+            .fetch(
+                "http://user:pass@example.com/secret",
+                None,
+                ExtractMode::Text,
+                false,
+            )
+            .await;
+
+        let err = result.expect_err("expected EmbeddedCredentialsBlocked");
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::EmbeddedCredentialsBlocked
+            ),
+            "got: {err:?}"
+        );
+    }
+
+    // --- Redirect target validation tests (via validate_fetch_target) ---
+    // These test that redirect targets to localhost/private networks are
+    // rejected, which can't be tested via a localhost mock server because
+    // the initial URL would also be blocked.
+
+    #[tokio::test]
+    async fn validate_fetch_target_blocks_localhost() {
+        use crate::fetch::limits::validate_fetch_target;
+
+        let limits = FetchLimits {
+            allow_localhost: false,
+            allow_private_network: true,
+            ..Default::default()
+        };
+
+        let urls = ["http://localhost/", "http://127.0.0.1/", "http://[::1]/"];
+        for url_str in &urls {
+            let url = url::Url::parse(url_str).unwrap();
+            let result = validate_fetch_target(&url, &limits).await;
+            assert!(
+                matches!(result, Err(FetchError::PrivateNetworkBlocked(_))),
+                "expected block for {url_str}, got: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_blocks_private_network() {
+        use crate::fetch::limits::validate_fetch_target;
+
+        let limits = FetchLimits {
+            allow_localhost: true,
+            allow_private_network: false,
+            ..Default::default()
+        };
+
+        let urls = [
+            "http://192.168.1.1/",
+            "http://10.0.0.1/",
+            "http://172.16.0.1/",
+            "http://169.254.169.254/",
+        ];
+        for url_str in &urls {
+            let url = url::Url::parse(url_str).unwrap();
+            let result = validate_fetch_target(&url, &limits).await;
+            assert!(result.is_err(), "expected block for {url_str}, got Ok");
+        }
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_blocks_embedded_credentials() {
+        use crate::fetch::limits::validate_fetch_target;
+
+        let limits = FetchLimits::default();
+        let url = url::Url::parse("http://user:pass@evil.com/steal").unwrap();
+        let result = validate_fetch_target(&url, &limits).await;
+        assert!(
+            matches!(result, Err(FetchError::EmbeddedCredentialsBlocked(_))),
+            "expected credentials block, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_blocks_all_private_ranges() {
+        use crate::fetch::limits::validate_fetch_target;
+
+        let limits = FetchLimits {
+            allow_private_network: false,
+            allow_localhost: false,
+            ..Default::default()
+        };
+
+        let blocked_urls = [
+            "http://10.0.0.1/",
+            "http://172.16.0.1/",
+            "http://192.168.0.1/",
+            "http://169.254.169.254/",
+            "http://127.0.0.1/",
+            "http://[::1]/",
+            "http://localhost/",
+        ];
+
+        for url_str in &blocked_urls {
+            let url = url::Url::parse(url_str).unwrap();
+            let result = validate_fetch_target(&url, &limits).await;
+            assert!(result.is_err(), "expected block for {url_str}, got Ok");
+        }
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_allows_public_urls() {
+        use crate::fetch::limits::validate_fetch_target;
+
+        let limits = FetchLimits::default();
+
+        let allowed_urls = ["https://example.com/", "https://httpbin.org/get"];
+
+        for url_str in &allowed_urls {
+            let url = url::Url::parse(url_str).unwrap();
+            let result = validate_fetch_target(&url, &limits).await;
+            assert!(
+                result.is_ok(),
+                "expected allow for {url_str}, got: {result:?}"
+            );
+        }
     }
 }

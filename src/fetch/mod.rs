@@ -10,5 +10,5 @@ pub mod types;
 
 pub use client::FetchClient;
 pub use extract::{extract_content, HtmlExtractor};
-pub use limits::FetchLimits;
+pub use limits::{validate_fetch_target, FetchLimits};
 pub use types::{FetchError, FetchErrorKind};

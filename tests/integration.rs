@@ -94,6 +94,9 @@ fn test_cfg() -> AppConfig {
     cfg.search.max_query_chars = 256;
     cfg.search.max_results = 10;
     cfg.search.max_results_cap = 50;
+    // Register mock provider ids so resolve_providers() accepts them.
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.search.providers.insert("mock_b".to_string(), true);
     cfg
 }
 
@@ -587,8 +590,8 @@ async fn provider_status_with_mixed_enabled_disabled() {
     ));
     let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
     // provider_status lists KNOWN_PROVIDERS (duckduckgo, brave, startpage,
-    // yahoo, mojeek, searxng), not mock engine names. The mock engines
-    // aren't in that list.
+    // yahoo, mojeek, searxng, brave_api), not mock engine names. The mock
+    // engines aren't in that list.
     let arr = v["providers"].as_array().unwrap();
     let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
     assert!(ids.contains(&"duckduckgo"));
@@ -597,9 +600,10 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"yahoo"));
     assert!(ids.contains(&"mojeek"));
     assert!(ids.contains(&"searxng"));
+    assert!(ids.contains(&"brave_api"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 6);
+    assert_eq!(ids.len(), 7);
 }
 
 #[cfg(feature = "mock")]
@@ -1073,5 +1077,67 @@ async fn web_fetch_sanitize_emits_marker_warning() {
     assert!(
         text.contains("<<<EXTERNAL_UNTRUSTED"),
         "text should be framed, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_empty_url_returns_validation_error() {
+    let state = state_with_default();
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: "".into(),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error");
+    assert!(
+        err.to_string().contains("url must not be empty"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_unsupported_scheme_returns_error() {
+    let state = state_with_default();
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: "file:///etc/passwd".into(),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected scheme error");
+    assert!(
+        err.to_string().contains("scheme") || err.to_string().contains("blocked URL scheme"),
+        "got: {err}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_disabled_provider_in_explicit_request_returns_error() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+    )];
+    let mut cfg = test_cfg();
+    // Disable mock_b in config
+    cfg.search.providers.insert("mock_b".to_string(), false);
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["mock_a", "mock_b"], "rust"))
+        .await
+        .expect_err("expected disabled provider error");
+    assert!(
+        err.to_string().contains("disabled"),
+        "error should mention disabled: {err}"
     );
 }

@@ -5,20 +5,6 @@ use crate::core::SearchWarning;
 use crate::core::SourceCard;
 use serde::{Deserialize, Serialize};
 
-/// Status of a single configured provider.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProviderStatus {
-    /// Stable provider id, e.g. `"duckduckgo"`.
-    pub id: String,
-    /// Whether the provider is enabled in the server's effective config.
-    pub enabled: bool,
-    /// Provider kind. For HTML-scraped engines this is `"html_scrape"`.
-    /// For engines that take an API key this is `"api_key"`.
-    pub kind: String,
-    /// Whether the provider requires an API key.
-    pub requires_api_key: bool,
-}
-
 /// A failure record for a single provider, exposed to the MCP tool.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProviderFailure {
@@ -59,22 +45,6 @@ pub struct WebSearchResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn provider_status_serde_roundtrip() {
-        let status = ProviderStatus {
-            id: "duckduckgo".to_string(),
-            enabled: true,
-            kind: "html_scrape".to_string(),
-            requires_api_key: false,
-        };
-        let json = serde_json::to_string(&status).unwrap();
-        let parsed: ProviderStatus = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.id, status.id);
-        assert_eq!(parsed.enabled, status.enabled);
-        assert_eq!(parsed.kind, status.kind);
-        assert_eq!(parsed.requires_api_key, status.requires_api_key);
-    }
 
     #[test]
     fn provider_failure_serde_roundtrip() {

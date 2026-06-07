@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use crate::core::config::Mode;
+use crate::core::provider::ProviderDescriptor;
 use crate::core::WebSearchRequest;
-use crate::meta::response::ProviderStatus;
 use serde::{Deserialize, Serialize};
 
 use crate::fetch::FetchClient;
@@ -72,7 +72,7 @@ pub struct WebFetchArgs {
     /// Timeout in milliseconds. Defaults to server config.
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    /// Extraction mode: "text" (default), "metadata_only".
+    /// Extraction mode: "text" (default) or "metadata_only".
     /// "markdown" is reserved for a future implementation and is
     /// currently rejected as a validation error.
     #[serde(default)]
@@ -214,9 +214,9 @@ pub fn run_provider_status(
     state: Arc<ServerState>,
     _args: ProviderStatusArgs,
 ) -> Result<serde_json::Value, String> {
-    let statuses: Vec<ProviderStatus> = state.adapter.provider_status();
+    let descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
     let payload = serde_json::json!({
-        "providers": statuses,
+        "providers": descriptors,
         "mode": mode_str(state.config.search.mode),
     });
     Ok(payload)
