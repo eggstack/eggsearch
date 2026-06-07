@@ -77,7 +77,12 @@ impl SearchEngine for DuckDuckGoEngine {
         max_results: usize,
         timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(duckduckgo::search(&self.client, query, max_results, timeout))
+        Box::pin(duckduckgo::search(
+            &self.client,
+            query,
+            max_results,
+            timeout,
+        ))
     }
 }
 

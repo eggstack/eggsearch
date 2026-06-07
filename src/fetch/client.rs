@@ -10,8 +10,8 @@ use super::limits::{validate_url, validate_url_with_dns, FetchLimits};
 use super::types::FetchError;
 use crate::core::fetch::{ExtractMode, FetchTrust, WebFetchResponse};
 use crate::core::sanitize::{
-    bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers, SNIPPET_MAX_CHARS,
-    TITLE_MAX_CHARS,
+    bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
+    SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
 };
 
 /// HTTP client for fetching URLs.
@@ -105,9 +105,16 @@ impl FetchClient {
         // body cap below remains the authoritative upper bound for
         // chunked/encoded responses; this is an early bailout.
         if let Some(cl_header) = response.headers().get("content-length") {
-            if let Some(content_length) = cl_header.to_str().ok().and_then(|s| s.parse::<usize>().ok()) {
+            if let Some(content_length) = cl_header
+                .to_str()
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+            {
                 if content_length > self.limits.max_bytes {
-                    return Err(FetchError::ContentTooLarge(content_length, self.limits.max_bytes));
+                    return Err(FetchError::ContentTooLarge(
+                        content_length,
+                        self.limits.max_bytes,
+                    ));
                 }
             }
         }
@@ -148,25 +155,26 @@ impl FetchClient {
             body.extend_from_slice(&chunk);
         }
 
-        let (mut title, mut description, mut text, links, extract_warnings) =
-            if extract_mode == ExtractMode::MetadataOnly {
-                if is_html {
-                    let extractor = super::extract::HtmlExtractor::new(&body, &final_url);
-                    let (t, d, _, l, w) = extractor.extract(max_chars, include_links);
-                    (t, d, None, l, w)
-                } else {
-                    (None, None, None, Vec::new(), Vec::new())
-                }
-            } else if is_html {
-                let (t, d, txt, l, w) = extract_content(&body, &final_url, max_chars, include_links);
-                (t, d, Some(txt), l, w)
+        let (mut title, mut description, mut text, links, extract_warnings) = if extract_mode
+            == ExtractMode::MetadataOnly
+        {
+            if is_html {
+                let extractor = super::extract::HtmlExtractor::new(&body, &final_url);
+                let (t, d, _, l, w) = extractor.extract(max_chars, include_links);
+                (t, d, None, l, w)
             } else {
-                let text = String::from_utf8_lossy(&body)
-                    .chars()
-                    .take(max_chars)
-                    .collect::<String>();
-                (None, None, Some(text), Vec::new(), Vec::new())
-            };
+                (None, None, None, Vec::new(), Vec::new())
+            }
+        } else if is_html {
+            let (t, d, txt, l, w) = extract_content(&body, &final_url, max_chars, include_links);
+            (t, d, Some(txt), l, w)
+        } else {
+            let text = String::from_utf8_lossy(&body)
+                .chars()
+                .take(max_chars)
+                .collect::<String>();
+            (None, None, Some(text), Vec::new(), Vec::new())
+        };
 
         let mut warnings = extract_warnings;
 
@@ -368,7 +376,11 @@ mod tests {
 
         assert_eq!(resp.status, 200);
         assert!(resp.fetched);
-        assert!(resp.text.as_deref().unwrap_or("").contains("just plain text"));
+        assert!(resp
+            .text
+            .as_deref()
+            .unwrap_or("")
+            .contains("just plain text"));
     }
 
     #[tokio::test]
@@ -531,7 +543,10 @@ mod tests {
             .await
             .expect_err("expected unsupported content type error");
         assert!(
-            matches!(err.kind(), crate::fetch::FetchErrorKind::UnsupportedContentType),
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::UnsupportedContentType
+            ),
             "got: {err:?}"
         );
     }
@@ -573,8 +588,8 @@ mod tests {
                 .body(body);
         });
 
-        let client = FetchClient::new(test_limits(), "eggsearch/test".to_string(), false)
-            .expect("client");
+        let client =
+            FetchClient::new(test_limits(), "eggsearch/test".to_string(), false).expect("client");
         let resp = client
             .fetch(&server.url("/p"), None, ExtractMode::Text, false)
             .await

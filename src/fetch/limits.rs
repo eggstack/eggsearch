@@ -141,10 +141,7 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
 /// HTTP request. For a single-tenant MCP server that does not
 /// resolve hostnames on a per-request basis on the data path, this
 /// is acceptable; the same pattern is used by SSRF proxies.
-pub async fn validate_url_with_dns(
-    url: Url,
-    limits: &FetchLimits,
-) -> Result<Url, FetchError> {
+pub async fn validate_url_with_dns(url: Url, limits: &FetchLimits) -> Result<Url, FetchError> {
     // Nothing to do if both flags grant access.
     if limits.allow_private_network && limits.allow_localhost {
         return Ok(url);
@@ -167,13 +164,10 @@ pub async fn validate_url_with_dns(
             .map(|it| it.collect::<Vec<_>>())
     })
     .await
-    .map_err(|e| {
-        FetchError::NetworkError(format!("DNS resolution task panicked: {e}"))
-    })?;
+    .map_err(|e| FetchError::NetworkError(format!("DNS resolution task panicked: {e}")))?;
 
-    let addrs = resolved.map_err(|e| {
-        FetchError::NetworkError(format!("DNS resolution failed for {host}: {e}"))
-    })?;
+    let addrs = resolved
+        .map_err(|e| FetchError::NetworkError(format!("DNS resolution failed for {host}: {e}")))?;
 
     if addrs.is_empty() {
         return Err(FetchError::NetworkError(format!(
@@ -244,7 +238,9 @@ fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     let s = v6.segments();
     if s[0] == 0 && s[1] == 0 && s[2] == 0 && s[3] == 0 && s[4] == 0 && s[5] == 0xffff {
         let octets = v6.octets();
-        Some(Ipv4Addr::new(octets[12], octets[13], octets[14], octets[15]))
+        Some(Ipv4Addr::new(
+            octets[12], octets[13], octets[14], octets[15],
+        ))
     } else {
         None
     }

@@ -242,6 +242,8 @@ user_agent = "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)"
 | `include_links_default` | `false` | Default for `include_links` when the client omits it. |
 | `user_agent` | `eggsearch/0.1 (+https://github.com/eggstack/eggsearch)` | HTTP `User-Agent` header for fetch requests. |
 
+> **Note.** The `[search].live.user_agent` and `[search].live.respect_robots_txt` config fields are parsed but have no effect in the current build. The vendored HTML engines use a hard-coded browser-like user agent that upstream providers expect. Setting either field logs a startup warning.
+
 > **Private network blocking.** `web_fetch` resolves DNS at fetch time and
 > validates every resolved IP against the same allow/deny rules applied to
 > the URL's host literal. This closes the hostname-based SSRF bypass where

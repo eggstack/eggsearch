@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `AppConfig::validate()` now rejects configurations where `[search].mode` is `"live"` but no providers are enabled in `[search].providers`
+
+### Notes
+- This is a polish release. All core features (web_search, web_fetch, provider_status, CLI commands, prompt-injection hardening) were already present in 0.2.1.
+
 ## [0.2.1] - 2026-06-07
 
 ### Added

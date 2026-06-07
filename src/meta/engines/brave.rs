@@ -16,16 +16,14 @@ pub async fn search(
     max_results: usize,
     timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
-    let response = tokio::time::timeout(
-        timeout,
-        client.get(BRAVE_URL).query(&[("q", query)]).send(),
-    )
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
+    let response =
+        tokio::time::timeout(timeout, client.get(BRAVE_URL).query(&[("q", query)]).send())
+            .await
+            .map_err(|_| EngineError::Timeout { engine: ENGINE })?
+            .map_err(|e| EngineError::Http {
+                engine: ENGINE,
+                source: e,
+            })?;
 
     if !response.status().is_success() {
         return Err(EngineError::BadStatus {

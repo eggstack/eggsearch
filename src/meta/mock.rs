@@ -120,10 +120,7 @@ impl MockEngine {
         }
     }
 
-    pub fn record_timeout(
-        name: &'static str,
-        sink: Arc<Mutex<Option<Duration>>>,
-    ) -> Self {
+    pub fn record_timeout(name: &'static str, sink: Arc<Mutex<Option<Duration>>>) -> Self {
         Self {
             name,
             results: Vec::new(),

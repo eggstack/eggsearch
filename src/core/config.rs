@@ -398,6 +398,15 @@ impl AppConfig {
                 "[search].max_query_chars must be > 0".to_string(),
             ));
         }
+        if self.search.mode == Mode::Live {
+            let enabled_count = self.search.providers.values().filter(|v| **v).count();
+            if enabled_count == 0 {
+                return Err(CoreError::Config(
+                    "[search].mode is 'live' but no providers are enabled in [search].providers"
+                        .to_string(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -454,7 +463,14 @@ mod tests {
     #[test]
     fn default_providers_lists_known_engines() {
         let c = AppConfig::default();
-        for expected in ["duckduckgo", "brave", "startpage", "yahoo", "mojeek", "searxng"] {
+        for expected in [
+            "duckduckgo",
+            "brave",
+            "startpage",
+            "yahoo",
+            "mojeek",
+            "searxng",
+        ] {
             assert!(
                 c.search.providers.contains_key(expected),
                 "missing default provider: {expected}"
@@ -619,10 +635,22 @@ mod tests {
         ];
 
         let misconfigured = c.misconfigured_default_providers();
-        assert!(misconfigured.contains(&"brave".to_string()), "got: {misconfigured:?}");
-        assert!(misconfigured.contains(&"yahoo".to_string()), "got: {misconfigured:?}");
-        assert!(misconfigured.contains(&"ghost".to_string()), "got: {misconfigured:?}");
-        assert!(!misconfigured.contains(&"duckduckgo".to_string()), "got: {misconfigured:?}");
+        assert!(
+            misconfigured.contains(&"brave".to_string()),
+            "got: {misconfigured:?}"
+        );
+        assert!(
+            misconfigured.contains(&"yahoo".to_string()),
+            "got: {misconfigured:?}"
+        );
+        assert!(
+            misconfigured.contains(&"ghost".to_string()),
+            "got: {misconfigured:?}"
+        );
+        assert!(
+            !misconfigured.contains(&"duckduckgo".to_string()),
+            "got: {misconfigured:?}"
+        );
         assert_eq!(misconfigured.len(), 3, "got: {misconfigured:?}");
     }
 
@@ -635,7 +663,11 @@ mod tests {
     #[test]
     fn validate_accepts_defaults() {
         let c = AppConfig::default();
-        assert!(c.validate().is_ok(), "default config should validate: {:?}", c.validate().err());
+        assert!(
+            c.validate().is_ok(),
+            "default config should validate: {:?}",
+            c.validate().err()
+        );
     }
 
     #[test]
@@ -665,7 +697,10 @@ mod tests {
         let mut c2 = AppConfig::default();
         c2.search.timeout_ms = 0;
         let err2 = c2.validate().expect_err("expected search timeout failure");
-        assert!(err2.to_string().contains("[search].timeout_ms"), "got: {err2}");
+        assert!(
+            err2.to_string().contains("[search].timeout_ms"),
+            "got: {err2}"
+        );
     }
 
     #[test]
@@ -703,5 +738,33 @@ mod tests {
     fn default_fetch_section_has_sanitize_output_true() {
         let c = AppConfig::default();
         assert!(c.fetch.sanitize_output);
+    }
+
+    #[test]
+    fn validate_rejects_no_providers_enabled_in_live_mode() {
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Live;
+        // Disable ALL providers
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        let err = c.validate().expect_err("expected no-providers failure");
+        assert!(
+            err.to_string().contains("no providers are enabled"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_allows_no_providers_in_off_mode() {
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Off;
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        // mode=off with no providers is fine - no search is attempted
+        assert!(c.validate().is_ok());
     }
 }

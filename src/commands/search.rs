@@ -98,7 +98,9 @@ mod tests {
     async fn run_respects_mode_off() {
         let mut cfg = AppConfig::default();
         cfg.search.mode = Mode::Off;
-        let err = run(&cfg, "rust", 10, false, &[]).await.expect_err("expected policy denial");
+        let err = run(&cfg, "rust", 10, false, &[])
+            .await
+            .expect_err("expected policy denial");
         assert!(err.to_string().contains("disabled by policy"), "got: {err}");
         assert!(err.to_string().contains("[search].mode"), "got: {err}");
     }

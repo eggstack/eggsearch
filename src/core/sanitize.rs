@@ -71,10 +71,8 @@ impl TrustMarkers {
 // ---------------------------------------------------------------------------
 
 static IGNORE_PREVIOUS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\bignore\s+(all|the)\s+(previous|prior|above)\s+(instructions?|prompts?)\b",
-    )
-    .expect("ignore_previous regex compiles")
+    Regex::new(r"(?i)\bignore\s+(all|the)\s+(previous|prior|above)\s+(instructions?|prompts?)\b")
+        .expect("ignore_previous regex compiles")
 });
 
 static DISREGARD_ALL: LazyLock<Regex> = LazyLock::new(|| {
@@ -82,9 +80,8 @@ static DISREGARD_ALL: LazyLock<Regex> = LazyLock::new(|| {
         .expect("disregard_all regex compiles")
 });
 
-static SYSTEM_COLON: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^\s*system\s*:\s*").expect("system_colon regex compiles")
-});
+static SYSTEM_COLON: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*system\s*:\s*").expect("system_colon regex compiles"));
 
 static ASSISTANT_COLON: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^\s*assistant\s*:\s*").expect("assistant_colon regex compiles")
@@ -279,7 +276,8 @@ mod tests {
     #[test]
     fn strip_removes_bidi_controls() {
         // LRE, RLE, PDF, LRO, RLO, plus isolates LRI/RLI/FSI/PDI
-        let s = "a\u{202A}b\u{202B}c\u{202C}d\u{202D}e\u{202E}f\u{2066}g\u{2067}h\u{2068}i\u{2069}j";
+        let s =
+            "a\u{202A}b\u{202B}c\u{202C}d\u{202D}e\u{202E}f\u{2066}g\u{2067}h\u{2068}i\u{2069}j";
         let (out, n) = strip_control_chars(s);
         assert_eq!(out, "abcdefghij");
         assert_eq!(n, 9);

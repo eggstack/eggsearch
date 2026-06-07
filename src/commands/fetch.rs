@@ -124,7 +124,10 @@ mod tests {
         )
         .await
         .expect_err("expected max_chars validation error");
-        assert!(err.to_string().contains("max_chars must be > 0"), "got: {err}");
+        assert!(
+            err.to_string().contains("max_chars must be > 0"),
+            "got: {err}"
+        );
     }
 
     #[tokio::test]

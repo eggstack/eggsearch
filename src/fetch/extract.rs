@@ -92,8 +92,7 @@ impl<'a> HtmlExtractor<'a> {
 }
 
 const STRIP_TAGS: &[&str] = &[
-    "script", "style", "noscript", "svg", "nav",
-    "footer", "header", "form", "aside",
+    "script", "style", "noscript", "svg", "nav", "footer", "header", "form", "aside",
 ];
 
 fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String) {
@@ -229,7 +228,10 @@ mod tests {
         assert!(text.contains("visible"), "got: {text:?}");
         assert!(text.contains("after"), "got: {text:?}");
         assert!(!text.contains("alert"), "script content leaked: {text:?}");
-        assert!(!text.contains("color:red"), "style content leaked: {text:?}");
+        assert!(
+            !text.contains("color:red"),
+            "style content leaked: {text:?}"
+        );
         assert!(!text.contains("body{"), "css leaked: {text:?}");
     }
 
@@ -273,8 +275,7 @@ mod tests {
         // The lossy decoder should turn 0xFF 0xFE into U+FFFD
         // replacement characters, and the surrounding text should
         // still be extractable.
-        let html: &[u8] =
-            b"<html><body><p>before</p>\xff\xfe<p>after</p></body></html>";
+        let html: &[u8] = b"<html><body><p>before</p>\xff\xfe<p>after</p></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
         let (title, _, text, _, warnings) = extractor.extract(1000, false);
         assert!(

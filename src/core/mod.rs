@@ -17,6 +17,6 @@ pub use query::{SafeSearch, WebSearchRequest};
 pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,
-    TITLE_MAX_CHARS, SNIPPET_MAX_CHARS,
+    SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
 };
 pub use source_card::SourceCard;

@@ -60,10 +60,7 @@ impl ServerState {
             .as_deref()
             .map(str::is_empty)
             .unwrap_or(true);
-        if searxng_requested
-            && (config.search.searxng.enabled
-                || !searxng_base_url_is_empty)
-        {
+        if searxng_requested && (config.search.searxng.enabled || !searxng_base_url_is_empty) {
             if !config.search.searxng.enabled {
                 tracing::warn!(
                     "[search].providers.searxng = true but [search].searxng.enabled = false; \
@@ -106,12 +103,7 @@ impl ServerState {
                  The vendored HTML engines use a hard-coded browser-like user agent."
             );
         }
-        if config
-            .search
-            .live
-            .respect_robots_txt
-            .is_some_and(|v| v)
-        {
+        if config.search.live.respect_robots_txt.is_some_and(|v| v) {
             tracing::warn!(
                 "[search].live.respect_robots_txt is reserved for future use and is not yet applied. \
                  web_fetch does not consult robots.txt in the current build."

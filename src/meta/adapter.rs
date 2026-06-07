@@ -5,14 +5,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::core::sanitize::{
+    bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
+    SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
+};
 use crate::core::SearchWarning;
 use crate::core::SourceCard;
 use crate::core::TrustLevel;
 use crate::core::WebSearchRequest;
-use crate::core::sanitize::{
-    bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers, SNIPPET_MAX_CHARS,
-    TITLE_MAX_CHARS,
-};
 use tracing::{debug, warn};
 
 use crate::meta::engines::error::EngineError;
@@ -829,7 +829,14 @@ mod tests {
 
     #[test]
     fn known_providers_includes_new_ids() {
-        for id in ["duckduckgo", "brave", "startpage", "yahoo", "mojeek", "searxng"] {
+        for id in [
+            "duckduckgo",
+            "brave",
+            "startpage",
+            "yahoo",
+            "mojeek",
+            "searxng",
+        ] {
             assert!(
                 KNOWN_PROVIDERS.contains(&id),
                 "KNOWN_PROVIDERS missing {id}"
@@ -854,8 +861,7 @@ mod tests {
     #[test]
     fn build_default_engines_includes_mojeek() {
         let enabled = vec!["mojeek".to_string()];
-        let (engines, skipped) =
-            build_default_engines(&enabled, None, None).expect("build");
+        let (engines, skipped) = build_default_engines(&enabled, None, None).expect("build");
         assert!(skipped.is_empty());
         assert_eq!(engines.len(), 1);
         assert_eq!(engines[0].name(), "mojeek");

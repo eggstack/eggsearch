@@ -77,12 +77,11 @@ pub async fn search(
         });
     }
 
-    let parsed: SearxngResponse = serde_json::from_slice(&bytes).map_err(|e| {
-        EngineError::ParseFailed {
+    let parsed: SearxngResponse =
+        serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
             engine: ENGINE,
             reason: format!("invalid JSON: {e}"),
-        }
-    })?;
+        })?;
 
     Ok(convert(parsed.results, max_results))
 }
@@ -157,7 +156,10 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].title, "Example Site");
         assert_eq!(out[0].url, "https://example.com");
-        assert_eq!(out[0].snippet.as_deref(), Some("An example website for testing."));
+        assert_eq!(
+            out[0].snippet.as_deref(),
+            Some("An example website for testing.")
+        );
         assert_eq!(out[0].source_engine, "searxng");
     }
 

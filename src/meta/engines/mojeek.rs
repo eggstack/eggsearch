@@ -177,10 +177,7 @@ mod tests {
                 <p class="s">Snippet</p>
             </li>
         "#;
-        let html = format!(
-            r#"<ul class="results-standard">{}</ul>"#,
-            item.repeat(5)
-        );
+        let html = format!(r#"<ul class="results-standard">{}</ul>"#, item.repeat(5));
         let results = parse(&html, 2).unwrap();
         assert_eq!(results.len(), 2);
     }

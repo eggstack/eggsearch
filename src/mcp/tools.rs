@@ -238,9 +238,7 @@ pub async fn run_web_fetch(
     }
 
     if let Some(0) = args.max_chars {
-        return Err(ToolError::Validation(
-            "max_chars must be > 0".to_string(),
-        ));
+        return Err(ToolError::Validation("max_chars must be > 0".to_string()));
     }
 
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
@@ -260,12 +258,7 @@ pub async fn run_web_fetch(
         .unwrap_or(state.config.fetch.include_links_default);
 
     let response = client
-        .fetch(
-            &args.url,
-            args.max_chars,
-            extract_mode,
-            include_links,
-        )
+        .fetch(&args.url, args.max_chars, extract_mode, include_links)
         .await;
 
     match response {
