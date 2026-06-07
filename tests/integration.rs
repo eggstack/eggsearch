@@ -1176,6 +1176,261 @@ async fn web_search_uses_default_max_results_when_omitted() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Task 7: MCP Tool Surface Regression Test (mock state)
+//
+// Verifies that EggsearchServer built with mock state still exposes
+// exactly the three expected tools: web_search, web_fetch,
+// provider_status. Catches accidental unregistration of any tool.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[test]
+fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
+    let engines = vec![MockEngine::success("mock_a", vec![])];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let tools = server.tool_definitions();
+    let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+
+    assert_eq!(names.len(), 3, "expected exactly 3 tools, got: {names:?}");
+    assert!(
+        names.contains(&"web_search".to_string()),
+        "missing web_search: {names:?}"
+    );
+    assert!(
+        names.contains(&"web_fetch".to_string()),
+        "missing web_fetch: {names:?}"
+    );
+    assert!(
+        names.contains(&"provider_status".to_string()),
+        "missing provider_status: {names:?}"
+    );
+
+    // Verify the tools have non-empty descriptions (MCP contract).
+    for tool in &tools {
+        assert!(
+            !tool.description.as_deref().unwrap_or("").is_empty(),
+            "tool '{}' should have a non-empty description",
+            tool.name
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 8: MCP-Level web_fetch Test With Local HTTP Server
+//
+// Verifies the web_fetch tool works end-to-end through the MCP layer
+// against a local HTTP server, checking response shape, trust label,
+// trust_markers, and minimal sanitize/framing behavior.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn web_fetch_mcp_level_full_response_shape() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/article");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head>\
+                  <title>Test Article</title>\
+                  <meta name=\"description\" content=\"A test article\">\
+                  </head><body>\
+                  <h1>Hello World</h1>\
+                  <p>This is test content for the MCP fetch test.</p>\
+                  </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/article"),
+            max_chars: Some(5000),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("web_fetch should succeed");
+
+    // --- response shape assertions ---
+
+    // URL fields
+    assert!(v["url"].as_str().is_some(), "url should be a string: {v:?}");
+    assert!(
+        v["final_url"].as_str().is_some(),
+        "final_url should be a string: {v:?}"
+    );
+    assert!(
+        v["final_url"].as_str().unwrap().contains("/article"),
+        "final_url should point to the fetched path: {v:?}"
+    );
+
+    // Content metadata
+    assert!(
+        v["content_type"].as_str().is_some(),
+        "content_type should be a string: {v:?}"
+    );
+    assert!(
+        v["content_type"].as_str().unwrap().contains("text/html"),
+        "content_type should indicate HTML: {v:?}"
+    );
+    assert!(
+        v["status"].as_u64().is_some(),
+        "status should be a number: {v:?}"
+    );
+    assert_eq!(v["status"], 200, "status should be 200: {v:?}");
+
+    // Trust label
+    assert_eq!(
+        v["trust"].as_str().unwrap(),
+        "external_untrusted",
+        "trust must be external_untrusted: {v:?}"
+    );
+
+    // Text content
+    let text = v["text"].as_str().expect("text should be a string");
+    assert!(
+        text.contains("Hello World"),
+        "extracted text should contain page content: {text}"
+    );
+    assert!(
+        text.contains("test content"),
+        "extracted text should contain body text: {text}"
+    );
+
+    // Truncation and fetched flags
+    assert!(
+        v["fetched"].as_bool().is_some(),
+        "fetched should be a bool: {v:?}"
+    );
+    assert!(
+        v["truncated"].as_bool().is_some(),
+        "truncated should be a bool: {v:?}"
+    );
+
+    // trust_markers must be present with expected fields
+    let markers = v["trust_markers"]
+        .as_object()
+        .expect("trust_markers should be an object");
+    assert!(
+        markers.contains_key("text_sanitized"),
+        "trust_markers missing text_sanitized: {markers:?}"
+    );
+    assert!(
+        markers.contains_key("text_truncated"),
+        "trust_markers missing text_truncated: {markers:?}"
+    );
+    assert!(
+        markers.contains_key("text_framed"),
+        "trust_markers missing text_framed: {markers:?}"
+    );
+    assert!(
+        markers.contains_key("control_chars_removed"),
+        "trust_markers missing control_chars_removed: {markers:?}"
+    );
+    assert!(
+        markers.contains_key("injection_hits"),
+        "trust_markers missing injection_hits: {markers:?}"
+    );
+
+    // With sanitize_output = true, Tier 2 framing should be active.
+    assert_eq!(
+        markers["text_framed"],
+        serde_json::json!(true),
+        "text_framed should be true when sanitize_output is enabled: {markers:?}"
+    );
+    assert!(
+        text.contains("<<<EXTERNAL_UNTRUSTED"),
+        "text should contain Tier 2 framing delimiter: {text}"
+    );
+    assert!(
+        text.contains("<<<END>>>"),
+        "text should contain Tier 2 end delimiter: {text}"
+    );
+
+    // warnings array should be present and include the untrusted advisory.
+    let warnings = v["warnings"]
+        .as_array()
+        .expect("warnings should be an array");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains("untrusted")),
+        "warnings should include the untrusted advisory: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_mcp_level_metadata_only_mode() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/meta");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head>\
+                  <title>Meta Page</title>\
+                  <meta name=\"description\" content=\"Desc only\">\
+                  </head><body><p>Body text here</p></body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/meta"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: Some(ExtractMode::MetadataOnly),
+            include_links: None,
+        },
+    )
+    .await
+    .expect("web_fetch metadata_only should succeed");
+
+    assert_eq!(
+        v["trust"].as_str().unwrap(),
+        "external_untrusted",
+        "trust must be external_untrusted: {v:?}"
+    );
+
+    // Metadata-only should still have title and description.
+    assert!(
+        v["title"].as_str().is_some(),
+        "title should be present: {v:?}"
+    );
+
+    // With sanitize_output = false, framing should be off.
+    let markers = v["trust_markers"]
+        .as_object()
+        .expect("trust_markers object");
+    assert_eq!(
+        markers["text_framed"],
+        serde_json::json!(false),
+        "text_framed should be false when sanitize_output is disabled: {markers:?}"
+    );
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_request_max_results_overrides_default() {

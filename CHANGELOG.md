@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-07
+
 ### Changed
 - `search.max_results` config field is deprecated in favor of `search.default_max_results`. Old configs using `max_results` are still accepted via a serde alias.
 - MCP request `max_results` is now a per-call final SourceCard count preference. When the request exceeds the server's `max_results_cap`, the response is clamped and a warning is included instead of returning a validation error.
@@ -15,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Centralized `resolve_max_results()` function in `core::query` for resolving the effective result count with clamping and warning generation.
 - Warning in `web_search` response when requested `max_results` exceeds configured `max_results_cap`.
 - `search` section in `doctor` output reporting `default_max_results` and `max_results_cap`.
+- MCP-level integration tests for `web_fetch` end-to-end (response shape, trust label, trust_markers, sanitize/framing behavior) and for the three-tool surface (`web_search`, `web_fetch`, `provider_status`) under mock state.
+
+### Fixed
+- Documentation: `README.md` "Project Structure" tree now lists `fetch` as a top-level library module (matches `src/lib.rs`); the "Search Engines" section now mentions the `brave_api` adapter and the "Security" section documents the distinct error classes for `web_search` and `web_fetch`.
+- Documentation: `src/mcp/mod.rs` module-level docs now list `web_fetch` alongside `web_search` and `provider_status`.
+- Test code: `field_reassign_with_default` clippy lint in `sanitize::tests` and `content-length` borrow in `fetch::client::tests` are written in a clippy-clean form.
 
 ## [0.3.0] - 2026-06-07
 

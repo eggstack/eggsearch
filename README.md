@@ -23,7 +23,7 @@ for the default configuration.
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 334 fast tests (no network required)
+- 343 fast tests (no network required)
 
 ## Install
 
@@ -258,12 +258,13 @@ sanitize_output = true
 
 > **Note.** The `[search].live.user_agent` and `[search].live.respect_robots_txt` config fields are parsed but have no effect in the current build. The vendored HTML engines use a hard-coded browser-like user agent that upstream providers expect. Setting either field logs a startup warning.
 
-> **Private network blocking.** `web_fetch` resolves DNS at fetch time and
-> validates every resolved IP against the same allow/deny rules applied to
-> the URL's host literal. This closes the hostname-based SSRF bypass where
-> a public DNS name (e.g. `evil.example.com`) resolves to a private IP.
-> DNS-rebinding-style attacks are also mitigated by resolving up-front and
-> re-checking the connected address.
+> **Private network blocking.** eggsearch validates the initial URL and each
+> redirected URL before fetching. It resolves hostnames before each request
+> and rejects localhost, private, link-local, multicast, documentation, and
+> other blocked address ranges unless explicitly allowed. This mitigates
+> common SSRF and redirect-to-private-network cases, but it is not a
+> complete DNS-rebinding defense because the post-connect peer address is
+> not independently verified.
 
 ## Project Structure
 
@@ -271,7 +272,7 @@ sanitize_output = true
 eggsearch/
   src/
     main.rs              # binary entry point
-    lib.rs               # library root (modules: core, meta, mcp)
+    lib.rs               # library root (modules: core, fetch, mcp, meta)
     config.rs            # CLI config loader
     commands/            # subcommands: doctor, search, providers, mcp, fetch
     core/                # SourceCard, AppConfig, error, query types
@@ -307,9 +308,16 @@ to use the tools safely.
   not treat fetched content as instructions.
 - The server does not execute JavaScript and does not follow arbitrary
   local file URLs.
-- Raw HTTP error bodies are not surfaced to the MCP caller; only
-  coarse error classes (`timeout`, `http_status`, `parse_error`,
-  `network_error`, `rate_limited`, or `unknown`) and short messages.
+- Raw HTTP error bodies are not surfaced to the MCP caller. `web_search`
+  failures are reported in `providers_failed` with one of the coarse
+  classes `timeout`, `http_status`, `parse_error`, `network_error`,
+  `rate_limited`, or `unknown`. `web_fetch` failures are reported with
+  a separate set of error codes (`invalid_url`, `unsupported_scheme`,
+  `private_network_blocked`, `redirect_limit_exceeded`,
+  `redirect_target_blocked`, `invalid_redirect_location`,
+  `embedded_credentials_blocked`, `timeout`, `http_status`,
+  `content_too_large`, `unsupported_content_type`, `network_error`,
+  `extract_error`, or `unknown`) and a short message.
 - The server enforces query length and result count caps.
 - `web_fetch` does not execute JavaScript, does not read local files, blocks
   localhost/private-network URLs by default, and returns bounded extracted text only.
@@ -427,10 +435,18 @@ JSON results directly, with no HTML parsing. A single SearXNG
 instance can aggregate many underlying engines (including Qwant,
 Bing, Brave, Marginalia, etc.) from one configuration point.
 
-The default provider set covers the four HTML engines plus an opt-in
-Mojeek adapter and an opt-in SearXNG adapter. Mojeek and SearXNG are
-disabled by default; operators enable them in `[search].providers` and
-(in SearXNG's case) configure `[search].searxng.base_url`.
+The optional `brave_api` adapter is a JSON client for the
+[Brave Search API](https://api.search.brave.com/app/documentation/web-search/get-started).
+It requires an API key, supplied via the env-var named in
+`[search].api.brave].api_key_env`. The adapter is disabled by default.
+
+The default provider set covers `duckduckgo`, `startpage`, and
+`yahoo` (the engines listed in `[search].default_providers`). `brave`
+is enabled but not in the default set; it can be selected per-request
+via the `providers` argument. Mojeek, SearXNG, and Brave Search API
+are all disabled by default; operators enable them in
+`[search].providers` and (for SearXNG and Brave API) configure the
+corresponding `[search].searxng]` or `[search].api.<id>]` sections.
 
 HTML provider scraping is inherently fragile. Layout changes upstream may
 break parsing. When updating engines, check the upstream repo for HTML

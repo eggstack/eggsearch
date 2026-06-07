@@ -167,7 +167,7 @@ The HTML scraping engines in `src/meta/engines/` are vendored from
 The vendored code includes:
 - `engines/duckduckgo.rs` — DuckDuckGo HTML scraper
 - `engines/brave.rs` — Brave Search HTML scraper
-- `engines/brave_api.rs` — Brave Search API provider (API-key, JSON)
+- `engines/brave_api.rs` — Brave Search API provider (API-key, JSON; added in 0.3.0)
 - `engines/startpage.rs` — Startpage HTML scraper
 - `engines/yahoo.rs` — Yahoo Search HTML scraper
 - `engines/mojeek.rs` — Mojeek HTML scraper (added in 0.2.0)
@@ -194,7 +194,7 @@ SearXNG can aggregate.
 eggsearch is published as a single crate. Before publishing:
 
 - `cargo clippy --all-features -- -D warnings` is clean
-- `cargo test --all-features` passes (334 tests)
+- `cargo test --all-features` passes (343 tests)
 - `cargo publish --dry-run` succeeds
 - The version in `Cargo.toml` is bumped
 - `CHANGELOG.md` is updated

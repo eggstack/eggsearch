@@ -559,8 +559,10 @@ mod tests {
 
     #[test]
     fn trust_markers_merge_ors_booleans() {
-        let mut a = TrustMarkers::default();
-        a.text_sanitized = true;
+        let mut a = TrustMarkers {
+            text_sanitized: true,
+            ..TrustMarkers::default()
+        };
         let b = TrustMarkers {
             text_truncated: true,
             text_framed: true,

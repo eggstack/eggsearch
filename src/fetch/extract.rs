@@ -303,7 +303,9 @@ mod tests {
     #[test]
     fn max_links_constant_is_reasonable() {
         // Sanity check the constant is set to a reasonable value.
-        assert!(MAX_LINKS >= 1);
-        assert!(MAX_LINKS <= 1000);
+        const {
+            assert!(MAX_LINKS >= 1);
+            assert!(MAX_LINKS <= 1000);
+        }
     }
 }

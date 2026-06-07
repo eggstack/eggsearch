@@ -519,7 +519,7 @@ mod tests {
             when.method(GET).path("/big");
             then.status(200)
                 .header("content-type", "text/plain")
-                .header("content-length", &big.len().to_string())
+                .header("content-length", big.len().to_string())
                 .body(&big);
         });
 
@@ -564,7 +564,7 @@ mod tests {
             when.method(GET).path("/declared-huge");
             then.status(200)
                 .header("content-type", "text/plain")
-                .header("content-length", &body.len().to_string())
+                .header("content-length", body.len().to_string())
                 .body(&body);
         });
 

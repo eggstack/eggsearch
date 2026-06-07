@@ -3,6 +3,7 @@
 //! Exposes a minimal, stable tool surface:
 //!
 //! - `web_search`     — live metasearch over configured upstream providers.
+//! - `web_fetch`      — bounded extraction of one explicit HTTP(S) URL.
 //! - `provider_status` — diagnostic report of configured providers.
 //!
 //! The public API ([`EggsearchServer`], [`ServerState`], [`Policy`]) is
