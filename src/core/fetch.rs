@@ -13,12 +13,9 @@ pub enum ExtractMode {
     /// Extract visible text content.
     #[default]
     Text,
-    /// Extract content as Markdown. **Reserved for future implementation:**
-    /// the current `web_fetch` tool rejects this value as a validation
-    /// error. The variant is kept so that incoming requests with
-    /// `extract_mode: "markdown"` deserialize cleanly and produce a
-    /// structured error rather than a schema-rejection at the MCP
-    /// boundary.
+    /// Extract content as Markdown. The HTML structural renderer
+    /// converts headings, lists, code blocks, tables, and other
+    /// semantic elements into their Markdown equivalents.
     Markdown,
     /// Extract only metadata (title, description, etc.), no body text.
     MetadataOnly,

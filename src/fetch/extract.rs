@@ -182,6 +182,19 @@ pub fn extract_content(
     extractor.extract(max_chars, include_links)
 }
 
+/// Extracts links from HTML bytes.
+///
+/// Parses the HTML and extracts all `<a href>` links, resolving
+/// relative URLs against `base_url`.
+pub fn extract_links_from_html(html: &[u8], base_url: &str) -> Vec<ExtractedLink> {
+    let html_str = match std::str::from_utf8(html) {
+        Ok(s) => Cow::Borrowed(s),
+        Err(_) => Cow::Owned(String::from_utf8_lossy(html).into_owned()),
+    };
+    let document = Html::parse_document(html_str.as_ref());
+    extract_links(&document, base_url)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

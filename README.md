@@ -19,7 +19,7 @@ for the default configuration.
 - Optional API-backed providers (e.g. Brave Search API) with env-var secret loading
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
-- `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL
+- `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering and Markdown mode
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
@@ -40,6 +40,10 @@ responsibility:
   bounded text from HTML or plain-text responses, and labels the
   result as `external_untrusted`. It does not crawl linked pages and
   does not execute JavaScript.
+- `web_fetch` supports `extract_mode: "markdown"` which renders HTML
+  as structured Markdown with headings, code blocks, tables, lists,
+  and inline formatting. This is a rendering mode, not summarization
+  -- it preserves the original content structure.
 
 A third tool, `provider_status`, is a non-probing diagnostic that
 reports which providers are configured, enabled, and available.
@@ -206,9 +210,19 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
       "charset": "utf-8",
       "redirects_followed": 0
     },
-    "outline": [{"level": 1, "title": "Page Title", "block_index": 0}],
-    "blocks": [{"kind": "paragraph", "text": "..."}],
-    "chunks": [{"chunk_id": "chunk_0", "text": "...", "block_start": 0, "block_end": 0}]
+    "outline": [
+      {"level": 1, "title": "Page Title", "block_index": 0},
+      {"level": 2, "title": "Section", "block_index": 2}
+    ],
+    "blocks": [
+      {"kind": "heading", "text": "Page Title", "level": 1, "anchor": "page-title"},
+      {"kind": "paragraph", "text": "Introduction text..."},
+      {"kind": "heading", "text": "Section", "level": 2, "anchor": "section"},
+      {"kind": "paragraph", "text": "Section content..."},
+      {"kind": "code", "text": "fn main() {\n    println!(\"hello\");\n}", "language": "rust"},
+      {"kind": "table", "text": "| Name | Value |\n|------|-------|\n| foo  | bar   |"}
+    ],
+    "chunks": [{"chunk_id": "chunk_0", "text": "...", "block_start": 0, "block_end": 5}]
   }
 }
 ```
@@ -226,7 +240,7 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
 
 - `max_chars`: maximum extraction size (default 12000, cap 50000).
 - `timeout_ms`: per-request timeout override.
-- `extract_mode`: `"text"` (default) or `"metadata_only"`. `"markdown"` is reserved for future use.
+- `extract_mode`: `"text"` (default), `"markdown"` (Markdown-rendered output), or `"metadata_only"`. Markdown mode renders HTML as structured Markdown with headings, code blocks, tables, and lists.
 - `include_links`: whether to include extracted links (default false).
 - `document`: structured document representation (present when fetch succeeds). Includes `kind`, `render_format`, `blocks`, `chunks`, `outline`, and `metadata`. The legacy `text` field is always populated for backward compatibility.
 

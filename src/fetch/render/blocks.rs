@@ -1,0 +1,600 @@
+use ego_tree::NodeRef;
+use scraper::{ElementRef, Html, Selector};
+
+use crate::core::document::{BlockKind, DocumentOutlineEntry, RenderedBlock};
+
+/// Result of rendering HTML into structured blocks.
+pub struct RenderedBlocks {
+    /// The rendered content blocks.
+    pub blocks: Vec<RenderedBlock>,
+    /// Document outline (table of contents) built from headings.
+    pub outline: Vec<DocumentOutlineEntry>,
+    /// Whether the total text exceeded `max_chars` and was truncated.
+    pub text_truncated: bool,
+}
+
+/// Elements whose content is always skipped.
+const SKIP_TAGS: &[&str] = &[
+    "script", "style", "noscript", "svg", "nav", "footer", "header", "form", "aside", "template",
+];
+
+/// Language class mappings for code blocks.
+fn normalize_language(lang: &str) -> String {
+    match lang {
+        "rs" => "rust",
+        "py" => "python",
+        "js" => "javascript",
+        "ts" => "typescript",
+        "sh" | "shell" => "bash",
+        "md" => "markdown",
+        other => other,
+    }
+    .to_string()
+}
+
+/// Render HTML bytes into structured blocks.
+///
+/// Returns `(title, description, rendered_blocks, warnings, non_utf8)`.
+pub fn render_blocks(
+    html: &[u8],
+    _base_url: &str,
+    max_chars: usize,
+) -> (
+    Option<String>,
+    Option<String>,
+    RenderedBlocks,
+    Vec<String>,
+    bool,
+) {
+    let (html_str, warnings, non_utf8) = decode_html(html);
+    let document = Html::parse_document(&html_str);
+
+    let title = extract_title(&document);
+    let description = extract_description(&document);
+
+    let mut blocks = Vec::new();
+    let mut outline = Vec::new();
+
+    let root = select_content_root(&document);
+    walk_element(root, &mut blocks, &mut outline);
+
+    let total_chars: usize = blocks.iter().map(|b| b.text.chars().count()).sum();
+    let text_truncated = total_chars > max_chars;
+
+    (
+        title,
+        description,
+        RenderedBlocks {
+            blocks,
+            outline,
+            text_truncated,
+        },
+        warnings,
+        non_utf8,
+    )
+}
+
+fn decode_html(html: &[u8]) -> (String, Vec<String>, bool) {
+    match std::str::from_utf8(html) {
+        Ok(s) => (s.to_string(), Vec::new(), false),
+        Err(_) => {
+            let decoded = String::from_utf8_lossy(html).into_owned();
+            (
+                decoded,
+                vec!["body is not valid UTF-8; extraction may be incomplete".to_string()],
+                true,
+            )
+        }
+    }
+}
+
+fn extract_title(document: &Html) -> Option<String> {
+    Selector::parse("title")
+        .ok()
+        .and_then(|sel| document.select(&sel).next())
+        .and_then(|el| el.text().next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn extract_description(document: &Html) -> Option<String> {
+    Selector::parse(r#"meta[name="description"]"#)
+        .ok()
+        .and_then(|sel| document.select(&sel).next())
+        .and_then(|el| el.value().attr("content"))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn select_content_root<'a>(document: &'a Html) -> ElementRef<'a> {
+    let selectors = ["main", "article", "[role=main]", "body"];
+    for sel_str in &selectors {
+        if let Ok(sel) = Selector::parse(sel_str) {
+            if let Some(el) = document.select(&sel).next() {
+                return el;
+            }
+        }
+    }
+    document.root_element()
+}
+
+fn should_skip(elem: &ElementRef) -> bool {
+    let tag = elem.value().name();
+    if SKIP_TAGS.contains(&tag) {
+        return true;
+    }
+    if elem.value().attr("hidden").is_some() {
+        return true;
+    }
+    if elem.value().attr("aria-hidden") == Some("true") {
+        return true;
+    }
+    false
+}
+
+fn walk_element(
+    element: ElementRef,
+    blocks: &mut Vec<RenderedBlock>,
+    outline: &mut Vec<DocumentOutlineEntry>,
+) {
+    for child in element.children() {
+        let child_elem = match ElementRef::wrap(child) {
+            Some(e) => e,
+            None => continue,
+        };
+
+        if should_skip(&child_elem) {
+            continue;
+        }
+
+        let tag = child_elem.value().name();
+        match tag {
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                let level = tag[1..].parse().unwrap_or(1);
+                let text = collect_inline_text(child);
+                let anchor = child_elem.value().id().map(|s| s.to_string()).or_else(|| {
+                    if text.is_empty() {
+                        None
+                    } else {
+                        Some(make_slug(&text))
+                    }
+                });
+                let block_index = blocks.len();
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::Heading,
+                    text: String::new(), // placeholder
+                    level: Some(level),
+                    anchor: anchor.clone(),
+                    language: None,
+                    line_start: None,
+                    line_end: None,
+                    page: None,
+                });
+                // Set text after push so block_index is valid
+                blocks[block_index].text = text;
+                outline.push(DocumentOutlineEntry {
+                    level,
+                    title: blocks[block_index].text.clone(),
+                    anchor,
+                    block_index: Some(block_index),
+                });
+            }
+            "p" => {
+                let text = collect_inline_text(child);
+                if !text.is_empty() {
+                    blocks.push(RenderedBlock {
+                        kind: BlockKind::Paragraph,
+                        text,
+                        level: None,
+                        anchor: None,
+                        language: None,
+                        line_start: None,
+                        line_end: None,
+                        page: None,
+                    });
+                }
+            }
+            "pre" => {
+                let text = collect_raw_text(child);
+                let language = detect_language_from_pre(&child_elem);
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::Code,
+                    text,
+                    level: None,
+                    anchor: None,
+                    language,
+                    line_start: None,
+                    line_end: None,
+                    page: None,
+                });
+            }
+            "table" => {
+                let text = render_table_text(&child_elem);
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::Table,
+                    text,
+                    level: None,
+                    anchor: None,
+                    language: None,
+                    line_start: None,
+                    line_end: None,
+                    page: None,
+                });
+            }
+            "blockquote" => {
+                let text = collect_inline_text(child);
+                if !text.is_empty() {
+                    blocks.push(RenderedBlock {
+                        kind: BlockKind::BlockQuote,
+                        text,
+                        level: None,
+                        anchor: None,
+                        language: None,
+                        line_start: None,
+                        line_end: None,
+                        page: None,
+                    });
+                }
+            }
+            "dl" => {
+                render_definition_list(&child_elem, blocks);
+            }
+            "hr" => {
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::HorizontalRule,
+                    text: String::new(),
+                    level: None,
+                    anchor: None,
+                    language: None,
+                    line_start: None,
+                    line_end: None,
+                    page: None,
+                });
+            }
+            "ul" | "ol" => {
+                render_list(&child_elem, blocks);
+            }
+            _ => {
+                walk_element(child_elem, blocks, outline);
+            }
+        }
+    }
+}
+
+/// Collect inline text from a node, normalizing whitespace.
+fn collect_inline_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
+    let mut parts = Vec::new();
+    collect_text_parts(node, &mut parts);
+    let text = parts.join("");
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+}
+
+fn collect_text_parts<'a>(node: NodeRef<'a, scraper::Node>, parts: &mut Vec<String>) {
+    if let Some(text) = node.value().as_text() {
+        let s = text.trim();
+        if !s.is_empty() {
+            parts.push(s.to_string());
+        }
+    } else if let Some(elem) = ElementRef::wrap(node) {
+        if should_skip(&elem) {
+            return;
+        }
+        for child in node.children() {
+            collect_text_parts(child, parts);
+        }
+    }
+}
+
+/// Collect raw text from a node, preserving whitespace (for code blocks).
+fn collect_raw_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
+    let mut text = String::new();
+    collect_raw_text_inner(node, &mut text);
+    text
+}
+
+fn collect_raw_text_inner<'a>(node: NodeRef<'a, scraper::Node>, text: &mut String) {
+    if let Some(t) = node.value().as_text() {
+        text.push_str(t);
+    } else if let Some(_elem) = ElementRef::wrap(node) {
+        for child in node.children() {
+            collect_raw_text_inner(child, text);
+        }
+    }
+}
+
+fn detect_language_from_pre(pre: &ElementRef) -> Option<String> {
+    if let Ok(code_sel) = Selector::parse("code") {
+        if let Some(code_el) = pre.select(&code_sel).next() {
+            if let Some(lang) = detect_language(code_el) {
+                return Some(lang);
+            }
+        }
+    }
+    detect_language(*pre)
+}
+
+fn detect_language(elem: ElementRef) -> Option<String> {
+    let classes = elem.value().attr("class").unwrap_or("");
+    for class in classes.split_whitespace() {
+        let lang_opt = class
+            .strip_prefix("language-")
+            .or_else(|| class.strip_prefix("lang-"));
+        if let Some(lang) = lang_opt {
+            let lang = lang.trim();
+            if !lang.is_empty() {
+                return Some(normalize_language(lang));
+            }
+        }
+    }
+    None
+}
+
+fn render_list(list: &ElementRef, blocks: &mut Vec<RenderedBlock>) {
+    for child in list.children() {
+        if let Some(li) = ElementRef::wrap(child) {
+            if li.value().name() == "li" {
+                let text = collect_inline_text(child);
+                if !text.is_empty() {
+                    blocks.push(RenderedBlock {
+                        kind: BlockKind::ListItem,
+                        text,
+                        level: None,
+                        anchor: None,
+                        language: None,
+                        line_start: None,
+                        line_end: None,
+                        page: None,
+                    });
+                }
+                // Flatten nested lists
+                for nested_child in li.children() {
+                    if let Some(nested_elem) = ElementRef::wrap(nested_child) {
+                        let tag = nested_elem.value().name();
+                        if tag == "ul" || tag == "ol" {
+                            render_list(&nested_elem, blocks);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn render_table_text(table: &ElementRef) -> String {
+    let mut rows = Vec::new();
+
+    if let Ok(tr_sel) = Selector::parse("tr") {
+        for tr in table.select(&tr_sel) {
+            let mut cells = Vec::new();
+            for child in tr.children() {
+                if let Some(cell) = ElementRef::wrap(child) {
+                    let tag = cell.value().name();
+                    if tag == "td" || tag == "th" {
+                        let text = collect_inline_text(child);
+                        cells.push(text);
+                    }
+                }
+            }
+            if !cells.is_empty() {
+                rows.push(cells);
+            }
+        }
+    }
+
+    if rows.is_empty() {
+        return collect_inline_text(**table);
+    }
+
+    let max_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let mut lines = Vec::new();
+
+    for (i, row) in rows.iter().enumerate() {
+        let mut line = String::from("|");
+        for cell in row {
+            line.push_str(&format!(" {} |", cell));
+        }
+        for _ in row.len()..max_cols {
+            line.push_str(" |");
+        }
+        lines.push(line);
+
+        if i == 0 {
+            let sep: String = (0..max_cols).map(|_| " --- |").collect();
+            lines.push(format!("|{}", sep));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn render_definition_list(dl: &ElementRef, blocks: &mut Vec<RenderedBlock>) {
+    let mut current_term = String::new();
+
+    for child in dl.children() {
+        if let Some(elem) = ElementRef::wrap(child) {
+            let tag = elem.value().name();
+            match tag {
+                "dt" => {
+                    current_term = collect_inline_text(child);
+                }
+                "dd" => {
+                    let definition = collect_inline_text(child);
+                    let text = if current_term.is_empty() {
+                        definition
+                    } else if definition.is_empty() {
+                        current_term.clone()
+                    } else {
+                        format!("{}: {}", current_term, definition)
+                    };
+                    if !text.is_empty() {
+                        blocks.push(RenderedBlock {
+                            kind: BlockKind::Definition,
+                            text,
+                            level: None,
+                            anchor: None,
+                            language: None,
+                            line_start: None,
+                            line_end: None,
+                            page: None,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn make_slug(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .filter_map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                Some(c)
+            } else if c.is_whitespace() {
+                Some('-')
+            } else {
+                None
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_blocks_extracts_title() {
+        let html = b"<!DOCTYPE html><html><head><title>My Page</title></head><body><p>content</p></body></html>";
+        let (title, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        assert_eq!(title, Some("My Page".to_string()));
+        assert!(!rendered.blocks.is_empty());
+    }
+
+    #[test]
+    fn render_blocks_extracts_description() {
+        let html = b"<!DOCTYPE html><html><head><meta name=\"description\" content=\"A test page\"></head><body></body></html>";
+        let (_, desc, _, _, _) = render_blocks(html, "https://example.com/", 10000);
+        assert_eq!(desc, Some("A test page".to_string()));
+    }
+
+    #[test]
+    fn render_blocks_creates_heading_blocks() {
+        let html = b"<!DOCTYPE html><html><body><h1>Title</h1><p>text</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        assert!(rendered.blocks.len() >= 2);
+        assert_eq!(rendered.blocks[0].kind, BlockKind::Heading);
+        assert_eq!(rendered.blocks[0].text, "Title");
+        assert_eq!(rendered.blocks[0].level, Some(1));
+    }
+
+    #[test]
+    fn render_blocks_creates_paragraph_blocks() {
+        let html = b"<!DOCTYPE html><html><body><p>hello</p><p>world</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        assert_eq!(rendered.blocks.len(), 2);
+        assert!(rendered
+            .blocks
+            .iter()
+            .all(|b| b.kind == BlockKind::Paragraph));
+    }
+
+    #[test]
+    fn render_blocks_skips_script_and_style() {
+        let html = b"<!DOCTYPE html><html><body><p>visible</p><script>alert('x')</script><style>body{}</style><p>also visible</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let text: String = rendered
+            .blocks
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("visible"));
+        assert!(text.contains("also visible"));
+        assert!(!text.contains("alert"));
+        assert!(!text.contains("body{}"));
+    }
+
+    #[test]
+    fn render_blocks_skips_nav_footer_header_aside() {
+        let html = b"<!DOCTYPE html><html><body><header>top</header><nav>links</nav><main><p>content</p></main><aside>side</aside><footer>bottom</footer></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let text: String = rendered
+            .blocks
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("content"));
+        assert!(!text.contains("top"));
+        assert!(!text.contains("links"));
+        assert!(!text.contains("side"));
+        assert!(!text.contains("bottom"));
+    }
+
+    #[test]
+    fn render_blocks_populates_outline() {
+        let html =
+            b"<!DOCTYPE html><html><body><h1>Intro</h1><h2>Details</h2><p>text</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        assert_eq!(rendered.outline.len(), 2);
+        assert_eq!(rendered.outline[0].level, 1);
+        assert_eq!(rendered.outline[0].title, "Intro");
+        assert_eq!(rendered.outline[1].level, 2);
+        assert_eq!(rendered.outline[1].title, "Details");
+    }
+
+    #[test]
+    fn render_blocks_code_block_detects_language() {
+        let html = b"<!DOCTYPE html><html><body><pre><code class=\"language-rust\">fn main() {}</code></pre></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        assert_eq!(rendered.blocks[0].kind, BlockKind::Code);
+        assert_eq!(rendered.blocks[0].language, Some("rust".to_string()));
+    }
+
+    #[test]
+    fn render_blocks_text_truncation() {
+        let html = b"<!DOCTYPE html><html><body><p>short</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 3);
+        assert!(rendered.text_truncated);
+    }
+
+    #[test]
+    fn render_blocks_no_truncation_within_limit() {
+        let html = b"<!DOCTYPE html><html><body><p>short</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 1000);
+        assert!(!rendered.text_truncated);
+    }
+
+    #[test]
+    fn make_slug_basic() {
+        assert_eq!(make_slug("Hello World"), "hello-world");
+        assert_eq!(make_slug("  Lots  of   Spaces  "), "lots-of-spaces");
+        assert_eq!(make_slug("Special!@#Chars"), "specialchars");
+    }
+
+    #[test]
+    fn non_utf8_body_emits_warning() {
+        let html: &[u8] = b"<html><body><p>before</p>\xff\xfe<p>after</p></body></html>";
+        let (_, _, _, warnings, non_utf8) = render_blocks(html, "https://example.com/", 10000);
+        assert!(non_utf8);
+        assert!(!warnings.is_empty());
+    }
+
+    #[test]
+    fn valid_utf8_no_warnings() {
+        let html = b"<!DOCTYPE html><html><body><p>hello</p></body></html>";
+        let (_, _, _, warnings, non_utf8) = render_blocks(html, "https://example.com/", 10000);
+        assert!(!non_utf8);
+        assert!(warnings.is_empty());
+    }
+}

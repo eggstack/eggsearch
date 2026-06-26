@@ -87,9 +87,7 @@ pub struct WebFetchArgs {
     /// Timeout in milliseconds. Defaults to server config.
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    /// Extraction mode: "text" (default) or "metadata_only".
-    /// "markdown" is reserved for a future implementation and is
-    /// currently rejected as a validation error.
+    /// Extraction mode: "text" (default), "markdown", or "metadata_only".
     #[serde(default)]
     pub extract_mode: Option<crate::core::fetch::ExtractMode>,
     /// Whether to include extracted links. Defaults to the server's
@@ -267,12 +265,6 @@ pub async fn run_web_fetch(
     }
 
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
-    if matches!(extract_mode, ExtractMode::Markdown) {
-        return Err(ToolError::Validation(
-            "extract_mode 'markdown' is not yet implemented; use 'text' or 'metadata_only'"
-                .to_string(),
-        ));
-    }
 
     let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
         ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())

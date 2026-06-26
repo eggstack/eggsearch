@@ -719,6 +719,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "ego-tree",
  "futures",
  "httpmock",
  "pretty_assertions",

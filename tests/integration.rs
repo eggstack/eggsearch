@@ -695,24 +695,51 @@ async fn web_fetch_disabled_by_policy_returns_error() {
 }
 
 #[tokio::test]
-async fn web_fetch_rejects_markdown_extract_mode() {
-    let state = state_with_default();
-    let res = run_web_fetch(
+async fn web_fetch_markdown_extract_mode_succeeds() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head>\
+                  <title>Test</title>\
+                  </head><body>\
+                  <h1>Hello</h1>\
+                  <p>World</p>\
+                  </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
         state,
         WebFetchArgs {
-            url: "https://example.com/".into(),
+            url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
             extract_mode: Some(ExtractMode::Markdown),
             include_links: None,
         },
     )
-    .await;
-    let err = res.expect_err("expected markdown rejection");
-    assert!(err.to_string().contains("markdown"), "got: {err}");
+    .await
+    .expect("markdown mode should succeed");
+
+    assert_eq!(v["status"], 200);
+    let text = v["text"].as_str().expect("text should be a string");
+    // Markdown renderer should produce heading with hash prefix
     assert!(
-        err.to_string().contains("not yet implemented"),
-        "got: {err}"
+        text.contains("# Hello"),
+        "markdown should render headings with #: {text}"
+    );
+    assert!(
+        text.contains("World"),
+        "markdown should contain body text: {text}"
     );
 }
 

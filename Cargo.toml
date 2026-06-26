@@ -46,6 +46,7 @@ rmcp = { version = "1", features = ["server", "transport-io", "macros"] }
 url = { version = "2", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json"] }
 scraper = "0.20"
+ego-tree = "0.6.2"
 urlencoding = "2"
 regex = "1"
 toml = "0.8"

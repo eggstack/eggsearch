@@ -64,7 +64,7 @@ eggsearch/
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
-    fetch/               # bounded HTTP(S) URL fetch + HTML extraction
+    fetch/               # HTTP fetch client, HTML structural rendering, and extraction
       mod.rs             # re-exports
       client.rs          # FetchClient, sanitize_field
       extract.rs         # HTML/text extraction logic (returns 6-tuple including text_truncated)
@@ -148,6 +148,12 @@ Key types (all in `src/core/document.rs`):
 - `DocumentChunk`: chunk_id, text, heading_path, block_start, block_end, page_start, page_end
 
 Phase 1 builds a minimal compatibility document: HTML gets `kind=html` with a single `paragraph` block, plain text gets `kind=plain_text` with a `raw_text` block. Chunks are a single chunk wrapping all blocks. Block text passes through Tier 1 (control-char strip + length bound) but is NOT framed (unlike the legacy `text` field).
+
+The `src/fetch/render/` module contains the HTML structural renderer:
+- `blocks.rs` parses HTML and produces `Vec<RenderedBlock>` with proper element mapping
+- `text.rs` renders blocks as plain text
+- `markdown.rs` renders blocks as Markdown
+Content root selection prefers `main` > `article` > `[role=main]` > `body`.
 
 `text_truncated` (character-level) is distinct from `truncated` (byte-level body cap). Both are reported.
 

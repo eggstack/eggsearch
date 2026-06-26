@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - Unreleased
+
+### Added
+- `web_fetch` now supports `extract_mode: "markdown"` for Markdown-rendered output. HTML pages are rendered as structured Markdown with headings, code blocks, tables, lists, and inline formatting.
+- HTML pages now produce structured blocks (`headings`, `paragraphs`, `list_item`, `code`, `table`, `block_quote`, `definitions`, `horizontal_rule`) instead of a single flat text block.
+- Document outline is populated from HTML heading elements.
+- Code blocks preserve whitespace and detect language classes from `<code>` elements.
+- Content root selection prefers `<main>`, `<article>`, `[role=main]`, then `<body>`.
+- New `src/fetch/render/` module with HTML structural renderer: `blocks.rs` (HTML-to-blocks parser), `text.rs` (plain text renderer), `markdown.rs` (Markdown renderer).
+
 ## [Unreleased]
 
 ### Changed

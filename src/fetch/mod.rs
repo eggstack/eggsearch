@@ -6,6 +6,8 @@
 pub mod client;
 pub mod extract;
 pub mod limits;
+/// HTML structural rendering (blocks, text, markdown).
+pub mod render;
 pub mod types;
 
 pub use client::FetchClient;

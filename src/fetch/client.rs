@@ -5,8 +5,9 @@ use std::time::Duration;
 use futures::StreamExt;
 use reqwest::Client;
 
-use super::extract::extract_content;
+use super::extract::extract_links_from_html;
 use super::limits::{validate_fetch_target, validate_url, FetchLimits};
+use super::render;
 use super::types::FetchError;
 use crate::core::document::{
     BlockKind, DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument,
@@ -223,16 +224,36 @@ impl FetchClient {
         let (mut title, mut description, mut text, links, extract_warnings, text_truncated) =
             if extract_mode == ExtractMode::MetadataOnly {
                 if is_html {
-                    let extractor = super::extract::HtmlExtractor::new(&body, &final_url);
-                    let (t, d, _, l, w, _) = extractor.extract(max_chars, include_links);
-                    (t, d, None, l, w, false)
+                    let (t, d, _blocks, w, _) =
+                        render::blocks::render_blocks(&body, &final_url, max_chars);
+                    let links = if include_links {
+                        extract_links_from_html(&body, &final_url)
+                    } else {
+                        Vec::new()
+                    };
+                    (t, d, None, links, w, false)
                 } else {
                     (None, None, None, Vec::new(), Vec::new(), false)
                 }
             } else if is_html {
-                let (t, d, txt, l, w, tt) =
-                    extract_content(&body, &final_url, max_chars, include_links);
-                (t, d, Some(txt), l, w, tt)
+                let (t, d, rendered, w, _non_utf8) =
+                    render::blocks::render_blocks(&body, &final_url, max_chars);
+                let links = if include_links {
+                    extract_links_from_html(&body, &final_url)
+                } else {
+                    Vec::new()
+                };
+                // Render text based on mode
+                let txt = match extract_mode {
+                    ExtractMode::Markdown => {
+                        render::markdown::render_blocks_markdown(&rendered.blocks)
+                    }
+                    _ => render::text::render_blocks_text(&rendered.blocks),
+                };
+                let tt = rendered.text_truncated;
+                // Truncate text to max_chars
+                let (bounded_txt, txt_truncated) = bound_text(&txt, max_chars);
+                (t, d, Some(bounded_txt), links, w, tt || txt_truncated)
             } else {
                 let full_text = String::from_utf8_lossy(&body);
                 let tt = full_text.chars().count() > max_chars;
@@ -334,25 +355,48 @@ impl FetchClient {
                 })
                 .filter(|e| !e.is_empty());
 
-            let text_chars = raw_text.as_ref().map_or(0, |t| t.chars().count());
+            let (blocks, outline, text_chars) = if is_html {
+                // Use the new renderer for HTML
+                let (_t, _d, rendered, _w, _non_utf8) =
+                    render::blocks::render_blocks(&body, &final_url, max_chars);
+                // text_chars is computed from the truncated text (raw_text),
+                // not from the full blocks.
+                let text_chars = raw_text.as_ref().map_or(0, |t| t.chars().count());
 
-            let mut blocks = Vec::new();
-            let mut outline = Vec::new();
+                // Apply Tier 1 (strip + bound) to each block's text
+                let mut blocks = rendered.blocks;
+                for block in &mut blocks {
+                    let (stripped, _) = strip_control_chars(&block.text);
+                    let (bounded, _) = bound_text(&stripped, max_chars);
+                    block.text = bounded;
+                }
 
-            if let Some(ref t) = raw_text {
-                // Sanitize block text: Tier 1 (strip + bound) always on,
-                // but no framing (unlike the legacy text field).
+                // If no headings found, populate outline from page title
+                let mut outline = rendered.outline;
+                if outline.is_empty() {
+                    if let Some(ref title_text) = raw_title {
+                        let (stripped_title, _) = strip_control_chars(title_text);
+                        let (bounded_title, _) = bound_text(&stripped_title, 200);
+                        if !bounded_title.is_empty() {
+                            outline.push(DocumentOutlineEntry {
+                                level: 1,
+                                title: bounded_title,
+                                anchor: None,
+                                block_index: if blocks.is_empty() { None } else { Some(0) },
+                            });
+                        }
+                    }
+                }
+
+                (blocks, outline, text_chars)
+            } else if let Some(ref t) = raw_text {
+                // Plain text path: single RawText block
                 let (stripped, _) = strip_control_chars(t);
                 let (bounded, _) = bound_text(&stripped, max_chars);
+                let text_chars = t.chars().count();
 
-                let kind = if is_html {
-                    BlockKind::Paragraph
-                } else {
-                    BlockKind::RawText
-                };
-
-                blocks.push(RenderedBlock {
-                    kind,
+                let blocks = vec![RenderedBlock {
+                    kind: BlockKind::RawText,
                     text: bounded,
                     level: None,
                     anchor: None,
@@ -360,11 +404,9 @@ impl FetchClient {
                     line_start: None,
                     line_end: None,
                     page: None,
-                });
+                }];
 
-                // Build outline entry from title if present.
-                // Use the original title (not the sanitized one which
-                // may be framed).
+                let mut outline = Vec::new();
                 if let Some(ref title_text) = raw_title {
                     let (stripped_title, _) = strip_control_chars(title_text);
                     let (bounded_title, _) = bound_text(&stripped_title, 200);
@@ -375,9 +417,13 @@ impl FetchClient {
                         block_index: Some(0),
                     });
                 }
-            }
 
-            // Build a single chunk from all blocks (Phase 1).
+                (blocks, outline, text_chars)
+            } else {
+                (Vec::new(), Vec::new(), 0)
+            };
+
+            // Build a single chunk from all blocks.
             let chunks = if !blocks.is_empty() {
                 let chunk_text = blocks
                     .iter()
