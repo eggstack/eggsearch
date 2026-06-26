@@ -2,184 +2,78 @@
 
 ## Objective
 
-Add conservative PDF text extraction to `web_fetch` behind an optional Cargo feature and explicit fetch configuration. The implementation must preserve eggsearch's tool boundary: one explicit URL, bounded download, no crawling, no JavaScript, no OCR, no embedded file extraction, and all extracted content labeled `external_untrusted`.
+Add conservative PDF text extraction to `web_fetch` behind an optional Cargo feature and explicit fetch configuration. Preserve eggsearch's tool boundary: one explicit URL, bounded download, no crawling, no JavaScript, no OCR, no embedded file extraction, and all extracted content labeled `external_untrusted`.
 
-The target user experience is that an agent can fetch a small/medium text-based PDF and receive page-indexed text, chunks, and warnings. Scanned/image-only PDFs should return a clear warning rather than attempting OCR.
+The target user experience is that an agent can fetch a small or medium text-based PDF and receive page-indexed text, chunks, and warnings. Scanned or image-only PDFs should return a clear warning rather than attempting OCR.
 
 ## Dependency on prior phases
 
-This phase assumes:
-
-- Phase 1 document model exists.
-- Phase 2/3 block/chunk/truncation machinery exists.
-- `DocumentKind::Pdf` exists or can be added compatibly.
-
-Do not add PDF support before the structured document response exists. Flattened PDF text without page locality is not sufficient for agent use.
+Do not add PDF support before the structured document response exists. This phase assumes the document model, block/chunk machinery, and truncation metadata from prior phases. Flattened PDF text without page locality is not sufficient for agent use.
 
 ## Non-goals
 
-- Do not perform OCR.
-- Do not render PDF pages to images.
-- Do not execute PDF JavaScript.
-- Do not extract embedded files.
-- Do not process multimedia annotations.
-- Do not attempt full layout reconstruction.
-- Do not accept unbounded page counts or byte sizes.
-- Do not enable PDF support by default if it materially increases dependency or attack surface.
+Do not perform OCR. Do not render PDF pages to images. Do not execute PDF JavaScript. Do not extract embedded files. Do not process multimedia annotations. Do not attempt full layout reconstruction. Do not accept unbounded page counts or byte sizes. Do not enable PDF support by default if it materially increases dependency weight or attack surface.
 
 ## Feature and config design
 
-Add a Cargo feature:
+Add a Cargo feature named `pdf`. The default feature set should remain lightweight. Select the smallest maintained Rust PDF text-extraction crate that can extract text without native system dependencies if possible. Avoid requiring external binaries such as `pdftotext` for the core implementation.
 
-```toml
-[features]
-default = []
-pdf = ["dep:<chosen-pdf-crate>"]
-```
+Add config fields under `[fetch]`: `pdf_enabled`, `pdf_max_pages`, `pdf_max_chars_per_page`, and `pdf_max_total_chars`. Reasonable defaults are disabled, 25 pages, 12000 chars per page, and 50000 total chars.
 
-The exact dependency must be selected during implementation. Choose the smallest maintained Rust crate that can extract text without a native system dependency if possible. Avoid dependencies that require external binaries like `pdftotext` for the core implementation.
+Behavior must be explicit:
 
-Add config fields under `[fetch]`:
+- Built without the `pdf` feature: PDF responses are rejected with a clear unsupported message explaining that PDF support is not compiled in.
+- Built with `pdf` but `pdf_enabled = false`: PDFs are rejected with a config-disabled message.
+- Built with `pdf` and `pdf_enabled = true`: bounded text extraction is attempted.
 
-```toml
-pdf_enabled = false
-pdf_max_pages = 25
-pdf_max_chars_per_page = 12000
-pdf_max_total_chars = 50000
-```
+## Detection
 
-Recommended Rust fields:
-
-```rust
-pub pdf_enabled: bool,
-pub pdf_max_pages: usize,
-pub pdf_max_chars_per_page: usize,
-pub pdf_max_total_chars: usize,
-```
-
-Behavior matrix:
-
-- Built without `pdf` feature: PDF responses are rejected as `unsupported_content_type` with a message explaining that PDF support is not compiled in.
-- Built with `pdf` feature but `pdf_enabled = false`: reject PDFs with a config-disabled message.
-- Built with `pdf` feature and `pdf_enabled = true`: attempt bounded text extraction.
-
-## Content-Type and URL detection
-
-Recognize PDFs by:
-
-- `Content-Type: application/pdf`
-- URL path ending in `.pdf`
-- body magic `%PDF-` only after byte cap validation has started
-
-Do not accept arbitrary binary files as PDFs unless at least one of these signals is present. If content-type is missing but URL extension is `.pdf`, allow parse attempt subject to byte cap.
+Recognize PDFs by `Content-Type: application/pdf`, URL path ending in `.pdf`, or body magic `%PDF-` after normal byte-cap validation has started. Do not accept arbitrary binary files as PDFs unless at least one strong signal is present.
 
 ## Extraction behavior
 
-The extraction function should return a structured result, for example:
+The PDF extraction path should return page count when available, pages extracted, rendered blocks, legacy text, warnings, and truncation flags.
 
-```rust
-pub struct PdfExtractResult {
-    pub page_count: Option<usize>,
-    pub pages_extracted: usize,
-    pub blocks: Vec<RenderedBlock>,
-    pub text: String,
-    pub warnings: Vec<String>,
-    pub text_truncated: bool,
-    pub blocks_truncated: bool,
-}
-```
+Each extracted page should produce page-indexed blocks. Chunks must include page start and page end. Legacy `text` should include explicit page markers, such as `--- Page 3 ---`, unless doing so would exceed bounds. Page markers are valuable for agent citation and orientation.
 
-Rendering rules:
-
-- Each extracted page should become at least one `RenderedBlock` with `kind = PageBreak` or `RawText`/`Paragraph` and `page = Some(page_number)`.
-- Chunks should include `page_start` and `page_end`.
-- Legacy `text` should include explicit page markers such as `\n\n--- Page 3 ---\n\n` unless this would be too noisy. Page markers are useful to agents.
-- If a page has no extractable text, emit a warning such as `page 7 had no extractable text` only when not too noisy. For many blank pages, aggregate warnings.
-- If the PDF appears scanned/image-only, return a warning such as `PDF has little or no extractable text; OCR is not supported`.
+If a page has no extractable text, emit a warning. If many pages are blank, aggregate warnings rather than producing noisy per-page spam. If the PDF appears scanned or image-only, return a warning such as `PDF has little or no extractable text; OCR is not supported`.
 
 ## Limits
 
-Limits must be layered:
+Layer limits carefully:
 
 - Existing `max_bytes` caps downloaded body bytes.
 - `pdf_max_pages` caps pages attempted.
 - `pdf_max_chars_per_page` caps each page.
 - `pdf_max_total_chars` caps total extracted PDF text.
-- User `max_chars` must still cap returned legacy `text`.
+- User `max_chars` still caps returned legacy `text`.
 
-If limits are hit, set `text_truncated` and/or `blocks_truncated` and add a warning specifying which limit was hit.
+When limits are hit, set `text_truncated` and/or `blocks_truncated` and add a warning that names the limit.
 
 ## Error handling
 
-Add explicit error paths or messages for:
+Add clear error paths for PDF feature not compiled, PDF disabled by config, parse failure, encrypted/password-protected PDF unsupported, no extractable text, and configured limits exceeded.
 
-- PDF feature not compiled.
-- PDF disabled by config.
-- PDF parse failure.
-- Encrypted/password-protected PDF unsupported.
-- No extractable text.
-- PDF exceeds configured page/text limits.
-
-Prefer returning a structured fetch error for complete failures and warnings for partial extraction. If the first N pages extract successfully and a later page fails, return partial content with warnings if the PDF library allows safe continuation.
+Prefer partial content with warnings when some pages extract successfully and a later page fails, provided the chosen PDF library allows safe continuation. Use structured fetch errors for complete failure.
 
 ## Security constraints
 
-- Keep byte cap before parsing.
-- Avoid memory-amplifying operations where possible.
-- Do not write PDF bytes to disk.
-- Do not shell out.
-- Do not call external programs.
-- Do not parse embedded attachments.
-- Do not expose PDF metadata as trusted instructions.
-- All extracted text must go through the same sanitation/trust-marker path as other fetched text.
+Keep byte caps before parsing. Avoid memory-amplifying operations. Do not write PDF bytes to disk. Do not shell out. Do not call external programs. Do not parse embedded attachments. Do not treat PDF metadata or text as trusted instructions. All extracted text must go through the same sanitation and trust-marker path as other fetched text.
 
 ## Tests
 
-Add tests that do not require network access. Use small fixture PDFs in `tests/fixtures/` only if license/size are acceptable. If binary fixtures are undesirable, generate a minimal PDF fixture in test code or use a small checked-in text-based PDF.
+Tests must not require network access. Use small local fixture PDFs only if license and size are acceptable. If binary fixtures are undesirable, generate a minimal text-based PDF fixture in test code.
 
-Required tests with `--features pdf`:
+With the `pdf` feature enabled, test text extraction, page-indexed blocks, page-indexed chunks, page cap enforcement, total char cap enforcement, metadata-only body suppression, malformed/encrypted PDF handling when feasible, and scanned/no-text warning if a fixture exists.
 
-- Text-based PDF extracts text.
-- Page markers or page-indexed blocks are present.
-- `page_start`/`page_end` are populated on chunks.
-- `pdf_max_pages` is enforced.
-- `pdf_max_total_chars` is enforced.
-- `metadata_only` does not emit page text.
-- Unsupported/encrypted/malformed PDF produces a clear error or warning.
-- Scanned/no-text PDF fixture returns no-OCR warning if fixture is available.
-
-Required tests without `pdf` feature:
-
-- Default `cargo test` passes.
-- Fetching PDF content type returns a clear unsupported/config message, not a panic.
-- Cargo default build does not include the PDF dependency.
+Without the `pdf` feature, test that default `cargo test` passes, PDF content type returns a clear unsupported/config message, and the default build does not include the PDF dependency.
 
 ## Documentation updates
 
-Update README:
-
-- State PDF support is optional.
-- Document feature flag and config fields.
-- Clarify text extraction only; no OCR.
-- Clarify limits and page-indexed output.
-
-Update `Cargo.toml` feature comments if the project uses them. Update AGENTS docs to warn future agents not to add OCR or browser-style PDF rendering to eggsearch.
+Update README to state that PDF support is optional, text-only, page-indexed, bounded, and does not include OCR. Document the feature flag and config fields. Update contributor guidance to warn future agents not to add OCR or browser-style PDF rendering to eggsearch.
 
 ## Acceptance criteria
 
-- Default build remains lightweight and passes all tests without PDF support.
-- `--features pdf` build passes all tests.
-- PDF extraction is page-indexed and bounded.
-- Scanned/image-only PDFs do not trigger OCR attempts.
-- No shell-outs or external binaries are required.
-- Existing HTML/code/Markdown behavior remains intact.
+Default build remains lightweight and passes all tests without PDF support. All-features build passes with PDF support. PDF extraction is page-indexed and bounded. Scanned/image-only PDFs do not trigger OCR attempts. No shell-outs or external binaries are required. Existing HTML/code/Markdown behavior remains intact.
 
-Run both paths:
-
-```bash
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-```
+Run both default and all-feature test paths: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test --all-features`.
