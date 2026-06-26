@@ -6,6 +6,12 @@ This file contains information for AI coding agents working on the eggsearch cod
 
 eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers (DuckDuckGo, Brave, Startpage, Yahoo, Mojeek), deduplicates results with reciprocal rank fusion, returns compact source cards, and also fetches one explicit HTTP(S) URL on demand with bounded text extraction. Transport is MCP over stdio.
 
+As of the agent-tool-surface-simplification, `web_search` also accepts
+optional `intent` and `freshness` retrieval hints and returns
+deterministic `SourceCard` metadata (`source_kind`, `domain`,
+`rank_reasons`) to help agents choose which result to inspect first.
+Intent-aware post-RRF reranking applies bounded domain priors.
+
 ## Build & Test Commands
 
 All commands are run from the project root.
@@ -94,7 +100,7 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch), `web_fetch` (bounded URL fetch), and `provider_status` (diagnostic)
+- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), and `provider_status` (diagnostic/host-facing)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 
@@ -121,9 +127,26 @@ eggsearch/
 ### Source Cards
 - `SourceCard` is the primary output type returned by `web_search`
 - Each card has a UUID-based `id` (`src_<uuid>`) unique per response
+- Each card includes deterministic `metadata` with `source_kind` (enum: `official_docs`, `package_registry`, `source_repository`, `issue_thread`, `release_notes`, `security_advisory`, `reference`, `news`, `tutorial`, `forum`, `unknown`), `domain`, and `rank_reasons` (e.g. `rrf_multi_provider`, `intent_match`, `domain_prior_docs`)
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
 - `WebFetchResponse` is the output type returned by `web_fetch`; trust is always `external_untrusted` for live web content
+
+### Search Intent and Freshness
+
+`web_search` accepts optional `intent` and `freshness` fields as
+retrieval hints. These are NOT workflow triggers — they only influence
+post-RRF reranking with bounded domain priors.
+
+`SearchIntent` enum: `web` (default), `docs`, `code`, `issues`,
+`releases`, `security`, `news`.
+
+`Freshness` enum: `any` (default), `day`, `week`, `month`, `year`.
+
+Intent-aware reranking boosts results whose `source_kind` matches the
+requested intent (e.g. `docs` intent boosts `official_docs` and
+`package_registry` sources). Boosts are bounded (+10-30% of max base
+score) so provider evidence remains dominant.
 
 ### Prompt-injection Hardening
 - Untrusted text from search and fetch flows through three tiers of

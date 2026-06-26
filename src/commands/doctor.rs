@@ -243,6 +243,8 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
             providers: vec![provider_id.clone()],
             safe_search: None,
             timeout_ms: Some(timeout_per_provider),
+            intent: eggsearch::core::query::SearchIntent::default(),
+            freshness: eggsearch::core::query::Freshness::default(),
         };
 
         let start = std::time::Instant::now();

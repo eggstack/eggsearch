@@ -110,6 +110,8 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         providers: providers.iter().map(|s| s.to_string()).collect(),
         safe_search: None,
         timeout_ms: None,
+        intent: None,
+        freshness: None,
     }
 }
 
@@ -172,6 +174,8 @@ async fn web_search_empty_query_returns_validation_error() {
             providers: vec![],
             safe_search: None,
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         },
     )
     .await;
@@ -191,6 +195,8 @@ async fn web_search_oversized_query_returns_validation_error() {
             providers: vec![],
             safe_search: None,
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         },
     )
     .await;
@@ -210,6 +216,8 @@ async fn web_search_zero_max_results_returns_validation_error() {
             providers: vec![],
             safe_search: None,
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         },
     )
     .await;
@@ -238,6 +246,8 @@ async fn web_search_oversized_max_results_clamps_and_warns() {
             providers: vec!["mock_a".into()],
             safe_search: None,
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         },
     )
     .await
@@ -261,6 +271,8 @@ async fn web_search_blocked_when_mode_off() {
             providers: vec![],
             safe_search: None,
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         },
     )
     .await;
@@ -279,6 +291,8 @@ async fn web_search_unknown_provider_returns_error() {
             providers: vec!["nope".into()],
             safe_search: None,
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         },
     )
     .await;

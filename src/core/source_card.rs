@@ -6,6 +6,80 @@ use uuid::Uuid;
 use crate::core::result::TrustLevel;
 use crate::core::sanitize::TrustMarkers;
 
+/// Deterministic classification of a result's source type, derived
+/// from URL/domain heuristics. Helps smaller models choose which
+/// result to fetch first.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    /// Unrecognized or non-classifiable source.
+    #[default]
+    Unknown,
+    /// Official language/library documentation (e.g. docs.rs, MDN).
+    OfficialDocs,
+    /// Package registry listing (e.g. crates.io, npm, PyPI).
+    PackageRegistry,
+    /// Source code repository root (e.g. GitHub/GitLab repo pages).
+    SourceRepository,
+    /// Issue, discussion, or pull request thread.
+    IssueThread,
+    /// Release notes or changelog entry.
+    ReleaseNotes,
+    /// Security advisory or vulnerability database entry.
+    SecurityAdvisory,
+    /// API reference or specification page.
+    Reference,
+    /// News article or press coverage.
+    News,
+    /// Tutorial, guide, or educational content.
+    Tutorial,
+    /// Community forum or discussion board.
+    Forum,
+}
+
+/// Deterministic rank-reason tag explaining why a result received
+/// its score. Always a short enum-like string, never generated prose.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RankReason {
+    /// Appeared in results from multiple providers (RRF boost).
+    RrfMultiProvider,
+    /// Ranked highly by a single provider's native ordering.
+    RrfProviderRank,
+    /// Domain is a known official-docs source.
+    DomainPriorDocs,
+    /// Domain is a known source-code hosting platform.
+    DomainPriorCode,
+    /// Domain is a known security-advisory source.
+    DomainPriorSecurity,
+    /// Domain is a known release-notes source.
+    DomainPriorRelease,
+    /// Query intent matched the page's topic or title.
+    IntentMatch,
+    /// Page was recently published or updated.
+    FreshnessMatch,
+    /// Page title matched the query exactly.
+    ExactTitleMatch,
+    /// Canonical URL deduplicated with another result.
+    CanonicalDedup,
+}
+
+/// Deterministic metadata attached to each `SourceCard` to help
+/// agents choose which result to inspect first. All fields are
+/// computed from URL/domain heuristics — no generated prose.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SourceMetadata {
+    /// Deterministic source-type classification.
+    #[serde(default)]
+    pub source_kind: SourceKind,
+    /// Extracted domain (e.g. `"docs.rs"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    /// Deterministic reasons this result scored where it did.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rank_reasons: Vec<RankReason>,
+}
+
 /// A single normalized result returned to MCP callers.
 ///
 /// This is the canonical, provider-agnostic output model. It is deliberately
@@ -48,6 +122,14 @@ pub struct SourceCard {
     /// with the actual counts.
     #[serde(default)]
     pub trust_markers: TrustMarkers,
+    /// Deterministic metadata helping agents choose which result to
+    /// inspect first. Populated by the adapter after aggregation.
+    #[serde(default, skip_serializing_if = "is_default_metadata")]
+    pub metadata: SourceMetadata,
+}
+
+fn is_default_metadata(m: &SourceMetadata) -> bool {
+    m.source_kind == SourceKind::Unknown && m.domain.is_none() && m.rank_reasons.is_empty()
 }
 
 impl SourceCard {
@@ -90,6 +172,7 @@ impl SourceCard {
             trust,
             fetched: false,
             trust_markers: TrustMarkers::default(),
+            metadata: SourceMetadata::default(),
         }
     }
 
@@ -108,6 +191,115 @@ impl SourceCard {
         self.trust_markers = m;
         self
     }
+
+    /// Attach deterministic source metadata to this card.
+    pub fn with_metadata(mut self, m: SourceMetadata) -> Self {
+        self.metadata = m;
+        self
+    }
+}
+
+/// Classify a URL into a deterministic `SourceKind` using domain
+/// and path heuristics. Returns `Unknown` when the URL does not
+/// match any known pattern.
+pub fn classify_source_kind(url: &str) -> SourceKind {
+    use url::Url;
+
+    let parsed = match Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return SourceKind::Unknown,
+    };
+    let host = parsed.host_str().unwrap_or("");
+    let path = parsed.path();
+
+    // Official docs domains
+    if host == "docs.rs"
+        || host.ends_with(".readthedocs.io")
+        || host.ends_with(".readthedocs.org")
+        || host == "doc.rust-lang.org"
+        || host == "doc.python.org"
+        || host == "docs.python.org"
+        || host == "developer.mozilla.org"
+        || host == "go.dev"
+        || host == "pkg.go.dev"
+        || host == "doc.npmjs.com"
+    {
+        return SourceKind::OfficialDocs;
+    }
+
+    // Package registries
+    if host == "crates.io"
+        || host == "npmjs.com"
+        || host == "www.npmjs.com"
+        || host == "pypi.org"
+        || host == "rubygems.org"
+        || host == "pkg.go.dev"
+    {
+        return SourceKind::PackageRegistry;
+    }
+
+    // Security advisories
+    if host == "osv.dev"
+        || host == "nvd.nist.gov"
+        || host == "github.com" && path.starts_with("/advisories/")
+        || host == "security.snyk.io"
+        || host == "cve.mitre.org"
+    {
+        return SourceKind::SecurityAdvisory;
+    }
+
+    // Issue threads (GitHub/GitLab issues and discussions)
+    if (host == "github.com" || host == "gitlab.com")
+        && (path.contains("/issues/") || path.contains("/discussions/") || path.contains("/pull/"))
+    {
+        return SourceKind::IssueThread;
+    }
+
+    // Release notes (GitHub/GitLab releases, CHANGELOG files)
+    if (host == "github.com" || host == "gitlab.com") && path.contains("/releases/") {
+        return SourceKind::ReleaseNotes;
+    }
+    if path.contains("CHANGELOG") || path.contains("changelog") || path.contains("CHANGES") {
+        return SourceKind::ReleaseNotes;
+    }
+
+    // Source repositories (GitHub/GitLab repos, not issues/releases)
+    if (host == "github.com" || host == "gitlab.com" || host == "codeberg.org")
+        && path.split('/').count() >= 3
+    {
+        return SourceKind::SourceRepository;
+    }
+
+    // Tutorials (heuristic: common tutorial sites)
+    if host.contains("tutorial")
+        || host.contains("learn")
+        || host == "dev.to"
+        || host == "medium.com"
+        || host == "stackoverflow.com"
+        || host == "stackexchange.com"
+    {
+        return SourceKind::Tutorial;
+    }
+
+    // Forums
+    if host.contains("forum")
+        || host == "discourse.org"
+        || host.ends_with(".discourse.app")
+    {
+        return SourceKind::Forum;
+    }
+
+    // News
+    if host.contains("news")
+        || host.contains("blog")
+        || host == "arstechnica.com"
+        || host == "theverge.com"
+        || host == "techcrunch.com"
+    {
+        return SourceKind::News;
+    }
+
+    SourceKind::Unknown
 }
 
 #[cfg(test)]
@@ -174,6 +366,7 @@ mod tests {
         assert_eq!(parsed.score, c.score);
         assert_eq!(parsed.trust, c.trust);
         assert_eq!(parsed.snippet, c.snippet);
+        assert_eq!(parsed.metadata, c.metadata);
     }
 
     #[test]
@@ -225,5 +418,58 @@ mod tests {
         )
         .with_trust_markers(markers.clone());
         assert_eq!(c.trust_markers, markers);
+    }
+
+    #[test]
+    fn source_kind_default_is_unknown() {
+        assert_eq!(SourceKind::default(), SourceKind::Unknown);
+    }
+
+    #[test]
+    fn source_metadata_default_is_empty() {
+        let m = SourceMetadata::default();
+        assert_eq!(m.source_kind, SourceKind::Unknown);
+        assert!(m.domain.is_none());
+        assert!(m.rank_reasons.is_empty());
+    }
+
+    #[test]
+    fn classify_source_kind_docs_rs() {
+        assert_eq!(
+            classify_source_kind("https://docs.rs/tower-http/latest/tower_http/"),
+            SourceKind::OfficialDocs
+        );
+    }
+
+    #[test]
+    fn classify_source_kind_github_issues() {
+        assert_eq!(
+            classify_source_kind("https://github.com/tokio-rs/axum/issues/123"),
+            SourceKind::IssueThread
+        );
+    }
+
+    #[test]
+    fn classify_source_kind_github_releases() {
+        assert_eq!(
+            classify_source_kind("https://github.com/tokio-rs/axum/releases/tag/v0.7.0"),
+            SourceKind::ReleaseNotes
+        );
+    }
+
+    #[test]
+    fn classify_source_kind_osv() {
+        assert_eq!(
+            classify_source_kind("https://osv.dev/vulnerability/GHSA-xxxx"),
+            SourceKind::SecurityAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_source_kind_unknown_for_random_url() {
+        assert_eq!(
+            classify_source_kind("https://example.com/some/page"),
+            SourceKind::Unknown
+        );
     }
 }

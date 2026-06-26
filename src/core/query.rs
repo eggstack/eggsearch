@@ -33,6 +33,78 @@ impl SafeSearch {
     }
 }
 
+/// Search intent hint. Signals what kind of result the caller is
+/// looking for so post-RRF reranking can apply bounded domain
+/// priors. The intent is a retrieval hint only — it must not
+/// trigger multi-step research behavior.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchIntent {
+    /// General web search.
+    #[default]
+    Web,
+    /// Documentation search.
+    Docs,
+    /// Code / repository search.
+    Code,
+    /// Issue tracker search.
+    Issues,
+    /// Release / changelog search.
+    Releases,
+    /// Security advisory search.
+    Security,
+    /// News article search.
+    News,
+}
+
+impl SearchIntent {
+    /// Stable lowercase string form.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Docs => "docs",
+            Self::Code => "code",
+            Self::Issues => "issues",
+            Self::Releases => "releases",
+            Self::Security => "security",
+            Self::News => "news",
+        }
+    }
+}
+
+/// Freshness hint. Signals how recent the caller wants results to
+/// be. Best-effort: providers that do not support date filters
+/// ignore this and the adapter applies no local freshness
+/// filtering.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Freshness {
+    /// No freshness preference.
+    #[default]
+    Any,
+    /// Within the last day.
+    Day,
+    /// Within the last week.
+    Week,
+    /// Within the last month.
+    Month,
+    /// Within the last year.
+    Year,
+}
+
+impl Freshness {
+    /// Stable lowercase string form.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::Day => "day",
+            Self::Week => "week",
+            Self::Month => "month",
+            Self::Year => "year",
+        }
+    }
+}
+
 /// Input shape for the MCP `web_search` tool.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebSearchRequest {
@@ -54,6 +126,16 @@ pub struct WebSearchRequest {
     /// Optional per-request timeout in milliseconds.
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// Search intent hint. Signals the kind of result the caller is
+    /// looking for so post-RRF reranking can apply bounded domain
+    /// priors. Default is `Web`.
+    #[serde(default)]
+    pub intent: SearchIntent,
+    /// Freshness hint. Signals how recent results should be.
+    /// Best-effort; providers that do not support date filters
+    /// ignore this. Default is `Any`.
+    #[serde(default)]
+    pub freshness: Freshness,
 }
 
 impl WebSearchRequest {
@@ -81,6 +163,8 @@ impl WebSearchRequest {
             providers: Vec::new(),
             safe_search: None,
             timeout_ms: None,
+            intent: SearchIntent::default(),
+            freshness: Freshness::default(),
         }
     }
 

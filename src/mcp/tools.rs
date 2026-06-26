@@ -56,6 +56,16 @@ pub struct WebSearchArgs {
     /// Optional per-request timeout override in milliseconds.
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// Search intent hint: `web`, `docs`, `code`, `issues`,
+    /// `releases`, `security`, or `news`. Optional; defaults to
+    /// `web`. Used as a retrieval and ranking hint only.
+    #[serde(default)]
+    pub intent: Option<crate::core::query::SearchIntent>,
+    /// Freshness hint: `any`, `day`, `week`, `month`, or `year`.
+    /// Optional; defaults to `any`. Best-effort; not all providers
+    /// support date filtering.
+    #[serde(default)]
+    pub freshness: Option<crate::core::query::Freshness>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -104,6 +114,8 @@ pub async fn run_web_search(
         providers: args.providers.clone(),
         safe_search: args.safe_search,
         timeout_ms: args.timeout_ms,
+        intent: args.intent.unwrap_or_default(),
+        freshness: args.freshness.unwrap_or_default(),
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
@@ -323,6 +335,8 @@ mod tests {
             providers: vec![],
             safe_search: Some(crate::core::SafeSearch::Strict),
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         };
 
         let result = run_web_search(state, args).await;
@@ -345,6 +359,8 @@ mod tests {
             providers: vec![],
             safe_search: None,
             timeout_ms: None,
+            intent: None,
+            freshness: None,
         };
 
         let result = run_web_search(state, args).await;

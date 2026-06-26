@@ -15,6 +15,7 @@ use crate::core::sanitize::{
 };
 use crate::core::SearchWarning;
 use crate::core::SourceCard;
+use crate::core::SourceMetadata;
 use crate::core::TrustLevel;
 use crate::core::WebSearchRequest;
 use tracing::{debug, warn};
@@ -423,6 +424,9 @@ impl MetadataSearchAdapter {
             }
         }
 
+        // --- bounded intent/freshness reranking ---
+        apply_intent_reranking(&mut results, req.intent, req.freshness);
+
         // Collect the set of provider ids that already completed (success
         // or individual failure) so we don't double-count.
         let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -682,6 +686,16 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         _ => None,
     };
 
+    // Deterministic source metadata from URL/domain heuristics.
+    let domain = url::Url::parse(&a.url)
+        .ok()
+        .and_then(|u| u.host_str().map(|s| s.to_string()));
+    let source_kind = crate::core::source_card::classify_source_kind(&a.url);
+    let mut rank_reasons: Vec<crate::core::source_card::RankReason> = Vec::new();
+    if providers.len() > 1 {
+        rank_reasons.push(crate::core::source_card::RankReason::RrfMultiProvider);
+    }
+
     Some(SourceCard {
         id,
         title,
@@ -692,6 +706,11 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         fetched: false,
         snippet,
         trust_markers,
+        metadata: SourceMetadata {
+            source_kind,
+            domain,
+            rank_reasons,
+        },
     })
 }
 
@@ -748,6 +767,115 @@ fn sanitize_field(
         }
         (bounded, m)
     }
+}
+
+/// Apply a bounded post-RRF score adjustment based on the caller's
+/// intent and freshness hints. The base RRF score remains dominant;
+/// boosts are additive and capped so a single heuristic never
+/// overwhelms multi-provider evidence.
+fn apply_intent_reranking(
+    results: &mut [SourceCard],
+    intent: crate::core::query::SearchIntent,
+    freshness: crate::core::query::Freshness,
+) {
+    use crate::core::query::{Freshness, SearchIntent};
+    use crate::core::source_card::{RankReason, SourceKind};
+
+    if results.is_empty() {
+        return;
+    }
+
+    // Compute the maximum base score so boosts are proportional.
+    let max_base = results
+        .iter()
+        .filter_map(|r| r.score)
+        .fold(0.0_f64, f64::max);
+    if max_base <= 0.0 {
+        return;
+    }
+
+    // Boost factor: at most +30% of the max base score for a
+    // perfect intent match. This keeps provider evidence dominant.
+    let boost_unit = max_base * 0.10;
+
+    for card in results.iter_mut() {
+        let base = card.score.unwrap_or(0.0);
+        let mut boost = 0.0_f64;
+        let mut reasons: Vec<RankReason> = Vec::new();
+
+        // --- intent-based domain priors ---
+        let kind = card.metadata.source_kind;
+        match intent {
+            SearchIntent::Docs => {
+                if matches!(kind, SourceKind::OfficialDocs | SourceKind::PackageRegistry) {
+                    boost += boost_unit * 2.0;
+                    reasons.push(RankReason::IntentMatch);
+                    if kind == SourceKind::OfficialDocs {
+                        reasons.push(RankReason::DomainPriorDocs);
+                    }
+                }
+            }
+            SearchIntent::Code => {
+                if matches!(kind, SourceKind::SourceRepository | SourceKind::PackageRegistry) {
+                    boost += boost_unit * 2.0;
+                    reasons.push(RankReason::IntentMatch);
+                    reasons.push(RankReason::DomainPriorCode);
+                }
+            }
+            SearchIntent::Issues => {
+                if kind == SourceKind::IssueThread {
+                    boost += boost_unit * 2.0;
+                    reasons.push(RankReason::IntentMatch);
+                }
+            }
+            SearchIntent::Releases => {
+                if kind == SourceKind::ReleaseNotes {
+                    boost += boost_unit * 2.0;
+                    reasons.push(RankReason::IntentMatch);
+                    reasons.push(RankReason::DomainPriorRelease);
+                }
+            }
+            SearchIntent::Security => {
+                if kind == SourceKind::SecurityAdvisory {
+                    boost += boost_unit * 3.0;
+                    reasons.push(RankReason::IntentMatch);
+                    reasons.push(RankReason::DomainPriorSecurity);
+                }
+            }
+            SearchIntent::News => {
+                if kind == SourceKind::News {
+                    boost += boost_unit * 2.0;
+                    reasons.push(RankReason::IntentMatch);
+                }
+            }
+            SearchIntent::Web => {
+                // No intent-based boosts for neutral web search.
+            }
+        }
+
+        // --- freshness boost ---
+        // Without actual date metadata from providers, we apply a
+        // small freshness boost to news intent only, since news
+        // queries inherently prefer recent results.
+        if freshness != Freshness::Any && matches!(intent, SearchIntent::News) {
+            boost += boost_unit * 0.5;
+            reasons.push(RankReason::FreshnessMatch);
+        }
+
+        // Apply boost and collect rank reasons.
+        if boost > 0.0 {
+            card.score = Some(base + boost);
+        }
+        card.metadata.rank_reasons.extend(reasons);
+    }
+
+    // Re-sort by updated scores (stable sort preserves original
+    // order for ties).
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1013,5 +1141,61 @@ mod tests {
         .expect("build");
         assert!(engines.is_empty());
         assert_eq!(skipped, vec!["searxng".to_string()]);
+    }
+
+    #[test]
+    fn classify_source_kind_populates_metadata() {
+        let a = AggregatedResult {
+            title: "tower-http - Rust".to_string(),
+            url: "https://docs.rs/tower-http/latest/tower_http/".to_string(),
+            snippet: Some("Middleware".to_string()),
+            engines: vec!["duckduckgo".to_string()],
+            score: 0.05,
+        };
+        let c = convert_aggregated(a, false).expect("expected card");
+        assert_eq!(c.metadata.source_kind, crate::core::source_card::SourceKind::OfficialDocs);
+        assert_eq!(c.metadata.domain.as_deref(), Some("docs.rs"));
+    }
+
+    #[test]
+    fn multi_provider_card_has_rrf_multi_provider_reason() {
+        let a = AggregatedResult {
+            title: "Example".to_string(),
+            url: "https://example.com/".to_string(),
+            snippet: None,
+            engines: vec!["duckduckgo".to_string(), "brave".to_string()],
+            score: 0.05,
+        };
+        let c = convert_aggregated(a, false).expect("expected card");
+        assert!(c.metadata.rank_reasons.contains(&crate::core::source_card::RankReason::RrfMultiProvider));
+    }
+
+    #[test]
+    fn apply_intent_reranking_does_not_panic_on_empty() {
+        let mut results: Vec<SourceCard> = vec![];
+        apply_intent_reranking(&mut results, crate::core::query::SearchIntent::Web, crate::core::query::Freshness::Any);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn apply_intent_reranking_boosts_docs_for_official_docs() {
+        let mut results = vec![
+            SourceCard::new("Blog post", "https://example.com/blog", vec!["a".to_string()], Some(0.01), crate::core::TrustLevel::ExternalUntrusted)
+                .with_metadata(crate::core::source_card::SourceMetadata {
+                    source_kind: crate::core::source_card::SourceKind::Unknown,
+                    domain: Some("example.com".to_string()),
+                    rank_reasons: vec![],
+                }),
+            SourceCard::new("Docs.rs", "https://docs.rs/tower-http", vec!["a".to_string()], Some(0.01), crate::core::TrustLevel::ExternalUntrusted)
+                .with_metadata(crate::core::source_card::SourceMetadata {
+                    source_kind: crate::core::source_card::SourceKind::OfficialDocs,
+                    domain: Some("docs.rs".to_string()),
+                    rank_reasons: vec![],
+                }),
+        ];
+        apply_intent_reranking(&mut results, crate::core::query::SearchIntent::Docs, crate::core::query::Freshness::Any);
+        // The docs.rs card should be first after reranking
+        assert_eq!(results[0].url, "https://docs.rs/tower-http");
+        assert!(results[0].metadata.rank_reasons.contains(&crate::core::source_card::RankReason::IntentMatch));
     }
 }
