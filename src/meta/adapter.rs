@@ -23,6 +23,7 @@ use tracing::{debug, warn};
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::{AggregatedResult, SearchResult};
 use crate::meta::engines::{build_http_client, SearchEngine};
+use crate::meta::planner::build_search_plan;
 use crate::meta::response::{ProviderFailure, WebSearchResponse};
 
 /// Coarse error class for provider failures. Exposed via `provider_status`
@@ -371,12 +372,17 @@ impl MetadataSearchAdapter {
         // reranking promote results just outside the final window.
         let candidate_limit = candidate_pool_size(final_max_results, candidate_cap);
 
+        let plan = build_search_plan(req);
+
         debug!(
             query = %req.query,
             providers = ?queried_ids,
             final_max_results,
             candidate_limit,
             timeout_ms = effective_timeout.as_millis(),
+            intent = %req.intent.as_str(),
+            generic_query = %plan.generic_query,
+            has_repo_hints = plan.hints.has_any(),
             "dispatching metasearch"
         );
 
@@ -386,14 +392,19 @@ impl MetadataSearchAdapter {
         let mut join_set = tokio::task::JoinSet::new();
         for engine in &engines {
             let engine = Arc::clone(engine);
-            let query = req.query.clone();
+            let provider_id = engine.name().to_string();
+            let query = plan
+                .provider_queries
+                .get(&provider_id)
+                .cloned()
+                .unwrap_or_else(|| plan.generic_query.clone());
             let engine_timeout = effective_timeout;
             let per_provider_limit = candidate_limit;
             join_set.spawn(async move {
                 let result = engine
                     .search(&query, per_provider_limit, engine_timeout)
                     .await;
-                (engine.name().to_string(), result)
+                (provider_id, result)
             });
         }
 

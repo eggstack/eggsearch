@@ -11,7 +11,9 @@ pub mod adapter;
 pub mod engines;
 #[cfg(feature = "mock")]
 pub mod mock;
+pub mod planner;
 pub mod response;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};
+pub use planner::{build_search_plan, SearchPlan};
 pub use response::{ProviderFailure, WebSearchResponse};

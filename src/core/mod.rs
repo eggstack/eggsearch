@@ -9,6 +9,8 @@ pub mod error;
 pub mod fetch;
 pub mod provider;
 pub mod query;
+/// Repo-oriented query hint parser for structured search.
+pub mod repo_query;
 pub mod result;
 pub mod sanitize;
 pub mod source_card;
@@ -29,6 +31,7 @@ pub use query::{
     resolve_max_results, Freshness, MaxResultsResolution, SafeSearch, SearchIntent,
     WebSearchRequest,
 };
+pub use repo_query::RepoQueryHints;
 pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,

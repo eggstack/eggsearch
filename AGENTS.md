@@ -53,6 +53,7 @@ eggsearch/
       error.rs           # CoreError, CoreResult (thiserror)
       query.rs           # WebSearchRequest, resolve_max_results, MaxResultsResolution
       result.rs          # SearchWarning, TrustLevel
+      repo_query.rs      # RepoQueryHints: structured repo hint parser
       source_card.rs     # SourceCard output type
       document.rs        # FetchDocument, DocumentKind, RenderFormat, BlockKind, etc.
       sanitize.rs        # prompt-injection hardening (strip, frame, scan)
@@ -61,6 +62,7 @@ eggsearch/
     meta/                # MetadataSearchAdapter + vendored engines
       mod.rs             # re-exports
       adapter.rs         # MetadataSearchAdapter, convert_aggregated, provider_status
+      planner.rs         # SearchPlan, build_search_plan (intent-aware query rewriting)
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -222,6 +224,29 @@ date metadata. Currently no providers expose result-level dates, so
 `FreshnessMatch` is never emitted. The `freshness` field is retained
 as a best-effort hint for future provider support.
 
+### Repo Query Hints
+
+`web_search` supports structured repo-oriented hints embedded in the
+free-text `query` string. The parser (`core::repo_query::RepoQueryHints`)
+extracts the following canonical hints:
+
+- `repo:owner/name` (aliases: `repository:`, `project:`)
+- `org:owner` (alias: `owner:`)
+- `path:src/foo.rs`
+- `file:Cargo.toml`
+- `lang:rust` / `language:rust`
+- `symbol:Router::layer`
+- `host:github` (aliases: `gh`, `gl`, `cb`)
+
+Bare `owner/repo` is also recognized when unambiguous.
+
+These are **search hints only** — they influence query rewriting via
+the `SearchPlan` planner but do not trigger cloning, crawling, or
+fetching page bodies. Agents must use `web_fetch` on a selected
+result URL to inspect content. The `provider_queries` map is
+reserved for future native provider support (e.g. a GitHub API
+provider).
+
 ### Candidate Pool Flow
 
 `MetadataSearchAdapter::web_search(req, effective_max_results,
@@ -232,17 +257,22 @@ point for the MCP `web_search` tool. The flow is:
    3, max_results_cap)`; never less than `effective_max_results`,
    never panics when `effective_max_results > max_results_cap`)
    **before** provider fan-out.
-2. Fan out to each enabled provider with `candidate_limit` as the
-   per-engine `max_results` argument. Each provider is responsible
-   for returning up to that many compact `SearchResult` values. No
-   page bodies are fetched — the extra headroom is only used to
-   expand the compact candidate pool.
-3. Aggregate the provider results via the vendored `aggregate_rrf`
+2. Build a `SearchPlan` from the request via `build_search_plan(req)`.
+   The plan parses repo hints from the query, then rewrites
+   `generic_query` with intent-aware platform suffixes (e.g. "github
+   gitlab codeberg source repository" for `code` intent). The
+   `provider_queries` map is reserved for future per-provider overrides.
+3. Fan out to each enabled provider with `candidate_limit` as the
+   per-engine `max_results` argument. Each provider receives the
+   planned query from `provider_queries` (if present) or
+   `generic_query`. No page bodies are fetched — the extra headroom
+   is only used to expand the compact candidate pool.
+4. Aggregate the provider results via the vendored `aggregate_rrf`
    up to `candidate_limit` (URL-normalized dedup).
-4. Convert each aggregated row to a `SourceCard` with deterministic
+5. Convert each aggregated row to a `SourceCard` with deterministic
    `source_kind` / `domain` / `rank_reasons` metadata.
-5. Apply bounded intent-aware post-RRF reranking.
-6. Truncate the final response to `effective_max_results` so an
+6. Apply bounded intent-aware post-RRF reranking.
+7. Truncate the final response to `effective_max_results` so an
    intent-matching result just outside the final window can be
    promoted.
 
@@ -321,7 +351,7 @@ SearXNG can aggregate.
 eggsearch is published as a single crate. Before publishing:
 
 - `cargo clippy --all-features -- -D warnings` is clean
-- `cargo test --all-features` passes (371 tests)
+- `cargo test --all-features` passes (643 tests)
 - `cargo publish --dry-run` succeeds
 - The version in `Cargo.toml` is bumped
 - `CHANGELOG.md` is updated
