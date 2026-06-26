@@ -3,6 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::core::document::FetchDocument;
 use crate::core::sanitize::TrustMarkers;
 
 /// Extraction mode for web content.
@@ -106,6 +107,13 @@ pub struct WebFetchResponse {
     /// stages replace it with the actual counts.
     #[serde(default)]
     pub trust_markers: TrustMarkers,
+    /// Structured document representation of the fetched content.
+    /// Present when the fetch succeeded and content was extracted.
+    /// Agents can inspect this for document kind, render format,
+    /// outline, blocks, and chunks. The legacy `text` field is
+    /// always populated for backward compatibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<FetchDocument>,
 }
 
 impl WebFetchResponse {

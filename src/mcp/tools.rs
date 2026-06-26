@@ -309,6 +309,7 @@ pub async fn run_web_fetch(
                 "warnings": resp.warnings,
                 "trust_markers": serde_json::to_value(&resp.trust_markers)
                     .unwrap_or(serde_json::json!({})),
+                "document": resp.document,
             });
             Ok(payload)
         }

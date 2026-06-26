@@ -8,6 +8,10 @@ use reqwest::Client;
 use super::extract::extract_content;
 use super::limits::{validate_fetch_target, validate_url, FetchLimits};
 use super::types::FetchError;
+use crate::core::document::{
+    BlockKind, DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument,
+    FetchRenderMetadata, RenderFormat, RenderedBlock,
+};
 use crate::core::fetch::{ExtractMode, FetchTrust, WebFetchResponse};
 use crate::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
@@ -163,12 +167,14 @@ impl FetchClient {
         // Pre-check Content-Length for honest servers. The streaming
         // body cap below remains the authoritative upper bound for
         // chunked/encoded responses; this is an early bailout.
+        let mut content_length_header: Option<usize> = None;
         if let Some(cl_header) = response.headers().get("content-length") {
             if let Some(content_length) = cl_header
                 .to_str()
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
             {
+                content_length_header = Some(content_length);
                 if content_length > self.limits.max_bytes {
                     return Err(FetchError::ContentTooLarge(
                         content_length,
@@ -214,28 +220,32 @@ impl FetchClient {
             body.extend_from_slice(&chunk);
         }
 
-        let (mut title, mut description, mut text, links, extract_warnings) = if extract_mode
-            == ExtractMode::MetadataOnly
-        {
-            if is_html {
-                let extractor = super::extract::HtmlExtractor::new(&body, &final_url);
-                let (t, d, _, l, w) = extractor.extract(max_chars, include_links);
-                (t, d, None, l, w)
+        let (mut title, mut description, mut text, links, extract_warnings, text_truncated) =
+            if extract_mode == ExtractMode::MetadataOnly {
+                if is_html {
+                    let extractor = super::extract::HtmlExtractor::new(&body, &final_url);
+                    let (t, d, _, l, w, _) = extractor.extract(max_chars, include_links);
+                    (t, d, None, l, w, false)
+                } else {
+                    (None, None, None, Vec::new(), Vec::new(), false)
+                }
+            } else if is_html {
+                let (t, d, txt, l, w, tt) =
+                    extract_content(&body, &final_url, max_chars, include_links);
+                (t, d, Some(txt), l, w, tt)
             } else {
-                (None, None, None, Vec::new(), Vec::new())
-            }
-        } else if is_html {
-            let (t, d, txt, l, w) = extract_content(&body, &final_url, max_chars, include_links);
-            (t, d, Some(txt), l, w)
-        } else {
-            let text = String::from_utf8_lossy(&body)
-                .chars()
-                .take(max_chars)
-                .collect::<String>();
-            (None, None, Some(text), Vec::new(), Vec::new())
-        };
+                let full_text = String::from_utf8_lossy(&body);
+                let tt = full_text.chars().count() > max_chars;
+                let text = full_text.chars().take(max_chars).collect::<String>();
+                (None, None, Some(text), Vec::new(), Vec::new(), tt)
+            };
 
         let mut warnings = extract_warnings;
+
+        // Save raw extracted text before sanitization for document
+        // construction (blocks use Tier 1 only, no framing).
+        let raw_text = text.clone();
+        let raw_title = title.clone();
 
         // Sanitize each untrusted field. Tier 1 (strip + bound) is
         // always on; Tier 2 (framing) and Tier 3 (marker scan) are
@@ -286,6 +296,131 @@ impl FetchClient {
 
         warnings.push(WebFetchResponse::untrusted_warning());
 
+        // Build the structured document from extraction output.
+        let document = if extract_mode != ExtractMode::MetadataOnly {
+            let doc_kind = if is_html {
+                DocumentKind::Html
+            } else {
+                DocumentKind::PlainText
+            };
+
+            let charset = content_type
+                .as_ref()
+                .and_then(|ct| {
+                    ct.split(';')
+                        .nth(1)?
+                        .trim()
+                        .strip_prefix("charset=")?
+                        .split(',')
+                        .next()
+                        .map(|s| s.trim().to_string())
+                })
+                .filter(|c| !c.is_empty());
+
+            let source_extension = url::Url::parse(&final_url)
+                .ok()
+                .and_then(|u| {
+                    let path = u.path();
+                    path.rsplit('.')
+                        .next()
+                        .filter(|ext| !ext.is_empty())
+                        .map(|ext| {
+                            if ext.len() <= 10 {
+                                ext.to_string()
+                            } else {
+                                String::new()
+                            }
+                        })
+                })
+                .filter(|e| !e.is_empty());
+
+            let text_chars = raw_text.as_ref().map_or(0, |t| t.chars().count());
+
+            let mut blocks = Vec::new();
+            let mut outline = Vec::new();
+
+            if let Some(ref t) = raw_text {
+                // Sanitize block text: Tier 1 (strip + bound) always on,
+                // but no framing (unlike the legacy text field).
+                let (stripped, _) = strip_control_chars(t);
+                let (bounded, _) = bound_text(&stripped, max_chars);
+
+                let kind = if is_html {
+                    BlockKind::Paragraph
+                } else {
+                    BlockKind::RawText
+                };
+
+                blocks.push(RenderedBlock {
+                    kind,
+                    text: bounded,
+                    level: None,
+                    anchor: None,
+                    language: None,
+                    line_start: None,
+                    line_end: None,
+                    page: None,
+                });
+
+                // Build outline entry from title if present.
+                // Use the original title (not the sanitized one which
+                // may be framed).
+                if let Some(ref title_text) = raw_title {
+                    let (stripped_title, _) = strip_control_chars(title_text);
+                    let (bounded_title, _) = bound_text(&stripped_title, 200);
+                    outline.push(DocumentOutlineEntry {
+                        level: 1,
+                        title: bounded_title,
+                        anchor: None,
+                        block_index: Some(0),
+                    });
+                }
+            }
+
+            // Build a single chunk from all blocks (Phase 1).
+            let chunks = if !blocks.is_empty() {
+                let chunk_text = blocks
+                    .iter()
+                    .map(|b| b.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                vec![DocumentChunk {
+                    chunk_id: "chunk_0".to_string(),
+                    text: chunk_text,
+                    heading_path: outline.iter().map(|e| e.title.clone()).collect(),
+                    block_start: 0,
+                    block_end: blocks.len().saturating_sub(1),
+                    page_start: None,
+                    page_end: None,
+                }]
+            } else {
+                Vec::new()
+            };
+
+            Some(FetchDocument {
+                kind: doc_kind,
+                render_format: RenderFormat::AgentBlocksV1,
+                text_format: "plain".to_string(),
+                text_chars_returned: text_chars,
+                text_truncated,
+                block_truncated: false,
+                link_truncated: false,
+                metadata: Some(FetchRenderMetadata {
+                    bytes_read: Some(body.len()),
+                    content_length: content_length_header,
+                    charset,
+                    redirects_followed: redirect_count,
+                    source_extension,
+                    detected_language: None,
+                }),
+                outline,
+                blocks,
+                chunks,
+            })
+        } else {
+            None
+        };
+
         Ok(WebFetchResponse {
             url: url_str.to_string(),
             final_url,
@@ -300,6 +435,7 @@ impl FetchClient {
             links,
             warnings,
             trust_markers,
+            document,
         })
     }
 }

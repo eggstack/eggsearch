@@ -54,6 +54,7 @@ eggsearch/
       query.rs           # WebSearchRequest, resolve_max_results, MaxResultsResolution
       result.rs          # SearchWarning, TrustLevel
       source_card.rs     # SourceCard output type
+      document.rs        # FetchDocument, DocumentKind, RenderFormat, BlockKind, etc.
       sanitize.rs        # prompt-injection hardening (strip, frame, scan)
       provider.rs        # ProviderKind, ProviderCapabilities, ProviderDescriptor
       fetch.rs           # fetch-related types (ExtractMode, WebFetchRequest, etc.)
@@ -66,7 +67,7 @@ eggsearch/
     fetch/               # bounded HTTP(S) URL fetch + HTML extraction
       mod.rs             # re-exports
       client.rs          # FetchClient, sanitize_field
-      extract.rs         # HTML/text extraction logic
+      extract.rs         # HTML/text extraction logic (returns 6-tuple including text_truncated)
       limits.rs          # FetchLimits struct
       types.rs           # internal fetch types
     mcp/                 # MCP server (rmcp)
@@ -131,6 +132,24 @@ eggsearch/
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
 - `WebFetchResponse` is the output type returned by `web_fetch`; trust is always `external_untrusted` for live web content
+
+### Document Model
+
+`web_fetch` returns an optional `document: Option<FetchDocument>` alongside the legacy `text` field. Existing agents can keep reading `text`; newer agents can inspect the structured `document` object.
+
+Key types (all in `src/core/document.rs`):
+- `DocumentKind`: `html`, `plain_text`, `markdown`, `code`, `json`, `toml`, `yaml`, `diff`, `patch`, `pdf`, `unknown`
+- `RenderFormat`: `legacy_text`, `agent_blocks_v1`
+- `BlockKind`: `heading`, `paragraph`, `list_item`, `code`, `table`, `block_quote`, `definition`, `horizontal_rule`, `page_break`, `raw_text`
+- `FetchDocument`: kind, render_format, text_format, text_chars_returned, text_truncated, block_truncated, link_truncated, metadata, outline, blocks, chunks
+- `FetchRenderMetadata`: bytes_read, content_length, charset, redirects_followed, source_extension, detected_language
+- `DocumentOutlineEntry`: level, title, anchor, block_index
+- `RenderedBlock`: kind, text, level, anchor, language, line_start, line_end, page
+- `DocumentChunk`: chunk_id, text, heading_path, block_start, block_end, page_start, page_end
+
+Phase 1 builds a minimal compatibility document: HTML gets `kind=html` with a single `paragraph` block, plain text gets `kind=plain_text` with a `raw_text` block. Chunks are a single chunk wrapping all blocks. Block text passes through Tier 1 (control-char strip + length bound) but is NOT framed (unlike the legacy `text` field).
+
+`text_truncated` (character-level) is distinct from `truncated` (byte-level body cap). Both are reported.
 
 ### Search Intent and Freshness
 

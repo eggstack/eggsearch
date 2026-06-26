@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RecordingMockEngine` test helper (feature-gated behind `mock`) that records the `max_results` argument it was called with. Used by new regression tests to verify provider fan-out passes the candidate-pool limit to providers.
 - Unit tests covering `candidate_pool_size` panic-safety, zero-handling, and the cap-clamping edge case.
 - Integration tests covering the candidate-pool flow at the MCP tool boundary: provider receives candidate limit, candidate pool grows above the final count, candidate pool clamps to a small cap, and the intent-reranking regression test now actually exercises the bug fix.
+- **Structured document model for `web_fetch`**: new `document` field on `WebFetchResponse` with `DocumentKind`, `RenderFormat`, `BlockKind`, `FetchDocument`, `FetchRenderMetadata`, `DocumentOutlineEntry`, `RenderedBlock`, and `DocumentChunk` types in `src/core/document.rs`. Phase 1 builds a minimal compatibility document from current extraction output: HTML gets `kind=html` with a single paragraph block, plain text gets `kind=plain_text` with a raw-text block. Block text passes through Tier 1 sanitization (control-char strip + length bound) but is not framed. The legacy `text` field remains fully populated for backward compatibility.
+- `text_truncated` field on `FetchDocument` distinguishes character-level truncation from the existing byte-level `truncated` flag.
+- `FetchRenderMetadata` reports `bytes_read`, `content_length`, `charset`, `redirects_followed`, `source_extension`, and `detected_language`.
+- `HtmlExtractor::extract` and `extract_content` now return a 6-tuple with an additional `text_truncated: bool` field.
+- 10 new integration tests covering document model acceptance criteria (kind/format, blocks/chunks, metadata, truncation, sanitization, legacy field compatibility).
 
 ## [0.3.2] - 2026-06-07
 

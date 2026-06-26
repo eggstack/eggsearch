@@ -3,6 +3,7 @@
 //! HTTP, or search-engine implementation.
 
 pub mod config;
+pub mod document;
 pub mod error;
 pub mod fetch;
 pub mod provider;
@@ -12,6 +13,10 @@ pub mod sanitize;
 pub mod source_card;
 
 pub use config::{AppConfig, LiveConfig, Mode, SearchSection};
+pub use document::{
+    BlockKind, DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument,
+    FetchRenderMetadata, RenderFormat, RenderedBlock,
+};
 pub use error::{CoreError, CoreResult};
 pub use fetch::{ExtractMode, ExtractedLink, FetchTrust, WebFetchRequest, WebFetchResponse};
 pub use provider::{
