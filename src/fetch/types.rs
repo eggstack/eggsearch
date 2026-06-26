@@ -81,10 +81,6 @@ pub enum FetchError {
     #[error("PDF has little or no extractable text; OCR is not supported")]
     PdfNoExtractableText,
 
-    /// PDF limits exceeded.
-    #[error("PDF limit exceeded: {0}")]
-    PdfLimitExceeded(String),
-
     /// Unknown error.
     #[error("{0}")]
     Unknown(String),
@@ -129,8 +125,6 @@ pub enum FetchErrorKind {
     PdfEncrypted,
     /// PDF no extractable text.
     PdfNoExtractableText,
-    /// PDF limit exceeded.
-    PdfLimitExceeded,
     /// Unknown error.
     Unknown,
 }
@@ -158,7 +152,6 @@ impl FetchError {
             FetchError::PdfParseError(_) => FetchErrorKind::PdfParseError,
             FetchError::PdfEncrypted => FetchErrorKind::PdfEncrypted,
             FetchError::PdfNoExtractableText => FetchErrorKind::PdfNoExtractableText,
-            FetchError::PdfLimitExceeded(_) => FetchErrorKind::PdfLimitExceeded,
             FetchError::Unknown(_) => FetchErrorKind::Unknown,
         }
     }
@@ -184,7 +177,6 @@ impl FetchError {
             FetchErrorKind::PdfParseError => "pdf_parse_error",
             FetchErrorKind::PdfEncrypted => "pdf_encrypted",
             FetchErrorKind::PdfNoExtractableText => "pdf_no_extractable_text",
-            FetchErrorKind::PdfLimitExceeded => "pdf_limit_exceeded",
             FetchErrorKind::Unknown => "unknown",
         }
     }

@@ -86,7 +86,7 @@ impl FetchClient {
         let mut current_url = initial_url;
         let mut redirect_count: usize = 0;
 
-        let response = loop {
+        let mut response = loop {
             // Full validation: credentials, localhost, DNS resolution, IP checks.
             validate_fetch_target(&current_url, &self.limits).await?;
 
@@ -222,7 +222,21 @@ impl FetchClient {
             false
         };
 
-        let is_pdf = is_pdf_by_ct || is_pdf_by_url;
+        let mut is_pdf = is_pdf_by_ct || is_pdf_by_url;
+
+        // If neither Content-Type nor URL extension indicates PDF,
+        // peek at the first 5 bytes of the body for the `%PDF-` magic.
+        // This catches misconfigured servers that serve PDFs as
+        // application/octet-stream or text/plain.
+        let mut pdf_magic_chunk = None;
+        if !is_pdf {
+            if let Ok(Some(first_chunk)) = response.chunk().await {
+                if first_chunk.len() >= 5 && &first_chunk[..5] == b"%PDF-" {
+                    is_pdf = true;
+                }
+                pdf_magic_chunk = Some(first_chunk);
+            }
+        }
 
         // Accept a broad set of text-based content types. Binary
         // types (images, PDFs, etc.) are rejected; text/* and known
@@ -259,6 +273,30 @@ impl FetchClient {
             return Err(FetchError::PdfDisabled);
         }
 
+        // Read the full body now, incorporating any magic-chunk we
+        // peeked for PDF detection.
+        let mut body = Vec::new();
+        let mut stream = response.bytes_stream();
+        let mut truncated = false;
+
+        // If we peeked at the first chunk for magic-byte detection,
+        // include it in the body before reading the rest.
+        if let Some(chunk) = pdf_magic_chunk {
+            body.extend_from_slice(&chunk);
+        }
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
+            if body.len() + chunk.len() > self.limits.max_bytes {
+                let remaining = self.limits.max_bytes.saturating_sub(body.len());
+                if remaining > 0 {
+                    body.extend_from_slice(&chunk[..remaining]);
+                }
+                truncated = true;
+                break;
+            }
+            body.extend_from_slice(&chunk);
+        }
+
         // --- PDF extraction path (early return) ---
         // PDFs are handled as a completely separate path because the
         // extraction, sanitization, and document construction differ
@@ -270,20 +308,6 @@ impl FetchClient {
                 max_chars_per_page: self.limits.pdf_max_chars_per_page,
                 max_total_chars: self.limits.pdf_max_total_chars,
             };
-
-            let mut body = Vec::new();
-            let mut stream = response.bytes_stream();
-            while let Some(chunk_result) = stream.next().await {
-                let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
-                if body.len() + chunk.len() > self.limits.max_bytes {
-                    let remaining = self.limits.max_bytes.saturating_sub(body.len());
-                    if remaining > 0 {
-                        body.extend_from_slice(&chunk[..remaining]);
-                    }
-                    break;
-                }
-                body.extend_from_slice(&chunk);
-            }
 
             let pdf_result = super::pdf::extract_pdf_text(&body, max_chars, &pdf_limits)?;
 
@@ -330,7 +354,7 @@ impl FetchClient {
                 content_type,
                 status,
                 fetched: true,
-                truncated: false,
+                truncated,
                 trust: FetchTrust::ExternalUntrusted,
                 text: Some(text),
                 links: Vec::new(),
@@ -338,23 +362,6 @@ impl FetchClient {
                 trust_markers,
                 document: Some(pdf_result.document),
             });
-        }
-
-        let mut body = Vec::new();
-        let mut stream = response.bytes_stream();
-        let mut truncated = false;
-
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
-            if body.len() + chunk.len() > self.limits.max_bytes {
-                let remaining = self.limits.max_bytes.saturating_sub(body.len());
-                if remaining > 0 {
-                    body.extend_from_slice(&chunk[..remaining]);
-                }
-                truncated = true;
-                break;
-            }
-            body.extend_from_slice(&chunk);
         }
 
         let (mut title, mut description, mut text, links, extract_warnings, text_truncated) =
@@ -956,6 +963,35 @@ mod tests {
                     | crate::fetch::FetchErrorKind::PdfParseError
             ),
             "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_pdf_by_body_magic_detection() {
+        // Serve a PDF with a non-PDF content type to test body magic detection.
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/mystery.bin");
+            then.status(200)
+                .header("content-type", "application/octet-stream")
+                .body("%PDF-1.4 fake body");
+        });
+
+        let client = test_client();
+        let err = client
+            .fetch(&server.url("/mystery.bin"), None, ExtractMode::Text, false)
+            .await
+            .expect_err("expected pdf error from body magic detection");
+        // Should be detected as PDF via body magic, then fail with
+        // PdfNotCompiledIn, PdfDisabled, or PdfParseError.
+        assert!(
+            matches!(
+                err.kind(),
+                crate::fetch::FetchErrorKind::PdfNotCompiledIn
+                    | crate::fetch::FetchErrorKind::PdfDisabled
+                    | crate::fetch::FetchErrorKind::PdfParseError
+            ),
+            "body magic should detect PDF, got: {err:?}"
         );
     }
 

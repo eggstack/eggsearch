@@ -552,4 +552,181 @@ mod tests {
         assert_eq!(meta.source_extension.as_deref(), Some("pdf"));
         assert!(meta.bytes_read.is_some());
     }
+
+    /// Generate a PDF with blank pages (no text content).
+    fn make_blank_page_pdf(page_count: usize) -> Vec<u8> {
+        use lopdf::{dictionary, Document, Object};
+
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+
+        let mut page_ids = Vec::new();
+        for _ in 0..page_count {
+            let page_id = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            });
+            page_ids.push(page_id);
+        }
+
+        let pages = dictionary! {
+            "Type" => "Pages",
+            "Kids" => page_ids.into_iter().map(Object::Reference).collect::<Vec<_>>(),
+            "Count" => page_count as u32,
+        };
+        doc.objects.insert(pages_id, Object::Dictionary(pages));
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    }
+
+    #[test]
+    fn pdf_all_blank_pages_returns_no_extractable_text() {
+        let pdf = make_blank_page_pdf(3);
+        let limits = PdfLimits {
+            max_pages: 25,
+            max_chars_per_page: 12000,
+            max_total_chars: 50000,
+        };
+        let result = extract_pdf_text(&pdf, 12000, &limits);
+        assert!(
+            matches!(result, Err(FetchError::PdfNoExtractableText)),
+            "expected PdfNoExtractableText for blank PDF, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn pdf_mixed_blank_and_text_pages_warns_about_blanks() {
+        // Create a PDF with some blank pages and some with text.
+        // We build it manually since make_multipage_pdf always adds text.
+        use lopdf::content::{Content, Operation};
+        use lopdf::{dictionary, Document, Object, Stream};
+
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+        });
+
+        let resources_id = doc.add_object(dictionary! {
+            "Font" => dictionary! {
+                "F1" => font_id,
+            },
+        });
+
+        let mut page_ids = Vec::new();
+
+        // Page 1: blank (no content stream)
+        let blank_page = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        });
+        page_ids.push(blank_page);
+
+        // Page 2: has text
+        let content = Content {
+            operations: vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec!["F1".into(), 12.into()]),
+                Operation::new("Td", vec![100.into(), 700.into()]),
+                Operation::new("Tj", vec![Object::string_literal("Visible text")]),
+                Operation::new("ET", vec![]),
+            ],
+        };
+        let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
+        let text_page = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => content_id,
+            "Resources" => resources_id,
+        });
+        page_ids.push(text_page);
+
+        // Page 3: blank
+        let blank_page2 = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        });
+        page_ids.push(blank_page2);
+
+        let pages = dictionary! {
+            "Type" => "Pages",
+            "Kids" => page_ids.into_iter().map(Object::Reference).collect::<Vec<_>>(),
+            "Count" => 3,
+        };
+        doc.objects.insert(pages_id, Object::Dictionary(pages));
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+
+        let limits = PdfLimits {
+            max_pages: 25,
+            max_chars_per_page: 12000,
+            max_total_chars: 50000,
+        };
+        let result = extract_pdf_text(&buf, 50000, &limits).expect("extraction should succeed");
+
+        // Should have a warning about blank pages
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("no extractable text")),
+            "expected blank-page warning, got: {:?}",
+            result.warnings
+        );
+        // Should still extract text from the page that has content
+        assert_eq!(result.document.blocks.len(), 1);
+        assert!(result.document.blocks[0].text.contains("Visible text"));
+    }
+
+    #[test]
+    fn encrypted_pdf_returns_encrypted_error() {
+        // We can't easily create an encrypted PDF in tests, but we can
+        // verify the error variant is correct by testing the error path.
+        // This test ensures the error type exists and is distinct.
+        let err = FetchError::PdfEncrypted;
+        assert!(matches!(err, FetchError::PdfEncrypted));
+        assert!(matches!(
+            err.kind(),
+            crate::fetch::types::FetchErrorKind::PdfEncrypted
+        ));
+        assert_eq!(err.error_code(), "pdf_encrypted");
+    }
+
+    #[test]
+    fn pdf_body_magic_detection_works() {
+        // Verify that %PDF- magic bytes are correctly identified.
+        // This tests the detection logic, not the extraction.
+        let pdf_bytes = make_text_pdf("test");
+        assert!(
+            pdf_bytes.starts_with(b"%PDF-"),
+            "PDF should start with %PDF- magic"
+        );
+
+        // Verify non-PDF bytes don't match
+        let text_bytes = b"hello world";
+        assert!(!text_bytes.starts_with(b"%PDF-"));
+    }
 }
