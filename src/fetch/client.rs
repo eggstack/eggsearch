@@ -10,6 +10,7 @@ use super::extract::{extract_links_from_html, LinkExtractionResult};
 use super::limits::{validate_fetch_target, validate_url, FetchLimits};
 use super::render;
 use super::types::FetchError;
+use crate::core::code_host_fetch::resolve_code_host_fetch_target;
 use crate::core::document::{
     DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument, FetchRenderMetadata,
     RenderFormat,
@@ -79,11 +80,29 @@ impl FetchClient {
         // obvious private-network literals, credentials).
         let initial_url = validate_url(url_str, &self.limits)?;
 
+        // Check if this is a code-host source-file URL that should be
+        // rewritten to a raw content URL for fetching.
+        let code_host_target = resolve_code_host_fetch_target(url_str);
+        let (fetch_url, fetch_transform) = if let Some(ref target) = code_host_target {
+            if let Some(ref raw_url) = target.raw_url {
+                // Validate the raw URL through the same safety pipeline.
+                let raw_url_parsed = validate_url(raw_url, &self.limits)?;
+                // Also apply full validation (credentials, localhost, DNS).
+                validate_fetch_target(&raw_url_parsed, &self.limits).await?;
+                let transform = target.to_fetch_transform(raw_url);
+                (raw_url_parsed, transform)
+            } else {
+                (initial_url, None)
+            }
+        } else {
+            (initial_url, None)
+        };
+
         let max_chars = max_chars
             .unwrap_or(self.limits.max_chars_default)
             .min(self.limits.max_chars_cap);
 
-        let mut current_url = initial_url;
+        let mut current_url = fetch_url;
         let mut redirect_count: usize = 0;
 
         let mut response = loop {
@@ -377,6 +396,7 @@ impl FetchClient {
                         blocks: Vec::new(),
                         chunks: Vec::new(),
                     }),
+                    fetch_transform: None,
                 });
             }
 
@@ -451,6 +471,7 @@ impl FetchClient {
                 warnings,
                 trust_markers,
                 document: Some(pdf_result.document),
+                fetch_transform: None,
             });
         }
 
@@ -774,6 +795,7 @@ impl FetchClient {
             warnings,
             trust_markers,
             document,
+            fetch_transform,
         })
     }
 }

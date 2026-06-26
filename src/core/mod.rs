@@ -2,6 +2,7 @@
 //! for eggsearch. This module is intentionally independent of any MCP,
 //! HTTP, or search-engine implementation.
 
+pub mod code_host_fetch;
 pub mod code_metadata;
 pub mod config;
 pub mod document;
@@ -15,6 +16,7 @@ pub mod result;
 pub mod sanitize;
 pub mod source_card;
 
+pub use code_host_fetch::{resolve_code_host_fetch_target, CodeHostFetchTarget};
 pub use code_metadata::{CodeHost, CodeMetadata};
 pub use config::{AppConfig, LiveConfig, Mode, SearchSection};
 pub use document::{
@@ -22,7 +24,10 @@ pub use document::{
     FetchRenderMetadata, RenderFormat, RenderedBlock,
 };
 pub use error::{CoreError, CoreResult};
-pub use fetch::{ExtractMode, ExtractedLink, FetchTrust, WebFetchRequest, WebFetchResponse};
+pub use fetch::{
+    ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
+    WebFetchResponse,
+};
 pub use provider::{
     built_in_provider_descriptor, ProviderCapabilities, ProviderDescriptor, ProviderKind,
     KNOWN_PROVIDER_IDS,

@@ -95,6 +95,30 @@ pub struct ExtractedLink {
     pub same_domain: Option<bool>,
 }
 
+/// Describes the kind of URL transformation applied to a code-host
+/// source-file URL.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FetchTransformKind {
+    /// GitHub blob URL rewritten to raw.githubusercontent.com.
+    GithubRawFile,
+    /// GitLab blob URL rewritten to /-/raw/.
+    GitlabRawFile,
+    /// Codeberg src URL rewritten to /raw/.
+    CodebergRawFile,
+}
+
+/// Describes a URL transformation applied during `web_fetch`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FetchTransform {
+    /// The kind of transformation.
+    pub kind: FetchTransformKind,
+    /// The original user-provided browser URL.
+    pub original_url: String,
+    /// The transformed raw content URL actually fetched.
+    pub transformed_url: String,
+}
+
 /// Trust label for fetched content (same vocabulary as SourceCard).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -165,6 +189,11 @@ pub struct WebFetchResponse {
     /// always populated for backward compatibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<FetchDocument>,
+    /// When a code-host source-file URL was rewritten to a raw content
+    /// URL for fetching, this field describes the transformation.
+    /// Present only for code-host fetches; absent for normal URLs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetch_transform: Option<FetchTransform>,
 }
 
 impl WebFetchResponse {

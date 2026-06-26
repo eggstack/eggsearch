@@ -791,7 +791,8 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         }
         ResultMetadata::Release(m) => {
             if providers.iter().any(|p| p == "github_releases") {
-                rank_reasons.push(crate::core::source_card::RankReason::ProviderNativeReleaseSearch);
+                rank_reasons
+                    .push(crate::core::source_card::RankReason::ProviderNativeReleaseSearch);
             }
             (None, Some(m.clone()))
         }
@@ -1863,63 +1864,99 @@ mod tests {
     fn matches_freshness_day_within_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::hours(12);
-        assert!(matches_freshness(ts, crate::core::query::Freshness::Day, now));
+        assert!(matches_freshness(
+            ts,
+            crate::core::query::Freshness::Day,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_day_outside_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::hours(36);
-        assert!(!matches_freshness(ts, crate::core::query::Freshness::Day, now));
+        assert!(!matches_freshness(
+            ts,
+            crate::core::query::Freshness::Day,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_week_within_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::days(3);
-        assert!(matches_freshness(ts, crate::core::query::Freshness::Week, now));
+        assert!(matches_freshness(
+            ts,
+            crate::core::query::Freshness::Week,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_week_outside_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::days(10);
-        assert!(!matches_freshness(ts, crate::core::query::Freshness::Week, now));
+        assert!(!matches_freshness(
+            ts,
+            crate::core::query::Freshness::Week,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_month_within_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::days(15);
-        assert!(matches_freshness(ts, crate::core::query::Freshness::Month, now));
+        assert!(matches_freshness(
+            ts,
+            crate::core::query::Freshness::Month,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_month_outside_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::days(31);
-        assert!(!matches_freshness(ts, crate::core::query::Freshness::Month, now));
+        assert!(!matches_freshness(
+            ts,
+            crate::core::query::Freshness::Month,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_year_within_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::days(200);
-        assert!(matches_freshness(ts, crate::core::query::Freshness::Year, now));
+        assert!(matches_freshness(
+            ts,
+            crate::core::query::Freshness::Year,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_year_outside_window() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::days(400);
-        assert!(!matches_freshness(ts, crate::core::query::Freshness::Year, now));
+        assert!(!matches_freshness(
+            ts,
+            crate::core::query::Freshness::Year,
+            now
+        ));
     }
 
     #[test]
     fn matches_freshness_any_always_false() {
         let now = chrono::Utc::now();
         let ts = now - chrono::Duration::hours(1);
-        assert!(!matches_freshness(ts, crate::core::query::Freshness::Any, now));
+        assert!(!matches_freshness(
+            ts,
+            crate::core::query::Freshness::Any,
+            now
+        ));
     }
 
     #[test]
@@ -1931,10 +1968,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        assert_eq!(
-            freshness_timestamp(&m),
-            Some("2024-06-15T12:00:00Z")
-        );
+        assert_eq!(freshness_timestamp(&m), Some("2024-06-15T12:00:00Z"));
     }
 
     #[test]
@@ -1947,10 +1981,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        assert_eq!(
-            freshness_timestamp(&m),
-            Some("2024-06-15T12:00:00Z")
-        );
+        assert_eq!(freshness_timestamp(&m), Some("2024-06-15T12:00:00Z"));
     }
 
     #[test]
@@ -1963,10 +1994,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        assert_eq!(
-            freshness_timestamp(&m),
-            Some("2024-06-14T10:00:00Z")
-        );
+        assert_eq!(freshness_timestamp(&m), Some("2024-06-14T10:00:00Z"));
     }
 
     #[test]

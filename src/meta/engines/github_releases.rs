@@ -108,12 +108,7 @@ pub async fn search(
             reason: format!("invalid JSON: {e}"),
         })?;
 
-    Ok(convert(
-        parsed.items,
-        max_results,
-        &owner,
-        &repo,
-    ))
+    Ok(convert(parsed.items, max_results, &owner, &repo))
 }
 
 fn truncate_body(body: &str, max_chars: usize) -> String {
@@ -217,9 +212,7 @@ mod tests {
             GithubReleaseItem {
                 tag_name: Some("v0.7.0".to_string()),
                 name: Some("Release v0.7.0".to_string()),
-                html_url: Some(
-                    "https://github.com/tokio-rs/axum/releases/tag/v0.7.0".to_string(),
-                ),
+                html_url: Some("https://github.com/tokio-rs/axum/releases/tag/v0.7.0".to_string()),
                 body: Some("Bug fixes and improvements".to_string()),
                 draft: Some(false),
                 prerelease: Some(false),
@@ -229,9 +222,7 @@ mod tests {
             GithubReleaseItem {
                 tag_name: Some("v0.6.0".to_string()),
                 name: None,
-                html_url: Some(
-                    "https://github.com/tokio-rs/axum/releases/tag/v0.6.0".to_string(),
-                ),
+                html_url: Some("https://github.com/tokio-rs/axum/releases/tag/v0.6.0".to_string()),
                 body: Some("Previous release".to_string()),
                 draft: Some(false),
                 prerelease: Some(false),
@@ -241,10 +232,7 @@ mod tests {
         ];
         let out = convert(items, 10, "tokio-rs", "axum");
         assert_eq!(out.len(), 2);
-        assert_eq!(
-            out[0].title,
-            "v0.7.0 Release v0.7.0 - tokio-rs/axum"
-        );
+        assert_eq!(out[0].title, "v0.7.0 Release v0.7.0 - tokio-rs/axum");
         assert_eq!(
             out[0].url,
             "https://github.com/tokio-rs/axum/releases/tag/v0.7.0"
@@ -374,9 +362,7 @@ mod tests {
             GithubReleaseItem {
                 tag_name: Some("v2.0.0".to_string()),
                 name: Some("Release".to_string()),
-                html_url: Some(
-                    "https://github.com/test/repo/releases/tag/v2.0.0".to_string(),
-                ),
+                html_url: Some("https://github.com/test/repo/releases/tag/v2.0.0".to_string()),
                 body: None,
                 draft: Some(false),
                 prerelease: Some(false),
@@ -445,10 +431,7 @@ mod tests {
         }"#;
         let parsed: GithubReleasesResponse = serde_json::from_str(body).unwrap();
         assert_eq!(parsed.items.len(), 1);
-        assert_eq!(
-            parsed.items[0].tag_name.as_deref(),
-            Some("v0.7.0")
-        );
+        assert_eq!(parsed.items[0].tag_name.as_deref(), Some("v0.7.0"));
         assert_eq!(parsed.items[0].draft, Some(false));
     }
 
@@ -525,10 +508,7 @@ mod tests {
         .expect("search should succeed");
 
         assert_eq!(results.len(), 2);
-        assert_eq!(
-            results[0].title,
-            "v0.7.0 Release v0.7.0 - tokio-rs/axum"
-        );
+        assert_eq!(results[0].title, "v0.7.0 Release v0.7.0 - tokio-rs/axum");
         assert_eq!(results[0].source_engine, "github_releases");
     }
 
@@ -538,8 +518,7 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET)
-                .path("/repos/test/empty/releases");
+            when.method(GET).path("/repos/test/empty/releases");
             then.status(200)
                 .header("content-type", "application/json")
                 .body(r#"{"items": []}"#);
@@ -566,8 +545,7 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET)
-                .path("/repos/test/repo/releases");
+            when.method(GET).path("/repos/test/repo/releases");
             then.status(401).body("Bad credentials");
         });
 
@@ -598,8 +576,7 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET)
-                .path("/repos/test/repo/releases");
+            when.method(GET).path("/repos/test/repo/releases");
             then.status(403).body("rate limit exceeded");
         });
 
@@ -630,8 +607,7 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET)
-                .path("/repos/test/nonexistent/releases");
+            when.method(GET).path("/repos/test/nonexistent/releases");
             then.status(404).body("Not Found");
         });
 
@@ -662,8 +638,7 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET)
-                .path("/repos/test/repo/releases");
+            when.method(GET).path("/repos/test/repo/releases");
             then.status(500).body("Internal Server Error");
         });
 
@@ -694,8 +669,7 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET)
-                .path("/repos/test/repo/releases");
+            when.method(GET).path("/repos/test/repo/releases");
             then.status(200)
                 .header("content-type", "application/json")
                 .body("this is not json");
@@ -794,8 +768,7 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET)
-                .path("/repos/test/repo/releases");
+            when.method(GET).path("/repos/test/repo/releases");
             then.status(200)
                 .header("content-type", "application/json")
                 .delay(std::time::Duration::from_secs(10))

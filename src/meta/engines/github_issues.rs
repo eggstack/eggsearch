@@ -158,10 +158,7 @@ fn convert(items: Vec<GithubIssueItem>, max_results: usize) -> Vec<SearchResult>
             Some(v) => v,
             None => continue,
         };
-        let number_str = item
-            .number
-            .map(|n| n.to_string())
-            .unwrap_or_default();
+        let number_str = item.number.map(|n| n.to_string()).unwrap_or_default();
         let title = format!("#{number_str} {title} - {owner}/{repo}");
 
         let snippet = item
@@ -250,10 +247,7 @@ mod tests {
         let out = convert(items, 10);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].title, "#123 Bug in parser - tokio-rs/axum");
-        assert_eq!(
-            out[0].url,
-            "https://github.com/tokio-rs/axum/issues/123"
-        );
+        assert_eq!(out[0].url, "https://github.com/tokio-rs/axum/issues/123");
         assert_eq!(out[0].snippet.as_deref(), Some("The parser crashes"));
         assert_eq!(out[0].source_engine, "github_issues");
         match &out[0].metadata {
@@ -482,9 +476,7 @@ mod tests {
                 GithubLabel {
                     name: Some("bug".to_string()),
                 },
-                GithubLabel {
-                    name: None,
-                },
+                GithubLabel { name: None },
                 GithubLabel {
                     name: Some("urgent".to_string()),
                 },
@@ -639,11 +631,11 @@ mod tests {
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].title, "#42 Fix parser - tokio-rs/axum");
+        assert_eq!(results[0].url, "https://github.com/tokio-rs/axum/issues/42");
         assert_eq!(
-            results[0].url,
-            "https://github.com/tokio-rs/axum/issues/42"
+            results[0].snippet.as_deref(),
+            Some("Parser bug description")
         );
-        assert_eq!(results[0].snippet.as_deref(), Some("Parser bug description"));
         assert_eq!(results[0].source_engine, "github_issues");
     }
 
