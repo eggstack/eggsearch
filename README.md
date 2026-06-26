@@ -16,14 +16,14 @@ for the default configuration.
 
 - Single Rust binary that speaks MCP over stdio
 - Queries DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, and optionally a self-hosted SearXNG instance (no API keys required)
-- Optional API-backed providers (e.g. Brave Search API) with env-var secret loading
+- Optional API-backed providers (Brave Search API, GitHub Code Search, GitHub Issues Search, GitHub Releases) with env-var secret loading
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
 - `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text, classified links with deterministic kind/rel/same-domain metadata, and optional PDF text extraction (feature-gated)
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 708 fast tests (no network required)
+- 796 fast tests (no network required)
 
 ## Search and fetch workflow
 
@@ -142,6 +142,58 @@ providers and returns compact `SourceCard` results.
 }
 ```
 
+#### Issue and release metadata (optional)
+
+When a result comes from a native GitHub issues or releases provider, the
+`metadata` object includes an optional `issue` or `release` field with
+structured metadata:
+
+```json
+{
+  "id": "src_def456",
+  "title": "#123 panic in middleware - tokio-rs/axum",
+  "url": "https://github.com/tokio-rs/axum/issues/123",
+  "metadata": {
+    "source_kind": "issue_thread",
+    "domain": "github.com",
+    "rank_reasons": ["intent_match", "freshness_match"],
+    "issue": {
+      "host": "github",
+      "owner": "tokio-rs",
+      "repo": "axum",
+      "number": 123,
+      "state": "open",
+      "labels": ["bug"],
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-20T14:22:00Z"
+    }
+  }
+}
+```
+
+```json
+{
+  "id": "src_ghi789",
+  "title": "v0.7.0 - tokio-rs/axum",
+  "url": "https://github.com/tokio-rs/axum/releases/tag/v0.7.0",
+  "metadata": {
+    "source_kind": "release_notes",
+    "domain": "github.com",
+    "rank_reasons": ["intent_match"],
+    "release": {
+      "host": "github",
+      "owner": "tokio-rs",
+      "repo": "axum",
+      "tag": "v0.7.0",
+      "name": "Release v0.7.0",
+      "published_at": "2024-06-15T12:00:00Z"
+    }
+  }
+}
+```
+
+The `issue` and `release` fields are `null` or omitted when not applicable.
+
 #### Code metadata (optional)
 
 When a result comes from a code-hosting platform (GitHub, GitLab, Codeberg),
@@ -193,6 +245,26 @@ Use the existing `web_search` tool with `intent`:
 Supported hints: `repo:` (or `repository:`, `project:`), `org:` (or `owner:`), `path:`, `file:`, `lang:` (or `language:`), `symbol:`, `host:`. Bare `owner/repo` is also recognized when unambiguous. These are best-effort query hints only — they influence search terms and provider-specific queries but do not trigger cloning, crawling, or fetching page bodies.
 
 The optional `github_code` provider uses the GitHub Code Search API when enabled with a personal access token. When `github_code` is not configured, generic web providers receive the planned query as-is. Use `web_fetch` on one selected result URL to inspect content.
+
+**Issues search:**
+
+Use `web_search` with `intent = "issues"` for bug reports, issue discussions, and PR context:
+
+```json
+{ "query": "repo:tokio-rs/axum panic middleware", "intent": "issues" }
+```
+
+The optional `github_issues` provider uses the GitHub Search Issues API when enabled. When `github_issues` is not configured, generic web providers receive the planned query as-is. Issue results include structured `issue` metadata with number, state, labels, and timestamps.
+
+**Releases search:**
+
+Use `web_search` with `intent = "releases"` for migration notes, breaking changes, and version history:
+
+```json
+{ "query": "repo:tokio-rs/axum breaking changes", "intent": "releases" }
+```
+
+The optional `github_releases` provider uses the GitHub Repository Releases API when enabled and `repo:owner/name` is present. Release results include structured `release` metadata with tag, name, and publication timestamps. Without repo hints, generic providers handle fallback.
 
 **Advanced fields (host/debug only):**
 
@@ -337,6 +409,16 @@ base_url      = "https://api.search.brave.com/res/v1/web/search"
 [search.api.github_code]
 enabled       = false
 api_key_env   = "GITHUB_TOKEN"          # env var holding a GitHub personal access token
+base_url      = "https://api.github.com"
+
+[search.api.github_issues]
+enabled       = false
+api_key_env   = "GITHUB_TOKEN"
+base_url      = "https://api.github.com"
+
+[search.api.github_releases]
+enabled       = false
+api_key_env   = "GITHUB_TOKEN"
 base_url      = "https://api.github.com"
 ```
 
@@ -563,10 +645,10 @@ conflate:
 
 - **Known provider IDs** are the identifiers the server understands:
   `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`,
-  `brave_api`, and `github_code`. Unknown IDs are rejected.
+  `brave_api`, `github_code`, `github_issues`, and `github_releases`. Unknown IDs are rejected.
 - **Enabled providers** are the subset of known IDs that the
   operator has switched on in `[search].providers` (and, for
-  `searxng`, `brave_api`, and `github_code`, that also have their required
+  `searxng`, `brave_api`, `github_code`, `github_issues`, and `github_releases`, that also have their required
   configuration present).
 - **Default providers** are the subset of enabled IDs listed in
   `[search].default_providers`; they are queried automatically when
@@ -612,15 +694,38 @@ When enabled, `web_search(intent = "code")` can use `github_code` for
 direct code search results from GitHub. Generic web providers remain
 available as fallback.
 
+The optional `github_issues` adapter is a JSON client for the
+[GitHub Search Issues API](https://docs.github.com/en/rest/search/search?apiVersion=2022-11-28#search-issues).
+It requires a personal access token, supplied via the env-var named in
+`[search].api.github_issues.api_key_env`. The adapter is disabled by
+default; it is built only when
+`[search].api.github_issues.enabled = true` and the env var is set.
+When enabled, `web_search(intent = "issues")` can use `github_issues` for
+direct issue/PR search results from GitHub. Issue results include structured
+metadata with number, state, labels, and timestamps. Generic web providers
+remain available as fallback.
+
+The optional `github_releases` adapter is a JSON client for the
+[GitHub Repository Releases API](https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28#list-releases-for-a-repository).
+It requires a personal access token, supplied via the env-var named in
+`[search].api.github_releases.api_key_env`. The adapter is disabled by
+default; it is built only when
+`[search].api.github_releases.enabled = true` and the env var is set.
+When enabled, `web_search(intent = "releases")` can use `github_releases` for
+direct release results from GitHub when `repo:owner/name` is present. Release
+results include structured metadata with tag, name, and timestamps. Generic
+web providers handle fallback when no repo scope is known.
+
 ### Default provider set
 
 The default provider set covers `duckduckgo`, `startpage`, and
 `yahoo` (the engines listed in `[search].default_providers`). `brave`
 is enabled but not in the default set; it can be selected per-request
-via the `providers` argument. Mojeek, SearXNG, Brave Search API, and
-GitHub Code Search are all disabled by default; operators enable them in
-`[search].providers` and (for SearXNG, Brave API, and GitHub) configure the
-corresponding `[search].searxng]` or `[search].api.<id>]` sections.
+via the `providers` argument. Mojeek, SearXNG, Brave Search API,
+GitHub Code Search, GitHub Issues Search, and GitHub Releases are all disabled
+by default; operators enable them in `[search].providers` and (for SearXNG,
+Brave API, and GitHub providers) configure the corresponding
+`[search].searxng]` or `[search].api.<id>]` sections.
 
 HTML provider scraping is inherently fragile. Layout changes upstream may
 break parsing. When updating engines, check the upstream repo for HTML

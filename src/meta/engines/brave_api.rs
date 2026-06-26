@@ -119,6 +119,7 @@ fn convert(raw: Vec<BraveResult>, max_results: usize) -> Vec<SearchResult> {
             url,
             snippet,
             source_engine: ENGINE.to_string(),
+            metadata: Default::default(),
         });
     }
     out

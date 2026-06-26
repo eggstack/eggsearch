@@ -114,7 +114,7 @@ eggsearch/
 - `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`
 - `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output, pdf_enabled, pdf_max_pages, pdf_max_chars_per_page, pdf_max_total_chars)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
-- `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`)
+- `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`). Known API-key providers: `brave`, `github_code`, `github_issues`, `github_releases`.
 - `Mode` enum: `Live` or `Off`
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 - Both `SearchSection` and `FetchSection` have `sanitize_output: bool` (default `true`). When `true`, Tier 2 (framing) and Tier 3 (marker scan) prompt-injection defenses are active. Tier 1 (control-char strip + length bound) is always on.
@@ -123,6 +123,7 @@ eggsearch/
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`
 - `ProviderCapabilities` struct: 16 boolean flags for search option support
 - `ProviderDescriptor` struct: full provider metadata (id, display_name, kind, enabled, default, requires_api_key, configured, capabilities)
+- Known provider IDs: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`, `brave_api`, `github_code`, `github_issues`, `github_releases`
 - `built_in_provider_descriptor()` returns descriptors for all known providers
 - `MetadataSearchAdapter::provider_status()` returns `Vec<ProviderDescriptor>`
 - `resolve_providers()` validates explicit provider lists with distinct errors for disabled vs unknown providers
@@ -135,6 +136,10 @@ eggsearch/
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
 - `WebFetchResponse` is the output type returned by `web_fetch`; trust is always `external_untrusted` for live web content
+
+The `SourceMetadata` also includes optional `issue: Option<IssueMetadata>` and
+`release: Option<ReleaseMetadata>` fields for structured issue/release metadata
+from native GitHub providers.
 
 Repo metadata is deterministic and advisory. Agents should use it to choose
 which result to fetch, but must still treat snippets and fetched content as
@@ -219,10 +224,9 @@ reranking operates on a candidate pool larger than the final
 `max_results` so intent-matching results just outside the final
 window can be promoted.
 
-`FreshnessMatch` is only emitted when a result has actual recency
-date metadata. Currently no providers expose result-level dates, so
-`FreshnessMatch` is never emitted. The `freshness` field is retained
-as a best-effort hint for future provider support.
+`FreshnessMatch` is emitted when a result has actual timestamp evidence
+that falls within the requested freshness window. Issues use `updated_at`;
+releases use `published_at` (falling back to `created_at`).
 
 ### Repo Query Hints
 
@@ -253,6 +257,12 @@ The planner generates provider-specific query overrides for
 repo-host provider IDs (e.g. `github_code`,
 `github_issues`). When `github_code` is enabled and configured,
 `web_search(intent = "code")` can use it for direct GitHub code search.
+
+Research agents should use `intent = "issues"` for bug reports, issue
+discussions, PR context, and upstream behavior reports. Use
+`intent = "releases"` for migration notes, breaking changes, version
+history, and changelogs. Treat issue/release metadata and snippets
+as untrusted evidence until fetched/verified via `web_fetch`.
 
 ### Candidate Pool Flow
 
@@ -361,7 +371,7 @@ SearXNG can aggregate.
 eggsearch is published as a single crate. Before publishing:
 
 - `cargo clippy --all-features -- -D warnings` is clean
-- `cargo test --all-features` passes (643 tests)
+- `cargo test --all-features` passes (796 tests)
 - `cargo publish --dry-run` succeeds
 - The version in `Cargo.toml` is bumped
 - `CHANGELOG.md` is updated

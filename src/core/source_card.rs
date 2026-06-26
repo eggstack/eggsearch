@@ -76,6 +76,60 @@ pub enum RankReason {
     ExactTitleMatch,
     /// Canonical URL deduplicated with another result.
     CanonicalDedup,
+    /// Result came from a native GitHub issues provider.
+    ProviderNativeIssueSearch,
+    /// Result came from a native GitHub releases provider.
+    ProviderNativeReleaseSearch,
+}
+
+/// Structured issue metadata from native GitHub issues providers.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[allow(missing_docs)]
+pub struct IssueMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<crate::core::code_metadata::CodeHost>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_pull_request: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed_at: Option<String>,
+}
+
+/// Structured release metadata from native GitHub releases providers.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[allow(missing_docs)]
+pub struct ReleaseMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<crate::core::code_metadata::CodeHost>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prerelease: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
 }
 
 /// Deterministic metadata attached to each `SourceCard` to help
@@ -95,6 +149,12 @@ pub struct SourceMetadata {
     /// Structured code/repo metadata, present only for code-host URLs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<crate::core::code_metadata::CodeMetadata>,
+    /// Structured issue metadata, present for native issue provider results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<IssueMetadata>,
+    /// Structured release metadata, present for native release provider results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release: Option<ReleaseMetadata>,
 }
 
 /// A single normalized result returned to MCP callers.
@@ -150,6 +210,8 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
         && m.domain.is_none()
         && m.rank_reasons.is_empty()
         && m.code.is_none()
+        && m.issue.is_none()
+        && m.release.is_none()
 }
 
 impl SourceCard {
@@ -442,6 +504,8 @@ mod tests {
         assert!(m.domain.is_none());
         assert!(m.rank_reasons.is_empty());
         assert!(m.code.is_none());
+        assert!(m.issue.is_none());
+        assert!(m.release.is_none());
     }
 
     #[test]

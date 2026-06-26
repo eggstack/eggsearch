@@ -89,6 +89,7 @@ impl MockEngine {
                 url: r.url,
                 snippet: r.snippet,
                 source_engine: r.source_engine,
+                metadata: Default::default(),
             })
             .collect();
         Self {
@@ -203,6 +204,7 @@ impl RecordingMockEngine {
                 url: r.url,
                 snippet: r.snippet,
                 source_engine: r.source_engine,
+                metadata: Default::default(),
             })
             .collect();
         Self {

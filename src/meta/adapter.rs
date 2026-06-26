@@ -21,7 +21,7 @@ use crate::core::WebSearchRequest;
 use tracing::{debug, warn};
 
 use crate::meta::engines::error::EngineError;
-use crate::meta::engines::models::{AggregatedResult, SearchResult};
+use crate::meta::engines::models::{AggregatedResult, ResultMetadata, SearchResult};
 use crate::meta::engines::{build_http_client, SearchEngine};
 use crate::meta::planner::build_search_plan;
 use crate::meta::response::{ProviderFailure, WebSearchResponse};
@@ -536,8 +536,8 @@ pub fn build_default_engines(
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
     use crate::meta::engines::{
-        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GithubCodeEngine, MojeekEngine,
-        SearxngEngine, StartpageEngine, YahooEngine,
+        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GithubCodeEngine, GithubIssuesEngine,
+        GithubReleasesEngine, MojeekEngine, SearxngEngine, StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -596,6 +596,20 @@ pub fn build_default_engines(
         match id.as_str() {
             "github_code" => {
                 engines.push(Arc::new(GithubCodeEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "github_issues" => {
+                engines.push(Arc::new(GithubIssuesEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "github_releases" => {
+                engines.push(Arc::new(GithubReleasesEngine {
                     client: client.clone(),
                     api_key,
                     base_url: api_cfg.base_url.clone(),
@@ -688,6 +702,7 @@ fn aggregate_rrf(
                             snippet: result.snippet,
                             engines: vec![engine_name.clone()],
                             score: rrf_score,
+                            metadata: result.metadata,
                         },
                     );
                 }
@@ -767,6 +782,22 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         rank_reasons.push(crate::core::source_card::RankReason::RrfMultiProvider);
     }
 
+    let (issue, release) = match &a.metadata {
+        ResultMetadata::Issue(m) => {
+            if providers.iter().any(|p| p == "github_issues") {
+                rank_reasons.push(crate::core::source_card::RankReason::ProviderNativeIssueSearch);
+            }
+            (Some(m.clone()), None)
+        }
+        ResultMetadata::Release(m) => {
+            if providers.iter().any(|p| p == "github_releases") {
+                rank_reasons.push(crate::core::source_card::RankReason::ProviderNativeReleaseSearch);
+            }
+            (None, Some(m.clone()))
+        }
+        ResultMetadata::None => (None, None),
+    };
+
     Some(SourceCard {
         id,
         title,
@@ -782,6 +813,8 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             domain,
             rank_reasons,
             code,
+            issue,
+            release,
         },
     })
 }
@@ -841,6 +874,53 @@ fn sanitize_field(
     }
 }
 
+/// Parse an RFC 3339 timestamp string into a `chrono::DateTime<Utc>`.
+/// Returns `None` for missing, empty, or unparseable strings.
+fn parse_timestamp(ts: Option<&str>) -> Option<chrono::DateTime<chrono::Utc>> {
+    let s = ts?;
+    if s.is_empty() {
+        return None;
+    }
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+}
+
+/// Extract the primary freshness timestamp from a card's metadata.
+/// For issues, uses `updated_at`; for releases, uses `published_at`
+/// falling back to `created_at`.
+fn freshness_timestamp(metadata: &crate::core::source_card::SourceMetadata) -> Option<&str> {
+    if let Some(ref issue) = metadata.issue {
+        issue.updated_at.as_deref()
+    } else if let Some(ref release) = metadata.release {
+        release
+            .published_at
+            .as_deref()
+            .or(release.created_at.as_deref())
+    } else {
+        None
+    }
+}
+
+/// Check whether a timestamp falls within the requested freshness window.
+/// Returns `true` only when the timestamp is within the window.
+/// `Any` always returns `false` (no freshness boost needed).
+fn matches_freshness(
+    ts: chrono::DateTime<chrono::Utc>,
+    freshness: crate::core::query::Freshness,
+    now: chrono::DateTime<chrono::Utc>,
+) -> bool {
+    use crate::core::query::Freshness;
+    let diff = now.signed_duration_since(ts);
+    match freshness {
+        Freshness::Any => false,
+        Freshness::Day => diff <= chrono::Duration::days(1),
+        Freshness::Week => diff <= chrono::Duration::weeks(1),
+        Freshness::Month => diff <= chrono::Duration::days(30),
+        Freshness::Year => diff <= chrono::Duration::days(365),
+    }
+}
+
 /// Apply a bounded post-RRF score adjustment based on the caller's
 /// intent and freshness hints. The base RRF score remains dominant;
 /// boosts are additive and capped so a single heuristic never
@@ -848,7 +928,7 @@ fn sanitize_field(
 fn apply_intent_reranking(
     results: &mut [SourceCard],
     intent: crate::core::query::SearchIntent,
-    _freshness: crate::core::query::Freshness,
+    freshness: crate::core::query::Freshness,
 ) {
     use crate::core::query::SearchIntent;
     use crate::core::source_card::{RankReason, SourceKind};
@@ -869,6 +949,10 @@ fn apply_intent_reranking(
     // Boost factor: at most +30% of the max base score for a
     // perfect intent match. This keeps provider evidence dominant.
     let boost_unit = max_base * 0.10;
+
+    // Current time for freshness checks. Only computed once per
+    // reranking pass so all cards use a consistent clock.
+    let now = chrono::Utc::now();
 
     for card in results.iter_mut() {
         let base = card.score.unwrap_or(0.0);
@@ -932,12 +1016,19 @@ fn apply_intent_reranking(
             }
         }
 
-        // NOTE: No freshness boost or FreshnessMatch is emitted here
-        // because providers do not currently expose result-level date
-        // metadata. FreshnessMatch will be added when reliable date
-        // extraction is available. The `freshness` field on
-        // WebSearchRequest is retained as a best-effort hint for
-        // future provider support.
+        // --- freshness boost ---
+        // Only emit FreshnessMatch when the card has actual timestamp
+        // evidence and the requested freshness is not Any.
+        if freshness != crate::core::query::Freshness::Any {
+            if let Some(ts_str) = freshness_timestamp(&card.metadata) {
+                if let Some(ts) = parse_timestamp(Some(ts_str)) {
+                    if matches_freshness(ts, freshness, now) {
+                        boost += boost_unit * 1.0;
+                        reasons.push(RankReason::FreshnessMatch);
+                    }
+                }
+            }
+        }
 
         // Apply boost and collect rank reasons.
         if boost > 0.0 {
@@ -982,6 +1073,7 @@ mod tests {
             snippet: Some("A short snippet.".to_string()),
             engines: vec!["duckduckgo".to_string(), "brave".to_string()],
             score: 0.0327,
+            metadata: ResultMetadata::None,
         };
         let c = convert_aggregated(a, true).expect("expected card");
         // With sanitize=true, the title and snippet are wrapped in
@@ -1012,6 +1104,7 @@ mod tests {
             snippet: None,
             engines: vec!["duckduckgo".to_string()],
             score: 0.1,
+            metadata: ResultMetadata::None,
         };
         assert!(convert_aggregated(a, true).is_none());
     }
@@ -1024,6 +1117,7 @@ mod tests {
             snippet: None,
             engines: vec!["duckduckgo".to_string()],
             score: 0.1,
+            metadata: ResultMetadata::None,
         };
         assert!(convert_aggregated(a, true).is_none());
     }
@@ -1036,6 +1130,7 @@ mod tests {
             snippet: Some(String::new()),
             engines: vec!["duckduckgo".to_string()],
             score: 0.1,
+            metadata: ResultMetadata::None,
         };
         let c = convert_aggregated(a, true).expect("expected card");
         // Empty snippets must be omitted *before* sanitization so
@@ -1051,6 +1146,7 @@ mod tests {
             snippet: Some("snippet text".to_string()),
             engines: vec!["duckduckgo".to_string()],
             score: 0.5,
+            metadata: ResultMetadata::None,
         };
         let c = convert_aggregated(a, false).expect("expected card");
         assert_eq!(c.title, "Hello");
@@ -1067,6 +1163,7 @@ mod tests {
             snippet: None,
             engines: vec!["duckduckgo".to_string()],
             score: 0.1,
+            metadata: ResultMetadata::None,
         };
         let c = convert_aggregated(a, true).expect("expected card");
         assert!(
@@ -1102,6 +1199,7 @@ mod tests {
             url: url.to_string(),
             snippet: Some(format!("Snippet for {title}")),
             source_engine: engine.to_string(),
+            metadata: ResultMetadata::None,
         }
     }
 
@@ -1229,6 +1327,7 @@ mod tests {
             snippet: Some("Middleware".to_string()),
             engines: vec!["duckduckgo".to_string()],
             score: 0.05,
+            metadata: ResultMetadata::None,
         };
         let c = convert_aggregated(a, false).expect("expected card");
         assert_eq!(
@@ -1246,6 +1345,7 @@ mod tests {
             snippet: None,
             engines: vec!["duckduckgo".to_string(), "brave".to_string()],
             score: 0.05,
+            metadata: ResultMetadata::None,
         };
         let c = convert_aggregated(a, false).expect("expected card");
         assert!(c
@@ -1280,6 +1380,8 @@ mod tests {
                 domain: Some("example.com".to_string()),
                 rank_reasons: vec![],
                 code: None,
+                issue: None,
+                release: None,
             }),
             SourceCard::new(
                 "Docs.rs",
@@ -1293,6 +1395,8 @@ mod tests {
                 domain: Some("docs.rs".to_string()),
                 rank_reasons: vec![],
                 code: None,
+                issue: None,
+                release: None,
             }),
         ];
         apply_intent_reranking(
@@ -1352,18 +1456,21 @@ mod tests {
                     url: "https://example.com/generic".to_string(),
                     snippet: Some("A generic page".to_string()),
                     source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
                 },
                 SearchResult {
                     title: "Official docs".to_string(),
                     url: "https://docs.rs/tower-http".to_string(),
                     snippet: Some("Official documentation".to_string()),
                     source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
                 },
                 SearchResult {
                     title: "Another result".to_string(),
                     url: "https://example.com/other".to_string(),
                     snippet: Some("Something else".to_string()),
                     source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
                 },
             ],
         })];
@@ -1400,12 +1507,14 @@ mod tests {
                     url: "https://example.com/first".to_string(),
                     snippet: None,
                     source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
                 },
                 SearchResult {
                     title: "Second".to_string(),
                     url: "https://example.com/second".to_string(),
                     snippet: None,
                     source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
                 },
             ],
         })];
@@ -1440,6 +1549,7 @@ mod tests {
                 url: "https://techcrunch.com/article".to_string(),
                 snippet: Some("A news article".to_string()),
                 source_engine: "mock_a".to_string(),
+                metadata: ResultMetadata::None,
             }],
         })];
         let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
@@ -1528,18 +1638,21 @@ mod tests {
                     url: "https://example.com/1".to_string(),
                     snippet: None,
                     source_engine: "recorder".to_string(),
+                    metadata: ResultMetadata::None,
                 },
                 SearchResult {
                     title: "Second".to_string(),
                     url: "https://example.com/2".to_string(),
                     snippet: None,
                     source_engine: "recorder".to_string(),
+                    metadata: ResultMetadata::None,
                 },
                 SearchResult {
                     title: "Third".to_string(),
                     url: "https://example.com/3".to_string(),
                     snippet: None,
                     source_engine: "recorder".to_string(),
+                    metadata: ResultMetadata::None,
                 },
             ],
             sink: Arc::clone(&seen_limit),
@@ -1612,6 +1725,7 @@ mod tests {
                 url: "https://github.com/tokio-rs/axum/blob/main/Cargo.toml".to_string(),
                 snippet: Some("Package manifest".to_string()),
                 source_engine: "duckduckgo".to_string(),
+                metadata: ResultMetadata::None,
             }],
             seen_query: Arc::clone(&seen_query),
             seen_limit: Arc::clone(&seen_limit),
@@ -1664,6 +1778,7 @@ mod tests {
                 url: "https://example.com".to_string(),
                 snippet: None,
                 source_engine: "duckduckgo".to_string(),
+                metadata: ResultMetadata::None,
             }],
             seen_query: Arc::clone(&seen_query),
             seen_limit: Arc::clone(&seen_limit),
@@ -1692,6 +1807,7 @@ mod tests {
                 url: "https://github.com/tokio-rs/axum/issues/123".to_string(),
                 snippet: None,
                 source_engine: "duckduckgo".to_string(),
+                metadata: ResultMetadata::None,
             }],
             seen_query: Arc::clone(&seen_query),
             seen_limit: Arc::new(Mutex::new(None)),
@@ -1718,5 +1834,427 @@ mod tests {
             recorded_query.contains("issues discussions pull request"),
             "query should contain issues suffix: {recorded_query}"
         );
+    }
+
+    // --- Freshness matching unit tests ---
+
+    #[test]
+    fn parse_timestamp_valid_rfc3339() {
+        let ts = parse_timestamp(Some("2024-06-15T12:00:00Z"));
+        assert!(ts.is_some());
+    }
+
+    #[test]
+    fn parse_timestamp_none_returns_none() {
+        assert!(parse_timestamp(None).is_none());
+    }
+
+    #[test]
+    fn parse_timestamp_empty_returns_none() {
+        assert!(parse_timestamp(Some("")).is_none());
+    }
+
+    #[test]
+    fn parse_timestamp_invalid_returns_none() {
+        assert!(parse_timestamp(Some("not-a-date")).is_none());
+    }
+
+    #[test]
+    fn matches_freshness_day_within_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::hours(12);
+        assert!(matches_freshness(ts, crate::core::query::Freshness::Day, now));
+    }
+
+    #[test]
+    fn matches_freshness_day_outside_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::hours(36);
+        assert!(!matches_freshness(ts, crate::core::query::Freshness::Day, now));
+    }
+
+    #[test]
+    fn matches_freshness_week_within_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::days(3);
+        assert!(matches_freshness(ts, crate::core::query::Freshness::Week, now));
+    }
+
+    #[test]
+    fn matches_freshness_week_outside_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::days(10);
+        assert!(!matches_freshness(ts, crate::core::query::Freshness::Week, now));
+    }
+
+    #[test]
+    fn matches_freshness_month_within_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::days(15);
+        assert!(matches_freshness(ts, crate::core::query::Freshness::Month, now));
+    }
+
+    #[test]
+    fn matches_freshness_month_outside_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::days(31);
+        assert!(!matches_freshness(ts, crate::core::query::Freshness::Month, now));
+    }
+
+    #[test]
+    fn matches_freshness_year_within_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::days(200);
+        assert!(matches_freshness(ts, crate::core::query::Freshness::Year, now));
+    }
+
+    #[test]
+    fn matches_freshness_year_outside_window() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::days(400);
+        assert!(!matches_freshness(ts, crate::core::query::Freshness::Year, now));
+    }
+
+    #[test]
+    fn matches_freshness_any_always_false() {
+        let now = chrono::Utc::now();
+        let ts = now - chrono::Duration::hours(1);
+        assert!(!matches_freshness(ts, crate::core::query::Freshness::Any, now));
+    }
+
+    #[test]
+    fn freshness_timestamp_from_issue_metadata() {
+        let m = crate::core::source_card::SourceMetadata {
+            issue: Some(crate::core::source_card::IssueMetadata {
+                updated_at: Some("2024-06-15T12:00:00Z".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            freshness_timestamp(&m),
+            Some("2024-06-15T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn freshness_timestamp_from_release_metadata_published() {
+        let m = crate::core::source_card::SourceMetadata {
+            release: Some(crate::core::source_card::ReleaseMetadata {
+                published_at: Some("2024-06-15T12:00:00Z".to_string()),
+                created_at: Some("2024-06-14T10:00:00Z".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            freshness_timestamp(&m),
+            Some("2024-06-15T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn freshness_timestamp_from_release_metadata_fallback_created() {
+        let m = crate::core::source_card::SourceMetadata {
+            release: Some(crate::core::source_card::ReleaseMetadata {
+                published_at: None,
+                created_at: Some("2024-06-14T10:00:00Z".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            freshness_timestamp(&m),
+            Some("2024-06-14T10:00:00Z")
+        );
+    }
+
+    #[test]
+    fn freshness_timestamp_none_when_no_metadata() {
+        let m = crate::core::source_card::SourceMetadata::default();
+        assert!(freshness_timestamp(&m).is_none());
+    }
+
+    // --- Adapter tests for issues/releases intent ---
+
+    #[tokio::test]
+    async fn issues_intent_boosts_issue_thread_cards() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Generic blog".to_string(),
+                    url: "https://example.com/blog".to_string(),
+                    snippet: Some("A blog post".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "#123 panic issue".to_string(),
+                    url: "https://github.com/tokio-rs/axum/issues/123".to_string(),
+                    snippet: Some("Panic in middleware".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum panic");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 2);
+        // The issues result should be first after intent reranking
+        assert_eq!(
+            resp.results[0].url,
+            "https://github.com/tokio-rs/axum/issues/123"
+        );
+        assert!(resp.results[0]
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::IntentMatch));
+    }
+
+    #[tokio::test]
+    async fn releases_intent_boosts_release_notes_cards() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Blog post".to_string(),
+                    url: "https://example.com/blog".to_string(),
+                    snippet: Some("A blog post".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "v0.7.0 release".to_string(),
+                    url: "https://github.com/tokio-rs/axum/releases/tag/v0.7.0".to_string(),
+                    snippet: Some("Release notes".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum breaking changes");
+        req.intent = crate::core::query::SearchIntent::Releases;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 2);
+        // The release result should be first after intent reranking
+        assert_eq!(
+            resp.results[0].url,
+            "https://github.com/tokio-rs/axum/releases/tag/v0.7.0"
+        );
+        assert!(resp.results[0]
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::IntentMatch));
+        assert!(resp.results[0]
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::DomainPriorRelease));
+    }
+
+    #[tokio::test]
+    async fn freshness_match_appears_for_timestamped_results() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "github_issues",
+            results: vec![SearchResult {
+                title: "#42 recent issue".to_string(),
+                url: "https://github.com/tokio-rs/axum/issues/42".to_string(),
+                snippet: Some("A recent issue".to_string()),
+                source_engine: "github_issues".to_string(),
+                metadata: ResultMetadata::Issue(crate::core::source_card::IssueMetadata {
+                    updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                    ..Default::default()
+                }),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        req.freshness = crate::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        assert!(
+            resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&crate::core::source_card::RankReason::FreshnessMatch),
+            "FreshnessMatch should be present for recent timestamped result"
+        );
+    }
+
+    #[tokio::test]
+    async fn freshness_match_not_appearing_for_generic_providers() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![SearchResult {
+                title: "Some result".to_string(),
+                url: "https://example.com/article".to_string(),
+                snippet: Some("An article".to_string()),
+                source_engine: "duckduckgo".to_string(),
+                metadata: ResultMetadata::None,
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("rust news");
+        req.intent = crate::core::query::SearchIntent::News;
+        req.freshness = crate::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        assert!(
+            !resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&crate::core::source_card::RankReason::FreshnessMatch),
+            "FreshnessMatch must not appear without timestamp evidence"
+        );
+    }
+
+    #[tokio::test]
+    async fn freshness_match_not_for_outside_window() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "github_issues",
+            results: vec![SearchResult {
+                title: "#42 old issue".to_string(),
+                url: "https://github.com/tokio-rs/axum/issues/42".to_string(),
+                snippet: Some("An old issue".to_string()),
+                source_engine: "github_issues".to_string(),
+                metadata: ResultMetadata::Issue(crate::core::source_card::IssueMetadata {
+                    updated_at: Some(
+                        (chrono::Utc::now() - chrono::Duration::days(10)).to_rfc3339(),
+                    ),
+                    ..Default::default()
+                }),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        req.freshness = crate::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        assert!(
+            !resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&crate::core::source_card::RankReason::FreshnessMatch),
+            "FreshnessMatch must not appear for results outside the freshness window"
+        );
+    }
+
+    #[tokio::test]
+    async fn issue_result_cards_have_issue_thread_source_kind() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "github_issues",
+            results: vec![SearchResult {
+                title: "#123 Test issue".to_string(),
+                url: "https://github.com/tokio-rs/axum/issues/123".to_string(),
+                snippet: Some("Test issue body".to_string()),
+                source_engine: "github_issues".to_string(),
+                metadata: ResultMetadata::Issue(crate::core::source_card::IssueMetadata {
+                    number: Some(123),
+                    state: Some("open".to_string()),
+                    labels: vec!["bug".to_string()],
+                    created_at: Some("2024-01-15T10:00:00Z".to_string()),
+                    updated_at: Some("2024-01-20T14:00:00Z".to_string()),
+                    ..Default::default()
+                }),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("repo:tokio-rs/axum");
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        assert_eq!(
+            resp.results[0].metadata.source_kind,
+            crate::core::source_card::SourceKind::IssueThread
+        );
+        assert!(resp.results[0].metadata.issue.is_some());
+        let issue = resp.results[0].metadata.issue.as_ref().unwrap();
+        assert_eq!(issue.number, Some(123));
+        assert_eq!(issue.state.as_deref(), Some("open"));
+        assert!(issue.labels.contains(&"bug".to_string()));
+    }
+
+    #[tokio::test]
+    async fn release_result_cards_have_release_notes_source_kind() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "github_releases",
+            results: vec![SearchResult {
+                title: "v0.7.0 - tokio-rs/axum".to_string(),
+                url: "https://github.com/tokio-rs/axum/releases/tag/v0.7.0".to_string(),
+                snippet: Some("Release notes".to_string()),
+                source_engine: "github_releases".to_string(),
+                metadata: ResultMetadata::Release(crate::core::source_card::ReleaseMetadata {
+                    tag: Some("v0.7.0".to_string()),
+                    name: Some("Release v0.7.0".to_string()),
+                    published_at: Some("2024-06-15T12:00:00Z".to_string()),
+                    ..Default::default()
+                }),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("repo:tokio-rs/axum");
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        assert_eq!(
+            resp.results[0].metadata.source_kind,
+            crate::core::source_card::SourceKind::ReleaseNotes
+        );
+        assert!(resp.results[0].metadata.release.is_some());
+        let release = resp.results[0].metadata.release.as_ref().unwrap();
+        assert_eq!(release.tag.as_deref(), Some("v0.7.0"));
+    }
+
+    #[tokio::test]
+    async fn pr_results_classify_as_pull_request() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "github_issues",
+            results: vec![SearchResult {
+                title: "#456 Refactor middleware".to_string(),
+                url: "https://github.com/tokio-rs/axum/pull/456".to_string(),
+                snippet: Some("Refactor PR".to_string()),
+                source_engine: "github_issues".to_string(),
+                metadata: ResultMetadata::Issue(crate::core::source_card::IssueMetadata {
+                    is_pull_request: Some(true),
+                    number: Some(456),
+                    ..Default::default()
+                }),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum refactor");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        assert_eq!(
+            resp.results[0].metadata.source_kind,
+            crate::core::source_card::SourceKind::PullRequest
+        );
+    }
+
+    #[tokio::test]
+    async fn web_search_result_cards_have_fetched_false() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "github_issues",
+            results: vec![SearchResult {
+                title: "#1 Test".to_string(),
+                url: "https://github.com/test/repo/issues/1".to_string(),
+                snippet: Some("Body".to_string()),
+                source_engine: "github_issues".to_string(),
+                metadata: ResultMetadata::Issue(crate::core::source_card::IssueMetadata {
+                    updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                    ..Default::default()
+                }),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("test");
+        let resp = adapter.web_search(&req, 10, 50).await;
+        for card in &resp.results {
+            assert!(!card.fetched, "web_search cards must have fetched=false");
+        }
     }
 }

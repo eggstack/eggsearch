@@ -638,8 +638,9 @@ async fn provider_status_with_mixed_enabled_disabled() {
     ));
     let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
     // provider_status lists KNOWN_PROVIDERS (duckduckgo, brave, startpage,
-    // yahoo, mojeek, searxng, brave_api), not mock engine names. The mock
-    // engines aren't in that list.
+    // yahoo, mojeek, searxng, brave_api, github_code, github_issues,
+    // github_releases), not mock engine names. The mock engines aren't
+    // in that list.
     let arr = v["providers"].as_array().unwrap();
     let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
     assert!(ids.contains(&"duckduckgo"));
@@ -650,9 +651,11 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"searxng"));
     assert!(ids.contains(&"brave_api"));
     assert!(ids.contains(&"github_code"));
+    assert!(ids.contains(&"github_issues"));
+    assert!(ids.contains(&"github_releases"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 8);
+    assert_eq!(ids.len(), 10);
 }
 
 #[cfg(feature = "mock")]

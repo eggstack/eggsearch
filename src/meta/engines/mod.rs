@@ -9,6 +9,8 @@ pub mod brave_api;
 pub mod duckduckgo;
 pub mod error;
 pub mod github_code;
+pub mod github_issues;
+pub mod github_releases;
 pub mod models;
 pub mod mojeek;
 pub mod normalizer;
@@ -75,6 +77,18 @@ pub struct BraveApiEngine {
 }
 
 pub struct GithubCodeEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+pub struct GithubIssuesEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+pub struct GithubReleasesEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: Option<String>,
@@ -222,6 +236,56 @@ impl SearchEngine for GithubCodeEngine {
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             github_code::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GithubIssuesEngine {
+    fn name(&self) -> &'static str {
+        "github_issues"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            github_issues::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GithubReleasesEngine {
+    fn name(&self) -> &'static str {
+        "github_releases"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            github_releases::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),

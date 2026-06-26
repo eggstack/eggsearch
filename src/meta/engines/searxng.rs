@@ -117,6 +117,7 @@ fn convert(raw: Vec<SearxngResult>, max_results: usize) -> Vec<SearchResult> {
             url,
             snippet,
             source_engine: ENGINE.to_string(),
+            metadata: Default::default(),
         });
     }
     out

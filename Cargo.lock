@@ -823,6 +823,7 @@ name = "eggsearch"
 version = "0.3.2"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "dirs",
  "ego-tree",
