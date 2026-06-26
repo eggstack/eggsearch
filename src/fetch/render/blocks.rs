@@ -1,5 +1,6 @@
 use ego_tree::NodeRef;
 use scraper::{ElementRef, Html, Selector};
+use url::Url;
 
 use crate::core::document::{BlockKind, DocumentOutlineEntry, RenderedBlock};
 
@@ -11,6 +12,8 @@ pub struct RenderedBlocks {
     pub outline: Vec<DocumentOutlineEntry>,
     /// Whether the total text exceeded `max_chars` and was truncated.
     pub text_truncated: bool,
+    /// Whether the block list was truncated (exceeded max_chars).
+    pub block_truncated: bool,
 }
 
 /// Elements whose content is always skipped.
@@ -37,8 +40,9 @@ fn normalize_language(lang: &str) -> String {
 /// Returns `(title, description, rendered_blocks, warnings, non_utf8)`.
 pub fn render_blocks(
     html: &[u8],
-    _base_url: &str,
+    base_url: &str,
     max_chars: usize,
+    markdown: bool,
 ) -> (
     Option<String>,
     Option<String>,
@@ -46,7 +50,7 @@ pub fn render_blocks(
     Vec<String>,
     bool,
 ) {
-    let (html_str, warnings, non_utf8) = decode_html(html);
+    let (html_str, mut warnings, non_utf8) = decode_html(html);
     let document = Html::parse_document(&html_str);
 
     let title = extract_title(&document);
@@ -56,10 +60,54 @@ pub fn render_blocks(
     let mut outline = Vec::new();
 
     let root = select_content_root(&document);
-    walk_element(root, &mut blocks, &mut outline);
+    walk_element(
+        root,
+        &mut blocks,
+        &mut outline,
+        base_url,
+        &mut warnings,
+        markdown,
+    );
+
+    // Block-boundary-aware truncation: walk blocks, accumulate chars,
+    // and truncate when the budget is exhausted.
+    let mut char_budget = max_chars;
+    let mut block_truncated = false;
+    let mut last_valid = blocks.len();
+    for (i, block) in blocks.iter().enumerate() {
+        let block_chars = block.text.chars().count();
+        if block_chars <= char_budget {
+            char_budget -= block_chars;
+        } else {
+            // Budget exhausted. If the block is a code block, try to
+            // snap to the nearest newline boundary within the budget.
+            if block.kind == BlockKind::Code && char_budget > 0 {
+                let truncated: String = block.text.chars().take(char_budget).collect();
+                if let Some(last_nl) = truncated.rfind('\n') {
+                    // Snap to line boundary if we have at least a few
+                    // chars of the line; otherwise keep what we have.
+                    if last_nl > char_budget / 2 {
+                        blocks[i].text = truncated[..last_nl].to_string();
+                        last_valid = i + 1;
+                        block_truncated = true;
+                        break;
+                    }
+                }
+            }
+            last_valid = i;
+            block_truncated = true;
+            break;
+        }
+    }
+    blocks.truncate(last_valid);
+
+    // If we truncated, emit a warning.
+    if block_truncated {
+        warnings.push("content truncated at block boundary".to_string());
+    }
 
     let total_chars: usize = blocks.iter().map(|b| b.text.chars().count()).sum();
-    let text_truncated = total_chars > max_chars;
+    let text_truncated = total_chars > max_chars || block_truncated;
 
     (
         title,
@@ -68,6 +116,7 @@ pub fn render_blocks(
             blocks,
             outline,
             text_truncated,
+            block_truncated,
         },
         warnings,
         non_utf8,
@@ -136,6 +185,9 @@ fn walk_element(
     element: ElementRef,
     blocks: &mut Vec<RenderedBlock>,
     outline: &mut Vec<DocumentOutlineEntry>,
+    base_url: &str,
+    warnings: &mut Vec<String>,
+    markdown: bool,
 ) {
     for child in element.children() {
         let child_elem = match ElementRef::wrap(child) {
@@ -151,7 +203,7 @@ fn walk_element(
         match tag {
             "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                 let level = tag[1..].parse().unwrap_or(1);
-                let text = collect_inline_text(child);
+                let text = collect_inline_text(child, markdown, base_url);
                 let anchor = child_elem.value().id().map(|s| s.to_string()).or_else(|| {
                     if text.is_empty() {
                         None
@@ -180,7 +232,7 @@ fn walk_element(
                 });
             }
             "p" => {
-                let text = collect_inline_text(child);
+                let text = collect_inline_text(child, markdown, base_url);
                 if !text.is_empty() {
                     blocks.push(RenderedBlock {
                         kind: BlockKind::Paragraph,
@@ -209,7 +261,12 @@ fn walk_element(
                 });
             }
             "table" => {
-                let text = render_table_text(&child_elem);
+                let (text, irregular) = render_table_text(&child_elem);
+                if irregular {
+                    warnings.push(
+                        "table has irregular row lengths; rendering may be incomplete".to_string(),
+                    );
+                }
                 blocks.push(RenderedBlock {
                     kind: BlockKind::Table,
                     text,
@@ -222,7 +279,7 @@ fn walk_element(
                 });
             }
             "blockquote" => {
-                let text = collect_inline_text(child);
+                let text = collect_inline_text(child, markdown, base_url);
                 if !text.is_empty() {
                     blocks.push(RenderedBlock {
                         kind: BlockKind::BlockQuote,
@@ -237,7 +294,7 @@ fn walk_element(
                 }
             }
             "dl" => {
-                render_definition_list(&child_elem, blocks);
+                render_definition_list(&child_elem, blocks, base_url, markdown);
             }
             "hr" => {
                 blocks.push(RenderedBlock {
@@ -252,19 +309,25 @@ fn walk_element(
                 });
             }
             "ul" | "ol" => {
-                render_list(&child_elem, blocks);
+                render_list(&child_elem, blocks, base_url, markdown);
             }
             _ => {
-                walk_element(child_elem, blocks, outline);
+                walk_element(child_elem, blocks, outline, base_url, warnings, markdown);
             }
         }
     }
 }
 
 /// Collect inline text from a node, normalizing whitespace.
-fn collect_inline_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
+/// When `markdown` is true, `<code>` is wrapped in backticks and
+/// `<a>` elements produce `[text](href)` Markdown links.
+fn collect_inline_text<'a>(
+    node: NodeRef<'a, scraper::Node>,
+    markdown: bool,
+    base_url: &str,
+) -> String {
     let mut parts = Vec::new();
-    collect_text_parts(node, &mut parts);
+    collect_text_parts(node, &mut parts, markdown, base_url);
     let text = parts.join("");
     text.split_whitespace()
         .collect::<Vec<_>>()
@@ -273,7 +336,12 @@ fn collect_inline_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
         .to_string()
 }
 
-fn collect_text_parts<'a>(node: NodeRef<'a, scraper::Node>, parts: &mut Vec<String>) {
+fn collect_text_parts<'a>(
+    node: NodeRef<'a, scraper::Node>,
+    parts: &mut Vec<String>,
+    markdown: bool,
+    base_url: &str,
+) {
     if let Some(text) = node.value().as_text() {
         let s = text.trim();
         if !s.is_empty() {
@@ -283,8 +351,29 @@ fn collect_text_parts<'a>(node: NodeRef<'a, scraper::Node>, parts: &mut Vec<Stri
         if should_skip(&elem) {
             return;
         }
+        let tag = elem.value().name();
+        if markdown && tag == "code" {
+            // Inline code: wrap in backticks.
+            let inner = collect_raw_text(node).trim().to_string();
+            if !inner.is_empty() {
+                parts.push(format!("`{}`", inner));
+            }
+            return;
+        }
+        if markdown && tag == "a" {
+            // Inline link: produce [text](url) Markdown syntax.
+            let href = elem.value().attr("href").unwrap_or("");
+            let link_text = collect_raw_text(node).trim().to_string();
+            if !link_text.is_empty() && !href.is_empty() {
+                let resolved = resolve_url(href, base_url);
+                parts.push(format!("[{}]({})", link_text, resolved));
+            } else if !link_text.is_empty() {
+                parts.push(link_text);
+            }
+            return;
+        }
         for child in node.children() {
-            collect_text_parts(child, parts);
+            collect_text_parts(child, parts, markdown, base_url);
         }
     }
 }
@@ -333,11 +422,11 @@ fn detect_language(elem: ElementRef) -> Option<String> {
     None
 }
 
-fn render_list(list: &ElementRef, blocks: &mut Vec<RenderedBlock>) {
+fn render_list(list: &ElementRef, blocks: &mut Vec<RenderedBlock>, base_url: &str, markdown: bool) {
     for child in list.children() {
         if let Some(li) = ElementRef::wrap(child) {
             if li.value().name() == "li" {
-                let text = collect_inline_text(child);
+                let text = collect_inline_text(child, markdown, base_url);
                 if !text.is_empty() {
                     blocks.push(RenderedBlock {
                         kind: BlockKind::ListItem,
@@ -355,7 +444,7 @@ fn render_list(list: &ElementRef, blocks: &mut Vec<RenderedBlock>) {
                     if let Some(nested_elem) = ElementRef::wrap(nested_child) {
                         let tag = nested_elem.value().name();
                         if tag == "ul" || tag == "ol" {
-                            render_list(&nested_elem, blocks);
+                            render_list(&nested_elem, blocks, base_url, markdown);
                         }
                     }
                 }
@@ -364,7 +453,7 @@ fn render_list(list: &ElementRef, blocks: &mut Vec<RenderedBlock>) {
     }
 }
 
-fn render_table_text(table: &ElementRef) -> String {
+fn render_table_text(table: &ElementRef) -> (String, bool) {
     let mut rows = Vec::new();
 
     if let Ok(tr_sel) = Selector::parse("tr") {
@@ -374,7 +463,7 @@ fn render_table_text(table: &ElementRef) -> String {
                 if let Some(cell) = ElementRef::wrap(child) {
                     let tag = cell.value().name();
                     if tag == "td" || tag == "th" {
-                        let text = collect_inline_text(child);
+                        let text = collect_inline_text(child, false, "");
                         cells.push(text);
                     }
                 }
@@ -386,10 +475,11 @@ fn render_table_text(table: &ElementRef) -> String {
     }
 
     if rows.is_empty() {
-        return collect_inline_text(**table);
+        return (collect_inline_text(**table, false, ""), false);
     }
 
     let max_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let irregular = rows.iter().any(|r| r.len() != max_cols);
     let mut lines = Vec::new();
 
     for (i, row) in rows.iter().enumerate() {
@@ -408,10 +498,15 @@ fn render_table_text(table: &ElementRef) -> String {
         }
     }
 
-    lines.join("\n")
+    (lines.join("\n"), irregular)
 }
 
-fn render_definition_list(dl: &ElementRef, blocks: &mut Vec<RenderedBlock>) {
+fn render_definition_list(
+    dl: &ElementRef,
+    blocks: &mut Vec<RenderedBlock>,
+    base_url: &str,
+    markdown: bool,
+) {
     let mut current_term = String::new();
 
     for child in dl.children() {
@@ -419,10 +514,10 @@ fn render_definition_list(dl: &ElementRef, blocks: &mut Vec<RenderedBlock>) {
             let tag = elem.value().name();
             match tag {
                 "dt" => {
-                    current_term = collect_inline_text(child);
+                    current_term = collect_inline_text(child, markdown, base_url);
                 }
                 "dd" => {
-                    let definition = collect_inline_text(child);
+                    let definition = collect_inline_text(child, markdown, base_url);
                     let text = if current_term.is_empty() {
                         definition
                     } else if definition.is_empty() {
@@ -468,6 +563,20 @@ fn make_slug(text: &str) -> String {
         .join("-")
 }
 
+/// Resolve a possibly-relative URL against a base URL.
+fn resolve_url(href: &str, base_url: &str) -> String {
+    // If the href is already absolute, return it directly.
+    if href.starts_with("http://") || href.starts_with("https://") {
+        return href.to_string();
+    }
+    if let Ok(base) = Url::parse(base_url) {
+        if let Ok(resolved) = base.join(href) {
+            return resolved.to_string();
+        }
+    }
+    href.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -475,7 +584,7 @@ mod tests {
     #[test]
     fn render_blocks_extracts_title() {
         let html = b"<!DOCTYPE html><html><head><title>My Page</title></head><body><p>content</p></body></html>";
-        let (title, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (title, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         assert_eq!(title, Some("My Page".to_string()));
         assert!(!rendered.blocks.is_empty());
     }
@@ -483,14 +592,14 @@ mod tests {
     #[test]
     fn render_blocks_extracts_description() {
         let html = b"<!DOCTYPE html><html><head><meta name=\"description\" content=\"A test page\"></head><body></body></html>";
-        let (_, desc, _, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (_, desc, _, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         assert_eq!(desc, Some("A test page".to_string()));
     }
 
     #[test]
     fn render_blocks_creates_heading_blocks() {
         let html = b"<!DOCTYPE html><html><body><h1>Title</h1><p>text</p></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         assert!(rendered.blocks.len() >= 2);
         assert_eq!(rendered.blocks[0].kind, BlockKind::Heading);
         assert_eq!(rendered.blocks[0].text, "Title");
@@ -500,7 +609,7 @@ mod tests {
     #[test]
     fn render_blocks_creates_paragraph_blocks() {
         let html = b"<!DOCTYPE html><html><body><p>hello</p><p>world</p></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         assert_eq!(rendered.blocks.len(), 2);
         assert!(rendered
             .blocks
@@ -511,7 +620,7 @@ mod tests {
     #[test]
     fn render_blocks_skips_script_and_style() {
         let html = b"<!DOCTYPE html><html><body><p>visible</p><script>alert('x')</script><style>body{}</style><p>also visible</p></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         let text: String = rendered
             .blocks
             .iter()
@@ -527,7 +636,7 @@ mod tests {
     #[test]
     fn render_blocks_skips_nav_footer_header_aside() {
         let html = b"<!DOCTYPE html><html><body><header>top</header><nav>links</nav><main><p>content</p></main><aside>side</aside><footer>bottom</footer></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         let text: String = rendered
             .blocks
             .iter()
@@ -545,7 +654,7 @@ mod tests {
     fn render_blocks_populates_outline() {
         let html =
             b"<!DOCTYPE html><html><body><h1>Intro</h1><h2>Details</h2><p>text</p></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         assert_eq!(rendered.outline.len(), 2);
         assert_eq!(rendered.outline[0].level, 1);
         assert_eq!(rendered.outline[0].title, "Intro");
@@ -556,7 +665,7 @@ mod tests {
     #[test]
     fn render_blocks_code_block_detects_language() {
         let html = b"<!DOCTYPE html><html><body><pre><code class=\"language-rust\">fn main() {}</code></pre></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         assert_eq!(rendered.blocks[0].kind, BlockKind::Code);
         assert_eq!(rendered.blocks[0].language, Some("rust".to_string()));
     }
@@ -564,14 +673,14 @@ mod tests {
     #[test]
     fn render_blocks_text_truncation() {
         let html = b"<!DOCTYPE html><html><body><p>short</p></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 3);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 3, false);
         assert!(rendered.text_truncated);
     }
 
     #[test]
     fn render_blocks_no_truncation_within_limit() {
         let html = b"<!DOCTYPE html><html><body><p>short</p></body></html>";
-        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 1000);
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 1000, false);
         assert!(!rendered.text_truncated);
     }
 
@@ -585,7 +694,8 @@ mod tests {
     #[test]
     fn non_utf8_body_emits_warning() {
         let html: &[u8] = b"<html><body><p>before</p>\xff\xfe<p>after</p></body></html>";
-        let (_, _, _, warnings, non_utf8) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, _, warnings, non_utf8) =
+            render_blocks(html, "https://example.com/", 10000, false);
         assert!(non_utf8);
         assert!(!warnings.is_empty());
     }
@@ -593,8 +703,107 @@ mod tests {
     #[test]
     fn valid_utf8_no_warnings() {
         let html = b"<!DOCTYPE html><html><body><p>hello</p></body></html>";
-        let (_, _, _, warnings, non_utf8) = render_blocks(html, "https://example.com/", 10000);
+        let (_, _, _, warnings, non_utf8) =
+            render_blocks(html, "https://example.com/", 10000, false);
         assert!(!non_utf8);
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn render_blocks_code_whitespace_preserved() {
+        let html = b"<pre><code>line1\n  line2\n    line3</code></pre>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert_eq!(rendered.blocks[0].kind, BlockKind::Code);
+        assert!(rendered.blocks[0].text.contains("line1"));
+        assert!(rendered.blocks[0].text.contains("  line2"));
+        assert!(rendered.blocks[0].text.contains("    line3"));
+        assert!(rendered.blocks[0].text.contains('\n'));
+    }
+
+    #[test]
+    fn render_blocks_regular_table() {
+        let html = b"<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>";
+        let (_, _, rendered, warnings, _) =
+            render_blocks(html, "https://example.com/", 10000, false);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert_eq!(rendered.blocks[0].kind, BlockKind::Table);
+        assert!(rendered.blocks[0].text.contains("| A | B |"));
+        assert!(rendered.blocks[0].text.contains("| 1 | 2 |"));
+        assert!(rendered.blocks[0].text.contains("---"));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn render_blocks_irregular_table_warns() {
+        let html =
+            b"<table><tr><th>A</th><th>B</th><th>C</th></tr><tr><td>1</td><td>2</td></tr></table>";
+        let (_, _, rendered, warnings, _) =
+            render_blocks(html, "https://example.com/", 10000, false);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert_eq!(rendered.blocks[0].kind, BlockKind::Table);
+        assert!(warnings.iter().any(|w| w.contains("irregular row lengths")));
+    }
+
+    #[test]
+    fn render_blocks_blockquote() {
+        let html = b"<blockquote><p>quoted text</p></blockquote>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert_eq!(rendered.blocks[0].kind, BlockKind::BlockQuote);
+        assert!(rendered.blocks[0].text.contains("quoted text"));
+    }
+
+    #[test]
+    fn render_blocks_inline_code_markdown() {
+        let html = b"<p>Use <code>fn main()</code> to start.</p>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, true);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert!(rendered.blocks[0].text.contains("`fn main()`"));
+        assert!(rendered.blocks[0].text.contains("Use"));
+        assert!(rendered.blocks[0].text.contains("to start"));
+    }
+
+    #[test]
+    fn render_blocks_inline_code_text_mode_no_backticks() {
+        let html = b"<p>Use <code>fn main()</code> to start.</p>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert!(rendered.blocks[0].text.contains("fn main()"));
+        assert!(!rendered.blocks[0].text.contains("`"));
+    }
+
+    #[test]
+    fn render_blocks_inline_link_markdown() {
+        let html = b"<p>See <a href=\"/docs/start\">the docs</a> for more.</p>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/page", 10000, true);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert!(rendered.blocks[0]
+            .text
+            .contains("[the docs](https://example.com/docs/start)"));
+    }
+
+    #[test]
+    fn render_blocks_inline_link_absolute_url() {
+        let html = "<p>Visit <a href=\"https://other.com/x\">other site</a>.</p>".as_bytes();
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, true);
+        assert!(rendered.blocks[0]
+            .text
+            .contains("[other site](https://other.com/x)"));
+    }
+
+    #[test]
+    fn render_blocks_block_boundary_truncation() {
+        // Two paragraphs: "aaa" (3 chars) + "bbb" (3 chars). Truncate at 4 chars.
+        // Should keep first block (3 chars) and drop second (would exceed budget).
+        let html = b"<p>aaa</p><p>bbb</p>";
+        let (_, _, rendered, warnings, _) = render_blocks(html, "https://example.com/", 4, false);
+        assert!(rendered.block_truncated);
+        assert!(rendered.text_truncated);
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("truncated at block boundary")));
+        assert_eq!(rendered.blocks.len(), 1);
+        assert_eq!(rendered.blocks[0].text, "aaa");
     }
 }

@@ -68,6 +68,9 @@ enum Commands {
         /// Extract metadata only, not body text.
         #[arg(long)]
         metadata_only: bool,
+        /// Render as Markdown instead of plain text.
+        #[arg(long)]
+        markdown: bool,
         /// Include extracted links in output.
         #[arg(long = "include-links", alias = "links")]
         include_links: bool,
@@ -107,6 +110,7 @@ async fn main() -> Result<()> {
             max_chars,
             timeout_ms,
             metadata_only,
+            markdown,
             include_links,
             json,
         } => {
@@ -116,6 +120,7 @@ async fn main() -> Result<()> {
                 max_chars,
                 timeout_ms,
                 metadata_only,
+                markdown,
                 include_links,
                 json,
             )

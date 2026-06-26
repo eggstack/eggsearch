@@ -153,4 +153,53 @@ mod tests {
         let text = render_blocks_text(&blocks);
         assert_eq!(text, "---");
     }
+
+    #[test]
+    fn text_blockquote() {
+        let blocks = vec![RenderedBlock {
+            kind: BlockKind::BlockQuote,
+            text: "quoted text".to_string(),
+            level: None,
+            anchor: None,
+            language: None,
+            line_start: None,
+            line_end: None,
+            page: None,
+        }];
+        let text = render_blocks_text(&blocks);
+        assert!(text.contains("> quoted text"));
+    }
+
+    #[test]
+    fn text_table() {
+        let blocks = vec![RenderedBlock {
+            kind: BlockKind::Table,
+            text: "| A | B |\n| --- | --- |\n| 1 | 2 |".to_string(),
+            level: None,
+            anchor: None,
+            language: None,
+            line_start: None,
+            line_end: None,
+            page: None,
+        }];
+        let text = render_blocks_text(&blocks);
+        assert!(text.contains("| A | B |"));
+        assert!(text.contains("| 1 | 2 |"));
+    }
+
+    #[test]
+    fn text_code_block_preserves_whitespace() {
+        let blocks = vec![RenderedBlock {
+            kind: BlockKind::Code,
+            text: "line1\n  line2\n    line3".to_string(),
+            level: None,
+            anchor: None,
+            language: Some("python".to_string()),
+            line_start: None,
+            line_end: None,
+            page: None,
+        }];
+        let text = render_blocks_text(&blocks);
+        assert!(text.contains("```python\nline1\n  line2\n    line3\n```"));
+    }
 }

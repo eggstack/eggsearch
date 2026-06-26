@@ -11,12 +11,14 @@ use eggsearch::fetch::FetchClient;
 /// returns more so that programmatic consumers can pick from a richer set.
 const CLI_DISPLAY_MAX_LINKS: usize = 20;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     cfg: &AppConfig,
     url: &str,
     max_chars: Option<usize>,
     timeout_ms: Option<u64>,
     metadata_only: bool,
+    markdown: bool,
     include_links: bool,
     as_json: bool,
 ) -> Result<()> {
@@ -37,6 +39,8 @@ pub async fn run(
 
     let extract_mode = if metadata_only {
         ExtractMode::MetadataOnly
+    } else if markdown {
+        ExtractMode::Markdown
     } else {
         ExtractMode::Text
     };
@@ -121,6 +125,7 @@ mod tests {
             false,
             false,
             false,
+            false,
         )
         .await
         .expect_err("expected max_chars validation error");
@@ -134,9 +139,18 @@ mod tests {
     async fn run_disabled_by_config_returns_error() {
         let mut cfg = AppConfig::default();
         cfg.fetch.enabled = false;
-        let err = run(&cfg, "https://example.com", None, None, false, false, false)
-            .await
-            .expect_err("expected fetch-disabled error");
+        let err = run(
+            &cfg,
+            "https://example.com",
+            None,
+            None,
+            false,
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect_err("expected fetch-disabled error");
         assert!(err.to_string().contains("disabled"), "got: {err}");
         assert!(err.to_string().contains("[fetch].enabled"), "got: {err}");
     }

@@ -141,4 +141,53 @@ mod tests {
         assert!(md.contains("- A"));
         assert!(md.contains("- B"));
     }
+
+    #[test]
+    fn markdown_blockquote() {
+        let blocks = vec![RenderedBlock {
+            kind: BlockKind::BlockQuote,
+            text: "quoted text".to_string(),
+            level: None,
+            anchor: None,
+            language: None,
+            line_start: None,
+            line_end: None,
+            page: None,
+        }];
+        let md = render_blocks_markdown(&blocks);
+        assert!(md.contains("> quoted text"));
+    }
+
+    #[test]
+    fn markdown_table() {
+        let blocks = vec![RenderedBlock {
+            kind: BlockKind::Table,
+            text: "| A | B |\n| --- | --- |\n| 1 | 2 |".to_string(),
+            level: None,
+            anchor: None,
+            language: None,
+            line_start: None,
+            line_end: None,
+            page: None,
+        }];
+        let md = render_blocks_markdown(&blocks);
+        assert!(md.contains("| A | B |"));
+        assert!(md.contains("| 1 | 2 |"));
+    }
+
+    #[test]
+    fn markdown_code_block_preserves_whitespace() {
+        let blocks = vec![RenderedBlock {
+            kind: BlockKind::Code,
+            text: "line1\n  line2\n    line3".to_string(),
+            level: None,
+            anchor: None,
+            language: Some("rust".to_string()),
+            line_start: None,
+            line_end: None,
+            page: None,
+        }];
+        let md = render_blocks_markdown(&blocks);
+        assert!(md.contains("```rust\nline1\n  line2\n    line3\n```"));
+    }
 }

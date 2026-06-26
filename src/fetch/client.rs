@@ -225,7 +225,7 @@ impl FetchClient {
             if extract_mode == ExtractMode::MetadataOnly {
                 if is_html {
                     let (t, d, _blocks, w, _) =
-                        render::blocks::render_blocks(&body, &final_url, max_chars);
+                        render::blocks::render_blocks(&body, &final_url, max_chars, false);
                     let links = if include_links {
                         extract_links_from_html(&body, &final_url)
                     } else {
@@ -236,8 +236,9 @@ impl FetchClient {
                     (None, None, None, Vec::new(), Vec::new(), false)
                 }
             } else if is_html {
+                let is_markdown = extract_mode == ExtractMode::Markdown;
                 let (t, d, rendered, w, _non_utf8) =
-                    render::blocks::render_blocks(&body, &final_url, max_chars);
+                    render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown);
                 let links = if include_links {
                     extract_links_from_html(&body, &final_url)
                 } else {
@@ -355,13 +356,15 @@ impl FetchClient {
                 })
                 .filter(|e| !e.is_empty());
 
-            let (blocks, outline, text_chars) = if is_html {
+            let (blocks, outline, text_chars, block_truncated) = if is_html {
                 // Use the new renderer for HTML
+                let is_markdown = extract_mode == ExtractMode::Markdown;
                 let (_t, _d, rendered, _w, _non_utf8) =
-                    render::blocks::render_blocks(&body, &final_url, max_chars);
+                    render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown);
                 // text_chars is computed from the truncated text (raw_text),
                 // not from the full blocks.
                 let text_chars = raw_text.as_ref().map_or(0, |t| t.chars().count());
+                let block_truncated = rendered.block_truncated;
 
                 // Apply Tier 1 (strip + bound) to each block's text
                 let mut blocks = rendered.blocks;
@@ -388,7 +391,7 @@ impl FetchClient {
                     }
                 }
 
-                (blocks, outline, text_chars)
+                (blocks, outline, text_chars, block_truncated)
             } else if let Some(ref t) = raw_text {
                 // Plain text path: single RawText block
                 let (stripped, _) = strip_control_chars(t);
@@ -418,9 +421,9 @@ impl FetchClient {
                     });
                 }
 
-                (blocks, outline, text_chars)
+                (blocks, outline, text_chars, false)
             } else {
-                (Vec::new(), Vec::new(), 0)
+                (Vec::new(), Vec::new(), 0, false)
             };
 
             // Build a single chunk from all blocks.
@@ -446,10 +449,14 @@ impl FetchClient {
             Some(FetchDocument {
                 kind: doc_kind,
                 render_format: RenderFormat::AgentBlocksV1,
-                text_format: "plain".to_string(),
+                text_format: if extract_mode == ExtractMode::Markdown {
+                    "markdown".to_string()
+                } else {
+                    "plain".to_string()
+                },
                 text_chars_returned: text_chars,
                 text_truncated,
-                block_truncated: false,
+                block_truncated,
                 link_truncated: false,
                 metadata: Some(FetchRenderMetadata {
                     bytes_read: Some(body.len()),
