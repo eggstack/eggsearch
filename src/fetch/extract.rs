@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use scraper::{Html, Selector};
 
-use crate::core::fetch::ExtractedLink;
+use crate::core::fetch::{ExtractedLink, LinkKind};
 
 /// Maximum number of links the extractor will collect from a single
 /// page. A defensive upper bound to keep response payloads bounded
@@ -15,6 +15,177 @@ pub const MAX_LINKS: usize = 100;
 /// when the response body cannot be decoded as UTF-8; the extractor
 /// falls back to a lossy decode so partial text is still returned.
 pub const NON_UTF8_WARNING: &str = "body is not valid UTF-8; extraction may be incomplete";
+
+/// Result of link extraction, including the links and metadata about
+/// the extraction process.
+#[derive(Clone, Debug)]
+pub struct LinkExtractionResult {
+    /// Extracted and classified links.
+    pub links: Vec<ExtractedLink>,
+    /// Total number of `<a href>` links encountered in the HTML.
+    pub total_seen: usize,
+    /// Whether the link list was truncated at `MAX_LINKS`.
+    pub truncated: bool,
+}
+
+/// Classifies a link based on URL heuristics relative to the page URL.
+fn classify_link(page_url: &url::Url, link_url: &url::Url) -> LinkKind {
+    let page_host = page_url.host_str().unwrap_or("");
+    let link_host = link_url.host_str().unwrap_or("");
+
+    // Same-page anchor: same host + path + query, only fragment differs.
+    if page_host == link_host
+        && page_url.path() == link_url.path()
+        && page_url.query() == link_url.query()
+    {
+        return LinkKind::SamePageAnchor;
+    }
+
+    let path = link_url.path().to_lowercase();
+
+    // PDF
+    if path.ends_with(".pdf") {
+        return LinkKind::Pdf;
+    }
+
+    // Image
+    if path.ends_with(".png")
+        || path.ends_with(".jpg")
+        || path.ends_with(".jpeg")
+        || path.ends_with(".gif")
+        || path.ends_with(".svg")
+        || path.ends_with(".webp")
+        || path.ends_with(".ico")
+    {
+        return LinkKind::Image;
+    }
+
+    // SourceCode
+    if path.ends_with(".rs")
+        || path.ends_with(".py")
+        || path.ends_with(".js")
+        || path.ends_with(".ts")
+        || path.ends_with(".jsx")
+        || path.ends_with(".tsx")
+        || path.ends_with(".go")
+        || path.ends_with(".c")
+        || path.ends_with(".cpp")
+        || path.ends_with(".h")
+        || path.ends_with(".java")
+        || path.ends_with(".rb")
+        || path.ends_with(".json")
+        || path.ends_with(".toml")
+        || path.ends_with(".yaml")
+        || path.ends_with(".yml")
+        || path.ends_with(".xml")
+        || path.ends_with(".css")
+        || path.ends_with(".scss")
+        || path.ends_with(".sh")
+        || path.ends_with(".bash")
+    {
+        return LinkKind::SourceCode;
+    }
+
+    // Download
+    if path.ends_with(".zip")
+        || path.ends_with(".tar")
+        || path.ends_with(".gz")
+        || path.ends_with(".bz2")
+        || path.ends_with(".xz")
+        || path.ends_with(".7z")
+        || path.ends_with(".rar")
+        || path.ends_with(".exe")
+        || path.ends_with(".dmg")
+        || path.ends_with(".msi")
+        || path.ends_with(".deb")
+        || path.ends_with(".rpm")
+        || path.ends_with(".apk")
+        || path.ends_with(".war")
+        || path.ends_with(".jar")
+    {
+        return LinkKind::Download;
+    }
+
+    // Feed
+    if path.ends_with(".rss")
+        || path.ends_with(".atom")
+        || path.ends_with("/feed")
+        || path.ends_with("/rss")
+    {
+        return LinkKind::Feed;
+    }
+
+    let is_gh_or_gl = is_github_or_gitlab(link_host);
+
+    // Issue
+    if is_gh_or_gl && path.contains("/issues/") {
+        return LinkKind::Issue;
+    }
+
+    // PullRequest
+    if is_gh_or_gl && (path.contains("/pull/") || path.contains("/merge_requests/")) {
+        return LinkKind::PullRequest;
+    }
+
+    // Release
+    if is_gh_or_gl && (path.contains("/releases/") || path.contains("/tags/")) {
+        return LinkKind::Release;
+    }
+
+    // SecurityAdvisory
+    if path.contains("/advisories/") || path.contains("/security/") || path.contains("/ghsa/") {
+        return LinkKind::SecurityAdvisory;
+    }
+
+    // Documentation / ApiReference (check hosts first)
+    if is_docs_host(link_host) {
+        if path.contains("/api/") || path.contains("/api-reference/") {
+            return LinkKind::ApiReference;
+        }
+        return LinkKind::Documentation;
+    }
+
+    // Documentation by path
+    if is_docs_path(&path) {
+        return LinkKind::Documentation;
+    }
+
+    // SameDomain / External
+    if page_host == link_host {
+        LinkKind::SameDomain
+    } else {
+        LinkKind::External
+    }
+}
+
+/// Returns `true` if the host is a GitHub or GitLab domain.
+fn is_github_or_gitlab(host: &str) -> bool {
+    host == "github.com" || host == "gitlab.com"
+}
+
+/// Returns `true` if the host is a well-known documentation host.
+#[allow(clippy::nonminimal_bool)]
+fn is_docs_host(host: &str) -> bool {
+    host == "readthedocs.io"
+        || host.ends_with(".readthedocs.io")
+        || host == "docs.rs"
+        || host == "doc.rust-lang.org"
+        || host == "docs.python.org"
+        || host == "developer.mozilla.org"
+        || host == "pkg.go.dev"
+        || host == "docs.npmjs.com"
+        || host == "docs.docker.com"
+        || host == "docs.github.com"
+}
+
+/// Returns `true` if the path contains a documentation-like segment.
+fn is_docs_path(path: &str) -> bool {
+    path.contains("/docs/")
+        || path.contains("/documentation/")
+        || path.contains("/guide/")
+        || path.contains("/manual/")
+        || path.contains("/reference/")
+}
 
 /// HTML content extractor.
 pub struct HtmlExtractor<'a> {
@@ -31,10 +202,12 @@ impl<'a> HtmlExtractor<'a> {
     /// Extracts content from the HTML.
     ///
     /// Returns a tuple of (title, description, body_text, links,
-    /// warnings, text_truncated). The `warnings` vec is empty unless
-    /// a non-fatal condition (e.g. non-UTF-8 body) was encountered.
+    /// warnings, text_truncated, links_seen, links_truncated).
+    /// The `warnings` vec is empty unless a non-fatal condition
+    /// (e.g. non-UTF-8 body) was encountered.
     /// `text_truncated` is `true` when the extracted text exceeded
     /// `max_chars` and was clamped.
+    #[allow(clippy::type_complexity)]
     pub fn extract(
         &self,
         max_chars: usize,
@@ -45,6 +218,8 @@ impl<'a> HtmlExtractor<'a> {
         String,
         Vec<ExtractedLink>,
         Vec<String>,
+        bool,
+        usize,
         bool,
     ) {
         let (html_str, warnings) = match std::str::from_utf8(self.html) {
@@ -85,10 +260,11 @@ impl<'a> HtmlExtractor<'a> {
         let text_truncated = normalized.chars().count() > max_chars;
         let truncated_text: String = normalized.chars().take(max_chars).collect();
 
-        let links = if include_links {
-            extract_links(&document, self.base_url)
+        let (links, links_seen, links_truncated) = if include_links {
+            let result = extract_links(&document, self.base_url);
+            (result.links, result.total_seen, result.truncated)
         } else {
-            Vec::new()
+            (Vec::new(), 0, false)
         };
 
         (
@@ -98,6 +274,8 @@ impl<'a> HtmlExtractor<'a> {
             links,
             warnings,
             text_truncated,
+            links_seen,
+            links_truncated,
         )
     }
 }
@@ -136,35 +314,60 @@ fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String) {
     }
 }
 
-fn extract_links(document: &scraper::Html, base_url: &str) -> Vec<ExtractedLink> {
+fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResult {
     use url::Url;
 
     let selector = Selector::parse("a[href]").ok();
     let base = Url::parse(base_url).ok();
 
-    selector
+    let mut total_seen: usize = 0;
+    let mut truncated = false;
+
+    let links = selector
         .map(|sel| {
-            document
+            let collected: Vec<ExtractedLink> = document
                 .select(&sel)
                 .filter_map(|el| {
                     let href = el.value().attr("href")?;
                     let text = el.text().collect::<String>().trim().to_string();
-                    let resolved = base
-                        .as_ref()
-                        .and_then(|b| b.join(href).ok())
-                        .map(|u| u.to_string());
-                    resolved.map(|url| ExtractedLink { text, url })
+                    let rel = el
+                        .value()
+                        .attr("rel")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty());
+                    let page_url = base.as_ref()?;
+                    let url = page_url.join(href).ok()?;
+                    let same_domain = Some(page_url.host_str() == url.host_str());
+                    let link_kind = classify_link(page_url, &url);
+                    Some(ExtractedLink {
+                        text,
+                        url: url.to_string(),
+                        link_kind,
+                        rel,
+                        same_domain,
+                    })
                 })
                 .take(MAX_LINKS)
-                .collect()
+                .collect();
+            let selector_all = Selector::parse("a[href]").unwrap();
+            total_seen = document.select(&selector_all).count();
+            truncated = total_seen > MAX_LINKS;
+            collected
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    LinkExtractionResult {
+        links,
+        total_seen,
+        truncated,
+    }
 }
 
 /// Extracts content from HTML bytes.
 ///
 /// Returns a tuple of (title, description, body_text, links, warnings,
-/// text_truncated).
+/// text_truncated, links_seen, links_truncated).
+#[allow(clippy::type_complexity)]
 pub fn extract_content(
     html: &[u8],
     base_url: &str,
@@ -177,6 +380,8 @@ pub fn extract_content(
     Vec<ExtractedLink>,
     Vec<String>,
     bool,
+    usize,
+    bool,
 ) {
     let extractor = HtmlExtractor::new(html, base_url);
     extractor.extract(max_chars, include_links)
@@ -186,7 +391,7 @@ pub fn extract_content(
 ///
 /// Parses the HTML and extracts all `<a href>` links, resolving
 /// relative URLs against `base_url`.
-pub fn extract_links_from_html(html: &[u8], base_url: &str) -> Vec<ExtractedLink> {
+pub fn extract_links_from_html(html: &[u8], base_url: &str) -> LinkExtractionResult {
     let html_str = match std::str::from_utf8(html) {
         Ok(s) => Cow::Borrowed(s),
         Err(_) => Cow::Owned(String::from_utf8_lossy(html).into_owned()),
@@ -204,7 +409,7 @@ mod tests {
         let html =
             b"<!DOCTYPE html><html><head><title>Test Page</title></head><body></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (title, _, _, _, _, _) = extractor.extract(1000, false);
+        let (title, _, _, _, _, _, _, _) = extractor.extract(1000, false);
         assert_eq!(title, Some("Test Page".to_string()));
     }
 
@@ -212,7 +417,7 @@ mod tests {
     fn html_meta_description_extraction() {
         let html = b"<!DOCTYPE html><html><head><meta name=\"description\" content=\"Page description\"></head><body></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, desc, _, _, _, _) = extractor.extract(1000, false);
+        let (_, desc, _, _, _, _, _, _) = extractor.extract(1000, false);
         assert_eq!(desc, Some("Page description".to_string()));
     }
 
@@ -220,7 +425,7 @@ mod tests {
     fn html_truncation() {
         let html = b"<!DOCTYPE html><html><body><p>a b c d e f g h i j k l m n o p q r s t u v w x y z</p></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _, _, truncated) = extractor.extract(10, false);
+        let (_, _, text, _, _, truncated, _, _) = extractor.extract(10, false);
         assert!(text.chars().count() <= 10);
         assert!(truncated);
     }
@@ -229,7 +434,7 @@ mod tests {
     fn html_no_truncation_when_within_limit() {
         let html = b"<!DOCTYPE html><html><body><p>short</p></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _, _, truncated) = extractor.extract(1000, false);
+        let (_, _, text, _, _, truncated, _, _) = extractor.extract(1000, false);
         assert!(!truncated);
         assert!(text.contains("short"));
     }
@@ -238,7 +443,7 @@ mod tests {
     fn html_relative_link_resolution() {
         let html = b"<!DOCTYPE html><html><body><a href=\"/path\">Link</a></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/base/");
-        let (_, _, _, links, _, _) = extractor.extract(1000, true);
+        let (_, _, _, links, _, _, _, _) = extractor.extract(1000, true);
         assert!(!links.is_empty());
         assert_eq!(links[0].url, "https://example.com/path");
     }
@@ -260,7 +465,7 @@ mod tests {
             <p>after</p>\
         </body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _, _, _) = extractor.extract(1000, false);
+        let (_, _, text, _, _, _, _, _) = extractor.extract(1000, false);
         assert!(text.contains("visible"), "got: {text:?}");
         assert!(text.contains("after"), "got: {text:?}");
         assert!(!text.contains("alert"), "script content leaked: {text:?}");
@@ -281,7 +486,7 @@ mod tests {
             <footer>bottom chrome</footer>\
         </body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _, _, _) = extractor.extract(1000, false);
+        let (_, _, text, _, _, _, _, _) = extractor.extract(1000, false);
         assert!(text.contains("main content"), "got: {text:?}");
         assert!(!text.contains("top chrome"), "header leaked: {text:?}");
         assert!(!text.contains("nav links"), "nav leaked: {text:?}");
@@ -298,7 +503,7 @@ mod tests {
             <p>after</p>\
         </body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, text, _, _, _) = extractor.extract(1000, false);
+        let (_, _, text, _, _, _, _, _) = extractor.extract(1000, false);
         assert!(text.contains("before"), "got: {text:?}");
         assert!(text.contains("after"), "got: {text:?}");
         assert!(!text.contains("enable js"), "noscript leaked: {text:?}");
@@ -313,7 +518,7 @@ mod tests {
         // still be extractable.
         let html: &[u8] = b"<html><body><p>before</p>\xff\xfe<p>after</p></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (title, _, text, _, warnings, _) = extractor.extract(1000, false);
+        let (title, _, text, _, warnings, _, _, _) = extractor.extract(1000, false);
         assert!(
             warnings.iter().any(|w| w == NON_UTF8_WARNING),
             "expected non-UTF-8 warning, got: {warnings:?}"
@@ -329,7 +534,7 @@ mod tests {
     fn valid_utf8_body_has_no_warnings() {
         let html = b"<!DOCTYPE html><html><body><p>hello</p></body></html>";
         let extractor = HtmlExtractor::new(html, "https://example.com/");
-        let (_, _, _, _, warnings, _) = extractor.extract(1000, false);
+        let (_, _, _, _, warnings, _, _, _) = extractor.extract(1000, false);
         assert!(
             warnings.is_empty(),
             "expected no warnings, got: {warnings:?}"
@@ -343,5 +548,215 @@ mod tests {
             assert!(MAX_LINKS >= 1);
             assert!(MAX_LINKS <= 1000);
         }
+    }
+
+    #[test]
+    fn classify_same_page_anchor() {
+        let page = url::Url::parse("https://example.com/page?q=1#section").unwrap();
+        let link = url::Url::parse("https://example.com/page?q=1#other").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::SamePageAnchor);
+    }
+
+    #[test]
+    fn classify_pdf_extension() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://example.com/doc.pdf").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::Pdf);
+    }
+
+    #[test]
+    fn classify_image_extensions() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        for ext in &[".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico"] {
+            let url = format!("https://example.com/photo{}", ext);
+            let link = url::Url::parse(&url).unwrap();
+            assert_eq!(classify_link(&page, &link), LinkKind::Image);
+        }
+    }
+
+    #[test]
+    fn classify_source_code_extensions() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        for ext in &[
+            ".rs", ".py", ".js", ".ts", ".go", ".c", ".json", ".toml", ".yaml",
+        ] {
+            let url = format!("https://example.com/file{}", ext);
+            let link = url::Url::parse(&url).unwrap();
+            assert_eq!(classify_link(&page, &link), LinkKind::SourceCode);
+        }
+    }
+
+    #[test]
+    fn classify_download_extensions() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        for ext in &[".zip", ".tar", ".gz", ".exe", ".dmg", ".deb", ".rpm"] {
+            let url = format!("https://example.com/archive{}", ext);
+            let link = url::Url::parse(&url).unwrap();
+            assert_eq!(classify_link(&page, &link), LinkKind::Download);
+        }
+    }
+
+    #[test]
+    fn classify_feed_extensions() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let rss = url::Url::parse("https://example.com/feed.xml").unwrap();
+        // .rss extension
+        let rss_ext = url::Url::parse("https://example.com/blog.rss").unwrap();
+        let atom_ext = url::Url::parse("https://example.com/atom.xml").unwrap();
+        // /feed path
+        let feed_path = url::Url::parse("https://example.com/feed").unwrap();
+        let rss_path = url::Url::parse("https://example.com/rss").unwrap();
+        assert_eq!(classify_link(&page, &rss_ext), LinkKind::Feed);
+        assert_eq!(classify_link(&page, &feed_path), LinkKind::Feed);
+        assert_eq!(classify_link(&page, &rss_path), LinkKind::Feed);
+    }
+
+    #[test]
+    fn classify_github_issue() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://github.com/rust-lang/rust/issues/12345").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::Issue);
+    }
+
+    #[test]
+    fn classify_gitlab_merge_request() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://gitlab.com/group/project/merge_requests/42").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::PullRequest);
+    }
+
+    #[test]
+    fn classify_github_pull_request() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://github.com/rust-lang/rust/pull/99999").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::PullRequest);
+    }
+
+    #[test]
+    fn classify_github_release() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://github.com/rust-lang/rust/releases/tag/1.75").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::Release);
+    }
+
+    #[test]
+    fn classify_security_advisory() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let ghsa = url::Url::parse("https://github.com/advisories/GHSA-xxxx").unwrap();
+        let security = url::Url::parse("https://example.com/security/cve-2024-1234").unwrap();
+        let advisories = url::Url::parse("https://example.com/advisories/123").unwrap();
+        assert_eq!(classify_link(&page, &ghsa), LinkKind::SecurityAdvisory);
+        assert_eq!(classify_link(&page, &security), LinkKind::SecurityAdvisory);
+        assert_eq!(
+            classify_link(&page, &advisories),
+            LinkKind::SecurityAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_documentation_by_host() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let rtd = url::Url::parse("https://myproject.readthedocs.io/en/latest/").unwrap();
+        let docs_rs = url::Url::parse("https://docs.rs/serde/latest/serde/").unwrap();
+        let mdn = url::Url::parse("https://developer.mozilla.org/en-US/docs/Web").unwrap();
+        assert_eq!(classify_link(&page, &rtd), LinkKind::Documentation);
+        assert_eq!(classify_link(&page, &docs_rs), LinkKind::Documentation);
+        assert_eq!(classify_link(&page, &mdn), LinkKind::Documentation);
+    }
+
+    #[test]
+    fn classify_api_reference_by_host() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link =
+            url::Url::parse("https://docs.rs/serde/latest/serde/struct.Serializer.html").unwrap();
+        // docs.rs is a docs host but doesn't have /api/ in path, so Documentation.
+        assert_eq!(classify_link(&page, &link), LinkKind::Documentation);
+        let api_link =
+            url::Url::parse("https://docs.rs/crate/serde/latest/serde/api/struct.Foo.html")
+                .unwrap();
+        assert_eq!(classify_link(&page, &api_link), LinkKind::ApiReference);
+    }
+
+    #[test]
+    fn classify_documentation_by_path() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://example.com/docs/getting-started").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::Documentation);
+        let guide = url::Url::parse("https://example.com/guide/intro").unwrap();
+        assert_eq!(classify_link(&page, &guide), LinkKind::Documentation);
+    }
+
+    #[test]
+    fn classify_same_domain() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://example.com/about").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::SameDomain);
+    }
+
+    #[test]
+    fn classify_external() {
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://other.com/page").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::External);
+    }
+
+    #[test]
+    fn classify_link_populates_same_domain_field() {
+        let html = b"<!DOCTYPE html><html><body>\
+            <a href=\"/same\">same</a>\
+            <a href=\"https://other.com/\">other</a>\
+        </body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, _, links, _, _, _, _) = extractor.extract(1000, true);
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].same_domain, Some(true));
+        assert_eq!(links[0].link_kind, LinkKind::SameDomain);
+        assert_eq!(links[1].same_domain, Some(false));
+        assert_eq!(links[1].link_kind, LinkKind::External);
+    }
+
+    #[test]
+    fn classify_link_populates_rel_field() {
+        let html = b"<!DOCTYPE html><html><body>\
+            <a href=\"/page\" rel=\"nofollow\">link</a>\
+            <a href=\"/other\">plain</a>\
+        </body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, _, links, _, _, _, _) = extractor.extract(1000, true);
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].rel, Some("nofollow".to_string()));
+        assert_eq!(links[1].rel, None);
+    }
+
+    #[test]
+    fn extract_links_returns_total_seen_and_truncated() {
+        // Build HTML with exactly 3 links.
+        let html = b"<!DOCTYPE html><html><body>\
+            <a href=\"/a\">a</a>\
+            <a href=\"/b\">b</a>\
+            <a href=\"/c\">c</a>\
+        </body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, _, _, _, _, links_seen, links_truncated) = extractor.extract(1000, true);
+        assert_eq!(links_seen, 3);
+        assert!(!links_truncated);
+    }
+
+    #[test]
+    fn classify_github_not_issues_is_same_domain() {
+        // A GitHub link that is NOT /issues/ should not be Issue.
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link =
+            url::Url::parse("https://github.com/rust-lang/rust/blob/main/src/main.rs").unwrap();
+        // /blob/ is not /issues/, /pull/, /releases/, etc.
+        assert_eq!(classify_link(&page, &link), LinkKind::SourceCode);
+    }
+
+    #[test]
+    fn classify_non_github_issues_is_not_issue_kind() {
+        // Issues path on a non-GitHub/GitLab host should not be classified as Issue.
+        let page = url::Url::parse("https://example.com/").unwrap();
+        let link = url::Url::parse("https://example.com/issues/123").unwrap();
+        assert_eq!(classify_link(&page, &link), LinkKind::SameDomain);
     }
 }

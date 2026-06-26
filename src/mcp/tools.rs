@@ -298,6 +298,8 @@ pub async fn run_web_fetch(
                 "trust": "external_untrusted",
                 "text": resp.text,
                 "links": resp.links,
+                "links_seen": resp.links_seen,
+                "links_truncated": resp.links_truncated,
                 "warnings": resp.warnings,
                 "trust_markers": serde_json::to_value(&resp.trust_markers)
                     .unwrap_or(serde_json::json!({})),

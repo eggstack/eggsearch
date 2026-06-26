@@ -6,7 +6,7 @@ use futures::StreamExt;
 use reqwest::Client;
 
 use super::detect;
-use super::extract::extract_links_from_html;
+use super::extract::{extract_links_from_html, LinkExtractionResult};
 use super::limits::{validate_fetch_target, validate_url, FetchLimits};
 use super::render;
 use super::types::FetchError;
@@ -358,52 +358,85 @@ impl FetchClient {
                 trust: FetchTrust::ExternalUntrusted,
                 text: Some(text),
                 links: Vec::new(),
+                links_seen: None,
+                links_truncated: false,
                 warnings,
                 trust_markers,
                 document: Some(pdf_result.document),
             });
         }
 
-        let (mut title, mut description, mut text, links, extract_warnings, text_truncated) =
-            if extract_mode == ExtractMode::MetadataOnly {
-                if is_html {
-                    let (t, d, _blocks, w, _) =
-                        render::blocks::render_blocks(&body, &final_url, max_chars, false);
-                    let links = if include_links {
-                        extract_links_from_html(&body, &final_url)
-                    } else {
-                        Vec::new()
-                    };
-                    (t, d, None, links, w, false)
-                } else {
-                    (None, None, None, Vec::new(), Vec::new(), false)
-                }
-            } else if is_html {
-                let is_markdown = extract_mode == ExtractMode::Markdown;
-                let (t, d, rendered, w, _non_utf8) =
-                    render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown);
-                let links = if include_links {
+        let (
+            mut title,
+            mut description,
+            mut text,
+            links,
+            extract_warnings,
+            text_truncated,
+            links_seen,
+            links_truncated,
+        ) = if extract_mode == ExtractMode::MetadataOnly {
+            if is_html {
+                let (t, d, _blocks, w, _) =
+                    render::blocks::render_blocks(&body, &final_url, max_chars, false);
+                let LinkExtractionResult {
+                    links,
+                    total_seen,
+                    truncated,
+                } = if include_links {
                     extract_links_from_html(&body, &final_url)
                 } else {
-                    Vec::new()
-                };
-                // Render text based on mode
-                let txt = match extract_mode {
-                    ExtractMode::Markdown => {
-                        render::markdown::render_blocks_markdown(&rendered.blocks)
+                    LinkExtractionResult {
+                        links: Vec::new(),
+                        total_seen: 0,
+                        truncated: false,
                     }
-                    _ => render::text::render_blocks_text(&rendered.blocks),
                 };
-                let tt = rendered.text_truncated;
-                // Truncate text to max_chars
-                let (bounded_txt, txt_truncated) = bound_text(&txt, max_chars);
-                (t, d, Some(bounded_txt), links, w, tt || txt_truncated)
+                (t, d, None, links, w, false, total_seen, truncated)
             } else {
-                let full_text = String::from_utf8_lossy(&body);
-                let tt = full_text.chars().count() > max_chars;
-                let text = full_text.chars().take(max_chars).collect::<String>();
-                (None, None, Some(text), Vec::new(), Vec::new(), tt)
+                (None, None, None, Vec::new(), Vec::new(), false, 0, false)
+            }
+        } else if is_html {
+            let is_markdown = extract_mode == ExtractMode::Markdown;
+            let (t, d, rendered, w, _non_utf8) =
+                render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown);
+            let LinkExtractionResult {
+                links,
+                total_seen,
+                truncated,
+            } = if include_links {
+                extract_links_from_html(&body, &final_url)
+            } else {
+                LinkExtractionResult {
+                    links: Vec::new(),
+                    total_seen: 0,
+                    truncated: false,
+                }
             };
+            // Render text based on mode
+            let txt = match extract_mode {
+                ExtractMode::Markdown => render::markdown::render_blocks_markdown(&rendered.blocks),
+                _ => render::text::render_blocks_text(&rendered.blocks),
+            };
+            let tt = rendered.text_truncated;
+            // Truncate text to max_chars
+            let (bounded_txt, txt_truncated) = bound_text(&txt, max_chars);
+            (
+                t,
+                d,
+                Some(bounded_txt),
+                links,
+                w,
+                tt || txt_truncated,
+                total_seen,
+                truncated,
+            )
+        } else {
+            let full_text = String::from_utf8_lossy(&body);
+            let tt = full_text.chars().count() > max_chars;
+            let text = full_text.chars().take(max_chars).collect::<String>();
+            (None, None, Some(text), Vec::new(), Vec::new(), tt, 0, false)
+        };
 
         let mut warnings = extract_warnings;
 
@@ -644,6 +677,12 @@ impl FetchClient {
             trust: FetchTrust::ExternalUntrusted,
             text,
             links,
+            links_seen: if links_seen > 0 {
+                Some(links_seen)
+            } else {
+                None
+            },
+            links_truncated,
             warnings,
             trust_markers,
             document,

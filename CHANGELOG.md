@@ -37,8 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `MockEngine::search` now respects the `max_results` argument and truncates its canned results accordingly. Previously the mock ignored the limit and returned all canned results, masking the candidate-pool bug where production providers were called with `final_max_results` instead of `candidate_limit`.
+- `run_web_fetch` MCP tool now includes `links_seen` and `links_truncated` fields in the JSON payload.
+- CLI `eggsearch fetch --json` now includes `trust_markers` and `document` fields in JSON output.
 
 ### Added
+- **Link classification for `web_fetch`**: extracted links now include a deterministic `link_kind` classification (`same_page_anchor`, `same_domain`, `external`, `download`, `source_code`, `documentation`, `api_reference`, `issue`, `pull_request`, `release`, `security_advisory`, `pdf`, `image`, `feed`, `other`), optional `rel` attribute, and `same_domain` boolean flag. Classification uses cheap URL heuristics (host equality, path patterns, file extensions) with no external dependencies.
+- **Link bounding metadata**: `WebFetchResponse` now includes `links_seen` (total `<a href>` elements encountered) and `links_truncated` (whether the link list was capped at 100) fields when `include_links` is enabled.
+- **CLI link display**: `eggsearch fetch --links` now shows link classification kinds and link bounding metadata in both pretty and JSON output.
+- 4 new integration tests covering link classification, link bounding metadata, empty links when not requested, and same-domain detection.
 - `RecordingMockEngine` test helper (feature-gated behind `mock`) that records the `max_results` argument it was called with. Used by new regression tests to verify provider fan-out passes the candidate-pool limit to providers.
 - Unit tests covering `candidate_pool_size` panic-safety, zero-handling, and the cap-clamping edge case.
 - Integration tests covering the candidate-pool flow at the MCP tool boundary: provider receives candidate limit, candidate pool grows above the final count, candidate pool clamps to a small cap, and the intent-reranking regression test now actually exercises the bug fix.

@@ -65,6 +65,8 @@ pub async fn run(
             "trust": "external_untrusted",
             "text": response.text,
             "links": response.links,
+            "trust_markers": response.trust_markers,
+            "document": response.document,
             "warnings": response.warnings,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
@@ -90,12 +92,22 @@ pub async fn run(
         }
         if !response.links.is_empty() {
             println!(
-                "\n--- Links ({} links, showing up to {}) ---",
+                "\n--- Links ({} returned, {} seen{}) ---",
                 response.links.len(),
-                CLI_DISPLAY_MAX_LINKS
+                response.links_seen.unwrap_or(response.links.len()),
+                if response.links_truncated {
+                    ", truncated"
+                } else {
+                    ""
+                }
             );
             for link in response.links.iter().take(CLI_DISPLAY_MAX_LINKS) {
-                println!("  - {}: {}", link.text, link.url);
+                println!(
+                    "  - [{}] {}: {}",
+                    format!("{:?}", link.link_kind).to_lowercase(),
+                    link.text,
+                    link.url
+                );
             }
         }
         if !response.warnings.is_empty() {

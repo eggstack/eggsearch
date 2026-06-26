@@ -162,6 +162,21 @@ Content root selection prefers `main` > `article` > `[role=main]` > `body`.
 
 `text_truncated` (character-level) is distinct from `truncated` (byte-level body cap). Both are reported.
 
+### Link Classification
+
+When `include_links` is enabled, each extracted `ExtractedLink` includes:
+- `link_kind`: deterministic classification based on URL heuristics
+- `same_domain`: optional boolean indicating whether the link host matches the page host
+- `rel`: optional `rel` attribute from the `<a>` element
+
+The response also includes `links_seen` (total `<a href>` elements encountered) and `links_truncated` (whether the list was capped at 100).
+
+`LinkKind` variants: `same_page_anchor`, `same_domain`, `external`, `download`, `source_code`, `documentation`, `api_reference`, `issue`, `pull_request`, `release`, `security_advisory`, `pdf`, `image`, `feed`, `other`.
+
+Classification rules are deterministic and cheap: same-page anchor (same URL minus fragment), file extension matching (pdf, image, source code, archive), GitHub/GitLab path patterns (issues, pulls, releases, advisories), docs host/path heuristics, and same-domain vs external fallback. No public-suffix dependency.
+
+Link classification is metadata only — agents may use it to decide which URLs to fetch, but eggsearch never follows links automatically.
+
 ### Content Detection
 
 `src/fetch/detect.rs` provides a deterministic `classify(content_type, url, body)` function that returns a `DetectedContent` struct with `kind`, `language`, and `line_preserving` fields. Detection priority: Content-Type header > URL file extension > byte heuristics. Byte heuristics look for shebangs, import statements, function definitions, and struct/class patterns to identify code-like content under `text/plain`.

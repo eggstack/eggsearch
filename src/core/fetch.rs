@@ -40,6 +40,43 @@ pub struct WebFetchRequest {
     pub include_links: Option<bool>,
 }
 
+/// Classification of an extracted link based on URL heuristics.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    /// Same-page anchor (URL differs only by fragment).
+    SamePageAnchor,
+    /// Same-domain link (same host, not a more specific kind).
+    SameDomain,
+    /// External link (different host).
+    External,
+    /// Download link (binary/archive based on extension or header).
+    Download,
+    /// Source code file link.
+    SourceCode,
+    /// Documentation page link.
+    Documentation,
+    /// API reference link.
+    ApiReference,
+    /// Issue tracker link.
+    Issue,
+    /// Pull request or merge request link.
+    PullRequest,
+    /// Release page link.
+    Release,
+    /// Security advisory link.
+    SecurityAdvisory,
+    /// PDF document link.
+    Pdf,
+    /// Image file link.
+    Image,
+    /// Feed (RSS/Atom) link.
+    Feed,
+    /// Unrecognized or other link type.
+    #[default]
+    Other,
+}
+
 /// An extracted link from a page.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ExtractedLink {
@@ -47,6 +84,15 @@ pub struct ExtractedLink {
     pub text: String,
     /// Resolved URL.
     pub url: String,
+    /// Deterministic classification of the link kind.
+    #[serde(default)]
+    pub link_kind: LinkKind,
+    /// The `rel` attribute value, if present on the `<a>` element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rel: Option<String>,
+    /// Whether the link host matches the page host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub same_domain: Option<bool>,
 }
 
 /// Trust label for fetched content (same vocabulary as SourceCard).
@@ -94,6 +140,14 @@ pub struct WebFetchResponse {
     /// Extracted links (if include_links = true).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<ExtractedLink>,
+    /// Total number of `<a href>` links encountered in the HTML
+    /// (only when `include_links = true`). May exceed `links.len()`
+    /// when the page has more links than the cap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub links_seen: Option<usize>,
+    /// Whether the link list was truncated at the cap.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub links_truncated: bool,
     /// Warning messages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,

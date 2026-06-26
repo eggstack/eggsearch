@@ -2746,3 +2746,225 @@ async fn web_fetch_document_application_json_no_extension() {
     assert!(!blocks.is_empty());
     assert_eq!(blocks[0]["language"], "json");
 }
+
+#[tokio::test]
+async fn web_fetch_links_classification() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r##"<!DOCTYPE html><html><head><title>Links</title></head><body>
+                <a href="#section">Same-page anchor</a>
+                <a href="/doc.pdf">PDF link</a>
+                <a href="https://other.com/page">External link</a>
+                <a href="/main.rs">Source code</a>
+                <a href="/photo.png">Image</a>
+                <a href="https://github.com/org/repo/issues/123">Issue link</a>
+                </body></html>"##,
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: Some(true),
+        },
+    )
+    .await
+    .expect("ok");
+
+    let links = v["links"].as_array().expect("links is array");
+    assert_eq!(links.len(), 6, "expected 6 links, got: {links:?}");
+
+    assert_eq!(links[0]["link_kind"], "same_page_anchor");
+    assert_eq!(links[0]["text"], "Same-page anchor");
+
+    assert_eq!(links[1]["link_kind"], "pdf");
+    assert_eq!(links[1]["text"], "PDF link");
+
+    assert_eq!(links[2]["link_kind"], "external");
+    assert_eq!(links[2]["text"], "External link");
+
+    assert_eq!(links[3]["link_kind"], "source_code");
+    assert_eq!(links[3]["text"], "Source code");
+
+    assert_eq!(links[4]["link_kind"], "image");
+    assert_eq!(links[4]["text"], "Image");
+
+    assert_eq!(links[5]["link_kind"], "issue");
+    assert_eq!(links[5]["text"], "Issue link");
+
+    let links_seen = v["links_seen"].as_u64().expect("links_seen present");
+    assert!(
+        links_seen >= 6,
+        "links_seen should be >= 6, got {links_seen}"
+    );
+
+    assert_eq!(
+        v["links_truncated"], false,
+        "links_truncated should be false"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_links_seen_metadata() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<!DOCTYPE html><html><head><title>Meta</title></head><body>
+                <a href="/a">A</a>
+                <a href="/b">B</a>
+                </body></html>"#,
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: Some(true),
+        },
+    )
+    .await
+    .expect("ok");
+
+    assert!(
+        v["links_seen"].is_number(),
+        "links_seen should be present, got: {v:?}"
+    );
+    assert!(
+        v["links_truncated"].is_boolean(),
+        "links_truncated should be a boolean, got: {v:?}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_links_empty_when_not_requested() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<!DOCTYPE html><html><head><title>No Links</title></head><body>
+                <a href="/a">A</a>
+                <a href="/b">B</a>
+                </body></html>"#,
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: Some(false),
+        },
+    )
+    .await
+    .expect("ok");
+
+    let links = v["links"]
+        .as_array()
+        .expect("links should be present (empty array)");
+    assert!(links.is_empty(), "links should be empty, got: {links:?}");
+    assert!(
+        v["links_seen"].is_null(),
+        "links_seen should be absent/null, got: {v:?}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_links_same_domain_detection() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mock_host = server.host();
+    let mock_port = server.port();
+
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(format!(
+                r##"<!DOCTYPE html><html><head><title>Domains</title></head><body>
+                <a href="http://{mock_host}:{mock_port}/local">Same domain</a>
+                <a href="https://other.com/page">Different domain</a>
+                </body></html>"##
+            ));
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: Some(true),
+        },
+    )
+    .await
+    .expect("ok");
+
+    let links = v["links"].as_array().expect("links is array");
+    assert_eq!(links.len(), 2, "expected 2 links, got: {links:?}");
+
+    assert_eq!(
+        links[0]["same_domain"], true,
+        "same-host link should have same_domain=true"
+    );
+    assert_eq!(
+        links[0]["link_kind"], "same_domain",
+        "same-host link should be classified as same_domain"
+    );
+
+    assert_eq!(
+        links[1]["same_domain"], false,
+        "external link should have same_domain=false"
+    );
+    assert_eq!(
+        links[1]["link_kind"], "external",
+        "external link should be classified as external"
+    );
+}
