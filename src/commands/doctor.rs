@@ -248,7 +248,10 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
         };
 
         let start = std::time::Instant::now();
-        let resp = state.adapter.web_search(&req, 1).await;
+        let resp = state
+            .adapter
+            .web_search(&req, 1, state.config.search.max_results_cap)
+            .await;
         let elapsed = start.elapsed().as_millis() as u64;
 
         if resp.providers_failed.is_empty() {

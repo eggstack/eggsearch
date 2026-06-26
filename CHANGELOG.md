@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `MetadataSearchAdapter::web_search` now takes a `max_results_cap` argument alongside the caller's effective `max_results`. The candidate-pool limit is computed from these two values before provider fan-out, so each provider is asked for the candidate limit rather than the final return count. This lets intent-aware reranking promote intent-matching results that would otherwise be truncated before ranking.
+- `candidate_pool_size` is now config-aware (bounded by the configured cap) and cannot panic when `effective_max_results > max_results_cap`. The previous helper used `usize::clamp(min, max)` which panicked on that path.
+- Provider fan-out logs now distinguish `final_max_results` from `candidate_limit` for debugging.
+
+### Fixed
+- `MockEngine::search` now respects the `max_results` argument and truncates its canned results accordingly. Previously the mock ignored the limit and returned all canned results, masking the candidate-pool bug where production providers were called with `final_max_results` instead of `candidate_limit`.
+
+### Added
+- `RecordingMockEngine` test helper (feature-gated behind `mock`) that records the `max_results` argument it was called with. Used by new regression tests to verify provider fan-out passes the candidate-pool limit to providers.
+- Unit tests covering `candidate_pool_size` panic-safety, zero-handling, and the cap-clamping edge case.
+- Integration tests covering the candidate-pool flow at the MCP tool boundary: provider receives candidate limit, candidate pool grows above the final count, candidate pool clamps to a small cap, and the intent-reranking regression test now actually exercises the bug fix.
+
 ## [0.3.2] - 2026-06-07
 
 ### Changed

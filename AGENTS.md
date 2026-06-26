@@ -159,6 +159,36 @@ date metadata. Currently no providers expose result-level dates, so
 `FreshnessMatch` is never emitted. The `freshness` field is retained
 as a best-effort hint for future provider support.
 
+### Candidate Pool Flow
+
+`MetadataSearchAdapter::web_search(req, effective_max_results,
+max_results_cap)` runs a discovery-only metasearch and is the entry
+point for the MCP `web_search` tool. The flow is:
+
+1. Compute a `candidate_limit` (typically `min(effective_max_results *
+   3, max_results_cap)`; never less than `effective_max_results`,
+   never panics when `effective_max_results > max_results_cap`)
+   **before** provider fan-out.
+2. Fan out to each enabled provider with `candidate_limit` as the
+   per-engine `max_results` argument. Each provider is responsible
+   for returning up to that many compact `SearchResult` values. No
+   page bodies are fetched — the extra headroom is only used to
+   expand the compact candidate pool.
+3. Aggregate the provider results via the vendored `aggregate_rrf`
+   up to `candidate_limit` (URL-normalized dedup).
+4. Convert each aggregated row to a `SourceCard` with deterministic
+   `source_kind` / `domain` / `rank_reasons` metadata.
+5. Apply bounded intent-aware post-RRF reranking.
+6. Truncate the final response to `effective_max_results` so an
+   intent-matching result just outside the final window can be
+   promoted.
+
+The MCP `run_web_search` caller passes
+`state.config.search.max_results_cap` to the adapter so the candidate
+pool is config-aware. The CLI `search` and `doctor` paths pass the
+same value from `AppConfig`. Provider fan-out logs distinguish
+`final_max_results` from `candidate_limit` for debugging.
+
 ### Prompt-injection Hardening
 - Untrusted text from search and fetch flows through three tiers of
   defense, defined in `src/core/sanitize.rs`:

@@ -139,7 +139,7 @@ impl SearchEngine for MockEngine {
     fn search<'a>(
         &'a self,
         _query: &'a str,
-        _max_results: usize,
+        max_results: usize,
         timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         if let Some(sink) = &self.timeout_sink {
@@ -147,6 +147,7 @@ impl SearchEngine for MockEngine {
                 *g = Some(timeout);
             }
         }
+        let limit = max_results;
         Box::pin(async move {
             if self.hang {
                 pending::<()>().await;
@@ -154,7 +155,17 @@ impl SearchEngine for MockEngine {
             }
             match self.failure {
                 Some(f) => Err(f.to_engine_error(self.name)),
-                None => Ok(self.results.clone()),
+                None => {
+                    // Respect the per-call `max_results` argument so
+                    // mock behavior mirrors real providers. This is
+                    // what makes the candidate-pool regression test
+                    // able to catch the original bug where production
+                    // providers were called with `final_max_results`
+                    // instead of `candidate_limit`.
+                    let mut results = self.results.clone();
+                    results.truncate(limit);
+                    Ok(results)
+                }
             }
         })
     }
@@ -166,4 +177,68 @@ pub fn mock_engines(engines: Vec<MockEngine>) -> Vec<Arc<dyn SearchEngine>> {
         .into_iter()
         .map(|e| Arc::new(e) as Arc<dyn SearchEngine>)
         .collect()
+}
+
+/// A mock engine that records the `max_results` argument it was last
+/// called with. The recorded value is exposed via the shared `sink`
+/// for assertions in tests. Used to verify that adapter fan-out passes
+/// the candidate-pool limit to providers rather than the final return
+/// count.
+pub struct RecordingMockEngine {
+    name: &'static str,
+    results: Vec<SearchResult>,
+    seen_limit: Arc<Mutex<Option<usize>>>,
+}
+
+impl RecordingMockEngine {
+    pub fn new(
+        name: &'static str,
+        results: Vec<MockResult>,
+        sink: Arc<Mutex<Option<usize>>>,
+    ) -> Self {
+        let rs = results
+            .into_iter()
+            .map(|r| SearchResult {
+                title: r.title,
+                url: r.url,
+                snippet: r.snippet,
+                source_engine: r.source_engine,
+            })
+            .collect();
+        Self {
+            name,
+            results: rs,
+            seen_limit: sink,
+        }
+    }
+
+    /// Wrap this engine into an `Arc<dyn SearchEngine>` for use with
+    /// `MetadataSearchAdapter`.
+    pub fn into_engine(self) -> Arc<dyn SearchEngine> {
+        Arc::new(self)
+    }
+}
+
+impl SearchEngine for RecordingMockEngine {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn search<'a>(
+        &'a self,
+        _query: &'a str,
+        max_results: usize,
+        _timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        if let Ok(mut g) = self.seen_limit.lock() {
+            *g = Some(max_results);
+        }
+        let results = self.results.clone();
+        let limit = max_results;
+        Box::pin(async move {
+            let mut out = results;
+            out.truncate(limit);
+            Ok(out)
+        })
+    }
 }

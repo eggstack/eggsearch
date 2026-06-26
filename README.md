@@ -143,7 +143,7 @@ providers and returns compact `SourceCard` results.
 - `query` is required and must be non-empty.
 - `intent` is optional: `web` (default), `docs`, `code`, `issues`, `releases`, `security`, `news`. A retrieval and ranking hint only — does not trigger multi-step behavior.
 - `freshness` is optional: `any` (default), `day`, `week`, `month`, `year`. Best-effort; not all providers support date filtering.
-- `max_results` is an optional per-call final SourceCard count. The server may clamp this to its configured `max_results_cap` (default 50) and return a warning in the response.
+- `max_results` is an optional per-call final SourceCard count. The server may clamp this to its configured `max_results_cap` (default 50) and return a warning in the response. Internally each provider is asked for a slightly larger candidate pool (bounded by `max_results_cap`) so intent-aware reranking can promote results that would otherwise be truncated before ranking; only the requested `max_results` are returned.
 - Each result includes deterministic `metadata` with `source_kind`, `domain`, and `rank_reasons` to help agents choose which result to inspect first.
 - Partial provider failure is non-fatal: surviving results are returned.
 - If all providers fail, the tool returns a structured error.

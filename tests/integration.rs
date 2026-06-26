@@ -49,7 +49,9 @@ use eggsearch::mcp::tools::{
 use rmcp::ServerHandler;
 
 #[cfg(feature = "mock")]
-use eggsearch::meta::mock::{mock_engines, MockEngine, MockFailure, MockResult};
+use eggsearch::meta::mock::{
+    mock_engines, MockEngine, MockFailure, MockResult, RecordingMockEngine,
+};
 #[cfg(feature = "mock")]
 use eggsearch::meta::MetadataSearchAdapter;
 #[cfg(feature = "mock")]
@@ -72,6 +74,16 @@ fn state_with_engines(
     timeout: Duration,
 ) -> Arc<ServerState> {
     let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
+    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+}
+
+#[cfg(feature = "mock")]
+fn state_with_arc_engines(
+    cfg: AppConfig,
+    engines: Vec<Arc<dyn eggsearch::meta::engines::SearchEngine>>,
+    timeout: Duration,
+) -> Arc<ServerState> {
+    let adapter = MetadataSearchAdapter::from_engines(engines, timeout);
     Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
 }
 
@@ -816,6 +828,108 @@ async fn web_search_uses_global_timeout_when_no_per_request_override() {
         recorded,
         Duration::from_millis(2_500),
         "engine should receive the global timeout when no override is set, got: {recorded:?}"
+    );
+}
+
+/// Provider fan-out must pass the candidate-pool limit to each
+/// engine, not the caller's final `max_results`. With a final count
+/// of 2 and a cap of 50, the candidate limit is 6.
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_provider_receives_candidate_limit() {
+    use std::sync::Mutex;
+
+    let sink: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
+    let engines = vec![RecordingMockEngine::new(
+        "mock_a",
+        vec![
+            MockResult::new("A", "https://example.com/a", "mock_a"),
+            MockResult::new("B", "https://example.com/b", "mock_a"),
+            MockResult::new("C", "https://example.com/c", "mock_a"),
+        ],
+        Arc::clone(&sink),
+    )
+    .into_engine()];
+    let state = state_with_arc_engines(test_cfg(), engines, Duration::from_secs(5));
+
+    let mut args = args_for(&["mock_a"], "rust");
+    args.max_results = Some(2);
+    let v = run_web_search(state, args).await.expect("ok");
+
+    let recorded = sink.lock().unwrap().expect("limit was recorded");
+    assert_eq!(
+        recorded, 6,
+        "provider should receive candidate_limit (2*3=6), got: {recorded}"
+    );
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(
+        results.len(),
+        2,
+        "response should be truncated to final_max_results=2"
+    );
+}
+
+/// The candidate pool grows above the final count but is bounded by
+/// the configured `max_results_cap`. With a final count of 10 and a
+/// cap of 50, the provider should be asked for 30 (3x final), not 10.
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_candidate_pool_grows_above_final_count() {
+    use std::sync::Mutex;
+
+    let sink: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
+    let engines = vec![RecordingMockEngine::new(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+        Arc::clone(&sink),
+    )
+    .into_engine()];
+    let mut cfg = test_cfg();
+    cfg.search.max_results_cap = 50;
+    let state = state_with_arc_engines(cfg, engines, Duration::from_secs(5));
+
+    // final_max_results = 10 -> candidate limit = 30 (10 * 3).
+    let mut args = args_for(&["mock_a"], "rust");
+    args.max_results = Some(10);
+    let _ = run_web_search(state, args).await.expect("ok");
+
+    let recorded = sink.lock().unwrap().expect("limit was recorded");
+    assert_eq!(
+        recorded, 30,
+        "provider should receive candidate_limit=30 (10*3), got: {recorded}"
+    );
+}
+
+/// When the cap is smaller than `final * 3`, the candidate pool is
+/// clamped to the cap, not `final * 3`. With a final count of 3 and
+/// a cap of 8, the provider should be asked for 8 (the cap), not 9
+/// (3 * 3).
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_candidate_pool_clamps_to_small_cap() {
+    use std::sync::Mutex;
+
+    let sink: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
+    let engines = vec![RecordingMockEngine::new(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+        Arc::clone(&sink),
+    )
+    .into_engine()];
+    let mut cfg = test_cfg();
+    cfg.search.max_results_cap = 8;
+    let state = state_with_arc_engines(cfg, engines, Duration::from_secs(5));
+
+    // final_max_results = 3 (within cap=8), so effective=3; pool =
+    // min(3*3=9, cap=8) = 8.
+    let mut args = args_for(&["mock_a"], "rust");
+    args.max_results = Some(3);
+    let _ = run_web_search(state, args).await.expect("ok");
+
+    let recorded = sink.lock().unwrap().expect("limit was recorded");
+    assert_eq!(
+        recorded, 8,
+        "provider should receive candidate_limit=8 (clamped to cap), got: {recorded}"
     );
 }
 

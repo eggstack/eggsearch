@@ -322,14 +322,22 @@ impl MetadataSearchAdapter {
     /// those engines are queried (and the caller is expected to have
     /// already rejected unknown ids via `select_engines`).
     ///
+    /// `effective_max_results` is the caller's final SourceCard count
+    /// (after the server's `max_results_cap` clamp). `max_results_cap`
+    /// is the configured server cap used to bound the candidate pool
+    /// requested from each provider so intent-aware reranking can
+    /// promote results that would otherwise be truncated.
+    ///
     /// Uses per-engine timeouts via `JoinSet` so that a global deadline
     /// preserves partial results from engines that responded in time.
     pub async fn web_search(
         &self,
         req: &WebSearchRequest,
         effective_max_results: usize,
+        max_results_cap: usize,
     ) -> WebSearchResponse {
-        let max_results = effective_max_results;
+        let final_max_results = effective_max_results;
+        let candidate_cap = max_results_cap;
         let (engines, queried_ids) = if req.providers.is_empty() {
             (self.engines.clone(), self.provider_ids.clone())
         } else {
@@ -357,10 +365,17 @@ impl MetadataSearchAdapter {
             None => self.global_timeout,
         };
 
+        // Compute the candidate pool size BEFORE provider fan-out so
+        // each provider is asked for the candidate limit rather than
+        // the final return count. This is what lets intent-aware
+        // reranking promote results just outside the final window.
+        let candidate_limit = candidate_pool_size(final_max_results, candidate_cap);
+
         debug!(
             query = %req.query,
             providers = ?queried_ids,
-            max_results,
+            final_max_results,
+            candidate_limit,
             timeout_ms = effective_timeout.as_millis(),
             "dispatching metasearch"
         );
@@ -373,8 +388,11 @@ impl MetadataSearchAdapter {
             let engine = Arc::clone(engine);
             let query = req.query.clone();
             let engine_timeout = effective_timeout;
+            let per_provider_limit = candidate_limit;
             join_set.spawn(async move {
-                let result = engine.search(&query, max_results, engine_timeout).await;
+                let result = engine
+                    .search(&query, per_provider_limit, engine_timeout)
+                    .await;
                 (engine.name().to_string(), result)
             });
         }
@@ -414,10 +432,8 @@ impl MetadataSearchAdapter {
         }
         // JoinSet dropped here cancels any in-flight engine tasks.
 
-        // Use a candidate pool larger than the final max_results so
-        // intent/freshness reranking can promote results that would
-        // otherwise be truncated before reranking.
-        let candidate_limit = candidate_pool_size(max_results);
+        // Aggregate up to the candidate pool size so intent/freshness
+        // reranking has the larger pool to work with.
         let aggregated = aggregate_rrf(raw_results.clone(), candidate_limit);
         let mut results: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
         let mut trust_markers = TrustMarkers::default();
@@ -434,7 +450,7 @@ impl MetadataSearchAdapter {
         // Truncate to the caller's effective max_results after
         // reranking so intent-matching results just outside the
         // final window can be promoted into the returned set.
-        results.truncate(max_results);
+        results.truncate(final_max_results);
 
         // Collect the set of provider ids that already completed (success
         // or individual failure) so we don't double-count.
@@ -588,11 +604,28 @@ const RRF_K: f64 = 60.0;
 /// Compute the candidate pool size for reranking. The pool is
 /// intentionally larger than the final `max_results` so that
 /// intent/freshness reranking can promote results just outside the
-/// final window. Capped at 50 to avoid excessive work.
-fn candidate_pool_size(final_max_results: usize) -> usize {
-    final_max_results
-        .saturating_mul(3)
-        .clamp(final_max_results, 50)
+/// final window.
+///
+/// `candidate_cap` is the configured server cap (typically
+/// `[search].max_results_cap`) used to bound the candidate pool. The
+/// returned value is guaranteed to be:
+///
+/// - at least `final_max_results` (so the final window is always
+///   coverable from the candidate pool),
+/// - at most `max(final_max_results, candidate_cap)` (so a final
+///   count larger than the cap still wins),
+/// - never panics when `final_max_results > candidate_cap`.
+///
+/// In practice, for `final_max_results <= candidate_cap`, the helper
+/// returns `min(final_max_results * 3, candidate_cap)`.
+fn candidate_pool_size(final_max_results: usize, candidate_cap: usize) -> usize {
+    if final_max_results == 0 {
+        return 0;
+    }
+    let desired = final_max_results.saturating_mul(3);
+    desired
+        .max(final_max_results)
+        .min(candidate_cap.max(final_max_results))
 }
 
 fn aggregate_rrf(
@@ -1064,7 +1097,7 @@ mod tests {
         ];
         let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
         let req = WebSearchRequest::new("rust axum");
-        let resp = adapter.web_search(&req, 10).await;
+        let resp = adapter.web_search(&req, 10, 50).await;
         assert_eq!(resp.query, "rust axum");
         assert_eq!(resp.mode, "live_metasearch");
         assert_eq!(resp.providers_queried.len(), 2);
@@ -1250,11 +1283,32 @@ mod tests {
 
     #[test]
     fn candidate_pool_size_scales_by_three() {
-        assert_eq!(candidate_pool_size(1), 3);
-        assert_eq!(candidate_pool_size(5), 15);
-        assert_eq!(candidate_pool_size(10), 30);
-        assert_eq!(candidate_pool_size(20), 50);
-        assert_eq!(candidate_pool_size(50), 50);
+        // Cap = 50: helper returns min(final * 3, 50).
+        assert_eq!(candidate_pool_size(1, 50), 3);
+        assert_eq!(candidate_pool_size(5, 50), 15);
+        assert_eq!(candidate_pool_size(10, 50), 30);
+        assert_eq!(candidate_pool_size(20, 50), 50);
+        assert_eq!(candidate_pool_size(50, 50), 50);
+        // Cap < final * 3: helper clamps to cap.
+        assert_eq!(candidate_pool_size(5, 8), 8);
+        assert_eq!(candidate_pool_size(10, 8), 10);
+    }
+
+    #[test]
+    fn candidate_pool_size_never_panics_when_final_exceeds_cap() {
+        // The previous helper used `.clamp(min, max)` and panicked
+        // when `final_max_results > 50`. The new helper must not.
+        assert_eq!(candidate_pool_size(60, 50), 60);
+        assert_eq!(candidate_pool_size(100, 50), 100);
+        assert_eq!(candidate_pool_size(usize::MAX, 50), usize::MAX);
+    }
+
+    #[test]
+    fn candidate_pool_size_zero_returns_zero() {
+        // Production validation rejects 0 effective max_results, but
+        // the helper should still be panic-safe for that case.
+        assert_eq!(candidate_pool_size(0, 50), 0);
+        assert_eq!(candidate_pool_size(0, 0), 0);
     }
 
     #[tokio::test]
@@ -1290,7 +1344,7 @@ mod tests {
         let mut req = WebSearchRequest::new("tower http");
         req.intent = crate::core::query::SearchIntent::Docs;
         req.freshness = crate::core::query::Freshness::Any;
-        let resp = adapter.web_search(&req, 1).await;
+        let resp = adapter.web_search(&req, 1, 50).await;
         assert_eq!(resp.results.len(), 1, "should return exactly 1 result");
         // The docs.rs result should be promoted because the candidate
         // pool (3) included it before truncation.
@@ -1330,7 +1384,7 @@ mod tests {
         })];
         let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
         let req = WebSearchRequest::new("test");
-        let resp = adapter.web_search(&req, 10).await;
+        let resp = adapter.web_search(&req, 10, 50).await;
         assert_eq!(resp.results.len(), 2);
         // First result should still be first (no reranking)
         assert_eq!(resp.results[0].url, "https://example.com/first");
@@ -1365,7 +1419,7 @@ mod tests {
         let mut req = WebSearchRequest::new("tech news");
         req.intent = crate::core::query::SearchIntent::News;
         req.freshness = crate::core::query::Freshness::Day;
-        let resp = adapter.web_search(&req, 10).await;
+        let resp = adapter.web_search(&req, 10, 50).await;
         assert_eq!(resp.results.len(), 1);
         let card = &resp.results[0];
         // FreshnessMatch must not be present without date evidence
@@ -1386,6 +1440,99 @@ mod tests {
         assert!(
             (actual - expected).abs() < 1e-10,
             "score should reflect intent boost only, not freshness: expected {expected}, got {actual}"
+        );
+    }
+
+    /// Regression test: provider fan-out must receive the candidate
+    /// pool limit, not the caller's final `max_results`. If fan-out
+    /// passes `final_max_results` instead of `candidate_limit`, this
+    /// test fails because the provider truncates its own results
+    /// before aggregation can rescue a docs result from outside the
+    /// final window.
+    #[tokio::test]
+    async fn provider_receives_candidate_limit_not_final_max_results() {
+        use std::sync::Mutex;
+
+        // The recording engine (in src/meta/mock.rs) is feature-gated
+        // behind the `mock` feature. Build a minimal inline recorder
+        // here so this unit test runs without the feature flag.
+        let seen_limit: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
+        let recorder_name: &'static str = "recorder";
+
+        struct Recorder {
+            name: &'static str,
+            results: Vec<SearchResult>,
+            sink: Arc<Mutex<Option<usize>>>,
+        }
+
+        impl SearchEngine for Recorder {
+            fn name(&self) -> &'static str {
+                self.name
+            }
+            fn search<'a>(
+                &'a self,
+                _query: &'a str,
+                max_results: usize,
+                _timeout: Duration,
+            ) -> crate::meta::engines::BoxFuture<
+                'a,
+                Result<Vec<SearchResult>, crate::meta::engines::error::EngineError>,
+            > {
+                if let Ok(mut g) = self.sink.lock() {
+                    *g = Some(max_results);
+                }
+                let results = self.results.clone();
+                let limit = max_results;
+                Box::pin(async move {
+                    let mut out = results;
+                    out.truncate(limit);
+                    Ok(out)
+                })
+            }
+        }
+
+        // Three results so the candidate pool for final=2 is 6, but
+        // the configured cap is 50, so the helper returns 6.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(Recorder {
+            name: recorder_name,
+            results: vec![
+                SearchResult {
+                    title: "First".to_string(),
+                    url: "https://example.com/1".to_string(),
+                    snippet: None,
+                    source_engine: "recorder".to_string(),
+                },
+                SearchResult {
+                    title: "Second".to_string(),
+                    url: "https://example.com/2".to_string(),
+                    snippet: None,
+                    source_engine: "recorder".to_string(),
+                },
+                SearchResult {
+                    title: "Third".to_string(),
+                    url: "https://example.com/3".to_string(),
+                    snippet: None,
+                    source_engine: "recorder".to_string(),
+                },
+            ],
+            sink: Arc::clone(&seen_limit),
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("test");
+        let resp = adapter.web_search(&req, 2, 50).await;
+
+        // The provider must have been called with the candidate
+        // limit (2 * 3 = 6), not the final return count (2).
+        let recorded = seen_limit.lock().unwrap().expect("limit was recorded");
+        assert_eq!(
+            recorded, 6,
+            "provider should receive candidate_limit=6, got {recorded}"
+        );
+        // The response is still truncated to the caller's final count.
+        assert_eq!(
+            resp.results.len(),
+            2,
+            "response should be truncated to final_max_results=2"
         );
     }
 }
