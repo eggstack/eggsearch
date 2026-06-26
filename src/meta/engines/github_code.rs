@@ -645,6 +645,39 @@ mod tests {
         .expect("search should succeed with correct auth header");
     }
 
+    #[tokio::test]
+    async fn test_timeout() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/search/code");
+            then.status(200)
+                .header("content-type", "application/json")
+                .delay(std::time::Duration::from_secs(10))
+                .body(r#"{"items": []}"#);
+        });
+
+        let client = reqwest::Client::new();
+        let err = search(
+            &client,
+            "test-token",
+            Some(&server.url("")),
+            "rust",
+            10,
+            Duration::from_millis(50),
+        )
+        .await
+        .expect_err("should fail with timeout");
+
+        match err {
+            EngineError::Timeout { engine } => {
+                assert_eq!(engine, "github_code");
+            }
+            other => panic!("expected Timeout, got: {other:?}"),
+        }
+    }
+
     #[test]
     fn test_provider_descriptor_for_github_code() {
         use crate::core::provider::built_in_provider_descriptor;

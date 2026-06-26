@@ -23,7 +23,7 @@ for the default configuration.
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 643 fast tests (no network required)
+- 708 fast tests (no network required)
 
 ## Search and fetch workflow
 
