@@ -736,7 +736,7 @@ impl FetchClient {
                 text_chars_returned: text_chars,
                 text_truncated,
                 block_truncated,
-                link_truncated: false,
+                link_truncated: links_truncated,
                 metadata: Some(FetchRenderMetadata {
                     bytes_read: Some(body.len()),
                     content_length: content_length_header,

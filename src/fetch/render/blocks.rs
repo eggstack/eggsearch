@@ -101,6 +101,13 @@ pub fn render_blocks(
     }
     blocks.truncate(last_valid);
 
+    // After truncation, prune outline entries whose `block_index`
+    // points beyond the retained block list. Heading blocks that
+    // were dropped by the budget would leave stale index references
+    // otherwise. Title-derived fallback entries (block_index = None)
+    // are emitted later in `FetchClient` and are unaffected here.
+    prune_outline_to_blocks(&mut outline, blocks.len());
+
     // If we truncated, emit a warning.
     if block_truncated {
         warnings.push("content truncated at block boundary".to_string());
@@ -630,6 +637,21 @@ fn make_slug(text: &str) -> String {
         .join("-")
 }
 
+/// Prune outline entries whose `block_index` points beyond the
+/// retained `blocks` list.
+///
+/// Called immediately after block-boundary truncation so headings
+/// whose blocks were dropped by the budget do not leave stale index
+/// references. Entries with `block_index = None` are retained as-is;
+/// those are emitted later by `FetchClient` as title-derived
+/// fallbacks and do not need block-relative validation.
+fn prune_outline_to_blocks(outline: &mut Vec<DocumentOutlineEntry>, blocks_len: usize) {
+    outline.retain(|entry| match entry.block_index {
+        Some(i) => i < blocks_len,
+        None => true,
+    });
+}
+
 /// Resolve a possibly-relative URL against a base URL.
 fn resolve_url(href: &str, base_url: &str) -> String {
     // If the href is already absolute, return it directly.
@@ -941,5 +963,111 @@ mod tests {
             .any(|w| w.contains("truncated at block boundary")));
         assert_eq!(rendered.blocks.len(), 1);
         assert_eq!(rendered.blocks[0].text, "aaa");
+    }
+
+    // --- Outline pruning after block-boundary truncation ---
+
+    #[test]
+    fn render_blocks_outline_indexes_in_range_when_no_truncation() {
+        // Test A from the final micro-closure plan: valid retained
+        // outline. With a generous budget, all blocks and outline
+        // entries survive; every block_index is in bounds.
+        let html = b"<h1>One</h1><p>first</p><h2>Two</h2><p>second</p>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10_000, false);
+        assert!(!rendered.block_truncated);
+        assert!(!rendered.outline.is_empty());
+        for entry in &rendered.outline {
+            if let Some(idx) = entry.block_index {
+                assert!(
+                    idx < rendered.blocks.len(),
+                    "outline entry {:?} has block_index {} >= blocks.len() {}",
+                    entry.title,
+                    idx,
+                    rendered.blocks.len()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn render_blocks_outline_pruned_after_truncation() {
+        // Test B from the final micro-closure plan: low max_chars keeps
+        // the first heading but drops later heading blocks. The dropped
+        // heading's outline entry must be removed so it cannot point
+        // beyond the truncated block list.
+        let html = b"<h1>Keep</h1><p>some text</p><h2>Drop</h2><p>more text here</p>";
+        // Budget ~ 11 chars: heading text "Keep" + paragraph "some text"
+        // (10 chars body) -> enough for first heading + first paragraph
+        // but not the second heading block.
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 12, false);
+
+        assert!(
+            rendered.block_truncated || rendered.text_truncated,
+            "expected truncation flags, got blocks={:?} outline={:?}",
+            rendered.blocks,
+            rendered.outline
+        );
+
+        // Every retained outline entry must have a valid block_index.
+        for entry in &rendered.outline {
+            if let Some(idx) = entry.block_index {
+                assert!(
+                    idx < rendered.blocks.len(),
+                    "outline entry {:?} has stale block_index {} (blocks.len() = {})",
+                    entry.title,
+                    idx,
+                    rendered.blocks.len()
+                );
+            }
+        }
+
+        // The removed heading's title must not be present.
+        let titles: Vec<&str> = rendered.outline.iter().map(|e| e.title.as_str()).collect();
+        assert!(
+            !titles.contains(&"Drop"),
+            "dropped heading should not appear in outline, got: {titles:?}"
+        );
+        assert!(
+            titles.contains(&"Keep"),
+            "retained heading should appear in outline, got: {titles:?}"
+        );
+    }
+
+    #[test]
+    fn render_blocks_outline_pruning_helper_directly() {
+        // Direct unit test for the pruning helper covering all branches.
+        let mut outline = vec![
+            DocumentOutlineEntry {
+                level: 1,
+                title: "in-range".to_string(),
+                anchor: None,
+                block_index: Some(0),
+            },
+            DocumentOutlineEntry {
+                level: 2,
+                title: "boundary".to_string(),
+                anchor: None,
+                block_index: Some(1),
+            },
+            DocumentOutlineEntry {
+                level: 2,
+                title: "out-of-range".to_string(),
+                anchor: None,
+                block_index: Some(5),
+            },
+            DocumentOutlineEntry {
+                level: 1,
+                title: "fallback".to_string(),
+                anchor: None,
+                block_index: None,
+            },
+        ];
+        prune_outline_to_blocks(&mut outline, 2);
+        let titles: Vec<&str> = outline.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            vec!["in-range", "boundary", "fallback"],
+            "only entries with block_index < blocks.len() should survive"
+        );
     }
 }

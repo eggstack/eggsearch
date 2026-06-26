@@ -3681,3 +3681,226 @@ async fn web_fetch_body_only_page_still_works() {
     assert!(text.contains("Paragraph one."), "got: {text}");
     assert!(text.contains("Paragraph two."), "got: {text}");
 }
+
+// ---------------------------------------------------------------------------
+// Final micro-closure: document link-truncation metadata parity and
+// outline pruning after block truncation.
+// ---------------------------------------------------------------------------
+
+/// When the link extractor truncates the link list, the top-level
+/// `links_truncated` is `true`. The nested `document.link_truncated`
+/// must mirror that value so agents reading only the `document`
+/// object see the same truncation state.
+#[tokio::test]
+async fn web_fetch_document_link_truncated_mirrors_top_level() {
+    use httpmock::prelude::*;
+
+    // Build a page with more than MAX_LINKS (100) `<a href>` links so
+    // the extractor reports `links_truncated = true`.
+    let mut body =
+        String::from("<!DOCTYPE html><html><head><title>Many Links</title></head><body>");
+    for i in 0..120 {
+        body.push_str(&format!("<a href=\"/p/{i}\">link {i}</a>"));
+    }
+    body.push_str("</body></html>");
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/many-links");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(body.as_bytes());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.include_links_default = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/many-links"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: Some(true),
+        },
+    )
+    .await
+    .expect("ok");
+
+    // Top-level must report truncation.
+    assert_eq!(
+        v["links_truncated"], true,
+        "top-level links_truncated should be true, got: {v:?}"
+    );
+    let links_seen = v["links_seen"].as_u64().expect("links_seen present");
+    assert!(
+        links_seen > 100,
+        "links_seen should exceed MAX_LINKS=100, got: {links_seen}"
+    );
+    let links = v["links"].as_array().expect("links is array");
+    assert!(
+        links.len() < links_seen as usize,
+        "links ({}) should be capped below links_seen ({})",
+        links.len(),
+        links_seen
+    );
+
+    // Document-level link_truncated must mirror top-level.
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(
+        doc["link_truncated"], true,
+        "document.link_truncated should mirror top-level links_truncated=true, doc: {doc:?}"
+    );
+    assert_eq!(
+        doc["kind"], "html",
+        "document kind should remain html, doc: {doc:?}"
+    );
+}
+
+/// Control test: a page with few links must NOT report truncation at
+/// either the top-level or document level.
+#[tokio::test]
+async fn web_fetch_document_link_truncated_false_when_no_truncation() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/few-links");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head><title>Few</title></head><body>\
+                  <a href=\"/a\">A</a>\
+                  <a href=\"/b\">B</a>\
+                  <p>content</p>\
+                  </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.include_links_default = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/few-links"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: Some(true),
+        },
+    )
+    .await
+    .expect("ok");
+
+    assert_eq!(
+        v["links_truncated"], false,
+        "top-level links_truncated should be false, got: {v:?}"
+    );
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    // link_truncated is `skip_serializing_if = false` in the schema,
+    // so when there is no truncation the field is absent (defaulting
+    // to false). Either the field is absent or it is false — never true.
+    let doc_link_truncated = doc
+        .get("link_truncated")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(
+        !doc_link_truncated,
+        "document.link_truncated should not be true when top-level links_truncated=false, doc: {doc:?}"
+    );
+}
+
+/// When block-boundary truncation removes later heading blocks, the
+/// `document.outline` must not retain entries whose `block_index`
+/// points beyond the truncated block list.
+#[tokio::test]
+async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    // First heading + a small paragraph fits the budget; the second
+    // heading and second paragraph are dropped by truncation.
+    server.mock(|when, then| {
+        when.method(GET).path("/truncated-outline");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head><title>Outline Trunc</title></head><body>\
+                  <h1>Keep</h1>\
+                  <p>some text</p>\
+                  <h2>Drop</h2>\
+                  <p>more text here that pushes past the budget entirely</p>\
+                  </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/truncated-outline"),
+            max_chars: Some(12),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+
+    let blocks = doc["blocks"].as_array().expect("blocks is array");
+    let outline = doc["outline"].as_array().expect("outline is array");
+
+    // The truncation must have actually triggered for this test to be
+    // meaningful.
+    assert!(
+        doc["block_truncated"].as_bool().unwrap_or(false)
+            || doc["text_truncated"].as_bool().unwrap_or(false),
+        "expected truncation flag, got: {doc:?}"
+    );
+    assert!(
+        !blocks.is_empty(),
+        "expected at least one block after truncation"
+    );
+
+    // Every outline block_index must be in bounds.
+    for entry in outline {
+        if let Some(idx) = entry["block_index"].as_u64() {
+            assert!(
+                (idx as usize) < blocks.len(),
+                "outline entry {:?} has stale block_index {} (blocks.len() = {})",
+                entry,
+                idx,
+                blocks.len()
+            );
+        }
+    }
+
+    // The dropped heading should not be in the outline.
+    let titles: Vec<&str> = outline.iter().filter_map(|e| e["title"].as_str()).collect();
+    assert!(
+        !titles.contains(&"Drop"),
+        "dropped heading should not appear in outline, got: {titles:?}"
+    );
+}
