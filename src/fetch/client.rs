@@ -303,13 +303,101 @@ impl FetchClient {
         // from the shared HTML/text pipeline.
         #[cfg(feature = "pdf")]
         if is_pdf {
+            // Metadata-only mode: skip expensive text extraction.
+            // Return fetch metadata and a minimal empty document.
+            if extract_mode == ExtractMode::MetadataOnly {
+                let charset = content_type
+                    .as_ref()
+                    .and_then(|ct| {
+                        ct.split(';')
+                            .nth(1)?
+                            .trim()
+                            .strip_prefix("charset=")?
+                            .split(',')
+                            .next()
+                            .map(|s| s.trim().to_string())
+                    })
+                    .filter(|c| !c.is_empty());
+
+                let source_extension = url::Url::parse(&final_url)
+                    .ok()
+                    .and_then(|u| {
+                        let path = u.path();
+                        path.rsplit('.')
+                            .next()
+                            .filter(|ext| !ext.is_empty())
+                            .map(|ext| {
+                                if ext.len() <= 10 {
+                                    ext.to_string()
+                                } else {
+                                    String::new()
+                                }
+                            })
+                    })
+                    .filter(|e| !e.is_empty());
+
+                let mut warnings = Vec::new();
+                let trust_markers = TrustMarkers::default();
+
+                warnings.push(WebFetchResponse::untrusted_warning());
+
+                return Ok(WebFetchResponse {
+                    url: url_str.to_string(),
+                    final_url,
+                    title: None,
+                    description: None,
+                    content_type,
+                    status,
+                    fetched: true,
+                    truncated,
+                    trust: FetchTrust::ExternalUntrusted,
+                    text: None,
+                    links: Vec::new(),
+                    links_seen: None,
+                    links_truncated: false,
+                    warnings,
+                    trust_markers,
+                    document: Some(FetchDocument {
+                        kind: DocumentKind::Pdf,
+                        render_format: RenderFormat::AgentBlocksV1,
+                        text_format: "plain".to_string(),
+                        text_chars_returned: 0,
+                        text_truncated: false,
+                        block_truncated: false,
+                        link_truncated: false,
+                        metadata: Some(FetchRenderMetadata {
+                            bytes_read: Some(body.len()),
+                            content_length: content_length_header,
+                            charset,
+                            redirects_followed: redirect_count,
+                            source_extension,
+                            detected_language: None,
+                        }),
+                        outline: Vec::new(),
+                        blocks: Vec::new(),
+                        chunks: Vec::new(),
+                    }),
+                });
+            }
+
             let pdf_limits = super::pdf::PdfLimits {
                 max_pages: self.limits.pdf_max_pages,
                 max_chars_per_page: self.limits.pdf_max_chars_per_page,
                 max_total_chars: self.limits.pdf_max_total_chars,
             };
 
-            let pdf_result = super::pdf::extract_pdf_text(&body, max_chars, &pdf_limits)?;
+            let mut pdf_result = super::pdf::extract_pdf_text(&body, max_chars, &pdf_limits)?;
+
+            // Propagate fetch-level context into the PDF document
+            // metadata. The extraction function knows nothing about
+            // redirects, content-length headers, or body size — patch
+            // the metadata here so PDF documents report the same fetch
+            // context quality as HTML/text documents.
+            if let Some(ref mut meta) = pdf_result.document.metadata {
+                meta.bytes_read = Some(body.len());
+                meta.content_length = content_length_header;
+                meta.redirects_followed = redirect_count;
+            }
 
             // Sanitize the legacy text field (Tier 1 + Tier 2/3).
             let mut warnings = pdf_result.warnings;

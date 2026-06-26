@@ -599,10 +599,10 @@ mod tests {
     #[test]
     fn classify_feed_extensions() {
         let page = url::Url::parse("https://example.com/").unwrap();
-        let rss = url::Url::parse("https://example.com/feed.xml").unwrap();
+        let _rss = url::Url::parse("https://example.com/feed.xml").unwrap();
         // .rss extension
         let rss_ext = url::Url::parse("https://example.com/blog.rss").unwrap();
-        let atom_ext = url::Url::parse("https://example.com/atom.xml").unwrap();
+        let _atom_ext = url::Url::parse("https://example.com/atom.xml").unwrap();
         // /feed path
         let feed_path = url::Url::parse("https://example.com/feed").unwrap();
         let rss_path = url::Url::parse("https://example.com/rss").unwrap();

@@ -91,10 +91,27 @@ fn detect_from_content_type(ct: &str) -> Option<DocumentKind> {
             Some(DocumentKind::Yaml)
         }
         "text/x-diff" | "text/x-patch" => Some(DocumentKind::Diff),
-        "text/x-rust" | "text/x-c" | "text/x-c++" | "text/x-java" | "text/x-python"
-        | "text/x-shellscript" | "text/x-ruby" | "text/x-php" | "text/x-go" | "text/x-kotlin"
-        | "text/x-scala" | "text/x-sql" | "text/x-swift" | "text/x-lua" | "text/x-typescript"
-        | "text/javascript" | "text/x-csrc" => Some(DocumentKind::Code),
+        "text/x-rust"
+        | "text/x-c"
+        | "text/x-c++"
+        | "text/x-java"
+        | "text/x-python"
+        | "text/x-shellscript"
+        | "text/x-ruby"
+        | "text/x-php"
+        | "text/x-go"
+        | "text/x-kotlin"
+        | "text/x-scala"
+        | "text/x-sql"
+        | "text/x-swift"
+        | "text/x-lua"
+        | "text/x-typescript"
+        | "text/javascript"
+        | "text/x-csrc"
+        | "application/javascript"
+        | "application/x-javascript"
+        | "application/typescript"
+        | "application/x-sh" => Some(DocumentKind::Code),
         "text/plain" => None,                      // needs further heuristics
         _ if ct_base.starts_with("text/") => None, // unknown text type, needs heuristics
         _ => None,
@@ -120,7 +137,9 @@ fn language_from_content_type(ct: &str) -> Option<String> {
         "text/x-swift" => Some("swift".to_string()),
         "text/x-lua" => Some("lua".to_string()),
         "text/x-typescript" | "application/typescript" => Some("typescript".to_string()),
-        "text/javascript" | "application/javascript" => Some("javascript".to_string()),
+        "text/javascript" | "application/javascript" | "application/x-javascript" => {
+            Some("javascript".to_string())
+        }
         "text/x-yaml" | "text/yaml" | "application/x-yaml" | "application/yaml" => {
             Some("yaml".to_string())
         }
@@ -461,5 +480,174 @@ mod tests {
             language_from_url("https://example.com/app.py"),
             Some("python".to_string())
         );
+    }
+
+    #[test]
+    fn classify_application_javascript() {
+        let det = classify(
+            Some("application/javascript"),
+            "https://example.com/script.js",
+            b"function foo() { return 1; }",
+        );
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert_eq!(det.language, Some("javascript".to_string()));
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_javascript_with_charset() {
+        let det = classify(
+            Some("application/javascript; charset=utf-8"),
+            "https://example.com/script.js",
+            b"const x = 1;",
+        );
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert_eq!(det.language, Some("javascript".to_string()));
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_x_javascript() {
+        let det = classify(
+            Some("application/x-javascript"),
+            "https://example.com/legacy.js",
+            b"var x = 1;",
+        );
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert_eq!(det.language, Some("javascript".to_string()));
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_typescript() {
+        let det = classify(
+            Some("application/typescript"),
+            "https://example.com/app.ts",
+            b"const x: number = 1;",
+        );
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert_eq!(det.language, Some("typescript".to_string()));
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_x_sh() {
+        let det = classify(
+            Some("application/x-sh"),
+            "https://example.com/run.sh",
+            b"#!/bin/bash\necho hello",
+        );
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert_eq!(det.language, Some("bash".to_string()));
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_json() {
+        let det = classify(
+            Some("application/json"),
+            "https://example.com/data",
+            b"{\"key\": \"value\"}",
+        );
+        assert_eq!(det.kind, DocumentKind::Json);
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_ld_json() {
+        let det = classify(
+            Some("application/ld+json"),
+            "https://example.com/schema",
+            b"{\"@type\": \"Thing\"}",
+        );
+        assert_eq!(det.kind, DocumentKind::Json);
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_wildcard_json() {
+        let det = classify(
+            Some("application/vnd.api+json"),
+            "https://example.com/api",
+            b"{\"data\": []}",
+        );
+        assert_eq!(det.kind, DocumentKind::Json);
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_toml() {
+        let det = classify(
+            Some("application/toml"),
+            "https://example.com/config.toml",
+            b"[package]\nname = \"foo\"",
+        );
+        assert_eq!(det.kind, DocumentKind::Toml);
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_yaml() {
+        let det = classify(
+            Some("application/yaml"),
+            "https://example.com/config.yaml",
+            b"name: foo",
+        );
+        assert_eq!(det.kind, DocumentKind::Yaml);
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_application_x_yaml() {
+        let det = classify(
+            Some("application/x-yaml"),
+            "https://example.com/config.yaml",
+            b"name: foo",
+        );
+        assert_eq!(det.kind, DocumentKind::Yaml);
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_text_javascript() {
+        let det = classify(
+            Some("text/javascript"),
+            "https://example.com/script.js",
+            b"function foo() {}",
+        );
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert_eq!(det.language, Some("javascript".to_string()));
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_text_x_typescript() {
+        let det = classify(
+            Some("text/x-typescript"),
+            "https://example.com/app.ts",
+            b"const x: number = 1;",
+        );
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert_eq!(det.language, Some("typescript".to_string()));
+        assert!(det.line_preserving);
+    }
+
+    #[test]
+    fn classify_unknown_text_type_falls_through() {
+        let det = classify(
+            Some("text/x-custom-thing"),
+            "https://example.com/thing",
+            b"just some text",
+        );
+        assert_eq!(det.kind, DocumentKind::PlainText);
+        assert!(!det.line_preserving);
+    }
+
+    #[test]
+    fn classify_text_plain_falls_through_to_heuristics() {
+        let code = b"use std::collections::HashMap;\nfn main() { HashMap::new(); }\n";
+        let det = classify(Some("text/plain"), "https://example.com/script", code);
+        assert_eq!(det.kind, DocumentKind::Code);
+        assert!(det.line_preserving);
     }
 }

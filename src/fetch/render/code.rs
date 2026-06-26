@@ -20,6 +20,22 @@ pub struct RenderedContent {
 /// Maximum lines per code block before splitting.
 const MAX_LINES_PER_BLOCK: usize = 200;
 
+/// Truncate `text` to fit within `char_budget`, returning the truncated
+/// string and a bool indicating truncation occurred. If `char_budget` is
+/// zero, returns `None` (caller should stop without pushing a block).
+fn truncate_to_budget(text: &str, char_budget: usize) -> Option<(String, bool)> {
+    if char_budget == 0 {
+        return None;
+    }
+    let char_count = text.chars().count();
+    if char_count <= char_budget {
+        Some((text.to_string(), false))
+    } else {
+        let truncated: String = text.chars().take(char_budget).collect();
+        Some((truncated, true))
+    }
+}
+
 /// Render a code-like document (source code, JSON, TOML, YAML, diff, patch).
 ///
 /// Preserves exact line breaks and indentation. Produces one or more
@@ -31,6 +47,7 @@ pub fn render_code(text: &str, language: Option<&str>, max_chars: usize) -> Rend
     let mut blocks = Vec::new();
     let mut char_budget = max_chars;
     let mut block_truncated = false;
+    let mut text_truncated = false;
     let mut last_line = 0;
 
     // Split into chunks by line count or character budget
@@ -51,9 +68,37 @@ pub fn render_code(text: &str, language: Option<&str>, max_chars: usize) -> Rend
         }
 
         if end_line == start_line {
-            // Single line exceeds budget - take what we can
-            end_line = start_line + 1;
-            block_truncated = true;
+            // Single line exceeds budget - take only what fits
+            let line = lines[start_line];
+            if let Some((truncated_text, line_truncated)) = truncate_to_budget(line, char_budget) {
+                block_truncated = true;
+                if line_truncated {
+                    text_truncated = true;
+                }
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::Code,
+                    text: truncated_text,
+                    level: None,
+                    anchor: None,
+                    language: language.map(|s| s.to_string()),
+                    line_start: Some(start_line + 1),
+                    line_end: Some(start_line + 1), // single line
+                    page: None,
+                });
+                // Account for the line chars consumed (up to budget + newline)
+                let consumed = line.chars().count().min(char_budget) + 1;
+                char_budget = char_budget.saturating_sub(consumed);
+                if line_truncated {
+                    char_budget = 0;
+                }
+            }
+            last_line = start_line + 1;
+            start_line += 1;
+            if char_budget == 0 {
+                block_truncated = true;
+                break;
+            }
+            continue;
         }
 
         // Check if we've exceeded total budget
@@ -68,7 +113,36 @@ pub fn render_code(text: &str, language: Option<&str>, max_chars: usize) -> Rend
                 end_line += 1;
             }
             if end_line == start_line {
-                end_line = start_line + 1;
+                // First line alone exceeds budget - truncate it
+                let line = lines[start_line];
+                if let Some((truncated_text, line_truncated)) =
+                    truncate_to_budget(line, char_budget)
+                {
+                    block_truncated = true;
+                    if line_truncated {
+                        text_truncated = true;
+                    }
+                    blocks.push(RenderedBlock {
+                        kind: BlockKind::Code,
+                        text: truncated_text,
+                        level: None,
+                        anchor: None,
+                        language: language.map(|s| s.to_string()),
+                        line_start: Some(start_line + 1),
+                        line_end: Some(start_line + 1),
+                        page: None,
+                    });
+                    if line_truncated {
+                        char_budget = 0;
+                    }
+                }
+                last_line = start_line + 1;
+                start_line += 1;
+                if char_budget == 0 {
+                    block_truncated = true;
+                    break;
+                }
+                continue;
             }
             block_truncated = true;
         }
@@ -97,7 +171,7 @@ pub fn render_code(text: &str, language: Option<&str>, max_chars: usize) -> Rend
         }
     }
 
-    let text_truncated = last_line < total_lines || block_truncated;
+    text_truncated = text_truncated || last_line < total_lines || block_truncated;
     if last_line < total_lines {
         block_truncated = true;
     }
@@ -123,6 +197,7 @@ pub fn render_diff(text: &str, max_chars: usize) -> RenderedContent {
     let mut blocks = Vec::new();
     let mut char_budget = max_chars;
     let mut block_truncated = false;
+    let mut text_truncated = false;
     let mut last_line = 0;
 
     let mut start_line = 0;
@@ -142,8 +217,36 @@ pub fn render_diff(text: &str, max_chars: usize) -> RenderedContent {
         }
 
         if end_line == start_line {
-            end_line = start_line + 1;
-            block_truncated = true;
+            // Single line exceeds budget - take only what fits
+            let line = lines[start_line];
+            if let Some((truncated_text, line_truncated)) = truncate_to_budget(line, char_budget) {
+                block_truncated = true;
+                if line_truncated {
+                    text_truncated = true;
+                }
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::Code,
+                    text: truncated_text,
+                    level: None,
+                    anchor: None,
+                    language: Some("diff".to_string()),
+                    line_start: Some(start_line + 1),
+                    line_end: Some(start_line + 1),
+                    page: None,
+                });
+                let consumed = line.chars().count().min(char_budget) + 1;
+                char_budget = char_budget.saturating_sub(consumed);
+                if line_truncated {
+                    char_budget = 0;
+                }
+            }
+            last_line = start_line + 1;
+            start_line += 1;
+            if char_budget == 0 {
+                block_truncated = true;
+                break;
+            }
+            continue;
         }
 
         char_budget = char_budget.saturating_sub(chunk_chars);
@@ -170,7 +273,7 @@ pub fn render_diff(text: &str, max_chars: usize) -> RenderedContent {
         }
     }
 
-    let text_truncated = last_line < total_lines || block_truncated;
+    text_truncated = text_truncated || last_line < total_lines || block_truncated;
     if last_line < total_lines {
         block_truncated = true;
     }
@@ -194,6 +297,7 @@ pub fn render_plaintext(text: &str, max_chars: usize) -> RenderedContent {
     let mut blocks = Vec::new();
     let mut char_budget = max_chars;
     let mut block_truncated = false;
+    let mut text_truncated = false;
 
     // Group into paragraphs by blank lines
     let mut para_start = 0;
@@ -216,7 +320,29 @@ pub fn render_plaintext(text: &str, max_chars: usize) -> RenderedContent {
 
         let para_chars = para_text.chars().count();
         if para_chars > char_budget {
-            block_truncated = true;
+            // Paragraph exceeds budget - truncate and return what fits
+            if let Some((truncated_text, para_truncated)) =
+                truncate_to_budget(&para_text, char_budget)
+            {
+                block_truncated = true;
+                if para_truncated {
+                    text_truncated = true;
+                }
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::Paragraph,
+                    text: truncated_text,
+                    level: None,
+                    anchor: None,
+                    language: None,
+                    line_start: Some(para_start + 1),
+                    line_end: Some(para_end),
+                    page: None,
+                });
+                if para_truncated {
+                    char_budget = 0;
+                }
+            }
+            para_start = para_end;
             break;
         }
 
@@ -236,7 +362,7 @@ pub fn render_plaintext(text: &str, max_chars: usize) -> RenderedContent {
         para_start = para_end;
     }
 
-    let text_truncated = char_budget == 0 && para_start < total_lines;
+    text_truncated = text_truncated || (char_budget == 0 && para_start < total_lines);
 
     RenderedContent {
         blocks,
@@ -333,5 +459,50 @@ mod tests {
             .join("\n");
         let result = render_diff(&diff, 100);
         assert!(result.text_truncated || result.block_truncated);
+    }
+
+    #[test]
+    fn render_code_single_oversized_line_truncated() {
+        let code = "a".repeat(500);
+        let result = render_code(&code, Some("json"), 100);
+        assert_eq!(result.blocks.len(), 1);
+        let block_text_chars = result.blocks[0].text.chars().count();
+        assert!(
+            block_text_chars <= 100,
+            "block text ({block_text_chars} chars) must be <= max_chars (100)"
+        );
+        assert!(result.text_truncated);
+        assert!(result.block_truncated);
+        // Line range should be preserved as the single line
+        assert_eq!(result.blocks[0].line_start, Some(1));
+        assert_eq!(result.blocks[0].line_end, Some(1));
+    }
+
+    #[test]
+    fn render_diff_single_oversized_line_truncated() {
+        let diff = format!("+{}", "=".repeat(500));
+        let result = render_diff(&diff, 100);
+        assert_eq!(result.blocks.len(), 1);
+        let block_text_chars = result.blocks[0].text.chars().count();
+        assert!(
+            block_text_chars <= 100,
+            "block text ({block_text_chars} chars) must be <= max_chars (100)"
+        );
+        assert!(result.text_truncated);
+        assert!(result.block_truncated);
+    }
+
+    #[test]
+    fn render_plaintext_single_oversized_paragraph_truncated() {
+        let text = "word ".repeat(200);
+        let result = render_plaintext(text.trim(), 100);
+        assert_eq!(result.blocks.len(), 1);
+        let block_text_chars = result.blocks[0].text.chars().count();
+        assert!(
+            block_text_chars <= 100,
+            "block text ({block_text_chars} chars) must be <= max_chars (100)"
+        );
+        assert!(result.text_truncated);
+        assert!(result.block_truncated);
     }
 }

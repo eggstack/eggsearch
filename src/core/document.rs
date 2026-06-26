@@ -17,7 +17,7 @@ pub enum DocumentKind {
     Html,
     /// Plain text document.
     PlainText,
-    /// Markdown document (reserved for future implementation).
+    /// Markdown document (rendered from Markdown source files via pulldown-cmark).
     Markdown,
     /// Source code file.
     Code,
@@ -31,7 +31,7 @@ pub enum DocumentKind {
     Diff,
     /// Patch file.
     Patch,
-    /// PDF document (reserved for future implementation).
+    /// PDF document (optional feature-gated extraction via the `pdf` Cargo feature).
     Pdf,
     /// Unrecognized content type.
     #[default]

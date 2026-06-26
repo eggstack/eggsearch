@@ -154,11 +154,15 @@ Phase 3 adds full content-type detection (`src/fetch/detect.rs`) and line-preser
 
 Phase 4 adds PDF text extraction, gated behind the `pdf` Cargo feature (opt-in, not default). When compiled with `pdf`, `web_fetch` detects PDF responses via `Content-Type: application/pdf`, `.pdf` URL extension, or body magic `%PDF-` and extracts text using the `lopdf` crate. Extraction is bounded by `pdf_max_pages`, `pdf_max_chars_per_page`, and `pdf_max_total_chars` config fields. Each extracted page produces a `paragraph` block with `page` metadata set. Legacy `text` includes `--- Page N ---` markers. No OCR, embedded file extraction, or JavaScript is supported. Encrypted or unextractable PDFs produce structured error variants (`pdf_encrypted`, `pdf_no_extractable_text`).
 
+The `metadata_only` extract mode suppresses body content for PDFs: no text extraction is performed, `document.blocks` and `document.chunks` are empty, and `text` is `None`. PDF `FetchDocument.metadata` includes real fetch context (`bytes_read`, `content_length`, `redirects_followed`) propagated from the HTTP client.
+
 The `src/fetch/render/` module contains the HTML structural renderer:
 - `blocks.rs` parses HTML and produces `Vec<RenderedBlock>` with proper element mapping
 - `text.rs` renders blocks as plain text
 - `markdown.rs` renders blocks as Markdown
-Content root selection prefers `main` > `article` > `[role=main]` > `body`.
+Content root selection prefers `main` > `article` > `[role=main]` > `body`, with sparse-root fallback: an empty or nearly empty `main` falls back to `body`.
+
+After block-boundary truncation, outline entries are filtered to remove any whose `block_index` points to a block that was removed by truncation, preventing stale index references.
 
 `text_truncated` (character-level) is distinct from `truncated` (byte-level body cap). Both are reported.
 
@@ -169,7 +173,7 @@ When `include_links` is enabled, each extracted `ExtractedLink` includes:
 - `same_domain`: optional boolean indicating whether the link host matches the page host
 - `rel`: optional `rel` attribute from the `<a>` element
 
-The response also includes `links_seen` (total `<a href>` elements encountered) and `links_truncated` (whether the list was capped at 100).
+The response also includes `links_seen` (total `<a href>` elements encountered) and `links_truncated` (whether the list was capped at 100). When a document is present, `document.link_truncated` mirrors the top-level `links_truncated` value.
 
 `LinkKind` variants: `same_page_anchor`, `same_domain`, `external`, `download`, `source_code`, `documentation`, `api_reference`, `issue`, `pull_request`, `release`, `security_advisory`, `pdf`, `image`, `feed`, `other`.
 
@@ -179,11 +183,13 @@ Link classification is metadata only — agents may use it to decide which URLs 
 
 ### Content Detection
 
-`src/fetch/detect.rs` provides a deterministic `classify(content_type, url, body)` function that returns a `DetectedContent` struct with `kind`, `language`, and `line_preserving` fields. Detection priority: Content-Type header > URL file extension > byte heuristics. Byte heuristics look for shebangs, import statements, function definitions, and struct/class patterns to identify code-like content under `text/plain`.
+`src/fetch/detect.rs` provides a deterministic `classify(content_type, url, body)` function that returns a `DetectedContent` struct with `kind`, `language`, and `line_preserving` fields. Detection priority: Content-Type header > URL file extension > byte heuristics. Byte heuristics look for shebangs, import statements, function definitions, and struct/class patterns to identify code-like content under `text/plain`. The classifier also recognizes `application/javascript`, `application/x-javascript`, `application/typescript`, and `application/x-sh` as code content types with deterministic language assignment.
 
 ### Non-HTML Renderers
 
 `src/fetch/render/code.rs` provides `render_code()`, `render_diff()`, and `render_plaintext()` for line-preserving rendering. `src/fetch/render/markdown_source.rs` provides `render_markdown_source()` using `pulldown-cmark` for Markdown file parsing with heading extraction, fenced code block detection, and outline generation.
+
+Code, diff, and plain-text renderers enforce hard output bounds: oversized single lines or paragraphs are truncated to the configured `max_chars` budget, producing a bounded partial block rather than exceeding the limit.
 
 ### Search Intent and Freshness
 

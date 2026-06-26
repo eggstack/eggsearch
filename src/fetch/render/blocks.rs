@@ -155,16 +155,83 @@ fn extract_description(document: &Html) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Minimum number of rendered blocks required for a content root to
+/// be considered useful.  A root that produces zero blocks is always
+/// treated as sparse.
+const MIN_BLOCKS: usize = 1;
+
+/// Minimum total character count across all rendered blocks for a
+/// content root to be considered useful.  This catches the case
+/// where a `<main>` element exists but only contains whitespace or
+/// a tiny placeholder.
+const MIN_CHARS: usize = 50;
+
+/// Probe a candidate content root by rendering it into a temporary
+/// buffer and returning `(block_count, total_chars)`.  The
+/// `warnings` and `outline` accumulators are supplied so that
+/// `walk_element` can push into them without extra plumbing — but
+/// callers should discard these after probing.
+fn probe_root<'a>(
+    element: ElementRef<'a>,
+    blocks: &mut Vec<RenderedBlock>,
+    outline: &mut Vec<DocumentOutlineEntry>,
+    base_url: &str,
+    warnings: &mut Vec<String>,
+    markdown: bool,
+) -> (usize, usize) {
+    blocks.clear();
+    outline.clear();
+    walk_element(element, blocks, outline, base_url, warnings, markdown);
+    let total_chars: usize = blocks.iter().map(|b| b.text.chars().count()).sum();
+    (blocks.len(), total_chars)
+}
+
+/// Select the content root for the page.
+///
+/// Candidates are tried in priority order: `main`, `article`,
+/// `[role=main]`, `body`.  The first candidate that produces at
+/// least [`MIN_BLOCKS`] blocks **and** at least [`MIN_CHARS`] chars
+/// of useful text is returned.  If every explicit candidate is
+/// sparse, `body` is returned as the ultimate fallback (it is
+/// always non-empty in a valid HTML document).
 fn select_content_root<'a>(document: &'a Html) -> ElementRef<'a> {
     let selectors = ["main", "article", "[role=main]", "body"];
+
+    // Collect candidate elements in priority order.
+    let mut candidates: Vec<ElementRef<'a>> = Vec::new();
     for sel_str in &selectors {
         if let Ok(sel) = Selector::parse(sel_str) {
             if let Some(el) = document.select(&sel).next() {
-                return el;
+                candidates.push(el);
             }
         }
     }
-    document.root_element()
+
+    // Probe each candidate; return the first one with enough content.
+    let mut probe_blocks = Vec::new();
+    let mut probe_outline = Vec::new();
+    let mut probe_warnings = Vec::new();
+    let mut last_candidate = document.root_element();
+
+    for candidate in &candidates {
+        last_candidate = *candidate;
+        let (block_count, total_chars) = probe_root(
+            *candidate,
+            &mut probe_blocks,
+            &mut probe_outline,
+            "",
+            &mut probe_warnings,
+            false,
+        );
+        probe_warnings.clear();
+        if block_count >= MIN_BLOCKS && total_chars >= MIN_CHARS {
+            return *candidate;
+        }
+    }
+
+    // All candidates were sparse — fall back to the last one (body
+    // or root_element).
+    last_candidate
 }
 
 fn should_skip(elem: &ElementRef) -> bool {
@@ -790,6 +857,75 @@ mod tests {
         assert!(rendered.blocks[0]
             .text
             .contains("[other site](https://other.com/x)"));
+    }
+
+    #[test]
+    fn empty_main_falls_back_to_body() {
+        let html = b"<!DOCTYPE html><html><head><title>Sparse Main</title></head><body><main></main><p>Body content that should be visible and is long enough to pass the threshold.</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        let text: String = rendered
+            .blocks
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            text.contains("Body content"),
+            "expected body content, got: {text}"
+        );
+        assert!(!rendered.blocks.is_empty());
+    }
+
+    #[test]
+    fn non_empty_main_preferred_over_noisy_body() {
+        let html = b"<!DOCTYPE html><html><body><main><h1>Article Title</h1><p>Main article content that is substantive and should be preferred.</p></main><p>Footer noise that should be ignored when main is selected.</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        let text: String = rendered
+            .blocks
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("Article Title"), "should prefer main: {text}");
+        assert!(
+            text.contains("Main article content"),
+            "should include main body: {text}"
+        );
+        assert!(
+            !text.contains("Footer noise"),
+            "should not include body noise when main is rich: {text}"
+        );
+    }
+
+    #[test]
+    fn tiny_main_falls_back_to_body() {
+        let html = b"<!DOCTYPE html><html><body><main>.</main><p>Substantial body content that provides real useful information and is well beyond the fifty character minimum threshold.</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        let text: String = rendered
+            .blocks
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            text.contains("Substantial body content"),
+            "expected body fallback, got: {text}"
+        );
+    }
+
+    #[test]
+    fn body_only_page_still_works() {
+        let html = b"<!DOCTYPE html><html><body><h1>Page Title</h1><p>Paragraph one.</p><p>Paragraph two.</p></body></html>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        let text: String = rendered
+            .blocks
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("Page Title"));
+        assert!(text.contains("Paragraph one."));
+        assert!(text.contains("Paragraph two."));
     }
 
     #[test]

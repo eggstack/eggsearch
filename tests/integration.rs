@@ -2968,3 +2968,716 @@ async fn web_fetch_links_same_domain_detection() {
         "external link should be classified as external"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Phase D: Long-line / oversized-block truncation tests
+//
+// Verifies that render_code, render_diff, and render_plaintext never
+// return a block whose text exceeds the configured max_chars budget.
+// A single oversized line or paragraph must be char-truncated and
+// flagged, not silently pushed in full.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
+    use httpmock::prelude::*;
+
+    // A single-line JSON blob that is 5000 chars long, served with
+    // application/json. With max_chars=100 the block text must be <= 100.
+    let json_body: String = format!(r#"{{"data": "{}"}}"#, "x".repeat(5000));
+    assert!(json_body.len() > 5000, "test body should exceed 5000 bytes");
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/bundle.json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(json_body.clone());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/bundle.json"),
+            max_chars: Some(100),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+
+    // Should be detected as JSON
+    assert_eq!(doc["kind"], "json", "kind should be json");
+
+    // Block text must not exceed max_chars
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty(), "should have at least one block");
+    let block_text = blocks[0]["text"].as_str().expect("block text");
+    let block_chars = block_text.chars().count();
+    assert!(
+        block_chars <= 100,
+        "block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
+    );
+
+    // Truncation flags should be set
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "truncation flags should be set when a single line exceeds max_chars"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
+    use httpmock::prelude::*;
+
+    // A single-line JavaScript bundle, 5000+ chars.
+    let js_body = format!("function f(){{ return \"{}\"; }}", "a".repeat(5000));
+    assert!(js_body.len() > 5000);
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/bundle.js");
+        then.status(200)
+            .header("content-type", "application/javascript")
+            .body(js_body.clone());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/bundle.js"),
+            max_chars: Some(100),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+    let block_text = blocks[0]["text"].as_str().expect("block text");
+    let block_chars = block_text.chars().count();
+    assert!(
+        block_chars <= 100,
+        "block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
+    );
+
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "truncation flags should be set for oversized JS line"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
+    use httpmock::prelude::*;
+
+    // A diff where one hunk line is 5000+ chars (e.g. a long context line
+    // from a minified file).
+    let long_line = format!("+{}", "=".repeat(5000));
+    let diff_body = format!("--- a/bundle.js\n+++ b/bundle.js\n@@ -1,1 +1,1 @@\n{long_line}\n");
+    assert!(diff_body.len() > 5000);
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/changes.diff");
+        then.status(200)
+            .header("content-type", "text/x-diff")
+            .body(diff_body.clone());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/changes.diff"),
+            max_chars: Some(100),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "diff", "kind should be diff");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+
+    // Every block's text must be <= max_chars
+    for (i, block) in blocks.iter().enumerate() {
+        let text = block["text"].as_str().expect("block text");
+        let chars = text.chars().count();
+        assert!(
+            chars <= 100,
+            "block {i} text chars ({chars}) must be <= max_chars (100), got: {text:?}"
+        );
+    }
+
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "truncation flags should be set for oversized diff line"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated() {
+    use httpmock::prelude::*;
+
+    // A single long plain-text paragraph (5000+ chars).
+    let long_para = "word ".repeat(1000);
+    let plain_body = format!("{long_para}\n");
+    assert!(plain_body.len() > 5000);
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/long.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(plain_body.clone());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/long.txt"),
+            max_chars: Some(100),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "plain_text");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty(), "should have at least one block");
+
+    // The paragraph block text must be <= max_chars
+    let block_text = blocks[0]["text"].as_str().expect("block text");
+    let block_chars = block_text.chars().count();
+    assert!(
+        block_chars <= 100,
+        "paragraph block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
+    );
+
+    // Truncation flags should be set
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "truncation flags should be set for oversized paragraph"
+    );
+
+    // Line range should be preserved from the original paragraph
+    assert_eq!(
+        blocks[0]["line_start"], 1,
+        "line_start should be 1 for the first paragraph"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_code_block_text_never_exceeds_max_chars() {
+    use httpmock::prelude::*;
+
+    // A code file with one very long line (minified) and some normal lines.
+    let long_line = format!("const x = \"{}\";", "z".repeat(3000));
+    let code_body = format!("{long_line}\nconst a = 1;\nconst b = 2;\n");
+    assert!(long_line.len() > 3000);
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/minified.js");
+        then.status(200)
+            .header("content-type", "application/javascript")
+            .body(code_body.clone());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/minified.js"),
+            max_chars: Some(200),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+
+    // No block should exceed the budget
+    for (i, block) in blocks.iter().enumerate() {
+        let text = block["text"].as_str().expect("block text");
+        let chars = text.chars().count();
+        assert!(
+            chars <= 200,
+            "block {i} text chars ({chars}) must be <= max_chars (200), got: {text:?}"
+        );
+    }
+
+    // Should report truncation since the minified line was truncated
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "truncation flags should be set when a minified line is truncated"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase F: PDF document metadata propagation
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn web_fetch_pdf_metadata_populates_fetch_context() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    // Build a valid PDF with text so extract_pdf_text succeeds.
+    let pdf_body = {
+        use lopdf::content::{Content, Operation};
+        use lopdf::{dictionary, Document, Object, Stream};
+
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+        });
+
+        let resources_id = doc.add_object(dictionary! {
+            "Font" => dictionary! {
+                "F1" => font_id,
+            },
+        });
+
+        let content = Content {
+            operations: vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec!["F1".into(), 12.into()]),
+                Operation::new("Td", vec![100.into(), 700.into()]),
+                Operation::new("Tj", vec![Object::string_literal("Hello from PDF")]),
+                Operation::new("ET", vec![]),
+            ],
+        };
+
+        let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => content_id,
+            "Resources" => resources_id,
+        });
+
+        let pages = dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![page_id.into()],
+            "Count" => 1,
+        };
+        doc.objects.insert(pages_id, Object::Dictionary(pages));
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    };
+
+    let pdf_len = pdf_body.len();
+    server.mock(|when, then| {
+        when.method(GET).path("/doc.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .header("content-length", pdf_len.to_string())
+            .body(pdf_body);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/doc.pdf"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("PDF fetch should succeed");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "pdf", "kind should be pdf");
+
+    let meta = doc["metadata"]
+        .as_object()
+        .expect("metadata should be present");
+
+    // bytes_read must reflect the actual body length
+    let bytes_read = meta["bytes_read"]
+        .as_u64()
+        .expect("bytes_read should be a number");
+    assert!(
+        bytes_read > 0,
+        "bytes_read should be > 0, got: {bytes_read}"
+    );
+    assert!(
+        bytes_read >= pdf_len as u64,
+        "bytes_read ({bytes_read}) should be >= pdf body len ({pdf_len})"
+    );
+
+    // content_length must reflect the Content-Length header
+    let content_length = meta["content_length"]
+        .as_u64()
+        .expect("content_length should be present and a number");
+    assert_eq!(
+        content_length, pdf_len as u64,
+        "content_length should match Content-Length header"
+    );
+
+    // redirects_followed must be 0 for a direct fetch
+    assert_eq!(
+        meta["redirects_followed"], 0,
+        "redirects_followed should be 0 for direct fetch"
+    );
+
+    // source_extension must be pdf
+    assert_eq!(
+        meta["source_extension"], "pdf",
+        "source_extension should be pdf"
+    );
+
+    // Text should be extracted
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("Hello from PDF"),
+        "extracted text should contain PDF content: {text}"
+    );
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    // Serve a fake PDF body that starts with %PDF- magic.
+    let pdf_body = b"%PDF-1.4 fake pdf body for metadata-only context test";
+    server.mock(|when, then| {
+        when.method(GET).path("/doc.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .header("content-length", pdf_body.len().to_string())
+            .body(pdf_body.as_slice());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/doc.pdf"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: Some(ExtractMode::MetadataOnly),
+            include_links: None,
+        },
+    )
+    .await
+    .expect("PDF metadata_only should succeed");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present for metadata_only PDF");
+    assert_eq!(doc["kind"], "pdf");
+
+    let meta = doc["metadata"]
+        .as_object()
+        .expect("metadata should be present");
+
+    // bytes_read must reflect the actual body length
+    let bytes_read = meta["bytes_read"]
+        .as_u64()
+        .expect("bytes_read should be a number");
+    assert!(
+        bytes_read >= pdf_body.len() as u64,
+        "bytes_read ({bytes_read}) should be >= pdf body len ({})",
+        pdf_body.len()
+    );
+
+    // content_length must reflect the Content-Length header
+    let content_length = meta["content_length"]
+        .as_u64()
+        .expect("content_length should be present and a number");
+    assert_eq!(
+        content_length,
+        pdf_body.len() as u64,
+        "content_length should match Content-Length header"
+    );
+
+    // redirects_followed must be 0 for a direct fetch
+    assert_eq!(
+        meta["redirects_followed"], 0,
+        "redirects_followed should be 0 for direct fetch"
+    );
+
+    // source_extension must be pdf
+    assert_eq!(
+        meta["source_extension"], "pdf",
+        "source_extension must be pdf"
+    );
+}
+
+// ── Content-root fallback tests ──────────────────────────────────────
+
+#[tokio::test]
+async fn web_fetch_empty_main_falls_back_to_body() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/sparse-main");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head><title>Sparse Main</title></head>\
+                 <body><main></main>\
+                 <p>Body content that provides real useful information and is well beyond the fifty character minimum threshold for content root selection.</p>\
+                 </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/sparse-main"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let text = v["text"].as_str().expect("text is string");
+    assert!(
+        text.contains("Body content that provides"),
+        "expected body fallback content, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_non_empty_main_preferred_over_body_noise() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/rich-main");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><body>\
+                 <main>\
+                   <h1>Article Title</h1>\
+                   <p>Main article content that is substantive and should be preferred over body noise.</p>\
+                 </main>\
+                 <p>Footer noise that should be ignored when main is selected.</p>\
+                 </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/rich-main"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let text = v["text"].as_str().expect("text is string");
+    assert!(
+        text.contains("Article Title"),
+        "should prefer main, got: {text}"
+    );
+    assert!(
+        text.contains("Main article content"),
+        "should include main body: {text}"
+    );
+    assert!(
+        !text.contains("Footer noise"),
+        "should not include body noise when main is rich: {text}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_tiny_main_falls_back_to_body() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/tiny-main");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><body>\
+                 <main>.</main>\
+                 <p>Substantial body content that provides real useful information and is well beyond the fifty character minimum threshold for content root selection.</p>\
+                 </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/tiny-main"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let text = v["text"].as_str().expect("text is string");
+    assert!(
+        text.contains("Substantial body content"),
+        "expected body fallback, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_body_only_page_still_works() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/body-only");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><body>\
+                 <h1>Page Title</h1>\
+                 <p>Paragraph one.</p>\
+                 <p>Paragraph two.</p>\
+                 </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/body-only"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let text = v["text"].as_str().expect("text is string");
+    assert!(text.contains("Page Title"), "got: {text}");
+    assert!(text.contains("Paragraph one."), "got: {text}");
+    assert!(text.contains("Paragraph two."), "got: {text}");
+}

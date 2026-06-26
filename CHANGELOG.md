@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MockEngine::search` now respects the `max_results` argument and truncates its canned results accordingly. Previously the mock ignored the limit and returned all canned results, masking the candidate-pool bug where production providers were called with `final_max_results` instead of `candidate_limit`.
 - `run_web_fetch` MCP tool now includes `links_seen` and `links_truncated` fields in the JSON payload.
 - CLI `eggsearch fetch --json` now includes `trust_markers` and `document` fields in JSON output.
+- **PDF `metadata_only` no longer leaks body content**: when `extract_mode: "metadata_only"` targets a PDF, the response returns `text: null` with empty `document.blocks` and `document.chunks` instead of extracting and returning page text.
+- **Document link truncation metadata consistency**: `FetchDocument.link_truncated` now mirrors the top-level `links_truncated` field instead of being hardcoded to `false`.
+- **HTML outline entries filtered after truncation**: outline entries whose `block_index` points to a block removed by block-boundary truncation are now removed, preventing stale index references.
+- **Code/diff/plaintext renderers enforce hard output bounds**: oversized single lines or paragraphs are now truncated to the configured `max_chars` budget instead of being pushed in full, preventing block text from exceeding the character limit.
+- **PDF document metadata includes real fetch context**: `FetchRenderMetadata` for PDFs now reports actual `bytes_read`, `content_length`, and `redirects_followed` instead of hardcoded zeros.
+- **HTML sparse-root fallback**: when `main` or `article` exists but produces no or minimal content, the renderer falls back to `body` instead of returning an empty document.
+- **Content-type classifier parity**: `application/javascript`, `application/x-javascript`, `application/typescript`, and `application/x-sh` are now classified as code by the content detection classifier.
 
 ### Added
 - **Link classification for `web_fetch`**: extracted links now include a deterministic `link_kind` classification (`same_page_anchor`, `same_domain`, `external`, `download`, `source_code`, `documentation`, `api_reference`, `issue`, `pull_request`, `release`, `security_advisory`, `pdf`, `image`, `feed`, `other`), optional `rel` attribute, and `same_domain` boolean flag. Classification uses cheap URL heuristics (host equality, path patterns, file extensions) with no external dependencies.
