@@ -149,6 +149,8 @@ Key types (all in `src/core/document.rs`):
 
 Phase 1 builds a minimal compatibility document: HTML gets `kind=html` with a single `paragraph` block, plain text gets `kind=plain_text` with a `raw_text` block. Chunks are a single chunk wrapping all blocks. Block text passes through Tier 1 (control-char strip + length bound) but is NOT framed (unlike the legacy `text` field).
 
+Phase 3 adds full content-type detection (`src/fetch/detect.rs`) and line-preserving renderers. `web_fetch` now classifies non-HTML responses using Content-Type headers, URL file extensions, and byte heuristics. Source code, JSON, TOML, YAML, diffs, and patches are rendered as line-preserving `Code` blocks with `line_start`/`line_end` metadata. Markdown source files are parsed with `pulldown-cmark` into heading, code, and paragraph blocks with an outline. Plain text is split into paragraph blocks. The `FetchRenderMetadata.detected_language` field is populated when a language can be determined.
+
 The `src/fetch/render/` module contains the HTML structural renderer:
 - `blocks.rs` parses HTML and produces `Vec<RenderedBlock>` with proper element mapping
 - `text.rs` renders blocks as plain text
@@ -156,6 +158,14 @@ The `src/fetch/render/` module contains the HTML structural renderer:
 Content root selection prefers `main` > `article` > `[role=main]` > `body`.
 
 `text_truncated` (character-level) is distinct from `truncated` (byte-level body cap). Both are reported.
+
+### Content Detection
+
+`src/fetch/detect.rs` provides a deterministic `classify(content_type, url, body)` function that returns a `DetectedContent` struct with `kind`, `language`, and `line_preserving` fields. Detection priority: Content-Type header > URL file extension > byte heuristics. Byte heuristics look for shebangs, import statements, function definitions, and struct/class patterns to identify code-like content under `text/plain`.
+
+### Non-HTML Renderers
+
+`src/fetch/render/code.rs` provides `render_code()`, `render_diff()`, and `render_plaintext()` for line-preserving rendering. `src/fetch/render/markdown_source.rs` provides `render_markdown_source()` using `pulldown-cmark` for Markdown file parsing with heading extraction, fenced code block detection, and outline generation.
 
 ### Search Intent and Freshness
 

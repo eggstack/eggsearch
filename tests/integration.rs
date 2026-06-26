@@ -2155,3 +2155,594 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
         );
     }
 }
+
+// =========================================================================
+// Phase 3: Code, Markdown, and Plaintext detection tests
+// =========================================================================
+
+#[tokio::test]
+async fn web_fetch_document_rust_source_has_code_kind() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/main.rs");
+        then.status(200)
+            .header("content-type", "text/x-rust")
+            .body("fn main() {\n    println!(\"hello\");\n}\n");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/main.rs"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "code", "kind should be code for .rs file");
+
+    // Should have code blocks with language
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty(), "should have at least one block");
+    assert_eq!(blocks[0]["kind"], "code");
+    assert_eq!(blocks[0]["language"], "rust");
+
+    // Line ranges should be present
+    assert!(blocks[0]["line_start"].is_number());
+    assert!(blocks[0]["line_end"].is_number());
+
+    // Metadata should include detected_language
+    let meta = doc["metadata"].as_object().expect("metadata");
+    assert_eq!(
+        meta["detected_language"], "rust",
+        "detected_language should be rust"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_document_json_content_type() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/data.json");
+        then.status(200)
+            .header("content-type", "application/json; charset=utf-8")
+            .body(r#"{"name": "test", "version": "1.0"}"#);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/data.json"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "json", "kind should be json");
+
+    // Should have code blocks preserving JSON structure
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+    assert_eq!(blocks[0]["kind"], "code");
+    assert_eq!(blocks[0]["language"], "json");
+}
+
+#[tokio::test]
+async fn web_fetch_document_markdown_content_type() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/readme.md");
+        then.status(200)
+            .header("content-type", "text/markdown")
+            .body("# Title\n\n## Section\n\nSome text here.\n\n```rust\nfn main() {}\n```\n");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/readme.md"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(
+        doc["kind"], "markdown",
+        "kind should be markdown for text/markdown"
+    );
+
+    // Should have heading blocks and code blocks
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(
+        blocks.len() >= 3,
+        "should have heading + paragraph + code blocks"
+    );
+
+    let kinds: Vec<&str> = blocks
+        .iter()
+        .map(|b| b["kind"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        kinds.contains(&"heading"),
+        "should have heading blocks: {kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"code"),
+        "should have code blocks: {kinds:?}"
+    );
+
+    // Outline should be populated from Markdown headings
+    let outline = doc["outline"].as_array().expect("outline");
+    assert_eq!(outline.len(), 2, "outline should have 2 headings");
+    assert_eq!(outline[0]["title"], "Title");
+    assert_eq!(outline[1]["title"], "Section");
+}
+
+#[tokio::test]
+async fn web_fetch_document_toml_content_type() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/Cargo.toml");
+        then.status(200)
+            .header("content-type", "text/toml")
+            .body("[package]\nname = \"test\"\nversion = \"0.1.0\"\n");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/Cargo.toml"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "toml", "kind should be toml");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+    assert_eq!(blocks[0]["kind"], "code");
+    assert_eq!(blocks[0]["language"], "toml");
+
+    // Line ranges should be present
+    assert_eq!(blocks[0]["line_start"], 1);
+}
+
+#[tokio::test]
+async fn web_fetch_document_yaml_content_type() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/config.yaml");
+        then.status(200)
+            .header("content-type", "text/yaml")
+            .body("name: test\nversion: '1.0'\n");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/config.yaml"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "yaml", "kind should be yaml");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+    assert_eq!(blocks[0]["kind"], "code");
+    assert_eq!(blocks[0]["language"], "yaml");
+}
+
+#[tokio::test]
+async fn web_fetch_document_diff_content_type() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/changes.diff");
+        then.status(200)
+            .header("content-type", "text/x-diff")
+            .body("--- a/foo.rs\n+++ b/foo.rs\n@@ -1,3 +1,3 @@\n-old line\n+new line\n context\n");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/changes.diff"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "diff", "kind should be diff");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+    assert_eq!(blocks[0]["language"], "diff");
+    assert!(blocks[0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("@@ -1,3 +1,3 @@"));
+}
+
+#[tokio::test]
+async fn web_fetch_document_plain_text_preserves_paragraphs() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/prose.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("First paragraph.\n\nSecond paragraph.\n\nThird paragraph.");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/prose.txt"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(
+        doc["kind"], "plain_text",
+        "kind should be plain_text for text/plain"
+    );
+
+    // Should have paragraph blocks, not a single raw_text block
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert_eq!(blocks.len(), 3, "should have 3 paragraph blocks");
+    assert!(
+        blocks.iter().all(|b| b["kind"] == "paragraph"),
+        "all blocks should be paragraphs: {blocks:?}"
+    );
+
+    // Each block should have line ranges
+    assert_eq!(blocks[0]["line_start"], 1);
+    assert_eq!(blocks[0]["line_end"], 1);
+    assert_eq!(blocks[1]["line_start"], 3);
+    assert_eq!(blocks[1]["line_end"], 3);
+}
+
+#[tokio::test]
+async fn web_fetch_document_code_preserves_line_ranges() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/lib.rs");
+        then.status(200).header("content-type", "text/x-rust").body(
+            "use std::collections::HashMap;\n\npub fn main() {\n    let map = HashMap::new();\n}\n",
+        );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/lib.rs"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "code");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+
+    // Line ranges should be 1-based and correct
+    let block = &blocks[0];
+    assert_eq!(block["line_start"], 1);
+    assert!(block["line_end"].as_u64().unwrap() >= 5);
+
+    // Language should be detected
+    assert_eq!(block["language"], "rust");
+
+    // Code text should preserve indentation
+    let text = block["text"].as_str().unwrap();
+    assert!(
+        text.contains("    let map"),
+        "should preserve indentation: {text}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_document_json_url_extension_no_content_type() {
+    use httpmock::prelude::*;
+
+    // Server returns text/plain but URL has .json extension
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/config.json");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(r#"{"key": "value"}"#);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/config.json"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    // URL extension .json should detect as JSON even with text/plain Content-Type
+    assert_eq!(
+        doc["kind"], "json",
+        "kind should be json from URL extension"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_document_truncation_at_line_boundary() {
+    use httpmock::prelude::*;
+
+    // Large code file that should be truncated at line boundaries
+    let lines: Vec<String> = (0..100)
+        .map(|i| format!("line_{}: {}", i, "x".repeat(50)))
+        .collect();
+    let body = lines.join("\n");
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/big.rs");
+        then.status(200)
+            .header("content-type", "text/x-rust")
+            .body(body.as_str());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/big.rs"),
+            max_chars: Some(500), // Small budget
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(doc["kind"], "code");
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+
+    // Truncation should happen at line boundaries (blocks are not
+    // split mid-line). Each block's text should be complete lines.
+    let total_block_chars: usize = blocks
+        .iter()
+        .filter_map(|b| b["text"].as_str())
+        .map(|t| t.chars().count())
+        .sum();
+    assert!(
+        total_block_chars <= 500,
+        "total block chars {total_block_chars} should not exceed budget 500"
+    );
+
+    // Should report truncation
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "should indicate truncation"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_document_metadata_only_suppresses_body() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/code.rs");
+        then.status(200)
+            .header("content-type", "text/x-rust")
+            .body("fn main() {\n    println!(\"hello\");\n}\n");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/code.rs"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: Some(ExtractMode::MetadataOnly),
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    // Metadata-only mode should not produce a document
+    assert!(
+        v["document"].is_null(),
+        "metadata_only should not produce document"
+    );
+    // Legacy text should also be null
+    assert!(
+        v["text"].is_null() || v["text"].as_str().unwrap_or("").is_empty(),
+        "metadata_only should not produce text"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_document_application_json_no_extension() {
+    use httpmock::prelude::*;
+
+    // JSON endpoint without .json extension (like a REST API)
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/api/data");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"items": [1, 2, 3], "total": 3}"#);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/api/data"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    assert_eq!(
+        doc["kind"], "json",
+        "application/json should detect as json"
+    );
+
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty());
+    assert_eq!(blocks[0]["language"], "json");
+}

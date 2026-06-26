@@ -4,6 +4,7 @@
 //! extracts readable text/metadata, and returns bounded structured output.
 
 pub mod client;
+pub mod detect;
 pub mod extract;
 pub mod limits;
 /// HTML structural rendering (blocks, text, markdown).

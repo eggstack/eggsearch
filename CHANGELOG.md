@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - Unreleased
+
+### Added
+
+- Content-type detection classifier (`src/fetch/detect.rs`) for deterministic document kind and language identification from Content-Type headers, URL extensions, and byte heuristics
+- Line-preserving code renderer (`src/fetch/render/code.rs`) for source code, JSON, TOML, YAML, and config files with line-range metadata
+- Diff/patch renderer with hunk preservation
+- Markdown source file renderer (`src/fetch/render/markdown_source.rs`) using pulldown-cmark with heading outline extraction
+- Plain text prose renderer with paragraph-based block splitting
+- `web_fetch` now accepts `application/json`, `text/markdown`, `text/toml`, `text/yaml`, `text/x-diff`, and other text-based Content-Type headers
+- `FetchRenderMetadata.detected_language` field populated from content detection
+- 12 new integration tests covering JSON, Markdown, TOML, YAML, diff, code, plaintext, and truncation behavior
+
 ## [0.4.0] - Unreleased
 
 ### Added

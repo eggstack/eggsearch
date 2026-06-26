@@ -5,13 +5,14 @@ use std::time::Duration;
 use futures::StreamExt;
 use reqwest::Client;
 
+use super::detect;
 use super::extract::extract_links_from_html;
 use super::limits::{validate_fetch_target, validate_url, FetchLimits};
 use super::render;
 use super::types::FetchError;
 use crate::core::document::{
-    BlockKind, DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument,
-    FetchRenderMetadata, RenderFormat, RenderedBlock,
+    DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument, FetchRenderMetadata,
+    RenderFormat,
 };
 use crate::core::fetch::{ExtractMode, FetchTrust, WebFetchResponse};
 use crate::core::sanitize::{
@@ -193,9 +194,26 @@ impl FetchClient {
             .as_ref()
             .map(|ct| ct.starts_with("text/html") || ct.starts_with("application/xhtml"))
             .unwrap_or(false);
+
+        // Accept a broad set of text-based content types. Binary
+        // types (images, PDFs, etc.) are rejected; text/* and known
+        // application types are accepted for content extraction.
         let is_text = content_type
             .as_ref()
-            .map(|ct| ct.starts_with("text/plain"))
+            .map(|ct| {
+                let ct_lower = ct.to_lowercase();
+                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
+                ct.starts_with("text/")
+                    || ct_base == "application/json"
+                    || ct_base == "application/ld+json"
+                    || ct_base.starts_with("application/") && ct_base.ends_with("+json")
+                    || ct_base == "application/toml"
+                    || ct_base == "application/x-yaml"
+                    || ct_base == "application/yaml"
+                    || ct_base == "application/javascript"
+                    || ct_base == "application/typescript"
+                    || ct_base == "application/x-sh"
+            })
             .unwrap_or(false);
 
         if !is_html && !is_text {
@@ -320,10 +338,14 @@ impl FetchClient {
 
         // Build the structured document from extraction output.
         let document = if extract_mode != ExtractMode::MetadataOnly {
+            // Use the detection classifier to determine document kind,
+            // language, and rendering strategy.
+            let detected = detect::classify(content_type.as_deref(), &final_url, &body);
+
             let doc_kind = if is_html {
                 DocumentKind::Html
             } else {
-                DocumentKind::PlainText
+                detected.kind
             };
 
             let charset = content_type
@@ -393,35 +415,46 @@ impl FetchClient {
 
                 (blocks, outline, text_chars, block_truncated)
             } else if let Some(ref t) = raw_text {
-                // Plain text path: single RawText block
-                let (stripped, _) = strip_control_chars(t);
-                let (bounded, _) = bound_text(&stripped, max_chars);
+                // Non-HTML path: use detected kind to pick the right renderer.
                 let text_chars = t.chars().count();
 
-                let blocks = vec![RenderedBlock {
-                    kind: BlockKind::RawText,
-                    text: bounded,
-                    level: None,
-                    anchor: None,
-                    language: None,
-                    line_start: None,
-                    line_end: None,
-                    page: None,
-                }];
+                let rendered = if detected.line_preserving {
+                    match detected.kind {
+                        DocumentKind::Markdown => {
+                            let md = render::markdown_source::render_markdown_source(t, max_chars);
+                            render::code::RenderedContent {
+                                blocks: md.blocks,
+                                outline: md.outline,
+                                text_truncated: md.text_truncated,
+                                block_truncated: md.block_truncated,
+                            }
+                        }
+                        DocumentKind::Diff | DocumentKind::Patch => {
+                            render::code::render_diff(t, max_chars)
+                        }
+                        _ => {
+                            // Code, Json, Toml, Yaml, and other structured text
+                            render::code::render_code(t, detected.language.as_deref(), max_chars)
+                        }
+                    }
+                } else {
+                    // Plain text prose: paragraph-based rendering
+                    render::code::render_plaintext(t, max_chars)
+                };
 
-                let mut outline = Vec::new();
-                if let Some(ref title_text) = raw_title {
-                    let (stripped_title, _) = strip_control_chars(title_text);
-                    let (bounded_title, _) = bound_text(&stripped_title, 200);
-                    outline.push(DocumentOutlineEntry {
-                        level: 1,
-                        title: bounded_title,
-                        anchor: None,
-                        block_index: Some(0),
-                    });
+                // Apply Tier 1 (strip + bound) to each block's text
+                let mut blocks = rendered.blocks;
+                for block in &mut blocks {
+                    let (stripped, _) = strip_control_chars(&block.text);
+                    let (bounded, _) = bound_text(&stripped, max_chars);
+                    block.text = bounded;
                 }
 
-                (blocks, outline, text_chars, false)
+                let outline = rendered.outline;
+                let block_truncated = rendered.block_truncated;
+                let _text_truncated = rendered.text_truncated;
+
+                (blocks, outline, text_chars, block_truncated)
             } else {
                 (Vec::new(), Vec::new(), 0, false)
             };
@@ -432,7 +465,7 @@ impl FetchClient {
                     .iter()
                     .map(|b| b.text.as_str())
                     .collect::<Vec<_>>()
-                    .join(" ");
+                    .join("\n");
                 vec![DocumentChunk {
                     chunk_id: "chunk_0".to_string(),
                     text: chunk_text,
@@ -464,7 +497,7 @@ impl FetchClient {
                     charset,
                     redirects_followed: redirect_count,
                     source_extension,
-                    detected_language: None,
+                    detected_language: detected.language,
                 }),
                 outline,
                 blocks,
@@ -1234,5 +1267,54 @@ mod tests {
                 "expected allow for {url_str}, got: {result:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn fetch_json_content_type_succeeds_and_detects_kind() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/data");
+            then.status(200)
+                .header("content-type", "application/json; charset=utf-8")
+                .body(r#"{"key": "value"}"#);
+        });
+
+        let client = test_client();
+        let resp = client
+            .fetch(&server.url("/api/data"), None, ExtractMode::Text, false)
+            .await
+            .expect("ok");
+
+        assert_eq!(resp.status, 200);
+        let doc = resp.document.expect("document should be present");
+        assert_eq!(doc.kind, crate::core::document::DocumentKind::Json);
+        assert_eq!(
+            doc.metadata.as_ref().unwrap().detected_language.as_deref(),
+            Some("json")
+        );
+        // Check blocks have language
+        assert!(!doc.blocks.is_empty());
+        assert_eq!(doc.blocks[0].language.as_deref(), Some("json"));
+    }
+
+    #[tokio::test]
+    async fn fetch_markdown_content_type_detects_kind() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/readme.md");
+            then.status(200)
+                .header("content-type", "text/markdown")
+                .body("# Title\n\n## Section\n\nText.\n");
+        });
+
+        let client = test_client();
+        let resp = client
+            .fetch(&server.url("/readme.md"), None, ExtractMode::Text, false)
+            .await
+            .expect("ok");
+
+        assert_eq!(resp.status, 200);
+        let doc = resp.document.expect("document should be present");
+        assert_eq!(doc.kind, crate::core::document::DocumentKind::Markdown);
     }
 }

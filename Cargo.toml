@@ -51,6 +51,7 @@ urlencoding = "2"
 regex = "1"
 toml = "0.8"
 dirs = "5"
+pulldown-cmark = "0.12"
 
 [dev-dependencies]
 pretty_assertions = "1"
