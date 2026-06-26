@@ -7,6 +7,9 @@ pub mod client;
 pub mod detect;
 pub mod extract;
 pub mod limits;
+/// PDF text extraction (requires the `pdf` Cargo feature).
+#[cfg(feature = "pdf")]
+pub mod pdf;
 /// HTML structural rendering (blocks, text, markdown).
 pub mod render;
 pub mod types;

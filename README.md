@@ -19,7 +19,7 @@ for the default configuration.
 - Optional API-backed providers (e.g. Brave Search API) with env-var secret loading
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
-- `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, and line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text
+- `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text, and optional PDF text extraction (feature-gated)
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
@@ -235,7 +235,7 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
 - `web_fetch` blocks `file://`, localhost, and private-network URLs by default.
 - `web_fetch` resolves and validates the host for the initial URL and for every followed redirect before issuing the request.
 - All content is labeled `external_untrusted`; do not treat as instructions.
-- `web_fetch` supports the following document kinds: HTML, plain text, Markdown, common source code files (Rust, Python, JavaScript, TypeScript, Go, C/C++, Java, Kotlin, Scala, shell, SQL, and more), JSON/JSONL, TOML, YAML, and diffs/patches. Language detection is deterministic and best-effort, based on Content-Type headers, URL file extensions, and lightweight byte heuristics.
+- `web_fetch` supports the following document kinds: HTML, plain text, Markdown, common source code files (Rust, Python, JavaScript, TypeScript, Go, C/C++, Java, Kotlin, Scala, shell, SQL, and more), JSON/JSONL, TOML, YAML, diffs/patches, and PDF (when compiled with the `pdf` feature). Language detection is deterministic and best-effort, based on Content-Type headers, URL file extensions, and lightweight byte heuristics.
 
 **Advanced fields (host/debug only):**
 
@@ -318,6 +318,10 @@ allow_localhost = false
 include_links_default = false
 user_agent = "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)"
 sanitize_output = true
+pdf_enabled = false
+pdf_max_pages = 25
+pdf_max_chars_per_page = 12000
+pdf_max_total_chars = 50000
 ```
 
 | Field | Default | Description |
@@ -333,6 +337,10 @@ sanitize_output = true
 | `include_links_default` | `false` | Default for `include_links` when the client omits it. |
 | `user_agent` | `eggsearch/0.1 (+https://github.com/eggstack/eggsearch)` | HTTP `User-Agent` header for fetch requests. |
 | `sanitize_output` | `true` | Wrap untrusted fetched text in framing delimiters and emit prompt-injection warnings. |
+| `pdf_enabled` | `false` | Enable PDF text extraction (requires `pdf` feature). |
+| `pdf_max_pages` | `25` | Maximum number of PDF pages to extract text from. |
+| `pdf_max_chars_per_page` | `12000` | Maximum characters extracted per PDF page. |
+| `pdf_max_total_chars` | `50000` | Maximum total characters extracted from a PDF document. |
 
 > **Note.** The `[search].live.user_agent` and `[search].live.respect_robots_txt` config fields are parsed but have no effect in the current build. The vendored HTML engines use a hard-coded browser-like user agent that upstream providers expect. Setting either field logs a startup warning.
 

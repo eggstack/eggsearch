@@ -180,6 +180,15 @@ fn default_user_agent() -> String {
 fn default_sanitize_output() -> bool {
     true
 }
+fn default_pdf_max_pages() -> usize {
+    25
+}
+fn default_pdf_max_chars_per_page() -> usize {
+    12000
+}
+fn default_pdf_max_total_chars() -> usize {
+    50000
+}
 
 /// The `[fetch]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -222,6 +231,22 @@ pub struct FetchSection {
     /// Default: `true`.
     #[serde(default = "default_sanitize_output")]
     pub sanitize_output: bool,
+    /// Whether PDF text extraction is enabled. Requires the `pdf`
+    /// Cargo feature to be compiled in. When disabled, PDF
+    /// responses are rejected with a clear message. Default: `false`.
+    #[serde(default)]
+    pub pdf_enabled: bool,
+    /// Maximum number of PDF pages to attempt extracting text from.
+    /// Default: 25.
+    #[serde(default = "default_pdf_max_pages")]
+    pub pdf_max_pages: usize,
+    /// Maximum characters to extract per PDF page. Default: 12000.
+    #[serde(default = "default_pdf_max_chars_per_page")]
+    pub pdf_max_chars_per_page: usize,
+    /// Maximum total characters to extract across all PDF pages.
+    /// Default: 50000.
+    #[serde(default = "default_pdf_max_total_chars")]
+    pub pdf_max_total_chars: usize,
 }
 
 impl Default for FetchSection {
@@ -238,6 +263,10 @@ impl Default for FetchSection {
             include_links_default: false,
             user_agent: default_user_agent(),
             sanitize_output: default_sanitize_output(),
+            pdf_enabled: false,
+            pdf_max_pages: default_pdf_max_pages(),
+            pdf_max_chars_per_page: default_pdf_max_chars_per_page(),
+            pdf_max_total_chars: default_pdf_max_total_chars(),
         }
     }
 }
@@ -406,6 +435,10 @@ impl AppConfig {
             redirect_limit: self.fetch.redirect_limit,
             allow_private_network: self.fetch.allow_private_network,
             allow_localhost: self.fetch.allow_localhost,
+            pdf_enabled: self.fetch.pdf_enabled,
+            pdf_max_pages: self.fetch.pdf_max_pages,
+            pdf_max_chars_per_page: self.fetch.pdf_max_chars_per_page,
+            pdf_max_total_chars: self.fetch.pdf_max_total_chars,
         }
     }
 

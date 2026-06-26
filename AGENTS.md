@@ -83,6 +83,7 @@ eggsearch/
 
 ### Feature Flags
 - `mock` (opt-in): enables the test-only mock engine harness in `meta::mock`
+- `pdf` (opt-in): enables PDF text extraction in `web_fetch` using the `lopdf` crate; requires MSRV 1.85
 - The previous `metasearch` feature is gone; the metasearch code is always compiled
 - Integration tests use `#[cfg(feature = "mock")]` and are run via `cargo test --features mock`
 
@@ -109,7 +110,7 @@ eggsearch/
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
 - `AppConfig` is the root type, contains `SearchSection`
 - `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`
-- `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output)
+- `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output, pdf_enabled, pdf_max_pages, pdf_max_chars_per_page, pdf_max_total_chars)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
 - `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`)
 - `Mode` enum: `Live` or `Off`
@@ -150,6 +151,8 @@ Key types (all in `src/core/document.rs`):
 Phase 1 builds a minimal compatibility document: HTML gets `kind=html` with a single `paragraph` block, plain text gets `kind=plain_text` with a `raw_text` block. Chunks are a single chunk wrapping all blocks. Block text passes through Tier 1 (control-char strip + length bound) but is NOT framed (unlike the legacy `text` field).
 
 Phase 3 adds full content-type detection (`src/fetch/detect.rs`) and line-preserving renderers. `web_fetch` now classifies non-HTML responses using Content-Type headers, URL file extensions, and byte heuristics. Source code, JSON, TOML, YAML, diffs, and patches are rendered as line-preserving `Code` blocks with `line_start`/`line_end` metadata. Markdown source files are parsed with `pulldown-cmark` into heading, code, and paragraph blocks with an outline. Plain text is split into paragraph blocks. The `FetchRenderMetadata.detected_language` field is populated when a language can be determined.
+
+Phase 4 adds PDF text extraction, gated behind the `pdf` Cargo feature (opt-in, not default). When compiled with `pdf`, `web_fetch` detects PDF responses via `Content-Type: application/pdf` or `.pdf` URL extension and extracts text using the `lopdf` crate. Extraction is bounded by `pdf_max_pages`, `pdf_max_chars_per_page`, and `pdf_max_total_chars` config fields. Each extracted page produces a `page_break` block followed by paragraph blocks, with per-page chunks. No OCR, embedded file extraction, or JavaScript is supported. Encrypted or unextractable PDFs produce structured error variants (`pdf_encrypted`, `pdf_no_extractable_text`).
 
 The `src/fetch/render/` module contains the HTML structural renderer:
 - `blocks.rs` parses HTML and produces `Vec<RenderedBlock>` with proper element mapping

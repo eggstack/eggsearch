@@ -195,6 +195,35 @@ impl FetchClient {
             .map(|ct| ct.starts_with("text/html") || ct.starts_with("application/xhtml"))
             .unwrap_or(false);
 
+        // Detect PDF by Content-Type or URL extension. PDFs are
+        // binary documents that require a separate extraction path.
+        let is_pdf_by_ct = content_type
+            .as_ref()
+            .map(|ct| {
+                let ct_lower = ct.to_lowercase();
+                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
+                ct_base == "application/pdf"
+            })
+            .unwrap_or(false);
+
+        let is_pdf_by_url = if !is_pdf_by_ct {
+            url::Url::parse(&final_url)
+                .ok()
+                .and_then(|u| {
+                    let path = u.path().to_lowercase();
+                    if path.ends_with(".pdf") {
+                        Some(true)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let is_pdf = is_pdf_by_ct || is_pdf_by_url;
+
         // Accept a broad set of text-based content types. Binary
         // types (images, PDFs, etc.) are rejected; text/* and known
         // application types are accepted for content extraction.
@@ -216,10 +245,99 @@ impl FetchClient {
             })
             .unwrap_or(false);
 
-        if !is_html && !is_text {
+        if !is_html && !is_text && !is_pdf {
             return Err(FetchError::UnsupportedContentType(
                 content_type.unwrap_or_else(|| "unknown".into()),
             ));
+        }
+
+        // Handle PDF-specific gates before reading the body.
+        if is_pdf && !cfg!(feature = "pdf") {
+            return Err(FetchError::PdfNotCompiledIn);
+        }
+        if is_pdf && !self.limits.pdf_enabled {
+            return Err(FetchError::PdfDisabled);
+        }
+
+        // --- PDF extraction path (early return) ---
+        // PDFs are handled as a completely separate path because the
+        // extraction, sanitization, and document construction differ
+        // from the shared HTML/text pipeline.
+        #[cfg(feature = "pdf")]
+        if is_pdf {
+            let pdf_limits = super::pdf::PdfLimits {
+                max_pages: self.limits.pdf_max_pages,
+                max_chars_per_page: self.limits.pdf_max_chars_per_page,
+                max_total_chars: self.limits.pdf_max_total_chars,
+            };
+
+            let mut body = Vec::new();
+            let mut stream = response.bytes_stream();
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
+                if body.len() + chunk.len() > self.limits.max_bytes {
+                    let remaining = self.limits.max_bytes.saturating_sub(body.len());
+                    if remaining > 0 {
+                        body.extend_from_slice(&chunk[..remaining]);
+                    }
+                    break;
+                }
+                body.extend_from_slice(&chunk);
+            }
+
+            let pdf_result = super::pdf::extract_pdf_text(&body, max_chars, &pdf_limits)?;
+
+            // Sanitize the legacy text field (Tier 1 + Tier 2/3).
+            let mut warnings = pdf_result.warnings;
+            let mut trust_markers = TrustMarkers::default();
+
+            // Sanitize PDF title if present
+            let title = if let Some(t) = &pdf_result.title {
+                let (s, m) = sanitize_field(
+                    t,
+                    "title",
+                    &final_url,
+                    TITLE_MAX_CHARS,
+                    self.sanitize_output,
+                    &mut warnings,
+                );
+                trust_markers.merge(&m);
+                Some(s)
+            } else {
+                None
+            };
+
+            // Sanitize the legacy text field
+            let (stripped_text, _) = strip_control_chars(&pdf_result.text);
+            let (bounded_text, _) = bound_text(&stripped_text, max_chars);
+            let (text, text_markers) = sanitize_field(
+                &bounded_text,
+                "text",
+                &final_url,
+                max_chars,
+                self.sanitize_output,
+                &mut warnings,
+            );
+            trust_markers.merge(&text_markers);
+
+            warnings.push(WebFetchResponse::untrusted_warning());
+
+            return Ok(WebFetchResponse {
+                url: url_str.to_string(),
+                final_url,
+                title,
+                description: None,
+                content_type,
+                status,
+                fetched: true,
+                truncated: false,
+                trust: FetchTrust::ExternalUntrusted,
+                text: Some(text),
+                links: Vec::new(),
+                warnings,
+                trust_markers,
+                document: Some(pdf_result.document),
+            });
         }
 
         let mut body = Vec::new();
@@ -597,6 +715,10 @@ mod tests {
             redirect_limit: 5,
             allow_private_network: true,
             allow_localhost: true,
+            pdf_enabled: false,
+            pdf_max_pages: 25,
+            pdf_max_chars_per_page: 12000,
+            pdf_max_total_chars: 50000,
         }
     }
 
@@ -822,11 +944,16 @@ mod tests {
         let err = client
             .fetch(&server.url("/doc.pdf"), None, ExtractMode::Text, false)
             .await
-            .expect_err("expected unsupported content type error");
+            .expect_err("expected pdf error");
+        // Without the `pdf` feature: PdfNotCompiledIn.
+        // With the `pdf` feature but pdf_enabled=false: PdfDisabled.
+        // With the `pdf` feature and pdf_enabled=true but fake body: PdfParseError.
         assert!(
             matches!(
                 err.kind(),
-                crate::fetch::FetchErrorKind::UnsupportedContentType
+                crate::fetch::FetchErrorKind::PdfNotCompiledIn
+                    | crate::fetch::FetchErrorKind::PdfDisabled
+                    | crate::fetch::FetchErrorKind::PdfParseError
             ),
             "got: {err:?}"
         );

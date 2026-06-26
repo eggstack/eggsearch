@@ -61,6 +61,30 @@ pub enum FetchError {
     #[error("extraction failed: {0}")]
     ExtractError(String),
 
+    /// PDF support is not compiled in (the `pdf` Cargo feature is disabled).
+    #[error("PDF support is not compiled in; enable the `pdf` Cargo feature")]
+    PdfNotCompiledIn,
+
+    /// PDF extraction is disabled by configuration.
+    #[error("PDF extraction is disabled; set [fetch].pdf_enabled = true in config")]
+    PdfDisabled,
+
+    /// PDF parse failure.
+    #[error("PDF parse error: {0}")]
+    PdfParseError(String),
+
+    /// PDF is encrypted/password-protected.
+    #[error("PDF is encrypted or password-protected; extraction is not supported")]
+    PdfEncrypted,
+
+    /// PDF has no extractable text (scanned or image-only).
+    #[error("PDF has little or no extractable text; OCR is not supported")]
+    PdfNoExtractableText,
+
+    /// PDF limits exceeded.
+    #[error("PDF limit exceeded: {0}")]
+    PdfLimitExceeded(String),
+
     /// Unknown error.
     #[error("{0}")]
     Unknown(String),
@@ -95,6 +119,18 @@ pub enum FetchErrorKind {
     NetworkError,
     /// Extraction error.
     ExtractError,
+    /// PDF not compiled in.
+    PdfNotCompiledIn,
+    /// PDF disabled by config.
+    PdfDisabled,
+    /// PDF parse error.
+    PdfParseError,
+    /// PDF encrypted.
+    PdfEncrypted,
+    /// PDF no extractable text.
+    PdfNoExtractableText,
+    /// PDF limit exceeded.
+    PdfLimitExceeded,
     /// Unknown error.
     Unknown,
 }
@@ -117,6 +153,12 @@ impl FetchError {
             FetchError::UnsupportedContentType(_) => FetchErrorKind::UnsupportedContentType,
             FetchError::NetworkError(_) => FetchErrorKind::NetworkError,
             FetchError::ExtractError(_) => FetchErrorKind::ExtractError,
+            FetchError::PdfNotCompiledIn => FetchErrorKind::PdfNotCompiledIn,
+            FetchError::PdfDisabled => FetchErrorKind::PdfDisabled,
+            FetchError::PdfParseError(_) => FetchErrorKind::PdfParseError,
+            FetchError::PdfEncrypted => FetchErrorKind::PdfEncrypted,
+            FetchError::PdfNoExtractableText => FetchErrorKind::PdfNoExtractableText,
+            FetchError::PdfLimitExceeded(_) => FetchErrorKind::PdfLimitExceeded,
             FetchError::Unknown(_) => FetchErrorKind::Unknown,
         }
     }
@@ -137,6 +179,12 @@ impl FetchError {
             FetchErrorKind::UnsupportedContentType => "unsupported_content_type",
             FetchErrorKind::NetworkError => "network_error",
             FetchErrorKind::ExtractError => "extract_error",
+            FetchErrorKind::PdfNotCompiledIn => "pdf_not_compiled_in",
+            FetchErrorKind::PdfDisabled => "pdf_disabled",
+            FetchErrorKind::PdfParseError => "pdf_parse_error",
+            FetchErrorKind::PdfEncrypted => "pdf_encrypted",
+            FetchErrorKind::PdfNoExtractableText => "pdf_no_extractable_text",
+            FetchErrorKind::PdfLimitExceeded => "pdf_limit_exceeded",
             FetchErrorKind::Unknown => "unknown",
         }
     }

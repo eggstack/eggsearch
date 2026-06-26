@@ -26,6 +26,14 @@ pub struct FetchLimits {
     pub allow_private_network: bool,
     /// Whether to allow localhost.
     pub allow_localhost: bool,
+    /// Whether PDF text extraction is enabled.
+    pub pdf_enabled: bool,
+    /// Maximum number of PDF pages to attempt extracting.
+    pub pdf_max_pages: usize,
+    /// Maximum characters to extract per PDF page.
+    pub pdf_max_chars_per_page: usize,
+    /// Maximum total characters to extract from PDF.
+    pub pdf_max_total_chars: usize,
 }
 
 impl Default for FetchLimits {
@@ -39,6 +47,10 @@ impl Default for FetchLimits {
             redirect_limit: 5,
             allow_private_network: false,
             allow_localhost: false,
+            pdf_enabled: false,
+            pdf_max_pages: 25,
+            pdf_max_chars_per_page: 12000,
+            pdf_max_total_chars: 50000,
         }
     }
 }

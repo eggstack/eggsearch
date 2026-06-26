@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `FetchRenderMetadata` reports `bytes_read`, `content_length`, `charset`, `redirects_followed`, `source_extension`, and `detected_language`.
 - `HtmlExtractor::extract` and `extract_content` now return a 6-tuple with an additional `text_truncated: bool` field.
 - 10 new integration tests covering document model acceptance criteria (kind/format, blocks/chunks, metadata, truncation, sanitization, legacy field compatibility).
+- **PDF text extraction** (feature-gated behind `pdf`, opt-in, not default): `web_fetch` detects PDF responses via `Content-Type: application/pdf` or `.pdf` URL extension and extracts text using the `lopdf` crate. Per-page indexed blocks with `page_break` markers, per-page chunks. Bounded by `pdf_max_pages` (default 25), `pdf_max_chars_per_page` (default 12000), and `pdf_max_total_chars` (default 50000). New config fields: `pdf_enabled`, `pdf_max_pages`, `pdf_max_chars_per_page`, `pdf_max_total_chars` in `[fetch]`. New error variants: `pdf_not_compiled_in`, `pdf_disabled`, `pdf_parse_error`, `pdf_encrypted`, `pdf_no_extractable_text`, `pdf_limit_exceeded`. MSRV bumped from 1.80 to 1.85 (lopdf 0.42 requirement). No OCR, no embedded file extraction, no JavaScript.
 
 ## [0.3.2] - 2026-06-07
 

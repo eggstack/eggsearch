@@ -2,7 +2,7 @@
 name = "eggsearch"
 version = "0.3.2"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.85"
 authors = ["eggstack"]
 license = "MIT"
 description = "Lightweight MCP metasearch server for AI agents"
@@ -29,6 +29,7 @@ path = "src/main.rs"
 [features]
 default = []
 mock = []
+pdf = ["dep:lopdf"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -52,6 +53,7 @@ regex = "1"
 toml = "0.8"
 dirs = "5"
 pulldown-cmark = "0.12"
+lopdf = { version = "0.42", optional = true, default-features = false }
 
 [dev-dependencies]
 pretty_assertions = "1"
