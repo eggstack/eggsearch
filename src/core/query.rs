@@ -1,6 +1,6 @@
 //! Query/request types accepted by the MCP `web_search` tool.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::core::error::{CoreError, CoreResult};
 
@@ -37,7 +37,7 @@ impl SafeSearch {
 /// looking for so post-RRF reranking can apply bounded domain
 /// priors. The intent is a retrieval hint only — it must not
 /// trigger multi-step research behavior.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchIntent {
     /// General web search.
@@ -57,6 +57,17 @@ pub enum SearchIntent {
     News,
 }
 
+impl<'de> Deserialize<'de> for SearchIntent {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        SearchIntent::from_alias(&s).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "invalid search intent `{s}`; valid values: web, docs, code, issues, releases, security, news"
+            ))
+        })
+    }
+}
+
 impl SearchIntent {
     /// Stable lowercase string form.
     pub fn as_str(&self) -> &'static str {
@@ -70,13 +81,40 @@ impl SearchIntent {
             Self::News => "news",
         }
     }
+
+    /// Map a string (possibly an alias from a weaker model) to the
+    /// canonical variant. Returns `None` for unrecognized values.
+    fn from_alias(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            // web
+            "web" | "general" | "general_web" => Some(Self::Web),
+            // docs
+            "docs" | "doc" | "documentation" => Some(Self::Docs),
+            // code
+            "code" | "source" | "source_code" | "repo" | "repository" | "repositories"
+            | "github" | "gitlab" => Some(Self::Code),
+            // issues
+            "issues" | "issue" | "bug" | "bugs" | "discussion" | "discussions" | "pr"
+            | "pull_request" => Some(Self::Issues),
+            // releases
+            "releases" | "release" | "changelog" | "changelogs" | "changes" | "migration" => {
+                Some(Self::Releases)
+            }
+            // security
+            "security" | "sec" | "advisory" | "advisories" | "cve" | "vulnerability"
+            | "vulnerabilities" | "vuln" | "vulns" => Some(Self::Security),
+            // news
+            "news" | "current_events" => Some(Self::News),
+            _ => None,
+        }
+    }
 }
 
 /// Freshness hint. Signals how recent the caller wants results to
 /// be. Best-effort: providers that do not support date filters
 /// ignore this and the adapter applies no local freshness
 /// filtering.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Freshness {
     /// No freshness preference.
@@ -92,6 +130,17 @@ pub enum Freshness {
     Year,
 }
 
+impl<'de> Deserialize<'de> for Freshness {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Freshness::from_alias(&s).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "invalid freshness `{s}`; valid values: any, day, week, month, year"
+            ))
+        })
+    }
+}
+
 impl Freshness {
     /// Stable lowercase string form.
     pub fn as_str(&self) -> &'static str {
@@ -101,6 +150,19 @@ impl Freshness {
             Self::Week => "week",
             Self::Month => "month",
             Self::Year => "year",
+        }
+    }
+
+    /// Map a string (possibly an alias from a weaker model) to the
+    /// canonical variant. Returns `None` for unrecognized values.
+    fn from_alias(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "any" | "none" | "all" => Some(Self::Any),
+            "day" | "today" | "24h" | "1d" => Some(Self::Day),
+            "week" | "7d" | "weekly" => Some(Self::Week),
+            "month" | "30d" | "monthly" | "latest" | "recent" => Some(Self::Month),
+            "year" | "365d" | "yearly" | "12mo" => Some(Self::Year),
+            _ => None,
         }
     }
 }
@@ -326,5 +388,107 @@ mod tests {
         assert_eq!(r.effective, 50);
         assert!(!r.clamped);
         assert!(r.warning.is_none());
+    }
+
+    // --- SearchIntent alias deserialization ---
+
+    #[test]
+    fn search_intent_alias_documentation() {
+        let v: SearchIntent = serde_json::from_str("\"documentation\"").unwrap();
+        assert_eq!(v, SearchIntent::Docs);
+    }
+
+    #[test]
+    fn search_intent_alias_github() {
+        let v: SearchIntent = serde_json::from_str("\"github\"").unwrap();
+        assert_eq!(v, SearchIntent::Code);
+    }
+
+    #[test]
+    fn search_intent_alias_bug() {
+        let v: SearchIntent = serde_json::from_str("\"bug\"").unwrap();
+        assert_eq!(v, SearchIntent::Issues);
+    }
+
+    #[test]
+    fn search_intent_alias_changelog() {
+        let v: SearchIntent = serde_json::from_str("\"changelog\"").unwrap();
+        assert_eq!(v, SearchIntent::Releases);
+    }
+
+    #[test]
+    fn search_intent_alias_cve() {
+        let v: SearchIntent = serde_json::from_str("\"cve\"").unwrap();
+        assert_eq!(v, SearchIntent::Security);
+    }
+
+    #[test]
+    fn search_intent_canonical_roundtrip() {
+        let intent = SearchIntent::Docs;
+        let json = serde_json::to_string(&intent).unwrap();
+        assert_eq!(json, "\"docs\"");
+        let parsed: SearchIntent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, intent);
+    }
+
+    #[test]
+    fn search_intent_invalid_string_fails() {
+        let result = serde_json::from_str::<SearchIntent>("\"documentationn\"");
+        assert!(result.is_err(), "misspelled alias should fail");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("valid values"),
+            "error should list valid values: {err}"
+        );
+    }
+
+    // --- Freshness alias deserialization ---
+
+    #[test]
+    fn freshness_alias_24h() {
+        let v: Freshness = serde_json::from_str("\"24h\"").unwrap();
+        assert_eq!(v, Freshness::Day);
+    }
+
+    #[test]
+    fn freshness_alias_latest() {
+        let v: Freshness = serde_json::from_str("\"latest\"").unwrap();
+        assert_eq!(v, Freshness::Month);
+    }
+
+    #[test]
+    fn freshness_canonical_roundtrip() {
+        let freshness = Freshness::Month;
+        let json = serde_json::to_string(&freshness).unwrap();
+        assert_eq!(json, "\"month\"");
+        let parsed: Freshness = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, freshness);
+    }
+
+    #[test]
+    fn freshness_invalid_string_fails() {
+        let result = serde_json::from_str::<Freshness>("\"banana\"");
+        assert!(result.is_err(), "invalid freshness should fail");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("valid values"),
+            "error should list valid values: {err}"
+        );
+    }
+
+    #[test]
+    fn freshness_alias_recent_maps_to_month() {
+        let v: Freshness = serde_json::from_str("\"recent\"").unwrap();
+        assert_eq!(v, Freshness::Month);
+    }
+
+    #[test]
+    fn search_intent_recent_is_not_news() {
+        // "recent" should NOT map to News; it mixes intent and freshness.
+        let result = serde_json::from_str::<SearchIntent>("\"recent\"");
+        assert!(
+            result.is_err(),
+            "\"recent\" should not be accepted as a search intent"
+        );
     }
 }

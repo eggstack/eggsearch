@@ -136,7 +136,10 @@ eggsearch/
 
 `web_search` accepts optional `intent` and `freshness` fields as
 retrieval hints. These are NOT workflow triggers — they only influence
-post-RRF reranking with bounded domain priors.
+post-RRF reranking with bounded domain priors. Both fields accept
+common aliases from weaker models (e.g. `"documentation"` -> `docs`,
+`"24h"` -> `day`, `"latest"` -> `month`) without hiding truly
+ambiguous mistakes.
 
 `SearchIntent` enum: `web` (default), `docs`, `code`, `issues`,
 `releases`, `security`, `news`.
@@ -146,7 +149,15 @@ post-RRF reranking with bounded domain priors.
 Intent-aware reranking boosts results whose `source_kind` matches the
 requested intent (e.g. `docs` intent boosts `official_docs` and
 `package_registry` sources). Boosts are bounded (+10-30% of max base
-score) so provider evidence remains dominant.
+score) so provider evidence remains dominant. Intent/freshness
+reranking operates on a candidate pool larger than the final
+`max_results` so intent-matching results just outside the final
+window can be promoted.
+
+`FreshnessMatch` is only emitted when a result has actual recency
+date metadata. Currently no providers expose result-level dates, so
+`FreshnessMatch` is never emitted. The `freshness` field is retained
+as a best-effort hint for future provider support.
 
 ### Prompt-injection Hardening
 - Untrusted text from search and fetch flows through three tiers of
@@ -217,7 +228,7 @@ SearXNG can aggregate.
 eggsearch is published as a single crate. Before publishing:
 
 - `cargo clippy --all-features -- -D warnings` is clean
-- `cargo test --all-features` passes (343 tests)
+- `cargo test --all-features` passes (371 tests)
 - `cargo publish --dry-run` succeeds
 - The version in `Cargo.toml` is bumped
 - `CHANGELOG.md` is updated

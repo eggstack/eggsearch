@@ -414,7 +414,11 @@ impl MetadataSearchAdapter {
         }
         // JoinSet dropped here cancels any in-flight engine tasks.
 
-        let aggregated = aggregate_rrf(raw_results.clone(), max_results);
+        // Use a candidate pool larger than the final max_results so
+        // intent/freshness reranking can promote results that would
+        // otherwise be truncated before reranking.
+        let candidate_limit = candidate_pool_size(max_results);
+        let aggregated = aggregate_rrf(raw_results.clone(), candidate_limit);
         let mut results: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
         let mut trust_markers = TrustMarkers::default();
         for a in aggregated {
@@ -426,6 +430,11 @@ impl MetadataSearchAdapter {
 
         // --- bounded intent/freshness reranking ---
         apply_intent_reranking(&mut results, req.intent, req.freshness);
+
+        // Truncate to the caller's effective max_results after
+        // reranking so intent-matching results just outside the
+        // final window can be promoted into the returned set.
+        results.truncate(max_results);
 
         // Collect the set of provider ids that already completed (success
         // or individual failure) so we don't double-count.
@@ -575,6 +584,16 @@ use std::collections::HashMap;
 
 // Standard RRF constant (Cormack et al., 2009).
 const RRF_K: f64 = 60.0;
+
+/// Compute the candidate pool size for reranking. The pool is
+/// intentionally larger than the final `max_results` so that
+/// intent/freshness reranking can promote results just outside the
+/// final window. Capped at 50 to avoid excessive work.
+fn candidate_pool_size(final_max_results: usize) -> usize {
+    final_max_results
+        .saturating_mul(3)
+        .clamp(final_max_results, 50)
+}
 
 fn aggregate_rrf(
     engine_results: Vec<(String, Vec<SearchResult>)>,
@@ -776,9 +795,9 @@ fn sanitize_field(
 fn apply_intent_reranking(
     results: &mut [SourceCard],
     intent: crate::core::query::SearchIntent,
-    freshness: crate::core::query::Freshness,
+    _freshness: crate::core::query::Freshness,
 ) {
-    use crate::core::query::{Freshness, SearchIntent};
+    use crate::core::query::SearchIntent;
     use crate::core::source_card::{RankReason, SourceKind};
 
     if results.is_empty() {
@@ -816,7 +835,10 @@ fn apply_intent_reranking(
                 }
             }
             SearchIntent::Code => {
-                if matches!(kind, SourceKind::SourceRepository | SourceKind::PackageRegistry) {
+                if matches!(
+                    kind,
+                    SourceKind::SourceRepository | SourceKind::PackageRegistry
+                ) {
                     boost += boost_unit * 2.0;
                     reasons.push(RankReason::IntentMatch);
                     reasons.push(RankReason::DomainPriorCode);
@@ -853,14 +875,12 @@ fn apply_intent_reranking(
             }
         }
 
-        // --- freshness boost ---
-        // Without actual date metadata from providers, we apply a
-        // small freshness boost to news intent only, since news
-        // queries inherently prefer recent results.
-        if freshness != Freshness::Any && matches!(intent, SearchIntent::News) {
-            boost += boost_unit * 0.5;
-            reasons.push(RankReason::FreshnessMatch);
-        }
+        // NOTE: No freshness boost or FreshnessMatch is emitted here
+        // because providers do not currently expose result-level date
+        // metadata. FreshnessMatch will be added when reliable date
+        // extraction is available. The `freshness` field on
+        // WebSearchRequest is retained as a best-effort hint for
+        // future provider support.
 
         // Apply boost and collect rank reasons.
         if boost > 0.0 {
@@ -1153,7 +1173,10 @@ mod tests {
             score: 0.05,
         };
         let c = convert_aggregated(a, false).expect("expected card");
-        assert_eq!(c.metadata.source_kind, crate::core::source_card::SourceKind::OfficialDocs);
+        assert_eq!(
+            c.metadata.source_kind,
+            crate::core::source_card::SourceKind::OfficialDocs
+        );
         assert_eq!(c.metadata.domain.as_deref(), Some("docs.rs"));
     }
 
@@ -1167,35 +1190,202 @@ mod tests {
             score: 0.05,
         };
         let c = convert_aggregated(a, false).expect("expected card");
-        assert!(c.metadata.rank_reasons.contains(&crate::core::source_card::RankReason::RrfMultiProvider));
+        assert!(c
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::RrfMultiProvider));
     }
 
     #[test]
     fn apply_intent_reranking_does_not_panic_on_empty() {
         let mut results: Vec<SourceCard> = vec![];
-        apply_intent_reranking(&mut results, crate::core::query::SearchIntent::Web, crate::core::query::Freshness::Any);
+        apply_intent_reranking(
+            &mut results,
+            crate::core::query::SearchIntent::Web,
+            crate::core::query::Freshness::Any,
+        );
         assert!(results.is_empty());
     }
 
     #[test]
     fn apply_intent_reranking_boosts_docs_for_official_docs() {
         let mut results = vec![
-            SourceCard::new("Blog post", "https://example.com/blog", vec!["a".to_string()], Some(0.01), crate::core::TrustLevel::ExternalUntrusted)
-                .with_metadata(crate::core::source_card::SourceMetadata {
-                    source_kind: crate::core::source_card::SourceKind::Unknown,
-                    domain: Some("example.com".to_string()),
-                    rank_reasons: vec![],
-                }),
-            SourceCard::new("Docs.rs", "https://docs.rs/tower-http", vec!["a".to_string()], Some(0.01), crate::core::TrustLevel::ExternalUntrusted)
-                .with_metadata(crate::core::source_card::SourceMetadata {
-                    source_kind: crate::core::source_card::SourceKind::OfficialDocs,
-                    domain: Some("docs.rs".to_string()),
-                    rank_reasons: vec![],
-                }),
+            SourceCard::new(
+                "Blog post",
+                "https://example.com/blog",
+                vec!["a".to_string()],
+                Some(0.01),
+                crate::core::TrustLevel::ExternalUntrusted,
+            )
+            .with_metadata(crate::core::source_card::SourceMetadata {
+                source_kind: crate::core::source_card::SourceKind::Unknown,
+                domain: Some("example.com".to_string()),
+                rank_reasons: vec![],
+            }),
+            SourceCard::new(
+                "Docs.rs",
+                "https://docs.rs/tower-http",
+                vec!["a".to_string()],
+                Some(0.01),
+                crate::core::TrustLevel::ExternalUntrusted,
+            )
+            .with_metadata(crate::core::source_card::SourceMetadata {
+                source_kind: crate::core::source_card::SourceKind::OfficialDocs,
+                domain: Some("docs.rs".to_string()),
+                rank_reasons: vec![],
+            }),
         ];
-        apply_intent_reranking(&mut results, crate::core::query::SearchIntent::Docs, crate::core::query::Freshness::Any);
+        apply_intent_reranking(
+            &mut results,
+            crate::core::query::SearchIntent::Docs,
+            crate::core::query::Freshness::Any,
+        );
         // The docs.rs card should be first after reranking
         assert_eq!(results[0].url, "https://docs.rs/tower-http");
-        assert!(results[0].metadata.rank_reasons.contains(&crate::core::source_card::RankReason::IntentMatch));
+        assert!(results[0]
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::IntentMatch));
+    }
+
+    #[test]
+    fn candidate_pool_size_scales_by_three() {
+        assert_eq!(candidate_pool_size(1), 3);
+        assert_eq!(candidate_pool_size(5), 15);
+        assert_eq!(candidate_pool_size(10), 30);
+        assert_eq!(candidate_pool_size(20), 50);
+        assert_eq!(candidate_pool_size(50), 50);
+    }
+
+    #[tokio::test]
+    async fn intent_reranking_promotes_docs_into_final_window() {
+        // Three results: A has higher RRF score (Unknown), B has
+        // slightly lower score (OfficialDocs). With max_results=1 and
+        // intent=Docs, B must be promoted over A because the candidate
+        // pool (3) includes B before truncation.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Generic result".to_string(),
+                    url: "https://example.com/generic".to_string(),
+                    snippet: Some("A generic page".to_string()),
+                    source_engine: "mock_a".to_string(),
+                },
+                SearchResult {
+                    title: "Official docs".to_string(),
+                    url: "https://docs.rs/tower-http".to_string(),
+                    snippet: Some("Official documentation".to_string()),
+                    source_engine: "mock_a".to_string(),
+                },
+                SearchResult {
+                    title: "Another result".to_string(),
+                    url: "https://example.com/other".to_string(),
+                    snippet: Some("Something else".to_string()),
+                    source_engine: "mock_a".to_string(),
+                },
+            ],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("tower http");
+        req.intent = crate::core::query::SearchIntent::Docs;
+        req.freshness = crate::core::query::Freshness::Any;
+        let resp = adapter.web_search(&req, 1).await;
+        assert_eq!(resp.results.len(), 1, "should return exactly 1 result");
+        // The docs.rs result should be promoted because the candidate
+        // pool (3) included it before truncation.
+        assert_eq!(
+            resp.results[0].url, "https://docs.rs/tower-http",
+            "docs result should be promoted over generic result"
+        );
+        assert!(
+            resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&crate::core::source_card::RankReason::IntentMatch),
+            "docs result should have IntentMatch reason"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_search_neutral_intent_preserves_rrf_ordering() {
+        // With SearchIntent::Web, no intent boosts apply. Results
+        // should remain in their original RRF score order.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "First".to_string(),
+                    url: "https://example.com/first".to_string(),
+                    snippet: None,
+                    source_engine: "mock_a".to_string(),
+                },
+                SearchResult {
+                    title: "Second".to_string(),
+                    url: "https://example.com/second".to_string(),
+                    snippet: None,
+                    source_engine: "mock_a".to_string(),
+                },
+            ],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("test");
+        let resp = adapter.web_search(&req, 10).await;
+        assert_eq!(resp.results.len(), 2);
+        // First result should still be first (no reranking)
+        assert_eq!(resp.results[0].url, "https://example.com/first");
+        assert_eq!(resp.results[1].url, "https://example.com/second");
+        // No IntentMatch reasons should be present for Web intent
+        for card in &resp.results {
+            assert!(
+                !card
+                    .metadata
+                    .rank_reasons
+                    .contains(&crate::core::source_card::RankReason::IntentMatch),
+                "Web intent should not add IntentMatch"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn news_intent_without_date_evidence_no_freshness_match() {
+        // With intent=News and freshness=Day, but no actual date
+        // metadata, FreshnessMatch must not be emitted and the score
+        // must not be boosted by freshness alone.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "mock_a",
+            results: vec![SearchResult {
+                title: "News article".to_string(),
+                url: "https://techcrunch.com/article".to_string(),
+                snippet: Some("A news article".to_string()),
+                source_engine: "mock_a".to_string(),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("tech news");
+        req.intent = crate::core::query::SearchIntent::News;
+        req.freshness = crate::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10).await;
+        assert_eq!(resp.results.len(), 1);
+        let card = &resp.results[0];
+        // FreshnessMatch must not be present without date evidence
+        assert!(
+            !card
+                .metadata
+                .rank_reasons
+                .contains(&crate::core::source_card::RankReason::FreshnessMatch),
+            "FreshnessMatch should not be emitted without date evidence"
+        );
+        // The score should only reflect the intent boost (News match),
+        // not a freshness boost. The original RRF score is the base;
+        // the intent boost is 2x boost_unit. No freshness boost.
+        let original_score = 1.0 / (RRF_K + 1.0); // rank=1
+        let expected_boost = original_score * 0.10 * 2.0; // intent match
+        let expected = original_score + expected_boost;
+        let actual = card.score.unwrap();
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "score should reflect intent boost only, not freshness: expected {expected}, got {actual}"
+        );
     }
 }

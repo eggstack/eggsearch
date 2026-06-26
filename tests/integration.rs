@@ -137,6 +137,19 @@ fn mcp_server_get_info() {
         instructions.contains("provider_status"),
         "instructions should mention provider_status: {instructions}"
     );
+    // Instructions must not suggest crawling is conditionally allowed.
+    assert!(
+        instructions.contains("Do not use web_fetch as a crawler"),
+        "instructions should contain anti-crawling wording: {instructions}"
+    );
+    assert!(
+        instructions.contains("one explicit HTTP(S) URL"),
+        "instructions should mention one explicit URL: {instructions}"
+    );
+    assert!(
+        !instructions.contains("unless the user explicitly asks for research"),
+        "instructions must not contain crawling-permissive wording: {instructions}"
+    );
 }
 
 #[test]

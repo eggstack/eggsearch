@@ -9,7 +9,9 @@ use crate::core::sanitize::TrustMarkers;
 /// Deterministic classification of a result's source type, derived
 /// from URL/domain heuristics. Helps smaller models choose which
 /// result to fetch first.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     /// Unrecognized or non-classifiable source.
@@ -282,10 +284,7 @@ pub fn classify_source_kind(url: &str) -> SourceKind {
     }
 
     // Forums
-    if host.contains("forum")
-        || host == "discourse.org"
-        || host.ends_with(".discourse.app")
-    {
+    if host.contains("forum") || host == "discourse.org" || host.ends_with(".discourse.app") {
         return SourceKind::Forum;
     }
 
