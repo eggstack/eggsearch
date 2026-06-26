@@ -190,7 +190,9 @@ Use the existing `web_search` tool with `intent`:
 { "query": "repo:tokio-rs/axum Router::layer", "intent": "code" }
 ```
 
-Supported hints: `repo:` (or `repository:`, `project:`), `org:` (or `owner:`), `path:`, `file:`, `lang:` (or `language:`), `symbol:`, `host:`. Bare `owner/repo` is also recognized when unambiguous. These are best-effort query hints only — they influence search terms and future provider-specific queries but do not trigger cloning, crawling, or fetching page bodies. No native GitHub/GitLab/Codeberg API provider exists yet; current generic providers use the planned query as-is. Use `web_fetch` on one selected result URL to inspect content.
+Supported hints: `repo:` (or `repository:`, `project:`), `org:` (or `owner:`), `path:`, `file:`, `lang:` (or `language:`), `symbol:`, `host:`. Bare `owner/repo` is also recognized when unambiguous. These are best-effort query hints only — they influence search terms and provider-specific queries but do not trigger cloning, crawling, or fetching page bodies.
+
+The optional `github_code` provider uses the GitHub Code Search API when enabled with a personal access token. When `github_code` is not configured, generic web providers receive the planned query as-is. Use `web_fetch` on one selected result URL to inspect content.
 
 **Advanced fields (host/debug only):**
 
@@ -331,6 +333,11 @@ base_url = ""       # e.g. "https://searx.example.org"
 enabled       = false
 api_key_env   = "BRAVE_SEARCH_API_KEY"  # env var holding the API key
 base_url      = "https://api.search.brave.com/res/v1/web/search"
+
+[search.api.github_code]
+enabled       = false
+api_key_env   = "GITHUB_TOKEN"          # env var holding a GitHub personal access token
+base_url      = "https://api.github.com"
 ```
 
 | Field | Default | Description |
@@ -556,10 +563,10 @@ conflate:
 
 - **Known provider IDs** are the identifiers the server understands:
   `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`,
-  and `brave_api`. Unknown IDs are rejected.
+  `brave_api`, and `github_code`. Unknown IDs are rejected.
 - **Enabled providers** are the subset of known IDs that the
   operator has switched on in `[search].providers` (and, for
-  `searxng` and `brave_api`, that also have their required
+  `searxng`, `brave_api`, and `github_code`, that also have their required
   configuration present).
 - **Default providers** are the subset of enabled IDs listed in
   `[search].default_providers`; they are queried automatically when
@@ -591,18 +598,28 @@ Bing, Brave, Marginalia, etc.) from one configuration point. The
 The optional `brave_api` adapter is a JSON client for the
 [Brave Search API](https://api.search.brave.com/app/documentation/web-search/get-started).
 It requires an API key, supplied via the env-var named in
-`[search].api.brave].api_key_env`. The adapter is disabled by
+`[search].api.brave.api_key_env`. The adapter is disabled by
 default; it is built only when
 `[search].api.brave.enabled = true` and the env var is set.
+
+The optional `github_code` adapter is a JSON client for the
+[GitHub Code Search API](https://docs.github.com/en/rest/search/search?apiVersion=2022-11-28#search-code).
+It requires a personal access token, supplied via the env-var named in
+`[search].api.github_code.api_key_env`. The adapter is disabled by
+default; it is built only when
+`[search].api.github_code.enabled = true` and the env var is set.
+When enabled, `web_search(intent = "code")` can use `github_code` for
+direct code search results from GitHub. Generic web providers remain
+available as fallback.
 
 ### Default provider set
 
 The default provider set covers `duckduckgo`, `startpage`, and
 `yahoo` (the engines listed in `[search].default_providers`). `brave`
 is enabled but not in the default set; it can be selected per-request
-via the `providers` argument. Mojeek, SearXNG, and Brave Search API
-are all disabled by default; operators enable them in
-`[search].providers` and (for SearXNG and Brave API) configure the
+via the `providers` argument. Mojeek, SearXNG, Brave Search API, and
+GitHub Code Search are all disabled by default; operators enable them in
+`[search].providers` and (for SearXNG, Brave API, and GitHub) configure the
 corresponding `[search].searxng]` or `[search].api.<id>]` sections.
 
 HTML provider scraping is inherently fragile. Layout changes upstream may

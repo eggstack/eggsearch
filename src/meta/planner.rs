@@ -168,19 +168,19 @@ fn push_symbol_hint(parts: &mut Vec<String>, hints: &RepoQueryHints) {
     }
 }
 
-/// Remove empty strings and deduplicate consecutive identical terms.
+/// Remove empty strings and deduplicate terms across the whole query,
+/// preserving order.
 fn dedupe_terms(parts: Vec<String>) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for p in parts {
-        let trimmed = p.trim().to_string();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for part in parts {
+        let trimmed = part.trim().to_string();
         if trimmed.is_empty() {
             continue;
         }
-        // Simple dedup: skip if last pushed term is identical.
-        if out.last().map(|s| s.as_str()) == Some(trimmed.as_str()) {
-            continue;
+        if seen.insert(trimmed.clone()) {
+            out.push(trimmed);
         }
-        out.push(trimmed);
     }
     out
 }
@@ -316,7 +316,7 @@ fn build_github_code_query(hints: &RepoQueryHints) -> String {
         parts.push(format!("path:{path}"));
     }
     if let Some(file) = &hints.file {
-        parts.push(format!("path:{file}"));
+        parts.push(format!("filename:{file}"));
     }
     if let Some(lang) = &hints.language {
         parts.push(format!("language:{lang}"));
@@ -849,7 +849,7 @@ mod tests {
             .get("github_code")
             .expect("github_code query");
         assert!(q.contains("repo:tokio-rs/axum"));
-        assert!(q.contains("path:Cargo.toml"));
+        assert!(q.contains("filename:Cargo.toml"));
     }
 
     #[test]
@@ -968,5 +968,67 @@ mod tests {
         assert!(q.contains("org:rust-lang"));
         assert!(q.contains("borrow"));
         assert!(q.contains("checker"));
+    }
+
+    // --- Phase 3: github_code query syntax ---
+
+    #[test]
+    fn github_code_file_hint_uses_filename_syntax() {
+        let plan = build_search_plan(
+            &req("repo:tokio-rs/axum file:Cargo.toml", SearchIntent::Code),
+            &["github_code".to_string()],
+        );
+        let q = plan
+            .provider_queries
+            .get("github_code")
+            .expect("github_code query");
+        assert!(q.contains("filename:Cargo.toml"));
+        assert!(
+            !q.contains("path:Cargo.toml"),
+            "file hint should use filename: not path:"
+        );
+    }
+
+    #[test]
+    fn github_code_path_hint_uses_path_syntax() {
+        let plan = build_search_plan(
+            &req("repo:tokio-rs/axum path:src/routing", SearchIntent::Code),
+            &["github_code".to_string()],
+        );
+        let q = plan
+            .provider_queries
+            .get("github_code")
+            .expect("github_code query");
+        assert!(q.contains("path:src/routing"));
+    }
+
+    #[test]
+    fn github_code_symbol_remains_free_text() {
+        let plan = build_search_plan(
+            &req(
+                "repo:tokio-rs/axum symbol:Router::layer",
+                SearchIntent::Code,
+            ),
+            &["github_code".to_string()],
+        );
+        let q = plan
+            .provider_queries
+            .get("github_code")
+            .expect("github_code query");
+        assert!(q.contains("Router::layer"));
+        assert!(!q.contains("symbol:"));
+    }
+
+    #[test]
+    fn dedupe_terms_removes_nonconsecutive_duplicates() {
+        let parts = vec![
+            "github".to_string(),
+            "tokio-rs/axum".to_string(),
+            "github".to_string(),
+            "source".to_string(),
+            "tokio-rs/axum".to_string(),
+        ];
+        let result = dedupe_terms(parts);
+        assert_eq!(result, vec!["github", "tokio-rs/axum", "source"]);
     }
 }

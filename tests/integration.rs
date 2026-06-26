@@ -649,9 +649,10 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"mojeek"));
     assert!(ids.contains(&"searxng"));
     assert!(ids.contains(&"brave_api"));
+    assert!(ids.contains(&"github_code"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 7);
+    assert_eq!(ids.len(), 8);
 }
 
 #[cfg(feature = "mock")]
@@ -3903,4 +3904,370 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
         !titles.contains(&"Drop"),
         "dropped heading should not appear in outline, got: {titles:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: github_code provider integration tests
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn github_code_adapter_dispatches_provider_specific_query() {
+    use httpmock::prelude::*;
+    use std::sync::Arc;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/search/code");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "items": [
+                    {
+                        "name": "Cargo.toml",
+                        "path": "Cargo.toml",
+                        "html_url": "https://github.com/tokio-rs/axum/blob/main/Cargo.toml",
+                        "repository": {"full_name": "tokio-rs/axum", "description": "A web framework"},
+                        "score": 1.0
+                    }
+                ]
+            }"#,
+            );
+    });
+
+    let client = reqwest::Client::new();
+    let engine = eggsearch::meta::engines::GithubCodeEngine {
+        client: Arc::new(client),
+        api_key: "test-token".to_string(),
+        base_url: Some(server.url("")),
+    };
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        vec![Arc::new(engine)],
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("github_code".to_string(), true);
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+
+    let args = WebSearchArgs {
+        query: "repo:tokio-rs/axum file:Cargo.toml".to_string(),
+        max_results: Some(10),
+        providers: vec!["github_code".to_string()],
+        safe_search: None,
+        timeout_ms: None,
+        intent: Some(eggsearch::core::query::SearchIntent::Code),
+        freshness: None,
+    };
+    let v = run_web_search(state, args).await.expect("ok");
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1);
+
+    let card = &results[0];
+    assert_eq!(card["providers"][0], "github_code");
+    assert_eq!(card["trust"], "external_untrusted");
+    assert_eq!(card["fetched"], false);
+    assert!(card["url"]
+        .as_str()
+        .unwrap()
+        .contains("tokio-rs/axum/blob/main/Cargo.toml"));
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn github_code_result_card_has_source_file_metadata() {
+    use httpmock::prelude::*;
+    use std::sync::Arc;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/search/code");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "items": [
+                    {
+                        "name": "lib.rs",
+                        "path": "src/lib.rs",
+                        "html_url": "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+                        "repository": {"full_name": "tokio-rs/axum", "description": "A web framework"},
+                        "score": 1.0
+                    }
+                ]
+            }"#,
+            );
+    });
+
+    let client = reqwest::Client::new();
+    let engine = eggsearch::meta::engines::GithubCodeEngine {
+        client: Arc::new(client),
+        api_key: "test-token".to_string(),
+        base_url: Some(server.url("")),
+    };
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        vec![Arc::new(engine)],
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("github_code".to_string(), true);
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+
+    let args = WebSearchArgs {
+        query: "repo:tokio-rs/axum src/lib.rs".to_string(),
+        max_results: Some(10),
+        providers: vec!["github_code".to_string()],
+        safe_search: None,
+        timeout_ms: None,
+        intent: Some(eggsearch::core::query::SearchIntent::Code),
+        freshness: None,
+    };
+    let v = run_web_search(state, args).await.expect("ok");
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1);
+
+    let card = &results[0];
+    let meta = &card["metadata"];
+    assert_eq!(meta["source_kind"], "source_file");
+
+    let code = &meta["code"];
+    assert_eq!(code["host"], "github");
+    assert_eq!(code["owner"], "tokio-rs");
+    assert_eq!(code["repo"], "axum");
+    assert_eq!(code["path"], "src/lib.rs");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn github_code_respects_max_results() {
+    use httpmock::prelude::*;
+    use std::sync::Arc;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/search/code");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "items": [
+                    {"name": "a.rs", "path": "src/a.rs", "html_url": "https://github.com/test/repo/blob/main/src/a.rs", "repository": {"full_name": "test/repo"}},
+                    {"name": "b.rs", "path": "src/b.rs", "html_url": "https://github.com/test/repo/blob/main/src/b.rs", "repository": {"full_name": "test/repo"}},
+                    {"name": "c.rs", "path": "src/c.rs", "html_url": "https://github.com/test/repo/blob/main/src/c.rs", "repository": {"full_name": "test/repo"}}
+                ]
+            }"#,
+            );
+    });
+
+    let client = reqwest::Client::new();
+    let engine = eggsearch::meta::engines::GithubCodeEngine {
+        client: Arc::new(client),
+        api_key: "test-token".to_string(),
+        base_url: Some(server.url("")),
+    };
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        vec![Arc::new(engine)],
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("github_code".to_string(), true);
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+
+    let args = WebSearchArgs {
+        query: "test repo".to_string(),
+        max_results: Some(2),
+        providers: vec!["github_code".to_string()],
+        safe_search: None,
+        timeout_ms: None,
+        intent: Some(eggsearch::core::query::SearchIntent::Code),
+        freshness: None,
+    };
+    let v = run_web_search(state, args).await.expect("ok");
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 2);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn github_code_empty_results_returned() {
+    use httpmock::prelude::*;
+    use std::sync::Arc;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/search/code");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"items": []}"#);
+    });
+
+    let client = reqwest::Client::new();
+    let engine = eggsearch::meta::engines::GithubCodeEngine {
+        client: Arc::new(client),
+        api_key: "test-token".to_string(),
+        base_url: Some(server.url("")),
+    };
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        vec![Arc::new(engine)],
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("github_code".to_string(), true);
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+
+    let args = WebSearchArgs {
+        query: "xyznonexistent".to_string(),
+        max_results: Some(10),
+        providers: vec!["github_code".to_string()],
+        safe_search: None,
+        timeout_ms: None,
+        intent: Some(eggsearch::core::query::SearchIntent::Code),
+        freshness: None,
+    };
+    let v = run_web_search(state, args).await.expect("ok");
+    let results = v["results"].as_array().expect("results array");
+    assert!(results.is_empty());
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn github_code_auth_error_returns_failure() {
+    use httpmock::prelude::*;
+    use std::sync::Arc;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/search/code");
+        then.status(401).body("Bad credentials");
+    });
+
+    let client = reqwest::Client::new();
+    let engine = eggsearch::meta::engines::GithubCodeEngine {
+        client: Arc::new(client),
+        api_key: "bad-token".to_string(),
+        base_url: Some(server.url("")),
+    };
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        vec![Arc::new(engine)],
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("github_code".to_string(), true);
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+
+    let args = WebSearchArgs {
+        query: "rust".to_string(),
+        max_results: Some(10),
+        providers: vec!["github_code".to_string()],
+        safe_search: None,
+        timeout_ms: None,
+        intent: Some(eggsearch::core::query::SearchIntent::Code),
+        freshness: None,
+    };
+    let result = run_web_search(state, args).await;
+    assert!(
+        result.is_err(),
+        "expected error when all providers fail, got: {result:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: provider_status tests for github_code
+// ---------------------------------------------------------------------------
+
+#[test]
+fn provider_status_includes_github_code() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let arr = v["providers"].as_array().expect("providers is array");
+    let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
+    assert!(
+        ids.contains(&"github_code"),
+        "github_code should be in provider status, got: {ids:?}"
+    );
+}
+
+#[test]
+fn provider_status_github_code_descriptor_shape() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let arr = v["providers"].as_array().expect("providers is array");
+    let gh = arr
+        .iter()
+        .find(|p| p["id"].as_str() == Some("github_code"))
+        .expect("github_code provider");
+    assert_eq!(gh["kind"], "api_key");
+    assert_eq!(gh["requires_api_key"], true);
+    assert_eq!(gh["enabled"], false);
+    assert_eq!(gh["configured"], false);
+
+    let caps = &gh["capabilities"];
+    assert_eq!(caps["supports_code_search"], true);
+    assert_eq!(caps["supports_repo_filter"], true);
+    assert_eq!(caps["supports_org_filter"], true);
+    assert_eq!(caps["supports_path_filter"], true);
+    assert_eq!(caps["supports_language_filter"], true);
+    assert_eq!(caps["supports_symbol_hint"], true);
+    assert_eq!(caps["supports_issue_search"], false);
+    assert_eq!(caps["supports_release_search"], false);
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn github_code_provider_descriptor_known() {
+    use eggsearch::core::provider::built_in_provider_descriptor;
+
+    let desc = built_in_provider_descriptor("github_code", true, false, true)
+        .expect("github_code should have descriptor");
+    assert_eq!(desc.id, "github_code");
+    assert_eq!(desc.display_name, "GitHub Code Search");
+    assert_eq!(desc.kind, eggsearch::core::provider::ProviderKind::ApiKey);
+    assert!(desc.requires_api_key);
+    assert!(desc.configured);
+    assert!(desc.enabled);
+    assert!(!desc.default);
+    assert!(desc.capabilities.supports_code_search);
+    assert!(desc.capabilities.supports_repo_filter);
+    assert!(desc.capabilities.supports_org_filter);
+    assert!(desc.capabilities.supports_path_filter);
+    assert!(desc.capabilities.supports_language_filter);
+    assert!(desc.capabilities.supports_symbol_hint);
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn github_code_provider_descriptor_unconfigured_when_disabled() {
+    use eggsearch::core::provider::built_in_provider_descriptor;
+
+    let desc = built_in_provider_descriptor("github_code", false, false, true)
+        .expect("github_code should have descriptor");
+    assert!(!desc.configured);
+    assert!(!desc.enabled);
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn github_code_capabilities_summary() {
+    use eggsearch::core::provider::built_in_provider_descriptor;
+
+    let desc = built_in_provider_descriptor("github_code", true, false, true).unwrap();
+    let summary = desc.capabilities.summary();
+    assert!(summary.contains("code_search"));
+    assert!(summary.contains("repo_filter"));
+    assert!(summary.contains("org_filter"));
+    assert!(summary.contains("path_filter"));
+    assert!(summary.contains("language_filter"));
+    assert!(summary.contains("symbol_hint"));
+    assert!(!summary.contains("safe_search"));
+    assert!(!summary.contains("issue_search"));
 }

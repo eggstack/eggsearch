@@ -8,6 +8,7 @@ pub mod brave;
 pub mod brave_api;
 pub mod duckduckgo;
 pub mod error;
+pub mod github_code;
 pub mod models;
 pub mod mojeek;
 pub mod normalizer;
@@ -68,6 +69,12 @@ pub struct SearxngEngine {
 }
 
 pub struct BraveApiEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+pub struct GithubCodeEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: Option<String>,
@@ -190,6 +197,31 @@ impl SearchEngine for BraveApiEngine {
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             brave_api::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GithubCodeEngine {
+    fn name(&self) -> &'static str {
+        "github_code"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            github_code::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),

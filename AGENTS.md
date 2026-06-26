@@ -121,7 +121,7 @@ eggsearch/
 
 ### Provider Model
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`
-- `ProviderCapabilities` struct: 7 boolean flags for search option support
+- `ProviderCapabilities` struct: 16 boolean flags for search option support
 - `ProviderDescriptor` struct: full provider metadata (id, display_name, kind, enabled, default, requires_api_key, configured, capabilities)
 - `built_in_provider_descriptor()` returns descriptors for all known providers
 - `MetadataSearchAdapter::provider_status()` returns `Vec<ProviderDescriptor>`
@@ -249,13 +249,10 @@ When using repo search, prefer `intent = "code"`, `"issues"`, or
 `"releases"` and include hints such as `repo:owner/name`, `path:...`,
 `file:...`, `lang:...`, and `symbol:...`. These hints are included
 in the planned generic query so generic providers can match them.
-The planner also generates provider-specific query overrides for
-future repo-host provider IDs (e.g. `github_code`,
-`github_issues`), even before those providers exist.
-
-No native GitHub/GitLab/Codeberg API provider is available yet.
-The `provider_queries` map is populated for future per-provider
-overrides; current generic providers receive `generic_query`.
+The planner generates provider-specific query overrides for
+repo-host provider IDs (e.g. `github_code`,
+`github_issues`). When `github_code` is enabled and configured,
+`web_search(intent = "code")` can use it for direct GitHub code search.
 
 ### Candidate Pool Flow
 
@@ -271,7 +268,7 @@ point for the MCP `web_search` tool. The flow is:
    The plan parses repo hints from the query, then rewrites
    `generic_query` with intent-aware platform suffixes (e.g. "github
    gitlab codeberg source repository" for `code` intent). The
-   `provider_queries` map is populated for future per-provider overrides
+   `provider_queries` map is populated for per-provider overrides
    (e.g. `github_code`, `github_issues`, `github_releases`,
    `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `codeberg_code`).
 3. Fan out to each enabled provider with `candidate_limit` as the
@@ -337,6 +334,7 @@ The vendored code includes:
 - `engines/duckduckgo.rs` — DuckDuckGo HTML scraper
 - `engines/brave.rs` — Brave Search HTML scraper
 - `engines/brave_api.rs` — Brave Search API provider (API-key, JSON; added in 0.3.0)
+- `engines/github_code.rs` — GitHub Code Search API provider (API-key, JSON; added in 0.4.0)
 - `engines/startpage.rs` — Startpage HTML scraper
 - `engines/yahoo.rs` — Yahoo Search HTML scraper
 - `engines/mojeek.rs` — Mojeek HTML scraper (added in 0.2.0)

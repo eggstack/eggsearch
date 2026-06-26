@@ -18,6 +18,7 @@ pub const KNOWN_PROVIDER_IDS: &[&str] = &[
     "mojeek",
     "searxng",
     "brave_api",
+    "github_code",
 ];
 
 /// Whether the provider scrapes HTML or speaks a JSON API, or
@@ -48,6 +49,24 @@ pub struct ProviderCapabilities {
     pub supports_domain_filters: bool,
     /// Provider supports a news-specific category.
     pub supports_news: bool,
+    /// Provider supports code/file search.
+    pub supports_code_search: bool,
+    /// Provider supports repo filter (e.g. `repo:owner/name`).
+    pub supports_repo_filter: bool,
+    /// Provider supports org filter (e.g. `org:name`).
+    pub supports_org_filter: bool,
+    /// Provider supports path filter (e.g. `path:src/`).
+    pub supports_path_filter: bool,
+    /// Provider supports language filter (e.g. `language:rust`).
+    pub supports_language_filter: bool,
+    /// Provider supports symbol hints (best-effort free-text).
+    pub supports_symbol_hint: bool,
+    /// Provider supports issue search.
+    pub supports_issue_search: bool,
+    /// Provider supports release search.
+    pub supports_release_search: bool,
+    /// Provider returns result-level timestamps.
+    pub supports_result_timestamps: bool,
 }
 
 impl ProviderCapabilities {
@@ -60,6 +79,15 @@ impl ProviderCapabilities {
             supports_region: false,
             supports_domain_filters: false,
             supports_news: false,
+            supports_code_search: false,
+            supports_repo_filter: false,
+            supports_org_filter: false,
+            supports_path_filter: false,
+            supports_language_filter: false,
+            supports_symbol_hint: false,
+            supports_issue_search: false,
+            supports_release_search: false,
+            supports_result_timestamps: false,
         }
     }
 
@@ -84,6 +112,33 @@ impl ProviderCapabilities {
         if self.supports_news {
             caps.push("news");
         }
+        if self.supports_code_search {
+            caps.push("code_search");
+        }
+        if self.supports_repo_filter {
+            caps.push("repo_filter");
+        }
+        if self.supports_org_filter {
+            caps.push("org_filter");
+        }
+        if self.supports_path_filter {
+            caps.push("path_filter");
+        }
+        if self.supports_language_filter {
+            caps.push("language_filter");
+        }
+        if self.supports_symbol_hint {
+            caps.push("symbol_hint");
+        }
+        if self.supports_issue_search {
+            caps.push("issue_search");
+        }
+        if self.supports_release_search {
+            caps.push("release_search");
+        }
+        if self.supports_result_timestamps {
+            caps.push("result_timestamps");
+        }
         if caps.is_empty() {
             "basic".to_string()
         } else {
@@ -100,6 +155,15 @@ impl ProviderCapabilities {
             CapabilityOption::Region => self.supports_region,
             CapabilityOption::DomainFilters => self.supports_domain_filters,
             CapabilityOption::News => self.supports_news,
+            CapabilityOption::CodeSearch => self.supports_code_search,
+            CapabilityOption::RepoFilter => self.supports_repo_filter,
+            CapabilityOption::OrgFilter => self.supports_org_filter,
+            CapabilityOption::PathFilter => self.supports_path_filter,
+            CapabilityOption::LanguageFilter => self.supports_language_filter,
+            CapabilityOption::SymbolHint => self.supports_symbol_hint,
+            CapabilityOption::IssueSearch => self.supports_issue_search,
+            CapabilityOption::ReleaseSearch => self.supports_release_search,
+            CapabilityOption::ResultTimestamps => self.supports_result_timestamps,
         }
     }
 }
@@ -119,6 +183,24 @@ pub enum CapabilityOption {
     DomainFilters,
     /// News-specific category.
     News,
+    /// Code/file search.
+    CodeSearch,
+    /// Repo filter.
+    RepoFilter,
+    /// Org filter.
+    OrgFilter,
+    /// Path filter.
+    PathFilter,
+    /// Language filter.
+    LanguageFilter,
+    /// Symbol hint.
+    SymbolHint,
+    /// Issue search.
+    IssueSearch,
+    /// Release search.
+    ReleaseSearch,
+    /// Result timestamps.
+    ResultTimestamps,
 }
 
 impl CapabilityOption {
@@ -131,6 +213,15 @@ impl CapabilityOption {
             Self::Region => "region",
             Self::DomainFilters => "domain_filters",
             Self::News => "news",
+            Self::CodeSearch => "code_search",
+            Self::RepoFilter => "repo_filter",
+            Self::OrgFilter => "org_filter",
+            Self::PathFilter => "path_filter",
+            Self::LanguageFilter => "language_filter",
+            Self::SymbolHint => "symbol_hint",
+            Self::IssueSearch => "issue_search",
+            Self::ReleaseSearch => "release_search",
+            Self::ResultTimestamps => "result_timestamps",
         }
     }
 }
@@ -236,6 +327,15 @@ pub fn built_in_provider_descriptor(
                 supports_region: true,
                 supports_domain_filters: false,
                 supports_news: true,
+                supports_code_search: false,
+                supports_repo_filter: false,
+                supports_org_filter: false,
+                supports_path_filter: false,
+                supports_language_filter: false,
+                supports_symbol_hint: false,
+                supports_issue_search: false,
+                supports_release_search: false,
+                supports_result_timestamps: false,
             },
         }),
         "brave_api" => Some(ProviderDescriptor {
@@ -253,6 +353,41 @@ pub fn built_in_provider_descriptor(
                 supports_region: true,
                 supports_domain_filters: false,
                 supports_news: false,
+                supports_code_search: false,
+                supports_repo_filter: false,
+                supports_org_filter: false,
+                supports_path_filter: false,
+                supports_language_filter: false,
+                supports_symbol_hint: false,
+                supports_issue_search: false,
+                supports_release_search: false,
+                supports_result_timestamps: false,
+            },
+        }),
+        "github_code" => Some(ProviderDescriptor {
+            id: "github_code".into(),
+            display_name: "GitHub Code Search".into(),
+            kind: ProviderKind::ApiKey,
+            enabled,
+            default: is_default,
+            requires_api_key: true,
+            configured: configured && enabled,
+            capabilities: ProviderCapabilities {
+                supports_safe_search: false,
+                supports_freshness: false,
+                supports_language: false,
+                supports_region: false,
+                supports_domain_filters: false,
+                supports_news: false,
+                supports_code_search: true,
+                supports_repo_filter: true,
+                supports_org_filter: true,
+                supports_path_filter: true,
+                supports_language_filter: true,
+                supports_symbol_hint: true,
+                supports_issue_search: false,
+                supports_release_search: false,
+                supports_result_timestamps: false,
             },
         }),
         _ => None,
@@ -376,6 +511,15 @@ mod tests {
             supports_region: false,
             supports_domain_filters: true,
             supports_news: false,
+            supports_code_search: false,
+            supports_repo_filter: false,
+            supports_org_filter: false,
+            supports_path_filter: false,
+            supports_language_filter: false,
+            supports_symbol_hint: false,
+            supports_issue_search: false,
+            supports_release_search: false,
+            supports_result_timestamps: false,
         };
         assert!(caps.supports(&CapabilityOption::SafeSearch));
         assert!(!caps.supports(&CapabilityOption::Freshness));
@@ -408,6 +552,15 @@ mod tests {
             CapabilityOption::Region,
             CapabilityOption::DomainFilters,
             CapabilityOption::News,
+            CapabilityOption::CodeSearch,
+            CapabilityOption::RepoFilter,
+            CapabilityOption::OrgFilter,
+            CapabilityOption::PathFilter,
+            CapabilityOption::LanguageFilter,
+            CapabilityOption::SymbolHint,
+            CapabilityOption::IssueSearch,
+            CapabilityOption::ReleaseSearch,
+            CapabilityOption::ResultTimestamps,
         ] {
             assert!(
                 !caps.supports(&option),

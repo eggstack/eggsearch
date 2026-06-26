@@ -536,8 +536,8 @@ pub fn build_default_engines(
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
     use crate::meta::engines::{
-        BraveApiEngine, BraveEngine, DuckDuckGoEngine, MojeekEngine, SearxngEngine,
-        StartpageEngine, YahooEngine,
+        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GithubCodeEngine, MojeekEngine,
+        SearxngEngine, StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -593,11 +593,22 @@ pub fn build_default_engines(
                 continue;
             }
         };
-        engines.push(Arc::new(BraveApiEngine {
-            client: client.clone(),
-            api_key,
-            base_url: api_cfg.base_url.clone(),
-        }));
+        match id.as_str() {
+            "github_code" => {
+                engines.push(Arc::new(GithubCodeEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            _ => {
+                engines.push(Arc::new(BraveApiEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+        }
     }
 
     Ok((engines, skipped))

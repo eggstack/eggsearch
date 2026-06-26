@@ -530,7 +530,8 @@ impl AppConfig {
         }
 
         // API provider validation
-        let known_api: std::collections::BTreeSet<&str> = ["brave_api"].into_iter().collect();
+        let known_api: std::collections::BTreeSet<&str> =
+            ["brave_api", "github_code"].into_iter().collect();
         for (id, api_cfg) in &self.search.api {
             if !known_api.contains(id.as_str()) {
                 tracing::warn!(
