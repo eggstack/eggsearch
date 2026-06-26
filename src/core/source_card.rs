@@ -21,12 +21,24 @@ pub enum SourceKind {
     OfficialDocs,
     /// Package registry listing (e.g. crates.io, npm, PyPI).
     PackageRegistry,
-    /// Source code repository root (e.g. GitHub/GitLab repo pages).
+    /// Source code repository (broad fallback for code-host URLs).
     SourceRepository,
+    /// Repository root page (e.g. `github.com/owner/repo`).
+    RepositoryRoot,
+    /// Directory or tree view within a repository.
+    SourceDirectory,
+    /// Individual source file (e.g. blob URL).
+    SourceFile,
     /// Issue, discussion, or pull request thread.
     IssueThread,
+    /// Pull request (distinct from issues when distinguishable).
+    PullRequest,
     /// Release notes or changelog entry.
     ReleaseNotes,
+    /// Tag page (distinct from release pages when distinguishable).
+    Tag,
+    /// Commit view.
+    Commit,
     /// Security advisory or vulnerability database entry.
     SecurityAdvisory,
     /// API reference or specification page.
@@ -80,6 +92,9 @@ pub struct SourceMetadata {
     /// Deterministic reasons this result scored where it did.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rank_reasons: Vec<RankReason>,
+    /// Structured code/repo metadata, present only for code-host URLs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<crate::core::code_metadata::CodeMetadata>,
 }
 
 /// A single normalized result returned to MCP callers.
@@ -131,7 +146,10 @@ pub struct SourceCard {
 }
 
 fn is_default_metadata(m: &SourceMetadata) -> bool {
-    m.source_kind == SourceKind::Unknown && m.domain.is_none() && m.rank_reasons.is_empty()
+    m.source_kind == SourceKind::Unknown
+        && m.domain.is_none()
+        && m.rank_reasons.is_empty()
+        && m.code.is_none()
 }
 
 impl SourceCard {
@@ -204,6 +222,11 @@ impl SourceCard {
 /// Classify a URL into a deterministic `SourceKind` using domain
 /// and path heuristics. Returns `Unknown` when the URL does not
 /// match any known pattern.
+///
+/// For code-host URLs (GitHub, GitLab, Codeberg), this delegates to
+/// the more precise `code_metadata::classify_and_extract` for
+/// narrower classification. For non-code-host URLs, domain heuristics
+/// are used directly.
 pub fn classify_source_kind(url: &str) -> SourceKind {
     use url::Url;
 
@@ -213,6 +236,12 @@ pub fn classify_source_kind(url: &str) -> SourceKind {
     };
     let host = parsed.host_str().unwrap_or("");
     let path = parsed.path();
+
+    // Code-host URLs: delegate to the precise classifier.
+    if matches!(host, "github.com" | "gitlab.com" | "codeberg.org") {
+        let (kind, _, _) = crate::core::code_metadata::classify_and_extract(url);
+        return kind;
+    }
 
     // Official docs domains
     if host == "docs.rs"
@@ -243,33 +272,15 @@ pub fn classify_source_kind(url: &str) -> SourceKind {
     // Security advisories
     if host == "osv.dev"
         || host == "nvd.nist.gov"
-        || host == "github.com" && path.starts_with("/advisories/")
         || host == "security.snyk.io"
         || host == "cve.mitre.org"
     {
         return SourceKind::SecurityAdvisory;
     }
 
-    // Issue threads (GitHub/GitLab issues and discussions)
-    if (host == "github.com" || host == "gitlab.com")
-        && (path.contains("/issues/") || path.contains("/discussions/") || path.contains("/pull/"))
-    {
-        return SourceKind::IssueThread;
-    }
-
-    // Release notes (GitHub/GitLab releases, CHANGELOG files)
-    if (host == "github.com" || host == "gitlab.com") && path.contains("/releases/") {
-        return SourceKind::ReleaseNotes;
-    }
+    // Release notes (CHANGELOG files)
     if path.contains("CHANGELOG") || path.contains("changelog") || path.contains("CHANGES") {
         return SourceKind::ReleaseNotes;
-    }
-
-    // Source repositories (GitHub/GitLab repos, not issues/releases)
-    if (host == "github.com" || host == "gitlab.com" || host == "codeberg.org")
-        && path.split('/').count() >= 3
-    {
-        return SourceKind::SourceRepository;
     }
 
     // Tutorials (heuristic: common tutorial sites)
@@ -430,6 +441,7 @@ mod tests {
         assert_eq!(m.source_kind, SourceKind::Unknown);
         assert!(m.domain.is_none());
         assert!(m.rank_reasons.is_empty());
+        assert!(m.code.is_none());
     }
 
     #[test]

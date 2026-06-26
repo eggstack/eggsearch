@@ -2,6 +2,7 @@
 //! for eggsearch. This module is intentionally independent of any MCP,
 //! HTTP, or search-engine implementation.
 
+pub mod code_metadata;
 pub mod config;
 pub mod document;
 pub mod error;
@@ -12,6 +13,7 @@ pub mod result;
 pub mod sanitize;
 pub mod source_card;
 
+pub use code_metadata::{CodeHost, CodeMetadata};
 pub use config::{AppConfig, LiveConfig, Mode, SearchSection};
 pub use document::{
     BlockKind, DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument,

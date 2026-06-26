@@ -739,10 +739,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
     };
 
     // Deterministic source metadata from URL/domain heuristics.
-    let domain = url::Url::parse(&a.url)
-        .ok()
-        .and_then(|u| u.host_str().map(|s| s.to_string()));
-    let source_kind = crate::core::source_card::classify_source_kind(&a.url);
+    let (source_kind, code, domain) = crate::core::code_metadata::classify_and_extract(&a.url);
     let mut rank_reasons: Vec<crate::core::source_card::RankReason> = Vec::new();
     if providers.len() > 1 {
         rank_reasons.push(crate::core::source_card::RankReason::RrfMultiProvider);
@@ -762,6 +759,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             source_kind,
             domain,
             rank_reasons,
+            code,
         },
     })
 }
@@ -870,7 +868,11 @@ fn apply_intent_reranking(
             SearchIntent::Code => {
                 if matches!(
                     kind,
-                    SourceKind::SourceRepository | SourceKind::PackageRegistry
+                    SourceKind::SourceRepository
+                        | SourceKind::RepositoryRoot
+                        | SourceKind::SourceDirectory
+                        | SourceKind::SourceFile
+                        | SourceKind::PackageRegistry
                 ) {
                     boost += boost_unit * 2.0;
                     reasons.push(RankReason::IntentMatch);
@@ -878,13 +880,13 @@ fn apply_intent_reranking(
                 }
             }
             SearchIntent::Issues => {
-                if kind == SourceKind::IssueThread {
+                if matches!(kind, SourceKind::IssueThread | SourceKind::PullRequest) {
                     boost += boost_unit * 2.0;
                     reasons.push(RankReason::IntentMatch);
                 }
             }
             SearchIntent::Releases => {
-                if kind == SourceKind::ReleaseNotes {
+                if matches!(kind, SourceKind::ReleaseNotes | SourceKind::Tag) {
                     boost += boost_unit * 2.0;
                     reasons.push(RankReason::IntentMatch);
                     reasons.push(RankReason::DomainPriorRelease);
@@ -1254,6 +1256,7 @@ mod tests {
                 source_kind: crate::core::source_card::SourceKind::Unknown,
                 domain: Some("example.com".to_string()),
                 rank_reasons: vec![],
+                code: None,
             }),
             SourceCard::new(
                 "Docs.rs",
@@ -1266,6 +1269,7 @@ mod tests {
                 source_kind: crate::core::source_card::SourceKind::OfficialDocs,
                 domain: Some("docs.rs".to_string()),
                 rank_reasons: vec![],
+                code: None,
             }),
         ];
         apply_intent_reranking(
