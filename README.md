@@ -190,7 +190,7 @@ Use the existing `web_search` tool with `intent`:
 { "query": "repo:tokio-rs/axum Router::layer", "intent": "code" }
 ```
 
-Supported hints: `repo:` (or `repository:`, `project:`), `org:` (or `owner:`), `path:`, `file:`, `lang:` (or `language:`), `symbol:`, `host:`. Bare `owner/repo` is also recognized when unambiguous. These are best-effort query hints only — they do not trigger cloning, crawling, or fetching page bodies. Use `web_fetch` on one selected result URL to inspect content.
+Supported hints: `repo:` (or `repository:`, `project:`), `org:` (or `owner:`), `path:`, `file:`, `lang:` (or `language:`), `symbol:`, `host:`. Bare `owner/repo` is also recognized when unambiguous. These are best-effort query hints only — they influence search terms and future provider-specific queries but do not trigger cloning, crawling, or fetching page bodies. No native GitHub/GitLab/Codeberg API provider exists yet; current generic providers use the planned query as-is. Use `web_fetch` on one selected result URL to inspect content.
 
 **Advanced fields (host/debug only):**
 

@@ -243,9 +243,19 @@ Bare `owner/repo` is also recognized when unambiguous.
 These are **search hints only** — they influence query rewriting via
 the `SearchPlan` planner but do not trigger cloning, crawling, or
 fetching page bodies. Agents must use `web_fetch` on a selected
-result URL to inspect content. The `provider_queries` map is
-reserved for future native provider support (e.g. a GitHub API
-provider).
+result URL to inspect content.
+
+When using repo search, prefer `intent = "code"`, `"issues"`, or
+`"releases"` and include hints such as `repo:owner/name`, `path:...`,
+`file:...`, `lang:...`, and `symbol:...`. These hints are included
+in the planned generic query so generic providers can match them.
+The planner also generates provider-specific query overrides for
+future repo-host provider IDs (e.g. `github_code`,
+`github_issues`), even before those providers exist.
+
+No native GitHub/GitLab/Codeberg API provider is available yet.
+The `provider_queries` map is populated for future per-provider
+overrides; current generic providers receive `generic_query`.
 
 ### Candidate Pool Flow
 
@@ -257,11 +267,13 @@ point for the MCP `web_search` tool. The flow is:
    3, max_results_cap)`; never less than `effective_max_results`,
    never panics when `effective_max_results > max_results_cap`)
    **before** provider fan-out.
-2. Build a `SearchPlan` from the request via `build_search_plan(req)`.
+2. Build a `SearchPlan` from the request via `build_search_plan(req, &queried_ids)`.
    The plan parses repo hints from the query, then rewrites
    `generic_query` with intent-aware platform suffixes (e.g. "github
    gitlab codeberg source repository" for `code` intent). The
-   `provider_queries` map is reserved for future per-provider overrides.
+   `provider_queries` map is populated for future per-provider overrides
+   (e.g. `github_code`, `github_issues`, `github_releases`,
+   `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `codeberg_code`).
 3. Fan out to each enabled provider with `candidate_limit` as the
    per-engine `max_results` argument. Each provider receives the
    planned query from `provider_queries` (if present) or

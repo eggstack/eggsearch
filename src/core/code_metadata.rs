@@ -89,6 +89,17 @@ pub fn language_from_extension(path: &str) -> Option<&'static str> {
     }
 }
 
+/// Heuristic check for whether the trailing component of a path
+/// looks like a file name (contains a dot, does not start or end
+/// with a dot). Used by Codeberg `/src/branch/...` classification
+/// to distinguish source files from directories when the extension
+/// is not in the known language list.
+fn looks_like_file_path(path: &str) -> bool {
+    path.rsplit('/')
+        .next()
+        .is_some_and(|last| last.contains('.') && !last.ends_with('.') && !last.starts_with('.'))
+}
+
 fn parse_line_fragment(fragment: &str) -> (Option<u32>, Option<u32>) {
     // Fragment looks like "L10" or "L10-L25"
     let inner = match fragment.strip_prefix('L') {
@@ -484,7 +495,6 @@ pub fn parse_codeberg_url(url: &str) -> (SourceKind, Option<CodeMetadata>, Optio
     match rest[0] {
         "src" => {
             // /src/branch/main/src/lib.rs or /src/tag/v1.2.3/...
-            let ref_kind = rest.get(1).copied();
             let ref_name = rest.get(2).map(|s| s.to_string());
             let file_path = if rest.len() > 3 {
                 Some(rest[3..].join("/"))
@@ -498,16 +508,11 @@ pub fn parse_codeberg_url(url: &str) -> (SourceKind, Option<CodeMetadata>, Optio
                 (None, None)
             };
 
-            let kind = if ref_kind == Some("tree") || ref_kind == Some("branch") {
-                SourceKind::SourceDirectory
-            } else {
-                // /src/tag/... or /src/<ref>/... — treat as source file
-                // when there's a path, otherwise directory
-                if file_path.is_some() {
-                    SourceKind::SourceFile
-                } else {
-                    SourceKind::SourceDirectory
-                }
+            let kind = match file_path.as_deref() {
+                None => SourceKind::SourceDirectory,
+                Some(path) if language_from_extension(path).is_some() => SourceKind::SourceFile,
+                Some(path) if looks_like_file_path(path) => SourceKind::SourceFile,
+                Some(_) => SourceKind::SourceDirectory,
             };
 
             (
@@ -839,7 +844,7 @@ mod tests {
     fn codeberg_src_branch() {
         let (kind, code, _) =
             classify_and_extract("https://codeberg.org/owner/repo/src/branch/main/src/lib.rs");
-        assert_eq!(kind, SourceKind::SourceDirectory);
+        assert_eq!(kind, SourceKind::SourceFile);
         let code = code.unwrap();
         assert_eq!(code.ref_name.as_deref(), Some("main"));
         assert_eq!(code.path.as_deref(), Some("src/lib.rs"));
@@ -883,6 +888,48 @@ mod tests {
         assert_eq!(kind, SourceKind::Commit);
         let code = code.unwrap();
         assert_eq!(code.ref_name.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn codeberg_branch_source_file() {
+        let (kind, code, _) =
+            classify_and_extract("https://codeberg.org/owner/repo/src/branch/main/src/lib.rs");
+        assert_eq!(kind, SourceKind::SourceFile);
+        let code = code.unwrap();
+        assert_eq!(code.ref_name.as_deref(), Some("main"));
+        assert_eq!(code.path.as_deref(), Some("src/lib.rs"));
+        assert_eq!(code.language.as_deref(), Some("rust"));
+    }
+
+    #[test]
+    fn codeberg_branch_directory() {
+        let (kind, code, _) =
+            classify_and_extract("https://codeberg.org/owner/repo/src/branch/main/src");
+        assert_eq!(kind, SourceKind::SourceDirectory);
+        assert_eq!(code.unwrap().path.as_deref(), Some("src"));
+    }
+
+    #[test]
+    fn codeberg_tag_source_file() {
+        let (kind, code, _) =
+            classify_and_extract("https://codeberg.org/owner/repo/src/tag/v1.0.0/src/lib.rs");
+        assert_eq!(kind, SourceKind::SourceFile);
+        assert_eq!(code.unwrap().ref_name.as_deref(), Some("v1.0.0"));
+    }
+
+    #[test]
+    fn codeberg_branch_unknown_extension_file() {
+        let (kind, _, _) =
+            classify_and_extract("https://codeberg.org/owner/repo/src/branch/main/README.md");
+        assert_eq!(kind, SourceKind::SourceFile);
+    }
+
+    #[test]
+    fn codeberg_branch_dotfile() {
+        let (kind, _, _) =
+            classify_and_extract("https://codeberg.org/owner/repo/src/branch/main/.gitignore");
+        // .gitignore starts with a dot — not a file by heuristic.
+        assert_eq!(kind, SourceKind::SourceDirectory);
     }
 
     // --- Non-code URLs ---
@@ -961,5 +1008,15 @@ mod tests {
         let (s, e) = parse_line_fragment("abc");
         assert!(s.is_none());
         assert!(e.is_none());
+    }
+
+    #[test]
+    fn looks_like_file_path_cases() {
+        assert!(looks_like_file_path("src/lib.rs"));
+        assert!(looks_like_file_path("Cargo.toml"));
+        assert!(looks_like_file_path("README.md"));
+        assert!(!looks_like_file_path("src"));
+        assert!(!looks_like_file_path(".gitignore"));
+        assert!(!looks_like_file_path("file."));
     }
 }

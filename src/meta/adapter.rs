@@ -372,7 +372,7 @@ impl MetadataSearchAdapter {
         // reranking promote results just outside the final window.
         let candidate_limit = candidate_pool_size(final_max_results, candidate_cap);
 
-        let plan = build_search_plan(req);
+        let plan = build_search_plan(req, &queried_ids);
 
         debug!(
             query = %req.query,
@@ -951,6 +951,7 @@ fn apply_intent_reranking(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     #[test]
     fn error_class_strs_are_stable() {
@@ -1548,6 +1549,163 @@ mod tests {
             resp.results.len(),
             2,
             "response should be truncated to final_max_results=2"
+        );
+    }
+
+    /// Recording mock engine that captures both query and limit.
+    struct RecordingQueryLimitMockEngine {
+        name: &'static str,
+        results: Vec<SearchResult>,
+        seen_query: Arc<Mutex<Option<String>>>,
+        seen_limit: Arc<Mutex<Option<usize>>>,
+    }
+
+    impl SearchEngine for RecordingQueryLimitMockEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn search<'a>(
+            &'a self,
+            query: &'a str,
+            max_results: usize,
+            _timeout: Duration,
+        ) -> crate::meta::engines::BoxFuture<
+            'a,
+            Result<Vec<SearchResult>, crate::meta::engines::error::EngineError>,
+        > {
+            if let Ok(mut g) = self.seen_query.lock() {
+                *g = Some(query.to_string());
+            }
+            if let Ok(mut g) = self.seen_limit.lock() {
+                *g = Some(max_results);
+            }
+            let results = self.results.clone();
+            let limit = max_results;
+            Box::pin(async move {
+                let mut out = results;
+                out.truncate(limit);
+                Ok(out)
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn code_intent_provider_receives_planned_generic_query_and_candidate_limit() {
+        let seen_query: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let seen_limit: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
+
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(RecordingQueryLimitMockEngine {
+            name: "duckduckgo",
+            results: vec![SearchResult {
+                title: "Cargo.toml".to_string(),
+                url: "https://github.com/tokio-rs/axum/blob/main/Cargo.toml".to_string(),
+                snippet: Some("Package manifest".to_string()),
+                source_engine: "duckduckgo".to_string(),
+            }],
+            seen_query: Arc::clone(&seen_query),
+            seen_limit: Arc::clone(&seen_limit),
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum file:Cargo.toml");
+        req.intent = crate::core::query::SearchIntent::Code;
+        let resp = adapter.web_search(&req, 2, 50).await;
+
+        // The response query field remains the user's original query.
+        assert_eq!(resp.query, "repo:tokio-rs/axum file:Cargo.toml");
+
+        // The provider must have received the planned generic query
+        // (not the raw query) and the candidate limit.
+        let recorded_query = seen_query
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("query was recorded");
+        assert!(
+            recorded_query.contains("tokio-rs/axum"),
+            "planned query should contain owner/repo: {recorded_query}"
+        );
+        assert!(
+            recorded_query.contains("Cargo.toml"),
+            "planned query should contain file hint: {recorded_query}"
+        );
+        assert!(
+            recorded_query.contains("github gitlab codeberg source repository"),
+            "planned query should contain code suffix: {recorded_query}"
+        );
+
+        let recorded_limit = seen_limit.lock().unwrap().expect("limit was recorded");
+        // candidate_pool_size(2, 50) = min(2*3, 50) = 6
+        assert_eq!(
+            recorded_limit, 6,
+            "provider should receive candidate_limit=6"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_intent_provider_receives_raw_trimmed_query() {
+        let seen_query: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let seen_limit: Arc<Mutex<Option<usize>>> = Arc::new(Mutex::new(None));
+
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(RecordingQueryLimitMockEngine {
+            name: "duckduckgo",
+            results: vec![SearchResult {
+                title: "Test".to_string(),
+                url: "https://example.com".to_string(),
+                snippet: None,
+                source_engine: "duckduckgo".to_string(),
+            }],
+            seen_query: Arc::clone(&seen_query),
+            seen_limit: Arc::clone(&seen_limit),
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("rust axum middleware");
+        let _resp = adapter.web_search(&req, 5, 50).await;
+
+        // Web intent: no repo suffix, query is trimmed original.
+        let recorded_query = seen_query
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("query was recorded");
+        assert_eq!(recorded_query, "rust axum middleware");
+    }
+
+    #[tokio::test]
+    async fn issues_intent_provider_receives_issues_suffix() {
+        let seen_query: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(RecordingQueryLimitMockEngine {
+            name: "duckduckgo",
+            results: vec![SearchResult {
+                title: "Issue #123".to_string(),
+                url: "https://github.com/tokio-rs/axum/issues/123".to_string(),
+                snippet: None,
+                source_engine: "duckduckgo".to_string(),
+            }],
+            seen_query: Arc::clone(&seen_query),
+            seen_limit: Arc::new(Mutex::new(None)),
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum panic");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        let _resp = adapter.web_search(&req, 5, 50).await;
+
+        let recorded_query = seen_query
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("query was recorded");
+        assert!(
+            recorded_query.contains("tokio-rs/axum"),
+            "query should contain owner/repo: {recorded_query}"
+        );
+        assert!(
+            recorded_query.contains("panic"),
+            "query should contain residual: {recorded_query}"
+        );
+        assert!(
+            recorded_query.contains("issues discussions pull request"),
+            "query should contain issues suffix: {recorded_query}"
         );
     }
 }
