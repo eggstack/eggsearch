@@ -7,6 +7,7 @@ use tracing;
 
 use crate::core::config::AppConfig;
 use crate::fetch::FetchClient;
+use crate::meta::engines::kev::KevClient;
 use crate::meta::MetadataSearchAdapter;
 
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
@@ -20,6 +21,8 @@ pub struct ServerState {
     /// fetch call should make the `None` case unreachable, but the
     /// type allows the disabled state for clean error reporting.
     pub fetch_client: Option<Arc<FetchClient>>,
+    /// CISA KEV catalog client with TTL cache.
+    pub kev_client: Arc<KevClient>,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -28,6 +31,7 @@ impl std::fmt::Debug for ServerState {
             .field("mode", &self.config.search.mode)
             .field("providers", &self.adapter.provider_ids())
             .field("fetch_enabled", &self.config.fetch.enabled)
+            .field("kev_client", &"<KevClient>")
             .finish()
     }
 }
@@ -126,10 +130,13 @@ impl ServerState {
             None
         };
 
+        let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
+
         Ok(Self {
             config,
             adapter: Arc::new(adapter),
             fetch_client,
+            kev_client,
         })
     }
 
@@ -152,10 +159,12 @@ impl ServerState {
         } else {
             None
         };
+        let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
         Self {
             config,
             adapter,
             fetch_client,
+            kev_client,
         }
     }
 

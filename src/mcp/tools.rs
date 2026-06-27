@@ -140,7 +140,7 @@ pub struct RepoSearchArgs {
     pub providers: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SecuritySearchArgs {
     /// Free-text query. May contain CVE/GHSA/RustSec identifiers.
     pub query: Option<String>,
@@ -579,7 +579,8 @@ fn classify_security_result(card: &crate::core::SourceCard) -> crate::core::Secu
         return SecurityResultGroupKind::PackageAdvisories;
     }
 
-    SecurityResultGroupKind::Other
+    // General context for other security-relevant results
+    SecurityResultGroupKind::GeneralContext
 }
 
 /// Group source cards into security result groups.
@@ -809,6 +810,114 @@ pub async fn run_security_search(
         ));
     }
 
+    // Generic context is external untrusted discussion, not advisory fact
+    if !web_resp.results.is_empty() {
+        warnings.push(crate::core::SearchWarning::new(
+            "_system",
+            "generic_context_untrusted: generic web results are external untrusted \
+             discussion, not authoritative advisory facts",
+        ));
+    }
+
+    // KEV requested but not available
+    if req.include_kev == Some(true) {
+        warnings.push(crate::core::SearchWarning::new(
+            "_system",
+            "kev_unavailable: CISA KEV catalog is not yet implemented; \
+             KEV status cannot be determined",
+        ));
+    }
+
+    // Severity may be unavailable from generic search
+    warnings.push(crate::core::SearchWarning::new(
+        "_system",
+        "severity_unavailable: severity levels may not be available \
+         from generic web search results; use native advisory providers for severity data",
+    ));
+
+    // Perform native advisory lookups for identified CVE/GHSA/RustSec IDs
+    let mut vulnerabilities: Vec<crate::core::VulnerabilityMetadata> = Vec::new();
+    let mut looked_up_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Look up CVE IDs
+    for cve_id in &resolved_ids.cve_ids {
+        if looked_up_ids.insert(cve_id.clone()) {
+            if let Ok(Some(meta)) = state.adapter.lookup_advisory(cve_id).await {
+                vulnerabilities.push(meta);
+            }
+        }
+    }
+
+    // Look up GHSA IDs (OSV accepts GHSA IDs directly)
+    for ghsa_id in &resolved_ids.ghsa_ids {
+        if looked_up_ids.insert(ghsa_id.clone()) {
+            if let Ok(Some(meta)) = state.adapter.lookup_advisory(ghsa_id).await {
+                vulnerabilities.push(meta);
+            }
+        }
+    }
+
+    // Look up OSV IDs
+    for osv_id in &resolved_ids.osv_ids {
+        if looked_up_ids.insert(osv_id.clone()) {
+            if let Ok(Some(meta)) = state.adapter.lookup_advisory(osv_id).await {
+                vulnerabilities.push(meta);
+            }
+        }
+    }
+
+    // Look up RustSec IDs (OSV accepts RustSec IDs)
+    for rustsec_id in &resolved_ids.rustsec_ids {
+        if looked_up_ids.insert(rustsec_id.clone()) {
+            if let Ok(Some(meta)) = state.adapter.lookup_advisory(rustsec_id).await {
+                vulnerabilities.push(meta);
+            }
+        }
+    }
+
+    // Enrich vulnerabilities with KEV data if requested
+    if req.include_kev == Some(true) {
+        let mut kev_found_ids: Vec<String> = Vec::new();
+        for vuln in &mut vulnerabilities {
+            for cve_id in &vuln.cve_ids {
+                if let Ok(Some(kev_meta)) = state.kev_client.lookup(cve_id).await {
+                    vuln.kev = Some(kev_meta);
+                    kev_found_ids.push(cve_id.clone());
+                }
+            }
+        }
+
+        // If we found KEV entries, update the warning
+        if !kev_found_ids.is_empty() {
+            // Remove the kev_unavailable warning if present
+            warnings.retain(|w| !w.message.contains("kev_unavailable"));
+            // Add a note about KEV matches
+            warnings.push(crate::core::SearchWarning::new(
+                "_system",
+                format!(
+                    "kev_match: {} CVE(s) found in CISA KEV catalog",
+                    kev_found_ids.len()
+                ),
+            ));
+        } else {
+            // No KEV matches found - explicitly note absence is not proof
+            warnings.push(crate::core::SearchWarning::new(
+                "_system",
+                "kev_absent_not_proof: no CVE(s) found in CISA KEV catalog; \
+                 absence does not prove no exploitation",
+            ));
+        }
+    }
+
+    // Warn about version matching limitations
+    if req.version.is_some() {
+        warnings.push(crate::core::SearchWarning::new(
+            "_system",
+            "version_match_unavailable: version-specific matching is not yet implemented; \
+             affected version ranges are returned as-is from advisory databases",
+        ));
+    }
+
     // Convert web results to source cards grouped by security category
     let groups = group_security_results(&web_resp.results, req.max_per_group);
     let suggested_fetches = generate_security_suggested_fetches(
@@ -822,7 +931,7 @@ pub async fn run_security_search(
         query: req.query.clone(),
         mode: "security_metasearch".to_string(),
         resolved_identifiers: resolved_ids,
-        vulnerabilities: Vec::new(),
+        vulnerabilities,
         groups,
         suggested_fetches,
         providers_queried: web_resp.providers_queried,

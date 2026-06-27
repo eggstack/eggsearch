@@ -11,6 +11,7 @@ pub mod error;
 pub mod github_code;
 pub mod github_issues;
 pub mod github_releases;
+pub mod kev;
 pub mod models;
 pub mod mojeek;
 pub mod normalizer;
@@ -44,6 +45,17 @@ pub trait SearchEngine: Send + Sync {
         max_results: usize,
         timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
+
+    /// Look up a vulnerability by ID (CVE, GHSA, OSV, etc.).
+    /// Returns `Ok(None)` if not found or not supported by this engine.
+    fn lookup_advisory<'a>(
+        &'a self,
+        _vuln_id: &'a str,
+        _timeout: Duration,
+    ) -> BoxFuture<'a, Result<Option<crate::core::security::VulnerabilityMetadata>, EngineError>>
+    {
+        Box::pin(async { Ok(None) })
+    }
 }
 
 pub struct DuckDuckGoEngine {
@@ -315,6 +327,15 @@ impl SearchEngine for OsvEngine {
         timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(osv::search(&self.client, query, max_results, timeout))
+    }
+
+    fn lookup_advisory<'a>(
+        &'a self,
+        vuln_id: &'a str,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Option<crate::core::security::VulnerabilityMetadata>, EngineError>>
+    {
+        Box::pin(osv::lookup_by_id(&self.client, vuln_id, timeout))
     }
 }
 

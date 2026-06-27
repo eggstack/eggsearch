@@ -43,8 +43,8 @@ use eggsearch::core::config::{AppConfig, Mode};
 use eggsearch::core::fetch::ExtractMode;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
-    run_provider_status, run_web_fetch, run_web_search, ProviderStatusArgs, WebFetchArgs,
-    WebSearchArgs,
+    run_provider_status, run_security_search, run_web_fetch, run_web_search, ProviderStatusArgs,
+    SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
 };
 use rmcp::ServerHandler;
 
@@ -5952,5 +5952,275 @@ mod repo_search {
             .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
             .sum();
         assert_eq!(total_results, 3, "all 3 results should be in groups");
+    }
+
+    #[tokio::test]
+    async fn security_search_returns_structured_response() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "CVE-2024-0001: Test vulnerability",
+                    "https://osv.dev/vulnerability/GHSA-test-1234-abcd",
+                    "mock_a",
+                )
+                .with_snippet("A test vulnerability in test-package"),
+                MockResult::new(
+                    "Test package on npm",
+                    "https://www.npmjs.com/package/test-package",
+                    "mock_a",
+                )
+                .with_snippet("Test package security advisory"),
+            ],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001 test-package vulnerability".into()),
+                ecosystem: Some("npm".into()),
+                package: Some("test-package".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        assert_eq!(v["query"], "CVE-2024-0001 test-package vulnerability");
+        assert_eq!(v["mode"], "security_metasearch");
+
+        let resolved_ids = v["resolved_identifiers"].as_object().expect("resolved_identifiers");
+        let cve_ids = resolved_ids["cve_ids"].as_array().expect("cve_ids");
+        assert!(
+            cve_ids.iter().any(|id| id.as_str() == Some("CVE-2024-0001")),
+            "should resolve CVE-2024-0001: {cve_ids:?}"
+        );
+
+        let groups = v["groups"].as_array().expect("groups");
+        assert!(
+            !groups.is_empty(),
+            "should have at least one group"
+        );
+
+        let warnings = v["warnings"].as_array().expect("warnings");
+        assert!(
+            warnings.iter().any(|w| w["message"].as_str().unwrap_or("").contains("generic_context_untrusted")),
+            "should have generic_context_untrusted warning: {warnings:?}"
+        );
+        assert!(
+            warnings.iter().any(|w| w["message"].as_str().unwrap_or("").contains("severity_unavailable")),
+            "should have severity_unavailable warning: {warnings:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn security_search_empty_query_without_identifiers_fails() {
+        let state = state_with_default();
+        let result = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("   ".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(result.is_err(), "empty query without identifiers should fail");
+    }
+
+    #[tokio::test]
+    async fn security_search_with_explicit_cve_id() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Advisory for CVE-2024-12345",
+                "https://nvd.nist.gov/vuln/detail/CVE-2024-12345",
+                "mock_a",
+            )
+            .with_snippet("NVD advisory details")],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: None,
+                cve_id: Some("CVE-2024-12345".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let resolved_ids = v["resolved_identifiers"].as_object().expect("resolved_identifiers");
+        let cve_ids = resolved_ids["cve_ids"].as_array().expect("cve_ids");
+        assert_eq!(cve_ids.len(), 1);
+        assert_eq!(cve_ids[0].as_str(), Some("CVE-2024-12345"));
+    }
+
+    #[tokio::test]
+    async fn security_search_kev_warning_when_requested() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Test advisory",
+                "https://example.com/advisory",
+                "mock_a",
+            )],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001".into()),
+                include_kev: Some(true),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let warnings = v["warnings"].as_array().expect("warnings");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w["message"].as_str().unwrap_or("").contains("kev_unavailable")),
+            "should have kev_unavailable warning when include_kev=true: {warnings:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn security_search_groups_results_by_type() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "OSV Advisory",
+                    "https://osv.dev/vulnerability/GHSA-test-1234-abcd",
+                    "mock_a",
+                ),
+                MockResult::new(
+                    "GitHub Advisory",
+                    "https://github.com/advisories/GHSA-test-5678-efgh",
+                    "mock_a",
+                ),
+                MockResult::new(
+                    "NVD Entry",
+                    "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+                    "mock_a",
+                ),
+                MockResult::new(
+                    "Exploit Discussion",
+                    "https://exploit-db.com/exploits/12345",
+                    "mock_a",
+                ),
+            ],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("test vulnerability".into()),
+                include_exploit_context: Some(true),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups");
+        let group_kinds: Vec<&str> = groups
+            .iter()
+            .map(|g| g["kind"].as_str().unwrap_or(""))
+            .collect();
+
+        assert!(
+            group_kinds.contains(&"authoritative_advisories"),
+            "should have authoritative_advisories group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"exploit_discussion"),
+            "should have exploit_discussion group: {group_kinds:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn security_search_suggested_fetches_include_osv() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Advisory",
+                "https://example.com/advisory",
+                "mock_a",
+            )],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001 vulnerability".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let suggested = v["suggested_fetches"].as_array().expect("suggested_fetches");
+        assert!(
+            suggested
+                .iter()
+                .any(|f| f["url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("osv.dev/vulnerability/CVE-2024-0001")),
+            "should suggest OSV fetch for CVE-2024-0001: {suggested:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn security_search_includes_trust_markers() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Test advisory",
+                "https://example.com/advisory",
+                "mock_a",
+            )],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("test vulnerability".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let trust_markers = v["trust_markers"].as_object().expect("trust_markers");
+        assert!(
+            trust_markers.contains_key("text_sanitized"),
+            "trust_markers should have text_sanitized"
+        );
+        assert!(
+            trust_markers.contains_key("text_truncated"),
+            "trust_markers should have text_truncated"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    fn security_state_with_engines(
+        cfg: AppConfig,
+        engines: Vec<MockEngine>,
+        timeout: Duration,
+    ) -> Arc<ServerState> {
+        let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
+        Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
     }
 }

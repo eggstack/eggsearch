@@ -246,6 +246,25 @@ impl MetadataSearchAdapter {
         &self.provider_ids
     }
 
+    /// Look up a vulnerability by ID using a native advisory provider.
+    /// Returns `Ok(Some(metadata))` if found, `Ok(None)` if not found
+    /// or no native provider supports advisory lookups.
+    pub async fn lookup_advisory(
+        &self,
+        vuln_id: &str,
+    ) -> Result<Option<crate::core::security::VulnerabilityMetadata>, anyhow::Error> {
+        let timeout = self.global_timeout;
+        for engine in &self.engines {
+            let result = engine.lookup_advisory(vuln_id, timeout).await;
+            match result {
+                Ok(Some(metadata)) => return Ok(Some(metadata)),
+                Ok(None) => continue,
+                Err(_) => continue,
+            }
+        }
+        Ok(None)
+    }
+
     /// Check whether all queried providers support a given capability
     /// option. Returns the list of provider ids that do NOT support it.
     /// When `provider_ids` is empty, checks all enabled providers.

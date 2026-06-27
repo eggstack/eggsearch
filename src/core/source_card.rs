@@ -86,6 +86,16 @@ pub enum RankReason {
     RepoOwnerMatch,
     /// Path/file/language/symbol hint matched the result.
     HintMatch,
+    /// Security identifier (CVE/GHSA/RustSec) detected in URL, title, or snippet.
+    AdvisoryIdentifierMatch,
+    /// Result is a CISA Known Exploited Vulnerabilities entry.
+    KevMatch,
+    /// Result is a vendor/project security advisory.
+    VendorAdvisory,
+    /// Result is a package-ecosystem security advisory.
+    PackageAdvisory,
+    /// Result is defensive guidance or hardening documentation.
+    DefensiveGuidance,
 }
 
 /// Structured issue metadata from native GitHub issues providers.
