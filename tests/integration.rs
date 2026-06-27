@@ -6241,3 +6241,445 @@ mod repo_search {
         Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
     }
 }
+
+// ---------------------------------------------------------------------------
+// research_search integration tests
+// ---------------------------------------------------------------------------
+
+mod research_search {
+    use super::*;
+    use eggsearch::mcp::tools::{run_research_search, ResearchSearchArgs};
+
+    #[cfg(feature = "mock")]
+    fn research_state_with_engines(
+        cfg: AppConfig,
+        engines: Vec<MockEngine>,
+        timeout: Duration,
+    ) -> Arc<ServerState> {
+        let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
+        Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+    }
+
+    fn research_args(query: &str) -> ResearchSearchArgs {
+        ResearchSearchArgs {
+            query: query.to_string(),
+            providers: vec!["mock_a".into()],
+            ..Default::default()
+        }
+    }
+
+    fn research_args_multi(providers: &[&str], query: &str) -> ResearchSearchArgs {
+        ResearchSearchArgs {
+            query: query.to_string(),
+            providers: providers.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    // ---- Validation tests ----
+
+    #[tokio::test]
+    async fn research_search_empty_query_returns_validation_error() {
+        let state = state_with_default();
+        let res = run_research_search(state, research_args("   ")).await;
+        let err = res.expect_err("expected validation error");
+        assert!(
+            err.to_string().contains("query must not be empty"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn research_search_zero_max_results_returns_validation_error() {
+        let state = state_with_default();
+        let res = run_research_search(
+            state,
+            ResearchSearchArgs {
+                query: "rust async".into(),
+                providers: vec!["mock_a".into()],
+                max_results: Some(0),
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected validation error");
+        assert!(
+            err.to_string().contains("max_results must be > 0"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn research_search_oversized_query_returns_validation_error() {
+        let state = state_with_default();
+        let too_long = "a".repeat(2_000);
+        let res = run_research_search(state, research_args(&too_long)).await;
+        let err = res.expect_err("expected validation error");
+        assert!(err.to_string().contains("characters"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn research_search_unknown_provider_returns_error() {
+        let state = state_with_default();
+        let res = run_research_search(
+            state,
+            ResearchSearchArgs {
+                query: "rust async".into(),
+                providers: vec!["nope".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected unknown provider error");
+        assert!(err.to_string().contains("unknown provider"), "got: {err}");
+        assert!(err.to_string().contains("nope"), "got: {err}");
+    }
+
+    // ---- Policy tests ----
+
+    #[tokio::test]
+    async fn research_search_blocked_when_mode_off() {
+        let state = state_with_mode_off();
+        let res = run_research_search(state, research_args("rust async")).await;
+        let err = res.expect_err("expected policy denial");
+        assert!(err.to_string().contains("disabled by policy"), "got: {err}");
+    }
+
+    // ---- Response shape tests ----
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_returns_grouped_response() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Rust Async Book",
+                "https://rust-lang.github.io/async-book/",
+                "mock_a",
+            )],
+        )];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(state, research_args("rust async runtime"))
+            .await
+            .expect("ok");
+
+        assert_eq!(v["query"], "rust async runtime");
+        assert!(v["groups"].is_array(), "groups should be an array");
+        assert!(v["subqueries"].is_array(), "subqueries should be an array");
+        assert!(
+            v["suggested_fetches"].is_array(),
+            "suggested_fetches should be an array"
+        );
+        assert!(
+            v["providers_queried"].is_array(),
+            "providers_queried should be an array"
+        );
+        assert!(v["warnings"].is_array(), "warnings should be an array");
+        assert!(
+            v["trust_markers"].is_object(),
+            "trust_markers should be an object"
+        );
+        assert!(
+            v["research_domain"].is_string(),
+            "research_domain should be a string"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_groups_are_nonempty_when_results_exist() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "Tokio Runtime",
+                    "https://docs.rs/tokio/latest/tokio/",
+                    "mock_a",
+                ),
+                MockResult::new(
+                    "Async Book",
+                    "https://rust-lang.github.io/async-book/",
+                    "mock_a",
+                ),
+                MockResult::new(
+                    "Smol Executor",
+                    "https://github.com/async-rs/smol",
+                    "mock_a",
+                ),
+            ],
+        )];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(state, research_args("rust async runtime"))
+            .await
+            .expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let nonempty: Vec<&serde_json::Value> = groups
+            .iter()
+            .filter(|g| !g["results"].as_array().unwrap_or(&vec![]).is_empty())
+            .collect();
+        assert!(
+            !nonempty.is_empty(),
+            "at least one group should have results: {groups:?}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_empty_results_returns_empty_groups() {
+        let engines = vec![MockEngine::success("mock_a", vec![])];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(state, research_args("nonexistent topic xyz"))
+            .await
+            .expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let total_results: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert_eq!(
+            total_results, 0,
+            "no results should be returned for empty engine"
+        );
+    }
+
+    // ---- Provider tests ----
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_preserves_provider_failures() {
+        let engines = vec![
+            MockEngine::success(
+                "mock_a",
+                vec![MockResult::new(
+                    "Tokio Docs",
+                    "https://docs.rs/tokio/latest/tokio/",
+                    "mock_a",
+                )],
+            ),
+            MockEngine::failure("mock_b", MockFailure::Parse),
+        ];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(
+            state,
+            research_args_multi(&["mock_a", "mock_b"], "tokio async"),
+        )
+        .await
+        .expect("ok");
+
+        let failed = v["providers_failed"].as_array().unwrap();
+        assert!(
+            !failed.is_empty(),
+            "providers_failed should be non-empty when one engine fails: {failed:?}"
+        );
+        let failed_ids: Vec<&str> = failed.iter().filter_map(|f| f["id"].as_str()).collect();
+        assert!(
+            failed_ids.contains(&"mock_b"),
+            "mock_b should be in providers_failed: {failed_ids:?}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_all_providers_fail_returns_ok_with_empty_groups() {
+        let engines = vec![
+            MockEngine::failure("mock_a", MockFailure::HttpStatus(503)),
+            MockEngine::failure("mock_b", MockFailure::Network),
+        ];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(
+            state,
+            research_args_multi(&["mock_a", "mock_b"], "rust async"),
+        )
+        .await
+        .expect("research_search should return Ok even when all providers fail");
+        let groups = v["groups"].as_array().expect("groups is array");
+        let total_results: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert_eq!(total_results, 0, "no results when all providers fail");
+        let failed = v["providers_failed"].as_array().expect("providers_failed");
+        assert!(
+            !failed.is_empty(),
+            "providers_failed should be non-empty when all providers fail"
+        );
+        let failed_ids: Vec<&str> = failed.iter().filter_map(|f| f["id"].as_str()).collect();
+        assert!(
+            failed_ids.contains(&"mock_a"),
+            "mock_a should be in providers_failed: {failed_ids:?}"
+        );
+        assert!(
+            failed_ids.contains(&"mock_b"),
+            "mock_b should be in providers_failed: {failed_ids:?}"
+        );
+    }
+
+    // ---- Full workflow test ----
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_full_workflow() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "Tokio Documentation",
+                    "https://docs.rs/tokio/latest/tokio/",
+                    "mock_a",
+                )
+                .with_snippet("Async runtime for Rust"),
+                MockResult::new(
+                    "Tokio on crates.io",
+                    "https://crates.io/crates/tokio",
+                    "mock_a",
+                )
+                .with_snippet("An async runtime"),
+                MockResult::new(
+                    "lib.rs",
+                    "https://github.com/tokio-rs/tokio/blob/main/src/lib.rs",
+                    "mock_a",
+                )
+                .with_snippet("Main library source"),
+                MockResult::new(
+                    "Issue #123",
+                    "https://github.com/tokio-rs/tokio/issues/123",
+                    "mock_a",
+                )
+                .with_snippet("Bug report about async scheduling"),
+                MockResult::new(
+                    "Release v1.37.0",
+                    "https://github.com/tokio-rs/tokio/releases/tag/v1.37.0",
+                    "mock_a",
+                )
+                .with_snippet("Release notes"),
+                MockResult::new(
+                    "Async discussion",
+                    "https://news.ycombinator.com/item?id=99999",
+                    "mock_a",
+                )
+                .with_snippet("Community discussion on async runtimes"),
+            ],
+        )];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(
+            state,
+            ResearchSearchArgs {
+                query: "tokio async runtime performance".into(),
+                research_domain: Some("performance".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        assert_eq!(v["query"], "tokio async runtime performance");
+        assert_eq!(v["research_domain"], "performance");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        assert!(!groups.is_empty(), "should have at least one group");
+
+        let total_results: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert_eq!(total_results, 6, "all 6 results should be in groups");
+
+        let group_kinds: Vec<&str> = groups
+            .iter()
+            .map(|g| g["kind"].as_str().unwrap_or(""))
+            .collect();
+        assert!(
+            group_kinds.contains(&"official_docs"),
+            "should have official_docs group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"reference_implementations"),
+            "should have reference_implementations group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"issue_threads"),
+            "should have issue_threads group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"release_notes"),
+            "should have release_notes group: {group_kinds:?}"
+        );
+
+        let subqueries = v["subqueries"].as_array().expect("subqueries is array");
+        assert!(
+            !subqueries.is_empty(),
+            "subqueries should be non-empty: {subqueries:?}"
+        );
+        for sq in subqueries {
+            assert!(
+                sq["id"].as_str().is_some(),
+                "subquery should have id: {sq:?}"
+            );
+            assert!(
+                sq["query"].as_str().is_some(),
+                "subquery should have query: {sq:?}"
+            );
+        }
+
+        let suggested = v["suggested_fetches"]
+            .as_array()
+            .expect("suggested_fetches");
+        assert!(
+            !suggested.is_empty(),
+            "suggested_fetches should be non-empty when results exist"
+        );
+        for fetch in suggested {
+            assert!(
+                fetch["url"].as_str().is_some(),
+                "suggested fetch should have a url: {fetch:?}"
+            );
+            assert!(
+                fetch["reason"].as_str().is_some(),
+                "suggested fetch should have a reason: {fetch:?}"
+            );
+            assert!(
+                fetch["evidence_quality"].as_str().is_some(),
+                "suggested fetch should have evidence_quality: {fetch:?}"
+            );
+        }
+
+        assert!(
+            v["providers_queried"]
+                .as_array()
+                .map_or(false, |a| !a.is_empty()),
+            "providers_queried should be non-empty"
+        );
+    }
+
+    // ---- Trust markers test ----
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_includes_trust_markers() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Test",
+                "https://example.com/test",
+                "mock_a",
+            )],
+        )];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(state, research_args("test topic"))
+            .await
+            .expect("ok");
+
+        let trust_markers = v["trust_markers"].as_object().expect("trust_markers");
+        assert!(
+            trust_markers.contains_key("text_sanitized"),
+            "trust_markers should have text_sanitized"
+        );
+        assert!(
+            trust_markers.contains_key("text_truncated"),
+            "trust_markers should have text_truncated"
+        );
+    }
+}
