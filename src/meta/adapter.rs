@@ -546,16 +546,11 @@ impl MetadataSearchAdapter {
 
         // 6. Security intent with no advisory provider.
         if req.intent == crate::core::query::SearchIntent::Security
-            && !any_engine_supports(&engines, |c| {
-                c.supports_code_search
-                    || c.supports_issue_search
-                    || c.supports_release_search
-                    || c.supports_result_timestamps
-            })
+            && !any_engine_supports(&engines, |c| c.supports_security_search)
         {
             capability_warnings.push(SearchWarning::new(
                 "_system",
-                "intent=security requested but no provider has native security advisory search; results are from generic text search",
+                "intent=security requested but no provider has native security advisory search; results are from generic/contextual search",
             ));
         }
 
@@ -661,16 +656,22 @@ impl MetadataSearchAdapter {
 
         let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
         let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
+        let overall_deadline = tokio::time::Instant::now() + effective_timeout;
+        let mut subqueries_skipped = 0usize;
 
         for subquery in &plan.subqueries {
-            let deadline = tokio::time::Instant::now() + effective_timeout;
+            let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                subqueries_skipped += 1;
+                continue;
+            }
             let mut join_set = tokio::task::JoinSet::new();
 
             for engine in &engines {
                 let engine = Arc::clone(engine);
                 let query = subquery.query.clone();
                 let limit = candidate_limit;
-                let engine_timeout = effective_timeout;
+                let engine_timeout = remaining;
 
                 join_set.spawn(async move {
                     let result = engine.search(&query, limit, engine_timeout).await;
@@ -679,10 +680,11 @@ impl MetadataSearchAdapter {
             }
 
             loop {
-                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                let remaining =
+                    overall_deadline.saturating_duration_since(tokio::time::Instant::now());
                 if remaining.is_zero() {
                     warn!(
-                        "repo_search subquery '{}' global timeout exceeded with {} engines still pending",
+                        "repo_search subquery '{}' request deadline exceeded with {} engines still pending",
                         subquery.label,
                         join_set.len()
                     );
@@ -701,7 +703,7 @@ impl MetadataSearchAdapter {
                     Ok(None) => break,
                     Err(_) => {
                         warn!(
-                            "repo_search subquery '{}' global timeout exceeded with {} engines still pending",
+                            "repo_search subquery '{}' request deadline exceeded with {} engines still pending",
                             subquery.label,
                             join_set.len()
                         );
@@ -727,6 +729,15 @@ impl MetadataSearchAdapter {
             crate::meta::suggested_fetches::generate_suggested_fetches(&groups, &plan.hints);
 
         let mut warnings: Vec<SearchWarning> = Vec::new();
+
+        if subqueries_skipped > 0 {
+            warnings.push(SearchWarning::new(
+                "_system",
+                format!(
+                    "request_deadline_exceeded: repo_search stopped before all subqueries completed ({subqueries_skipped} skipped)"
+                ),
+            ));
+        }
 
         if plan.hints.has_any()
             && !engines.iter().any(|e| {
@@ -895,16 +906,22 @@ impl MetadataSearchAdapter {
 
         let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
         let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
+        let overall_deadline = tokio::time::Instant::now() + effective_timeout;
+        let mut subqueries_skipped = 0usize;
 
         for subquery in &plan.subqueries {
-            let deadline = tokio::time::Instant::now() + effective_timeout;
+            let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                subqueries_skipped += 1;
+                continue;
+            }
             let mut join_set = tokio::task::JoinSet::new();
 
             for engine in &engines {
                 let engine = Arc::clone(engine);
                 let query = subquery.query.clone();
                 let limit = candidate_limit;
-                let engine_timeout = effective_timeout;
+                let engine_timeout = remaining;
 
                 join_set.spawn(async move {
                     let result = engine.search(&query, limit, engine_timeout).await;
@@ -913,10 +930,11 @@ impl MetadataSearchAdapter {
             }
 
             loop {
-                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                let remaining =
+                    overall_deadline.saturating_duration_since(tokio::time::Instant::now());
                 if remaining.is_zero() {
                     warn!(
-                        "research_search subquery '{}' timeout exceeded with {} engines pending",
+                        "research_search subquery '{}' request deadline exceeded with {} engines still pending",
                         subquery.id,
                         join_set.len()
                     );
@@ -935,7 +953,7 @@ impl MetadataSearchAdapter {
                     Ok(None) => break,
                     Err(_) => {
                         warn!(
-                            "research_search subquery '{}' timeout exceeded with {} engines pending",
+                            "research_search subquery '{}' request deadline exceeded with {} engines still pending",
                             subquery.id,
                             join_set.len()
                         );
@@ -954,12 +972,22 @@ impl MetadataSearchAdapter {
         }
 
         let max_per_group = req.effective_max_per_group(5);
-        let groups = group_research_results(cards, max_per_group);
+        let max_groups = req.effective_max_groups(14);
+        let groups = group_research_results(cards, max_per_group, max_groups);
 
         let suggested_fetches = generate_research_suggested_fetches(&groups);
 
         // Build warnings
         let mut warnings: Vec<SearchWarning> = Vec::new();
+
+        if subqueries_skipped > 0 {
+            warnings.push(SearchWarning::new(
+                "_system",
+                format!(
+                    "request_deadline_exceeded: research_search stopped before all subqueries completed ({subqueries_skipped} skipped)"
+                ),
+            ));
+        }
 
         // Subquery cap warning
         if plan.subqueries.len() >= 8 {

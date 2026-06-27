@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn merge_none_into_advisory_keeps_advisory() {
-        let advisory = ResultMetadata::Advisory(Box::new(VulnerabilityMetadata::default()));
+        let advisory = ResultMetadata::Advisory(Box::default());
         assert_eq!(advisory.clone().merge(ResultMetadata::None), advisory);
         assert_eq!(ResultMetadata::None.merge(advisory.clone()), advisory);
     }

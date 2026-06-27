@@ -295,6 +295,7 @@ fn classify_unknown_group(
 pub fn group_research_results(
     cards: Vec<SourceCard>,
     max_per_group: usize,
+    max_groups: usize,
 ) -> Vec<ResearchResultGroup> {
     use std::collections::HashMap;
 
@@ -361,6 +362,9 @@ pub fn group_research_results(
 
     let mut groups = Vec::new();
     for kind in canonical_order {
+        if groups.len() >= max_groups {
+            break;
+        }
         if let Some(mut results) = buckets.remove(&kind) {
             let full_count = results.len();
             results.truncate(max_per_group);
@@ -850,7 +854,7 @@ mod tests {
 
     #[test]
     fn empty_list_produces_empty_groups() {
-        let groups = group_research_results(vec![], 10);
+        let groups = group_research_results(vec![], 10, 14);
         assert!(groups.is_empty());
     }
 
@@ -869,7 +873,7 @@ mod tests {
             make_card(SourceKind::News, "https://blog.example.com/news"),
             make_card(SourceKind::Tutorial, "https://dev.to/foo/tutorial"),
         ];
-        let groups = group_research_results(cards, 10);
+        let groups = group_research_results(cards, 10, 14);
         let kinds: Vec<ResearchResultGroupKind> = groups.iter().map(|g| g.kind).collect();
         assert_eq!(
             kinds,
@@ -898,7 +902,7 @@ mod tests {
                 card
             })
             .collect();
-        let groups = group_research_results(cards, 3);
+        let groups = group_research_results(cards, 3, 14);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].results.len(), 3);
         assert!(groups[0].truncated);
@@ -914,7 +918,7 @@ mod tests {
                 )
             })
             .collect();
-        let groups = group_research_results(cards, 5);
+        let groups = group_research_results(cards, 5, 14);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].results.len(), 2);
         assert!(!groups[0].truncated);
@@ -926,8 +930,20 @@ mod tests {
             make_card(SourceKind::OfficialDocs, "https://docs.rs/axum"),
             make_card(SourceKind::OfficialDocs, "https://docs.rs/serde"),
         ];
-        let groups = group_research_results(cards, 10);
+        let groups = group_research_results(cards, 10, 14);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].kind, ResearchResultGroupKind::OfficialDocs);
+    }
+
+    #[test]
+    fn group_results_max_groups_enforced() {
+        let cards = vec![
+            make_card(SourceKind::OfficialDocs, "https://docs.rs/axum"),
+            make_card(SourceKind::ReleaseNotes, "https://example.com/releases"),
+            make_card(SourceKind::IssueThread, "https://example.com/issues/1"),
+            make_card(SourceKind::SecurityAdvisory, "https://osv.dev/vuln/X"),
+        ];
+        let groups = group_research_results(cards, 10, 2);
+        assert_eq!(groups.len(), 2);
     }
 }

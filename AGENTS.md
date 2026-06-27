@@ -84,6 +84,8 @@ eggsearch/
       research_planner.rs   # subquery generation for research search
       research_suggested_fetches.rs # suggested fetch URL generation for research groups
       suggested_fetches.rs # suggested fetch URL generation for repo groups
+      security_grouping.rs  # deterministic grouping of security search results
+      security_suggested_fetches.rs # suggested fetch URL generation for security groups
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -166,7 +168,8 @@ eggsearch/
 - Known warning cases:
   - `safe_search` requested but no enabled provider enforces safe search
   - `freshness` requested but no enabled provider supports server-side freshness filtering
-  - `code`/`issues`/`releases`/`security` intent requested but no native provider for that intent is enabled
+  - `code`/`issues`/`releases` intent requested but no native provider for that intent is enabled
+  - `security` intent requested but no provider has `supports_security_search`; the warning message is: "intent=security requested but no provider has native security advisory search; results are from generic/contextual search"
   - `security_search` requested but no native advisory provider is enabled
 - Warnings are non-blocking — generic fallback search always works.
   Agents should treat them as informational hints about degraded
@@ -328,6 +331,10 @@ the `SearchPlan` planner but do not trigger cloning, crawling, or
 fetching page bodies. Agents must use `web_fetch` on a selected
 result URL to inspect content.
 
+When `RepoSearchRequest` provides explicit fields (e.g. `repo`,
+`path`, `file`, `lang`, `symbol`), those fields take **precedence**
+over any hints parsed from the free-text `query` string.
+
 When using repo search, prefer `intent = "code"`, `"issues"`, or
 `"releases"` and include hints such as `repo:owner/name`, `path:...`,
 `file:...`, `lang:...`, and `symbol:...`. These hints are included
@@ -357,6 +364,11 @@ queries when the caller wants categorized results rather than a flat
   `results` (Vec<SourceCard>), `suggested_fetches` (Vec<RepoSuggestedFetch>)
 - `RepoSearchResponse`: `repo`, `groups` (Vec<RepoResultGroup>), `warnings`
 - `RepoSuggestedFetch`: `url`, `label`
+
+**Request-level deadline:** `repo_search` and `research_search` share a
+request-level deadline. Each subquery consumes from a shared remaining
+budget. When budget is exhausted, subqueries are skipped with a
+`request_deadline_exceeded` warning.
 
 **Group kinds:** `OfficialDocs`, `PackageRegistry`, `Repository`,
 `Readme`, `Examples`, `Tests`, `SourceFiles`, `Issues`,
@@ -405,8 +417,11 @@ web search results.
 
 **Providers:**
 - `osv`: native OSV (Open Source Vulnerabilities) JSON API provider.
-  Queries `/v1/query` for package+ecosystem searches and `/v1/vulns/{id}`
-  for vulnerability ID lookups. No API key required. Enabled by default.
+  The `query_package` function handles explicit ecosystem/package/version
+  queries via `/v1/query`. The `search()` function still exists for
+  backward compatibility but `query_package` is the preferred entry point
+  for security_search use. Vulnerability ID lookups use `/v1/vulns/{id}`.
+  No API key required. Enabled by default.
 - Generic web providers: used as fallback for vendor advisories,
   patch releases, defensive guidance, exploit discussion, and
   general context.
@@ -426,10 +441,18 @@ that identifier type is skipped to avoid duplicates.
 - `no_native_advisory_provider`: only generic web search was used
 - `identifier_not_found`: a requested ID was not found in native providers
 - `version_match_unavailable`: affected version could not be determined
+- `kev_match`: CVE(s) found in KEV catalog
+- `kev_absent_not_proof`: no CVE(s) found (absence is not proof)
+- `kev_lookup_failed`: catalog lookup failed
+- `kev_lookup_skipped`: no CVE identifiers available for lookup
 
 The MCP `run_security_search` tool in `src/mcp/tools.rs` orchestrates
 the flow: parse identifiers, run web_search with security intent,
 group results, and return the structured response.
+
+Security grouping and suggested-fetch logic live in
+`src/meta/security_grouping.rs` and
+`src/meta/security_suggested_fetches.rs`.
 
 **Fallback:** if `security_search` is unavailable, use `web_search`
 with `intent = "security"`.
@@ -477,7 +500,8 @@ for complex architectural or technical questions where flat
 - `src/meta/research_planner.rs`: Subquery generation from requested
   source types
 - `src/meta/research_grouping.rs`: Deterministic classification of
-  source cards into research groups
+  source cards into research groups. `group_research_results` takes a
+  `max_groups` parameter and enforces it.
 - `src/meta/research_suggested_fetches.rs`: Priority-ordered fetch
   suggestions with domain diversity
 

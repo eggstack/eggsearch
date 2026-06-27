@@ -5889,7 +5889,7 @@ mod repo_search {
         assert!(
             v["providers_queried"]
                 .as_array()
-                .map_or(false, |a| !a.is_empty()),
+                .is_some_and(|a| !a.is_empty()),
             "providers_queried should be non-empty"
         );
     }
@@ -6100,11 +6100,10 @@ mod repo_search {
 
         let warnings = v["warnings"].as_array().expect("warnings");
         assert!(
-            warnings.iter().any(|w| w["message"]
-                .as_str()
-                .unwrap_or("")
-                .contains("kev_unavailable")),
-            "should have kev_unavailable warning when include_kev=true: {warnings:?}"
+            warnings
+                .iter()
+                .any(|w| w["message"].as_str().unwrap_or("").contains("kev_lookup")),
+            "should have kev_lookup warning when include_kev=true: {warnings:?}"
         );
     }
 
@@ -6649,7 +6648,7 @@ mod research_search {
         assert!(
             v["providers_queried"]
                 .as_array()
-                .map_or(false, |a| !a.is_empty()),
+                .is_some_and(|a| !a.is_empty()),
             "providers_queried should be non-empty"
         );
     }

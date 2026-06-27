@@ -203,6 +203,91 @@ pub async fn lookup_by_id(
     Ok(Some(convert_vuln_metadata(&vuln)))
 }
 
+/// Query OSV by package name, ecosystem, and optional version.
+///
+/// Builds a proper OSV `/v1/query` request body with explicit
+/// `package.ecosystem`, `package.name`, and optional `version`.
+/// Returns parsed `VulnerabilityMetadata` for each matching vulnerability.
+pub async fn query_package(
+    client: &Client,
+    ecosystem: &str,
+    package: &str,
+    version: Option<&str>,
+    max_results: usize,
+    timeout: Duration,
+) -> Result<Vec<VulnerabilityMetadata>, EngineError> {
+    if max_results == 0 {
+        return Ok(Vec::new());
+    }
+
+    let url = format!("{DEFAULT_BASE_URL}/query");
+
+    let mut body = serde_json::json!({
+        "package": {
+            "ecosystem": ecosystem,
+            "name": package,
+        }
+    });
+
+    if let Some(v) = version {
+        body["version"] = serde_json::Value::String(v.to_string());
+    }
+
+    let response = tokio::time::timeout(
+        timeout,
+        client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send(),
+    )
+    .await
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
+    .map_err(|e| EngineError::Http {
+        engine: ENGINE,
+        source: e,
+    })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+
+    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
+        engine: ENGINE,
+        source: e,
+    })?;
+    if bytes.len() > MAX_BODY_BYTES {
+        return Err(EngineError::ParseFailed {
+            engine: ENGINE,
+            reason: format!("response body too large: {} bytes", bytes.len()),
+        });
+    }
+
+    let parsed: OsvQueryResponse =
+        serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
+            engine: ENGINE,
+            reason: format!("invalid JSON: {e}"),
+        })?;
+
+    let mut out = Vec::with_capacity(max_results.min(parsed.vulns.len()));
+    for vuln in parsed.vulns {
+        if out.len() >= max_results {
+            break;
+        }
+        let id = vuln.id.clone();
+        if id.is_empty() {
+            continue;
+        }
+        out.push(convert_vuln_metadata(&vuln));
+    }
+
+    Ok(out)
+}
+
 fn convert(vulns: Vec<OsvVulnerability>, max_results: usize) -> Vec<SearchResult> {
     let mut out = Vec::with_capacity(max_results.min(vulns.len()));
     for vuln in vulns {

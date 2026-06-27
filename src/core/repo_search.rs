@@ -95,30 +95,31 @@ impl RepoSearchRequest {
     }
 
     /// Merge explicit fields with parsed hints from the query string.
+    /// Explicit fields always override parsed query hints.
     pub fn resolved_hints(&self) -> RepoQueryHints {
         let mut hints = RepoQueryHints::parse(&self.query);
-        if self.host.is_some() && hints.host.is_none() {
+        if self.host.is_some() {
             hints.host = self.host;
         }
-        if self.owner.is_some() && hints.owner.is_none() {
+        if self.owner.is_some() {
             hints.owner = self.owner.clone();
         }
-        if self.repo.is_some() && hints.repo.is_none() {
+        if self.repo.is_some() {
             hints.repo = self.repo.clone();
         }
-        if self.org.is_some() && hints.org.is_none() {
+        if self.org.is_some() {
             hints.org = self.org.clone();
         }
-        if self.path.is_some() && hints.path.is_none() {
+        if self.path.is_some() {
             hints.path = self.path.clone();
         }
-        if self.file.is_some() && hints.file.is_none() {
+        if self.file.is_some() {
             hints.file = self.file.clone();
         }
-        if self.language.is_some() && hints.language.is_none() {
+        if self.language.is_some() {
             hints.language = self.language.clone().map(|s| s.to_lowercase());
         }
-        if self.symbol.is_some() && hints.symbol.is_none() {
+        if self.symbol.is_some() {
             hints.symbol = self.symbol.clone();
         }
         hints
@@ -359,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn resolved_hints_prefers_query_over_explicit() {
+    fn resolved_hints_explicit_fields_override_query() {
         let req = RepoSearchRequest {
             query: "repo:serde-rs/serde serializer".to_string(),
             owner: Some("other-owner".to_string()),
@@ -367,8 +368,8 @@ mod tests {
             ..Default::default()
         };
         let hints = req.resolved_hints();
-        assert_eq!(hints.owner.as_deref(), Some("serde-rs"));
-        assert_eq!(hints.repo.as_deref(), Some("serde"));
+        assert_eq!(hints.owner.as_deref(), Some("other-owner"));
+        assert_eq!(hints.repo.as_deref(), Some("other-repo"));
     }
 
     #[test]

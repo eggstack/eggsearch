@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MetadataSearchAdapter::web_search` now takes a `max_results_cap` argument alongside the caller's effective `max_results`. The candidate-pool limit is computed from these two values before provider fan-out, so each provider is asked for the candidate limit rather than the final return count. This lets intent-aware reranking promote intent-matching results that would otherwise be truncated before ranking.
 - `candidate_pool_size` is now config-aware (bounded by the configured cap) and cannot panic when `effective_max_results > max_results_cap`. The previous helper used `usize::clamp(min, max)` which panicked on that path.
 - Provider fan-out logs now distinguish `final_max_results` from `candidate_limit` for debugging.
+- `repo_search` and `research_search` use a single request-level timeout instead of per-subquery timeouts, preventing timeout multiplication when multiple subqueries are issued.
+- Security intent warning now uses the `supports_security_search` provider capability flag instead of a generic message.
+- OSV `query_package` function used for explicit ecosystem/package/version queries in `security_search`, providing structured package-scoped results.
+- KEV warning taxonomy: outcome-based warnings (`kev_match`, `kev_absent_not_proof`, `kev_lookup_failed`, `kev_lookup_skipped`) replace the previous "not yet implemented" placeholder.
+- `repo_search` explicit JSON fields (e.g. `repo`, `aspects`) now override any hints parsed from the `query` text.
+- `research_search` `max_groups` limit is now enforced; the response contains at most `max_groups` groups.
+- Security grouping and suggested-fetch logic moved from `src/mcp/tools.rs` to `src/meta/security_grouping.rs` and `src/meta/security_suggested_fetches.rs` for better module organization.
 
 ### Added
 - `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches with domain diversity constraints.
@@ -60,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Adapter orchestration: bounded subquery fan-out with global timeout, RRF aggregation, and deduplication.
   - Warning system: subquery cap, freshness approximate, provider failures, empty groups.
   - Server capabilities: `research_search` advertised in `provider_status` response.
+- `src/mcp/mod.rs` module doc comment updated to list all six MCP tools: `web_search`, `web_fetch`, `provider_status`, `repo_search`, `security_search`, `research_search`.
 - `repo_search` MCP tool for structured repository evidence discovery with grouped result bundles and suggested fetch URLs
 - `RepoSearchRequest`, `RepoResultGroup`, `RepoSearchResponse`, `RepoSuggestedFetch` types in `src/core/repo_search.rs`
 - `repo_grouping` deterministic classification of SourceCards into group kinds (OfficialDocs, PackageRegistry, Repository, Readme, Examples, Tests, SourceFiles, Issues, PullRequests, Releases, MigrationNotes, Changelog, CommunityDiscovery, Other)
@@ -67,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `suggested_fetches` suggested fetch URL generation for each group
 - `server_capabilities.repo_search` field now reports `true`
 - `security_search` MCP tool for security-oriented retrieval with normalized vulnerability metadata and grouped source cards
-- `osv` provider: native OSV (Open Source Vulnerabilities) JSON API adapter for querying vulnerability databases by package+ecosystem or vulnerability ID. No API key required. Enabled by default.
+- `osv` provider: native OSV (Open Source Vulnerabilities) JSON API adapter for querying vulnerability databases by package+ecosystem or vulnerability ID. No API key required. Enabled by default. The `query_package` function handles explicit ecosystem/package/version queries via the `/v1/query` endpoint.
 - `SecuritySearchRequest`, `SecurityIdentifiers`, `VulnerabilityMetadata`, `SecurityResultGroup`, `SecuritySearchResponse` types in `src/core/security.rs`
 - Deterministic identifier parser for CVE, GHSA, OSV, RustSec, and package/ecosystem/version hints
 - `ResultMetadata::Advisory` variant for native advisory provider results
@@ -76,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RankReason::ProviderNativeAdvisorySearch` variant
 - Security result grouping logic (AuthoritativeAdvisories, VendorAdvisories, PackageAdvisories, KevEntries, PatchCommitsOrReleases, ExploitDiscussion, DefensiveGuidance, GeneralContext, Other)
 - `server_capabilities.security_search` field now reports `true`
-- `KevMetadata` type for CISA Known Exploited Vulnerabilities data
+- `KevMetadata` type for CISA Known Exploited Vulnerabilities data. KEV status is reported via outcome-based warnings (`kev_match`, `kev_absent_not_proof`, `kev_lookup_failed`, `kev_lookup_skipped`).
 - `VulnerabilitySource` enum (Osv, GithubAdvisory, Nvd, Rustsec, CisaKev, Generic)
 - `SeverityLevel` enum (Critical, High, Medium, Low, Unknown) with loose parsing
 

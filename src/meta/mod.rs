@@ -18,6 +18,8 @@ pub mod research_grouping;
 pub mod research_planner;
 pub mod research_suggested_fetches;
 pub mod response;
+pub mod security_grouping;
+pub mod security_suggested_fetches;
 pub mod suggested_fetches;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};

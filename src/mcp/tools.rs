@@ -1,9 +1,12 @@
 //! MCP tool implementations for the metasearch server.
 //!
-//! Three tools are exposed:
-//! - `web_search`       — live metasearch.
-//! - `web_fetch`        — explicit URL fetch.
-//! - `provider_status`  — diagnostic report of configured providers.
+//! Six tools are exposed:
+//! - `web_search`        — live metasearch.
+//! - `web_fetch`         — explicit URL fetch.
+//! - `provider_status`   — diagnostic report of configured providers.
+//! - `repo_search`       — structured repository evidence discovery.
+//! - `security_search`   — security vulnerability and advisory search.
+//! - `research_search`   — research-oriented multi-source evidence discovery.
 
 use std::sync::Arc;
 
@@ -681,192 +684,8 @@ pub async fn run_web_fetch(
     }
 }
 
-/// Classify a single source card into a security result group.
-fn classify_security_result(
-    card: &crate::core::SourceCard,
-) -> crate::core::SecurityResultGroupKind {
-    use crate::core::SecurityResultGroupKind;
-    use crate::core::SourceKind;
-
-    let url_lower = card.url.to_lowercase();
-
-    // Authoritative advisory databases
-    if url_lower.contains("osv.dev") || url_lower.contains("nvd.nist.gov") {
-        return SecurityResultGroupKind::AuthoritativeAdvisories;
-    }
-    if url_lower.contains("github.com/advisories") || url_lower.contains("ghsa") {
-        return SecurityResultGroupKind::AuthoritativeAdvisories;
-    }
-    if url_lower.contains("rustsec.org") || url_lower.contains("rust advisory") {
-        return SecurityResultGroupKind::AuthoritativeAdvisories;
-    }
-
-    // Vendor advisories
-    if url_lower.contains("advisory") || url_lower.contains("/security/advisories") {
-        return SecurityResultGroupKind::VendorAdvisories;
-    }
-    if card.metadata.source_kind == SourceKind::SecurityAdvisory {
-        return SecurityResultGroupKind::VendorAdvisories;
-    }
-
-    // Patch commits or releases
-    if url_lower.contains("/commit/") || url_lower.contains("/pull/") {
-        return SecurityResultGroupKind::PatchCommitsOrReleases;
-    }
-    if url_lower.contains("release") || url_lower.contains("changelog") {
-        return SecurityResultGroupKind::PatchCommitsOrReleases;
-    }
-
-    // Exploit discussion
-    if url_lower.contains("exploit")
-        || url_lower.contains("poc")
-        || url_lower.contains("proof-of-concept")
-        || url_lower.contains("metasploit")
-    {
-        return SecurityResultGroupKind::ExploitDiscussion;
-    }
-
-    // Defensive guidance
-    if url_lower.contains("mitigation")
-        || url_lower.contains("hardening")
-        || url_lower.contains("defensive")
-        || url_lower.contains("best-practice")
-    {
-        return SecurityResultGroupKind::DefensiveGuidance;
-    }
-
-    // Package advisories (issue-like on package registries)
-    if url_lower.contains("/issues/")
-        && (url_lower.contains("github.com") || url_lower.contains("gitlab.com"))
-    {
-        return SecurityResultGroupKind::PackageAdvisories;
-    }
-
-    // General context for other security-relevant results
-    SecurityResultGroupKind::GeneralContext
-}
-
-/// Group source cards into security result groups.
-fn group_security_results(
-    results: &[crate::core::SourceCard],
-    max_per_group: Option<usize>,
-) -> Vec<crate::core::SecurityResultGroup> {
-    use crate::core::SecurityResultGroup;
-
-    let mut groups: Vec<SecurityResultGroup> = Vec::new();
-
-    for card in results {
-        let kind = classify_security_result(card);
-
-        // Find or create group
-        let group = groups.iter_mut().find(|g| g.kind == kind);
-        if let Some(group) = group {
-            let at_limit = max_per_group.is_some_and(|cap| group.results.len() >= cap);
-            if !at_limit {
-                group.results.push(card.clone());
-            } else {
-                group.truncated = true;
-            }
-        } else {
-            groups.push(SecurityResultGroup {
-                kind,
-                label: security_group_label(kind),
-                results: vec![card.clone()],
-                truncated: false,
-            });
-        }
-    }
-
-    // Sort groups by kind for deterministic output
-    groups.sort_by_key(|g| format!("{:?}", g.kind));
-    groups
-}
-
-fn security_group_label(kind: crate::core::SecurityResultGroupKind) -> String {
-    use crate::core::SecurityResultGroupKind;
-    match kind {
-        SecurityResultGroupKind::AuthoritativeAdvisories => "Authoritative Advisories".to_string(),
-        SecurityResultGroupKind::VendorAdvisories => "Vendor Advisories".to_string(),
-        SecurityResultGroupKind::PackageAdvisories => "Package Advisories".to_string(),
-        SecurityResultGroupKind::KevEntries => "Known Exploited Vulnerabilities".to_string(),
-        SecurityResultGroupKind::PatchCommitsOrReleases => "Patches & Fixes".to_string(),
-        SecurityResultGroupKind::ExploitDiscussion => "Exploit Discussion".to_string(),
-        SecurityResultGroupKind::DefensiveGuidance => "Defensive Guidance".to_string(),
-        SecurityResultGroupKind::GeneralContext => "General Context".to_string(),
-        SecurityResultGroupKind::Other => "Other".to_string(),
-    }
-}
-
-/// Generate suggested fetches for security groups.
-fn generate_security_suggested_fetches(
-    groups: &[crate::core::SecurityResultGroup],
-    resolved_ids: &crate::core::SecurityIdentifiers,
-    ecosystem: Option<&str>,
-    package: Option<&str>,
-) -> Vec<crate::core::SecuritySuggestedFetch> {
-    use crate::core::SecuritySuggestedFetch;
-
-    let mut fetches = Vec::new();
-
-    // Always suggest OSV for any identified CVE/GHSA
-    for cve_id in &resolved_ids.cve_ids {
-        fetches.push(SecuritySuggestedFetch {
-            url: format!("https://osv.dev/vulnerability/{cve_id}"),
-            reason: format!("OSV entry for {cve_id}"),
-            group: crate::core::SecurityResultGroupKind::AuthoritativeAdvisories,
-            priority: 0,
-        });
-    }
-    for ghsa_id in &resolved_ids.ghsa_ids {
-        fetches.push(SecuritySuggestedFetch {
-            url: format!("https://github.com/advisories/{ghsa_id}"),
-            reason: format!("GitHub Advisory entry for {ghsa_id}"),
-            group: crate::core::SecurityResultGroupKind::AuthoritativeAdvisories,
-            priority: 0,
-        });
-    }
-    for osv_id in &resolved_ids.osv_ids {
-        fetches.push(SecuritySuggestedFetch {
-            url: format!("https://osv.dev/vulnerability/{osv_id}"),
-            reason: format!("OSV entry for {osv_id}"),
-            group: crate::core::SecurityResultGroupKind::AuthoritativeAdvisories,
-            priority: 0,
-        });
-    }
-
-    // If we have a package + ecosystem, suggest the ecosystem's security page
-    if let (Some(pkg), Some(eco)) = (package, ecosystem) {
-        match eco {
-            "crates.io" => fetches.push(SecuritySuggestedFetch {
-                url: format!("https://crates.io/crates/{pkg}"),
-                reason: format!("{pkg} on crates.io (check security advisories tab)"),
-                group: crate::core::SecurityResultGroupKind::PackageAdvisories,
-                priority: 1,
-            }),
-            "npm" => fetches.push(SecuritySuggestedFetch {
-                url: format!("https://www.npmjs.com/package/{pkg}"),
-                reason: format!("{pkg} on npm (check security advisories)"),
-                group: crate::core::SecurityResultGroupKind::PackageAdvisories,
-                priority: 1,
-            }),
-            _ => {}
-        }
-    }
-
-    // Add top results from groups
-    for group in groups {
-        for card in group.results.iter().take(2) {
-            fetches.push(SecuritySuggestedFetch {
-                url: card.url.clone(),
-                reason: card.title.clone(),
-                group: group.kind,
-                priority: 2,
-            });
-        }
-    }
-
-    fetches
-}
+use crate::meta::security_grouping::group_security_results;
+use crate::meta::security_suggested_fetches::generate_security_suggested_fetches;
 
 /// Run the `security_search` tool.
 pub async fn run_security_search(
@@ -982,15 +801,6 @@ pub async fn run_security_search(
         ));
     }
 
-    // KEV requested but not available
-    if req.include_kev == Some(true) {
-        warnings.push(crate::core::SearchWarning::new(
-            "_system",
-            "kev_unavailable: CISA KEV catalog is not yet implemented; \
-             KEV status cannot be determined",
-        ));
-    }
-
     // Severity may be unavailable from generic search
     warnings.push(crate::core::SearchWarning::new(
         "_system",
@@ -1040,35 +850,59 @@ pub async fn run_security_search(
 
     // Enrich vulnerabilities with KEV data if requested
     if req.include_kev == Some(true) {
-        let mut kev_found_ids: Vec<String> = Vec::new();
-        for vuln in &mut vulnerabilities {
-            for cve_id in &vuln.cve_ids {
-                if let Ok(Some(kev_meta)) = state.kev_client.lookup(cve_id).await {
-                    vuln.kev = Some(kev_meta);
-                    kev_found_ids.push(cve_id.clone());
-                }
-            }
-        }
+        let cve_ids_for_kev: Vec<String> = vulnerabilities
+            .iter()
+            .flat_map(|v| v.cve_ids.iter().cloned())
+            .collect();
 
-        // If we found KEV entries, update the warning
-        if !kev_found_ids.is_empty() {
-            // Remove the kev_unavailable warning if present
-            warnings.retain(|w| !w.message.contains("kev_unavailable"));
-            // Add a note about KEV matches
+        if cve_ids_for_kev.is_empty() {
+            // No CVE IDs available for KEV lookup
             warnings.push(crate::core::SearchWarning::new(
                 "_system",
-                format!(
-                    "kev_match: {} CVE(s) found in CISA KEV catalog",
-                    kev_found_ids.len()
-                ),
+                "kev_lookup_skipped: KEV lookup requires CVE identifiers",
             ));
         } else {
-            // No KEV matches found - explicitly note absence is not proof
-            warnings.push(crate::core::SearchWarning::new(
-                "_system",
-                "kev_absent_not_proof: no CVE(s) found in CISA KEV catalog; \
-                 absence does not prove no exploitation",
-            ));
+            let mut kev_found_ids: Vec<String> = Vec::new();
+            let mut kev_lookup_failed = false;
+
+            for cve_id in &cve_ids_for_kev {
+                match state.kev_client.lookup(cve_id).await {
+                    Ok(Some(kev_meta)) => {
+                        // Enrich the matching vulnerability
+                        for vuln in &mut vulnerabilities {
+                            if vuln.cve_ids.iter().any(|id| id == cve_id) {
+                                vuln.kev = Some(kev_meta.clone());
+                            }
+                        }
+                        kev_found_ids.push(cve_id.clone());
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        kev_lookup_failed = true;
+                    }
+                }
+            }
+
+            if kev_lookup_failed && kev_found_ids.is_empty() {
+                warnings.push(crate::core::SearchWarning::new(
+                    "_system",
+                    "kev_lookup_failed: KEV catalog lookup failed; KEV status could not be determined",
+                ));
+            } else if !kev_found_ids.is_empty() {
+                warnings.push(crate::core::SearchWarning::new(
+                    "_system",
+                    format!(
+                        "kev_match: {} CVE(s) found in CISA KEV catalog",
+                        kev_found_ids.len()
+                    ),
+                ));
+            } else {
+                warnings.push(crate::core::SearchWarning::new(
+                    "_system",
+                    "kev_absent_not_proof: no CVE(s) found in CISA KEV catalog; \
+                     absence does not prove no exploitation",
+                ));
+            }
         }
     }
 
