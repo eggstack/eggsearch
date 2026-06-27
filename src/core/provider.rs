@@ -343,12 +343,12 @@ pub fn built_in_provider_descriptor(
             requires_api_key: false,
             configured: configured && enabled,
             capabilities: ProviderCapabilities {
-                supports_safe_search: true,
-                supports_freshness: true,
-                supports_language: true,
-                supports_region: true,
+                supports_safe_search: false,
+                supports_freshness: false,
+                supports_language: false,
+                supports_region: false,
                 supports_domain_filters: false,
-                supports_news: true,
+                supports_news: false,
                 supports_code_search: false,
                 supports_repo_filter: false,
                 supports_org_filter: false,
@@ -369,10 +369,10 @@ pub fn built_in_provider_descriptor(
             requires_api_key: true,
             configured: configured && enabled,
             capabilities: ProviderCapabilities {
-                supports_safe_search: true,
-                supports_freshness: true,
-                supports_language: true,
-                supports_region: true,
+                supports_safe_search: false,
+                supports_freshness: false,
+                supports_language: false,
+                supports_region: false,
                 supports_domain_filters: false,
                 supports_news: false,
                 supports_code_search: false,
@@ -455,7 +455,7 @@ pub fn built_in_provider_descriptor(
                 supports_news: false,
                 supports_code_search: false,
                 supports_repo_filter: true,
-                supports_org_filter: true,
+                supports_org_filter: false,
                 supports_path_filter: false,
                 supports_language_filter: false,
                 supports_symbol_hint: false,
@@ -496,10 +496,9 @@ mod tests {
     fn capabilities_summary_searxng() {
         let desc = built_in_provider_descriptor("searxng", true, false, true).unwrap();
         let summary = desc.capabilities.summary();
-        assert!(summary.contains("safe_search"));
-        assert!(summary.contains("language"));
-        assert!(summary.contains("news"));
-        assert!(!summary.contains("domain_filters"));
+        // SearXNG adapter only forwards hardcoded en-US/general params;
+        // no capability flags are set because none are actually passed through.
+        assert_eq!(summary, "basic");
     }
 
     #[test]
@@ -557,10 +556,12 @@ mod tests {
     #[test]
     fn brave_api_descriptor_capabilities() {
         let desc = built_in_provider_descriptor("brave_api", true, false, true).unwrap();
-        assert!(desc.capabilities.supports_safe_search);
-        assert!(desc.capabilities.supports_freshness);
-        assert!(desc.capabilities.supports_language);
-        assert!(desc.capabilities.supports_region);
+        // Brave API adapter only forwards q and count; safe_search,
+        // freshness, language, and region are not passed through.
+        assert!(!desc.capabilities.supports_safe_search);
+        assert!(!desc.capabilities.supports_freshness);
+        assert!(!desc.capabilities.supports_language);
+        assert!(!desc.capabilities.supports_region);
         assert!(!desc.capabilities.supports_domain_filters);
         assert!(!desc.capabilities.supports_news);
     }
@@ -569,11 +570,7 @@ mod tests {
     fn brave_api_capabilities_summary() {
         let desc = built_in_provider_descriptor("brave_api", true, false, true).unwrap();
         let summary = desc.capabilities.summary();
-        assert!(summary.contains("safe_search"));
-        assert!(summary.contains("freshness"));
-        assert!(summary.contains("language"));
-        assert!(summary.contains("region"));
-        assert!(!summary.contains("news"));
+        assert_eq!(summary, "basic");
     }
 
     #[test]

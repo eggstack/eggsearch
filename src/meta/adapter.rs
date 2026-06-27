@@ -463,6 +463,83 @@ impl MetadataSearchAdapter {
         // final window can be promoted into the returned set.
         results.truncate(final_max_results);
 
+        // --- capability warnings ---
+        // Advisory warnings when the request asks for behavior that
+        // selected providers cannot enforce. These are non-fatal and
+        // appended to the existing warnings vector.
+        let mut capability_warnings: Vec<SearchWarning> = Vec::new();
+
+        // 1. safe_search requested but no provider enforces it.
+        if req.safe_search.is_some() && !any_engine_supports(&engines, |c| c.supports_safe_search) {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "safe_search requested but no selected provider enforces safe search filtering",
+            ));
+        }
+
+        // 2. Freshness requested but no provider-side filtering
+        //    and no result-level timestamps available.
+        if req.freshness != crate::core::query::Freshness::Any {
+            let has_freshness = any_engine_supports(&engines, |c| c.supports_freshness);
+            let has_timestamps = any_engine_supports(&engines, |c| c.supports_result_timestamps);
+            if !has_freshness && !has_timestamps {
+                capability_warnings.push(SearchWarning::new(
+                    "_system",
+                    format!(
+                        "freshness hint '{}' requested but no provider applies server-side freshness filtering",
+                        req.freshness.as_str()
+                    ),
+                ));
+            }
+        }
+
+        // 3. Code intent with no native code/repository providers.
+        if req.intent == crate::core::query::SearchIntent::Code
+            && !any_engine_supports(&engines, |c| {
+                c.supports_code_search || c.supports_repo_filter
+            })
+        {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "intent=code requested but no provider has native code/repository search; results are from generic text search",
+            ));
+        }
+
+        // 4. Issues intent with no issue providers.
+        if req.intent == crate::core::query::SearchIntent::Issues
+            && !any_engine_supports(&engines, |c| c.supports_issue_search)
+        {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "intent=issues requested but no provider has native issue search; results are from generic text search",
+            ));
+        }
+
+        // 5. Releases intent with no release providers.
+        if req.intent == crate::core::query::SearchIntent::Releases
+            && !any_engine_supports(&engines, |c| c.supports_release_search)
+        {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "intent=releases requested but no provider has native release search; results are from generic text search",
+            ));
+        }
+
+        // 6. Security intent with no advisory provider.
+        if req.intent == crate::core::query::SearchIntent::Security
+            && !any_engine_supports(&engines, |c| {
+                c.supports_code_search
+                    || c.supports_issue_search
+                    || c.supports_release_search
+                    || c.supports_result_timestamps
+            })
+        {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "intent=security requested but no provider has native security advisory search; results are from generic text search",
+            ));
+        }
+
         // Collect the set of provider ids that already completed (success
         // or individual failure) so we don't double-count.
         let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -496,10 +573,11 @@ impl MetadataSearchAdapter {
 
         let providers_queried: Vec<String> = queried_ids;
 
-        let warnings: Vec<SearchWarning> = providers_failed
+        let mut warnings: Vec<SearchWarning> = providers_failed
             .iter()
             .map(|f| SearchWarning::new(f.id.clone(), format!("[{}] {}", f.error_class, f.message)))
             .collect();
+        warnings.extend(capability_warnings);
 
         WebSearchResponse {
             query: req.query.clone(),
@@ -511,6 +589,18 @@ impl MetadataSearchAdapter {
             trust_markers,
         }
     }
+}
+
+/// Check whether any engine in the list supports a given capability.
+fn any_engine_supports(
+    engines: &[Arc<dyn SearchEngine>],
+    check: impl Fn(&crate::core::provider::ProviderCapabilities) -> bool,
+) -> bool {
+    engines.iter().any(|e| {
+        let configured = true; // adapters only hold live engines
+        built_in_provider_descriptor(e.name(), true, false, configured)
+            .is_some_and(|desc| check(&desc.capabilities))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -2392,5 +2482,309 @@ mod tests {
             .expect("release metadata must survive merge with ResultMetadata::None");
         assert_eq!(release.tag.as_deref(), Some("v1.0.0"));
         assert_eq!(release.owner.as_deref(), Some("tokio-rs"));
+    }
+
+    // --- Capability warning tests ---
+
+    #[tokio::test]
+    async fn capability_warning_safe_search_no_provider_supports() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("test");
+        req.safe_search = Some(crate::core::query::SafeSearch::Strict);
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert_eq!(
+            cap_warnings.len(),
+            1,
+            "expected exactly 1 capability warning"
+        );
+        assert!(cap_warnings[0].message.contains("safe_search"));
+    }
+
+    #[tokio::test]
+    async fn capability_warning_safe_search_not_emitted_when_none_requested() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("test");
+        // safe_search is None by default
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings.is_empty(),
+            "should not emit safe_search warning when not requested: {:?}",
+            cap_warnings
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_code_intent_no_native_providers() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum Router::layer");
+        req.intent = crate::core::query::SearchIntent::Code;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert_eq!(
+            cap_warnings.len(),
+            1,
+            "expected exactly 1 capability warning"
+        );
+        assert!(
+            cap_warnings[0].message.contains("intent=code"),
+            "warning should mention intent=code: {}",
+            cap_warnings[0].message
+        );
+        assert!(
+            cap_warnings[0].message.contains("generic text search"),
+            "warning should mention generic text search: {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_code_intent_not_emitted_with_native_provider() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            Arc::new(MockEngine {
+                name: "github_code",
+                results: vec![SearchResult {
+                    title: "router.rs".to_string(),
+                    url: "https://github.com/tokio-rs/axum/blob/main/src/routing/mod.rs"
+                        .to_string(),
+                    snippet: Some("Router::layer".to_string()),
+                    source_engine: "github_code".to_string(),
+                    metadata: ResultMetadata::None,
+                }],
+            }),
+            Arc::new(MockEngine {
+                name: "duckduckgo",
+                results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+            }),
+        ];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum Router::layer");
+        req.intent = crate::core::query::SearchIntent::Code;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings.is_empty(),
+            "should not emit code intent warning when github_code is available: {:?}",
+            cap_warnings
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_freshness_no_server_side_or_timestamps() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("test");
+        req.freshness = crate::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert_eq!(
+            cap_warnings.len(),
+            1,
+            "expected exactly 1 capability warning"
+        );
+        assert!(
+            cap_warnings[0].message.contains("freshness"),
+            "warning should mention freshness: {}",
+            cap_warnings[0].message
+        );
+        assert!(
+            cap_warnings[0].message.contains("day"),
+            "warning should include the freshness value: {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_freshness_suppressed_when_timestamps_available() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "github_issues",
+            results: vec![SearchResult {
+                title: "#42 Bug".to_string(),
+                url: "https://github.com/tokio-rs/axum/issues/42".to_string(),
+                snippet: Some("A bug".to_string()),
+                source_engine: "github_issues".to_string(),
+                metadata: ResultMetadata::Issue(crate::core::source_card::IssueMetadata {
+                    updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                    ..Default::default()
+                }),
+            }],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        req.freshness = crate::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings.is_empty(),
+            "should not emit freshness warning when supports_result_timestamps is true: {:?}",
+            cap_warnings
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_issues_intent_no_native_providers() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("tokio-rs/axum panic");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert_eq!(
+            cap_warnings.len(),
+            1,
+            "expected exactly 1 capability warning"
+        );
+        assert!(
+            cap_warnings[0].message.contains("intent=issues"),
+            "warning should mention intent=issues: {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_releases_intent_no_native_providers() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("tokio-rs/axum v0.7.0");
+        req.intent = crate::core::query::SearchIntent::Releases;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert_eq!(
+            cap_warnings.len(),
+            1,
+            "expected exactly 1 capability warning"
+        );
+        assert!(
+            cap_warnings[0].message.contains("intent=releases"),
+            "warning should mention intent=releases: {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_security_intent_no_native_providers() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("axum CVE");
+        req.intent = crate::core::query::SearchIntent::Security;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert_eq!(
+            cap_warnings.len(),
+            1,
+            "expected exactly 1 capability warning"
+        );
+        assert!(
+            cap_warnings[0].message.contains("intent=security"),
+            "warning should mention intent=security: {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warnings_multiple_concurrent() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("tokio-rs/axum CVE");
+        req.intent = crate::core::query::SearchIntent::Security;
+        req.freshness = crate::core::query::Freshness::Week;
+        req.safe_search = Some(crate::core::query::SafeSearch::Strict);
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings.len() >= 3,
+            "expected at least 3 capability warnings (safe_search, freshness, security), got {}",
+            cap_warnings.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_warning_not_emitted_for_web_intent() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = WebSearchRequest::new("test");
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings.is_empty(),
+            "Web intent should not produce capability warnings: {:?}",
+            cap_warnings
+        );
     }
 }

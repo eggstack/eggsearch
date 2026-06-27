@@ -899,7 +899,7 @@ mod tests {
         assert!(!desc.default);
         assert!(desc.capabilities.supports_release_search);
         assert!(desc.capabilities.supports_repo_filter);
-        assert!(desc.capabilities.supports_org_filter);
+        assert!(!desc.capabilities.supports_org_filter);
         assert!(desc.capabilities.supports_result_timestamps);
         assert!(!desc.capabilities.supports_code_search);
         assert!(!desc.capabilities.supports_issue_search);

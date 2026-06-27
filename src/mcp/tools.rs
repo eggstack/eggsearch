@@ -241,6 +241,15 @@ pub fn run_provider_status(
     let payload = serde_json::json!({
         "providers": descriptors,
         "mode": mode_str(state.config.search.mode),
+        "server_capabilities": {
+            "generic_search": true,
+            "explicit_fetch": true,
+            "repo_search": false,
+            "security_search": false,
+            "research_search": false,
+            "document_fetch": true,
+            "pdf_fetch": cfg!(feature = "pdf"),
+        },
     });
     Ok(payload)
 }

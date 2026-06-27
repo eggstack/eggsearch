@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - Unreleased
 
+### Changed
+
+- Provider capability audit: searxng and brave_api capabilities corrected to reflect what the adapter actually forwards (not what the upstream API supports); github_releases `org_filter` corrected to false
+- Capability warnings emitted when requests ask for behavior providers cannot enforce (safe_search, freshness, intent without native providers)
+
+### Added
+
+- `server_capabilities` object in `provider_status` response for MCP capability discovery
+- Capability warning system in adapter (6 advisory warning types)
+- Regression tests for intent-neutral generic search, intent reranking, and provider status
+- README stable baseline section documenting tool contracts
+
 ### Added
 
 - Content-type detection classifier (`src/fetch/detect.rs`) for deterministic document kind and language identification from Content-Type headers, URL extensions, and byte heuristics

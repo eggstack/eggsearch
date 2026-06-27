@@ -87,7 +87,10 @@ mod tests {
 
     #[test]
     fn merge_none_into_none_is_none() {
-        assert_eq!(ResultMetadata::None.merge(ResultMetadata::None), ResultMetadata::None);
+        assert_eq!(
+            ResultMetadata::None.merge(ResultMetadata::None),
+            ResultMetadata::None
+        );
     }
 
     #[test]
@@ -130,6 +133,9 @@ mod tests {
         // and is misclassified by one should not flip the variant.
         let release = ResultMetadata::Release(ReleaseMetadata::default());
         let issue = ResultMetadata::Issue(IssueMetadata::default());
-        assert!(matches!(release.clone().merge(issue), ResultMetadata::Release(_)));
+        assert!(matches!(
+            release.clone().merge(issue),
+            ResultMetadata::Release(_)
+        ));
     }
 }

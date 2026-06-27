@@ -109,6 +109,9 @@ eggsearch/
 - Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), and `provider_status` (diagnostic/host-facing)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
+- The `provider_status` response includes a `server_capabilities`
+  object alongside the provider list, advertising which tool classes
+  are available (see "Server Capabilities Discovery").
 
 ### Configuration
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
@@ -130,6 +133,40 @@ eggsearch/
 - `MetadataSearchAdapter::provider_status()` returns `Vec<ProviderDescriptor>`
 - `resolve_providers()` validates explicit provider lists with distinct errors for disabled vs unknown providers
 - API providers use env-var indirection for secrets (`api_key_env` field)
+- Capability flags are conservative by design. HTML scraper providers
+  report `ProviderCapabilities::none()` — they cannot enforce safe
+  search, freshness, or any structured option server-side. `searxng`
+  and `brave_api` capabilities reflect what the adapter actually
+  forwards to the upstream API, not the full feature set the upstream
+  may support.
+
+### Capability Warnings
+- The adapter emits advisory `SearchWarning` entries when a request
+  asks for behavior that no enabled provider can enforce.
+- Known warning cases:
+  - `safe_search` requested but no enabled provider enforces safe search
+  - `freshness` requested but no enabled provider supports server-side freshness filtering
+  - `code`/`issues`/`releases`/`security` intent requested but no native provider for that intent is enabled
+- Warnings are non-blocking — generic fallback search always works.
+  Agents should treat them as informational hints about degraded
+  capability, not errors.
+- Warning format: `SearchWarning::new("_system", message)` where
+  `message` is a human-readable description of the limitation.
+
+### Server Capabilities Discovery
+- The `provider_status` MCP tool response includes a top-level
+  `server_capabilities` object alongside the provider list.
+- Fields:
+  - `generic_search`: always `true` (generic HTML-scrape providers)
+  - `explicit_fetch`: always `true` (`web_fetch` is available)
+  - `repo_search`: `false` (planned specialized tool, not yet implemented)
+  - `security_search`: `false` (planned specialized tool)
+  - `research_search`: `false` (planned specialized tool)
+  - `document_fetch`: always `true` (structured document extraction)
+  - `pdf_fetch`: `cfg!(feature = "pdf")` (only available when compiled with the `pdf` feature)
+- This is the capability discovery endpoint for MCP clients. Clients
+  can use it to determine which specialized tools are available before
+  attempting to use them.
 
 ### Source Cards
 - `SourceCard` is the primary output type returned by `web_search`

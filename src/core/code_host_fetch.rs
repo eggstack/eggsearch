@@ -335,7 +335,9 @@ mod tests {
             "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs",
         )
         .unwrap();
-        assert!(target.to_fetch_transform("https://example.com/raw").is_none());
+        assert!(target
+            .to_fetch_transform("https://example.com/raw")
+            .is_none());
     }
 
     // --- Codeberg non-file URLs return None ---

@@ -23,7 +23,22 @@ for the default configuration.
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 831 fast tests (no network required)
+- 850+ fast tests (no network required)
+
+## Stable baseline
+
+`web_search`, `web_fetch`, and `provider_status` are the three stable
+MCP tools. Generic search (`intent = web`) is first-class and will
+remain the default path. Specialized retrieval workflows (repository
+search, security advisory search, research aggregation) are planned
+as layered improvements built on top of this baseline.
+
+Provider capability flags reflect actual API support -- if eggsearch
+only rewrites query text without forwarding a native parameter, the
+corresponding capability is `false`. The `intent` and `freshness`
+fields on `web_search` are retrieval and ranking hints, not hard
+semantic guarantees, unless a provider with native support is
+selected.
 
 ## Search and fetch workflow
 

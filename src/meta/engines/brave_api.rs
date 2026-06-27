@@ -600,10 +600,12 @@ mod tests {
         assert!(desc.configured);
         assert!(desc.enabled);
         assert!(!desc.default);
-        assert!(desc.capabilities.supports_safe_search);
-        assert!(desc.capabilities.supports_freshness);
-        assert!(desc.capabilities.supports_language);
-        assert!(desc.capabilities.supports_region);
+        // Brave API adapter only forwards q and count; safe_search,
+        // freshness, language, and region are not passed through.
+        assert!(!desc.capabilities.supports_safe_search);
+        assert!(!desc.capabilities.supports_freshness);
+        assert!(!desc.capabilities.supports_language);
+        assert!(!desc.capabilities.supports_region);
     }
 
     #[test]

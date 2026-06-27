@@ -361,6 +361,31 @@ fn provider_status_payload_shape_is_stable() {
     }
 }
 
+#[test]
+fn provider_status_includes_server_capabilities() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let caps = v["server_capabilities"]
+        .as_object()
+        .expect("server_capabilities is object");
+
+    // Static capabilities
+    assert_eq!(caps["generic_search"], serde_json::json!(true));
+    assert_eq!(caps["explicit_fetch"], serde_json::json!(true));
+    assert_eq!(caps["document_fetch"], serde_json::json!(true));
+    assert_eq!(caps["repo_search"], serde_json::json!(false));
+    assert_eq!(caps["security_search"], serde_json::json!(false));
+    assert_eq!(caps["research_search"], serde_json::json!(false));
+
+    // pdf_fetch reflects compile-time feature flag
+    let expected_pdf = cfg!(feature = "pdf");
+    assert_eq!(
+        caps["pdf_fetch"],
+        serde_json::json!(expected_pdf),
+        "pdf_fetch should match cfg!(feature = \"pdf\")"
+    );
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_happy_path_dedupes_across_engines() {
@@ -4368,7 +4393,10 @@ fn code_host_fetch_target_codeberg_blob_does_not_rewrite() {
     assert!(target
         .to_fetch_transform("https://example.com/raw")
         .is_none());
-    assert_eq!(target.source_kind, eggsearch::core::source_card::SourceKind::SourceFile);
+    assert_eq!(
+        target.source_kind,
+        eggsearch::core::source_card::SourceKind::SourceFile
+    );
 }
 
 #[test]
@@ -4512,4 +4540,812 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         !json.as_object().unwrap().contains_key("fetch_transform"),
         "fetch_transform should be absent when None"
     );
+}
+
+// =========================================================================
+// Phase 1: Baseline Capability Audit — Integration Tests
+// =========================================================================
+
+// ---------------------------------------------------------------------------
+// Workstream 4: Intent-neutral generic search tests
+// ---------------------------------------------------------------------------
+
+mod intent_neutral_generic_search {
+    use super::*;
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn web_intent_leaves_query_trimmed() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+        )];
+        let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let mut args = args_for(&["mock_a"], "  rust axum  ");
+        args.intent = Some(eggsearch::core::query::SearchIntent::Web);
+        args.freshness = Some(eggsearch::core::query::Freshness::Any);
+        let v = run_web_search(state, args).await.expect("ok");
+
+        assert_eq!(v["query"], "  rust axum  ");
+        // Web intent with Freshness::Any should produce no freshness warning
+        // and no intent-related warnings.
+        let warnings = v["warnings"].as_array().unwrap();
+        for w in warnings {
+            let msg = w.as_str().unwrap_or("");
+            assert!(
+                !msg.contains("freshness"),
+                "Web+Any should not produce freshness warning: {msg}"
+            );
+            assert!(
+                !msg.contains("intent"),
+                "Web+Any should not produce intent warning: {msg}"
+            );
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn web_search_returns_source_cards_with_expected_fields() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new("Rust Book", "https://doc.rust-lang.org/book/", "mock_a")
+                    .with_snippet("The Rust Programming Language"),
+            ],
+        )];
+        let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_web_search(state, args_for(&["mock_a"], "rust book"))
+            .await
+            .expect("ok");
+
+        let results = v["results"].as_array().expect("results is array");
+        assert_eq!(results.len(), 1, "should have 1 result");
+        let card = &results[0];
+
+        // Source card field assertions
+        assert!(
+            card["id"].as_str().unwrap().starts_with("src_"),
+            "id should start with src_: {:?}",
+            card["id"]
+        );
+        assert_eq!(card["title"], "Rust Book");
+        assert_eq!(card["url"], "https://doc.rust-lang.org/book/");
+        assert_eq!(
+            card["snippet"].as_str().unwrap(),
+            "The Rust Programming Language"
+        );
+        assert_eq!(card["trust"], "external_untrusted");
+        assert_eq!(card["fetched"], false);
+        assert!(card["score"].as_f64().is_some(), "score should be a number");
+
+        // Providers list
+        let providers = card["providers"].as_array().expect("providers is array");
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0], "mock_a");
+
+        // Metadata: when rank_reasons is empty and the rest is default,
+        // the `metadata` field may be omitted by serde. But we can
+        // still verify the id format and basic fields above. For
+        // multi-provider results, metadata is populated with
+        // rank_reasons. Verify that at minimum the card serializes
+        // correctly with the expected top-level fields.
+        let card_json = serde_json::to_string(card).unwrap();
+        assert!(card_json.contains("\"title\""));
+        assert!(card_json.contains("\"url\""));
+        assert!(card_json.contains("\"trust\""));
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn rrf_aggregation_deduplicates_urls() {
+        let engines = vec![
+            MockEngine::success(
+                "mock_a",
+                vec![
+                    MockResult::new("Title", "https://example.com/page", "mock_a"),
+                    MockResult::new("Other", "https://example.com/other", "mock_a"),
+                ],
+            ),
+            MockEngine::success(
+                "mock_b",
+                vec![MockResult::new(
+                    "Title",
+                    "https://example.com/page",
+                    "mock_b",
+                )],
+            ),
+        ];
+        let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_web_search(state, args_for(&["mock_a", "mock_b"], "test"))
+            .await
+            .expect("ok");
+
+        let results = v["results"].as_array().expect("results is array");
+        // Two unique URLs: page (from both) and other (from mock_a only).
+        assert_eq!(
+            results.len(),
+            2,
+            "should have 2 unique results: {results:?}"
+        );
+
+        // The deduplicated card should list both providers.
+        let page_card = results
+            .iter()
+            .find(|c| c["url"] == "https://example.com/page")
+            .expect("page card");
+        let providers: Vec<&str> = page_card["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert!(
+            providers.contains(&"mock_a") && providers.contains(&"mock_b"),
+            "page card should have both providers: {providers:?}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn candidate_pool_does_not_change_max_results() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new("A", "https://example.com/a", "mock_a"),
+                MockResult::new("B", "https://example.com/b", "mock_a"),
+                MockResult::new("C", "https://example.com/c", "mock_a"),
+                MockResult::new("D", "https://example.com/d", "mock_a"),
+                MockResult::new("E", "https://example.com/e", "mock_a"),
+            ],
+        )];
+        let mut cfg = test_cfg();
+        cfg.search.max_results_cap = 50;
+        let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+
+        let mut args = args_for(&["mock_a"], "test");
+        args.max_results = Some(2);
+        let v = run_web_search(state, args).await.expect("ok");
+
+        let results = v["results"].as_array().expect("results is array");
+        assert_eq!(
+            results.len(),
+            2,
+            "candidate pool expansion must not change final max_results=2"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn provider_failure_produces_warning_without_discarding_results() {
+        let engines = vec![
+            MockEngine::success(
+                "mock_a",
+                vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+            ),
+            MockEngine::failure("mock_b", MockFailure::Network),
+        ];
+        let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_web_search(state, args_for(&["mock_a", "mock_b"], "test"))
+            .await
+            .expect("ok");
+
+        // Successful results from mock_a must be present.
+        let results = v["results"].as_array().expect("results is array");
+        assert_eq!(results.len(), 1, "should have 1 result from mock_a");
+        assert_eq!(results[0]["title"], "A");
+
+        // providers_failed must list mock_b.
+        let failed = v["providers_failed"].as_array().expect("providers_failed");
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0]["id"], "mock_b");
+
+        // warnings must include the failure.
+        let warnings = v["warnings"].as_array().expect("warnings");
+        let has_failure_warning = warnings
+            .iter()
+            .filter_map(|w| w.as_str())
+            .any(|w| w.contains("mock_b"));
+        assert!(
+            has_failure_warning,
+            "warnings should mention mock_b failure: {warnings:?}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn sanitization_stable_for_search_results() {
+        // Title and snippet with embedded control characters (NUL, BEL,
+        // U+202E bidi override). Tier 1 always strips these.
+        let poisoned_title = "Hello\x00World\x07\u{202E}test";
+        let poisoned_snippet = "Snippet\x00\x07text";
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(poisoned_title, "https://example.com/sanitize", "mock_a")
+                    .with_snippet(poisoned_snippet),
+            ],
+        )];
+        let state = state_with_engines_sanitize(test_cfg(), engines, Duration::from_secs(5), true);
+        let v = run_web_search(state, args_for(&["mock_a"], "test"))
+            .await
+            .expect("ok");
+
+        let results = v["results"].as_array().expect("results is array");
+        assert_eq!(results.len(), 1);
+
+        let title = results[0]["title"].as_str().expect("title");
+        assert!(
+            !title.contains('\x00'),
+            "title must not contain NUL: {title:?}"
+        );
+        assert!(
+            !title.contains('\x07'),
+            "title must not contain BEL: {title:?}"
+        );
+        assert!(
+            !title.contains('\u{202E}'),
+            "title must not contain bidi override: {title:?}"
+        );
+        assert!(
+            title.contains("Hello"),
+            "title should preserve readable text"
+        );
+
+        let snippet = results[0]["snippet"].as_str().expect("snippet");
+        assert!(
+            !snippet.contains('\x00'),
+            "snippet must not contain NUL: {snippet:?}"
+        );
+        assert!(
+            !snippet.contains('\x07'),
+            "snippet must not contain BEL: {snippet:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 5: Intent regression tests
+// ---------------------------------------------------------------------------
+
+mod intent_reranking_regression {
+    use super::*;
+    use eggsearch::meta::engines::error::EngineError;
+    use eggsearch::meta::engines::models::{ResultMetadata, SearchResult};
+    use eggsearch::meta::engines::SearchEngine;
+
+    /// Local mock engine that allows custom `SearchResult` values
+    /// (including `ResultMetadata::Issue` / `Release`) which the
+    /// public `MockEngine::success()` doesn't support.
+    struct DirectMockEngine {
+        name: &'static str,
+        results: Vec<SearchResult>,
+    }
+
+    impl SearchEngine for DirectMockEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn search<'a>(
+            &'a self,
+            _query: &'a str,
+            _max_results: usize,
+            _timeout: Duration,
+        ) -> eggsearch::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>
+        {
+            let results = self.results.clone();
+            Box::pin(async move { Ok(results) })
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn docs_intent_promotes_official_docs() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(DirectMockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Random blog".to_string(),
+                    url: "https://example.com/blog".to_string(),
+                    snippet: Some("A blog post".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "tower-http - Rust".to_string(),
+                    url: "https://docs.rs/tower-http/latest/tower_http/".to_string(),
+                    snippet: Some("Official docs".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = eggsearch::core::WebSearchRequest::new("tower http");
+        req.intent = eggsearch::core::query::SearchIntent::Docs;
+        req.freshness = eggsearch::core::query::Freshness::Any;
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert!(!resp.results.is_empty(), "should have results");
+        assert_eq!(
+            resp.results[0].url, "https://docs.rs/tower-http/latest/tower_http/",
+            "docs intent should promote OfficialDocs"
+        );
+        assert!(
+            resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&eggsearch::core::source_card::RankReason::IntentMatch),
+            "promoted card should have IntentMatch"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn code_intent_promotes_source_repository() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(DirectMockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Random article".to_string(),
+                    url: "https://example.com/article".to_string(),
+                    snippet: Some("An article".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "tokio-rs/axum".to_string(),
+                    url: "https://github.com/tokio-rs/axum".to_string(),
+                    snippet: Some("A web framework".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = eggsearch::core::WebSearchRequest::new("axum repo");
+        req.intent = eggsearch::core::query::SearchIntent::Code;
+        req.freshness = eggsearch::core::query::Freshness::Any;
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert!(!resp.results.is_empty());
+        assert_eq!(
+            resp.results[0].url, "https://github.com/tokio-rs/axum",
+            "code intent should promote SourceRepository"
+        );
+        assert!(resp.results[0]
+            .metadata
+            .rank_reasons
+            .contains(&eggsearch::core::source_card::RankReason::IntentMatch));
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn issues_intent_promotes_issue_thread() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(DirectMockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Blog post".to_string(),
+                    url: "https://example.com/blog".to_string(),
+                    snippet: Some("A blog post".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "Issue #42: panic".to_string(),
+                    url: "https://github.com/tokio-rs/axum/issues/42".to_string(),
+                    snippet: Some("Bug report".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = eggsearch::core::WebSearchRequest::new("axum panic");
+        req.intent = eggsearch::core::query::SearchIntent::Issues;
+        req.freshness = eggsearch::core::query::Freshness::Any;
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert!(!resp.results.is_empty());
+        assert_eq!(
+            resp.results[0].url, "https://github.com/tokio-rs/axum/issues/42",
+            "issues intent should promote IssueThread"
+        );
+        assert!(resp.results[0]
+            .metadata
+            .rank_reasons
+            .contains(&eggsearch::core::source_card::RankReason::IntentMatch));
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn releases_intent_promotes_release_notes() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(DirectMockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Blog post".to_string(),
+                    url: "https://example.com/blog".to_string(),
+                    snippet: Some("A blog post".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "v0.7.0 release".to_string(),
+                    url: "https://github.com/tokio-rs/axum/releases/tag/v0.7.0".to_string(),
+                    snippet: Some("Release notes".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = eggsearch::core::WebSearchRequest::new("axum releases");
+        req.intent = eggsearch::core::query::SearchIntent::Releases;
+        req.freshness = eggsearch::core::query::Freshness::Any;
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert!(!resp.results.is_empty());
+        assert_eq!(
+            resp.results[0].url, "https://github.com/tokio-rs/axum/releases/tag/v0.7.0",
+            "releases intent should promote ReleaseNotes"
+        );
+        assert!(resp.results[0]
+            .metadata
+            .rank_reasons
+            .contains(&eggsearch::core::source_card::RankReason::IntentMatch));
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn freshness_boost_requires_timestamp_evidence() {
+        // Two results: one with IssueMetadata containing a recent
+        // updated_at timestamp, one with ResultMetadata::None.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(DirectMockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Generic result".to_string(),
+                    url: "https://example.com/generic".to_string(),
+                    snippet: Some("No timestamp".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "Recent issue".to_string(),
+                    url: "https://github.com/test/repo/issues/1".to_string(),
+                    snippet: Some("Has timestamp".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::Issue(eggsearch::core::source_card::IssueMetadata {
+                        updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                        ..Default::default()
+                    }),
+                },
+            ],
+        })];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = eggsearch::core::WebSearchRequest::new("test");
+        req.intent = eggsearch::core::query::SearchIntent::Web;
+        req.freshness = eggsearch::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert_eq!(resp.results.len(), 2);
+
+        let issue_card = resp
+            .results
+            .iter()
+            .find(|c| c.url.contains("/issues/"))
+            .expect("issue card");
+        assert!(
+            issue_card
+                .metadata
+                .rank_reasons
+                .contains(&eggsearch::core::source_card::RankReason::FreshnessMatch),
+            "issue with recent timestamp should have FreshnessMatch"
+        );
+
+        let generic_card = resp
+            .results
+            .iter()
+            .find(|c| c.url.contains("example.com"))
+            .expect("generic card");
+        assert!(
+            !generic_card
+                .metadata
+                .rank_reasons
+                .contains(&eggsearch::core::source_card::RankReason::FreshnessMatch),
+            "generic card without timestamps should not have FreshnessMatch"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn rank_reasons_are_deterministic() {
+        // Two engines returning the same URL to trigger rrf_multi_provider.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            Arc::new(DirectMockEngine {
+                name: "mock_a",
+                results: vec![SearchResult {
+                    title: "Deduped".to_string(),
+                    url: "https://example.com/dedup".to_string(),
+                    snippet: None,
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                }],
+            }),
+            Arc::new(DirectMockEngine {
+                name: "mock_b",
+                results: vec![SearchResult {
+                    title: "Deduped".to_string(),
+                    url: "https://example.com/dedup".to_string(),
+                    snippet: None,
+                    source_engine: "mock_b".to_string(),
+                    metadata: ResultMetadata::None,
+                }],
+            }),
+        ];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = eggsearch::core::WebSearchRequest::new("test");
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert_eq!(resp.results.len(), 1);
+        let card = &resp.results[0];
+
+        // rank_reasons must be short, deterministic enum-like values,
+        // not generated prose.
+        for reason in &card.metadata.rank_reasons {
+            let s = serde_json::to_string(reason).unwrap();
+            assert!(
+                s.starts_with('"') && s.ends_with('"'),
+                "rank_reason should serialize as a quoted string: {s}"
+            );
+            let inner = s.trim_matches('"');
+            assert!(
+                inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                "rank_reason should be snake_case alphanumeric: {inner}"
+            );
+            assert!(inner.len() <= 40, "rank_reason should be short: {inner}");
+        }
+
+        assert!(
+            card.metadata
+                .rank_reasons
+                .contains(&eggsearch::core::source_card::RankReason::RrfMultiProvider),
+            "multi-provider dedup should produce RrfMultiProvider reason"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 6: Provider status tests
+// ---------------------------------------------------------------------------
+
+mod provider_status {
+    use super::*;
+
+    #[test]
+    fn all_known_providers_represented() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().expect("providers is array");
+        let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
+
+        for expected in eggsearch::core::provider::KNOWN_PROVIDER_IDS {
+            assert!(
+                ids.contains(expected),
+                "expected provider id '{expected}' in status, got {ids:?}"
+            );
+        }
+        assert_eq!(
+            ids.len(),
+            eggsearch::core::provider::KNOWN_PROVIDER_IDS.len(),
+            "provider count should match KNOWN_PROVIDER_IDS"
+        );
+    }
+
+    #[test]
+    fn enabled_providers_marked_enabled() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+
+        // The default config enables duckduckgo, brave, startpage, yahoo.
+        // Verify they are reported as enabled.
+        for id in &["duckduckgo", "brave", "startpage", "yahoo"] {
+            let p = arr.iter().find(|p| p["id"].as_str() == Some(id));
+            assert!(p.is_some(), "provider {id} should be present");
+            let p = p.unwrap();
+            assert_eq!(p["enabled"], true, "provider {id} should be enabled=true");
+        }
+    }
+
+    #[test]
+    fn default_providers_marked_default() {
+        // Build a state with explicit default_providers so the
+        // provider_status response reflects them.
+        let mut cfg = AppConfig::default();
+        cfg.search.default_providers = vec![
+            "duckduckgo".to_string(),
+            "brave".to_string(),
+            "startpage".to_string(),
+            "yahoo".to_string(),
+        ];
+        let state = Arc::new(ServerState::build(cfg).expect("state"));
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+
+        for id in &["duckduckgo", "brave", "startpage", "yahoo"] {
+            let p = arr.iter().find(|p| p["id"].as_str() == Some(id));
+            assert!(p.is_some(), "provider {id} should be present");
+            let p = p.unwrap();
+            assert_eq!(
+                p["default"], true,
+                "provider {id} should have default=true when in default_providers"
+            );
+        }
+    }
+
+    #[test]
+    fn api_providers_configured_only_when_enabled() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+
+        // API providers (brave_api, github_code, etc.) are not enabled
+        // by default. They should report configured=false and enabled=false.
+        for id in &[
+            "brave_api",
+            "github_code",
+            "github_issues",
+            "github_releases",
+        ] {
+            let p = arr.iter().find(|p| p["id"].as_str() == Some(id));
+            assert!(p.is_some(), "API provider {id} should be present");
+            let p = p.unwrap();
+            assert_eq!(
+                p["enabled"], false,
+                "API provider {id} should be enabled=false when not configured"
+            );
+            assert_eq!(
+                p["configured"], false,
+                "API provider {id} should be configured=false when not configured"
+            );
+        }
+    }
+
+    #[test]
+    fn capability_summary_matches_booleans() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+
+        for p in arr {
+            let id = p["id"].as_str().unwrap();
+            let caps = &p["capabilities"];
+
+            // Every capability boolean field must be present and must
+            // be a boolean. Verify the full set of known capability
+            // fields is present for each provider.
+            let bool_fields = [
+                "supports_safe_search",
+                "supports_freshness",
+                "supports_language",
+                "supports_region",
+                "supports_domain_filters",
+                "supports_news",
+                "supports_code_search",
+                "supports_repo_filter",
+                "supports_org_filter",
+                "supports_path_filter",
+                "supports_language_filter",
+                "supports_symbol_hint",
+                "supports_issue_search",
+                "supports_release_search",
+                "supports_result_timestamps",
+            ];
+
+            for field in &bool_fields {
+                assert!(
+                    caps.get(*field).is_some(),
+                    "provider {id}: capabilities missing field {field}"
+                );
+                assert!(
+                    caps[*field].is_boolean(),
+                    "provider {id}: capabilities.{field} should be a boolean, got: {:?}",
+                    caps[*field]
+                );
+            }
+
+            // Cross-check: github_code should have code_search, repo_filter, etc.
+            if id == "github_code" {
+                assert!(
+                    caps["supports_code_search"].as_bool().unwrap(),
+                    "github_code should support code_search"
+                );
+                assert!(
+                    caps["supports_repo_filter"].as_bool().unwrap(),
+                    "github_code should support repo_filter"
+                );
+                assert!(
+                    caps["supports_org_filter"].as_bool().unwrap(),
+                    "github_code should support org_filter"
+                );
+                assert!(
+                    caps["supports_path_filter"].as_bool().unwrap(),
+                    "github_code should support path_filter"
+                );
+                assert!(
+                    caps["supports_language_filter"].as_bool().unwrap(),
+                    "github_code should support language_filter"
+                );
+                assert!(
+                    caps["supports_symbol_hint"].as_bool().unwrap(),
+                    "github_code should support symbol_hint"
+                );
+                // Must NOT have issue/release search
+                assert!(
+                    !caps["supports_issue_search"].as_bool().unwrap(),
+                    "github_code should NOT support issue_search"
+                );
+                assert!(
+                    !caps["supports_release_search"].as_bool().unwrap(),
+                    "github_code should NOT support release_search"
+                );
+            }
+
+            // github_issues should have issue_search and result_timestamps.
+            if id == "github_issues" {
+                assert!(
+                    caps["supports_issue_search"].as_bool().unwrap(),
+                    "github_issues should support issue_search"
+                );
+                assert!(
+                    caps["supports_result_timestamps"].as_bool().unwrap(),
+                    "github_issues should support result_timestamps"
+                );
+                assert!(
+                    !caps["supports_release_search"].as_bool().unwrap(),
+                    "github_issues should NOT support release_search"
+                );
+            }
+
+            // github_releases should have release_search and result_timestamps.
+            if id == "github_releases" {
+                assert!(
+                    caps["supports_release_search"].as_bool().unwrap(),
+                    "github_releases should support release_search"
+                );
+                assert!(
+                    caps["supports_result_timestamps"].as_bool().unwrap(),
+                    "github_releases should support result_timestamps"
+                );
+                assert!(
+                    !caps["supports_issue_search"].as_bool().unwrap(),
+                    "github_releases should NOT support issue_search"
+                );
+            }
+
+            // duckduckgo should have no code/issue/release search
+            if id == "duckduckgo" {
+                assert!(
+                    !caps["supports_code_search"].as_bool().unwrap(),
+                    "duckduckgo should NOT support code_search"
+                );
+                assert!(
+                    !caps["supports_issue_search"].as_bool().unwrap(),
+                    "duckduckgo should NOT support issue_search"
+                );
+                assert!(
+                    !caps["supports_release_search"].as_bool().unwrap(),
+                    "duckduckgo should NOT support release_search"
+                );
+            }
+        }
+    }
 }
