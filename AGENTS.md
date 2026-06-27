@@ -15,6 +15,10 @@ Intent-aware post-RRF reranking applies bounded domain priors.
 The `repo_search` tool provides structured repository evidence discovery
 with grouped result bundles and suggested fetch URLs.
 
+The `security_search` tool provides security-oriented retrieval with
+normalized vulnerability metadata from OSV and grouped source cards
+for advisory, vendor, package, exploit, and defensive guidance contexts.
+
 ## Build & Test Commands
 
 All commands are run from the project root.
@@ -113,7 +117,7 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), and `repo_search` (structured repository evidence discovery with grouped bundles)
+- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), and `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 - The `provider_status` response includes a `server_capabilities`
@@ -135,11 +139,12 @@ eggsearch/
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`
 - `ProviderCapabilities` struct: 16 boolean flags for search option support
 - `ProviderDescriptor` struct: full provider metadata (id, display_name, kind, enabled, default, requires_api_key, configured, capabilities)
-- Known provider IDs: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`, `brave_api`, `github_code`, `github_issues`, `github_releases`
+- Known provider IDs: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`, `brave_api`, `github_code`, `github_issues`, `github_releases`, `osv`
 - `built_in_provider_descriptor()` returns descriptors for all known providers
 - `MetadataSearchAdapter::provider_status()` returns `Vec<ProviderDescriptor>`
 - `resolve_providers()` validates explicit provider lists with distinct errors for disabled vs unknown providers
 - API providers use env-var indirection for secrets (`api_key_env` field)
+- `supports_security_search`: provider supports native security advisory search
 - Capability flags are conservative by design. HTML scraper providers
   report `ProviderCapabilities::none()` — they cannot enforce safe
   search, freshness, or any structured option server-side. `searxng`
@@ -154,6 +159,7 @@ eggsearch/
   - `safe_search` requested but no enabled provider enforces safe search
   - `freshness` requested but no enabled provider supports server-side freshness filtering
   - `code`/`issues`/`releases`/`security` intent requested but no native provider for that intent is enabled
+  - `security_search` requested but no native advisory provider is enabled
 - Warnings are non-blocking — generic fallback search always works.
   Agents should treat them as informational hints about degraded
   capability, not errors.
@@ -167,7 +173,7 @@ eggsearch/
   - `generic_search`: always `true` (generic HTML-scrape providers)
   - `explicit_fetch`: always `true` (`web_fetch` is available)
   - `repo_search`: `true` (structured repository evidence discovery)
-  - `security_search`: `false` (planned specialized tool)
+  - `security_search`: `true` (security-oriented retrieval with normalized vulnerability metadata)
   - `research_search`: `false` (planned specialized tool)
   - `document_fetch`: always `true` (structured document extraction)
   - `pdf_fetch`: `cfg!(feature = "pdf")` (only available when compiled with the `pdf` feature)
@@ -364,6 +370,61 @@ response.
 
 **Fallback:** if `repo_search` is unavailable (e.g. older server),
 use `web_search` with `intent = "code"` and `repo:owner/name`.
+
+### Security Search
+
+`security_search` provides security-oriented retrieval with normalized
+vulnerability metadata. It is the preferred tool for security queries
+when the caller wants structured advisory facts rather than generic
+web search results.
+
+**Request types** (in `src/core/security.rs`):
+- `SecuritySearchRequest`: `query`, optional `ecosystem`, `package`,
+  `version`, `cve_id`, `ghsa_id`, `osv_id`, `rustsec_id`,
+  `severity_min`, `include_kev`, `include_exploit_context`,
+  `include_defensive_guidance`, `include_vendor_advisories`,
+  `max_results`, `max_per_group`, `freshness`, `timeout_ms`, `providers`
+- `SecurityIdentifiers`: parsed identifiers from request fields and
+  query text (CVE, GHSA, OSV, RustSec, package/ecosystem/version hints)
+- `VulnerabilityMetadata`: normalized advisory metadata (IDs, affected
+  ranges, patched versions, severity, CVSS, KEV, timestamps, references)
+- `SecurityResultGroup`: grouped source cards by category
+- `SecuritySearchResponse`: vulnerabilities + groups + suggested fetches
+
+**Group kinds:** `AuthoritativeAdvisories`, `VendorAdvisories`,
+`PackageAdvisories`, `KevEntries`, `PatchCommitsOrReleases`,
+`ExploitDiscussion`, `DefensiveGuidance`, `GeneralContext`, `Other`.
+
+**Providers:**
+- `osv`: native OSV (Open Source Vulnerabilities) JSON API provider.
+  Queries `/v1/query` for package+ecosystem searches and `/v1/vulns/{id}`
+  for vulnerability ID lookups. No API key required. Enabled by default.
+- Generic web providers: used as fallback for vendor advisories,
+  patch releases, defensive guidance, exploit discussion, and
+  general context.
+
+**Identifier parsing:**
+- CVE: `CVE-YYYY-NNNN...` (case-insensitive, normalized to uppercase)
+- GHSA: `GHSA-xxxx-xxxx-xxxx` (case-insensitive, normalized to uppercase)
+- RustSec: `RUSTSEC-YYYY-NNNN` (case-insensitive, normalized to uppercase)
+- Package hints: `package:name`, `crate:name`, `pypi:name`, `npm:name`
+- Ecosystem hints: `ecosystem:name`
+- Version hints: `version:x.y.z`
+
+When explicit identifier fields are provided, query-text parsing for
+that identifier type is skipped to avoid duplicates.
+
+**Warnings:**
+- `no_native_advisory_provider`: only generic web search was used
+- `identifier_not_found`: a requested ID was not found in native providers
+- `version_match_unavailable`: affected version could not be determined
+
+The MCP `run_security_search` tool in `src/mcp/tools.rs` orchestrates
+the flow: parse identifiers, run web_search with security intent,
+group results, and return the structured response.
+
+**Fallback:** if `security_search` is unavailable, use `web_search`
+with `intent = "security"`.
 
 ### Code-Host Fetch
 

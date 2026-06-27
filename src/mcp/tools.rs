@@ -141,6 +141,63 @@ pub struct RepoSearchArgs {
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SecuritySearchArgs {
+    /// Free-text query. May contain CVE/GHSA/RustSec identifiers.
+    pub query: Option<String>,
+    /// Package ecosystem (e.g. "crates.io", "npm", "pypi").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ecosystem: Option<String>,
+    /// Package name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// Version string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Explicit CVE ID (e.g. "CVE-2024-12345").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cve_id: Option<String>,
+    /// Explicit GHSA ID (e.g. "GHSA-abcd-1234-efgh").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ghsa_id: Option<String>,
+    /// Explicit OSV ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub osv_id: Option<String>,
+    /// Explicit RustSec ID (e.g. "RUSTSEC-2024-0001").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rustsec_id: Option<String>,
+    /// Minimum severity level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity_min: Option<String>,
+    /// Include KEV (Known Exploited Vulnerabilities) data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_kev: Option<bool>,
+    /// Include exploit context in results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_exploit_context: Option<bool>,
+    /// Include defensive/mitigation guidance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_defensive_guidance: Option<bool>,
+    /// Include vendor advisory links.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_vendor_advisories: Option<bool>,
+    /// Maximum total results to return.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<usize>,
+    /// Maximum results per group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_group: Option<usize>,
+    /// Freshness hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness: Option<String>,
+    /// Per-request timeout override in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Explicit provider ID list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub providers: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
     pub url: String,
@@ -393,7 +450,7 @@ pub fn run_provider_status(
             "generic_search": true,
             "explicit_fetch": true,
             "repo_search": true,
-            "security_search": false,
+            "security_search": true,
             "research_search": false,
             "document_fetch": true,
             "pdf_fetch": cfg!(feature = "pdf"),
@@ -467,6 +524,317 @@ pub async fn run_web_fetch(
         }
         Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
     }
+}
+
+/// Classify a single source card into a security result group.
+fn classify_security_result(card: &crate::core::SourceCard) -> crate::core::SecurityResultGroupKind {
+    use crate::core::SecurityResultGroupKind;
+    use crate::core::SourceKind;
+
+    let url_lower = card.url.to_lowercase();
+
+    // Authoritative advisory databases
+    if url_lower.contains("osv.dev") || url_lower.contains("nvd.nist.gov") {
+        return SecurityResultGroupKind::AuthoritativeAdvisories;
+    }
+    if url_lower.contains("github.com/advisories") || url_lower.contains("ghsa") {
+        return SecurityResultGroupKind::AuthoritativeAdvisories;
+    }
+    if url_lower.contains("rustsec.org") || url_lower.contains("rust advisory") {
+        return SecurityResultGroupKind::AuthoritativeAdvisories;
+    }
+
+    // Vendor advisories
+    if url_lower.contains("advisory") || url_lower.contains("/security/advisories") {
+        return SecurityResultGroupKind::VendorAdvisories;
+    }
+    if card.metadata.source_kind == SourceKind::SecurityAdvisory {
+        return SecurityResultGroupKind::VendorAdvisories;
+    }
+
+    // Patch commits or releases
+    if url_lower.contains("/commit/") || url_lower.contains("/pull/") {
+        return SecurityResultGroupKind::PatchCommitsOrReleases;
+    }
+    if url_lower.contains("release") || url_lower.contains("changelog") {
+        return SecurityResultGroupKind::PatchCommitsOrReleases;
+    }
+
+    // Exploit discussion
+    if url_lower.contains("exploit") || url_lower.contains("poc")
+        || url_lower.contains("proof-of-concept") || url_lower.contains("metasploit")
+    {
+        return SecurityResultGroupKind::ExploitDiscussion;
+    }
+
+    // Defensive guidance
+    if url_lower.contains("mitigation") || url_lower.contains("hardening")
+        || url_lower.contains("defensive") || url_lower.contains("best-practice")
+    {
+        return SecurityResultGroupKind::DefensiveGuidance;
+    }
+
+    // Package advisories (issue-like on package registries)
+    if url_lower.contains("/issues/") && (url_lower.contains("github.com") || url_lower.contains("gitlab.com")) {
+        return SecurityResultGroupKind::PackageAdvisories;
+    }
+
+    SecurityResultGroupKind::Other
+}
+
+/// Group source cards into security result groups.
+fn group_security_results(
+    results: &[crate::core::SourceCard],
+    max_per_group: Option<usize>,
+) -> Vec<crate::core::SecurityResultGroup> {
+    use crate::core::SecurityResultGroup;
+
+    let mut groups: Vec<SecurityResultGroup> = Vec::new();
+
+    for card in results {
+        let kind = classify_security_result(card);
+
+        // Find or create group
+        let group = groups.iter_mut().find(|g| g.kind == kind);
+        if let Some(group) = group {
+            let at_limit = max_per_group.is_some_and(|cap| group.results.len() >= cap);
+            if !at_limit {
+                group.results.push(card.clone());
+            } else {
+                group.truncated = true;
+            }
+        } else {
+            groups.push(SecurityResultGroup {
+                kind,
+                label: security_group_label(kind),
+                results: vec![card.clone()],
+                truncated: false,
+            });
+        }
+    }
+
+    // Sort groups by kind for deterministic output
+    groups.sort_by_key(|g| format!("{:?}", g.kind));
+    groups
+}
+
+fn security_group_label(kind: crate::core::SecurityResultGroupKind) -> String {
+    use crate::core::SecurityResultGroupKind;
+    match kind {
+        SecurityResultGroupKind::AuthoritativeAdvisories => "Authoritative Advisories".to_string(),
+        SecurityResultGroupKind::VendorAdvisories => "Vendor Advisories".to_string(),
+        SecurityResultGroupKind::PackageAdvisories => "Package Advisories".to_string(),
+        SecurityResultGroupKind::KevEntries => "Known Exploited Vulnerabilities".to_string(),
+        SecurityResultGroupKind::PatchCommitsOrReleases => "Patches & Fixes".to_string(),
+        SecurityResultGroupKind::ExploitDiscussion => "Exploit Discussion".to_string(),
+        SecurityResultGroupKind::DefensiveGuidance => "Defensive Guidance".to_string(),
+        SecurityResultGroupKind::GeneralContext => "General Context".to_string(),
+        SecurityResultGroupKind::Other => "Other".to_string(),
+    }
+}
+
+/// Generate suggested fetches for security groups.
+fn generate_security_suggested_fetches(
+    groups: &[crate::core::SecurityResultGroup],
+    resolved_ids: &crate::core::SecurityIdentifiers,
+    ecosystem: Option<&str>,
+    package: Option<&str>,
+) -> Vec<crate::core::SecuritySuggestedFetch> {
+    use crate::core::SecuritySuggestedFetch;
+
+    let mut fetches = Vec::new();
+
+    // Always suggest OSV for any identified CVE/GHSA
+    for cve_id in &resolved_ids.cve_ids {
+        fetches.push(SecuritySuggestedFetch {
+            url: format!("https://osv.dev/vulnerability/{cve_id}"),
+            reason: format!("OSV entry for {cve_id}"),
+            group: crate::core::SecurityResultGroupKind::AuthoritativeAdvisories,
+            priority: 0,
+        });
+    }
+    for ghsa_id in &resolved_ids.ghsa_ids {
+        fetches.push(SecuritySuggestedFetch {
+            url: format!("https://github.com/advisories/{ghsa_id}"),
+            reason: format!("GitHub Advisory entry for {ghsa_id}"),
+            group: crate::core::SecurityResultGroupKind::AuthoritativeAdvisories,
+            priority: 0,
+        });
+    }
+    for osv_id in &resolved_ids.osv_ids {
+        fetches.push(SecuritySuggestedFetch {
+            url: format!("https://osv.dev/vulnerability/{osv_id}"),
+            reason: format!("OSV entry for {osv_id}"),
+            group: crate::core::SecurityResultGroupKind::AuthoritativeAdvisories,
+            priority: 0,
+        });
+    }
+
+    // If we have a package + ecosystem, suggest the ecosystem's security page
+    if let (Some(pkg), Some(eco)) = (package, ecosystem) {
+        match eco {
+            "crates.io" => fetches.push(SecuritySuggestedFetch {
+                url: format!("https://crates.io/crates/{pkg}"),
+                reason: format!("{pkg} on crates.io (check security advisories tab)"),
+                group: crate::core::SecurityResultGroupKind::PackageAdvisories,
+                priority: 1,
+            }),
+            "npm" => fetches.push(SecuritySuggestedFetch {
+                url: format!("https://www.npmjs.com/package/{pkg}"),
+                reason: format!("{pkg} on npm (check security advisories)"),
+                group: crate::core::SecurityResultGroupKind::PackageAdvisories,
+                priority: 1,
+            }),
+            _ => {}
+        }
+    }
+
+    // Add top results from groups
+    for group in groups {
+        for card in group.results.iter().take(2) {
+            fetches.push(SecuritySuggestedFetch {
+                url: card.url.clone(),
+                reason: card.title.clone(),
+                group: group.kind,
+                priority: 2,
+            });
+        }
+    }
+
+    fetches
+}
+
+/// Run the `security_search` tool.
+pub async fn run_security_search(
+    state: Arc<ServerState>,
+    args: SecuritySearchArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::query::SearchIntent;
+    use crate::core::SecurityIdentifiers;
+    use crate::core::SecuritySearchRequest;
+
+    if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
+        return Err(ToolError::Internal(web_search_denied_message()));
+    }
+
+    let query = args.query.unwrap_or_default();
+
+    let severity_min = args
+        .severity_min
+        .as_deref()
+        .map(crate::core::SeverityLevel::from_str_loose);
+
+    let freshness = args
+        .freshness
+        .as_deref()
+        .and_then(|f| serde_json::from_value(serde_json::Value::String(f.to_string())).ok())
+        .unwrap_or_default();
+
+    let req = SecuritySearchRequest {
+        query: query.clone(),
+        ecosystem: args.ecosystem.clone(),
+        package: args.package.clone(),
+        version: args.version.clone(),
+        cve_id: args.cve_id.clone(),
+        ghsa_id: args.ghsa_id.clone(),
+        osv_id: args.osv_id.clone(),
+        rustsec_id: args.rustsec_id.clone(),
+        severity_min,
+        include_kev: args.include_kev,
+        include_exploit_context: args.include_exploit_context,
+        include_defensive_guidance: args.include_defensive_guidance,
+        include_vendor_advisories: args.include_vendor_advisories,
+        max_results: args.max_results,
+        max_per_group: args.max_per_group,
+        freshness,
+        timeout_ms: args.timeout_ms,
+        providers: args.providers.clone(),
+    };
+
+    if let Err(e) = req.validate(state.config.search.max_query_chars) {
+        return Err(ToolError::Validation(format!("invalid request: {e}")));
+    }
+
+    let effective_providers = state
+        .config
+        .resolve_providers(&req.providers)
+        .map_err(|e| ToolError::Internal(format!("provider resolution failed: {}", e)))?;
+    let (_, unknown) = state.adapter.select_engines(&effective_providers);
+    if !unknown.is_empty() {
+        return Err(ToolError::Validation(format!(
+            "unknown provider id(s): {}",
+            unknown.join(", ")
+        )));
+    }
+
+    let resolved_ids = SecurityIdentifiers::parse(
+        &req.query,
+        req.cve_id.as_deref(),
+        req.ghsa_id.as_deref(),
+        req.osv_id.as_deref(),
+        req.rustsec_id.as_deref(),
+        req.package.as_deref(),
+        req.ecosystem.as_deref(),
+        req.version.as_deref(),
+    );
+
+    let effective_max = req.effective_max_results(
+        state.config.search.default_max_results,
+        state.config.search.max_results_cap,
+    );
+
+    // Build a web_search request with security intent for generic fallback
+    let mut web_req = WebSearchRequest::new(req.query.clone());
+    web_req.intent = SearchIntent::Security;
+    web_req.freshness = req.freshness;
+    web_req.max_results = Some(effective_max);
+    web_req.timeout_ms = req.timeout_ms;
+    web_req.providers = effective_providers.clone();
+
+    let web_resp = state
+        .adapter
+        .web_search(&web_req, effective_max, state.config.search.max_results_cap)
+        .await;
+
+    // Check if any native security provider (OSV) is available
+    let has_native_advisory = effective_providers.iter().any(|id| id == "osv");
+
+    let mut warnings: Vec<crate::core::SearchWarning> = web_resp.warnings;
+
+    if !has_native_advisory {
+        warnings.push(crate::core::SearchWarning::new(
+            "_system",
+            "no_native_advisory_provider: only generic web search was used; \
+             enable the 'osv' provider for native advisory lookups",
+        ));
+    }
+
+    // Convert web results to source cards grouped by security category
+    let groups = group_security_results(&web_resp.results, req.max_per_group);
+    let suggested_fetches = generate_security_suggested_fetches(
+        &groups,
+        &resolved_ids,
+        req.ecosystem.as_deref(),
+        req.package.as_deref(),
+    );
+
+    let response = crate::core::SecuritySearchResponse {
+        query: req.query.clone(),
+        mode: "security_metasearch".to_string(),
+        resolved_identifiers: resolved_ids,
+        vulnerabilities: Vec::new(),
+        groups,
+        suggested_fetches,
+        providers_queried: web_resp.providers_queried,
+        providers_failed: web_resp.providers_failed,
+        warnings,
+        trust_markers: web_resp.trust_markers,
+    };
+
+    let value = serde_json::to_value(&response)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+
+    Ok(value)
 }
 
 fn mode_str(mode: Mode) -> &'static str {

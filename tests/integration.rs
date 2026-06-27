@@ -374,7 +374,7 @@ fn provider_status_includes_server_capabilities() {
     assert_eq!(caps["explicit_fetch"], serde_json::json!(true));
     assert_eq!(caps["document_fetch"], serde_json::json!(true));
     assert_eq!(caps["repo_search"], serde_json::json!(true));
-    assert_eq!(caps["security_search"], serde_json::json!(false));
+    assert_eq!(caps["security_search"], serde_json::json!(true));
     assert_eq!(caps["research_search"], serde_json::json!(false));
 
     // pdf_fetch reflects compile-time feature flag
@@ -678,9 +678,10 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"github_code"));
     assert!(ids.contains(&"github_issues"));
     assert!(ids.contains(&"github_releases"));
+    assert!(ids.contains(&"osv"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 10);
+    assert_eq!(ids.len(), 11);
 }
 
 #[cfg(feature = "mock")]
@@ -1390,7 +1391,7 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 4, "expected exactly 4 tools, got: {names:?}");
+    assert_eq!(names.len(), 5, "expected exactly 5 tools, got: {names:?}");
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
@@ -1406,6 +1407,10 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     assert!(
         names.contains(&"repo_search".to_string()),
         "missing repo_search: {names:?}"
+    );
+    assert!(
+        names.contains(&"security_search".to_string()),
+        "missing security_search: {names:?}"
     );
 
     // Verify the tools have non-empty descriptions (MCP contract).
@@ -4816,6 +4821,7 @@ mod intent_reranking_regression {
     use eggsearch::meta::engines::error::EngineError;
     use eggsearch::meta::engines::models::{ResultMetadata, SearchResult};
     use eggsearch::meta::engines::SearchEngine;
+    use std::time::Duration;
 
     /// Local mock engine that allows custom `SearchResult` values
     /// (including `ResultMetadata::Issue` / `Release`) which the

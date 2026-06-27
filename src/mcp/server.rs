@@ -12,8 +12,8 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler
 
 use crate::mcp::state::ServerState;
 use crate::mcp::tools::{
-    run_provider_status, run_repo_search, run_web_fetch, run_web_search, ProviderStatusArgs,
-    RepoSearchArgs, ToolError, WebFetchArgs, WebSearchArgs,
+    run_provider_status, run_repo_search, run_security_search, run_web_fetch, run_web_search,
+    ProviderStatusArgs, RepoSearchArgs, SecuritySearchArgs, ToolError, WebFetchArgs, WebSearchArgs,
 };
 
 #[derive(Clone)]
@@ -114,6 +114,23 @@ impl EggsearchServer {
             Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
         }
     }
+
+    #[tool(
+        name = "security_search",
+        description = "Security vulnerability and advisory search. Returns grouped source-card bundles for vulnerabilities, advisories, exploits, and defensive guidance. Supports CVE, GHSA, RustSec, and OSV identifiers. Use `intent: security` in web_search as a simpler alternative. Use this tool when you need structured security vulnerability context with authoritative advisory sources, exploit discussion, and defensive guidance grouped by category."
+    )]
+    async fn security_search(
+        &self,
+        Parameters(args): Parameters<SecuritySearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let state = self.state.clone();
+        let res = run_security_search(state, args).await;
+        match res {
+            Ok(v) => Self::json_result(v),
+            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
+            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -151,6 +168,7 @@ Tools:
 - web_fetch: fetch one explicit URL from a search result or user-supplied HTTP(S) URL; returns bounded extracted text. Supports `extract_mode`: 'text' (default), 'markdown' (Markdown rendering preserving headings/code/tables/lists), 'metadata_only' (title/description only).
 - provider_status: diagnostic provider report; not needed for normal research.
 - repo_search: structured repository evidence discovery. Returns grouped source-card bundles (official docs, package registry, README, source files, issues, releases, etc.) with suggested fetches. Use this when you need organized context for a specific codebase.
+- security_search: security vulnerability and advisory search. Returns grouped source-card bundles for vulnerabilities, advisories, exploits, and defensive guidance. Supports CVE, GHSA, RustSec, and OSV identifiers.
 
 Agent discipline:
 - Use web_search for discovery. The minimum call is {\"query\": \"...\"}.

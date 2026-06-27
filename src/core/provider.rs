@@ -21,6 +21,7 @@ pub const KNOWN_PROVIDER_IDS: &[&str] = &[
     "github_code",
     "github_issues",
     "github_releases",
+    "osv",
 ];
 
 /// Whether the provider scrapes HTML or speaks a JSON API, or
@@ -89,6 +90,8 @@ pub struct ProviderCapabilities {
     /// freshness reranking. See the type-level docs for the
     /// distinction from `supports_freshness`.
     pub supports_result_timestamps: bool,
+    /// Provider supports native security advisory search.
+    pub supports_security_search: bool,
 }
 
 impl ProviderCapabilities {
@@ -110,6 +113,7 @@ impl ProviderCapabilities {
             supports_issue_search: false,
             supports_release_search: false,
             supports_result_timestamps: false,
+            supports_security_search: false,
         }
     }
 
@@ -161,6 +165,9 @@ impl ProviderCapabilities {
         if self.supports_result_timestamps {
             caps.push("result_timestamps");
         }
+        if self.supports_security_search {
+            caps.push("security_search");
+        }
         if caps.is_empty() {
             "basic".to_string()
         } else {
@@ -186,6 +193,7 @@ impl ProviderCapabilities {
             CapabilityOption::IssueSearch => self.supports_issue_search,
             CapabilityOption::ReleaseSearch => self.supports_release_search,
             CapabilityOption::ResultTimestamps => self.supports_result_timestamps,
+            CapabilityOption::SecuritySearch => self.supports_security_search,
         }
     }
 }
@@ -223,6 +231,8 @@ pub enum CapabilityOption {
     ReleaseSearch,
     /// Result timestamps.
     ResultTimestamps,
+    /// Security advisory search.
+    SecuritySearch,
 }
 
 impl CapabilityOption {
@@ -244,6 +254,7 @@ impl CapabilityOption {
             Self::IssueSearch => "issue_search",
             Self::ReleaseSearch => "release_search",
             Self::ResultTimestamps => "result_timestamps",
+            Self::SecuritySearch => "security_search",
         }
     }
 }
@@ -358,6 +369,7 @@ pub fn built_in_provider_descriptor(
                 supports_issue_search: false,
                 supports_release_search: false,
                 supports_result_timestamps: false,
+                supports_security_search: false,
             },
         }),
         "brave_api" => Some(ProviderDescriptor {
@@ -384,6 +396,7 @@ pub fn built_in_provider_descriptor(
                 supports_issue_search: false,
                 supports_release_search: false,
                 supports_result_timestamps: false,
+                supports_security_search: false,
             },
         }),
         "github_code" => Some(ProviderDescriptor {
@@ -410,6 +423,7 @@ pub fn built_in_provider_descriptor(
                 supports_issue_search: false,
                 supports_release_search: false,
                 supports_result_timestamps: false,
+                supports_security_search: false,
             },
         }),
         "github_issues" => Some(ProviderDescriptor {
@@ -436,6 +450,7 @@ pub fn built_in_provider_descriptor(
                 supports_issue_search: true,
                 supports_release_search: false,
                 supports_result_timestamps: true,
+                supports_security_search: false,
             },
         }),
         "github_releases" => Some(ProviderDescriptor {
@@ -462,6 +477,34 @@ pub fn built_in_provider_descriptor(
                 supports_issue_search: false,
                 supports_release_search: true,
                 supports_result_timestamps: true,
+                supports_security_search: false,
+            },
+        }),
+        "osv" => Some(ProviderDescriptor {
+            id: "osv".into(),
+            display_name: "OSV (Open Source Vulnerabilities)".into(),
+            kind: ProviderKind::JsonApi,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured: true,
+            capabilities: ProviderCapabilities {
+                supports_safe_search: false,
+                supports_freshness: false,
+                supports_language: false,
+                supports_region: false,
+                supports_domain_filters: false,
+                supports_news: false,
+                supports_code_search: false,
+                supports_repo_filter: false,
+                supports_org_filter: false,
+                supports_path_filter: false,
+                supports_language_filter: false,
+                supports_symbol_hint: false,
+                supports_issue_search: false,
+                supports_release_search: false,
+                supports_result_timestamps: false,
+                supports_security_search: true,
             },
         }),
         _ => None,
@@ -591,6 +634,7 @@ mod tests {
             supports_issue_search: false,
             supports_release_search: false,
             supports_result_timestamps: false,
+            supports_security_search: false,
         };
         assert!(caps.supports(&CapabilityOption::SafeSearch));
         assert!(!caps.supports(&CapabilityOption::Freshness));
@@ -632,6 +676,7 @@ mod tests {
             CapabilityOption::IssueSearch,
             CapabilityOption::ReleaseSearch,
             CapabilityOption::ResultTimestamps,
+            CapabilityOption::SecuritySearch,
         ] {
             assert!(
                 !caps.supports(&option),

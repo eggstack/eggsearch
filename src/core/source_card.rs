@@ -80,6 +80,8 @@ pub enum RankReason {
     ProviderNativeIssueSearch,
     /// Result came from a native GitHub releases provider.
     ProviderNativeReleaseSearch,
+    /// Result came from a native advisory provider (e.g. OSV).
+    ProviderNativeAdvisorySearch,
     /// URL matches the requested owner/repo.
     RepoOwnerMatch,
     /// Path/file/language/symbol hint matched the result.
@@ -205,6 +207,9 @@ pub struct SourceMetadata {
     /// Structured release metadata, present for native release provider results.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<ReleaseMetadata>,
+    /// Structured vulnerability metadata, present for native advisory provider results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vulnerability: Option<Box<crate::core::security::VulnerabilityMetadata>>,
 }
 
 /// A single normalized result returned to MCP callers.
@@ -262,6 +267,7 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
         && m.code.is_none()
         && m.issue.is_none()
         && m.release.is_none()
+        && m.vulnerability.is_none()
 }
 
 impl SourceCard {
@@ -556,6 +562,7 @@ mod tests {
         assert!(m.code.is_none());
         assert!(m.issue.is_none());
         assert!(m.release.is_none());
+        assert!(m.vulnerability.is_none());
     }
 
     #[test]

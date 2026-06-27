@@ -14,6 +14,7 @@ pub mod github_releases;
 pub mod models;
 pub mod mojeek;
 pub mod normalizer;
+pub mod osv;
 pub mod searxng;
 pub mod startpage;
 pub mod yahoo;
@@ -92,6 +93,10 @@ pub struct GithubReleasesEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: Option<String>,
+}
+
+pub struct OsvEngine {
+    pub client: Arc<Client>,
 }
 
 impl SearchEngine for DuckDuckGoEngine {
@@ -295,6 +300,21 @@ impl SearchEngine for GithubReleasesEngine {
             )
             .await
         })
+    }
+}
+
+impl SearchEngine for OsvEngine {
+    fn name(&self) -> &'static str {
+        "osv"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(osv::search(&self.client, query, max_results, timeout))
     }
 }
 

@@ -15,6 +15,7 @@ pub mod repo_query;
 pub mod repo_search;
 pub mod result;
 pub mod sanitize;
+pub mod security;
 pub mod source_card;
 
 pub use code_host_fetch::{resolve_code_host_fetch_target, CodeHostFetchTarget};
@@ -45,5 +46,10 @@ pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
+};
+pub use security::{
+    KevMetadata, SecurityIdentifiers, SecurityResultGroup, SecurityResultGroupKind,
+    SecuritySearchRequest, SecuritySearchResponse, SecuritySuggestedFetch, SeverityLevel,
+    VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
 };
 pub use source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};

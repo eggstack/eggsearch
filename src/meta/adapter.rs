@@ -888,7 +888,7 @@ pub fn build_default_engines(
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
     use crate::meta::engines::{
         BraveApiEngine, BraveEngine, DuckDuckGoEngine, GithubCodeEngine, GithubIssuesEngine,
-        GithubReleasesEngine, MojeekEngine, SearxngEngine, StartpageEngine, YahooEngine,
+        GithubReleasesEngine, MojeekEngine, OsvEngine, SearxngEngine, StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -910,6 +910,9 @@ pub fn build_default_engines(
                 client: client.clone(),
             })),
             "mojeek" => engines.push(Arc::new(MojeekEngine {
+                client: client.clone(),
+            })),
+            "osv" => engines.push(Arc::new(OsvEngine {
                 client: client.clone(),
             })),
             "searxng" => match searxng_base_url.as_deref().filter(|s| !s.is_empty()) {
@@ -1141,21 +1144,27 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         rank_reasons.push(crate::core::source_card::RankReason::RrfMultiProvider);
     }
 
-    let (issue, release) = match &a.metadata {
+    let (issue, release, vulnerability) = match &a.metadata {
         ResultMetadata::Issue(m) => {
             if providers.iter().any(|p| p == "github_issues") {
                 rank_reasons.push(crate::core::source_card::RankReason::ProviderNativeIssueSearch);
             }
-            (Some(m.clone()), None)
+            (Some(m.clone()), None, None)
         }
         ResultMetadata::Release(m) => {
             if providers.iter().any(|p| p == "github_releases") {
                 rank_reasons
                     .push(crate::core::source_card::RankReason::ProviderNativeReleaseSearch);
             }
-            (None, Some(m.clone()))
+            (None, Some(m.clone()), None)
         }
-        ResultMetadata::None => (None, None),
+        ResultMetadata::Advisory(m) => {
+            if providers.iter().any(|p| p == "osv") {
+                rank_reasons.push(crate::core::source_card::RankReason::ProviderNativeAdvisorySearch);
+            }
+            (None, None, Some(m.clone()))
+        }
+        ResultMetadata::None => (None, None, None),
     };
 
     Some(SourceCard {
@@ -1175,6 +1184,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             code,
             issue,
             release,
+            vulnerability,
         },
     })
 }
@@ -1742,6 +1752,7 @@ mod tests {
                 code: None,
                 issue: None,
                 release: None,
+                vulnerability: None,
             }),
             SourceCard::new(
                 "Docs.rs",
@@ -1757,6 +1768,7 @@ mod tests {
                 code: None,
                 issue: None,
                 release: None,
+                vulnerability: None,
             }),
         ];
         apply_intent_reranking(

@@ -58,6 +58,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `repo_planner` subquery generation for repo search bundles
 - `suggested_fetches` suggested fetch URL generation for each group
 - `server_capabilities.repo_search` field now reports `true`
+- `security_search` MCP tool for security-oriented retrieval with normalized vulnerability metadata and grouped source cards
+- `osv` provider: native OSV (Open Source Vulnerabilities) JSON API adapter for querying vulnerability databases by package+ecosystem or vulnerability ID. No API key required. Enabled by default.
+- `SecuritySearchRequest`, `SecurityIdentifiers`, `VulnerabilityMetadata`, `SecurityResultGroup`, `SecuritySearchResponse` types in `src/core/security.rs`
+- Deterministic identifier parser for CVE, GHSA, OSV, RustSec, and package/ecosystem/version hints
+- `ResultMetadata::Advisory` variant for native advisory provider results
+- `SourceMetadata.vulnerability` field for structured vulnerability metadata on source cards
+- `ProviderCapabilities.supports_security_search` flag
+- `RankReason::ProviderNativeAdvisorySearch` variant
+- Security result grouping logic (AuthoritativeAdvisories, VendorAdvisories, PackageAdvisories, KevEntries, PatchCommitsOrReleases, ExploitDiscussion, DefensiveGuidance, GeneralContext, Other)
+- `server_capabilities.security_search` field now reports `true`
+- `KevMetadata` type for CISA Known Exploited Vulnerabilities data
+- `VulnerabilitySource` enum (Osv, GithubAdvisory, Nvd, Rustsec, CisaKev, Generic)
+- `SeverityLevel` enum (Critical, High, Medium, Low, Unknown) with loose parsing
 
 ### Fixed
 - `MockEngine::search` now respects the `max_results` argument and truncates its canned results accordingly. Previously the mock ignored the limit and returned all canned results, masking the candidate-pool bug where production providers were called with `final_max_results` instead of `candidate_limit`.

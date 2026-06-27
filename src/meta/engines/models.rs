@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::core::security::VulnerabilityMetadata;
 use crate::core::source_card::{IssueMetadata, ReleaseMetadata};
 
 #[allow(missing_docs)]
@@ -9,6 +10,7 @@ pub enum ResultMetadata {
     None,
     Issue(IssueMetadata),
     Release(ReleaseMetadata),
+    Advisory(Box<VulnerabilityMetadata>),
 }
 
 impl ResultMetadata {
@@ -33,6 +35,9 @@ impl ResultMetadata {
             }
             (ResultMetadata::Release(a), ResultMetadata::Release(b)) => {
                 ResultMetadata::Release(ReleaseMetadata::merge(a, b))
+            }
+            (ResultMetadata::Advisory(a), ResultMetadata::Advisory(b)) => {
+                ResultMetadata::Advisory(Box::new(VulnerabilityMetadata::merge(*a, *b)))
             }
             // Mixed / None: the structured variant always wins over
             // `None`. If both sides are structured but of different
@@ -137,5 +142,37 @@ mod tests {
             release.clone().merge(issue),
             ResultMetadata::Release(_)
         ));
+    }
+
+    #[test]
+    fn merge_advisory_with_advisory_keeps_left_side() {
+        let a = ResultMetadata::Advisory(Box::new(VulnerabilityMetadata {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            ..Default::default()
+        }));
+        let b = ResultMetadata::Advisory(Box::new(VulnerabilityMetadata {
+            cve_ids: vec!["CVE-2024-0002".to_string()],
+            ..Default::default()
+        }));
+        let merged = a.clone().merge(b);
+        match merged {
+            ResultMetadata::Advisory(m) => {
+                assert_eq!(m.cve_ids, vec!["CVE-2024-0001", "CVE-2024-0002"]);
+            }
+            other => panic!("expected Advisory, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn merge_none_into_advisory_keeps_advisory() {
+        let advisory = ResultMetadata::Advisory(Box::new(VulnerabilityMetadata::default()));
+        assert_eq!(
+            advisory.clone().merge(ResultMetadata::None),
+            advisory
+        );
+        assert_eq!(
+            ResultMetadata::None.merge(advisory.clone()),
+            advisory
+        );
     }
 }
