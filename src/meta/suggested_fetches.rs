@@ -1,7 +1,9 @@
 //! Suggested fetch generation for repo bundle search.
 
+use crate::core::fetch::ExtractMode;
 use crate::core::repo_query::RepoQueryHints;
 use crate::core::repo_search::{RepoResultGroup, RepoResultGroupKind, RepoSuggestedFetch};
+use crate::core::source_card::SourceKind;
 
 /// Generate suggested fetches from grouped results and resolved hints.
 pub fn generate_suggested_fetches(
@@ -17,8 +19,8 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "official_docs".to_string(),
                 group: RepoResultGroupKind::OfficialDocs,
-                expected_kind: "documentation".to_string(),
-                recommended_extract_mode: Some("markdown".to_string()),
+                expected_kind: SourceKind::OfficialDocs,
+                recommended_extract_mode: Some(ExtractMode::Markdown),
                 priority,
             });
             priority = priority.saturating_add(1);
@@ -31,8 +33,8 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "package_registry".to_string(),
                 group: RepoResultGroupKind::PackageRegistry,
-                expected_kind: "documentation".to_string(),
-                recommended_extract_mode: Some("markdown".to_string()),
+                expected_kind: SourceKind::PackageRegistry,
+                recommended_extract_mode: Some(ExtractMode::Markdown),
                 priority,
             });
             priority = priority.saturating_add(1);
@@ -45,8 +47,8 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "readme".to_string(),
                 group: RepoResultGroupKind::Readme,
-                expected_kind: "documentation".to_string(),
-                recommended_extract_mode: Some("markdown".to_string()),
+                expected_kind: SourceKind::SourceFile,
+                recommended_extract_mode: Some(ExtractMode::Markdown),
                 priority,
             });
             priority = priority.saturating_add(1);
@@ -59,7 +61,7 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "source_file_symbol_match".to_string(),
                 group: RepoResultGroupKind::SourceFiles,
-                expected_kind: "source".to_string(),
+                expected_kind: SourceKind::SourceFile,
                 recommended_extract_mode: None,
                 priority,
             });
@@ -73,7 +75,7 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "example_file".to_string(),
                 group: RepoResultGroupKind::Examples,
-                expected_kind: "source".to_string(),
+                expected_kind: SourceKind::SourceFile,
                 recommended_extract_mode: None,
                 priority,
             });
@@ -87,8 +89,8 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "recent_release".to_string(),
                 group: RepoResultGroupKind::Releases,
-                expected_kind: "release_notes".to_string(),
-                recommended_extract_mode: Some("markdown".to_string()),
+                expected_kind: SourceKind::ReleaseNotes,
+                recommended_extract_mode: Some(ExtractMode::Markdown),
                 priority,
             });
             priority = priority.saturating_add(1);
@@ -101,8 +103,8 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "migration_note".to_string(),
                 group: RepoResultGroupKind::MigrationNotes,
-                expected_kind: "documentation".to_string(),
-                recommended_extract_mode: Some("markdown".to_string()),
+                expected_kind: SourceKind::Tutorial,
+                recommended_extract_mode: Some(ExtractMode::Markdown),
                 priority,
             });
             priority = priority.saturating_add(1);
@@ -115,7 +117,7 @@ pub fn generate_suggested_fetches(
                 url: card.url.clone(),
                 reason: "issue_thread".to_string(),
                 group: RepoResultGroupKind::Issues,
-                expected_kind: "issue".to_string(),
+                expected_kind: SourceKind::IssueThread,
                 recommended_extract_mode: None,
                 priority,
             });

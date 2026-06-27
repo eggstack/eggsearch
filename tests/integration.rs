@@ -5883,4 +5883,68 @@ mod repo_search {
             "providers_queried should be non-empty"
         );
     }
+
+    #[tokio::test]
+    async fn repo_search_migration_workflow() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "Axum Migration Guide",
+                    "https://docs.rs/axum/latest/axum/migration/index.html",
+                    "mock_a",
+                )
+                .with_snippet("Migration from 0.6 to 0.7"),
+                MockResult::new(
+                    "Axum on crates.io",
+                    "https://crates.io/crates/axum",
+                    "mock_a",
+                )
+                .with_snippet("A web framework"),
+                MockResult::new(
+                    "Release v0.7.0",
+                    "https://github.com/tokio-rs/axum/releases/tag/v0.7.0",
+                    "mock_a",
+                )
+                .with_snippet("Breaking changes in v0.7"),
+            ],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "rust crate axum migration 0.7".into(),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        assert_eq!(v["query"], "rust crate axum migration 0.7");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let group_kinds: Vec<&str> = groups
+            .iter()
+            .map(|g| g["kind"].as_str().unwrap_or(""))
+            .collect();
+        assert!(
+            group_kinds.contains(&"official_docs"),
+            "should have official_docs group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"package_registry"),
+            "should have package_registry group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"releases"),
+            "should have releases group: {group_kinds:?}"
+        );
+
+        let total_results: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert_eq!(total_results, 3, "all 3 results should be in groups");
+    }
 }

@@ -80,6 +80,10 @@ pub enum RankReason {
     ProviderNativeIssueSearch,
     /// Result came from a native GitHub releases provider.
     ProviderNativeReleaseSearch,
+    /// URL matches the requested owner/repo.
+    RepoOwnerMatch,
+    /// Path/file/language/symbol hint matched the result.
+    HintMatch,
 }
 
 /// Structured issue metadata from native GitHub issues providers.

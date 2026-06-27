@@ -1,4 +1,5 @@
 use crate::core::code_metadata::CodeHost;
+use serde::{Deserialize, Serialize};
 
 /// Structured hints parsed from a repo-oriented search query string.
 ///
@@ -6,7 +7,7 @@ use crate::core::code_metadata::CodeHost;
 /// `symbol:`, and `host:` hint tokens, plus bare `owner/repo` extraction
 /// and `repo=` alternative syntax. Unknown `key:value` tokens are
 /// preserved in `residual_query`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoQueryHints {
     /// Code-host platform (e.g. GitHub, GitLab, Codeberg).
     pub host: Option<CodeHost>,

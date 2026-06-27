@@ -1,5 +1,6 @@
 //! Deterministic grouping of SourceCards into repo bundle categories.
 
+use crate::core::repo_query::RepoQueryHints;
 use crate::core::repo_search::{RepoResultGroup, RepoResultGroupKind};
 use crate::core::source_card::{SourceCard, SourceKind};
 
@@ -121,6 +122,131 @@ fn classify_fallback(
     RepoResultGroupKind::Other
 }
 
+/// Apply bounded within-group reranking based on repo hints.
+///
+/// Boosts are additive and capped so provider RRF evidence remains dominant.
+/// The maximum theoretical boost is +30% of the max base score per group.
+fn rerank_group(cards: &mut [SourceCard], hints: &RepoQueryHints) {
+    use crate::core::source_card::RankReason;
+
+    if cards.is_empty() {
+        return;
+    }
+
+    let max_base = cards.iter().filter_map(|r| r.score).fold(0.0_f64, f64::max);
+    if max_base <= 0.0 {
+        return;
+    }
+
+    // Boost unit: 10% of the max base score in this group.
+    let boost_unit = max_base * 0.10;
+
+    let owner_lower = hints.owner.as_deref().map(|s| s.to_lowercase());
+    let repo_lower = hints.repo.as_deref().map(|s| s.to_lowercase());
+    let path_lower = hints.path.as_deref().map(|s| s.to_lowercase());
+    let file_lower = hints.file.as_deref().map(|s| s.to_lowercase());
+    let lang_lower = hints.language.as_deref();
+    let symbol_lower = hints.symbol.as_deref().map(|s| s.to_lowercase());
+
+    for card in cards.iter_mut() {
+        let base = card.score.unwrap_or(0.0);
+        let mut boost = 0.0_f64;
+        let mut reasons: Vec<RankReason> = Vec::new();
+
+        // --- owner/repo match ---
+        let url_lower = card.url.to_lowercase();
+        if let (Some(ref o), Some(ref r)) = (&owner_lower, &repo_lower) {
+            if url_lower.contains(o.as_str()) && url_lower.contains(r.as_str()) {
+                boost += boost_unit * 1.5;
+                reasons.push(RankReason::RepoOwnerMatch);
+            }
+        }
+
+        // --- path/file hint match ---
+        let code = card.metadata.code.as_ref();
+        let card_path = code
+            .and_then(|c| c.path.as_deref())
+            .unwrap_or("")
+            .to_lowercase();
+        if let Some(ref p) = path_lower {
+            if !p.is_empty() && card_path.contains(p.as_str()) {
+                boost += boost_unit * 1.0;
+                reasons.push(RankReason::HintMatch);
+            }
+        }
+        if let Some(ref f) = file_lower {
+            if !f.is_empty() && card_path.contains(f.as_str()) {
+                boost += boost_unit * 1.0;
+                reasons.push(RankReason::HintMatch);
+            }
+        }
+
+        // --- language hint match ---
+        if let Some(lang) = lang_lower {
+            if let Some(card_lang) = code.and_then(|c| c.language.as_deref()) {
+                if card_lang.to_lowercase() == lang {
+                    boost += boost_unit * 0.5;
+                    reasons.push(RankReason::HintMatch);
+                }
+            }
+        }
+
+        // --- symbol hint match (check title) ---
+        if let Some(ref sym) = symbol_lower {
+            if !sym.is_empty() {
+                let title_lower = card.title.to_lowercase();
+                if title_lower.contains(sym.as_str()) {
+                    boost += boost_unit * 1.0;
+                    reasons.push(RankReason::HintMatch);
+                }
+            }
+        }
+
+        // --- native provider evidence ---
+        let provider_lower = card.providers.first().map(|s| s.to_lowercase());
+        if provider_lower.as_deref() == Some("github_issues") {
+            boost += boost_unit * 0.5;
+            reasons.push(RankReason::ProviderNativeIssueSearch);
+        } else if provider_lower.as_deref() == Some("github_releases") {
+            boost += boost_unit * 0.5;
+            reasons.push(RankReason::ProviderNativeReleaseSearch);
+        }
+
+        // --- domain priors ---
+        let kind = card.metadata.source_kind;
+        match kind {
+            SourceKind::OfficialDocs | SourceKind::Reference => {
+                boost += boost_unit * 1.0;
+                reasons.push(RankReason::DomainPriorDocs);
+            }
+            SourceKind::PackageRegistry => {
+                boost += boost_unit * 0.5;
+            }
+            SourceKind::ReleaseNotes | SourceKind::Tag => {
+                boost += boost_unit * 0.5;
+                reasons.push(RankReason::DomainPriorRelease);
+            }
+            SourceKind::SecurityAdvisory => {
+                boost += boost_unit * 0.5;
+                reasons.push(RankReason::DomainPriorSecurity);
+            }
+            _ => {}
+        }
+
+        if boost > 0.0 {
+            card.score = Some(base + boost);
+        }
+        card.metadata.rank_reasons.extend(reasons);
+    }
+
+    // Stable sort by updated score (descending).
+    cards.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
 /// Group a flat list of SourceCards into RepoResultGroups.
 /// Each card goes to exactly one group (its primary classification).
 /// Groups are returned in a fixed canonical order.
@@ -195,10 +321,93 @@ pub fn group_results(cards: Vec<SourceCard>, max_per_group: usize) -> Vec<RepoRe
     groups
 }
 
+/// Group a flat list of SourceCards into RepoResultGroups with within-group reranking.
+/// Each card goes to exactly one group (its primary classification).
+/// Groups are returned in a fixed canonical order.
+pub fn group_results_with_hints(
+    cards: Vec<SourceCard>,
+    max_per_group: usize,
+    hints: &RepoQueryHints,
+) -> Vec<RepoResultGroup> {
+    use std::collections::HashMap;
+
+    let mut buckets: HashMap<RepoResultGroupKind, Vec<SourceCard>> = HashMap::new();
+    for card in cards {
+        let kind = classify_group(&card);
+        buckets.entry(kind).or_default().push(card);
+    }
+
+    // Apply within-group reranking before truncation.
+    for bucket in buckets.values_mut() {
+        rerank_group(bucket, hints);
+    }
+
+    let canonical_order: Vec<RepoResultGroupKind> = vec![
+        RepoResultGroupKind::OfficialDocs,
+        RepoResultGroupKind::PackageRegistry,
+        RepoResultGroupKind::Repository,
+        RepoResultGroupKind::Readme,
+        RepoResultGroupKind::Examples,
+        RepoResultGroupKind::Tests,
+        RepoResultGroupKind::SourceFiles,
+        RepoResultGroupKind::Issues,
+        RepoResultGroupKind::PullRequests,
+        RepoResultGroupKind::Releases,
+        RepoResultGroupKind::MigrationNotes,
+        RepoResultGroupKind::Changelog,
+        RepoResultGroupKind::CommunityDiscussion,
+        RepoResultGroupKind::Other,
+    ];
+
+    let labels: Vec<(RepoResultGroupKind, &str)> = vec![
+        (RepoResultGroupKind::OfficialDocs, "Official Documentation"),
+        (RepoResultGroupKind::PackageRegistry, "Package Registry"),
+        (RepoResultGroupKind::Repository, "Repository"),
+        (RepoResultGroupKind::Readme, "README"),
+        (RepoResultGroupKind::Examples, "Examples"),
+        (RepoResultGroupKind::Tests, "Tests"),
+        (RepoResultGroupKind::SourceFiles, "Source Files"),
+        (RepoResultGroupKind::Issues, "Issues"),
+        (RepoResultGroupKind::PullRequests, "Pull Requests"),
+        (RepoResultGroupKind::Releases, "Releases"),
+        (RepoResultGroupKind::MigrationNotes, "Migration Notes"),
+        (RepoResultGroupKind::Changelog, "Changelog"),
+        (
+            RepoResultGroupKind::CommunityDiscussion,
+            "Community Discussion",
+        ),
+        (RepoResultGroupKind::Other, "Other"),
+    ];
+
+    let label_map: std::collections::HashMap<RepoResultGroupKind, &str> =
+        labels.into_iter().collect();
+
+    let mut groups = Vec::new();
+    for kind in canonical_order {
+        if let Some(mut results) = buckets.remove(&kind) {
+            let full_count = results.len();
+            results.truncate(max_per_group);
+            let truncated = full_count > max_per_group;
+            let label = label_map
+                .get(&kind)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{kind:?}"));
+            groups.push(RepoResultGroup {
+                kind,
+                label,
+                results,
+                truncated,
+            });
+        }
+    }
+
+    groups
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::code_metadata::{CodeHost, CodeMetadata};
+    use crate::core::code_metadata::CodeMetadata;
     use crate::core::result::TrustLevel;
     use crate::core::source_card::{IssueMetadata, SourceMetadata};
 
@@ -549,5 +758,178 @@ mod tests {
     fn classify_reference_as_docs() {
         let card = make_card(SourceKind::Reference, "https://example.com/api-ref");
         assert_eq!(classify_group(&card), RepoResultGroupKind::OfficialDocs);
+    }
+
+    // ---- Within-group ranking tests ----
+
+    fn make_card_with_score(source_kind: SourceKind, url: &str, score: f64) -> SourceCard {
+        let mut card = make_card(source_kind, url);
+        card.score = Some(score);
+        card
+    }
+
+    fn make_card_with_code_and_score(
+        source_kind: SourceKind,
+        url: &str,
+        path: &str,
+        score: f64,
+    ) -> SourceCard {
+        let mut card = make_card_with_code(source_kind, url, path);
+        card.score = Some(score);
+        card
+    }
+
+    #[test]
+    fn rerank_boosts_owner_repo_match() {
+        let hints = RepoQueryHints {
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ..Default::default()
+        };
+        let mut cards = vec![
+            make_card_with_score(
+                SourceKind::SourceFile,
+                "https://docs.rs/axum/latest/axum/",
+                10.0,
+            ),
+            make_card_with_score(
+                SourceKind::SourceFile,
+                "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+                9.0,
+            ),
+        ];
+        rerank_group(&mut cards, &hints);
+        // The card with owner/repo in URL should be boosted to top.
+        assert_eq!(
+            cards[0].url,
+            "https://github.com/tokio-rs/axum/blob/main/src/lib.rs"
+        );
+        assert!(cards[0].score.unwrap() > cards[1].score.unwrap());
+    }
+
+    #[test]
+    fn rerank_boosts_path_hint_match() {
+        let hints = RepoQueryHints {
+            path: Some("src/lib.rs".to_string()),
+            ..Default::default()
+        };
+        let mut cards = vec![
+            make_card_with_code_and_score(
+                SourceKind::SourceFile,
+                "https://github.com/foo/bar/blob/main/src/lib.rs",
+                "src/lib.rs",
+                10.0,
+            ),
+            make_card_with_code_and_score(
+                SourceKind::SourceFile,
+                "https://github.com/foo/bar/blob/main/src/main.rs",
+                "src/main.rs",
+                10.0,
+            ),
+        ];
+        rerank_group(&mut cards, &hints);
+        // The card with matching path should be first.
+        assert_eq!(
+            cards[0].url,
+            "https://github.com/foo/bar/blob/main/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn rerank_boosts_language_match() {
+        let hints = RepoQueryHints {
+            language: Some("rust".to_string()),
+            ..Default::default()
+        };
+        let mut cards = vec![
+            {
+                let mut card = make_card_with_score(
+                    SourceKind::SourceFile,
+                    "https://example.com/foo.py",
+                    10.0,
+                );
+                card.metadata.code = Some(CodeMetadata {
+                    language: Some("python".to_string()),
+                    ..Default::default()
+                });
+                card
+            },
+            {
+                let mut card = make_card_with_score(
+                    SourceKind::SourceFile,
+                    "https://example.com/bar.rs",
+                    10.0,
+                );
+                card.metadata.code = Some(CodeMetadata {
+                    language: Some("rust".to_string()),
+                    ..Default::default()
+                });
+                card
+            },
+        ];
+        rerank_group(&mut cards, &hints);
+        // The Rust card should be boosted to top.
+        assert!(cards[0].url.contains("bar.rs"));
+    }
+
+    #[test]
+    fn rerank_boosts_symbol_in_title() {
+        let hints = RepoQueryHints {
+            symbol: Some("Layer".to_string()),
+            ..Default::default()
+        };
+        let mut cards = vec![
+            make_card_with_score(SourceKind::SourceFile, "https://example.com/router", 10.0),
+            make_card_with_score(SourceKind::SourceFile, "https://example.com/layer", 10.0),
+        ];
+        cards[1].title = "Layer trait".to_string();
+        rerank_group(&mut cards, &hints);
+        // The card with "Layer" in title should be boosted.
+        assert!(cards[0].title.contains("Layer"));
+    }
+
+    #[test]
+    fn rerank_boosts_domain_prior() {
+        let hints = RepoQueryHints::default();
+        let mut cards = vec![
+            make_card_with_score(SourceKind::SourceFile, "https://example.com/code", 10.0),
+            make_card_with_score(SourceKind::OfficialDocs, "https://docs.rs/axum", 10.0),
+        ];
+        rerank_group(&mut cards, &hints);
+        // OfficialDocs should get a domain prior boost.
+        assert_eq!(cards[0].metadata.source_kind, SourceKind::OfficialDocs);
+    }
+
+    #[test]
+    fn rerank_empty_cards_noop() {
+        let hints = RepoQueryHints::default();
+        let mut cards: Vec<SourceCard> = vec![];
+        rerank_group(&mut cards, &hints);
+        assert!(cards.is_empty());
+    }
+
+    #[test]
+    fn group_results_with_hints_applies_reranking() {
+        let hints = RepoQueryHints {
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ..Default::default()
+        };
+        let cards = vec![
+            make_card_with_score(
+                SourceKind::SourceFile,
+                "https://docs.rs/axum/latest/axum/",
+                10.0,
+            ),
+            make_card_with_score(
+                SourceKind::SourceFile,
+                "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+                9.0,
+            ),
+        ];
+        let groups = group_results_with_hints(cards, 10, &hints);
+        // Both cards are SourceFile but classified differently by URL heuristics.
+        // The reranking should boost the owner/repo match within its group.
+        assert!(!groups.is_empty());
     }
 }

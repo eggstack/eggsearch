@@ -701,7 +701,8 @@ impl MetadataSearchAdapter {
         }
 
         let max_per_group = req.max_per_group.unwrap_or(5);
-        let groups = crate::meta::repo_grouping::group_results(cards, max_per_group);
+        let groups =
+            crate::meta::repo_grouping::group_results_with_hints(cards, max_per_group, &plan.hints);
 
         let suggested_fetches =
             crate::meta::suggested_fetches::generate_suggested_fetches(&groups, &plan.hints);
@@ -717,6 +718,31 @@ impl MetadataSearchAdapter {
             warnings.push(SearchWarning::new(
                 "_system",
                 "Repo hints parsed but no native GitHub provider configured; using generic web providers.",
+            ));
+        }
+
+        // Symbol-aware search warning.
+        if plan.hints.symbol.is_some() && !engines.iter().any(|e| e.name() == "github_code") {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "Symbol hint parsed but no native code provider configured; using text query fallback.",
+            ));
+        }
+
+        // Issues without native provider warning.
+        if req.include_issues_enabled() && !engines.iter().any(|e| e.name() == "github_issues") {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "Issues requested but no native issue provider configured; using generic web search.",
+            ));
+        }
+
+        // Releases without native provider warning.
+        if req.include_releases_enabled() && !engines.iter().any(|e| e.name() == "github_releases")
+        {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "Releases requested but no native release provider configured; using generic web search.",
             ));
         }
 
@@ -781,7 +807,8 @@ impl MetadataSearchAdapter {
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
             mode: "repo_metasearch".to_string(),
-            resolved_hints: resolved_hints_str,
+            resolved_hints: plan.hints.clone(),
+            resolved_hints_summary: resolved_hints_str,
             groups,
             suggested_fetches,
             providers_queried: queried_ids,

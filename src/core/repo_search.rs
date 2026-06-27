@@ -1,11 +1,12 @@
 //! Types for the repo-oriented structured search (repo_search) tool.
 
 use crate::core::code_metadata::CodeHost;
+use crate::core::fetch::ExtractMode;
 use crate::core::query::{resolve_max_results, Freshness};
 use crate::core::repo_query::RepoQueryHints;
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
-use crate::core::source_card::SourceCard;
+use crate::core::source_card::{SourceCard, SourceKind};
 use crate::meta::response::ProviderFailure;
 use serde::{Deserialize, Serialize};
 
@@ -214,10 +215,10 @@ pub struct RepoSuggestedFetch {
     /// Which result group this fetch belongs to.
     pub group: RepoResultGroupKind,
     /// Expected content kind (e.g. "documentation", "source").
-    pub expected_kind: String,
+    pub expected_kind: SourceKind,
     /// Recommended extract mode for the fetch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recommended_extract_mode: Option<String>,
+    pub recommended_extract_mode: Option<ExtractMode>,
     /// Priority (lower is higher priority).
     pub priority: u8,
 }
@@ -229,8 +230,10 @@ pub struct RepoSearchResponse {
     pub query: String,
     /// Search mode used.
     pub mode: String,
+    /// Resolved hints merged from explicit fields and query tokens.
+    pub resolved_hints: RepoQueryHints,
     /// Human-readable summary of resolved hints.
-    pub resolved_hints: String,
+    pub resolved_hints_summary: String,
     /// Grouped results.
     pub groups: Vec<RepoResultGroup>,
     /// Suggested URLs to fetch next.
