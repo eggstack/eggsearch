@@ -226,7 +226,7 @@ The `code` field is `null` or omitted for non-code-host results.
 
 - `query` is required and must be non-empty.
 - `intent` is optional: `web` (default), `docs`, `code`, `issues`, `releases`, `security`, `news`. A retrieval and ranking hint only — does not trigger multi-step behavior.
-- `freshness` is optional: `any` (default), `day`, `week`, `month`, `year`. Best-effort; not all providers support date filtering.
+- `freshness` is optional: `any` (default), `day`, `week`, `month`, `year`. Best-effort; not all providers support date filtering. Two distinct capability flags are tracked on each provider: `supports_freshness` (provider-side time-range parameter) and `supports_result_timestamps` (per-result timestamps used for local freshness reranking). Most HTML scrapers set both to `false`; GitHub issues/releases set `supports_result_timestamps = true` so `FreshnessMatch` is emitted only when an actual timestamp falls within the requested window. `FreshnessMatch` is never emitted without timestamp evidence.
 - `max_results` is an optional per-call final SourceCard count. The server may clamp this to its configured `max_results_cap` (default 50) and return a warning in the response. Internally each provider is asked for a slightly larger candidate pool (bounded by `max_results_cap`) so intent-aware reranking can promote results that would otherwise be truncated before ranking; only the requested `max_results` are returned.
 - Each result includes deterministic `metadata` with `source_kind`, `domain`, and `rank_reasons` to help agents choose which result to inspect first. `source_kind` is one of: `official_docs`, `package_registry`, `source_repository`, `repository_root`, `source_directory`, `source_file`, `issue_thread`, `pull_request`, `tag`, `commit`, `release_notes`, `security_advisory`, `reference`, `news`, `tutorial`, `forum`, `unknown`.
 - Partial provider failure is non-fatal: surviving results are returned.
@@ -354,7 +354,7 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
 
 **Link classification:** When `include_links` is enabled, each extracted link is classified with a deterministic `link_kind` based on URL heuristics (host equality, path patterns, file extensions). Classification is cheap and requires no external dependencies. Links also include a `same_domain` boolean indicating whether the link host matches the page host, and an optional `rel` attribute from the `<a>` element. The response includes `links_seen` (total `<a href>` elements encountered) and `links_truncated` (whether the list was capped at 100) for bounding awareness. When a document is present, `document.link_truncated` mirrors the top-level `links_truncated` value.
 
-**Code-host source-file fetch:** `web_fetch` recognizes source-file browser URLs from GitHub, GitLab, and Codeberg and internally rewrites them to raw content URLs for fetching. This means you can pass a browser source-file URL directly:
+**Code-host source-file fetch:** `web_fetch` recognizes source-file browser URLs from GitHub and GitLab and internally rewrites them to raw content URLs for fetching. This means you can pass a browser source-file URL directly:
 
 ```json
 { "url": "https://github.com/tokio-rs/axum/blob/main/src/lib.rs" }
@@ -378,9 +378,11 @@ When a rewrite occurs, the response includes a `fetch_transform` object:
 }
 ```
 
-Supported `fetch_transform.kind` values: `github_raw_file`, `gitlab_raw_file`, `codeberg_raw_file`.
+Supported `fetch_transform.kind` values: `github_raw_file`, `gitlab_raw_file`.
 
 Line anchors (e.g. `#L10-L25`) are preserved in metadata but the full file is fetched. Non-file URLs (repo roots, directories, issues, PRs, releases, tags, commits) are not rewritten. This does not clone repos, list directories, crawl links, or fetch multiple files. Source code is untrusted data.
+
+**Codeberg source-file URLs:** are classified as `source_file` so callers can identify them, but `web_fetch` does **not** rewrite them to `/raw/branch/...` or `/raw/tag/...` paths in this version. Codeberg source-file browser URLs are fetched as ordinary web pages through the existing HTML extraction path; the response will not contain a `fetch_transform` block. Rewriting Codeberg URLs requires distinguishing branch refs from tag refs at the parser level, which is out of scope until the Codeberg raw-URL shape is verified.
 
 **Advanced fields (host/debug only):**
 
@@ -389,7 +391,7 @@ Line anchors (e.g. `#L10-L25`) are preserved in metadata but the full file is fe
 - `extract_mode`: `"text"` (default), `"markdown"` (Markdown-rendered output), or `"metadata_only"`. Markdown mode renders HTML as structured Markdown with headings, code blocks, tables, and lists.
 - `include_links`: whether to include extracted links (default false). When enabled, each link includes a deterministic `link_kind` classification, optional `rel` attribute, and `same_domain` flag. Link kinds include: `same_page_anchor`, `same_domain`, `external`, `download`, `source_code`, `documentation`, `api_reference`, `issue`, `pull_request`, `release`, `security_advisory`, `pdf`, `image`, `feed`, and `other`.
 - `document`: structured document representation (present when fetch succeeds). Includes `kind`, `render_format`, `blocks`, `chunks`, `outline`, and `metadata`. Outline entries are filtered after block-boundary truncation so `block_index` values always reference valid blocks. The legacy `text` field is always populated for backward compatibility.
-- `fetch_transform`: when a code-host source-file URL was rewritten to a raw content URL, this object describes the transformation. Includes `kind` (`github_raw_file`, `gitlab_raw_file`, `codeberg_raw_file`), `original_url`, and `transformed_url`. Absent for normal (non-code-host) URLs.
+- `fetch_transform`: when a code-host source-file URL was rewritten to a raw content URL, this object describes the transformation. Includes `kind` (`github_raw_file` or `gitlab_raw_file`), `original_url`, and `transformed_url`. Absent for normal (non-code-host) URLs and for Codeberg source-file URLs (which are fetched as ordinary web pages).
 
 ### `provider_status`
 

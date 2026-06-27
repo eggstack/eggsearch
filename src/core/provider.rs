@@ -37,11 +37,29 @@ pub enum ProviderKind {
 }
 
 /// Feature capabilities that a provider may or may not support.
+///
+/// Two distinct flags cover time-related behaviour and the distinction
+/// matters for downstream freshness-aware reranking:
+///
+/// - [`ProviderCapabilities::supports_freshness`] is a **provider-side**
+///   flag: the upstream engine accepts a freshness / time-range
+///   parameter and applies it on the server before returning results.
+///   When this is `false`, eggsearch does not pass a freshness hint to
+///   the upstream request at all.
+/// - [`ProviderCapabilities::supports_result_timestamps`] is a
+///   **client-side** flag: the provider's result payloads include
+///   per-result timestamp evidence (e.g. `updated_at` on issues,
+///   `published_at` on releases). eggsearch uses these timestamps
+///   locally, after retrieval, to apply bounded freshness reranking.
+///   When this is `true`, `FreshnessMatch` may be emitted even when
+///   `supports_freshness` is `false`.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct ProviderCapabilities {
     /// Provider enforces safe-search filtering.
     pub supports_safe_search: bool,
-    /// Provider supports a freshness / time-range parameter.
+    /// Provider supports a provider-side freshness / time-range
+    /// request parameter. See the type-level docs for the distinction
+    /// from `supports_result_timestamps`.
     pub supports_freshness: bool,
     /// Provider supports a language parameter.
     pub supports_language: bool,
@@ -67,7 +85,9 @@ pub struct ProviderCapabilities {
     pub supports_issue_search: bool,
     /// Provider supports release search.
     pub supports_release_search: bool,
-    /// Provider returns result-level timestamps.
+    /// Provider returns result-level timestamps usable for local
+    /// freshness reranking. See the type-level docs for the
+    /// distinction from `supports_freshness`.
     pub supports_result_timestamps: bool,
 }
 
@@ -620,6 +640,62 @@ mod tests {
                 !caps.supports(&option),
                 "ProviderCapabilities::none() should not support {}",
                 option.display_name()
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Freshness vs result_timestamps semantics.
+    //
+    // `supports_freshness` is the provider-side flag: the upstream
+    // engine accepts a freshness/time-range parameter and applies it
+    // server-side.
+    //
+    // `supports_result_timestamps` is the client-side flag: the
+    // provider's result payloads include per-result timestamps that
+    // eggsearch uses for local freshness reranking.
+    //
+    // GitHub issues/releases currently use the client-side model only
+    // (they do not pass a freshness hint upstream). These tests pin
+    // the (false, true) shape so the distinction cannot drift.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn github_issues_supports_result_timestamps_but_not_freshness() {
+        let desc = built_in_provider_descriptor("github_issues", true, false, true).unwrap();
+        // Provider-side: false. The /search/issues endpoint does not
+        // accept a freshness parameter.
+        assert!(!desc.capabilities.supports_freshness);
+        // Client-side: true. The payload carries `updated_at` which
+        // eggsearch uses for local freshness reranking.
+        assert!(desc.capabilities.supports_result_timestamps);
+    }
+
+    #[test]
+    fn github_releases_supports_result_timestamps_but_not_freshness() {
+        let desc = built_in_provider_descriptor("github_releases", true, false, true).unwrap();
+        assert!(!desc.capabilities.supports_freshness);
+        assert!(desc.capabilities.supports_result_timestamps);
+    }
+
+    #[test]
+    fn github_code_supports_neither_freshness_flag() {
+        let desc = built_in_provider_descriptor("github_code", true, false, true).unwrap();
+        assert!(!desc.capabilities.supports_freshness);
+        assert!(!desc.capabilities.supports_result_timestamps);
+    }
+
+    #[test]
+    fn html_scrape_providers_supports_neither_freshness_flag() {
+        for id in ["duckduckgo", "brave", "startpage", "yahoo", "mojeek"] {
+            let desc = built_in_provider_descriptor(id, true, false, true).unwrap();
+            assert!(
+                !desc.capabilities.supports_freshness,
+                "{id} should not advertise provider-side freshness"
+            );
+            assert!(
+                !desc.capabilities.supports_result_timestamps,
+                "{id} should not advertise result timestamps"
             );
         }
     }

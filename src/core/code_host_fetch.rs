@@ -4,6 +4,16 @@
 //! content URLs for fetching. Returns `None` for non-code-host URLs,
 //! directory URLs, issue/PR/release/tag/commit URLs, or any URL
 //! that does not represent a single source file.
+//!
+//! Codeberg source-file URLs are intentionally **not** rewritten.
+//! The raw URL shape (`/raw/branch/<ref>/<path>` vs `/raw/tag/<ref>/<path>`)
+//! requires distinguishing branch refs from tag refs at the parser
+//! level, which is out of scope for this phase. Until that is added,
+//! Codeberg source URLs are fetched through the normal browser-page
+//! path: the original URL is returned with `raw_url = None` and
+//! `web_fetch` falls back to extracting the page body. The
+//! `source_kind` and `code` metadata are still populated so callers
+//! can classify the result.
 
 use crate::core::code_metadata::{classify_and_extract, CodeMetadata};
 use crate::core::fetch::{FetchTransform, FetchTransformKind};
@@ -30,7 +40,11 @@ impl CodeHostFetchTarget {
         let kind = match host {
             crate::core::code_metadata::CodeHost::Github => FetchTransformKind::GithubRawFile,
             crate::core::code_metadata::CodeHost::Gitlab => FetchTransformKind::GitlabRawFile,
-            crate::core::code_metadata::CodeHost::Codeberg => FetchTransformKind::CodebergRawFile,
+            crate::core::code_metadata::CodeHost::Codeberg => {
+                // Codeberg raw rewrite is intentionally disabled.
+                // See module docs.
+                return None;
+            }
             _ => return None,
         };
         Some(FetchTransform {
@@ -46,6 +60,10 @@ impl CodeHostFetchTarget {
 /// Returns `None` for non-code-host URLs, non-file URLs (directories,
 /// repos, issues, PRs, releases, tags, commits), or when the raw URL
 /// shape is not well-understood.
+///
+/// Codeberg source-file URLs always return a target with
+/// `raw_url = None`. The caller should treat this as "no rewrite
+/// available" and proceed with the normal browser-page fetch.
 ///
 /// Safety: the caller must validate the original URL and any produced
 /// `raw_url` through the same SSRF/localhost/private-network policy
@@ -84,13 +102,9 @@ pub fn resolve_code_host_fetch_target(url: &str) -> Option<CodeHostFetchTarget> 
             ))
         }
         crate::core::code_metadata::CodeHost::Codeberg => {
-            // Codeberg raw URLs: /raw/branch/<ref>/<path> or /raw/tag/<ref>/<path>.
-            // We use "branch" as the ref type for simplicity; this works for
-            // branch names but may not be correct for tags. For Phase 5 we
-            // default to "branch" and document the limitation.
-            Some(format!(
-                "https://codeberg.org/{owner}/{repo}/raw/branch/{ref_name}/{file_path}"
-            ))
+            // Codeberg raw rewrite is intentionally disabled in this
+            // phase. See module docs.
+            None
         }
         _ => None,
     };
@@ -278,42 +292,50 @@ mod tests {
 
     // --- Codeberg URL resolution ---
 
+    // Codeberg raw rewrite is intentionally disabled in this phase
+    // (see module docs). Codeberg source-file URLs still resolve to
+    // a target so callers can classify the URL, but `raw_url` is
+    // `None` so `web_fetch` falls back to normal browser-page fetch.
     #[test]
-    fn codeberg_src_branch_resolves_to_raw() {
+    fn codeberg_src_branch_resolves_without_raw_rewrite() {
         let target = resolve_code_host_fetch_target(
             "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs",
         )
         .unwrap();
-        assert_eq!(
-            target.raw_url.as_deref(),
-            Some("https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs")
+        assert!(
+            target.raw_url.is_none(),
+            "Codeberg raw rewrite is disabled in this phase"
         );
         assert_eq!(target.source_kind, SourceKind::SourceFile);
+        let code = target.code.unwrap();
+        assert_eq!(code.owner.as_deref(), Some("owner"));
+        assert_eq!(code.repo.as_deref(), Some("repo"));
+        assert_eq!(code.ref_name.as_deref(), Some("main"));
+        assert_eq!(code.path.as_deref(), Some("src/lib.rs"));
     }
 
     #[test]
-    fn codeberg_src_tag_resolves_to_raw() {
+    fn codeberg_src_tag_resolves_without_raw_rewrite() {
         let target = resolve_code_host_fetch_target(
             "https://codeberg.org/owner/repo/src/tag/v1.2.3/src/lib.rs",
         )
         .unwrap();
-        // Codeberg uses "branch" in the raw URL shape for both branches and tags
-        assert_eq!(
-            target.raw_url.as_deref(),
-            Some("https://codeberg.org/owner/repo/raw/branch/v1.2.3/src/lib.rs")
+        assert!(
+            target.raw_url.is_none(),
+            "Codeberg raw rewrite is disabled in this phase"
         );
+        assert_eq!(target.source_kind, SourceKind::SourceFile);
+        let code = target.code.unwrap();
+        assert_eq!(code.ref_name.as_deref(), Some("v1.2.3"));
     }
 
     #[test]
-    fn codeberg_src_with_line_anchor_resolves() {
+    fn codeberg_to_fetch_transform_returns_none() {
         let target = resolve_code_host_fetch_target(
-            "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs#L10-L25",
+            "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs",
         )
         .unwrap();
-        assert!(target.raw_url.is_some());
-        let code = target.code.unwrap();
-        assert_eq!(code.line_start, Some(10));
-        assert_eq!(code.line_end, Some(25));
+        assert!(target.to_fetch_transform("https://example.com/raw").is_none());
     }
 
     // --- Codeberg non-file URLs return None ---

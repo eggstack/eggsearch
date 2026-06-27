@@ -108,6 +108,33 @@ pub struct IssueMetadata {
     pub closed_at: Option<String>,
 }
 
+impl IssueMetadata {
+    /// Field-wise merge used by RRF deduplication. `self` wins for
+    /// every present field; `other` is only consulted for fields that
+    /// are `None` on `self`. `Vec` fields concatenate, deduplicated,
+    /// preserving `self`'s elements first.
+    pub fn merge(self, other: IssueMetadata) -> IssueMetadata {
+        let mut labels = self.labels;
+        for label in other.labels {
+            if !labels.contains(&label) {
+                labels.push(label);
+            }
+        }
+        IssueMetadata {
+            host: self.host.or(other.host),
+            owner: self.owner.or(other.owner),
+            repo: self.repo.or(other.repo),
+            number: self.number.or(other.number),
+            state: self.state.or(other.state),
+            is_pull_request: self.is_pull_request.or(other.is_pull_request),
+            labels,
+            created_at: self.created_at.or(other.created_at),
+            updated_at: self.updated_at.or(other.updated_at),
+            closed_at: self.closed_at.or(other.closed_at),
+        }
+    }
+}
+
 /// Structured release metadata from native GitHub releases providers.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[allow(missing_docs)]
@@ -130,6 +157,25 @@ pub struct ReleaseMetadata {
     pub created_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published_at: Option<String>,
+}
+
+impl ReleaseMetadata {
+    /// Field-wise merge used by RRF deduplication. `self` wins for
+    /// every present field; `other` is only consulted for fields that
+    /// are `None` on `self`.
+    pub fn merge(self, other: ReleaseMetadata) -> ReleaseMetadata {
+        ReleaseMetadata {
+            host: self.host.or(other.host),
+            owner: self.owner.or(other.owner),
+            repo: self.repo.or(other.repo),
+            tag: self.tag.or(other.tag),
+            name: self.name.or(other.name),
+            draft: self.draft.or(other.draft),
+            prerelease: self.prerelease.or(other.prerelease),
+            created_at: self.created_at.or(other.created_at),
+            published_at: self.published_at.or(other.published_at),
+        }
+    }
 }
 
 /// Deterministic metadata attached to each `SourceCard` to help

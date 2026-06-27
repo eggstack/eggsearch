@@ -97,6 +97,11 @@ pub struct ExtractedLink {
 
 /// Describes the kind of URL transformation applied to a code-host
 /// source-file URL.
+///
+/// `CodebergRawFile` was previously part of this enum but has been
+/// removed: Codeberg source-file browser URLs are no longer rewritten
+/// to raw paths in `web_fetch` and fall back to normal browser-page
+/// fetching. See `src/core/code_host_fetch.rs` for the rationale.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FetchTransformKind {
@@ -104,8 +109,6 @@ pub enum FetchTransformKind {
     GithubRawFile,
     /// GitLab blob URL rewritten to /-/raw/.
     GitlabRawFile,
-    /// Codeberg src URL rewritten to /raw/.
-    CodebergRawFile,
 }
 
 /// Describes a URL transformation applied during `web_fetch`.

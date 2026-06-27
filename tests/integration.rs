@@ -4354,23 +4354,21 @@ fn code_host_fetch_target_gitlab_blob_includes_transform_metadata() {
 }
 
 #[test]
-fn code_host_fetch_target_codeberg_blob_includes_transform_metadata() {
+fn code_host_fetch_target_codeberg_blob_does_not_rewrite() {
     use eggsearch::core::code_host_fetch::resolve_code_host_fetch_target;
 
+    // Codeberg raw rewrite is intentionally disabled in this phase.
+    // The URL still classifies as SourceFile so callers can identify
+    // it, but `raw_url` is None and `to_fetch_transform` returns None.
     let target = resolve_code_host_fetch_target(
         "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs",
     )
     .unwrap();
-    let raw_url = target.raw_url.as_ref().unwrap();
-    let transform = target.to_fetch_transform(raw_url).unwrap();
-    assert_eq!(
-        transform.kind,
-        eggsearch::core::fetch::FetchTransformKind::CodebergRawFile
-    );
-    assert_eq!(
-        transform.transformed_url,
-        "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs"
-    );
+    assert!(target.raw_url.is_none());
+    assert!(target
+        .to_fetch_transform("https://example.com/raw")
+        .is_none());
+    assert_eq!(target.source_kind, eggsearch::core::source_card::SourceKind::SourceFile);
 }
 
 #[test]
@@ -4417,7 +4415,6 @@ fn fetch_transform_kind_serde_roundtrip() {
     let kinds = [
         FetchTransformKind::GithubRawFile,
         FetchTransformKind::GitlabRawFile,
-        FetchTransformKind::CodebergRawFile,
     ];
     for kind in &kinds {
         let json = serde_json::to_string(kind).unwrap();

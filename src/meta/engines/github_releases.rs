@@ -111,14 +111,28 @@ pub async fn search(
     Ok(convert(parsed.items, max_results, &owner, &repo))
 }
 
+/// UTF-8-safe snippet truncation that preserves the historical
+/// word-boundary-trim semantics without ever slicing by byte offset
+/// inside a multi-byte code point.
+///
+/// Counts Unicode scalar values (chars), not bytes. The returned
+/// `pos` from `rfind(char::is_whitespace)` is a valid UTF-8 boundary
+/// because it indexes inside the already-valid truncated string.
+/// UTF-8-safe snippet truncation. See `github_issues::truncate_body`
+/// for the full contract — the impl is mirrored here so each engine
+/// stands alone.
 fn truncate_body(body: &str, max_chars: usize) -> String {
-    if body.len() <= max_chars {
+    if max_chars == 0 {
+        return String::new();
+    }
+    let body_char_len = body.chars().count();
+    if body_char_len <= max_chars {
         return body.to_string();
     }
-    let truncated = &body[..max_chars];
-    match truncated.rfind(' ') {
-        Some(pos) => truncated[..pos].to_string(),
-        None => truncated.to_string(),
+    let truncated: String = body.chars().take(max_chars).collect();
+    match truncated.rfind(char::is_whitespace) {
+        Some(pos) if pos > 0 => truncated[..pos].to_string(),
+        _ => truncated,
     }
 }
 
@@ -405,6 +419,44 @@ mod tests {
     #[test]
     fn test_truncate_body_no_spaces() {
         assert_eq!(truncate_body("abcdefghij", 5), "abcde");
+    }
+
+    #[test]
+    fn test_truncate_body_handles_multibyte_utf8() {
+        // "🦀" is 4 bytes but 1 char. The legacy byte-slicing
+        // implementation would panic when the byte slice landed
+        // inside the crab emoji.
+        let body = "abc 🦀 rust 🧪 unicode";
+        let out = truncate_body(body, 7);
+        assert!(out.is_char_boundary(out.len()));
+        assert!(out.len() <= body.len());
+        assert!(out.chars().count() <= 7);
+    }
+
+    #[test]
+    fn test_truncate_body_handles_cjk_text() {
+        // CJK characters are 3 bytes each. The legacy implementation
+        // would panic when max_chars fell inside a multi-byte
+        // character.
+        let body = "修正修正修正修正";
+        let out = truncate_body(body, 5);
+        assert!(out.is_char_boundary(out.len()));
+        assert!(out.chars().count() <= 5);
+    }
+
+    #[test]
+    fn test_truncate_body_handles_emoji_only_text() {
+        let body = "🦀🦀🦀🦀🦀";
+        let out = truncate_body(body, 3);
+        assert!(out.is_char_boundary(out.len()));
+        assert_eq!(out.chars().count(), 3);
+        assert_eq!(out, "🦀🦀🦀");
+    }
+
+    #[test]
+    fn test_truncate_body_zero_max_returns_empty() {
+        let out = truncate_body("anything", 0);
+        assert_eq!(out, "");
     }
 
     #[test]

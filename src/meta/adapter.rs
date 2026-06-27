@@ -692,6 +692,14 @@ fn aggregate_rrf(
                     if existing.snippet.is_none() && result.snippet.is_some() {
                         existing.snippet = result.snippet;
                     }
+                    // Preserve the richer structured metadata. A row
+                    // from `github_issues` carries real IssueMetadata
+                    // and must not be replaced by `ResultMetadata::None`
+                    // when a generic HTML scraper also returned the
+                    // same URL.
+                    existing.metadata =
+                        std::mem::replace(&mut existing.metadata, result.metadata.clone())
+                            .merge(result.metadata);
                 }
                 None => {
                     map.insert(
@@ -2284,5 +2292,105 @@ mod tests {
         for card in &resp.results {
             assert!(!card.fetched, "web_search cards must have fetched=false");
         }
+    }
+
+    #[tokio::test]
+    async fn metadata_merge_preserves_structured_issue_metadata() {
+        // When the same URL is returned by both `github_issues` and a
+        // generic HTML scraper, RRF aggregation must keep the
+        // structured IssueMetadata from `github_issues` rather than
+        // replacing it with `ResultMetadata::None`.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            Arc::new(MockEngine {
+                name: "github_issues",
+                results: vec![SearchResult {
+                    title: "#42 Bug".to_string(),
+                    url: "https://github.com/tokio-rs/axum/issues/42".to_string(),
+                    snippet: Some("A bug report".to_string()),
+                    source_engine: "github_issues".to_string(),
+                    metadata: ResultMetadata::Issue(crate::core::source_card::IssueMetadata {
+                        owner: Some("tokio-rs".to_string()),
+                        repo: Some("axum".to_string()),
+                        number: Some(42),
+                        state: Some("open".to_string()),
+                        labels: vec!["bug".to_string()],
+                        updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                        ..Default::default()
+                    }),
+                }],
+            }),
+            Arc::new(MockEngine {
+                name: "duckduckgo",
+                results: vec![SearchResult {
+                    title: "#42 Bug - some scraper".to_string(),
+                    url: "https://github.com/tokio-rs/axum/issues/42".to_string(),
+                    snippet: Some("Generic snippet".to_string()),
+                    source_engine: "duckduckgo".to_string(),
+                    metadata: ResultMetadata::None,
+                }],
+            }),
+        ];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        let card = &resp.results[0];
+        let issue = card
+            .metadata
+            .issue
+            .as_ref()
+            .expect("issue metadata must survive merge with ResultMetadata::None");
+        assert_eq!(issue.owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(issue.repo.as_deref(), Some("axum"));
+        assert_eq!(issue.number, Some(42));
+        assert_eq!(issue.labels, vec!["bug".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn metadata_merge_preserves_structured_release_metadata() {
+        // Same scenario as the issue test, but for releases.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            Arc::new(MockEngine {
+                name: "github_releases",
+                results: vec![SearchResult {
+                    title: "v1.0.0 release".to_string(),
+                    url: "https://github.com/tokio-rs/axum/releases/tag/v1.0.0".to_string(),
+                    snippet: Some("Release notes".to_string()),
+                    source_engine: "github_releases".to_string(),
+                    metadata: ResultMetadata::Release(crate::core::source_card::ReleaseMetadata {
+                        owner: Some("tokio-rs".to_string()),
+                        repo: Some("axum".to_string()),
+                        tag: Some("v1.0.0".to_string()),
+                        name: Some("v1.0.0".to_string()),
+                        published_at: Some(chrono::Utc::now().to_rfc3339()),
+                        ..Default::default()
+                    }),
+                }],
+            }),
+            Arc::new(MockEngine {
+                name: "duckduckgo",
+                results: vec![SearchResult {
+                    title: "v1.0.0 release - scraper".to_string(),
+                    url: "https://github.com/tokio-rs/axum/releases/tag/v1.0.0".to_string(),
+                    snippet: Some("Generic snippet".to_string()),
+                    source_engine: "duckduckgo".to_string(),
+                    metadata: ResultMetadata::None,
+                }],
+            }),
+        ];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum");
+        req.intent = crate::core::query::SearchIntent::Releases;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        assert_eq!(resp.results.len(), 1);
+        let card = &resp.results[0];
+        let release = card
+            .metadata
+            .release
+            .as_ref()
+            .expect("release metadata must survive merge with ResultMetadata::None");
+        assert_eq!(release.tag.as_deref(), Some("v1.0.0"));
+        assert_eq!(release.owner.as_deref(), Some("tokio-rs"));
     }
 }

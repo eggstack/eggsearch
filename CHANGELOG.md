@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `FetchRenderMetadata.detected_language` field populated from content detection
 - 12 new integration tests covering JSON, Markdown, TOML, YAML, diff, code, plaintext, and truncation behavior
 
+### Fixed
+
+- **UTF-8-safe snippet truncation in `github_issues` and `github_releases` engines**: the legacy `truncate_body` helper sliced on byte offsets and panicked when the slice landed inside a multi-byte code point (e.g. CJK characters or emoji). The new implementation counts Unicode scalar values and only returns substrings at valid char boundaries, preserving the historical word-boundary trim semantics. Added 10 new unit tests covering multibyte UTF-8, CJK, emoji-only text, zero `max_chars`, and word-boundary-with-emoji cases.
+
 ## [0.4.0] - Unreleased
 
 ### Added
@@ -64,6 +68,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PDF text extraction** (feature-gated behind `pdf`, opt-in, not default): `web_fetch` detects PDF responses via `Content-Type: application/pdf` or `.pdf` URL extension and extracts text using the `lopdf` crate. Per-page indexed blocks with `page_break` markers, per-page chunks. Bounded by `pdf_max_pages` (default 25), `pdf_max_chars_per_page` (default 12000), and `pdf_max_total_chars` (default 50000). New config fields: `pdf_enabled`, `pdf_max_pages`, `pdf_max_chars_per_page`, `pdf_max_total_chars` in `[fetch]`. New error variants: `pdf_not_compiled_in`, `pdf_disabled`, `pdf_parse_error`, `pdf_encrypted`, `pdf_no_extractable_text`. Limit hits produce a warning and partial content rather than a hard error. MSRV bumped from 1.80 to 1.85 (lopdf 0.42 requirement). No OCR, no embedded file extraction, no JavaScript.
 - **Code-host source-file fetch**: `web_fetch` now recognizes source-file browser URLs from GitHub, GitLab, and Codeberg and internally rewrites them to raw content URLs for fetching. GitHub blob URLs are rewritten to `raw.githubusercontent.com`, GitLab blob URLs to `/-/raw/`, and Codeberg src URLs to `/raw/branch/`. The response includes a `fetch_transform` object (`kind`, `original_url`, `transformed_url`) when a rewrite occurs. Both the original and rewritten URLs pass the same SSRF/localhost/private-network validation. New types: `FetchTransform`, `FetchTransformKind` in `src/core/fetch.rs`; `resolve_code_host_fetch_target` in `src/core/code_host_fetch.rs`.
 - 10 new unit tests for URL resolution (GitHub/GitLab/Codeberg blob URLs, non-file URLs, line anchors, safety validation) and 7 new integration tests for code-host fetch (transform metadata, serde roundtrips, response shape).
+
+## [0.3.4] - Unreleased
+
+### Changed
+- **Codeberg raw rewrite deferred**: `web_fetch` no longer rewrites Codeberg source-file browser URLs (`/src/branch/<ref>/<path>` or `/src/tag/<ref>/<path>`) to raw paths. Distinguishing branch refs from tag refs at the parser level is out of scope until the Codeberg raw URL shape is verified. Codeberg source-file URLs still classify as `SourceFile` and are fetched as ordinary web pages through the existing HTML extraction path; no `fetch_transform` block is emitted. The `FetchTransformKind::CodebergRawFile` variant has been removed; only `github_raw_file` and `gitlab_raw_file` are emitted.
+- **Documented `supports_freshness` vs `supports_result_timestamps` semantics**: `ProviderCapabilities::supports_freshness` is the provider-side flag (upstream engine accepts a time-range parameter), while `supports_result_timestamps` is the client-side flag (provider payloads carry per-result timestamps usable for local freshness reranking). GitHub issues/releases set `supports_result_timestamps = true` and `supports_freshness = false`; the GitHub search API does not accept a freshness parameter but its payloads include `updated_at` / `published_at`, so eggsearch applies local freshness reranking on the response. `FreshnessMatch` is never emitted without timestamp evidence.
+- **Metadata merge on RRF deduplication**: when the same URL is returned by multiple providers, the structured metadata (`ResultMetadata::Issue(...)`, `ResultMetadata::Release(...)`) wins over `ResultMetadata::None` from a generic HTML scraper. New `ResultMetadata::merge`, `IssueMetadata::merge`, and `ReleaseMetadata::merge` helpers in `src/meta/engines/models.rs` and `src/core/source_card.rs`. The merge is idempotent and order-independent; the left side wins for shared fields.
+
+### Added
+- 5 unit tests for `ResultMetadata::merge` semantics and 2 adapter-level tests proving that structured `IssueMetadata` / `ReleaseMetadata` survive RRF aggregation even when a generic HTML scraper also returns the same URL with `ResultMetadata::None`.
+- 4 unit tests pinning the (false, true) capability shape for `github_issues` and `github_releases`, and the (false, false) shape for HTML scrape providers and `github_code`.
+- New unit tests for the disabled Codeberg rewrite: `codeberg_src_branch_resolves_without_raw_rewrite`, `codeberg_src_tag_resolves_without_raw_rewrite`, and `codeberg_to_fetch_transform_returns_none`.
 
 ## [0.3.2] - 2026-06-07
 
