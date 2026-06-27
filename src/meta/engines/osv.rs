@@ -164,16 +164,13 @@ pub async fn lookup_by_id(
 ) -> Result<Option<VulnerabilityMetadata>, EngineError> {
     let url = format!("{DEFAULT_BASE_URL}/vulns/{vuln_id}");
 
-    let response = tokio::time::timeout(
-        timeout,
-        client.get(&url).send(),
-    )
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
+    let response = tokio::time::timeout(timeout, client.get(&url).send())
+        .await
+        .map_err(|_| EngineError::Timeout { engine: ENGINE })?
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?;
 
     let status = response.status();
     if status.as_u16() == 404 {
@@ -217,10 +214,7 @@ fn convert(vulns: Vec<OsvVulnerability>, max_results: usize) -> Vec<SearchResult
             continue;
         }
 
-        let summary = vuln
-            .summary
-            .as_deref()
-            .unwrap_or("OSV vulnerability entry");
+        let summary = vuln.summary.as_deref().unwrap_or("OSV vulnerability entry");
         let title = format!("{id}: {summary}");
 
         let snippet = vuln
@@ -432,7 +426,10 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert!(out[0].title.contains("GHSA-test-1234-abcd"));
         assert!(out[0].title.contains("Test vulnerability"));
-        assert_eq!(out[0].url, "https://osv.dev/vulnerability/GHSA-test-1234-abcd");
+        assert_eq!(
+            out[0].url,
+            "https://osv.dev/vulnerability/GHSA-test-1234-abcd"
+        );
         assert!(out[0].snippet.is_some());
         assert_eq!(out[0].source_engine, "osv");
 

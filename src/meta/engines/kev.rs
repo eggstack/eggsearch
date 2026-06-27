@@ -138,9 +138,8 @@ impl KevClient {
             ));
         }
 
-        let catalog: KeCatalog = serde_json::from_slice(&bytes).map_err(|e| {
-            anyhow::anyhow!("Failed to parse KEV catalog: {e}")
-        })?;
+        let catalog: KeCatalog = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to parse KEV catalog: {e}"))?;
 
         let mut entries = HashMap::new();
         for vuln in &catalog.vulnerabilities {

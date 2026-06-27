@@ -13,6 +13,7 @@ pub mod query;
 /// Repo-oriented query hint parser for structured search.
 pub mod repo_query;
 pub mod repo_search;
+pub mod research;
 pub mod result;
 pub mod sanitize;
 pub mod security;
@@ -41,6 +42,11 @@ pub use query::{
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{
     RepoResultGroup, RepoResultGroupKind, RepoSearchRequest, RepoSearchResponse, RepoSuggestedFetch,
+};
+pub use research::{
+    EvidenceQuality, ResearchDomain, ResearchResultGroup, ResearchResultGroupKind,
+    ResearchSearchRequest, ResearchSearchResponse, ResearchSourceType, ResearchSubquery,
+    ResearchSuggestedFetch,
 };
 pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{

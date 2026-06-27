@@ -197,6 +197,48 @@ pub struct SecuritySearchArgs {
     pub providers: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchSearchArgs {
+    /// Free-text research query. Must be non-empty.
+    pub query: String,
+    /// Optional. Research domain hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_domain: Option<String>,
+    /// Optional. Source types to include.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub desired_source_types: Vec<String>,
+    /// Optional. Include counterpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_counterpoints: Option<bool>,
+    /// Optional. Prioritize primary sources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_primary_sources: Option<bool>,
+    /// Optional. Include recent discussion and news.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_recent_discussion: Option<bool>,
+    /// Optional. Include security considerations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_security_considerations: Option<bool>,
+    /// Optional. Maximum total results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<usize>,
+    /// Optional. Maximum result groups.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_groups: Option<usize>,
+    /// Optional. Maximum results per group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_group: Option<usize>,
+    /// Optional. Freshness hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness: Option<String>,
+    /// Optional. Per-request timeout override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Optional. Explicit provider ID list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub providers: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
@@ -437,6 +479,119 @@ pub async fn run_repo_search(
     Ok(value)
 }
 
+/// Run the `research_search` tool.
+pub async fn run_research_search(
+    state: Arc<ServerState>,
+    args: ResearchSearchArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::research::{ResearchDomain, ResearchSearchRequest, ResearchSourceType};
+
+    if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
+        return Err(ToolError::Validation(web_search_denied_message()));
+    }
+
+    let research_domain =
+        args.research_domain
+            .as_deref()
+            .and_then(|d| match d.to_lowercase().as_str() {
+                "general" => Some(ResearchDomain::General),
+                "software_architecture" | "architecture" => {
+                    Some(ResearchDomain::SoftwareArchitecture)
+                }
+                "api_design" | "api" => Some(ResearchDomain::ApiDesign),
+                "distributed_systems" | "distributed" => Some(ResearchDomain::DistributedSystems),
+                "security" => Some(ResearchDomain::Security),
+                "performance" => Some(ResearchDomain::Performance),
+                "language_ecosystem" | "ecosystem" => Some(ResearchDomain::LanguageEcosystem),
+                "machine_learning" | "ml" => Some(ResearchDomain::MachineLearning),
+                "infrastructure" | "infra" => Some(ResearchDomain::Infrastructure),
+                _ => None,
+            });
+
+    let desired_source_types: Vec<ResearchSourceType> = args
+        .desired_source_types
+        .iter()
+        .filter_map(|s| match s.to_lowercase().as_str() {
+            "primary_sources" | "primary" => Some(ResearchSourceType::PrimarySources),
+            "official_docs" | "docs" => Some(ResearchSourceType::OfficialDocs),
+            "specifications" | "specs" => Some(ResearchSourceType::Specifications),
+            "reference_implementations" | "reference" | "implementations" => {
+                Some(ResearchSourceType::ReferenceImplementations)
+            }
+            "design_discussions" | "design" => Some(ResearchSourceType::DesignDiscussions),
+            "benchmarks" | "benchmark" => Some(ResearchSourceType::Benchmarks),
+            "security_considerations" | "security" => {
+                Some(ResearchSourceType::SecurityConsiderations)
+            }
+            "issue_threads" | "issues" => Some(ResearchSourceType::IssueThreads),
+            "release_notes" | "releases" => Some(ResearchSourceType::ReleaseNotes),
+            "academic_or_formal_sources" | "academic" | "formal" => {
+                Some(ResearchSourceType::AcademicOrFormalSources)
+            }
+            "recent_news" | "news" => Some(ResearchSourceType::RecentNews),
+            "community_discussion" | "community" => Some(ResearchSourceType::CommunityDiscussion),
+            "counterpoints" | "counterpoint" => Some(ResearchSourceType::Counterpoints),
+            _ => None,
+        })
+        .collect();
+
+    let freshness = args
+        .freshness
+        .as_deref()
+        .and_then(|f| serde_json::from_value(serde_json::Value::String(f.to_string())).ok())
+        .unwrap_or_default();
+
+    let req = ResearchSearchRequest {
+        query: args.query,
+        research_domain,
+        desired_source_types,
+        include_counterpoints: args.include_counterpoints,
+        include_primary_sources: args.include_primary_sources,
+        include_recent_discussion: args.include_recent_discussion,
+        include_security_considerations: args.include_security_considerations,
+        max_results: args.max_results,
+        max_groups: args.max_groups,
+        max_per_group: args.max_per_group,
+        freshness,
+        timeout_ms: args.timeout_ms,
+        providers: args.providers,
+    };
+
+    if let Err(e) = req.validate(state.config.search.max_query_chars) {
+        return Err(ToolError::Validation(format!("invalid request: {e}")));
+    }
+
+    let effective_providers = state
+        .config
+        .resolve_providers(&req.providers)
+        .map_err(|e| ToolError::Validation(format!("provider resolution failed: {e}")))?;
+    let (_, unknown) = state.adapter.select_engines(&effective_providers);
+    if !unknown.is_empty() {
+        return Err(ToolError::Validation(format!(
+            "unknown provider id(s): {}",
+            unknown.join(", ")
+        )));
+    }
+
+    let effective_max = req.effective_max_results(
+        state.config.search.default_max_results,
+        state.config.search.max_results_cap,
+    );
+
+    let mut req = req;
+    req.providers = effective_providers;
+
+    let response = state
+        .adapter
+        .research_search(&req, effective_max, state.config.search.max_results_cap)
+        .await;
+
+    let value = serde_json::to_value(&response)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+
+    Ok(value)
+}
+
 /// Run the `provider_status` tool.
 pub fn run_provider_status(
     state: Arc<ServerState>,
@@ -451,7 +606,7 @@ pub fn run_provider_status(
             "explicit_fetch": true,
             "repo_search": true,
             "security_search": true,
-            "research_search": false,
+            "research_search": true,
             "document_fetch": true,
             "pdf_fetch": cfg!(feature = "pdf"),
         },
@@ -527,7 +682,9 @@ pub async fn run_web_fetch(
 }
 
 /// Classify a single source card into a security result group.
-fn classify_security_result(card: &crate::core::SourceCard) -> crate::core::SecurityResultGroupKind {
+fn classify_security_result(
+    card: &crate::core::SourceCard,
+) -> crate::core::SecurityResultGroupKind {
     use crate::core::SecurityResultGroupKind;
     use crate::core::SourceKind;
 
@@ -561,21 +718,27 @@ fn classify_security_result(card: &crate::core::SourceCard) -> crate::core::Secu
     }
 
     // Exploit discussion
-    if url_lower.contains("exploit") || url_lower.contains("poc")
-        || url_lower.contains("proof-of-concept") || url_lower.contains("metasploit")
+    if url_lower.contains("exploit")
+        || url_lower.contains("poc")
+        || url_lower.contains("proof-of-concept")
+        || url_lower.contains("metasploit")
     {
         return SecurityResultGroupKind::ExploitDiscussion;
     }
 
     // Defensive guidance
-    if url_lower.contains("mitigation") || url_lower.contains("hardening")
-        || url_lower.contains("defensive") || url_lower.contains("best-practice")
+    if url_lower.contains("mitigation")
+        || url_lower.contains("hardening")
+        || url_lower.contains("defensive")
+        || url_lower.contains("best-practice")
     {
         return SecurityResultGroupKind::DefensiveGuidance;
     }
 
     // Package advisories (issue-like on package registries)
-    if url_lower.contains("/issues/") && (url_lower.contains("github.com") || url_lower.contains("gitlab.com")) {
+    if url_lower.contains("/issues/")
+        && (url_lower.contains("github.com") || url_lower.contains("gitlab.com"))
+    {
         return SecurityResultGroupKind::PackageAdvisories;
     }
 

@@ -375,7 +375,7 @@ fn provider_status_includes_server_capabilities() {
     assert_eq!(caps["document_fetch"], serde_json::json!(true));
     assert_eq!(caps["repo_search"], serde_json::json!(true));
     assert_eq!(caps["security_search"], serde_json::json!(true));
-    assert_eq!(caps["research_search"], serde_json::json!(false));
+    assert_eq!(caps["research_search"], serde_json::json!(true));
 
     // pdf_fetch reflects compile-time feature flag
     let expected_pdf = cfg!(feature = "pdf");
@@ -1391,7 +1391,7 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 5, "expected exactly 5 tools, got: {names:?}");
+    assert_eq!(names.len(), 6, "expected exactly 6 tools, got: {names:?}");
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
@@ -1411,6 +1411,10 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     assert!(
         names.contains(&"security_search".to_string()),
         "missing security_search: {names:?}"
+    );
+    assert!(
+        names.contains(&"research_search".to_string()),
+        "missing research_search: {names:?}"
     );
 
     // Verify the tools have non-empty descriptions (MCP contract).
@@ -5990,26 +5994,33 @@ mod repo_search {
         assert_eq!(v["query"], "CVE-2024-0001 test-package vulnerability");
         assert_eq!(v["mode"], "security_metasearch");
 
-        let resolved_ids = v["resolved_identifiers"].as_object().expect("resolved_identifiers");
+        let resolved_ids = v["resolved_identifiers"]
+            .as_object()
+            .expect("resolved_identifiers");
         let cve_ids = resolved_ids["cve_ids"].as_array().expect("cve_ids");
         assert!(
-            cve_ids.iter().any(|id| id.as_str() == Some("CVE-2024-0001")),
+            cve_ids
+                .iter()
+                .any(|id| id.as_str() == Some("CVE-2024-0001")),
             "should resolve CVE-2024-0001: {cve_ids:?}"
         );
 
         let groups = v["groups"].as_array().expect("groups");
-        assert!(
-            !groups.is_empty(),
-            "should have at least one group"
-        );
+        assert!(!groups.is_empty(), "should have at least one group");
 
         let warnings = v["warnings"].as_array().expect("warnings");
         assert!(
-            warnings.iter().any(|w| w["message"].as_str().unwrap_or("").contains("generic_context_untrusted")),
+            warnings.iter().any(|w| w["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("generic_context_untrusted")),
             "should have generic_context_untrusted warning: {warnings:?}"
         );
         assert!(
-            warnings.iter().any(|w| w["message"].as_str().unwrap_or("").contains("severity_unavailable")),
+            warnings.iter().any(|w| w["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("severity_unavailable")),
             "should have severity_unavailable warning: {warnings:?}"
         );
     }
@@ -6026,7 +6037,10 @@ mod repo_search {
             },
         )
         .await;
-        assert!(result.is_err(), "empty query without identifiers should fail");
+        assert!(
+            result.is_err(),
+            "empty query without identifiers should fail"
+        );
     }
 
     #[tokio::test]
@@ -6053,7 +6067,9 @@ mod repo_search {
         .await
         .expect("ok");
 
-        let resolved_ids = v["resolved_identifiers"].as_object().expect("resolved_identifiers");
+        let resolved_ids = v["resolved_identifiers"]
+            .as_object()
+            .expect("resolved_identifiers");
         let cve_ids = resolved_ids["cve_ids"].as_array().expect("cve_ids");
         assert_eq!(cve_ids.len(), 1);
         assert_eq!(cve_ids[0].as_str(), Some("CVE-2024-12345"));
@@ -6084,9 +6100,10 @@ mod repo_search {
 
         let warnings = v["warnings"].as_array().expect("warnings");
         assert!(
-            warnings
-                .iter()
-                .any(|w| w["message"].as_str().unwrap_or("").contains("kev_unavailable")),
+            warnings.iter().any(|w| w["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("kev_unavailable")),
             "should have kev_unavailable warning when include_kev=true: {warnings:?}"
         );
     }
@@ -6169,14 +6186,14 @@ mod repo_search {
         .await
         .expect("ok");
 
-        let suggested = v["suggested_fetches"].as_array().expect("suggested_fetches");
+        let suggested = v["suggested_fetches"]
+            .as_array()
+            .expect("suggested_fetches");
         assert!(
-            suggested
-                .iter()
-                .any(|f| f["url"]
-                    .as_str()
-                    .unwrap_or("")
-                    .contains("osv.dev/vulnerability/CVE-2024-0001")),
+            suggested.iter().any(|f| f["url"]
+                .as_str()
+                .unwrap_or("")
+                .contains("osv.dev/vulnerability/CVE-2024-0001")),
             "should suggest OSV fetch for CVE-2024-0001: {suggested:?}"
         );
     }

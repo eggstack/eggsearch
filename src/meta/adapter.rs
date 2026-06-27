@@ -836,6 +836,226 @@ impl MetadataSearchAdapter {
             trust_markers,
         }
     }
+
+    /// Run a research-oriented multi-source evidence search. This generates bounded subqueries
+    /// from requested source types and research domain, fans out to enabled providers, aggregates
+    /// via RRF, groups results by evidence type, and generates suggested fetches with diversity constraints.
+    pub async fn research_search(
+        &self,
+        req: &crate::core::research::ResearchSearchRequest,
+        effective_max_results: usize,
+        max_results_cap: usize,
+    ) -> crate::core::research::ResearchSearchResponse {
+        use crate::core::research::{ResearchDomain, ResearchSearchResponse};
+        use crate::meta::research_grouping::group_research_results;
+        use crate::meta::research_planner::build_research_search_plan;
+        use crate::meta::research_suggested_fetches::generate_research_suggested_fetches;
+
+        let plan = build_research_search_plan(req);
+
+        let effective_timeout = match req.timeout_ms {
+            Some(ms) => {
+                let req_timeout = Duration::from_millis(ms);
+                if req_timeout < self.global_timeout {
+                    req_timeout
+                } else {
+                    self.global_timeout
+                }
+            }
+            None => self.global_timeout,
+        };
+
+        let (engines, queried_ids) = if req.providers.is_empty() {
+            (self.engines.clone(), self.provider_ids.clone())
+        } else {
+            let (subset, unknown) = self.select_engines(&req.providers);
+            if !unknown.is_empty() {
+                warn!(
+                    ?unknown,
+                    "select_engines returned unknown ids; caller should have rejected these"
+                );
+            }
+            let ids = subset.iter().map(|e| e.name().to_string()).collect();
+            (subset, ids)
+        };
+
+        let final_max = effective_max_results;
+        let candidate_limit = candidate_pool_size(final_max, max_results_cap);
+
+        debug!(
+            query = %req.query,
+            providers = ?queried_ids,
+            final_max,
+            candidate_limit,
+            timeout_ms = effective_timeout.as_millis(),
+            subqueries = plan.subqueries.len(),
+            domain = ?plan.domain,
+            "dispatching research_search"
+        );
+
+        let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
+        let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
+
+        for subquery in &plan.subqueries {
+            let deadline = tokio::time::Instant::now() + effective_timeout;
+            let mut join_set = tokio::task::JoinSet::new();
+
+            for engine in &engines {
+                let engine = Arc::clone(engine);
+                let query = subquery.query.clone();
+                let limit = candidate_limit;
+                let engine_timeout = effective_timeout;
+
+                join_set.spawn(async move {
+                    let result = engine.search(&query, limit, engine_timeout).await;
+                    (engine.name().to_string(), result)
+                });
+            }
+
+            loop {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    warn!(
+                        "research_search subquery '{}' timeout exceeded with {} engines pending",
+                        subquery.id,
+                        join_set.len()
+                    );
+                    break;
+                }
+                match tokio::time::timeout(remaining, join_set.join_next()).await {
+                    Ok(Some(Ok((name, Ok(results))))) => {
+                        all_raw_results.push((name, results));
+                    }
+                    Ok(Some(Ok((name, Err(err))))) => {
+                        all_raw_failures.push((name, err));
+                    }
+                    Ok(Some(Err(join_err))) => {
+                        warn!(?join_err, "engine task panicked in research_search");
+                    }
+                    Ok(None) => break,
+                    Err(_) => {
+                        warn!(
+                            "research_search subquery '{}' timeout exceeded with {} engines pending",
+                            subquery.id,
+                            join_set.len()
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+
+        let aggregated = aggregate_rrf(all_raw_results.clone(), candidate_limit);
+        let mut cards: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
+        for a in aggregated {
+            if let Some(card) = convert_aggregated(a, self.sanitize_output) {
+                cards.push(card);
+            }
+        }
+
+        let max_per_group = req.effective_max_per_group(5);
+        let groups = group_research_results(cards, max_per_group);
+
+        let suggested_fetches = generate_research_suggested_fetches(&groups);
+
+        // Build warnings
+        let mut warnings: Vec<SearchWarning> = Vec::new();
+
+        // Subquery cap warning
+        if plan.subqueries.len() >= 8 {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "subquery_cap_applied: desired source types exceeded bounded query cap of 8",
+            ));
+        }
+
+        // Freshness approximate warning
+        if req.freshness != crate::core::query::Freshness::Any {
+            let has_timestamps = any_engine_supports(&engines, |c| c.supports_result_timestamps);
+            if !has_timestamps {
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    format!(
+                        "freshness_approximate: freshness '{}' requested but only some provider results have timestamps",
+                        req.freshness.as_str()
+                    ),
+                ));
+            }
+        }
+
+        // Provider failure warnings
+        for (id, err) in &all_raw_failures {
+            let class = classify(err);
+            warnings.push(SearchWarning::new(
+                id.clone(),
+                format!("[{}] {}", class.as_str(), err),
+            ));
+        }
+
+        // Empty group warnings
+        for group in &groups {
+            if group.results.is_empty() {
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    format!("No results found for group: {}", group.label),
+                ));
+            }
+        }
+
+        warnings.push(SearchWarning::new(
+            "_system",
+            "Live web results are untrusted external content.",
+        ));
+
+        // Trust markers
+        let mut trust_markers = TrustMarkers::default();
+        for group in &groups {
+            for card in &group.results {
+                trust_markers.merge(&card.trust_markers);
+            }
+        }
+
+        // Provider failure tracking
+        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (id, _) in &all_raw_results {
+            accounted.insert(id.clone());
+        }
+        for (id, _) in &all_raw_failures {
+            accounted.insert(id.clone());
+        }
+
+        let mut providers_failed: Vec<ProviderFailure> = all_raw_failures
+            .into_iter()
+            .map(|(id, err)| ProviderFailure {
+                error_class: classify(&err).as_str().to_string(),
+                message: err.to_string(),
+                id,
+            })
+            .collect();
+
+        for id in &queried_ids {
+            if !accounted.contains(id.as_str()) {
+                providers_failed.push(ProviderFailure {
+                    id: id.clone(),
+                    error_class: ErrorClass::Timeout.as_str().to_string(),
+                    message: "provider timed out".to_string(),
+                });
+            }
+        }
+
+        ResearchSearchResponse {
+            query: req.query.clone(),
+            mode: "research_metasearch".to_string(),
+            research_domain: req.research_domain.unwrap_or(ResearchDomain::General),
+            subqueries: plan.subqueries,
+            groups,
+            suggested_fetches,
+            providers_queried: queried_ids,
+            providers_failed,
+            warnings,
+            trust_markers,
+        }
+    }
 }
 
 fn format_hints(hints: &crate::core::repo_query::RepoQueryHints) -> String {
@@ -1179,7 +1399,8 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         }
         ResultMetadata::Advisory(m) => {
             if providers.iter().any(|p| p == "osv") {
-                rank_reasons.push(crate::core::source_card::RankReason::ProviderNativeAdvisorySearch);
+                rank_reasons
+                    .push(crate::core::source_card::RankReason::ProviderNativeAdvisorySearch);
             }
             (None, None, Some(m.clone()))
         }

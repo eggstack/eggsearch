@@ -1,0 +1,489 @@
+//! Types for the research-oriented structured search (research_search) tool.
+
+use crate::core::fetch::ExtractMode;
+use crate::core::query::{resolve_max_results, Freshness, SearchIntent};
+use crate::core::result::SearchWarning;
+use crate::core::sanitize::TrustMarkers;
+use crate::core::source_card::{SourceCard, SourceKind};
+use crate::meta::response::ProviderFailure;
+use serde::{Deserialize, Serialize};
+
+/// Research domain classification.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchDomain {
+    /// General-purpose research (default).
+    #[default]
+    General,
+    /// Software architecture patterns and system design.
+    SoftwareArchitecture,
+    /// API design patterns and conventions.
+    ApiDesign,
+    /// Distributed systems topics.
+    DistributedSystems,
+    /// Security vulnerabilities, advisories, and hardening.
+    Security,
+    /// Performance tuning and benchmarking.
+    Performance,
+    /// Language ecosystem discovery and comparison.
+    LanguageEcosystem,
+    /// Machine learning frameworks, models, and pipelines.
+    MachineLearning,
+    /// Infrastructure, deployment, and DevOps.
+    Infrastructure,
+}
+
+/// Classification of source types sought in a research query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchSourceType {
+    /// Peer-reviewed papers, standards-track documents, or formal specifications.
+    PrimarySources,
+    /// Official documentation sites or README files.
+    OfficialDocs,
+    /// Specifications and protocol definitions.
+    Specifications,
+    /// Reference implementations or canonical codebases.
+    ReferenceImplementations,
+    /// Design discussions, RFCs, and architecture decision records.
+    DesignDiscussions,
+    /// Benchmarks, performance reports, and measurements.
+    Benchmarks,
+    /// Security advisories, CVEs, and hardening guides.
+    SecurityConsiderations,
+    /// Issue threads and bug reports.
+    IssueThreads,
+    /// Release notes, changelogs, and migration guides.
+    ReleaseNotes,
+    /// Academic papers, theses, or formal verification results.
+    AcademicOrFormalSources,
+    /// Recent news articles and press releases.
+    RecentNews,
+    /// Community discussions, forum threads, and Stack Overflow.
+    CommunityDiscussion,
+    /// Counterpoints, criticism, or alternative viewpoints.
+    Counterpoints,
+}
+
+/// Quality tier of an evidence source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceQuality {
+    /// Official primary source from the project or standard body.
+    OfficialPrimary,
+    /// Primary source from a maintainer (blog post, talk, etc.).
+    MaintainerPrimary,
+    /// Standards-track or specification document.
+    StandardsOrSpecification,
+    /// Primary source from a vendor or platform.
+    VendorPrimary,
+    /// Package registry listing or metadata.
+    PackageRegistry,
+    /// Academic paper, thesis, or formal document.
+    AcademicOrFormal,
+    /// Benchmark or measurement result.
+    BenchmarkOrMeasurement,
+    /// Security advisory or vulnerability disclosure.
+    SecurityAdvisory,
+    /// Community discussion or forum thread.
+    CommunityDiscussion,
+    /// News article or press coverage.
+    NewsOrPress,
+    /// Blog post or tutorial.
+    BlogOrTutorial,
+    /// Unknown or unclassifiable source.
+    Unknown,
+}
+
+/// Classification for research result groups.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchResultGroupKind {
+    /// Peer-reviewed papers, standards-track documents, or formal specifications.
+    PrimarySources,
+    /// Official documentation sites or README files.
+    OfficialDocs,
+    /// Specifications and protocol definitions.
+    Specifications,
+    /// Reference implementations or canonical codebases.
+    ReferenceImplementations,
+    /// Design discussions, RFCs, and architecture decision records.
+    DesignDiscussions,
+    /// Benchmarks, performance reports, and measurements.
+    Benchmarks,
+    /// Security advisories, CVEs, and hardening guides.
+    SecurityConsiderations,
+    /// Issue threads and bug reports.
+    IssueThreads,
+    /// Release notes, changelogs, and migration guides.
+    ReleaseNotes,
+    /// Academic papers, theses, or formal verification results.
+    AcademicOrFormalSources,
+    /// Recent news articles and press releases.
+    RecentNews,
+    /// Community discussions, forum threads, and Stack Overflow.
+    CommunityDiscussion,
+    /// Counterpoints, criticism, or alternative viewpoints.
+    Counterpoints,
+    /// Unclassified results.
+    #[default]
+    Unknown,
+}
+
+/// Structured request for research-oriented bundle search.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchSearchRequest {
+    /// Required. Free-text research query.
+    pub query: String,
+    /// Optional. Research domain to scope the search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_domain: Option<ResearchDomain>,
+    /// Optional. Source types to include in the search.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub desired_source_types: Vec<ResearchSourceType>,
+    /// Optional. Include counterpoints and alternative viewpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_counterpoints: Option<bool>,
+    /// Optional. Prioritize primary sources over secondary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_primary_sources: Option<bool>,
+    /// Optional. Include recent discussion and news.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_recent_discussion: Option<bool>,
+    /// Optional. Include security-related considerations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_security_considerations: Option<bool>,
+    /// Optional. Maximum total results to return.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<usize>,
+    /// Optional. Maximum result groups to return.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_groups: Option<usize>,
+    /// Optional. Maximum results per group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_group: Option<usize>,
+    /// Optional. Freshness hint for results.
+    #[serde(default)]
+    pub freshness: Freshness,
+    /// Optional. Per-request timeout override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Optional. Explicit provider ID list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub providers: Vec<String>,
+}
+
+impl ResearchSearchRequest {
+    /// Validate the request, returning an error if invalid.
+    pub fn validate(&self, max_query_chars: usize) -> Result<(), String> {
+        if self.query.trim().is_empty() {
+            return Err("query must not be empty".to_string());
+        }
+        if self.query.chars().count() > max_query_chars {
+            return Err(format!("query must be <= {max_query_chars} characters"));
+        }
+        if let Some(0) = self.max_results {
+            return Err("max_results must be > 0".to_string());
+        }
+        if let Some(0) = self.max_groups {
+            return Err("max_groups must be > 0".to_string());
+        }
+        if let Some(0) = self.max_per_group {
+            return Err("max_per_group must be > 0".to_string());
+        }
+        if self.desired_source_types.len() > 12 {
+            return Err("desired_source_types must have <= 12 entries".to_string());
+        }
+        Ok(())
+    }
+
+    /// Effective max_results, defaulting to the given default.
+    pub fn effective_max_results(&self, default: usize, cap: usize) -> usize {
+        resolve_max_results(self.max_results, default, cap).effective
+    }
+
+    /// Effective max_groups, defaulting to the given default.
+    pub fn effective_max_groups(&self, default: usize) -> usize {
+        self.max_groups.unwrap_or(default).max(1)
+    }
+
+    /// Effective max_per_group, defaulting to the given default.
+    pub fn effective_max_per_group(&self, default: usize) -> usize {
+        self.max_per_group.unwrap_or(default).max(1)
+    }
+}
+
+/// A subquery generated for a specific source type.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchSubquery {
+    /// Unique identifier for this subquery.
+    pub id: String,
+    /// Source type this subquery targets.
+    pub source_type: ResearchSourceType,
+    /// The rewritten query string for this source type.
+    pub query: String,
+    /// Search intent used for this subquery.
+    pub intent: SearchIntent,
+    /// Freshness filter applied to this subquery.
+    pub freshness: Freshness,
+}
+
+/// A group of source cards sharing a classification.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchResultGroup {
+    /// The classification kind for this group.
+    pub kind: ResearchResultGroupKind,
+    /// Human-readable label for the group.
+    pub label: String,
+    /// Source cards in this group.
+    pub results: Vec<SourceCard>,
+    /// Whether additional results were truncated.
+    pub truncated: bool,
+}
+
+/// A suggested URL for the caller to fetch.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchSuggestedFetch {
+    /// The URL to fetch.
+    pub url: String,
+    /// Which result group this fetch belongs to.
+    pub group: ResearchResultGroupKind,
+    /// Expected content kind (e.g. "documentation", "source").
+    pub expected_kind: SourceKind,
+    /// Evidence quality tier of the source.
+    pub evidence_quality: EvidenceQuality,
+    /// Why this URL is suggested.
+    pub reason: String,
+    /// Recommended extract mode for the fetch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_extract_mode: Option<ExtractMode>,
+    /// Priority (lower is higher priority).
+    pub priority: u8,
+}
+
+/// Response from research_search.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchSearchResponse {
+    /// The original query string.
+    pub query: String,
+    /// Search mode used.
+    pub mode: String,
+    /// Resolved research domain.
+    pub research_domain: ResearchDomain,
+    /// Subqueries generated for this research request.
+    pub subqueries: Vec<ResearchSubquery>,
+    /// Grouped results.
+    pub groups: Vec<ResearchResultGroup>,
+    /// Suggested URLs to fetch next.
+    pub suggested_fetches: Vec<ResearchSuggestedFetch>,
+    /// Provider IDs that were queried.
+    pub providers_queried: Vec<String>,
+    /// Per-provider failures, if any.
+    pub providers_failed: Vec<ProviderFailure>,
+    /// Aggregated warnings.
+    pub warnings: Vec<SearchWarning>,
+    /// Aggregate trust markers across all results.
+    pub trust_markers: TrustMarkers,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_rejects_empty_query() {
+        let req = ResearchSearchRequest {
+            query: "   ".to_string(),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_oversized_query() {
+        let req = ResearchSearchRequest {
+            query: "a".repeat(1000),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_results() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            max_results: Some(0),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_groups() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            max_groups: Some(0),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_per_group() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            max_per_group: Some(0),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_too_many_source_types() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            desired_source_types: vec![
+                ResearchSourceType::OfficialDocs,
+                ResearchSourceType::Specifications,
+                ResearchSourceType::ReferenceImplementations,
+                ResearchSourceType::DesignDiscussions,
+                ResearchSourceType::Benchmarks,
+                ResearchSourceType::SecurityConsiderations,
+                ResearchSourceType::IssueThreads,
+                ResearchSourceType::ReleaseNotes,
+                ResearchSourceType::AcademicOrFormalSources,
+                ResearchSourceType::RecentNews,
+                ResearchSourceType::CommunityDiscussion,
+                ResearchSourceType::Counterpoints,
+                ResearchSourceType::PrimarySources,
+            ],
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_valid_query() {
+        let req = ResearchSearchRequest {
+            query: "distributed consensus algorithms".to_string(),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn effective_max_results_defaults() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_max_results(10, 50), 10);
+    }
+
+    #[test]
+    fn effective_max_results_clamps_to_cap() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            max_results: Some(100),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_max_results(10, 50), 50);
+    }
+
+    #[test]
+    fn effective_max_groups_defaults() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_max_groups(8), 8);
+    }
+
+    #[test]
+    fn effective_max_groups_min_one() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            max_groups: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_max_groups(8), 1);
+    }
+
+    #[test]
+    fn effective_max_per_group_defaults() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_max_per_group(5), 5);
+    }
+
+    #[test]
+    fn effective_max_per_group_min_one() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            max_per_group: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_max_per_group(5), 1);
+    }
+
+    #[test]
+    fn research_domain_default() {
+        assert_eq!(ResearchDomain::default(), ResearchDomain::General);
+    }
+
+    #[test]
+    fn research_result_group_kind_default() {
+        assert_eq!(
+            ResearchResultGroupKind::default(),
+            ResearchResultGroupKind::Unknown
+        );
+    }
+
+    #[test]
+    fn serde_roundtrip_request() {
+        let req = ResearchSearchRequest {
+            query: "raft consensus".to_string(),
+            research_domain: Some(ResearchDomain::DistributedSystems),
+            desired_source_types: vec![
+                ResearchSourceType::AcademicOrFormalSources,
+                ResearchSourceType::ReferenceImplementations,
+            ],
+            include_counterpoints: Some(true),
+            max_results: Some(20),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: ResearchSearchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.query, req.query);
+        assert_eq!(parsed.research_domain, req.research_domain);
+        assert_eq!(parsed.desired_source_types, req.desired_source_types);
+        assert_eq!(parsed.include_counterpoints, req.include_counterpoints);
+        assert_eq!(parsed.max_results, req.max_results);
+    }
+
+    #[test]
+    fn serde_roundtrip_response() {
+        let resp = ResearchSearchResponse {
+            query: "test".to_string(),
+            mode: "live".to_string(),
+            research_domain: ResearchDomain::Security,
+            subqueries: vec![],
+            groups: vec![],
+            suggested_fetches: vec![],
+            providers_queried: vec!["duckduckgo".to_string()],
+            providers_failed: vec![],
+            warnings: vec![],
+            trust_markers: TrustMarkers::default(),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.query, resp.query);
+        assert_eq!(parsed.research_domain, resp.research_domain);
+    }
+}

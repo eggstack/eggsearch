@@ -202,7 +202,9 @@ pub struct KevMetadata {
 }
 
 /// Which advisory source produced the vulnerability metadata.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum VulnerabilitySource {
     Osv,
@@ -372,12 +374,14 @@ impl SecurityIdentifiers {
 
 static CVE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(CVE-\d{4}-\d{4,})\b").unwrap());
-static GHSA_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"(?i)\b(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})\b").unwrap());
+static GHSA_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\b(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})\b").unwrap()
+});
 static RUSTSEC_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(RUSTSEC-\d{4}-\d{4,})\b").unwrap());
-static PACKAGE_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"(?i)\b(package|crate|pypi|npm):([a-zA-Z0-9_\-\.]+)\b").unwrap());
+static PACKAGE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\b(package|crate|pypi|npm):([a-zA-Z0-9_\-\.]+)\b").unwrap()
+});
 static ECOSYSTEM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(ecosystem):([a-zA-Z0-9_\-\.]+)\b").unwrap());
 static VERSION_RE: LazyLock<regex::Regex> =
@@ -592,15 +596,30 @@ mod tests {
 
     #[test]
     fn severity_level_from_str_loose() {
-        assert_eq!(SeverityLevel::from_str_loose("CRITICAL"), SeverityLevel::Critical);
-        assert_eq!(SeverityLevel::from_str_loose("crit"), SeverityLevel::Critical);
+        assert_eq!(
+            SeverityLevel::from_str_loose("CRITICAL"),
+            SeverityLevel::Critical
+        );
+        assert_eq!(
+            SeverityLevel::from_str_loose("crit"),
+            SeverityLevel::Critical
+        );
         assert_eq!(SeverityLevel::from_str_loose("High"), SeverityLevel::High);
-        assert_eq!(SeverityLevel::from_str_loose("important"), SeverityLevel::High);
-        assert_eq!(SeverityLevel::from_str_loose("MODERATE"), SeverityLevel::Medium);
+        assert_eq!(
+            SeverityLevel::from_str_loose("important"),
+            SeverityLevel::High
+        );
+        assert_eq!(
+            SeverityLevel::from_str_loose("MODERATE"),
+            SeverityLevel::Medium
+        );
         assert_eq!(SeverityLevel::from_str_loose("med"), SeverityLevel::Medium);
         assert_eq!(SeverityLevel::from_str_loose("low"), SeverityLevel::Low);
         assert_eq!(SeverityLevel::from_str_loose("minor"), SeverityLevel::Low);
-        assert_eq!(SeverityLevel::from_str_loose("banana"), SeverityLevel::Unknown);
+        assert_eq!(
+            SeverityLevel::from_str_loose("banana"),
+            SeverityLevel::Unknown
+        );
     }
 
     #[test]
@@ -628,14 +647,8 @@ mod tests {
 
     #[test]
     fn normalize_ghsa_valid() {
-        assert_eq!(
-            normalize_ghsa("GHSA-xxxx-xxxx-xxxx"),
-            "GHSA-XXXX-XXXX-XXXX"
-        );
-        assert_eq!(
-            normalize_ghsa("ghsa-abcd-1234-efgh"),
-            "GHSA-ABCD-1234-EFGH"
-        );
+        assert_eq!(normalize_ghsa("GHSA-xxxx-xxxx-xxxx"), "GHSA-XXXX-XXXX-XXXX");
+        assert_eq!(normalize_ghsa("ghsa-abcd-1234-efgh"), "GHSA-ABCD-1234-EFGH");
     }
 
     #[test]
@@ -646,10 +659,7 @@ mod tests {
 
     #[test]
     fn normalize_rustsec_valid() {
-        assert_eq!(
-            normalize_rustsec("RUSTSEC-2024-0001"),
-            "RUSTSEC-2024-0001"
-        );
+        assert_eq!(normalize_rustsec("RUSTSEC-2024-0001"), "RUSTSEC-2024-0001");
         assert_eq!(
             normalize_rustsec("rustsec-2024-12345"),
             "RUSTSEC-2024-12345"
@@ -674,7 +684,13 @@ mod tests {
     fn identifiers_parse_cve_from_query() {
         let ids = SecurityIdentifiers::parse(
             "CVE-2024-0001 openssl vulnerability",
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert_eq!(ids.cve_ids, vec!["CVE-2024-0001"]);
         assert!(ids.residual_query.contains("openssl"));
@@ -685,7 +701,13 @@ mod tests {
     fn identifiers_parse_ghsa_from_query() {
         let ids = SecurityIdentifiers::parse(
             "GHSA-abcd-1234-efgh is a vulnerability",
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert_eq!(ids.ghsa_ids, vec!["GHSA-ABCD-1234-EFGH"]);
         assert!(ids.residual_query.contains("vulnerability"));
@@ -695,7 +717,13 @@ mod tests {
     fn identifiers_parse_multiple_ids() {
         let ids = SecurityIdentifiers::parse(
             "CVE-2024-0001 and GHSA-abcd-1234-efgh",
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert_eq!(ids.cve_ids, vec!["CVE-2024-0001"]);
         assert_eq!(ids.ghsa_ids, vec!["GHSA-ABCD-1234-EFGH"]);
@@ -705,7 +733,13 @@ mod tests {
     fn identifiers_parse_package_hint() {
         let ids = SecurityIdentifiers::parse(
             "package:openssl vulnerability",
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert_eq!(ids.package.as_deref(), Some("openssl"));
     }
@@ -714,7 +748,13 @@ mod tests {
     fn identifiers_parse_crate_hint() {
         let ids = SecurityIdentifiers::parse(
             "crate:serde-rs serde vulnerability",
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert_eq!(ids.package.as_deref(), Some("serde-rs"));
     }
@@ -723,7 +763,13 @@ mod tests {
     fn identifiers_parse_ecosystem_hint() {
         let ids = SecurityIdentifiers::parse(
             "ecosystem:crates.io vulnerability",
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert_eq!(ids.ecosystem.as_deref(), Some("crates.io"));
     }
@@ -732,7 +778,13 @@ mod tests {
     fn identifiers_parse_version_hint() {
         let ids = SecurityIdentifiers::parse(
             "version:1.2.3 vulnerability",
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert_eq!(ids.version.as_deref(), Some("1.2.3"));
     }
@@ -858,7 +910,10 @@ mod tests {
     #[test]
     fn vulnerability_source_as_str() {
         assert_eq!(VulnerabilitySource::Osv.as_str(), "osv");
-        assert_eq!(VulnerabilitySource::GithubAdvisory.as_str(), "github_advisory");
+        assert_eq!(
+            VulnerabilitySource::GithubAdvisory.as_str(),
+            "github_advisory"
+        );
         assert_eq!(VulnerabilitySource::Nvd.as_str(), "nvd");
         assert_eq!(VulnerabilitySource::Rustsec.as_str(), "rustsec");
         assert_eq!(VulnerabilitySource::CisaKev.as_str(), "cisa_kev");

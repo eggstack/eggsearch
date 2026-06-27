@@ -14,6 +14,9 @@ pub mod mock;
 pub mod planner;
 pub mod repo_grouping;
 pub mod repo_planner;
+pub mod research_grouping;
+pub mod research_planner;
+pub mod research_suggested_fetches;
 pub mod response;
 pub mod suggested_fetches;
 
@@ -21,4 +24,5 @@ pub use adapter::{ErrorClass, MetadataSearchAdapter};
 pub use planner::{build_search_plan, SearchPlan};
 pub use repo_grouping::{classify_group, group_results};
 pub use repo_planner::{build_repo_search_plan, RepoSearchPlan, RepoSubquery};
+pub use research_planner::{build_research_search_plan, ResearchSearchPlan};
 pub use response::{ProviderFailure, WebSearchResponse};

@@ -19,6 +19,10 @@ The `security_search` tool provides security-oriented retrieval with
 normalized vulnerability metadata from OSV and grouped source cards
 for advisory, vendor, package, exploit, and defensive guidance contexts.
 
+The `research_search` tool provides research-oriented multi-source
+evidence discovery with grouped source-card bundles for complex
+architectural or technical questions.
+
 ## Build & Test Commands
 
 All commands are run from the project root.
@@ -62,6 +66,7 @@ eggsearch/
       result.rs          # SearchWarning, TrustLevel
       repo_query.rs      # RepoQueryHints: structured repo hint parser
       repo_search.rs     # RepoSearchRequest, RepoResultGroup, RepoSearchResponse types
+      research.rs        # ResearchSearchRequest, ResearchDomain, ResearchSourceType, etc.
       source_card.rs     # SourceCard output type
       document.rs        # FetchDocument, DocumentKind, RenderFormat, BlockKind, etc.
       sanitize.rs        # prompt-injection hardening (strip, frame, scan)
@@ -75,6 +80,9 @@ eggsearch/
       planner.rs         # SearchPlan, build_search_plan (intent-aware query rewriting)
       repo_grouping.rs   # deterministic grouping of SourceCards into repo bundles
       repo_planner.rs    # subquery generation for repo search bundles
+      research_grouping.rs  # deterministic classification of research results
+      research_planner.rs   # subquery generation for research search
+      research_suggested_fetches.rs # suggested fetch URL generation for research groups
       suggested_fetches.rs # suggested fetch URL generation for repo groups
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
@@ -117,7 +125,7 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), and `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards)
+- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), and `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 - The `provider_status` response includes a `server_capabilities`
@@ -174,7 +182,7 @@ eggsearch/
   - `explicit_fetch`: always `true` (`web_fetch` is available)
   - `repo_search`: `true` (structured repository evidence discovery)
   - `security_search`: `true` (security-oriented retrieval with normalized vulnerability metadata)
-  - `research_search`: `false` (planned specialized tool)
+  - `research_search`: `true` (research-oriented multi-source evidence discovery)
   - `document_fetch`: always `true` (structured document extraction)
   - `pdf_fetch`: `cfg!(feature = "pdf")` (only available when compiled with the `pdf` feature)
 - This is the capability discovery endpoint for MCP clients. Clients
@@ -425,6 +433,59 @@ group results, and return the structured response.
 
 **Fallback:** if `security_search` is unavailable, use `web_search`
 with `intent = "security"`.
+
+### Research Search
+
+`research_search` provides research-oriented multi-source evidence
+discovery with grouped source-card bundles. It is the preferred tool
+for complex architectural or technical questions where flat
+`web_search` is insufficient.
+
+**Request types** (in `src/core/research.rs`):
+- `ResearchSearchRequest`: `query` (required), optional `research_domain`,
+  optional `desired_source_types`, optional `include_counterpoints`,
+  `include_primary_sources`, `include_recent_discussion`,
+  `include_security_considerations`, optional `max_results`, `max_groups`,
+  `max_per_group`, `freshness`, `timeout_ms`, `providers`
+- `ResearchSubquery`: transparent subquery with `id`, `source_type`,
+  `query`, `intent`, `freshness`
+- `ResearchResultGroup`: grouped source cards by `kind`, `label`,
+  `results`, `truncated`
+- `ResearchSuggestedFetch`: `url`, `group`, `expected_kind`,
+  `evidence_quality`, `reason`, `recommended_extract_mode`, `priority`
+- `ResearchSearchResponse`: `query`, `mode`, `research_domain`,
+  `subqueries`, `groups`, `suggested_fetches`, `providers_queried`,
+  `providers_failed`, `warnings`, `trust_markers`
+
+**Research domains:** `General` (default), `SoftwareArchitecture`,
+`ApiDesign`, `DistributedSystems`, `Security`, `Performance`,
+`LanguageEcosystem`, `MachineLearning`, `Infrastructure`
+
+**Source types:** `PrimarySources`, `OfficialDocs`, `Specifications`,
+`ReferenceImplementations`, `DesignDiscussions`, `Benchmarks`,
+`SecurityConsiderations`, `IssueThreads`, `ReleaseNotes`,
+`AcademicOrFormalSources`, `RecentNews`, `CommunityDiscussion`,
+`Counterpoints`
+
+**Evidence quality tiers:** `OfficialPrimary`, `MaintainerPrimary`,
+`StandardsOrSpecification`, `VendorPrimary`, `PackageRegistry`,
+`AcademicOrFormal`, `BenchmarkOrMeasurement`, `SecurityAdvisory`,
+`CommunityDiscussion`, `NewsOrPress`, `BlogOrTutorial`, `Unknown`
+
+**Implementation:**
+- `src/core/research.rs`: Core request/response types and validation
+- `src/meta/research_planner.rs`: Subquery generation from requested
+  source types
+- `src/meta/research_grouping.rs`: Deterministic classification of
+  source cards into research groups
+- `src/meta/research_suggested_fetches.rs`: Priority-ordered fetch
+  suggestions with domain diversity
+
+The MCP `run_research_search` tool in `src/mcp/tools.rs` orchestrates
+the flow.
+
+**Fallback:** if `research_search` is unavailable, use `web_search`
+with `intent` hint.
 
 ### Code-Host Fetch
 

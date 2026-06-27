@@ -52,6 +52,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provider fan-out logs now distinguish `final_max_results` from `candidate_limit` for debugging.
 
 ### Added
+- `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches with domain diversity constraints.
+  - New core types: `ResearchSearchRequest`, `ResearchSearchResponse`, `ResearchDomain`, `ResearchSourceType`, `EvidenceQuality`, `ResearchResultGroupKind`, `ResearchSubquery`, `ResearchResultGroup`, `ResearchSuggestedFetch`.
+  - New planner module: generates bounded subqueries from requested source types and research domain.
+  - New grouping module: deterministic classification of source cards into research evidence groups with evidence-quality scoring.
+  - New suggested-fetch generator: priority-ordered fetch suggestions with per-domain diversity caps.
+  - Adapter orchestration: bounded subquery fan-out with global timeout, RRF aggregation, and deduplication.
+  - Warning system: subquery cap, freshness approximate, provider failures, empty groups.
+  - Server capabilities: `research_search` advertised in `provider_status` response.
 - `repo_search` MCP tool for structured repository evidence discovery with grouped result bundles and suggested fetch URLs
 - `RepoSearchRequest`, `RepoResultGroup`, `RepoSearchResponse`, `RepoSuggestedFetch` types in `src/core/repo_search.rs`
 - `repo_grouping` deterministic classification of SourceCards into group kinds (OfficialDocs, PackageRegistry, Repository, Readme, Examples, Tests, SourceFiles, Issues, PullRequests, Releases, MigrationNotes, Changelog, CommunityDiscovery, Other)
