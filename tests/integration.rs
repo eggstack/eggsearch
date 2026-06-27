@@ -373,7 +373,7 @@ fn provider_status_includes_server_capabilities() {
     assert_eq!(caps["generic_search"], serde_json::json!(true));
     assert_eq!(caps["explicit_fetch"], serde_json::json!(true));
     assert_eq!(caps["document_fetch"], serde_json::json!(true));
-    assert_eq!(caps["repo_search"], serde_json::json!(false));
+    assert_eq!(caps["repo_search"], serde_json::json!(true));
     assert_eq!(caps["security_search"], serde_json::json!(false));
     assert_eq!(caps["research_search"], serde_json::json!(false));
 
@@ -1390,7 +1390,7 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 3, "expected exactly 3 tools, got: {names:?}");
+    assert_eq!(names.len(), 4, "expected exactly 4 tools, got: {names:?}");
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
@@ -1402,6 +1402,10 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     assert!(
         names.contains(&"provider_status".to_string()),
         "missing provider_status: {names:?}"
+    );
+    assert!(
+        names.contains(&"repo_search".to_string()),
+        "missing repo_search: {names:?}"
     );
 
     // Verify the tools have non-empty descriptions (MCP contract).
@@ -5002,6 +5006,99 @@ mod intent_reranking_regression {
 
     #[cfg(feature = "mock")]
     #[tokio::test]
+    async fn security_intent_promotes_security_advisory() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(DirectMockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Random blog".to_string(),
+                    url: "https://example.com/blog".to_string(),
+                    snippet: Some("A blog post".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "CVE-2024-12345".to_string(),
+                    url: "https://nvd.nist.gov/vuln/detail/CVE-2024-12345".to_string(),
+                    snippet: Some("Security advisory".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = eggsearch::core::WebSearchRequest::new("axum CVE");
+        req.intent = eggsearch::core::query::SearchIntent::Security;
+        req.freshness = eggsearch::core::query::Freshness::Any;
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert!(!resp.results.is_empty());
+        assert_eq!(
+            resp.results[0].url, "https://nvd.nist.gov/vuln/detail/CVE-2024-12345",
+            "security intent should promote SecurityAdvisory"
+        );
+        assert!(
+            resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&eggsearch::core::source_card::RankReason::IntentMatch),
+            "promoted card should have IntentMatch"
+        );
+        assert!(
+            resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&eggsearch::core::source_card::RankReason::DomainPriorSecurity),
+            "promoted card should have DomainPriorSecurity"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn news_intent_promotes_news_source() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(DirectMockEngine {
+            name: "mock_a",
+            results: vec![
+                SearchResult {
+                    title: "Random article".to_string(),
+                    url: "https://example.com/article".to_string(),
+                    snippet: Some("An article".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+                SearchResult {
+                    title: "Breaking: axum releases v0.8".to_string(),
+                    url: "https://techcrunch.com/2024/axum-v8".to_string(),
+                    snippet: Some("News coverage".to_string()),
+                    source_engine: "mock_a".to_string(),
+                    metadata: ResultMetadata::None,
+                },
+            ],
+        })];
+        let adapter =
+            eggsearch::meta::MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = eggsearch::core::WebSearchRequest::new("axum release");
+        req.intent = eggsearch::core::query::SearchIntent::News;
+        req.freshness = eggsearch::core::query::Freshness::Any;
+        let resp = adapter.web_search(&req, 10, 50).await;
+
+        assert!(!resp.results.is_empty());
+        assert_eq!(
+            resp.results[0].url, "https://techcrunch.com/2024/axum-v8",
+            "news intent should promote News source"
+        );
+        assert!(
+            resp.results[0]
+                .metadata
+                .rank_reasons
+                .contains(&eggsearch::core::source_card::RankReason::IntentMatch),
+            "promoted card should have IntentMatch"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
     async fn freshness_boost_requires_timestamp_evidence() {
         // Two results: one with IssueMetadata containing a recent
         // updated_at timestamp, one with ResultMetadata::None.
@@ -5347,5 +5444,443 @@ mod provider_status {
                 );
             }
         }
+    }
+
+    #[test]
+    fn searxng_configured_reflects_base_url() {
+        use eggsearch::core::config::{AppConfig, SearxngConfig};
+
+        // Default config: searxng disabled, no base_url → configured=false
+        let state_default = state_with_default();
+        let v_default =
+            run_provider_status(state_default, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr_default = v_default["providers"].as_array().unwrap();
+        let searxng_default = arr_default
+            .iter()
+            .find(|p| p["id"].as_str() == Some("searxng"))
+            .expect("searxng should be present");
+        assert_eq!(
+            searxng_default["configured"], false,
+            "searxng should be configured=false when base_url is absent"
+        );
+
+        // Config with searxng enabled and base_url set → configured=true
+        let mut cfg = AppConfig::default();
+        cfg.search.searxng = SearxngConfig {
+            enabled: true,
+            base_url: Some("https://searx.example.org".to_string()),
+        };
+        cfg.search.providers.insert("searxng".to_string(), true);
+        let state_configured = Arc::new(ServerState::build(cfg).expect("searxng-configured state"));
+        let v_configured =
+            run_provider_status(state_configured, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr_configured = v_configured["providers"].as_array().unwrap();
+        let searxng_configured = arr_configured
+            .iter()
+            .find(|p| p["id"].as_str() == Some("searxng"))
+            .expect("searxng should be present");
+        assert_eq!(
+            searxng_configured["configured"], true,
+            "searxng should be configured=true when base_url is set"
+        );
+    }
+
+    #[test]
+    fn unknown_api_provider_ids_do_not_appear() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+        let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
+
+        // Only KNOWN_PROVIDER_IDS should appear. No fabricated or
+        // dynamically discovered IDs should leak into the response.
+        for id in &ids {
+            assert!(
+                eggsearch::core::provider::KNOWN_PROVIDER_IDS.contains(id),
+                "provider id '{id}' is not in KNOWN_PROVIDER_IDS and should not appear in status"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Repo Search Integration Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+mod repo_search {
+    use super::*;
+    use eggsearch::mcp::tools::{run_repo_search, RepoSearchArgs};
+
+    #[cfg(feature = "mock")]
+    fn repo_state_with_engines(
+        cfg: AppConfig,
+        engines: Vec<MockEngine>,
+        timeout: Duration,
+    ) -> Arc<ServerState> {
+        let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
+        Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+    }
+
+    fn repo_args(query: &str) -> RepoSearchArgs {
+        RepoSearchArgs {
+            query: query.to_string(),
+            providers: vec!["mock_a".into()],
+            ..Default::default()
+        }
+    }
+
+    fn repo_args_multi(providers: &[&str], query: &str) -> RepoSearchArgs {
+        RepoSearchArgs {
+            query: query.to_string(),
+            providers: providers.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    // ---- Validation tests ----
+
+    #[tokio::test]
+    async fn repo_search_empty_query_returns_validation_error() {
+        let state = state_with_default();
+        let res = run_repo_search(state, repo_args("   ")).await;
+        let err = res.expect_err("expected validation error");
+        assert!(err.to_string().contains("invalid query"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn repo_search_zero_max_results_returns_validation_error() {
+        let state = state_with_default();
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "rust".into(),
+                providers: vec!["mock_a".into()],
+                max_results: Some(0),
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected validation error");
+        assert!(
+            err.to_string().contains("max_results must be > 0"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_oversized_query_returns_validation_error() {
+        let state = state_with_default();
+        let too_long = "a".repeat(2_000);
+        let res = run_repo_search(state, repo_args(&too_long)).await;
+        let err = res.expect_err("expected validation error");
+        assert!(err.to_string().contains("invalid query"), "got: {err}");
+        assert!(err.to_string().contains("characters"), "got: {err}");
+    }
+
+    // ---- Response shape tests ----
+
+    #[tokio::test]
+    async fn repo_search_returns_grouped_response() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        assert_eq!(v["query"], "axum");
+        assert!(v["groups"].is_array(), "groups should be an array");
+        assert!(
+            v["suggested_fetches"].is_array(),
+            "suggested_fetches should be an array"
+        );
+        assert!(
+            v["providers_queried"].is_array(),
+            "providers_queried should be an array"
+        );
+        assert!(v["warnings"].is_array(), "warnings should be an array");
+        assert!(
+            v["trust_markers"].is_object(),
+            "trust_markers should be an object"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_groups_are_nonempty_when_results_exist() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new("Axum Docs", "https://docs.rs/axum/latest/axum/", "mock_a"),
+                MockResult::new(
+                    "Axum Source",
+                    "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+                    "mock_a",
+                ),
+                MockResult::new(
+                    "Axum Issue #123",
+                    "https://github.com/tokio-rs/axum/issues/123",
+                    "mock_a",
+                ),
+            ],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let nonempty: Vec<&serde_json::Value> = groups
+            .iter()
+            .filter(|g| !g["results"].as_array().unwrap_or(&vec![]).is_empty())
+            .collect();
+        assert!(
+            !nonempty.is_empty(),
+            "at least one group should have results: {groups:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_empty_results_returns_empty_groups() {
+        let engines = vec![MockEngine::success("mock_a", vec![])];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("nonexistent"))
+            .await
+            .expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let total_results: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert_eq!(
+            total_results, 0,
+            "no results should be returned for empty engine"
+        );
+    }
+
+    // ---- Provider tests ----
+
+    #[tokio::test]
+    async fn repo_search_preserves_provider_failures() {
+        let engines = vec![
+            MockEngine::success(
+                "mock_a",
+                vec![MockResult::new(
+                    "A",
+                    "https://docs.rs/tokio/latest/tokio/",
+                    "mock_a",
+                )],
+            ),
+            MockEngine::failure("mock_b", MockFailure::Parse),
+        ];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args_multi(&["mock_a", "mock_b"], "tokio"))
+            .await
+            .expect("ok");
+
+        let failed = v["providers_failed"].as_array().unwrap();
+        assert!(
+            !failed.is_empty(),
+            "providers_failed should be non-empty when one engine fails: {failed:?}"
+        );
+        let failed_ids: Vec<&str> = failed.iter().filter_map(|f| f["id"].as_str()).collect();
+        assert!(
+            failed_ids.contains(&"mock_b"),
+            "mock_b should be in providers_failed: {failed_ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_all_providers_fail_returns_error() {
+        let engines = vec![
+            MockEngine::failure("mock_a", MockFailure::HttpStatus(503)),
+            MockEngine::failure("mock_b", MockFailure::Network),
+        ];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args_multi(&["mock_a", "mock_b"], "rust"))
+            .await
+            .expect("repo_search should return Ok even when all providers fail");
+        let groups = v["groups"].as_array().expect("groups is array");
+        let total_results: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert_eq!(total_results, 0, "no results when all providers fail");
+        let failed = v["providers_failed"].as_array().expect("providers_failed");
+        assert!(
+            !failed.is_empty(),
+            "providers_failed should be non-empty when all providers fail"
+        );
+        // Both provider IDs should appear in the failure list. There may
+        // be multiple entries per provider when the planner generates
+        // multiple subqueries (both engines fail in each).
+        let failed_ids: Vec<&str> = failed.iter().filter_map(|f| f["id"].as_str()).collect();
+        assert!(
+            failed_ids.contains(&"mock_a"),
+            "mock_a should be in providers_failed: {failed_ids:?}"
+        );
+        assert!(
+            failed_ids.contains(&"mock_b"),
+            "mock_b should be in providers_failed: {failed_ids:?}"
+        );
+    }
+
+    // ---- Policy tests ----
+
+    #[tokio::test]
+    async fn repo_search_blocked_when_mode_off() {
+        let state = state_with_mode_off();
+        let res = run_repo_search(state, repo_args("rust")).await;
+        let err = res.expect_err("expected policy denial");
+        assert!(err.to_string().contains("disabled by policy"), "got: {err}");
+    }
+
+    // ---- Include flag tests ----
+
+    #[tokio::test]
+    async fn repo_search_include_false_suppresses_groups() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Axum Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "axum".into(),
+                providers: vec!["mock_a".into()],
+                include_docs: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        // The flag is accepted without error and produces a valid response.
+        // The actual subquery suppression (no docs subquery generated) is
+        // tested at the unit level in repo_planner; the mock engine returns
+        // all results for all queries so docs.rs URLs may still appear.
+        assert!(v["groups"].is_array(), "groups should be an array");
+        assert!(
+            v["trust_markers"].is_object(),
+            "trust_markers should be an object"
+        );
+        assert!(
+            v["providers_queried"].is_array(),
+            "providers_queried should be an array"
+        );
+    }
+
+    // ---- Mock workflow test ----
+
+    #[tokio::test]
+    async fn repo_search_full_workflow() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new("Axum Docs", "https://docs.rs/axum/latest/axum/", "mock_a")
+                    .with_snippet("Web framework for Rust"),
+                MockResult::new(
+                    "Axum on crates.io",
+                    "https://crates.io/crates/axum",
+                    "mock_a",
+                )
+                .with_snippet("A web framework"),
+                MockResult::new(
+                    "lib.rs",
+                    "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+                    "mock_a",
+                )
+                .with_snippet("Main library source"),
+                MockResult::new(
+                    "README.md",
+                    "https://github.com/tokio-rs/axum/blob/main/README.md",
+                    "mock_a",
+                )
+                .with_snippet("Axum README"),
+                MockResult::new(
+                    "Issue #123",
+                    "https://github.com/tokio-rs/axum/issues/123",
+                    "mock_a",
+                )
+                .with_snippet("Bug report"),
+                MockResult::new(
+                    "Release v0.7.0",
+                    "https://github.com/tokio-rs/axum/releases/tag/v0.7.0",
+                    "mock_a",
+                )
+                .with_snippet("Release notes"),
+            ],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        assert_eq!(v["query"], "axum");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        assert!(!groups.is_empty(), "should have at least one group");
+
+        let total_results: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert_eq!(total_results, 6, "all 6 results should be in groups");
+
+        let group_kinds: Vec<&str> = groups
+            .iter()
+            .map(|g| g["kind"].as_str().unwrap_or(""))
+            .collect();
+        assert!(
+            group_kinds.contains(&"official_docs"),
+            "should have official_docs group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"package_registry"),
+            "should have package_registry group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"source_files"),
+            "should have source_files group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"issues"),
+            "should have issues group: {group_kinds:?}"
+        );
+        assert!(
+            group_kinds.contains(&"releases"),
+            "should have releases group: {group_kinds:?}"
+        );
+
+        let suggested = v["suggested_fetches"]
+            .as_array()
+            .expect("suggested_fetches");
+        assert!(
+            !suggested.is_empty(),
+            "suggested_fetches should be non-empty when results exist"
+        );
+        for fetch in suggested {
+            assert!(
+                fetch["url"].as_str().is_some(),
+                "suggested fetch should have a url: {fetch:?}"
+            );
+            assert!(
+                fetch["reason"].as_str().is_some(),
+                "suggested fetch should have a reason: {fetch:?}"
+            );
+        }
+
+        assert!(
+            v["providers_queried"]
+                .as_array()
+                .map_or(false, |a| !a.is_empty()),
+            "providers_queried should be non-empty"
+        );
     }
 }

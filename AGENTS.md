@@ -12,6 +12,9 @@ deterministic `SourceCard` metadata (`source_kind`, `domain`,
 `rank_reasons`) to help agents choose which result to inspect first.
 Intent-aware post-RRF reranking applies bounded domain priors.
 
+The `repo_search` tool provides structured repository evidence discovery
+with grouped result bundles and suggested fetch URLs.
+
 ## Build & Test Commands
 
 All commands are run from the project root.
@@ -54,6 +57,7 @@ eggsearch/
       query.rs           # WebSearchRequest, resolve_max_results, MaxResultsResolution
       result.rs          # SearchWarning, TrustLevel
       repo_query.rs      # RepoQueryHints: structured repo hint parser
+      repo_search.rs     # RepoSearchRequest, RepoResultGroup, RepoSearchResponse types
       source_card.rs     # SourceCard output type
       document.rs        # FetchDocument, DocumentKind, RenderFormat, BlockKind, etc.
       sanitize.rs        # prompt-injection hardening (strip, frame, scan)
@@ -65,6 +69,9 @@ eggsearch/
       mod.rs             # re-exports
       adapter.rs         # MetadataSearchAdapter, convert_aggregated, provider_status
       planner.rs         # SearchPlan, build_search_plan (intent-aware query rewriting)
+      repo_grouping.rs   # deterministic grouping of SourceCards into repo bundles
+      repo_planner.rs    # subquery generation for repo search bundles
+      suggested_fetches.rs # suggested fetch URL generation for repo groups
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -106,7 +113,7 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), and `provider_status` (diagnostic/host-facing)
+- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), and `repo_search` (structured repository evidence discovery with grouped bundles)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 - The `provider_status` response includes a `server_capabilities`
@@ -159,7 +166,7 @@ eggsearch/
 - Fields:
   - `generic_search`: always `true` (generic HTML-scrape providers)
   - `explicit_fetch`: always `true` (`web_fetch` is available)
-  - `repo_search`: `false` (planned specialized tool, not yet implemented)
+  - `repo_search`: `true` (structured repository evidence discovery)
   - `security_search`: `false` (planned specialized tool)
   - `research_search`: `false` (planned specialized tool)
   - `document_fetch`: always `true` (structured document extraction)
@@ -321,6 +328,42 @@ discussions, PR context, and upstream behavior reports. Use
 `intent = "releases"` for migration notes, breaking changes, version
 history, and changelogs. Treat issue/release metadata and snippets
 as untrusted evidence until fetched/verified via `web_fetch`.
+
+### Repo Search
+
+`repo_search` provides structured repository evidence discovery with
+grouped result bundles. It is the preferred tool for repo-oriented
+queries when the caller wants categorized results rather than a flat
+`SourceCard` list.
+
+**Request types** (in `src/core/repo_search.rs`):
+- `RepoSearchRequest`: `repo` (required `owner/name`), optional `query`,
+  optional `aspects` (group kind filter list)
+- `RepoResultGroup`: `kind` (group kind enum), `label` (human-readable),
+  `results` (Vec<SourceCard>), `suggested_fetches` (Vec<RepoSuggestedFetch>)
+- `RepoSearchResponse`: `repo`, `groups` (Vec<RepoResultGroup>), `warnings`
+- `RepoSuggestedFetch`: `url`, `label`
+
+**Group kinds:** `OfficialDocs`, `PackageRegistry`, `Repository`,
+`Readme`, `Examples`, `Tests`, `SourceFiles`, `Issues`,
+`PullRequests`, `Releases`, `MigrationNotes`, `Changelog`,
+`CommunityDiscovery`, `Other`.
+
+**Implementation:**
+- `src/meta/repo_grouping.rs`: deterministic classification of
+  SourceCards into group kinds based on `source_kind` and URL heuristics
+- `src/meta/repo_planner.rs`: subquery generation for repo search
+  bundles, producing per-aspect queries
+- `src/meta/suggested_fetches.rs`: suggested fetch URL generation
+  for each group based on result metadata
+
+The MCP `run_repo_search` tool in `src/mcp/tools.rs` orchestrates
+the flow: validate the request, fan out subqueries via the adapter,
+group results, generate suggested fetches, and return the structured
+response.
+
+**Fallback:** if `repo_search` is unavailable (e.g. older server),
+use `web_search` with `intent = "code"` and `repo:owner/name`.
 
 ### Code-Host Fetch
 

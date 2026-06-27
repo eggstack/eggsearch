@@ -77,6 +77,69 @@ pub struct ProviderStatusArgs {
     pub probe: bool,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoSearchArgs {
+    /// Free-text query. May contain repo hints (repo:owner/name, etc.).
+    pub query: String,
+    /// Optional. Code host to target (github, gitlab, codeberg).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// Optional. Repository owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// Optional. Repository name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// Optional. Organization filter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org: Option<String>,
+    /// Optional. Path hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Optional. File hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// Optional. Language filter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Optional. Symbol hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Optional. Include official docs results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_docs: Option<bool>,
+    /// Optional. Include package registry results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_registry: Option<bool>,
+    /// Optional. Include issue results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_issues: Option<bool>,
+    /// Optional. Include release results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_releases: Option<bool>,
+    /// Optional. Include example results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_examples: Option<bool>,
+    /// Optional. Include pull request results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_pull_requests: Option<bool>,
+    /// Optional. Maximum total results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<usize>,
+    /// Optional. Maximum results per group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_group: Option<usize>,
+    /// Optional. Freshness hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness: Option<String>,
+    /// Optional. Per-request timeout override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Optional. Explicit provider ID list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub providers: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
@@ -232,6 +295,91 @@ pub async fn run_web_search(
     Ok(payload)
 }
 
+/// Run the `repo_search` tool.
+pub async fn run_repo_search(
+    state: Arc<ServerState>,
+    args: RepoSearchArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::repo_search::RepoSearchRequest;
+
+    if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
+        return Err(ToolError::Validation(web_search_denied_message()));
+    }
+
+    let host = args
+        .host
+        .as_deref()
+        .map(|h| match h.to_lowercase().as_str() {
+            "github" | "gh" => crate::core::code_metadata::CodeHost::Github,
+            "gitlab" | "gl" => crate::core::code_metadata::CodeHost::Gitlab,
+            "codeberg" | "cb" => crate::core::code_metadata::CodeHost::Codeberg,
+            _ => crate::core::code_metadata::CodeHost::Unknown,
+        });
+
+    let freshness = args
+        .freshness
+        .as_deref()
+        .and_then(|f| serde_json::from_value(serde_json::Value::String(f.to_string())).ok())
+        .unwrap_or_default();
+
+    let req = RepoSearchRequest {
+        query: args.query,
+        host,
+        owner: args.owner,
+        repo: args.repo,
+        org: args.org,
+        path: args.path,
+        file: args.file,
+        language: args.language,
+        symbol: args.symbol,
+        include_docs: args.include_docs,
+        include_registry: args.include_registry,
+        include_issues: args.include_issues,
+        include_releases: args.include_releases,
+        include_examples: args.include_examples,
+        include_pull_requests: args.include_pull_requests,
+        max_results: args.max_results,
+        max_per_group: args.max_per_group,
+        freshness,
+        timeout_ms: args.timeout_ms,
+        providers: args.providers,
+    };
+
+    if let Err(e) = req.validate(state.config.search.max_query_chars) {
+        return Err(ToolError::Validation(format!("invalid query: {e}")));
+    }
+
+    let effective_providers = state
+        .config
+        .resolve_providers(&req.providers)
+        .map_err(|e| ToolError::Validation(format!("provider resolution failed: {e}")))?;
+    let (_, unknown) = state.adapter.select_engines(&effective_providers);
+    if !unknown.is_empty() {
+        return Err(ToolError::Validation(format!(
+            "unknown provider id(s): {}",
+            unknown.join(", ")
+        )));
+    }
+
+    let effective_max = req.effective_max_results(
+        state.config.search.default_max_results,
+        state.config.search.max_results_cap,
+    );
+
+    let mut req = req;
+    req.providers = effective_providers;
+
+    let response = state
+        .adapter
+        .repo_search(&req, effective_max, state.config.search.max_results_cap)
+        .await;
+
+    let value = serde_json::to_value(&response)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+
+    Ok(value)
+}
+
 /// Run the `provider_status` tool.
 pub fn run_provider_status(
     state: Arc<ServerState>,
@@ -244,7 +392,7 @@ pub fn run_provider_status(
         "server_capabilities": {
             "generic_search": true,
             "explicit_fetch": true,
-            "repo_search": false,
+            "repo_search": true,
             "security_search": false,
             "research_search": false,
             "document_fetch": true,

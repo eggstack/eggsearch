@@ -51,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `candidate_pool_size` is now config-aware (bounded by the configured cap) and cannot panic when `effective_max_results > max_results_cap`. The previous helper used `usize::clamp(min, max)` which panicked on that path.
 - Provider fan-out logs now distinguish `final_max_results` from `candidate_limit` for debugging.
 
+### Added
+- `repo_search` MCP tool for structured repository evidence discovery with grouped result bundles and suggested fetch URLs
+- `RepoSearchRequest`, `RepoResultGroup`, `RepoSearchResponse`, `RepoSuggestedFetch` types in `src/core/repo_search.rs`
+- `repo_grouping` deterministic classification of SourceCards into group kinds (OfficialDocs, PackageRegistry, Repository, Readme, Examples, Tests, SourceFiles, Issues, PullRequests, Releases, MigrationNotes, Changelog, CommunityDiscovery, Other)
+- `repo_planner` subquery generation for repo search bundles
+- `suggested_fetches` suggested fetch URL generation for each group
+- `server_capabilities.repo_search` field now reports `true`
+
 ### Fixed
 - `MockEngine::search` now respects the `max_results` argument and truncates its canned results accordingly. Previously the mock ignored the limit and returned all canned results, masking the candidate-pool bug where production providers were called with `final_max_results` instead of `candidate_limit`.
 - `run_web_fetch` MCP tool now includes `links_seen` and `links_truncated` fields in the JSON payload.

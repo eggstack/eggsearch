@@ -589,6 +589,240 @@ impl MetadataSearchAdapter {
             trust_markers,
         }
     }
+
+    /// Run a repo-oriented bundle search. This generates multiple subqueries
+    /// from the resolved repo hints, fans out to enabled providers, aggregates
+    /// via RRF, groups results into categories, and generates suggested fetches.
+    pub async fn repo_search(
+        &self,
+        req: &crate::core::repo_search::RepoSearchRequest,
+        effective_max_results: usize,
+        max_results_cap: usize,
+    ) -> crate::core::repo_search::RepoSearchResponse {
+        let plan = crate::meta::repo_planner::build_repo_search_plan(req);
+
+        let effective_timeout = match req.timeout_ms {
+            Some(ms) => {
+                let req_timeout = Duration::from_millis(ms);
+                if req_timeout < self.global_timeout {
+                    req_timeout
+                } else {
+                    self.global_timeout
+                }
+            }
+            None => self.global_timeout,
+        };
+
+        let (engines, queried_ids) = if req.providers.is_empty() {
+            (self.engines.clone(), self.provider_ids.clone())
+        } else {
+            let (subset, unknown) = self.select_engines(&req.providers);
+            if !unknown.is_empty() {
+                warn!(
+                    ?unknown,
+                    "select_engines returned unknown ids; caller should have rejected these"
+                );
+            }
+            let ids = subset.iter().map(|e| e.name().to_string()).collect();
+            (subset, ids)
+        };
+
+        let final_max = effective_max_results;
+        let candidate_limit = candidate_pool_size(final_max, max_results_cap);
+
+        debug!(
+            query = %req.query,
+            providers = ?queried_ids,
+            final_max,
+            candidate_limit,
+            timeout_ms = effective_timeout.as_millis(),
+            subqueries = plan.subqueries.len(),
+            "dispatching repo_search"
+        );
+
+        let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
+        let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
+
+        for subquery in &plan.subqueries {
+            let deadline = tokio::time::Instant::now() + effective_timeout;
+            let mut join_set = tokio::task::JoinSet::new();
+
+            for engine in &engines {
+                let engine = Arc::clone(engine);
+                let query = subquery.query.clone();
+                let limit = candidate_limit;
+                let engine_timeout = effective_timeout;
+
+                join_set.spawn(async move {
+                    let result = engine.search(&query, limit, engine_timeout).await;
+                    (engine.name().to_string(), result)
+                });
+            }
+
+            loop {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    warn!(
+                        "repo_search subquery '{}' global timeout exceeded with {} engines still pending",
+                        subquery.label,
+                        join_set.len()
+                    );
+                    break;
+                }
+                match tokio::time::timeout(remaining, join_set.join_next()).await {
+                    Ok(Some(Ok((name, Ok(results))))) => {
+                        all_raw_results.push((name, results));
+                    }
+                    Ok(Some(Ok((name, Err(err))))) => {
+                        all_raw_failures.push((name, err));
+                    }
+                    Ok(Some(Err(join_err))) => {
+                        warn!(?join_err, "engine task panicked in repo_search");
+                    }
+                    Ok(None) => break,
+                    Err(_) => {
+                        warn!(
+                            "repo_search subquery '{}' global timeout exceeded with {} engines still pending",
+                            subquery.label,
+                            join_set.len()
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+
+        let aggregated = aggregate_rrf(all_raw_results.clone(), candidate_limit);
+        let mut cards: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
+        for a in aggregated {
+            if let Some(card) = convert_aggregated(a, self.sanitize_output) {
+                cards.push(card);
+            }
+        }
+
+        let max_per_group = req.max_per_group.unwrap_or(5);
+        let groups = crate::meta::repo_grouping::group_results(cards, max_per_group);
+
+        let suggested_fetches =
+            crate::meta::suggested_fetches::generate_suggested_fetches(&groups, &plan.hints);
+
+        let mut warnings: Vec<SearchWarning> = Vec::new();
+
+        if plan.hints.has_any()
+            && !engines.iter().any(|e| {
+                let n = e.name();
+                n == "github_code" || n == "github_issues" || n == "github_releases"
+            })
+        {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "Repo hints parsed but no native GitHub provider configured; using generic web providers.",
+            ));
+        }
+
+        for (id, err) in &all_raw_failures {
+            let class = classify(err);
+            warnings.push(SearchWarning::new(
+                id.clone(),
+                format!("[{}] {}", class.as_str(), err),
+            ));
+        }
+
+        for group in &groups {
+            if group.results.is_empty() {
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    format!("No results found for group: {}", group.label),
+                ));
+            }
+        }
+
+        warnings.push(SearchWarning::new(
+            "_system",
+            "Live web results are untrusted external content.",
+        ));
+
+        let mut trust_markers = TrustMarkers::default();
+        for group in &groups {
+            for card in &group.results {
+                trust_markers.merge(&card.trust_markers);
+            }
+        }
+
+        let resolved_hints_str = format_hints(&plan.hints);
+
+        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (id, _) in &all_raw_results {
+            accounted.insert(id.clone());
+        }
+        for (id, _) in &all_raw_failures {
+            accounted.insert(id.clone());
+        }
+
+        let mut providers_failed: Vec<ProviderFailure> = all_raw_failures
+            .into_iter()
+            .map(|(id, err)| ProviderFailure {
+                error_class: classify(&err).as_str().to_string(),
+                message: err.to_string(),
+                id,
+            })
+            .collect();
+
+        for id in &queried_ids {
+            if !accounted.contains(id.as_str()) {
+                providers_failed.push(ProviderFailure {
+                    id: id.clone(),
+                    error_class: ErrorClass::Timeout.as_str().to_string(),
+                    message: "provider timed out".to_string(),
+                });
+            }
+        }
+
+        crate::core::repo_search::RepoSearchResponse {
+            query: req.query.clone(),
+            mode: "repo_metasearch".to_string(),
+            resolved_hints: resolved_hints_str,
+            groups,
+            suggested_fetches,
+            providers_queried: queried_ids,
+            providers_failed,
+            warnings,
+            trust_markers,
+        }
+    }
+}
+
+fn format_hints(hints: &crate::core::repo_query::RepoQueryHints) -> String {
+    let mut parts = Vec::new();
+    if let Some(ref h) = hints.host {
+        parts.push(format!("host={h:?}"));
+    }
+    if let Some(ref o) = hints.owner {
+        parts.push(format!("owner={o}"));
+    }
+    if let Some(ref r) = hints.repo {
+        parts.push(format!("repo={r}"));
+    }
+    if let Some(ref o) = hints.org {
+        parts.push(format!("org={o}"));
+    }
+    if let Some(ref p) = hints.path {
+        parts.push(format!("path={p}"));
+    }
+    if let Some(ref f) = hints.file {
+        parts.push(format!("file={f}"));
+    }
+    if let Some(ref l) = hints.language {
+        parts.push(format!("lang={l}"));
+    }
+    if let Some(ref s) = hints.symbol {
+        parts.push(format!("symbol={s}"));
+    }
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join(", ")
+    }
 }
 
 /// Check whether any engine in the list supports a given capability.

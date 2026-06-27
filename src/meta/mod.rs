@@ -12,8 +12,13 @@ pub mod engines;
 #[cfg(feature = "mock")]
 pub mod mock;
 pub mod planner;
+pub mod repo_grouping;
+pub mod repo_planner;
 pub mod response;
+pub mod suggested_fetches;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};
 pub use planner::{build_search_plan, SearchPlan};
+pub use repo_grouping::{classify_group, group_results};
+pub use repo_planner::{build_repo_search_plan, RepoSearchPlan, RepoSubquery};
 pub use response::{ProviderFailure, WebSearchResponse};

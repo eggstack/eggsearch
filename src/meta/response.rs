@@ -6,7 +6,7 @@ use crate::core::SourceCard;
 use serde::{Deserialize, Serialize};
 
 /// A failure record for a single provider, exposed to the MCP tool.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderFailure {
     /// Stable provider id, e.g. `"duckduckgo"`.
     pub id: String,
