@@ -348,12 +348,12 @@ pub async fn run_web_search(
     warnings.splice(0..0, marker_warnings);
     warnings.insert(
         0,
-        "Live web results are untrusted external content.".to_string(),
+        "generic_context_untrusted: Live web results are untrusted external content.".to_string(),
     );
 
     if args.safe_search.is_some() {
         warnings.push(
-            "safe_search is not enforced by current HTML providers; results may include unexpected content".to_string()
+            "safe_search_unenforced: safe_search is not enforced by current HTML providers; results may include unexpected content".to_string()
         );
     }
 
@@ -408,15 +408,20 @@ pub async fn run_repo_search(
         return Err(ToolError::Validation(web_search_denied_message()));
     }
 
-    let host = args
-        .host
-        .as_deref()
-        .map(|h| match h.to_lowercase().as_str() {
-            "github" | "gh" => crate::core::code_metadata::CodeHost::Github,
-            "gitlab" | "gl" => crate::core::code_metadata::CodeHost::Gitlab,
-            "codeberg" | "cb" => crate::core::code_metadata::CodeHost::Codeberg,
-            _ => crate::core::code_metadata::CodeHost::Unknown,
-        });
+    let host = if let Some(h) = &args.host {
+        match h.to_lowercase().as_str() {
+            "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
+            "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
+            "codeberg" | "cb" => Some(crate::core::code_metadata::CodeHost::Codeberg),
+            other => {
+                return Err(ToolError::Validation(format!(
+                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb)"
+                )));
+            }
+        }
+    } else {
+        None
+    };
 
     let freshness = args
         .freshness
@@ -684,16 +689,11 @@ pub async fn run_web_fetch(
     }
 }
 
-use crate::meta::security_grouping::group_security_results;
-use crate::meta::security_suggested_fetches::generate_security_suggested_fetches;
-
 /// Run the `security_search` tool.
 pub async fn run_security_search(
     state: Arc<ServerState>,
     args: SecuritySearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
-    use crate::core::query::SearchIntent;
-    use crate::core::SecurityIdentifiers;
     use crate::core::SecuritySearchRequest;
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
@@ -750,192 +750,19 @@ pub async fn run_security_search(
         )));
     }
 
-    let resolved_ids = SecurityIdentifiers::parse(
-        &req.query,
-        req.cve_id.as_deref(),
-        req.ghsa_id.as_deref(),
-        req.osv_id.as_deref(),
-        req.rustsec_id.as_deref(),
-        req.package.as_deref(),
-        req.ecosystem.as_deref(),
-        req.version.as_deref(),
-    );
-
     let effective_max = req.effective_max_results(
         state.config.search.default_max_results,
         state.config.search.max_results_cap,
     );
 
-    // Build a web_search request with security intent for generic fallback
-    let mut web_req = WebSearchRequest::new(req.query.clone());
-    web_req.intent = SearchIntent::Security;
-    web_req.freshness = req.freshness;
-    web_req.max_results = Some(effective_max);
-    web_req.timeout_ms = req.timeout_ms;
-    web_req.providers = effective_providers.clone();
-
-    let web_resp = state
-        .adapter
-        .web_search(&web_req, effective_max, state.config.search.max_results_cap)
-        .await;
-
-    // Check if any native security provider (OSV) is available
-    let has_native_advisory = effective_providers.iter().any(|id| id == "osv");
-
-    let mut warnings: Vec<crate::core::SearchWarning> = web_resp.warnings;
-
-    if !has_native_advisory {
-        warnings.push(crate::core::SearchWarning::new(
-            "_system",
-            "no_native_advisory_provider: only generic web search was used; \
-             enable the 'osv' provider for native advisory lookups",
-        ));
-    }
-
-    // Generic context is external untrusted discussion, not advisory fact
-    if !web_resp.results.is_empty() {
-        warnings.push(crate::core::SearchWarning::new(
-            "_system",
-            "generic_context_untrusted: generic web results are external untrusted \
-             discussion, not authoritative advisory facts",
-        ));
-    }
-
-    // Severity may be unavailable from generic search
-    warnings.push(crate::core::SearchWarning::new(
-        "_system",
-        "severity_unavailable: severity levels may not be available \
-         from generic web search results; use native advisory providers for severity data",
-    ));
-
-    // Perform native advisory lookups for identified CVE/GHSA/RustSec IDs
-    let mut vulnerabilities: Vec<crate::core::VulnerabilityMetadata> = Vec::new();
-    let mut looked_up_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    // Look up CVE IDs
-    for cve_id in &resolved_ids.cve_ids {
-        if looked_up_ids.insert(cve_id.clone()) {
-            if let Ok(Some(meta)) = state.adapter.lookup_advisory(cve_id).await {
-                vulnerabilities.push(meta);
-            }
-        }
-    }
-
-    // Look up GHSA IDs (OSV accepts GHSA IDs directly)
-    for ghsa_id in &resolved_ids.ghsa_ids {
-        if looked_up_ids.insert(ghsa_id.clone()) {
-            if let Ok(Some(meta)) = state.adapter.lookup_advisory(ghsa_id).await {
-                vulnerabilities.push(meta);
-            }
-        }
-    }
-
-    // Look up OSV IDs
-    for osv_id in &resolved_ids.osv_ids {
-        if looked_up_ids.insert(osv_id.clone()) {
-            if let Ok(Some(meta)) = state.adapter.lookup_advisory(osv_id).await {
-                vulnerabilities.push(meta);
-            }
-        }
-    }
-
-    // Look up RustSec IDs (OSV accepts RustSec IDs)
-    for rustsec_id in &resolved_ids.rustsec_ids {
-        if looked_up_ids.insert(rustsec_id.clone()) {
-            if let Ok(Some(meta)) = state.adapter.lookup_advisory(rustsec_id).await {
-                vulnerabilities.push(meta);
-            }
-        }
-    }
-
-    // Enrich vulnerabilities with KEV data if requested
-    if req.include_kev == Some(true) {
-        let cve_ids_for_kev: Vec<String> = vulnerabilities
-            .iter()
-            .flat_map(|v| v.cve_ids.iter().cloned())
-            .collect();
-
-        if cve_ids_for_kev.is_empty() {
-            // No CVE IDs available for KEV lookup
-            warnings.push(crate::core::SearchWarning::new(
-                "_system",
-                "kev_lookup_skipped: KEV lookup requires CVE identifiers",
-            ));
-        } else {
-            let mut kev_found_ids: Vec<String> = Vec::new();
-            let mut kev_lookup_failed = false;
-
-            for cve_id in &cve_ids_for_kev {
-                match state.kev_client.lookup(cve_id).await {
-                    Ok(Some(kev_meta)) => {
-                        // Enrich the matching vulnerability
-                        for vuln in &mut vulnerabilities {
-                            if vuln.cve_ids.iter().any(|id| id == cve_id) {
-                                vuln.kev = Some(kev_meta.clone());
-                            }
-                        }
-                        kev_found_ids.push(cve_id.clone());
-                    }
-                    Ok(None) => {}
-                    Err(_) => {
-                        kev_lookup_failed = true;
-                    }
-                }
-            }
-
-            if kev_lookup_failed && kev_found_ids.is_empty() {
-                warnings.push(crate::core::SearchWarning::new(
-                    "_system",
-                    "kev_lookup_failed: KEV catalog lookup failed; KEV status could not be determined",
-                ));
-            } else if !kev_found_ids.is_empty() {
-                warnings.push(crate::core::SearchWarning::new(
-                    "_system",
-                    format!(
-                        "kev_match: {} CVE(s) found in CISA KEV catalog",
-                        kev_found_ids.len()
-                    ),
-                ));
-            } else {
-                warnings.push(crate::core::SearchWarning::new(
-                    "_system",
-                    "kev_absent_not_proof: no CVE(s) found in CISA KEV catalog; \
-                     absence does not prove no exploitation",
-                ));
-            }
-        }
-    }
-
-    // Warn about version matching limitations
-    if req.version.is_some() {
-        warnings.push(crate::core::SearchWarning::new(
-            "_system",
-            "version_match_unavailable: version-specific matching is not yet implemented; \
-             affected version ranges are returned as-is from advisory databases",
-        ));
-    }
-
-    // Convert web results to source cards grouped by security category
-    let groups = group_security_results(&web_resp.results, req.max_per_group);
-    let suggested_fetches = generate_security_suggested_fetches(
-        &groups,
-        &resolved_ids,
-        req.ecosystem.as_deref(),
-        req.package.as_deref(),
-    );
-
-    let response = crate::core::SecuritySearchResponse {
-        query: req.query.clone(),
-        mode: "security_metasearch".to_string(),
-        resolved_identifiers: resolved_ids,
-        vulnerabilities,
-        groups,
-        suggested_fetches,
-        providers_queried: web_resp.providers_queried,
-        providers_failed: web_resp.providers_failed,
-        warnings,
-        trust_markers: web_resp.trust_markers,
-    };
+    let response = crate::meta::security_search::run_security_search_plan(
+        &state.adapter,
+        &state.kev_client,
+        &req,
+        effective_max,
+        state.config.search.max_results_cap,
+    )
+    .await;
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
@@ -979,7 +806,7 @@ mod tests {
         let warnings = value.get("warnings").unwrap().as_array().unwrap();
         assert!(warnings
             .iter()
-            .any(|w| w.as_str().unwrap().contains("safe_search")));
+            .any(|w| w.as_str().unwrap().contains("safe_search_unenforced")));
     }
 
     #[tokio::test]
@@ -1031,5 +858,92 @@ mod tests {
         assert_eq!(v["text_framed"], serde_json::json!(true));
         assert_eq!(v["control_chars_removed"], serde_json::json!(3));
         assert_eq!(v["injection_hits"], serde_json::json!(2));
+    }
+
+    #[tokio::test]
+    async fn repo_search_host_github_accepted() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = RepoSearchArgs {
+            query: "repo:tokio-rs/axum".to_string(),
+            host: Some("github".to_string()),
+            ..Default::default()
+        };
+
+        let result = run_repo_search(state, args).await;
+        // Should not fail with a validation error about the host.
+        // It may fail for other reasons (e.g. no providers), but
+        // the host itself is valid.
+        match &result {
+            Err(ToolError::Validation(msg)) if msg.contains("unknown host") => {
+                panic!("github host should be accepted, got: {msg}");
+            }
+            _ => {}
+        }
+    }
+
+    #[tokio::test]
+    async fn repo_search_host_gh_alias_accepted() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = RepoSearchArgs {
+            query: "repo:tokio-rs/axum".to_string(),
+            host: Some("gh".to_string()),
+            ..Default::default()
+        };
+
+        let result = run_repo_search(state, args).await;
+        match &result {
+            Err(ToolError::Validation(msg)) if msg.contains("unknown host") => {
+                panic!("gh alias should be accepted, got: {msg}");
+            }
+            _ => {}
+        }
+    }
+
+    #[tokio::test]
+    async fn repo_search_host_unknown_rejected() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = RepoSearchArgs {
+            query: "some query".to_string(),
+            host: Some("unknownhost".to_string()),
+            ..Default::default()
+        };
+
+        let result = run_repo_search(state, args).await;
+        match result {
+            Err(ToolError::Validation(msg)) => {
+                assert!(
+                    msg.contains("unknown host 'unknownhost'"),
+                    "unexpected validation message: {msg}"
+                );
+            }
+            other => panic!("expected validation error, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn repo_search_host_none_accepted() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = RepoSearchArgs {
+            query: "some query".to_string(),
+            host: None,
+            ..Default::default()
+        };
+
+        let result = run_repo_search(state, args).await;
+        // host=None should not produce a validation error about host.
+        match &result {
+            Err(ToolError::Validation(msg)) if msg.contains("unknown host") => {
+                panic!("None host should be accepted, got: {msg}");
+            }
+            _ => {}
+        }
     }
 }

@@ -1,5 +1,7 @@
+use std::sync::LazyLock;
 use std::time::Duration;
 
+use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -9,9 +11,75 @@ use crate::core::security::{
     SeverityLevel, VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
 };
 
+static CVE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(CVE-\d{4}-\d{4,})\b").unwrap());
+static GHSA_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})\b").unwrap());
+static RUSTSEC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(RUSTSEC-\d{4}-\d{4,})\b").unwrap());
+static PACKAGE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(package|crate|pypi|npm):([a-zA-Z0-9_\-\.]+)\b").unwrap());
+static ECOSYSTEM_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(ecosystem):([a-zA-Z0-9_\-\.]+)\b").unwrap());
+static VERSION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(version):([0-9]+[a-zA-Z0-9_\-\.]*)\b").unwrap());
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OsvQuery {
+    ById(String),
+    ByPackage {
+        ecosystem: String,
+        package: String,
+        version: Option<String>,
+    },
+    Unstructured,
+}
+
+fn parse_osv_query(query: &str) -> OsvQuery {
+    if let Some(cap) = CVE_RE.captures(query) {
+        return OsvQuery::ById(cap[1].to_uppercase());
+    }
+    if let Some(cap) = GHSA_RE.captures(query) {
+        return OsvQuery::ById(cap[1].to_uppercase());
+    }
+    if let Some(cap) = RUSTSEC_RE.captures(query) {
+        return OsvQuery::ById(cap[1].to_uppercase());
+    }
+
+    if let Some(cap) = PACKAGE_RE.captures(query) {
+        let prefix = cap[1].to_ascii_lowercase();
+        let name = cap[2].to_string();
+        let mut ecosystem = match prefix.as_str() {
+            "crate" => Some("crates.io".to_string()),
+            "npm" => Some("npm".to_string()),
+            "pypi" => Some("PyPI".to_string()),
+            _ => None,
+        };
+        let mut version = None;
+
+        if let Some(eco_cap) = ECOSYSTEM_RE.captures(query) {
+            ecosystem = Some(eco_cap[2].to_string());
+        }
+        if let Some(ver_cap) = VERSION_RE.captures(query) {
+            version = Some(ver_cap[2].to_string());
+        }
+
+        if let Some(eco) = ecosystem {
+            return OsvQuery::ByPackage {
+                ecosystem: eco,
+                package: name,
+                version,
+            };
+        }
+    }
+
+    OsvQuery::Unstructured
+}
+
 const ENGINE: &str = "osv";
 const DEFAULT_BASE_URL: &str = "https://api.osv.dev/v1";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+#[allow(dead_code)]
 const SNIPPET_MAX_CHARS: usize = 500;
 
 #[derive(Debug, Deserialize)]
@@ -25,8 +93,10 @@ struct OsvVulnerability {
     #[serde(default)]
     id: String,
     #[serde(default)]
+    #[allow(dead_code)]
     summary: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     details: Option<String>,
     #[serde(default)]
     aliases: Vec<String>,
@@ -106,55 +176,91 @@ pub async fn search(
         return Ok(Vec::new());
     }
 
-    let url = format!("{DEFAULT_BASE_URL}/query");
-
-    let body = serde_json::json!({
-        "package": {
-            "name": query,
+    match parse_osv_query(query) {
+        OsvQuery::ById(id) => {
+            let metadata = lookup_by_id(client, &id, timeout).await?;
+            match metadata {
+                Some(m) => {
+                    let id_display = m
+                        .osv_ids
+                        .first()
+                        .or(m.cve_ids.first())
+                        .or(m.ghsa_ids.first())
+                        .cloned()
+                        .unwrap_or_else(|| id.clone());
+                    let summary = m
+                        .references
+                        .first()
+                        .map(|r| r.url.as_str())
+                        .unwrap_or("OSV vulnerability entry");
+                    let title = format!("{id_display}: {summary}");
+                    let url = format!("https://osv.dev/vulnerability/{id_display}");
+                    let snippet = m
+                        .affected_ranges
+                        .first()
+                        .map(|r| format!("Affected: {r}"))
+                        .filter(|s| !s.is_empty());
+                    Ok(vec![SearchResult {
+                        title,
+                        url,
+                        snippet,
+                        source_engine: ENGINE.to_string(),
+                        metadata: ResultMetadata::Advisory(Box::new(m)),
+                    }])
+                }
+                None => Ok(Vec::new()),
+            }
         }
-    });
-
-    let response = tokio::time::timeout(
-        timeout,
-        client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send(),
-    )
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-
-    let status = response.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
+        OsvQuery::ByPackage {
+            ecosystem,
+            package,
+            version,
+        } => {
+            let vulns = query_package(
+                client,
+                &ecosystem,
+                &package,
+                version.as_deref(),
+                max_results,
+                timeout,
+            )
+            .await?;
+            let mut out = Vec::with_capacity(max_results.min(vulns.len()));
+            for m in vulns {
+                if out.len() >= max_results {
+                    break;
+                }
+                let id_display = m
+                    .osv_ids
+                    .first()
+                    .or(m.cve_ids.first())
+                    .or(m.ghsa_ids.first())
+                    .cloned()
+                    .unwrap_or_else(|| package.clone());
+                let summary = m
+                    .references
+                    .first()
+                    .map(|r| r.url.as_str())
+                    .unwrap_or("OSV vulnerability entry");
+                let title = format!("{id_display}: {summary}");
+                let url = format!("https://osv.dev/vulnerability/{id_display}");
+                let snippet = m
+                    .affected_ranges
+                    .first()
+                    .map(|r| format!("Affected: {r}"))
+                    .filter(|s| !s.is_empty());
+                out.push(SearchResult {
+                    title,
+                    url,
+                    snippet,
+                    source_engine: ENGINE.to_string(),
+                    metadata: ResultMetadata::Advisory(Box::new(m)),
+                });
+            }
+            Ok(out)
+        }
+        OsvQuery::Unstructured => Ok(Vec::new()),
     }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
-
-    let parsed: OsvQueryResponse =
-        serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("invalid JSON: {e}"),
-        })?;
-
-    Ok(convert(parsed.vulns, max_results))
 }
 
 pub async fn lookup_by_id(
@@ -288,6 +394,7 @@ pub async fn query_package(
     Ok(out)
 }
 
+#[allow(dead_code)]
 fn convert(vulns: Vec<OsvVulnerability>, max_results: usize) -> Vec<SearchResult> {
     let mut out = Vec::with_capacity(max_results.min(vulns.len()));
     for vuln in vulns {
@@ -337,31 +444,47 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
         .map(|a| a.to_uppercase())
         .collect();
 
-    let severity = vuln
-        .severity
-        .first()
-        .and_then(|s| s.score.as_deref())
-        .and_then(|score| {
-            // Try to parse CVSS score from the score string
+    let first_score = vuln.severity.iter().find_map(|s| s.score.as_deref());
+
+    let cvss_vector = first_score.and_then(|score| {
+        if score.contains("CVSS:") {
+            Some(score.to_string())
+        } else {
+            None
+        }
+    });
+
+    let cvss_score = first_score.and_then(|score| {
+        score.parse::<f64>().ok().or_else(|| {
             score
-                .split('/')
-                .find(|part| part.starts_with("CVSS:"))
-                .map(|_| SeverityLevel::Unknown)
-                .or_else(|| {
-                    // Parse severity from score
-                    let s = score.to_ascii_lowercase();
-                    if s.contains("critical") {
-                        Some(SeverityLevel::Critical)
-                    } else if s.contains("high") {
-                        Some(SeverityLevel::High)
-                    } else if s.contains("medium") || s.contains("moderate") {
-                        Some(SeverityLevel::Medium)
-                    } else if s.contains("low") {
-                        Some(SeverityLevel::Low)
-                    } else {
-                        None
-                    }
-                })
+                .split_whitespace()
+                .find_map(|part| part.parse::<f64>().ok())
+        })
+    });
+
+    let severity = first_score
+        .and_then(|score| {
+            let s = score.to_ascii_lowercase();
+            if s.contains("critical") {
+                Some(SeverityLevel::Critical)
+            } else if s.contains("high") {
+                Some(SeverityLevel::High)
+            } else if s.contains("medium") || s.contains("moderate") {
+                Some(SeverityLevel::Medium)
+            } else if s.contains("low") {
+                Some(SeverityLevel::Low)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            cvss_score.map(|s| match s {
+                9.0..=10.0 => SeverityLevel::Critical,
+                7.0..=8.99 => SeverityLevel::High,
+                4.0..=6.99 => SeverityLevel::Medium,
+                0.1..=3.99 => SeverityLevel::Low,
+                _ => SeverityLevel::Unknown,
+            })
         });
 
     let mut affected_ranges = Vec::new();
@@ -423,8 +546,8 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
         vulnerable_versions,
         patched_versions,
         severity,
-        cvss_score: None,
-        cvss_vector: None,
+        cvss_score,
+        cvss_vector,
         epss_score: None,
         kev: None,
         published_at: vuln.published.clone(),
@@ -435,6 +558,7 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
     }
 }
 
+#[allow(dead_code)]
 fn truncate_body(body: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
@@ -655,6 +779,121 @@ mod tests {
         assert_eq!(m.severity, Some(SeverityLevel::Critical));
     }
 
+    #[test]
+    fn test_cvss_vector_preserved() {
+        let vuln = OsvVulnerability {
+            id: "test".to_string(),
+            summary: None,
+            details: None,
+            aliases: vec![],
+            severity: vec![OsvSeverity {
+                severity_type: Some("CVSS_V3".to_string()),
+                score: Some("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H".to_string()),
+            }],
+            affected: vec![],
+            published: None,
+            modified: None,
+            withdrawn: None,
+            references: vec![],
+        };
+        let m = convert_vuln_metadata(&vuln);
+        assert_eq!(
+            m.cvss_vector.as_deref(),
+            Some("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")
+        );
+    }
+
+    #[test]
+    fn test_numeric_score_maps_to_cvss_score_and_severity() {
+        let vuln = OsvVulnerability {
+            id: "test".to_string(),
+            summary: None,
+            details: None,
+            aliases: vec![],
+            severity: vec![OsvSeverity {
+                severity_type: Some("CVSS_V3".to_string()),
+                score: Some("7.5".to_string()),
+            }],
+            affected: vec![],
+            published: None,
+            modified: None,
+            withdrawn: None,
+            references: vec![],
+        };
+        let m = convert_vuln_metadata(&vuln);
+        assert_eq!(m.cvss_score, Some(7.5));
+        assert_eq!(m.severity, Some(SeverityLevel::High));
+    }
+
+    #[test]
+    fn test_empty_severity_no_fabricated_data() {
+        let vuln = OsvVulnerability {
+            id: "test".to_string(),
+            summary: None,
+            details: None,
+            aliases: vec![],
+            severity: vec![],
+            affected: vec![],
+            published: None,
+            modified: None,
+            withdrawn: None,
+            references: vec![],
+        };
+        let m = convert_vuln_metadata(&vuln);
+        assert_eq!(m.severity, None);
+        assert_eq!(m.cvss_score, None);
+        assert_eq!(m.cvss_vector, None);
+    }
+
+    #[test]
+    fn test_text_severity_still_works() {
+        let vuln = OsvVulnerability {
+            id: "test".to_string(),
+            summary: None,
+            details: None,
+            aliases: vec![],
+            severity: vec![OsvSeverity {
+                severity_type: Some("CVSS_V3".to_string()),
+                score: Some("MEDIUM".to_string()),
+            }],
+            affected: vec![],
+            published: None,
+            modified: None,
+            withdrawn: None,
+            references: vec![],
+        };
+        let m = convert_vuln_metadata(&vuln);
+        assert_eq!(m.severity, Some(SeverityLevel::Medium));
+        assert_eq!(m.cvss_score, None);
+        assert_eq!(m.cvss_vector, None);
+    }
+
+    #[test]
+    fn test_cvss_score_with_vector_and_numeric() {
+        let vuln = OsvVulnerability {
+            id: "test".to_string(),
+            summary: None,
+            details: None,
+            aliases: vec![],
+            severity: vec![OsvSeverity {
+                severity_type: Some("CVSS_V3".to_string()),
+                score: Some("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H 9.8".to_string()),
+            }],
+            affected: vec![],
+            published: None,
+            modified: None,
+            withdrawn: None,
+            references: vec![],
+        };
+        let m = convert_vuln_metadata(&vuln);
+        assert_eq!(
+            m.cvss_vector.as_deref(),
+            Some("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H 9.8")
+        );
+        assert_eq!(m.cvss_score, Some(9.8));
+        assert_eq!(m.severity, Some(SeverityLevel::Critical));
+    }
+
     #[tokio::test]
     async fn test_osv_provider_descriptor() {
         use crate::core::provider::built_in_provider_descriptor;
@@ -670,5 +909,150 @@ mod tests {
         assert!(desc.capabilities.supports_security_search);
         assert!(!desc.capabilities.supports_code_search);
         assert!(!desc.capabilities.supports_issue_search);
+    }
+
+    #[test]
+    fn test_parse_osv_query_unstructured_prose() {
+        assert_eq!(
+            parse_osv_query("how to fix sql injection"),
+            OsvQuery::Unstructured
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_unstructured_plain_words() {
+        assert_eq!(
+            parse_osv_query("serde deserialization vulnerability"),
+            OsvQuery::Unstructured
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_cve_id() {
+        assert_eq!(
+            parse_osv_query("CVE-2024-12345"),
+            OsvQuery::ById("CVE-2024-12345".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_cve_id_case_insensitive() {
+        assert_eq!(
+            parse_osv_query("cve-2024-12345"),
+            OsvQuery::ById("CVE-2024-12345".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_ghsa_id() {
+        assert_eq!(
+            parse_osv_query("GHSA-xxxx-xxxx-xxxx"),
+            OsvQuery::ById("GHSA-XXXX-XXXX-XXXX".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_rustsec_id() {
+        assert_eq!(
+            parse_osv_query("RUSTSEC-2024-0001"),
+            OsvQuery::ById("RUSTSEC-2024-0001".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_crate_hint_infers_ecosystem() {
+        assert_eq!(
+            parse_osv_query("crate:serde"),
+            OsvQuery::ByPackage {
+                ecosystem: "crates.io".to_string(),
+                package: "serde".to_string(),
+                version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_npm_hint_infers_ecosystem() {
+        assert_eq!(
+            parse_osv_query("npm:express"),
+            OsvQuery::ByPackage {
+                ecosystem: "npm".to_string(),
+                package: "express".to_string(),
+                version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_pypi_hint_infers_ecosystem() {
+        assert_eq!(
+            parse_osv_query("pypi:requests"),
+            OsvQuery::ByPackage {
+                ecosystem: "PyPI".to_string(),
+                package: "requests".to_string(),
+                version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_package_with_explicit_ecosystem() {
+        assert_eq!(
+            parse_osv_query("package:serde ecosystem:crates.io"),
+            OsvQuery::ByPackage {
+                ecosystem: "crates.io".to_string(),
+                package: "serde".to_string(),
+                version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_package_with_version() {
+        assert_eq!(
+            parse_osv_query("package:serde ecosystem:crates.io version:1.0.0"),
+            OsvQuery::ByPackage {
+                ecosystem: "crates.io".to_string(),
+                package: "serde".to_string(),
+                version: Some("1.0.0".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_crate_with_version() {
+        assert_eq!(
+            parse_osv_query("crate:tokio version:1.0"),
+            OsvQuery::ByPackage {
+                ecosystem: "crates.io".to_string(),
+                package: "tokio".to_string(),
+                version: Some("1.0".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_cve_in_prose() {
+        assert_eq!(
+            parse_osv_query("details about CVE-2024-12345 and its impact"),
+            OsvQuery::ById("CVE-2024-12345".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_explicit_ecosystem_overrides_prefix() {
+        assert_eq!(
+            parse_osv_query("crate:serde ecosystem:npm"),
+            OsvQuery::ByPackage {
+                ecosystem: "npm".to_string(),
+                package: "serde".to_string(),
+                version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_osv_query_empty_string() {
+        assert_eq!(parse_osv_query(""), OsvQuery::Unstructured);
     }
 }

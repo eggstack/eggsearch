@@ -85,6 +85,7 @@ eggsearch/
       research_suggested_fetches.rs # suggested fetch URL generation for research groups
       suggested_fetches.rs # suggested fetch URL generation for repo groups
       security_grouping.rs  # deterministic grouping of security search results
+      security_search.rs   # security search orchestration (run_security_search_plan)
       security_suggested_fetches.rs # suggested fetch URL generation for security groups
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
@@ -368,7 +369,12 @@ queries when the caller wants categorized results rather than a flat
 **Request-level deadline:** `repo_search` and `research_search` share a
 request-level deadline. Each subquery consumes from a shared remaining
 budget. When budget is exhausted, subqueries are skipped with a
-`request_deadline_exceeded` warning.
+`request_deadline_exceeded` warning that reports both interrupted
+(started but incomplete) and skipped (never started) subquery counts.
+
+**Host validation:** Unknown `host` values in query hints are rejected
+with a validation error. Accepted host values: `github` (alias `gh`),
+`gitlab` (alias `gl`), `codeberg` (alias `cb`).
 
 **Group kinds:** `OfficialDocs`, `PackageRegistry`, `Repository`,
 `Readme`, `Examples`, `Tests`, `SourceFiles`, `Issues`,
@@ -417,11 +423,13 @@ web search results.
 
 **Providers:**
 - `osv`: native OSV (Open Source Vulnerabilities) JSON API provider.
-  The `query_package` function handles explicit ecosystem/package/version
-  queries via `/v1/query`. The `search()` function still exists for
-  backward compatibility but `query_package` is the preferred entry point
-  for security_search use. Vulnerability ID lookups use `/v1/vulns/{id}`.
-  No API key required. Enabled by default.
+  Advisory-native, not a generic prose search engine — the `search()`
+  function only processes structured queries (vulnerability IDs,
+  package/ecosystem hints) and returns empty results for unstructured
+  prose. The `query_package` function handles explicit
+  ecosystem/package/version queries via `/v1/query`. Vulnerability
+  ID lookups use `/v1/vulns/{id}`. No API key required. Enabled
+  by default.
 - Generic web providers: used as fallback for vendor advisories,
   patch releases, defensive guidance, exploit discussion, and
   general context.
@@ -448,11 +456,20 @@ that identifier type is skipped to avoid duplicates.
 
 The MCP `run_security_search` tool in `src/mcp/tools.rs` orchestrates
 the flow: parse identifiers, run web_search with security intent,
-group results, and return the structured response.
+group results, and return the structured response. The core
+orchestration logic lives in `src/meta/security_search.rs`
+(`run_security_search_plan`), which coordinates identifier parsing,
+native advisory lookups, KEV enrichment, result grouping, and
+suggested fetch generation.
 
 Security grouping and suggested-fetch logic live in
 `src/meta/security_grouping.rs` and
 `src/meta/security_suggested_fetches.rs`.
+
+**Warning prefixes:** All advisory warnings use stable, machine-parseable
+prefixes (e.g. `native_advisory_search_unavailable:`, `kev_match:`,
+`version_match_unavailable:`). Agents can match on these prefixes for
+programmatic handling. See "Warning Prefixes" below for the full list.
 
 **Fallback:** if `security_search` is unavailable, use `web_search`
 with `intent = "security"`.
@@ -507,6 +524,12 @@ for complex architectural or technical questions where flat
 
 The MCP `run_research_search` tool in `src/mcp/tools.rs` orchestrates
 the flow.
+
+**Request-level deadline:** `repo_search` and `research_search` share a
+request-level deadline. Each subquery consumes from a shared remaining
+budget. When budget is exhausted, subqueries are skipped with a
+`request_deadline_exceeded` warning that reports both interrupted
+(started but incomplete) and skipped (never started) subquery counts.
 
 **Fallback:** if `research_search` is unavailable, use `web_search`
 with `intent` hint.
@@ -642,11 +665,15 @@ The vendored code includes:
 - `engines/brave.rs` — Brave Search HTML scraper
 - `engines/brave_api.rs` — Brave Search API provider (API-key, JSON; added in 0.3.0)
 - `engines/github_code.rs` — GitHub Code Search API provider (API-key, JSON; added in 0.4.0)
+- `engines/github_issues.rs` — GitHub Issues Search API provider (API-key, JSON)
+- `engines/github_releases.rs` — GitHub Releases API provider (API-key, JSON)
 - `engines/startpage.rs` — Startpage HTML scraper
 - `engines/yahoo.rs` — Yahoo Search HTML scraper
 - `engines/mojeek.rs` — Mojeek HTML scraper (added in 0.2.0)
 - `engines/searxng.rs` — SearXNG JSON client for a self-hosted
   SearXNG instance (added in 0.2.0)
+- `engines/osv.rs` — OSV (Open Source Vulnerabilities) JSON API client
+- `engines/kev.rs` — CISA Known Exploited Vulnerabilities (KEV) JSON API client
 - `engines/normalizer.rs` — URL normalization for deduplication
 - `engines/models.rs` — `SearchResult`, `AggregatedResult`
 - `engines/error.rs` — `EngineError` enum

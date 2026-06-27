@@ -56,6 +56,19 @@ pub trait SearchEngine: Send + Sync {
     {
         Box::pin(async { Ok(None) })
     }
+
+    /// Query vulnerabilities by package name, ecosystem, and optional version.
+    /// Returns `Ok(Vec::new())` if not supported by this engine.
+    fn query_advisories_by_package<'a>(
+        &'a self,
+        _ecosystem: &'a str,
+        _package: &'a str,
+        _version: Option<&'a str>,
+        _max_results: usize,
+        _timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<crate::core::security::VulnerabilityMetadata>, EngineError>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
 }
 
 pub struct DuckDuckGoEngine {
@@ -336,6 +349,24 @@ impl SearchEngine for OsvEngine {
     ) -> BoxFuture<'a, Result<Option<crate::core::security::VulnerabilityMetadata>, EngineError>>
     {
         Box::pin(osv::lookup_by_id(&self.client, vuln_id, timeout))
+    }
+
+    fn query_advisories_by_package<'a>(
+        &'a self,
+        ecosystem: &'a str,
+        package: &'a str,
+        version: Option<&'a str>,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<crate::core::security::VulnerabilityMetadata>, EngineError>> {
+        Box::pin(osv::query_package(
+            &self.client,
+            ecosystem,
+            package,
+            version,
+            max_results,
+            timeout,
+        ))
     }
 }
 

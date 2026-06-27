@@ -265,6 +265,31 @@ impl MetadataSearchAdapter {
         Ok(None)
     }
 
+    /// Query vulnerabilities by package name, ecosystem, and optional
+    /// version using a native advisory provider. Returns the list of
+    /// matching vulnerabilities, or an empty list if no native provider
+    /// supports package queries.
+    pub async fn query_advisories_by_package(
+        &self,
+        ecosystem: &str,
+        package: &str,
+        version: Option<&str>,
+        max_results: usize,
+    ) -> Result<Vec<crate::core::security::VulnerabilityMetadata>, anyhow::Error> {
+        let timeout = self.global_timeout;
+        for engine in &self.engines {
+            let result = engine
+                .query_advisories_by_package(ecosystem, package, version, max_results, timeout)
+                .await;
+            match result {
+                Ok(vulns) if !vulns.is_empty() => return Ok(vulns),
+                Ok(_) => continue,
+                Err(_) => continue,
+            }
+        }
+        Ok(Vec::new())
+    }
+
     /// Check whether all queried providers support a given capability
     /// option. Returns the list of provider ids that do NOT support it.
     /// When `provider_ids` is empty, checks all enabled providers.
@@ -492,7 +517,7 @@ impl MetadataSearchAdapter {
         if req.safe_search.is_some() && !any_engine_supports(&engines, |c| c.supports_safe_search) {
             capability_warnings.push(SearchWarning::new(
                 "_system",
-                "safe_search requested but no selected provider enforces safe search filtering",
+                "safe_search_unenforced: safe_search requested but no selected provider enforces safe search filtering",
             ));
         }
 
@@ -505,7 +530,7 @@ impl MetadataSearchAdapter {
                 capability_warnings.push(SearchWarning::new(
                     "_system",
                     format!(
-                        "freshness hint '{}' requested but no provider applies server-side freshness filtering",
+                        "freshness_unenforced: freshness hint '{}' requested but no provider applies server-side freshness filtering",
                         req.freshness.as_str()
                     ),
                 ));
@@ -520,7 +545,7 @@ impl MetadataSearchAdapter {
         {
             capability_warnings.push(SearchWarning::new(
                 "_system",
-                "intent=code requested but no provider has native code/repository search; results are from generic text search",
+                "native_code_search_unavailable: intent=code requested but no provider has native code/repository search; results are from generic text search",
             ));
         }
 
@@ -530,7 +555,7 @@ impl MetadataSearchAdapter {
         {
             capability_warnings.push(SearchWarning::new(
                 "_system",
-                "intent=issues requested but no provider has native issue search; results are from generic text search",
+                "native_issue_search_unavailable: intent=issues requested but no provider has native issue search; results are from generic text search",
             ));
         }
 
@@ -540,7 +565,7 @@ impl MetadataSearchAdapter {
         {
             capability_warnings.push(SearchWarning::new(
                 "_system",
-                "intent=releases requested but no provider has native release search; results are from generic text search",
+                "native_release_search_unavailable: intent=releases requested but no provider has native release search; results are from generic text search",
             ));
         }
 
@@ -550,7 +575,7 @@ impl MetadataSearchAdapter {
         {
             capability_warnings.push(SearchWarning::new(
                 "_system",
-                "intent=security requested but no provider has native security advisory search; results are from generic/contextual search",
+                "native_advisory_search_unavailable: intent=security requested but no provider has native security advisory search; results are from generic/contextual search",
             ));
         }
 
@@ -657,11 +682,14 @@ impl MetadataSearchAdapter {
         let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
         let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
         let overall_deadline = tokio::time::Instant::now() + effective_timeout;
+        let mut request_deadline_exceeded = false;
         let mut subqueries_skipped = 0usize;
+        let mut subqueries_interrupted = 0usize;
 
         for subquery in &plan.subqueries {
             let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
+                request_deadline_exceeded = true;
                 subqueries_skipped += 1;
                 continue;
             }
@@ -683,6 +711,8 @@ impl MetadataSearchAdapter {
                 let remaining =
                     overall_deadline.saturating_duration_since(tokio::time::Instant::now());
                 if remaining.is_zero() {
+                    request_deadline_exceeded = true;
+                    subqueries_interrupted += 1;
                     warn!(
                         "repo_search subquery '{}' request deadline exceeded with {} engines still pending",
                         subquery.label,
@@ -702,6 +732,8 @@ impl MetadataSearchAdapter {
                     }
                     Ok(None) => break,
                     Err(_) => {
+                        request_deadline_exceeded = true;
+                        subqueries_interrupted += 1;
                         warn!(
                             "repo_search subquery '{}' request deadline exceeded with {} engines still pending",
                             subquery.label,
@@ -730,11 +762,11 @@ impl MetadataSearchAdapter {
 
         let mut warnings: Vec<SearchWarning> = Vec::new();
 
-        if subqueries_skipped > 0 {
+        if request_deadline_exceeded {
             warnings.push(SearchWarning::new(
                 "_system",
                 format!(
-                    "request_deadline_exceeded: repo_search stopped before all subqueries completed ({subqueries_skipped} skipped)"
+                    "request_deadline_exceeded: repo_search returned partial results ({subqueries_interrupted} interrupted, {subqueries_skipped} skipped)"
                 ),
             ));
         }
@@ -747,7 +779,7 @@ impl MetadataSearchAdapter {
         {
             warnings.push(SearchWarning::new(
                 "_system",
-                "Repo hints parsed but no native GitHub provider configured; using generic web providers.",
+                "native_code_search_unavailable: Repo hints parsed but no native GitHub provider configured; using generic web providers.",
             ));
         }
 
@@ -755,7 +787,7 @@ impl MetadataSearchAdapter {
         if plan.hints.symbol.is_some() && !engines.iter().any(|e| e.name() == "github_code") {
             warnings.push(SearchWarning::new(
                 "_system",
-                "Symbol hint parsed but no native code provider configured; using text query fallback.",
+                "native_code_search_unavailable: Symbol hint parsed but no native code provider configured; using text query fallback.",
             ));
         }
 
@@ -763,7 +795,7 @@ impl MetadataSearchAdapter {
         if req.include_issues_enabled() && !engines.iter().any(|e| e.name() == "github_issues") {
             warnings.push(SearchWarning::new(
                 "_system",
-                "Issues requested but no native issue provider configured; using generic web search.",
+                "native_issue_search_unavailable: Issues requested but no native issue provider configured; using generic web search.",
             ));
         }
 
@@ -772,7 +804,7 @@ impl MetadataSearchAdapter {
         {
             warnings.push(SearchWarning::new(
                 "_system",
-                "Releases requested but no native release provider configured; using generic web search.",
+                "native_release_search_unavailable: Releases requested but no native release provider configured; using generic web search.",
             ));
         }
 
@@ -795,7 +827,7 @@ impl MetadataSearchAdapter {
 
         warnings.push(SearchWarning::new(
             "_system",
-            "Live web results are untrusted external content.",
+            "generic_context_untrusted: Live web results are untrusted external content.",
         ));
 
         let mut trust_markers = TrustMarkers::default();
@@ -907,11 +939,14 @@ impl MetadataSearchAdapter {
         let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
         let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
         let overall_deadline = tokio::time::Instant::now() + effective_timeout;
+        let mut request_deadline_exceeded = false;
         let mut subqueries_skipped = 0usize;
+        let mut subqueries_interrupted = 0usize;
 
         for subquery in &plan.subqueries {
             let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
+                request_deadline_exceeded = true;
                 subqueries_skipped += 1;
                 continue;
             }
@@ -933,6 +968,8 @@ impl MetadataSearchAdapter {
                 let remaining =
                     overall_deadline.saturating_duration_since(tokio::time::Instant::now());
                 if remaining.is_zero() {
+                    request_deadline_exceeded = true;
+                    subqueries_interrupted += 1;
                     warn!(
                         "research_search subquery '{}' request deadline exceeded with {} engines still pending",
                         subquery.id,
@@ -952,6 +989,8 @@ impl MetadataSearchAdapter {
                     }
                     Ok(None) => break,
                     Err(_) => {
+                        request_deadline_exceeded = true;
+                        subqueries_interrupted += 1;
                         warn!(
                             "research_search subquery '{}' request deadline exceeded with {} engines still pending",
                             subquery.id,
@@ -980,11 +1019,11 @@ impl MetadataSearchAdapter {
         // Build warnings
         let mut warnings: Vec<SearchWarning> = Vec::new();
 
-        if subqueries_skipped > 0 {
+        if request_deadline_exceeded {
             warnings.push(SearchWarning::new(
                 "_system",
                 format!(
-                    "request_deadline_exceeded: research_search stopped before all subqueries completed ({subqueries_skipped} skipped)"
+                    "request_deadline_exceeded: research_search returned partial results ({subqueries_interrupted} interrupted, {subqueries_skipped} skipped)"
                 ),
             ));
         }
@@ -1004,7 +1043,7 @@ impl MetadataSearchAdapter {
                 warnings.push(SearchWarning::new(
                     "_system",
                     format!(
-                        "freshness_approximate: freshness '{}' requested but only some provider results have timestamps",
+                        "freshness_unenforced: freshness '{}' requested but only some provider results have timestamps",
                         req.freshness.as_str()
                     ),
                 ));
@@ -1032,10 +1071,8 @@ impl MetadataSearchAdapter {
 
         warnings.push(SearchWarning::new(
             "_system",
-            "Live web results are untrusted external content.",
+            "generic_context_untrusted: Live web results are untrusted external content.",
         ));
-
-        // Trust markers
         let mut trust_markers = TrustMarkers::default();
         for group in &groups {
             for card in &group.results {
@@ -3326,6 +3363,321 @@ mod tests {
             cap_warnings.is_empty(),
             "Web intent should not produce capability warnings: {:?}",
             cap_warnings
+        );
+    }
+
+    // --- Request deadline warning tests ---
+
+    struct SlowMockEngine {
+        name: &'static str,
+        delay: Duration,
+        results: Vec<SearchResult>,
+    }
+
+    impl SearchEngine for SlowMockEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn search<'a>(
+            &'a self,
+            _query: &'a str,
+            _max_results: usize,
+            _timeout: Duration,
+        ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+            let delay = self.delay;
+            let results = self.results.clone();
+            Box::pin(async move {
+                tokio::time::sleep(delay).await;
+                Ok(results)
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn repo_search_deadline_warning_includes_interrupted_and_skipped_counts() {
+        // Use a very short deadline and a slow engine so that some
+        // subqueries start but are interrupted, and others are skipped.
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(SlowMockEngine {
+            name: "duckduckgo",
+            delay: Duration::from_secs(10),
+            results: vec![mk_result("R1", "https://example.com/1", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_millis(50));
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "test repo:owner/repo".to_string(),
+            repo: Some("repo".to_string()),
+            owner: Some("owner".to_string()),
+            timeout_ms: Some(50),
+            ..Default::default()
+        };
+        let resp = adapter.repo_search(&req, 10, 50).await;
+
+        let deadline_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.message.contains("request_deadline_exceeded"))
+            .collect();
+        assert!(
+            !deadline_warnings.is_empty(),
+            "expected a request_deadline_exceeded warning, got: {:?}",
+            resp.warnings
+        );
+        let msg = &deadline_warnings[0].message;
+        assert!(
+            msg.contains("interrupted"),
+            "warning should mention interrupted: {msg}"
+        );
+        assert!(
+            msg.contains("skipped"),
+            "warning should mention skipped: {msg}"
+        );
+        assert!(
+            msg.starts_with("request_deadline_exceeded:"),
+            "deadline warning must start with 'request_deadline_exceeded:': {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn research_search_deadline_warning_includes_interrupted_and_skipped_counts() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(SlowMockEngine {
+            name: "duckduckgo",
+            delay: Duration::from_secs(10),
+            results: vec![mk_result("R1", "https://example.com/1", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_millis(50));
+        let req = crate::core::research::ResearchSearchRequest {
+            query: "test query".to_string(),
+            timeout_ms: Some(50),
+            desired_source_types: vec![
+                crate::core::research::ResearchSourceType::PrimarySources,
+                crate::core::research::ResearchSourceType::OfficialDocs,
+                crate::core::research::ResearchSourceType::Specifications,
+                crate::core::research::ResearchSourceType::DesignDiscussions,
+                crate::core::research::ResearchSourceType::Benchmarks,
+                crate::core::research::ResearchSourceType::SecurityConsiderations,
+                crate::core::research::ResearchSourceType::IssueThreads,
+                crate::core::research::ResearchSourceType::ReleaseNotes,
+            ],
+            ..Default::default()
+        };
+        let resp = adapter.research_search(&req, 10, 50).await;
+
+        let deadline_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.message.contains("request_deadline_exceeded"))
+            .collect();
+        assert!(
+            !deadline_warnings.is_empty(),
+            "expected a request_deadline_exceeded warning, got: {:?}",
+            resp.warnings
+        );
+        let msg = &deadline_warnings[0].message;
+        assert!(
+            msg.contains("interrupted"),
+            "warning should mention interrupted: {msg}"
+        );
+        assert!(
+            msg.contains("skipped"),
+            "warning should mention skipped: {msg}"
+        );
+        assert!(
+            msg.starts_with("request_deadline_exceeded:"),
+            "research deadline warning must start with 'request_deadline_exceeded:': {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_no_deadline_warning_when_all_subqueries_complete() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("R1", "https://example.com/1", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "test repo:owner/repo".to_string(),
+            repo: Some("repo".to_string()),
+            owner: Some("owner".to_string()),
+            ..Default::default()
+        };
+        let resp = adapter.repo_search(&req, 10, 50).await;
+
+        let deadline_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.message.contains("request_deadline_exceeded"))
+            .collect();
+        assert!(
+            deadline_warnings.is_empty(),
+            "should not emit deadline warning when all subqueries complete: {:?}",
+            deadline_warnings
+        );
+    }
+
+    #[tokio::test]
+    async fn research_search_no_deadline_warning_when_all_subqueries_complete() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("R1", "https://example.com/1", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let req = crate::core::research::ResearchSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        let resp = adapter.research_search(&req, 10, 50).await;
+
+        let deadline_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.message.contains("request_deadline_exceeded"))
+            .collect();
+        assert!(
+            deadline_warnings.is_empty(),
+            "should not emit deadline warning when all subqueries complete: {:?}",
+            deadline_warnings
+        );
+    }
+
+    #[tokio::test]
+    async fn warning_prefix_safe_search_unenforced() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("test");
+        req.safe_search = Some(crate::core::query::SafeSearch::Strict);
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings[0]
+                .message
+                .starts_with("safe_search_unenforced:"),
+            "safe_search warning must start with 'safe_search_unenforced:': {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn warning_prefix_freshness_unenforced() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("test");
+        req.freshness = crate::core::query::Freshness::Day;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings[0].message.starts_with("freshness_unenforced:"),
+            "freshness warning must start with 'freshness_unenforced:': {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn warning_prefix_native_code_search_unavailable() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("repo:tokio-rs/axum Router::layer");
+        req.intent = crate::core::query::SearchIntent::Code;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings[0]
+                .message
+                .starts_with("native_code_search_unavailable:"),
+            "code intent warning must start with 'native_code_search_unavailable:': {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn warning_prefix_native_issue_search_unavailable() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("tokio-rs/axum panic");
+        req.intent = crate::core::query::SearchIntent::Issues;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings[0]
+                .message
+                .starts_with("native_issue_search_unavailable:"),
+            "issues intent warning must start with 'native_issue_search_unavailable:': {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn warning_prefix_native_release_search_unavailable() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("tokio-rs/axum v0.7.0");
+        req.intent = crate::core::query::SearchIntent::Releases;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings[0]
+                .message
+                .starts_with("native_release_search_unavailable:"),
+            "releases intent warning must start with 'native_release_search_unavailable:': {}",
+            cap_warnings[0].message
+        );
+    }
+
+    #[tokio::test]
+    async fn warning_prefix_native_advisory_search_unavailable() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![Arc::new(MockEngine {
+            name: "duckduckgo",
+            results: vec![mk_result("Test", "https://example.com", "duckduckgo")],
+        })];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(5));
+        let mut req = WebSearchRequest::new("axum CVE");
+        req.intent = crate::core::query::SearchIntent::Security;
+        let resp = adapter.web_search(&req, 10, 50).await;
+        let cap_warnings: Vec<_> = resp
+            .warnings
+            .iter()
+            .filter(|w| w.provider_id == "_system")
+            .collect();
+        assert!(
+            cap_warnings[0]
+                .message
+                .starts_with("native_advisory_search_unavailable:"),
+            "security intent warning must start with 'native_advisory_search_unavailable:': {}",
+            cap_warnings[0].message
         );
     }
 }

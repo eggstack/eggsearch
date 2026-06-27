@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **OSV package/ecosystem/version native query support in `security_search`**: when both `package` and `ecosystem` are provided, the native OSV provider is queried directly via `/v1/query` for structured package-scoped results. When OSV is not enabled, a `native_advisory_search_unavailable` warning is emitted.
+- **OSV free-text search guarded**: the `osv` provider's `search()` function now returns empty results for unstructured prose queries, only processing structured queries (vulnerability IDs, package/ecosystem hints). This prevents OSV from acting as a generic search engine.
+- **OSV CVSS handling**: CVSS vector strings are preserved when present; numeric CVSS scores are parsed when available. Severity is derived from both text labels and numeric scores.
+- **Security orchestration moved to `src/meta/security_search.rs`**: core security search logic (`run_security_search_plan`) extracted from `src/mcp/tools.rs` into its own module for better separation of concerns.
+- **Request deadline warnings now report interrupted subqueries**: `request_deadline_exceeded` warnings for `repo_search` and `research_search` now report both interrupted (started but incomplete) and skipped (never started) subquery counts.
+- **Unknown `repo_search` host values rejected with validation error**: explicit `host` values in repo search query hints that are not `github`, `gitlab`, or `codeberg` produce a validation error. Accepted values: `github` (alias `gh`), `gitlab` (alias `gl`), `codeberg` (alias `cb`).
+- **Stable warning prefixes adopted**: all advisory warnings use stable, machine-parseable prefixes (e.g. `native_advisory_search_unavailable:`, `kev_match:`, `version_match_unavailable:`) for programmatic handling by agents.
 - `MetadataSearchAdapter::web_search` now takes a `max_results_cap` argument alongside the caller's effective `max_results`. The candidate-pool limit is computed from these two values before provider fan-out, so each provider is asked for the candidate limit rather than the final return count. This lets intent-aware reranking promote intent-matching results that would otherwise be truncated before ranking.
 - `candidate_pool_size` is now config-aware (bounded by the configured cap) and cannot panic when `effective_max_results > max_results_cap`. The previous helper used `usize::clamp(min, max)` which panicked on that path.
 - Provider fan-out logs now distinguish `final_max_results` from `candidate_limit` for debugging.
