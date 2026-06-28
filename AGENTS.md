@@ -140,10 +140,11 @@ eggsearch/
 ### Configuration
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
 - `AppConfig` is the root type, contains `SearchSection`
-- `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`
+- `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`, `profiles`
 - `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output, pdf_enabled, pdf_max_pages, pdf_max_chars_per_page, pdf_max_total_chars)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
 - `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`). Known API-key providers: `brave`, `github_code`, `github_issues`, `github_releases`.
+- `ProfileConfig` is the `[search.profiles.<name>]` section: named provider list for search profiles (`providers`). Built-in defaults exist for `generic`, `coding`, `security`, and `research` profiles when not configured.
 - `Mode` enum: `Live` or `Off`
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 - Both `SearchSection` and `FetchSection` have `sanitize_output: bool` (default `true`). When `true`, Tier 2 (framing) and Tier 3 (marker scan) prompt-injection defenses are active. Tier 1 (control-char strip + length bound) is always on.
@@ -174,6 +175,14 @@ eggsearch/
   - `code`/`issues`/`releases` intent requested but no native provider for that intent is enabled
   - `security` intent requested but no provider has `supports_security_search`; the warning message is: "intent=security requested but no provider has native security advisory search; results are from generic/contextual search"
   - `security_search` requested but no native advisory provider is enabled
+  - `symbol_hint_no_native_provider`: symbol hint present but no native code provider supports symbol search
+  - `repo_hints_not_enforced_natively`: repo/path/language hints present but selected providers cannot enforce them natively
+  - `issue_search_no_native_provider`: issues requested but no native issue provider selected
+  - `release_search_no_native_provider`: releases requested but no native release provider selected
+  - `coding_profile_degraded`: coding profile requested but no native code/issues/releases provider is available
+  - `profile_provider_unavailable`: provider in profile is not configured or enabled
+  - `profile_degraded`: profile fell back to default providers
+  - `freshness_unenforced`: freshness requested but no provider has timestamp support
 - Warnings are non-blocking — generic fallback search always works.
   Agents should treat them as informational hints about degraded
   capability, not errors.
@@ -364,12 +373,58 @@ queries when the caller wants categorized results rather than a flat
 `SourceCard` list.
 
 **Request types** (in `src/core/repo_search.rs`):
-- `RepoSearchRequest`: `repo` (required `owner/name`), optional `query`,
-  optional `aspects` (group kind filter list)
+- `RepoSearchRequest`: `query` (required), optional `host`, `owner`,
+  `repo`, `org`, `path`, `file`, `language`, `symbol`, optional
+  `include_*` flags, optional `max_results`, `max_per_group`,
+  `freshness`, `timeout_ms`, optional `providers`, optional `profile`
+  (one of `generic`, `coding`, `security`, `research`)
 - `RepoResultGroup`: `kind` (group kind enum), `label` (human-readable),
-  `results` (Vec<SourceCard>), `suggested_fetches` (Vec<RepoSuggestedFetch>)
-- `RepoSearchResponse`: `repo`, `groups` (Vec<RepoResultGroup>), `warnings`
-- `RepoSuggestedFetch`: `url`, `label`, optional `structured_repo_fetch` (`RepoFetchRequest` for source-file results with code evidence)
+  `results` (Vec<SourceCard>), `truncated` (bool)
+- `RepoSearchResponse`: `query`, `mode`, `resolved_hints`,
+  `resolved_hints_summary`, `groups`, `suggested_fetches`,
+  `providers_queried`, `providers_failed`, `warnings`, `trust_markers`,
+  `telemetry`
+- `RepoSuggestedFetch`: `url`, `reason`, `group`, `expected_kind`,
+  `recommended_extract_mode`, `priority`, optional `structured_repo_fetch`
+- `RepoSearchTelemetry`: `provider_selection`, `subqueries`,
+  `deadline_exceeded`, `subqueries_interrupted`, `subqueries_skipped`
+- `ProviderSelectionTelemetry`: `profile_requested`, `profile_applied`,
+  `degraded`, `reason`
+- `RepoSearchSubqueryTelemetry`: `label`, `query`, `intended_group`,
+  `required_capability`, `providers_attempted`
+
+**Search profiles** (`SearchProfile` enum):
+- `generic`: default behavior; uses configured default providers
+- `coding`: prefer native code/issues/releases providers, then API/web
+- `security`: prefer OSV and security-capable providers
+- `research`: prefer diverse source discovery and broad web/API providers
+
+Profiles are advisory: they influence provider selection when no
+explicit `providers` list is given. Unavailable providers are skipped
+with warnings (`profile_provider_unavailable`, `profile_degraded`)
+rather than fatal errors. The `telemetry.provider_selection` object
+shows which profile was requested, applied, and whether degradation
+occurred.
+
+**Telemetry:**
+- `provider_selection.profile_requested`: profile from the request
+- `provider_selection.profile_applied`: profile actually used
+- `provider_selection.degraded`: whether fallback to defaults occurred
+- `provider_selection.reason`: human-readable explanation
+- `subqueries`: list of generated subqueries with labels, queries,
+  intended groups, required capabilities, and providers attempted
+- `deadline_exceeded`: whether the request-level deadline was hit
+- `subqueries_interrupted`: subqueries cut short by deadline
+- `subqueries_skipped`: subqueries never started due to deadline
+
+**Capability-aware warnings:**
+- `native_code_search_unavailable`: repo hints present but no GitHub provider
+- `symbol_hint_no_native_provider`: symbol hint but no code search provider
+- `repo_hints_not_enforced_natively`: repo/path/language hints with no native filter support
+- `issue_search_no_native_provider`: issues requested but no issue provider
+- `release_search_no_native_provider`: releases requested but no release provider
+- `coding_profile_degraded`: coding profile fell back to generic providers
+- `freshness_unenforced`: freshness requested but no timestamp support
 
 **Request-level deadline:** `repo_search` and `research_search` share a
 request-level deadline. Each subquery consumes from a shared remaining
@@ -387,17 +442,22 @@ with a validation error. Accepted host values: `github` (alias `gh`),
 `CommunityDiscovery`, `Other`.
 
 **Implementation:**
+- `src/core/repo_search.rs`: core types including `SearchProfile`,
+  `RepoSearchTelemetry`, `ProviderSelectionTelemetry`,
+  `RepoSearchSubqueryTelemetry`
 - `src/meta/repo_grouping.rs`: deterministic classification of
   SourceCards into group kinds based on `source_kind` and URL heuristics
 - `src/meta/repo_planner.rs`: subquery generation for repo search
   bundles, producing per-aspect queries
 - `src/meta/suggested_fetches.rs`: suggested fetch URL generation
   for each group based on result metadata
+- `src/core/config.rs`: `ProfileConfig` type, `profiles` field in
+  `SearchSection`, `resolve_profile_providers()` method
 
 The MCP `run_repo_search` tool in `src/mcp/tools.rs` orchestrates
-the flow: validate the request, fan out subqueries via the adapter,
-group results, generate suggested fetches, and return the structured
-response.
+the flow: validate the request, resolve profile-based providers,
+fan out subqueries via the adapter, group results, generate suggested
+fetches, populate telemetry, and return the structured response.
 
 **Fallback:** if `repo_search` is unavailable (e.g. older server),
 use `web_search` with `intent = "code"` and `repo:owner/name`.

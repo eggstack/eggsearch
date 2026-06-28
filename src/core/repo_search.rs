@@ -10,6 +10,113 @@ use crate::core::source_card::{SourceCard, SourceKind};
 use crate::meta::response::ProviderFailure;
 use serde::{Deserialize, Serialize};
 
+/// Named search profile that controls provider selection behavior.
+///
+/// Profiles are advisory: they influence which providers are selected
+/// when no explicit `providers` list is given, and they emit telemetry
+/// so callers can observe degradation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchProfile {
+    /// Default behavior: use configured default providers.
+    #[default]
+    Generic,
+    /// Prefer native code/issues/releases providers when configured,
+    /// then API/web providers, then generic HTML fallback.
+    Coding,
+    /// Prefer OSV and security-capable providers, then authoritative
+    /// advisory domains through generic search.
+    Security,
+    /// Prefer diverse source discovery and broad web/API providers.
+    Research,
+}
+
+impl SearchProfile {
+    /// Parse a profile string, accepting common aliases.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "generic" | "default" | "web" => Some(Self::Generic),
+            "coding" | "code" | "repo" | "repository" | "project" => Some(Self::Coding),
+            "security" | "vuln" | "vulnerability" | "advisory" => Some(Self::Security),
+            "research" | "deep" | "thorough" => Some(Self::Research),
+            _ => None,
+        }
+    }
+
+    /// Stable snake-case string form.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::Coding => "coding",
+            Self::Security => "security",
+            Self::Research => "research",
+        }
+    }
+}
+
+impl std::fmt::Display for SearchProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Telemetry for provider selection in a search response.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ProviderSelectionTelemetry {
+    /// The profile that was requested by the caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_requested: Option<SearchProfile>,
+    /// The profile that was actually applied (may differ if the
+    /// requested profile was unavailable or fell back).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_applied: Option<SearchProfile>,
+    /// Whether the profile fell back to generic providers.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub degraded: bool,
+    /// Human-readable reason for the provider selection or degradation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Telemetry for a single subquery in a repo search.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoSearchSubqueryTelemetry {
+    /// Label for this subquery (e.g. "docs", "source", "issues").
+    pub label: String,
+    /// The query text that was sent to providers.
+    pub query: String,
+    /// Which result group this subquery targets.
+    pub intended_group: Option<String>,
+    /// Required native capability for this subquery (e.g. "code_search",
+    /// "issue_search", "release_search"), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_capability: Option<String>,
+    /// Provider IDs that were attempted for this subquery.
+    pub providers_attempted: Vec<String>,
+}
+
+/// Telemetry for a repo search response.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoSearchTelemetry {
+    /// Provider selection telemetry.
+    pub provider_selection: ProviderSelectionTelemetry,
+    /// Subqueries that were generated and dispatched.
+    pub subqueries: Vec<RepoSearchSubqueryTelemetry>,
+    /// Whether the request-level deadline was exceeded.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deadline_exceeded: bool,
+    /// Number of subqueries that were interrupted by deadline.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub subqueries_interrupted: usize,
+    /// Number of subqueries that were skipped (never started).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub subqueries_skipped: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 /// Structured request for repo-oriented bundle search.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoSearchRequest {
@@ -72,6 +179,9 @@ pub struct RepoSearchRequest {
     /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
+    /// Optional. Search profile for provider selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<SearchProfile>,
 }
 
 impl RepoSearchRequest {
@@ -231,7 +341,7 @@ pub struct RepoSuggestedFetch {
 }
 
 /// Response from repo_search.
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoSearchResponse {
     /// The original query string.
     pub query: String,
@@ -253,6 +363,8 @@ pub struct RepoSearchResponse {
     pub warnings: Vec<SearchWarning>,
     /// Aggregate trust markers across all results.
     pub trust_markers: TrustMarkers,
+    /// Telemetry for provider selection, subqueries, and deadline status.
+    pub telemetry: RepoSearchTelemetry,
 }
 
 #[cfg(test)]
@@ -410,5 +522,144 @@ mod tests {
         assert_eq!(parsed.query, req.query);
         assert_eq!(parsed.host, req.host);
         assert_eq!(parsed.owner, req.owner);
+    }
+
+    #[test]
+    fn search_profile_parse_aliases() {
+        assert_eq!(SearchProfile::parse("generic"), Some(SearchProfile::Generic));
+        assert_eq!(SearchProfile::parse("default"), Some(SearchProfile::Generic));
+        assert_eq!(SearchProfile::parse("web"), Some(SearchProfile::Generic));
+        assert_eq!(SearchProfile::parse("coding"), Some(SearchProfile::Coding));
+        assert_eq!(SearchProfile::parse("code"), Some(SearchProfile::Coding));
+        assert_eq!(SearchProfile::parse("repo"), Some(SearchProfile::Coding));
+        assert_eq!(SearchProfile::parse("repository"), Some(SearchProfile::Coding));
+        assert_eq!(SearchProfile::parse("project"), Some(SearchProfile::Coding));
+        assert_eq!(
+            SearchProfile::parse("security"),
+            Some(SearchProfile::Security)
+        );
+        assert_eq!(SearchProfile::parse("vuln"), Some(SearchProfile::Security));
+        assert_eq!(
+            SearchProfile::parse("advisory"),
+            Some(SearchProfile::Security)
+        );
+        assert_eq!(
+            SearchProfile::parse("research"),
+            Some(SearchProfile::Research)
+        );
+        assert_eq!(SearchProfile::parse("deep"), Some(SearchProfile::Research));
+        assert_eq!(
+            SearchProfile::parse("thorough"),
+            Some(SearchProfile::Research)
+        );
+        assert_eq!(SearchProfile::parse("unknown"), None);
+        assert_eq!(SearchProfile::parse(""), None);
+    }
+
+    #[test]
+    fn search_profile_as_str() {
+        assert_eq!(SearchProfile::Generic.as_str(), "generic");
+        assert_eq!(SearchProfile::Coding.as_str(), "coding");
+        assert_eq!(SearchProfile::Security.as_str(), "security");
+        assert_eq!(SearchProfile::Research.as_str(), "research");
+    }
+
+    #[test]
+    fn search_profile_display() {
+        assert_eq!(SearchProfile::Generic.to_string(), "generic");
+        assert_eq!(SearchProfile::Coding.to_string(), "coding");
+    }
+
+    #[test]
+    fn search_profile_default_is_generic() {
+        assert_eq!(SearchProfile::default(), SearchProfile::Generic);
+    }
+
+    #[test]
+    fn search_profile_serde_roundtrip() {
+        let profiles = vec![
+            SearchProfile::Generic,
+            SearchProfile::Coding,
+            SearchProfile::Security,
+            SearchProfile::Research,
+        ];
+        for p in profiles {
+            let json = serde_json::to_string(&p).unwrap();
+            let parsed: SearchProfile = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, p);
+        }
+    }
+
+    #[test]
+    fn search_profile_serde_snake_case() {
+        let json = serde_json::to_string(&SearchProfile::Coding).unwrap();
+        assert_eq!(json, "\"coding\"");
+        let json = serde_json::to_string(&SearchProfile::Security).unwrap();
+        assert_eq!(json, "\"security\"");
+    }
+
+    #[test]
+    fn request_with_profile_roundtrips() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            profile: Some(SearchProfile::Coding),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: RepoSearchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.profile, Some(SearchProfile::Coding));
+    }
+
+    #[test]
+    fn request_without_profile_omits_in_json() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("profile"));
+    }
+
+    #[test]
+    fn telemetry_roundtrip() {
+        let telemetry = RepoSearchTelemetry {
+            provider_selection: ProviderSelectionTelemetry {
+                profile_requested: Some(SearchProfile::Coding),
+                profile_applied: Some(SearchProfile::Coding),
+                degraded: false,
+                reason: Some("using coding profile providers".to_string()),
+            },
+            subqueries: vec![RepoSearchSubqueryTelemetry {
+                label: "docs".to_string(),
+                query: "tokio-rs/axum docs".to_string(),
+                intended_group: Some("official_docs".to_string()),
+                required_capability: None,
+                providers_attempted: vec!["duckduckgo".to_string()],
+            }],
+            deadline_exceeded: false,
+            subqueries_interrupted: 0,
+            subqueries_skipped: 0,
+        };
+        let json = serde_json::to_string(&telemetry).unwrap();
+        let parsed: RepoSearchTelemetry = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed.provider_selection.profile_requested,
+            Some(SearchProfile::Coding)
+        );
+        assert_eq!(parsed.subqueries.len(), 1);
+        assert_eq!(parsed.subqueries[0].label, "docs");
+        assert!(!parsed.deadline_exceeded);
+    }
+
+    #[test]
+    fn response_with_profile_includes_telemetry() {
+        let response = RepoSearchResponse {
+            query: "test".to_string(),
+            mode: "repo_metasearch".to_string(),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("telemetry"));
+        assert!(json.contains("provider_selection"));
     }
 }

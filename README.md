@@ -20,7 +20,7 @@ for the default configuration.
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
 - `web_search` MCP tool: live metasearch with intent/freshness retrieval hints and deterministic `SourceCard` metadata
-- `repo_search` MCP tool: structured repository evidence discovery with grouped result bundles and suggested fetches
+- `repo_search` MCP tool: structured repository evidence discovery with grouped result bundles, search profiles, subquery telemetry, and suggested fetches
 - `security_search` MCP tool: security-oriented retrieval with normalized vulnerability metadata from OSV and grouped source cards
 - `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches
 - `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text, classified links with deterministic kind/rel/same-domain metadata, and optional PDF text extraction (feature-gated)
@@ -35,7 +35,8 @@ for the default configuration.
 `security_search`, and `research_search` are the six stable MCP tools.
 Generic search (`intent = web`) is first-class and will remain the
 default path. `repo_search` provides structured repository evidence
-discovery with grouped result bundles. `security_search` provides
+discovery with grouped result bundles, search profiles for provider
+selection, and subquery telemetry for debugging. `security_search` provides
 security-oriented retrieval with normalized vulnerability metadata and
 grouped source cards. `research_search` provides research-oriented
 multi-source evidence discovery with subquery transparency,
@@ -56,7 +57,8 @@ on:
 - **Generic search**: call `web_search` with `intent = web` (default).
 - **Documentation search**: call `web_search` with `intent = docs`.
 - **Code/repo search (preferred)**: call `repo_search` with
-  `repo:owner/name` for structured, grouped repository evidence.
+  `repo:owner/name` and optionally `profile: "coding"` for
+  structured, grouped repository evidence with provider selection.
 - **Code/repo fallback**: call `web_search` with `intent = code` and
   repo hints (e.g. `repo:owner/name`). Results are source cards, not
   structured code intelligence.
@@ -717,7 +719,9 @@ running a doctor command.
 
 Structured repository evidence discovery tool. Groups search results
 by category (docs, registry, README, source files, issues, releases,
-etc.) and returns suggested fetch URLs for each group.
+etc.) and returns suggested fetch URLs for each group. Supports
+**search profiles** for provider selection and returns **telemetry**
+showing generated subqueries and provider degradation.
 
 **Minimal call:**
 
@@ -727,13 +731,13 @@ etc.) and returns suggested fetch URLs for each group.
 }
 ```
 
-**With full repo hints:**
+**With profile and full repo hints:**
 
 ```json
 {
   "repo": "tokio-rs/axum",
   "query": "Router middleware",
-  "aspects": ["docs", "source", "issues", "releases"]
+  "profile": "coding"
 }
 ```
 
@@ -772,20 +776,80 @@ etc.) and returns suggested fetch URLs for each group.
       "suggested_fetches": []
     }
   ],
+  "telemetry": {
+    "provider_selection": {
+      "profile_requested": "coding",
+      "profile_applied": "coding",
+      "degraded": false,
+      "reason": "using coding profile providers"
+    },
+    "subqueries": [
+      {
+        "label": "docs",
+        "query": "Router middleware tokio-rs/axum docs documentation",
+        "intended_group": "official_docs",
+        "providers_attempted": ["github_code", "duckduckgo"]
+      }
+    ],
+    "deadline_exceeded": false,
+    "subqueries_interrupted": 0,
+    "subqueries_skipped": 0
+  },
   "warnings": []
 }
 ```
+
+**Search profiles:**
+
+| Profile    | Behavior                                                       |
+|------------|----------------------------------------------------------------|
+| `generic`  | Default: use configured default providers                      |
+| `coding`   | Prefer native code/issues/releases providers, then API/web     |
+| `security` | Prefer OSV and security-capable providers                      |
+| `research` | Prefer diverse source discovery and broad web/API providers    |
+
+Profiles are advisory: they influence provider selection when no
+explicit `providers` list is given. Unavailable providers are skipped
+with warnings rather than fatal errors. The response `telemetry`
+object shows which profile was requested, applied, and whether the
+selection degraded to generic providers.
 
 **Group kinds:** `OfficialDocs`, `PackageRegistry`, `Repository`,
 `Readme`, `Examples`, `Tests`, `SourceFiles`, `Issues`,
 `PullRequests`, `Releases`, `MigrationNotes`, `Changelog`,
 `CommunityDiscussion`, `Other`.
 
+**Telemetry fields:**
+
+- `provider_selection.profile_requested`: profile from the request
+- `provider_selection.profile_applied`: profile actually used
+- `provider_selection.degraded`: whether fallback to defaults occurred
+- `provider_selection.reason`: human-readable explanation
+- `subqueries`: list of generated subqueries with labels, queries,
+  intended groups, and providers attempted
+- `deadline_exceeded`: whether the request-level deadline was hit
+- `subqueries_interrupted`: subqueries cut short by deadline
+- `subqueries_skipped`: subqueries never started due to deadline
+
+**Capability warnings:**
+
+- `native_code_search_unavailable`: repo hints present but no GitHub provider
+- `symbol_hint_no_native_provider`: symbol hint but no code search provider
+- `repo_hints_not_enforced_natively`: repo/path/language hints with no native filter support
+- `issue_search_no_native_provider`: issues requested but no issue provider
+- `release_search_no_native_provider`: releases requested but no release provider
+- `coding_profile_degraded`: coding profile fell back to generic providers
+- `freshness_unenforced`: freshness requested but no timestamp support
+
 **Rules:**
 
 - `repo` is required and must be a valid `owner/name` string.
 - `query` is optional; when omitted, results are discovered from
   the repo alone.
+- `profile` is optional; one of `generic`, `coding`, `security`,
+  `research`. Common aliases (`code`, `repo`, `vuln`, `deep`) are
+  accepted.
+- `providers` is optional; explicit provider list overrides profile.
 - `aspects` is an optional list of group kinds to include; omit
   for all groups.
 - Explicit JSON fields (e.g. `repo`, `aspects`) override any

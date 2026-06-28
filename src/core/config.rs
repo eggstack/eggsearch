@@ -85,6 +85,15 @@ pub struct ApiProviderConfig {
     pub base_url: Option<String>,
 }
 
+/// Configuration for a named search profile.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProfileConfig {
+    /// Ordered list of provider IDs for this profile.
+    /// Providers are tried in order; unavailable providers are
+    /// skipped with warnings.
+    pub providers: Vec<String>,
+}
+
 /// The `[search]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
@@ -116,6 +125,7 @@ pub struct SearchSection {
     pub api: std::collections::BTreeMap<String, ApiProviderConfig>,
     /// Live network configuration. Most fields are reserved for future
     /// use; see `LiveConfig` docs.
+    #[serde(default)]
     pub live: LiveConfig,
     /// Whether to wrap untrusted search-result text (titles,
     /// snippets) in `<<<EXTERNAL_UNTRUSTED ...>>>` framing
@@ -125,6 +135,11 @@ pub struct SearchSection {
     /// Default: `true`.
     #[serde(default = "default_sanitize_output")]
     pub sanitize_output: bool,
+    /// Named search profiles. Keys are profile names ("generic",
+    /// "coding", "security", "research"). When a profile is not
+    /// configured, built-in defaults are used.
+    #[serde(default)]
+    pub profiles: std::collections::BTreeMap<String, ProfileConfig>,
 }
 
 impl Default for SearchSection {
@@ -153,6 +168,7 @@ impl Default for SearchSection {
             api: std::collections::BTreeMap::new(),
             live: LiveConfig::default(),
             sanitize_output: default_sanitize_output(),
+            profiles: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -584,6 +600,172 @@ impl AppConfig {
     /// Returns the configured user agent for fetch.
     pub fn fetch_user_agent(&self) -> String {
         self.fetch.user_agent.clone()
+    }
+
+    /// Resolve providers for a search profile. Returns the provider list,
+    /// whether the profile degraded to generic providers, and any warnings
+    /// about unavailable providers.
+    ///
+    /// Resolution order:
+    /// 1. If `explicit_providers` is non-empty, validate and use it exactly.
+    /// 2. Else if `profile` is supplied, derive provider list from configured
+    ///    profile or built-in defaults.
+    /// 3. Else use existing `default_providers` behavior.
+    pub fn resolve_profile_providers(
+        &self,
+        profile: Option<crate::core::repo_search::SearchProfile>,
+        explicit_providers: &[String],
+    ) -> (Vec<String>, bool, Vec<crate::core::result::SearchWarning>) {
+        use crate::core::repo_search::SearchProfile;
+
+        // Explicit providers always win
+        if !explicit_providers.is_empty() {
+            match self.resolve_providers(explicit_providers) {
+                Ok(providers) => return (providers, false, vec![]),
+                Err(e) => {
+                    return (
+                        vec![],
+                        true,
+                        vec![crate::core::result::SearchWarning::new(
+                            "_system",
+                            format!("provider_resolution_failed: {e}"),
+                        )],
+                    );
+                }
+            }
+        }
+
+        let profile = profile.unwrap_or_default();
+
+        // Try configured profile first
+        let profile_providers = self.search.profiles.get(profile.as_str());
+
+        // Built-in defaults per profile
+        let built_in = match profile {
+            SearchProfile::Generic => vec![],
+            SearchProfile::Coding => vec![
+                "github_code".to_string(),
+                "github_issues".to_string(),
+                "github_releases".to_string(),
+                "brave_api".to_string(),
+                "searxng".to_string(),
+                "duckduckgo".to_string(),
+                "startpage".to_string(),
+            ],
+            SearchProfile::Security => vec![
+                "osv".to_string(),
+                "github_issues".to_string(),
+                "brave_api".to_string(),
+                "duckduckgo".to_string(),
+                "startpage".to_string(),
+            ],
+            SearchProfile::Research => vec![
+                "brave_api".to_string(),
+                "searxng".to_string(),
+                "duckduckgo".to_string(),
+                "startpage".to_string(),
+                "mojeek".to_string(),
+            ],
+        };
+
+        let candidate_list = profile_providers
+            .map(|pc| pc.providers.clone())
+            .unwrap_or(built_in);
+
+        // If the profile is Generic and has no configured providers, fall back to defaults
+        if candidate_list.is_empty() && profile == SearchProfile::Generic {
+            match self.resolve_providers(&[]) {
+                Ok(providers) => return (providers, false, vec![]),
+                Err(e) => {
+                    return (
+                        vec![],
+                        true,
+                        vec![crate::core::result::SearchWarning::new(
+                            "_system",
+                            format!("default_provider_resolution_failed: {e}"),
+                        )],
+                    );
+                }
+            }
+        }
+
+        let enabled_ids = self.enabled_provider_ids();
+        let enabled: std::collections::BTreeSet<&str> =
+            enabled_ids.iter().map(|s| s.as_str()).collect();
+        let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
+        let configured: std::collections::BTreeSet<&str> =
+            self.search.providers.keys().map(|s| s.as_str()).collect();
+        let api_known: std::collections::BTreeSet<&str> =
+            self.search.api.keys().map(|s| s.as_str()).collect();
+
+        let mut warnings = Vec::new();
+        let mut resolved = Vec::new();
+        let mut any_available = false;
+
+        for id in &candidate_list {
+            let id_str = id.as_str();
+            let is_known = known.contains(id_str)
+                || configured.contains(id_str)
+                || api_known.contains(id_str);
+            let is_enabled = enabled.contains(id_str) || api_known.contains(id_str);
+
+            if !is_known {
+                // Unknown provider IDs are skipped with warning
+                warnings.push(crate::core::result::SearchWarning::new(
+                    "_system",
+                    format!("profile_provider_unknown: {id} is in {profile} profile but is not a known provider"),
+                ));
+                continue;
+            }
+
+            if !is_enabled {
+                warnings.push(crate::core::result::SearchWarning::new(
+                    "_system",
+                    format!("profile_provider_unavailable: {id} is in {profile} profile but not configured or enabled"),
+                ));
+                continue;
+            }
+
+            resolved.push(id.clone());
+            any_available = true;
+        }
+
+        if resolved.is_empty() && !candidate_list.is_empty() {
+            warnings.push(crate::core::result::SearchWarning::new(
+                "_system",
+                format!("profile_degraded: {profile} profile fell back to default providers"),
+            ));
+            // Fall back to default_providers
+            match self.resolve_providers(&[]) {
+                Ok(defaults) => return (defaults, true, warnings),
+                Err(e) => {
+                    warnings.push(crate::core::result::SearchWarning::new(
+                        "_system",
+                        format!("default_provider_resolution_failed: {e}"),
+                    ));
+                    return (vec![], true, warnings);
+                }
+            }
+        }
+
+        if !any_available {
+            warnings.push(crate::core::result::SearchWarning::new(
+                "_system",
+                format!("profile_degraded: {profile} profile fell back to default providers"),
+            ));
+            match self.resolve_providers(&[]) {
+                Ok(defaults) => return (defaults, true, warnings),
+                Err(e) => {
+                    warnings.push(crate::core::result::SearchWarning::new(
+                        "_system",
+                        format!("default_provider_resolution_failed: {e}"),
+                    ));
+                    return (vec![], true, warnings);
+                }
+            }
+        }
+
+        (resolved, false, warnings)
     }
 }
 
@@ -1199,5 +1381,168 @@ mod tests {
         assert!(!cfg.enabled);
         assert!(cfg.api_key_env.is_none());
         assert!(cfg.base_url.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Profile config tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn default_profiles_map_is_empty() {
+        let c = AppConfig::default();
+        assert!(c.search.profiles.is_empty());
+    }
+
+    #[test]
+    fn profile_config_serde_roundtrip() {
+        let mut profiles = std::collections::BTreeMap::new();
+        profiles.insert(
+            "coding".to_string(),
+            ProfileConfig {
+                providers: vec![
+                    "github_code".to_string(),
+                    "github_issues".to_string(),
+                    "duckduckgo".to_string(),
+                ],
+            },
+        );
+        let mut c = AppConfig::default();
+        c.search.profiles = profiles;
+
+        let text = toml::to_string(&c).unwrap();
+        let parsed: AppConfig = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.search.profiles.len(), 1);
+        let coding = parsed.search.profiles.get("coding").unwrap();
+        assert_eq!(coding.providers.len(), 3);
+        assert_eq!(coding.providers[0], "github_code");
+    }
+
+    #[test]
+    fn resolve_profile_providers_no_profile_no_explicit() {
+        let c = AppConfig::default();
+        let (providers, degraded, warnings) =
+            c.resolve_profile_providers(None, &[]);
+        assert!(!providers.is_empty());
+        assert!(!degraded);
+        assert!(warnings.is_empty());
+        assert_eq!(providers, c.search.default_providers);
+    }
+
+    #[test]
+    fn resolve_profile_providers_explicit_overrides_profile() {
+        let c = AppConfig::default();
+        let (providers, degraded, warnings) =
+            c.resolve_profile_providers(
+                Some(crate::core::repo_search::SearchProfile::Coding),
+                &["duckduckgo".to_string()],
+            );
+        assert_eq!(providers, vec!["duckduckgo".to_string()]);
+        assert!(!degraded);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn resolve_profile_providers_coding_profile_uses_builtins() {
+        let c = AppConfig::default();
+        let (providers, _degraded, warnings) =
+            c.resolve_profile_providers(
+                Some(crate::core::repo_search::SearchProfile::Coding),
+                &[],
+            );
+        // Coding profile built-in defaults include github_code, github_issues, etc.
+        // Most won't be enabled in default config, so some will be skipped with warnings
+        assert!(!providers.is_empty());
+        // Should have warnings about unavailable providers
+        assert!(!warnings.is_empty());
+        // Available providers should be a subset of default_providers
+        // (the non-github ones that are enabled)
+        for p in &providers {
+            assert!(
+                c.search.default_providers.contains(p),
+                "resolved provider {p} should be from default_providers"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_profile_providers_configured_profile_used() {
+        let mut c = AppConfig::default();
+        c.search.profiles.insert(
+            "coding".to_string(),
+            ProfileConfig {
+                providers: vec!["duckduckgo".to_string(), "startpage".to_string()],
+            },
+        );
+        let (providers, degraded, _warnings) =
+            c.resolve_profile_providers(
+                Some(crate::core::repo_search::SearchProfile::Coding),
+                &[],
+            );
+        assert_eq!(providers, vec!["duckduckgo", "startpage"]);
+        assert!(!degraded);
+    }
+
+    #[test]
+    fn resolve_profile_providers_generic_falls_back_to_defaults() {
+        let c = AppConfig::default();
+        let (providers, degraded, _warnings) =
+            c.resolve_profile_providers(
+                Some(crate::core::repo_search::SearchProfile::Generic),
+                &[],
+            );
+        assert_eq!(providers, c.search.default_providers);
+        assert!(!degraded);
+    }
+
+    #[test]
+    fn resolve_profile_providers_unknown_explicit_returns_warning() {
+        let c = AppConfig::default();
+        let (_providers, degraded, warnings) =
+            c.resolve_profile_providers(None, &["ghost_provider".to_string()]);
+        assert!(degraded);
+        assert!(warnings.iter().any(|w| w.message.contains("provider_resolution_failed")));
+    }
+
+    #[test]
+    fn profile_config_toml_parse() {
+        let toml = r#"
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo"]
+
+[search.providers]
+duckduckgo = true
+
+[search.profiles.coding]
+providers = ["github_code", "duckduckgo"]
+
+[search.profiles.security]
+providers = ["osv", "duckduckgo"]
+"#;
+        let c: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(c.search.profiles.len(), 2);
+        let coding = c.search.profiles.get("coding").unwrap();
+        assert_eq!(coding.providers, vec!["github_code", "duckduckgo"]);
+        let security = c.search.profiles.get("security").unwrap();
+        assert_eq!(security.providers, vec!["osv", "duckduckgo"]);
+    }
+
+    #[test]
+    fn search_profile_parse_returns_none_for_unknown() {
+        use crate::core::repo_search::SearchProfile;
+        assert_eq!(SearchProfile::parse("unknown"), None);
+        assert_eq!(SearchProfile::parse(""), None);
+    }
+
+    #[test]
+    fn search_profile_parse_case_insensitive() {
+        use crate::core::repo_search::SearchProfile;
+        assert_eq!(SearchProfile::parse("Coding"), Some(SearchProfile::Coding));
+        assert_eq!(SearchProfile::parse("SECURITY"), Some(SearchProfile::Security));
+        assert_eq!(SearchProfile::parse("Research"), Some(SearchProfile::Research));
     }
 }

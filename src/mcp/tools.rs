@@ -142,6 +142,10 @@ pub struct RepoSearchArgs {
     /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
+    /// Optional. Search profile for provider selection ("generic",
+    /// "coding", "security", "research").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -297,6 +301,12 @@ pub struct RepoFetchArgs {
     /// Timeout in milliseconds. Defaults to server config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
+    /// Override URL for the actual fetch (internal/test-only). When
+    /// set, this URL is fetched instead of the internally-constructed
+    /// raw URL. Hidden from the MCP tool schema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub test_fetch_url: Option<String>,
 }
 
 /// Run the `web_search` tool against the shared adapter. The response
@@ -467,6 +477,11 @@ pub async fn run_repo_search(
         .and_then(|f| serde_json::from_value(serde_json::Value::String(f.to_string())).ok())
         .unwrap_or_default();
 
+    let profile = args
+        .profile
+        .as_deref()
+        .and_then(crate::core::repo_search::SearchProfile::parse);
+
     let req = RepoSearchRequest {
         query: args.query,
         host,
@@ -487,17 +502,17 @@ pub async fn run_repo_search(
         max_per_group: args.max_per_group,
         freshness,
         timeout_ms: args.timeout_ms,
-        providers: args.providers,
+        providers: args.providers.clone(),
+        profile,
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
-    let effective_providers = state
-        .config
-        .resolve_providers(&req.providers)
-        .map_err(|e| ToolError::Validation(format!("provider resolution failed: {e}")))?;
+    let (effective_providers, degraded, profile_warnings) =
+        state.config.resolve_profile_providers(req.profile, &req.providers);
+
     let (_, unknown) = state.adapter.select_engines(&effective_providers);
     if !unknown.is_empty() {
         return Err(ToolError::Validation(format!(
@@ -514,10 +529,27 @@ pub async fn run_repo_search(
     let mut req = req;
     req.providers = effective_providers;
 
-    let response = state
+    let mut response = state
         .adapter
         .repo_search(&req, effective_max, state.config.search.max_results_cap)
         .await;
+
+    // Merge profile warnings into response warnings
+    response.warnings.extend(profile_warnings);
+
+    // Populate telemetry provider selection
+    response.telemetry.provider_selection = crate::core::repo_search::ProviderSelectionTelemetry {
+        profile_requested: req.profile,
+        profile_applied: req.profile,
+        degraded,
+        reason: if degraded {
+            Some("profile fell back to default providers".to_string())
+        } else if req.profile.is_some() {
+            Some(format!("using {} profile providers", req.profile.unwrap().as_str()))
+        } else {
+            None
+        },
+    };
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
@@ -835,13 +867,29 @@ pub async fn run_repo_fetch(
     let source_role = infer_source_role(path);
 
     let max_chars = req.max_chars;
-    let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
+    let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
         ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
 
-    // Fetch the raw URL.
+    // Use per-request timeout override when provided.
+    let client: Arc<FetchClient> = if let Some(ms) = req.timeout_ms {
+        Arc::new(
+            base_client
+                .with_timeout_ms(ms)
+                .map_err(|e| ToolError::Internal(format!("failed to create timeout override: {e}")))?,
+        )
+    } else {
+        base_client
+    };
+
+    // Fetch the raw URL (or test override).
+    let fetch_url = args
+        .test_fetch_url
+        .as_deref()
+        .unwrap_or(&raw_url);
+
     let response = client
-        .fetch(&raw_url, max_chars, ExtractMode::Text, false)
+        .fetch(fetch_url, max_chars, ExtractMode::Text, false)
         .await;
 
     match response {

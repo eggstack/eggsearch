@@ -6130,6 +6130,243 @@ mod repo_search {
         );
     }
 
+    // ---- Profile and telemetry tests ----
+
+    #[tokio::test]
+    async fn repo_search_response_includes_telemetry() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let telemetry = v["telemetry"].as_object().expect("telemetry should be an object");
+        assert!(
+            telemetry.contains_key("provider_selection"),
+            "telemetry should have provider_selection"
+        );
+        assert!(
+            telemetry.contains_key("subqueries"),
+            "telemetry should have subqueries"
+        );
+        assert!(
+            telemetry["subqueries"].is_array(),
+            "subqueries should be an array"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_telemetry_subqueries_have_labels() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "tokio-rs/axum middleware".into(),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let subqueries = v["telemetry"]["subqueries"]
+            .as_array()
+            .expect("subqueries is array");
+        assert!(!subqueries.is_empty(), "should have subqueries");
+        for sq in subqueries {
+            assert!(
+                sq.get("label").is_some(),
+                "subquery should have label"
+            );
+            assert!(
+                sq.get("query").is_some(),
+                "subquery should have query"
+            );
+            assert!(
+                sq.get("providers_attempted").is_some(),
+                "subquery should have providers_attempted"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn repo_search_with_profile_field() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "tokio-rs/axum".into(),
+                providers: vec!["mock_a".into()],
+                profile: Some("coding".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let telemetry = v["telemetry"].as_object().expect("telemetry should be an object");
+        let provider_selection = telemetry["provider_selection"]
+            .as_object()
+            .expect("provider_selection should be an object");
+        assert_eq!(
+            provider_selection["profile_requested"].as_str(),
+            Some("coding"),
+            "profile_requested should be coding"
+        );
+        assert_eq!(
+            provider_selection["profile_applied"].as_str(),
+            Some("coding"),
+            "profile_applied should be coding"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_without_profile_has_no_profile_in_telemetry() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let provider_selection = v["telemetry"]["provider_selection"]
+            .as_object()
+            .expect("provider_selection should be an object");
+        assert!(
+            provider_selection.get("profile_requested").is_none()
+                || provider_selection["profile_requested"].is_null(),
+            "profile_requested should be null when no profile specified"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_telemetry_deadline_fields() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let telemetry = v["telemetry"].as_object().expect("telemetry");
+        // deadline_exceeded is skipped when false, so just check it's not true
+        assert_ne!(
+            telemetry.get("deadline_exceeded").and_then(|v| v.as_bool()),
+            Some(true),
+            "deadline_exceeded should not be true"
+        );
+        // subqueries_interrupted and subqueries_skipped are skipped when 0
+        assert_ne!(
+            telemetry.get("subqueries_interrupted").and_then(|v| v.as_u64()),
+            Some(1),
+            "subqueries_interrupted should not be > 0"
+        );
+        assert_ne!(
+            telemetry.get("subqueries_skipped").and_then(|v| v.as_u64()),
+            Some(1),
+            "subqueries_skipped should not be > 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_capability_warnings_include_prefix() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "tokio-rs/axum".into(),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let warnings = v["warnings"].as_array().expect("warnings should be an array");
+        // Warnings are SearchWarning objects with {provider_id, message} fields
+        let has_native_warning = warnings.iter().any(|w| {
+            w["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("native_code_search_unavailable")
+        });
+        assert!(
+            has_native_warning,
+            "should have native_code_search_unavailable warning when no github providers: {:?}",
+            warnings
+                .iter()
+                .filter_map(|w| w["message"].as_str())
+                .collect::<Vec<_>>()
+        );
+
+        let has_issue_warning = warnings.iter().any(|w| {
+            w["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("issue_search_no_native_provider")
+        });
+        assert!(
+            has_issue_warning,
+            "should have issue_search_no_native_provider warning: {:?}",
+            warnings
+                .iter()
+                .filter_map(|w| w["message"].as_str())
+                .collect::<Vec<_>>()
+        );
+
+        let has_release_warning = warnings.iter().any(|w| {
+            w["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("release_search_no_native_provider")
+        });
+        assert!(
+            has_release_warning,
+            "should have release_search_no_native_provider warning: {:?}",
+            warnings
+                .iter()
+                .filter_map(|w| w["message"].as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[tokio::test]
     async fn security_search_returns_structured_response() {
         let engines = vec![MockEngine::success(

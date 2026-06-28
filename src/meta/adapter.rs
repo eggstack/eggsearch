@@ -659,6 +659,10 @@ impl MetadataSearchAdapter {
         effective_max_results: usize,
         max_results_cap: usize,
     ) -> crate::core::repo_search::RepoSearchResponse {
+        use crate::core::repo_search::{
+            RepoSearchSubqueryTelemetry, RepoSearchTelemetry,
+        };
+
         let plan = crate::meta::repo_planner::build_repo_search_plan(req);
 
         let effective_timeout = self.effective_timeout(req.timeout_ms);
@@ -708,12 +712,16 @@ impl MetadataSearchAdapter {
 
         push_deadline_warning(&mut warnings, "repo_search", &dispatch.deadline);
 
-        if plan.hints.has_any()
-            && !engines.iter().any(|e| {
-                let n = e.name();
-                n == "github_code" || n == "github_issues" || n == "github_releases"
-            })
-        {
+        // Capability-aware warnings
+        let has_native_code = engines.iter().any(|e| {
+            let n = e.name();
+            n == "github_code"
+        });
+        let has_native_issues = engines.iter().any(|e| e.name() == "github_issues");
+        let has_native_releases = engines.iter().any(|e| e.name() == "github_releases");
+        let has_any_native = has_native_code || has_native_issues || has_native_releases;
+
+        if plan.hints.has_any() && !has_any_native {
             warnings.push(SearchWarning::new(
                 "_system",
                 "native_code_search_unavailable: Repo hints parsed but no native GitHub provider configured; using generic web providers.",
@@ -721,28 +729,62 @@ impl MetadataSearchAdapter {
         }
 
         // Symbol-aware search warning.
-        if plan.hints.symbol.is_some() && !engines.iter().any(|e| e.name() == "github_code") {
+        if plan.hints.symbol.is_some() && !has_native_code {
             warnings.push(SearchWarning::new(
                 "_system",
-                "native_code_search_unavailable: Symbol hint parsed but no native code provider configured; using text query fallback.",
+                "symbol_hint_no_native_provider: Symbol hint present but no native code provider supports symbol search; using text query fallback.",
+            ));
+        }
+
+        // Repo/path/language hint with no native provider
+        if (plan.hints.owner.is_some() || plan.hints.path.is_some() || plan.hints.language.is_some())
+            && !engines.iter().any(|e| {
+                let n = e.name();
+                n == "github_code"
+            })
+        {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "repo_hints_not_enforced_natively: Repo/path/language hints present but selected providers cannot enforce them natively; using text query fallback.",
             ));
         }
 
         // Issues without native provider warning.
-        if req.include_issues_enabled() && !engines.iter().any(|e| e.name() == "github_issues") {
+        if req.include_issues_enabled() && !has_native_issues {
             warnings.push(SearchWarning::new(
                 "_system",
-                "native_issue_search_unavailable: Issues requested but no native issue provider configured; using generic web search.",
+                "issue_search_no_native_provider: Issues requested but no native issue provider selected; using generic web search.",
             ));
         }
 
         // Releases without native provider warning.
-        if req.include_releases_enabled() && !engines.iter().any(|e| e.name() == "github_releases")
-        {
+        if req.include_releases_enabled() && !has_native_releases {
             warnings.push(SearchWarning::new(
                 "_system",
-                "native_release_search_unavailable: Releases requested but no native release provider configured; using generic web search.",
+                "release_search_no_native_provider: Releases requested but no native release provider selected; using generic web search.",
             ));
+        }
+
+        // Coding profile with only generic providers
+        if req.profile == Some(crate::core::repo_search::SearchProfile::Coding) && !has_any_native {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "coding_profile_degraded: Coding profile requested but no native code/issues/releases provider is available; results are from generic web search",
+            ));
+        }
+
+        // Freshness with no timestamp support
+        if req.freshness != crate::core::query::Freshness::Any {
+            let has_timestamps = any_engine_supports(&engines, |c| c.supports_result_timestamps);
+            if !has_timestamps {
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    format!(
+                        "freshness_unenforced: freshness '{}' requested but no provider has timestamp support",
+                        req.freshness.as_str()
+                    ),
+                ));
+            }
         }
 
         push_failure_warnings(&mut warnings, &dispatch.raw_failures);
@@ -766,6 +808,54 @@ impl MetadataSearchAdapter {
 
         let resolved_hints_str = format_hints(&plan.hints);
 
+        // Build subquery telemetry
+        let subquery_telemetry: Vec<RepoSearchSubqueryTelemetry> = plan
+            .subqueries
+            .iter()
+            .map(|sq| {
+                let intended_group = sq.target_groups.first().map(|s| s.to_string());
+                let required_capability = match sq.label {
+                    "source" | "examples" => {
+                        if has_native_code {
+                            Some("code_search".to_string())
+                        } else {
+                            None
+                        }
+                    }
+                    "issues" => {
+                        if has_native_issues {
+                            Some("issue_search".to_string())
+                        } else {
+                            None
+                        }
+                    }
+                    "releases" => {
+                        if has_native_releases {
+                            Some("release_search".to_string())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                RepoSearchSubqueryTelemetry {
+                    label: sq.label.to_string(),
+                    query: sq.query.clone(),
+                    intended_group,
+                    required_capability,
+                    providers_attempted: queried_ids.clone(),
+                }
+            })
+            .collect();
+
+        let telemetry = RepoSearchTelemetry {
+            provider_selection: crate::core::repo_search::ProviderSelectionTelemetry::default(),
+            subqueries: subquery_telemetry,
+            deadline_exceeded: dispatch.deadline.exceeded,
+            subqueries_interrupted: dispatch.deadline.subqueries_interrupted,
+            subqueries_skipped: dispatch.deadline.subqueries_skipped,
+        };
+
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
             mode: "repo_metasearch".to_string(),
@@ -777,6 +867,7 @@ impl MetadataSearchAdapter {
             providers_failed,
             warnings,
             trust_markers,
+            telemetry,
         }
     }
 

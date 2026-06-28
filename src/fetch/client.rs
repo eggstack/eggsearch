@@ -60,6 +60,26 @@ impl FetchClient {
         })
     }
 
+    /// Clone this client with a different request timeout.
+    ///
+    /// All other settings (limits, user agent, sanitize flag) are
+    /// preserved. Only the `reqwest::Client` timeout is changed.
+    pub fn with_timeout_ms(&self, timeout_ms: u64) -> anyhow::Result<Self> {
+        let client = Client::builder()
+            .timeout(Duration::from_millis(timeout_ms))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent(&self.user_agent)
+            .build()?;
+        let mut limits = self.limits.clone();
+        limits.timeout_ms = timeout_ms;
+        Ok(Self {
+            client,
+            limits,
+            user_agent: self.user_agent.clone(),
+            sanitize_output: self.sanitize_output,
+        })
+    }
+
     /// Fetches a URL and extracts content.
     ///
     /// # Arguments

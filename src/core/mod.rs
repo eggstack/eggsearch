@@ -52,7 +52,9 @@ pub use repo_fetch::{
 };
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{
-    RepoResultGroup, RepoResultGroupKind, RepoSearchRequest, RepoSearchResponse, RepoSuggestedFetch,
+    ProviderSelectionTelemetry, RepoResultGroup, RepoResultGroupKind, RepoSearchRequest,
+    RepoSearchResponse, RepoSearchSubqueryTelemetry, RepoSearchTelemetry, RepoSuggestedFetch,
+    SearchProfile,
 };
 pub use research::{
     EvidenceQuality, ResearchDomain, ResearchResultGroup, ResearchResultGroupKind,
