@@ -76,6 +76,7 @@ eggsearch/
       code_metadata.rs   # CodeHost, CodeMetadata, deterministic URL parsing
       code_evidence.rs   # CodeEvidence, SourceRole, EvidenceConfidence, URL derivation
       code_host_fetch.rs # resolve_code_host_fetch_target, CodeHostFetchTarget
+      package.rs         # PackageEcosystem, PackageCoordinate, PackageResolution types
     meta/                # MetadataSearchAdapter + vendored engines
       mod.rs             # re-exports
       adapter.rs         # MetadataSearchAdapter, convert_aggregated, provider_status
@@ -89,6 +90,7 @@ eggsearch/
       security_grouping.rs  # deterministic grouping of security search results
       security_search.rs   # security search orchestration (run_security_search_plan)
       security_suggested_fetches.rs # suggested fetch URL generation for security groups
+      package_resolver.rs  # bounded HTTP registry lookups for package resolution
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -377,13 +379,17 @@ queries when the caller wants categorized results rather than a flat
   `repo`, `org`, `path`, `file`, `language`, `symbol`, optional
   `include_*` flags, optional `max_results`, `max_per_group`,
   `freshness`, `timeout_ms`, optional `providers`, optional `profile`
-  (one of `generic`, `coding`, `security`, `research`)
+  (one of `generic`, `coding`, `security`, `research`),
+  optional `ecosystem`, `package`, `version`, `version_requirement`,
+  `compare_version`, `include_security_context`, `include_changelog`,
+  `include_migration_guides`
 - `RepoResultGroup`: `kind` (group kind enum), `label` (human-readable),
   `results` (Vec<SourceCard>), `truncated` (bool)
 - `RepoSearchResponse`: `query`, `mode`, `resolved_hints`,
   `resolved_hints_summary`, `groups`, `suggested_fetches`,
   `providers_queried`, `providers_failed`, `warnings`, `trust_markers`,
-  `telemetry`
+  `telemetry`, optional `package_resolution: Option<PackageResolution>`,
+  optional `security_context: Option<Vec<VulnerabilityMetadata>>`
 - `RepoSuggestedFetch`: `url`, `reason`, `group`, `expected_kind`,
   `recommended_extract_mode`, `priority`, optional `structured_repo_fetch`
 - `RepoSearchTelemetry`: `provider_selection`, `subqueries`,
@@ -425,6 +431,8 @@ occurred.
 - `release_search_no_native_provider`: releases requested but no release provider
 - `coding_profile_degraded`: coding profile fell back to generic providers
 - `freshness_unenforced`: freshness requested but no timestamp support
+- `package_resolution:`: package resolution succeeded with metadata
+- `package_resolution_fallback:`: package registry API failed, using fallback metadata
 
 **Request-level deadline:** `repo_search` and `research_search` share a
 request-level deadline. Each subquery consumes from a shared remaining
@@ -441,14 +449,34 @@ with a validation error. Accepted host values: `github` (alias `gh`),
 `PullRequests`, `Releases`, `MigrationNotes`, `Changelog`,
 `CommunityDiscovery`, `Other`.
 
+**Package fields:** When package-oriented fields are provided
+(`ecosystem`, `package`, `version`, `version_requirement`,
+`compare_version`), the planner generates package-aware subqueries
+and the resolver attempts bounded HTTP lookups against the
+appropriate package registry. Package resolution is metadata
+retrieval only — it does not solve dependencies or download
+artifacts. If the registry API fails, a fallback metadata object
+is returned with a `package_resolution_fallback:` warning.
+
+When `include_security_context` is `true` and a package is
+provided, the resolver queries OSV for known vulnerabilities
+affecting the specified package and version range, returning
+results in the `security_context` response field.
+
+When `include_changelog` or `include_migration_guides` are `true`,
+subqueries are generated to discover changelog and migration-guide
+sources for the package.
+
 **Implementation:**
 - `src/core/repo_search.rs`: core types including `SearchProfile`,
   `RepoSearchTelemetry`, `ProviderSelectionTelemetry`,
   `RepoSearchSubqueryTelemetry`
+- `src/core/package.rs`: package coordinate types and ecosystem resolution
 - `src/meta/repo_grouping.rs`: deterministic classification of
   SourceCards into group kinds based on `source_kind` and URL heuristics
 - `src/meta/repo_planner.rs`: subquery generation for repo search
   bundles, producing per-aspect queries
+- `src/meta/package_resolver.rs`: bounded HTTP registry lookups
 - `src/meta/suggested_fetches.rs`: suggested fetch URL generation
   for each group based on result metadata
 - `src/core/config.rs`: `ProfileConfig` type, `profiles` field in
@@ -461,6 +489,32 @@ fetches, populate telemetry, and return the structured response.
 
 **Fallback:** if `repo_search` is unavailable (e.g. older server),
 use `web_search` with `intent = "code"` and `repo:owner/name`.
+
+### Package Resolution
+
+`repo_search` can resolve package metadata from upstream registries
+when package-oriented fields are provided in the request.
+
+**Types** (in `src/core/package.rs`):
+- `PackageEcosystem` enum: `CratesIo`, `PyPI`, `Npm`
+- `PackageCoordinate`: `ecosystem`, `name`, optional `version`,
+  optional `version_requirement`, optional `compare_version`
+- `PackageResolution`: `ecosystem`, `name`, `latest_version`,
+  optional `version`, optional `description`, `repository_url`,
+  `homepage_url`, optional `documentation_url`, `download_count`,
+  `freshness`
+
+**Resolver behavior** (in `src/meta/package_resolver.rs`):
+- Bounded HTTP lookups against crates.io, PyPI, and npm registries
+- Falls back to a best-effort metadata object if the registry API
+  returns an error or times out
+- Returns `package_resolution_fallback:` warning on fallback
+- Returns `package_resolution:` warning on successful resolution
+
+**Supported ecosystems:**
+- `CratesIo`: crates.io JSON API (`/api/v1/crates/{name}`)
+- `PyPI`: PyPI JSON API (`/pypi/{name}/json`)
+- `Npm`: npm registry API (`/v1/packages/{name}`)
 
 ### Repo Fetch
 

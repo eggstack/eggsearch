@@ -146,6 +146,30 @@ pub struct RepoSearchArgs {
     /// "coding", "security", "research").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// Optional. Package ecosystem ("crates.io", "pypi", "npm").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ecosystem: Option<String>,
+    /// Optional. Package name for package-aware search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// Optional. Specific package version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Optional. Version requirement for range queries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_requirement: Option<String>,
+    /// Optional. Compare version for migration/changelog context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compare_version: Option<String>,
+    /// Optional. Include security advisory context (default false).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_security_context: Option<bool>,
+    /// Optional. Include changelog results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_changelog: Option<bool>,
+    /// Optional. Include migration guide results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_migration_guides: Option<bool>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -504,6 +528,17 @@ pub async fn run_repo_search(
         timeout_ms: args.timeout_ms,
         providers: args.providers.clone(),
         profile,
+        ecosystem: args
+            .ecosystem
+            .as_deref()
+            .and_then(crate::core::package::PackageEcosystem::parse),
+        package: args.package.clone(),
+        version: args.version.clone(),
+        version_requirement: args.version_requirement.clone(),
+        compare_version: args.compare_version.clone(),
+        include_security_context: args.include_security_context,
+        include_changelog: args.include_changelog,
+        include_migration_guides: args.include_migration_guides,
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {

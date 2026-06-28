@@ -11,6 +11,8 @@ pub mod adapter;
 pub mod engines;
 #[cfg(feature = "mock")]
 pub mod mock;
+/// Package registry resolver: bounded HTTP lookups for crates.io, PyPI, npm.
+pub mod package_resolver;
 pub mod planner;
 pub mod repo_grouping;
 pub mod repo_planner;
@@ -26,6 +28,8 @@ pub mod suggested_fetches;
 pub use adapter::{ErrorClass, MetadataSearchAdapter};
 pub use planner::{build_search_plan, SearchPlan};
 pub use repo_grouping::{classify_group, group_results};
-pub use repo_planner::{build_repo_search_plan, RepoSearchPlan, RepoSubquery};
+pub use repo_planner::{
+    build_repo_search_plan, build_repo_search_plan_with_package, RepoSearchPlan, RepoSubquery,
+};
 pub use research_planner::{build_research_search_plan, ResearchSearchPlan};
 pub use response::{ProviderFailure, WebSearchResponse};

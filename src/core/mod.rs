@@ -9,6 +9,8 @@ pub mod config;
 pub mod document;
 pub mod error;
 pub mod fetch;
+/// Package coordinate types and ecosystem resolution for repo_search.
+pub mod package;
 pub mod provider;
 pub mod query;
 /// Structured repository fetch request/response types and validation.
@@ -37,6 +39,10 @@ pub use error::{CoreError, CoreResult};
 pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
     WebFetchResponse,
+};
+pub use package::{
+    ecosystem_to_osv, user_ecosystem_to_osv, PackageCoordinate, PackageEcosystem,
+    PackageResolution,
 };
 pub use provider::{
     built_in_provider_descriptor, ProviderCapabilities, ProviderDescriptor, ProviderKind,

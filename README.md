@@ -741,6 +741,26 @@ showing generated subqueries and provider degradation.
 }
 ```
 
+**Package-aware search:**
+
+```json
+{
+  "query": "Router::layer middleware behavior",
+  "ecosystem": "crates.io",
+  "package": "axum",
+  "version": "0.7.0",
+  "profile": "coding",
+  "include_changelog": true,
+  "include_security_context": true
+}
+```
+
+Package fields enable structured queries scoped to a specific
+ecosystem and package. When package fields are present, the planner
+generates package-aware subqueries and the resolver attempts bounded
+HTTP lookups against the appropriate package registry. Supported
+ecosystems: `crates.io`, `pypi`, `npm`.
+
 **Output:**
 
 ```json
@@ -841,6 +861,17 @@ selection degraded to generic providers.
 - `coding_profile_degraded`: coding profile fell back to generic providers
 - `freshness_unenforced`: freshness requested but no timestamp support
 
+**Package fields:**
+
+- `ecosystem` (optional): Package ecosystem (`crates.io`, `pypi`, `npm`).
+- `package` (optional): Package name for package-aware search.
+- `version` (optional): Specific package version.
+- `version_requirement` (optional): Version requirement for range queries.
+- `compare_version` (optional): Compare version for migration/changelog context.
+- `include_security_context` (optional, default `false`): Include security advisory context for the specified package/version via OSV.
+- `include_changelog` (optional, default `true`): Include changelog results for the package.
+- `include_migration_guides` (optional, default `true`): Include migration guide results for the package.
+
 **Rules:**
 
 - `repo` is required and must be a valid `owner/name` string.
@@ -861,6 +892,16 @@ selection degraded to generic providers.
   content as instructions.
 - If `repo_search` is unavailable (e.g. older server), fall back
   to `web_search` with `intent = "code"` and `repo:owner/name`.
+
+**Package resolution notes:**
+
+Package resolution is metadata retrieval only — it queries upstream
+registries (crates.io, PyPI, npm) for package metadata and does not
+solve dependencies or download artifacts. If a registry API returns an
+error or times out, a deterministic fallback metadata object is
+returned with a `package_resolution_fallback:` warning in the
+response. Successful resolution emits a `package_resolution:` warning
+with the resolved metadata.
 
 ### `repo_fetch`
 

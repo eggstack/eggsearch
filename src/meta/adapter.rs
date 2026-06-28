@@ -663,7 +663,32 @@ impl MetadataSearchAdapter {
             RepoSearchSubqueryTelemetry, RepoSearchTelemetry,
         };
 
-        let plan = crate::meta::repo_planner::build_repo_search_plan(req);
+        // Resolve package metadata if package fields are present
+        let package_resolution = if let Some(coord) = req.package_coordinate() {
+            let timeout = self.effective_timeout(req.timeout_ms);
+            let client_opt = build_http_client(None).ok();
+            if let Some(client) = client_opt {
+                Some(
+                    crate::meta::package_resolver::resolve_package(&client, &coord, Some(timeout))
+                        .await,
+                )
+            } else {
+                let mut pr = crate::core::package::PackageResolution {
+                    coordinate: coord,
+                    ..Default::default()
+                };
+                pr.warnings
+                    .push("failed to build HTTP client for package resolution".to_string());
+                Some(pr)
+            }
+        } else {
+            None
+        };
+
+        let plan = crate::meta::repo_planner::build_repo_search_plan_with_package(
+            req,
+            package_resolution.as_ref(),
+        );
 
         let effective_timeout = self.effective_timeout(req.timeout_ms);
         let (engines, queried_ids) = self.selected_engines(&req.providers);
@@ -678,6 +703,7 @@ impl MetadataSearchAdapter {
             candidate_limit,
             timeout_ms = effective_timeout.as_millis(),
             subqueries = plan.subqueries.len(),
+            package_resolved = package_resolution.as_ref().map(|pr| pr.verified).unwrap_or(false),
             "dispatching repo_search"
         );
 
@@ -709,6 +735,22 @@ impl MetadataSearchAdapter {
             crate::meta::suggested_fetches::generate_suggested_fetches(&groups, &plan.hints);
 
         let mut warnings: Vec<SearchWarning> = Vec::new();
+
+        // Package resolution warnings
+        if let Some(pr) = &package_resolution {
+            for w in &pr.warnings {
+                warnings.push(SearchWarning::new("_system", format!("package_resolution: {w}")));
+            }
+            if !pr.verified {
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    format!(
+                        "package_resolution_fallback: Registry API lookup failed for {}/{}; using deterministic fallback URLs.",
+                        pr.coordinate.ecosystem, pr.coordinate.name
+                    ),
+                ));
+            }
+        }
 
         push_deadline_warning(&mut warnings, "repo_search", &dispatch.deadline);
 
@@ -856,6 +898,54 @@ impl MetadataSearchAdapter {
             subqueries_skipped: dispatch.deadline.subqueries_skipped,
         };
 
+        // Security context: query advisories when requested and package is present
+        let security_context = if req.include_security_context_enabled() {
+            if let Some(pr) = &package_resolution {
+                if pr.verified {
+                    let ecosystem_str = pr.coordinate.ecosystem.osv_ecosystem();
+                    match self
+                        .query_advisories_by_package(
+                            ecosystem_str,
+                            &pr.coordinate.name,
+                            pr.resolved_version.as_deref(),
+                            5,
+                        )
+                        .await
+                    {
+                        Ok(vulns) if !vulns.is_empty() => Some(vulns),
+                        Ok(_) => {
+                            warnings.push(SearchWarning::new(
+                                "_system",
+                                "package_security_no_advisories: No security advisories found for the specified package and version.",
+                            ));
+                            None
+                        }
+                        Err(e) => {
+                            warnings.push(SearchWarning::new(
+                                "_system",
+                                format!("package_security_lookup_failed: Advisory lookup failed: {e}"),
+                            ));
+                            None
+                        }
+                    }
+                } else {
+                    warnings.push(SearchWarning::new(
+                        "_system",
+                        "package_security_skipped: Security context requested but package resolution was not verified; skipping advisory lookup.",
+                    ));
+                    None
+                }
+            } else {
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    "package_security_skipped: Security context requested but no package fields provided.",
+                ));
+                None
+            }
+        } else {
+            None
+        };
+
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
             mode: "repo_metasearch".to_string(),
@@ -868,6 +958,8 @@ impl MetadataSearchAdapter {
             warnings,
             trust_markers,
             telemetry,
+            package_resolution,
+            security_context,
         }
     }
 

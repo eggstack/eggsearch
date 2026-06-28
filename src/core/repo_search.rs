@@ -2,6 +2,7 @@
 
 use crate::core::code_metadata::CodeHost;
 use crate::core::fetch::ExtractMode;
+use crate::core::package::{PackageCoordinate, PackageEcosystem, PackageResolution};
 use crate::core::query::{resolve_max_results, Freshness};
 use crate::core::repo_query::RepoQueryHints;
 use crate::core::result::SearchWarning;
@@ -182,6 +183,30 @@ pub struct RepoSearchRequest {
     /// Optional. Search profile for provider selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<SearchProfile>,
+    /// Optional. Package ecosystem (crates.io, pypi, npm).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ecosystem: Option<PackageEcosystem>,
+    /// Optional. Package name for package-aware search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// Optional. Specific package version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Optional. Version requirement for range queries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_requirement: Option<String>,
+    /// Optional. Compare version for migration/changelog context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compare_version: Option<String>,
+    /// Optional. Include security advisory context (default false).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_security_context: Option<bool>,
+    /// Optional. Include changelog results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_changelog: Option<bool>,
+    /// Optional. Include migration guide results (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_migration_guides: Option<bool>,
 }
 
 impl RepoSearchRequest {
@@ -195,6 +220,13 @@ impl RepoSearchRequest {
         }
         if let Some(0) = self.max_results {
             return Err("max_results must be > 0".to_string());
+        }
+        // Validate package coordinate: ecosystem requires package name and vice versa.
+        if self.ecosystem.is_some() != self.package.is_some() {
+            return Err("both 'ecosystem' and 'package' must be provided together".to_string());
+        }
+        if let Some(coord) = self.package_coordinate() {
+            coord.validate()?;
         }
         Ok(())
     }
@@ -263,6 +295,33 @@ impl RepoSearchRequest {
     /// Whether pull request results are included (default true).
     pub fn include_pull_requests_enabled(&self) -> bool {
         self.include_pull_requests.unwrap_or(true)
+    }
+
+    /// Whether changelog results are included (default true).
+    pub fn include_changelog_enabled(&self) -> bool {
+        self.include_changelog.unwrap_or(true)
+    }
+
+    /// Whether migration guide results are included (default true).
+    pub fn include_migration_guides_enabled(&self) -> bool {
+        self.include_migration_guides.unwrap_or(true)
+    }
+
+    /// Whether security context should be included (default false).
+    pub fn include_security_context_enabled(&self) -> bool {
+        self.include_security_context.unwrap_or(false)
+    }
+
+    /// Build a PackageCoordinate from the request fields if package fields are present.
+    pub fn package_coordinate(&self) -> Option<PackageCoordinate> {
+        let ecosystem = self.ecosystem.clone()?;
+        let name = self.package.clone()?;
+        Some(PackageCoordinate {
+            ecosystem,
+            name,
+            version: self.version.clone(),
+            version_requirement: self.version_requirement.clone(),
+        })
     }
 }
 
@@ -365,6 +424,12 @@ pub struct RepoSearchResponse {
     pub trust_markers: TrustMarkers,
     /// Telemetry for provider selection, subqueries, and deadline status.
     pub telemetry: RepoSearchTelemetry,
+    /// Optional package resolution metadata when package fields were provided.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_resolution: Option<PackageResolution>,
+    /// Optional security context when include_security_context is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_context: Option<Vec<crate::core::security::VulnerabilityMetadata>>,
 }
 
 #[cfg(test)]
@@ -611,13 +676,148 @@ mod tests {
     }
 
     #[test]
-    fn request_without_profile_omits_in_json() {
+    fn response_without_profile_omits_in_json() {
         let req = RepoSearchRequest {
             query: "test".to_string(),
             ..Default::default()
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("profile"));
+    }
+
+    #[test]
+    fn validate_rejects_ecosystem_without_package() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::CratesIo),
+            package: None,
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_package_without_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: None,
+            package: Some("axum".to_string()),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_empty_package_name() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::CratesIo),
+            package: Some("  ".to_string()),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_valid_package_coordinate() {
+        let req = RepoSearchRequest {
+            query: "Router::layer middleware".to_string(),
+            ecosystem: Some(PackageEcosystem::CratesIo),
+            package: Some("axum".to_string()),
+            version: Some("0.7.0".to_string()),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn package_coordinate_returns_some_when_fields_present() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::Npm),
+            package: Some("express".to_string()),
+            version: Some("4.18.0".to_string()),
+            ..Default::default()
+        };
+        let coord = req.package_coordinate().unwrap();
+        assert_eq!(coord.ecosystem, PackageEcosystem::Npm);
+        assert_eq!(coord.name, "express");
+        assert_eq!(coord.version.as_deref(), Some("4.18.0"));
+    }
+
+    #[test]
+    fn package_coordinate_returns_none_when_fields_missing() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert!(req.package_coordinate().is_none());
+    }
+
+    #[test]
+    fn include_security_context_defaults_false() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert!(!req.include_security_context_enabled());
+    }
+
+    #[test]
+    fn include_changelog_defaults_true() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert!(req.include_changelog_enabled());
+        assert!(req.include_migration_guides_enabled());
+    }
+
+    #[test]
+    fn serde_roundtrip_request_with_package() {
+        let req = RepoSearchRequest {
+            query: "Router::layer".to_string(),
+            ecosystem: Some(PackageEcosystem::CratesIo),
+            package: Some("axum".to_string()),
+            version: Some("0.7.0".to_string()),
+            include_security_context: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: RepoSearchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.ecosystem, Some(PackageEcosystem::CratesIo));
+        assert_eq!(parsed.package.as_deref(), Some("axum"));
+        assert_eq!(parsed.version.as_deref(), Some("0.7.0"));
+        assert_eq!(parsed.include_security_context, Some(true));
+    }
+
+    #[test]
+    fn response_with_package_resolution_includes_field() {
+        use crate::core::package::{PackageCoordinate, PackageEcosystem, PackageResolution};
+
+        let response = RepoSearchResponse {
+            query: "test".to_string(),
+            mode: "repo_metasearch".to_string(),
+            package_resolution: Some(PackageResolution {
+                coordinate: PackageCoordinate {
+                    ecosystem: PackageEcosystem::CratesIo,
+                    name: "axum".to_string(),
+                    version: Some("0.7.0".to_string()),
+                    version_requirement: None,
+                },
+                registry_url: Some("https://crates.io/crates/axum".to_string()),
+                verified: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("package_resolution"));
+        assert!(json.contains("axum"));
+        let parsed: RepoSearchResponse = serde_json::from_str(&json).unwrap();
+        let pr = parsed.package_resolution.unwrap();
+        assert!(pr.verified);
+        assert_eq!(pr.coordinate.name, "axum");
     }
 
     #[test]
