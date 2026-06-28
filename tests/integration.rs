@@ -6887,6 +6887,7 @@ async fn repo_fetch_validation_error_empty_owner() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -6917,6 +6918,7 @@ async fn repo_fetch_validation_error_empty_path() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -6947,6 +6949,7 @@ async fn repo_fetch_validation_error_path_traversal() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -6977,6 +6980,7 @@ async fn repo_fetch_validation_error_absolute_path() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7007,6 +7011,7 @@ async fn repo_fetch_validation_error_inverted_line_range() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7037,6 +7042,7 @@ async fn repo_fetch_validation_error_zero_line_start() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7067,6 +7073,7 @@ async fn repo_fetch_validation_error_zero_line_end() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7097,6 +7104,7 @@ async fn repo_fetch_validation_error_excessive_context() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7127,6 +7135,7 @@ async fn repo_fetch_validation_error_max_chars_above_cap() {
             context_after: None,
             max_chars: Some(60000),
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7157,6 +7166,7 @@ async fn repo_fetch_validation_error_max_chars_zero() {
             context_after: None,
             max_chars: Some(0),
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7187,6 +7197,7 @@ async fn repo_fetch_validation_error_unsupported_host_codeberg() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7218,6 +7229,7 @@ async fn repo_fetch_validation_error_unknown_host_cli_string() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
@@ -7434,6 +7446,197 @@ async fn repo_fetch_via_web_fetch_truncation() {
 }
 
 #[tokio::test]
+async fn repo_fetch_line_range_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n");
+    });
+
+    let state = Arc::new(ServerState::build({
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        cfg
+    })
+    .expect("state"));
+
+    // Request lines 3-6 (1-indexed, inclusive) — should return exactly 4 lines.
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: Some(3),
+            line_end: Some(6),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    // Verify line metadata.
+    let returned_start = v["returned_line_start"]
+        .as_u64()
+        .expect("returned_line_start should be present");
+    let returned_end = v["returned_line_end"]
+        .as_u64()
+        .expect("returned_line_end should be present");
+    assert_eq!(returned_start, 3, "should start at line 3");
+    assert_eq!(returned_end, 6, "should end at line 6");
+
+    // Verify total_lines.
+    let total = v["total_lines"]
+        .as_u64()
+        .expect("total_lines should be present");
+    assert_eq!(total, 10, "file has 10 lines");
+
+    // Verify line content via the lines array.
+    let lines = v["lines"]
+        .as_array()
+        .expect("lines should be an array");
+    assert_eq!(lines.len(), 4, "should have 4 lines (3,4,5,6)");
+    assert_eq!(lines[0]["number"], 3);
+    assert_eq!(lines[0]["text"], "line 3");
+    assert_eq!(lines[3]["number"], 6);
+    assert_eq!(lines[3]["text"], "line 6");
+
+    // Verify the text field also contains only those lines.
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(text.contains("line 3"), "text should contain line 3: {text}");
+    assert!(text.contains("line 6"), "text should contain line 6: {text}");
+    assert!(
+        !text.contains("line 1"),
+        "text should NOT contain line 1: {text}"
+    );
+    assert!(
+        !text.contains("line 10"),
+        "text should NOT contain line 10: {text}"
+    );
+}
+
+#[tokio::test]
+async fn repo_fetch_line_range_with_context_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n");
+    });
+
+    let state = Arc::new(ServerState::build({
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        cfg
+    })
+    .expect("state"));
+
+    // Request lines 5-7 with context_before=2, context_after=1
+    // Should return lines 3-8 (5-2=3 start, 7+1=8 end).
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: Some(5),
+            line_end: Some(7),
+            context_before: Some(2),
+            context_after: Some(1),
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let returned_start = v["returned_line_start"]
+        .as_u64()
+        .expect("returned_line_start");
+    let returned_end = v["returned_line_end"]
+        .as_u64()
+        .expect("returned_line_end");
+    assert_eq!(returned_start, 3, "context should expand start to line 3");
+    assert_eq!(returned_end, 8, "context should expand end to line 8");
+
+    let lines = v["lines"]
+        .as_array()
+        .expect("lines should be an array");
+    assert_eq!(lines.len(), 6, "should have 6 lines (3..=8)");
+    assert_eq!(lines[0]["text"], "line 3");
+    assert_eq!(lines[5]["text"], "line 8");
+}
+
+#[tokio::test]
+async fn repo_fetch_429_via_run_repo_fetch() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(429).body("Rate Limited");
+    });
+
+    let state = Arc::new(ServerState::build({
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        cfg
+    })
+    .expect("state"));
+
+    let result = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+        },
+    )
+    .await;
+
+    let err = result.expect_err("429 should return an error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("429") || msg.contains("rate"),
+        "error should mention rate limit: {msg}"
+    );
+}
+
+#[tokio::test]
 async fn repo_fetch_fetch_disabled_by_policy() {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
@@ -7454,6 +7657,7 @@ async fn repo_fetch_fetch_disabled_by_policy() {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            test_fetch_url: None,
         },
     )
     .await;
