@@ -66,6 +66,7 @@ eggsearch/
       result.rs          # SearchWarning, TrustLevel
       repo_query.rs      # RepoQueryHints: structured repo hint parser
       repo_search.rs     # RepoSearchRequest, RepoResultGroup, RepoSearchResponse types
+      repo_fetch.rs      # RepoFetchRequest, RepoFetchResponse: structured repo file fetch
       research.rs        # ResearchSearchRequest, ResearchDomain, ResearchSourceType, etc.
       source_card.rs     # SourceCard output type
       document.rs        # FetchDocument, DocumentKind, RenderFormat, BlockKind, etc.
@@ -129,7 +130,7 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), and `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles)
+- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `repo_fetch` (fetches repository files by structured locator with optional line ranges), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), and `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 - The `provider_status` response includes a `server_capabilities`
@@ -188,6 +189,7 @@ eggsearch/
   - `repo_search`: `true` (structured repository evidence discovery)
   - `security_search`: `true` (security-oriented retrieval with normalized vulnerability metadata)
   - `research_search`: `true` (research-oriented multi-source evidence discovery)
+  - `repo_fetch`: always `true` (structured repository file fetch by locator)
   - `document_fetch`: always `true` (structured document extraction)
   - `pdf_fetch`: `cfg!(feature = "pdf")` (only available when compiled with the `pdf` feature)
 - This is the capability discovery endpoint for MCP clients. Clients
@@ -367,7 +369,7 @@ queries when the caller wants categorized results rather than a flat
 - `RepoResultGroup`: `kind` (group kind enum), `label` (human-readable),
   `results` (Vec<SourceCard>), `suggested_fetches` (Vec<RepoSuggestedFetch>)
 - `RepoSearchResponse`: `repo`, `groups` (Vec<RepoResultGroup>), `warnings`
-- `RepoSuggestedFetch`: `url`, `label`
+- `RepoSuggestedFetch`: `url`, `label`, optional `structured_repo_fetch` (`RepoFetchRequest` for source-file results with code evidence)
 
 **Request-level deadline:** `repo_search` and `research_search` share a
 request-level deadline. Each subquery consumes from a shared remaining
@@ -399,6 +401,57 @@ response.
 
 **Fallback:** if `repo_search` is unavailable (e.g. older server),
 use `web_search` with `intent = "code"` and `repo:owner/name`.
+
+### Repo Fetch
+
+`repo_fetch` provides structured repository file fetch by locator. It
+is the preferred tool for fetching source files from repositories
+when the caller has a structured locator rather than a URL.
+
+**Request type** (in `src/core/repo_fetch.rs`):
+- `RepoFetchRequest`: `host` (required: `github` or `gitlab`),
+  `owner` (required), `repo` (required), `path` (required file path),
+  optional `ref` (branch/tag/commit, defaults to repository default),
+  optional `line_start`, optional `line_end` (line range, 1-indexed),
+  optional `context_before` (lines of context before range),
+  optional `context_after` (lines of context after range),
+  optional `max_chars` (output cap)
+
+**Response type:**
+- `RepoFetchResponse`: `locator` (echoed request locator), `text`
+  (fetched content, sanitized), `lines` (optional line-numbered
+  content), `line_start`/`line_end` (effective line range after
+  clamping), `text_truncated` (whether output was capped),
+  `trust_markers` (sanitization metadata)
+
+**Supported hosts:**
+- GitHub: full support (raw content via `raw.githubusercontent.com`)
+- GitLab: full support (raw content via `gitlab.com/.../raw/`)
+
+**Line range behavior:**
+- Line ranges are deterministic and clamped to actual file boundaries.
+  If the requested range exceeds the file, it is silently clamped
+  to the available lines.
+- Context lines (`context_before`/`context_after`) are applied
+  **after** range validation and clamping, expanding outward from
+  the validated range. Context is also clamped to file boundaries.
+- When a line range is specified, only the requested range (plus
+  context) is returned; the full file is not returned.
+
+**Security:**
+- Reuses existing fetch safety limits (SSRF, localhost, private
+  network validation) from `web_fetch`.
+- Content is treated as `external_untrusted` and flows through the
+  same sanitization pipeline (Tier 1 control-char strip + length
+  bound; Tier 2/3 gated by `sanitize_output`).
+- `trust_markers` are included in the response.
+
+**Validation rejects:**
+- Empty `owner`, `repo`, or `path`
+- Path traversal (`..` segments)
+- Absolute paths (paths starting with `/`)
+- Inverted line ranges (`line_end` < `line_start`)
+- Excessive `context_before`/`context_after` or `max_chars` values
 
 ### Security Search
 

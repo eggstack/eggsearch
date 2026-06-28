@@ -88,6 +88,35 @@ pub fn generate_suggested_fetches(
             .and_then(|ce| ce.raw_url.as_deref().or(ce.permalink_url.as_deref()))
             .unwrap_or(&card.url);
 
+        // Build structured repo_fetch request when code evidence
+        // has all required locator fields.
+        let structured = card
+            .metadata
+            .code_evidence
+            .as_ref()
+            .and_then(|ce| {
+                let host = ce.host?;
+                let owner = ce.owner.as_deref()?;
+                let repo = ce.repo.as_deref()?;
+                let ref_name = ce.ref_name.as_deref()?;
+                let path = ce.path.as_deref()?;
+                Some(crate::core::repo_fetch::RepoFetchRequest {
+                    host: Some(host),
+                    owner: owner.to_string(),
+                    repo: repo.to_string(),
+                    ref_name: Some(ref_name.to_string()),
+                    commit_sha: ce.commit_sha.clone(),
+                    path: path.to_string(),
+                    line_start: ce.match_line_start,
+                    line_end: ce.match_line_end,
+                    context_before: ce.context_line_start.map(|_| 3),
+                    context_after: ce.context_line_end.map(|_| 3),
+                    max_chars: None,
+                    timeout_ms: None,
+                    include_full_file_metadata: None,
+                })
+            });
+
         let priority = suggestions.len().saturating_add(1) as u8;
         suggestions.push(RepoSuggestedFetch {
             url: fetch_url.to_string(),
@@ -96,6 +125,7 @@ pub fn generate_suggested_fetches(
             expected_kind: rule.expected_kind,
             recommended_extract_mode: rule.extract_mode,
             priority,
+            structured_repo_fetch: structured,
         });
 
         if suggestions.len() >= SUGGESTION_CAP {

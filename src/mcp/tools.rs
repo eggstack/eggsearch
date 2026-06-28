@@ -261,6 +261,46 @@ pub struct WebFetchArgs {
     pub include_links: Option<bool>,
 }
 
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoFetchArgs {
+    /// Code host. Optional; accepted values: github, gitlab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// Repository owner (or namespace for GitLab nested groups).
+    pub owner: String,
+    /// Repository name.
+    pub repo: String,
+    /// Branch, tag, or commit ref. Defaults to "main" when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_name: Option<String>,
+    /// Full commit SHA for stable permalink construction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_sha: Option<String>,
+    /// File path relative to repository root.
+    pub path: String,
+    /// First line to return (1-indexed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_start: Option<u32>,
+    /// Last line to return (1-indexed, inclusive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_end: Option<u32>,
+    /// Extra lines of context before line_start. Defaults to 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_before: Option<u32>,
+    /// Extra lines of context after line_end. Defaults to 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_after: Option<u32>,
+    /// Maximum characters to return. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_chars: Option<usize>,
+    /// Timeout in milliseconds. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Whether to include full file metadata. Defaults to true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_full_file_metadata: Option<bool>,
+}
+
 /// Run the `web_search` tool against the shared adapter. The response
 /// is serialized as JSON and returned to the MCP caller.
 pub async fn run_web_search(
@@ -613,6 +653,7 @@ pub fn run_provider_status(
             "generic_search": true,
             "explicit_fetch": true,
             "repo_search": true,
+            "repo_fetch": true,
             "security_search": true,
             "research_search": true,
             "document_fetch": true,
@@ -684,6 +725,200 @@ pub async fn run_web_fetch(
                 "fetch_transform": resp.fetch_transform,
             });
             Ok(payload)
+        }
+        Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
+    }
+}
+
+/// Run the `repo_fetch` tool.
+pub async fn run_repo_fetch(
+    state: Arc<ServerState>,
+    args: RepoFetchArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::code_evidence::infer_source_role;
+    use crate::core::code_metadata::CodeHost;
+    use crate::core::fetch::ExtractMode;
+    use crate::core::repo_fetch::{
+        apply_line_range, github_browser_url, github_permalink_url, github_raw_url,
+        gitlab_browser_url, gitlab_raw_url, FetchTrust, RepoFetchResponse, RepoFetchRequest,
+        RepoLocator,
+    };
+
+    if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
+        return Err(ToolError::Internal(web_fetch_denied_message()));
+    }
+
+    // Parse host.
+    let host = if let Some(h) = &args.host {
+        match h.to_lowercase().as_str() {
+            "github" | "gh" => Some(CodeHost::Github),
+            "gitlab" | "gl" => Some(CodeHost::Gitlab),
+            other => {
+                return Err(ToolError::Validation(format!(
+                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl)"
+                )));
+            }
+        }
+    } else {
+        None
+    };
+
+    // Determine effective host: infer from owner/repo if not explicit.
+    // For now we require an explicit host or default to GitHub.
+    let effective_host = host.unwrap_or(CodeHost::Github);
+
+    let ref_name = args.ref_name.unwrap_or_else(|| "main".to_string());
+
+    // Build and validate the request.
+    let req = RepoFetchRequest {
+        host: Some(effective_host),
+        owner: args.owner.clone(),
+        repo: args.repo.clone(),
+        ref_name: Some(ref_name.clone()),
+        commit_sha: args.commit_sha.clone(),
+        path: args.path.clone(),
+        line_start: args.line_start,
+        line_end: args.line_end,
+        context_before: args.context_before,
+        context_after: args.context_after,
+        max_chars: args.max_chars,
+        timeout_ms: args.timeout_ms,
+        include_full_file_metadata: args.include_full_file_metadata,
+    };
+
+    req.validate(state.config.fetch.max_chars_cap)
+        .map_err(ToolError::Validation)?;
+
+    let owner = &req.owner;
+    let repo = &req.repo;
+    let path = &req.path;
+    let rn = req.ref_name.as_deref().unwrap_or("main");
+
+    // Build URLs based on host.
+    let (browser_url, raw_url) = match effective_host {
+        CodeHost::Github => {
+            let browser = github_browser_url(owner, repo, rn, path);
+            let raw = github_raw_url(owner, repo, rn, path);
+            (browser, raw)
+        }
+        CodeHost::Gitlab => {
+            let browser = gitlab_browser_url(owner, repo, rn, path);
+            let raw = gitlab_raw_url(owner, repo, rn, path);
+            (browser, raw)
+        }
+        _ => {
+            return Err(ToolError::Validation(format!(
+                "host '{effective_host:?}' is not supported for repo_fetch"
+            )));
+        }
+    };
+
+    let permalink_url = req.commit_sha.as_ref().map(|sha| {
+        match effective_host {
+            CodeHost::Github => github_permalink_url(owner, repo, sha, path),
+            CodeHost::Gitlab => {
+                // GitLab permalink uses the same raw URL pattern with SHA.
+                gitlab_raw_url(owner, repo, sha, path)
+            }
+            _ => raw_url.clone(),
+        }
+    });
+
+    let locator = RepoLocator {
+        host: effective_host,
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+        ref_name: rn.to_string(),
+        commit_sha: req.commit_sha.clone(),
+        path: path.to_string(),
+    };
+
+    let language = crate::core::code_metadata::language_from_extension(path)
+        .map(String::from);
+    let source_role = infer_source_role(path);
+
+    let max_chars = req.max_chars;
+    let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
+        ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
+    })?;
+
+    // Fetch the raw URL.
+    let response = client
+        .fetch(&raw_url, max_chars, ExtractMode::Text, false)
+        .await;
+
+    match response {
+        Ok(resp) => {
+            let status = resp.status;
+            let content_type = resp.content_type.clone();
+            let truncated = resp.truncated;
+            let warnings = resp.warnings.clone();
+            let trust_markers = resp.trust_markers.clone();
+            let text = resp.text.clone();
+
+            // Parse lines from text for line slicing.
+            let all_lines: Vec<String> = text
+                .as_deref()
+                .unwrap_or("")
+                .lines()
+                .map(String::from)
+                .collect();
+            let total_lines = if all_lines.is_empty() {
+                None
+            } else {
+                Some(all_lines.len() as u32)
+            };
+
+            // Apply line range.
+            let (sliced_lines, returned_start, returned_end, _line_truncated) = apply_line_range(
+                &all_lines,
+                req.line_start,
+                req.line_end,
+                req.context_before.unwrap_or(0),
+                req.context_after.unwrap_or(0),
+            );
+
+            // Build text from sliced lines.
+            let sliced_text = if sliced_lines.is_empty() {
+                None
+            } else {
+                let t: String = sliced_lines
+                    .iter()
+                    .map(|l| l.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Some(t)
+            };
+
+            let fetch_response = RepoFetchResponse {
+                locator,
+                fetched: resp.fetched,
+                status: Some(status),
+                content_type,
+                language,
+                source_role: Some(source_role),
+                browser_url,
+                raw_url: raw_url.clone(),
+                permalink_url,
+                content_sha256: None,
+                ref_resolved: Some(rn.to_string()),
+                line_start: req.line_start,
+                line_end: req.line_end,
+                returned_line_start: returned_start,
+                returned_line_end: returned_end,
+                total_lines,
+                text: sliced_text,
+                lines: sliced_lines,
+                document: None,
+                truncated,
+                warnings,
+                trust: FetchTrust::ExternalUntrusted,
+                trust_markers,
+            };
+
+            let value = serde_json::to_value(&fetch_response)
+                .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+            Ok(value)
         }
         Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
     }

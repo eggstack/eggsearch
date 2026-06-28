@@ -1391,7 +1391,7 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 6, "expected exactly 6 tools, got: {names:?}");
+    assert_eq!(names.len(), 7, "expected exactly 7 tools, got: {names:?}");
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
@@ -1407,6 +1407,10 @@ fn mcp_tool_surface_exactly_three_tools_with_mock_state() {
     assert!(
         names.contains(&"repo_search".to_string()),
         "missing repo_search: {names:?}"
+    );
+    assert!(
+        names.contains(&"repo_fetch".to_string()),
+        "missing repo_fetch: {names:?}"
     );
     assert!(
         names.contains(&"security_search".to_string()),

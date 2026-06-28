@@ -222,6 +222,12 @@ pub struct RepoSuggestedFetch {
     pub recommended_extract_mode: Option<ExtractMode>,
     /// Priority (lower is higher priority).
     pub priority: u8,
+    /// Optional structured repo_fetch request. When present, the
+    /// caller can use `repo_fetch` with these locator fields instead
+    /// of constructing a raw URL. Only populated for source-file
+    /// results with code evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_repo_fetch: Option<super::repo_fetch::RepoFetchRequest>,
 }
 
 /// Response from repo_search.

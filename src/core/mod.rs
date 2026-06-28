@@ -11,6 +11,8 @@ pub mod error;
 pub mod fetch;
 pub mod provider;
 pub mod query;
+/// Structured repository fetch request/response types and validation.
+pub mod repo_fetch;
 /// Repo-oriented query hint parser for structured search.
 pub mod repo_query;
 pub mod repo_search;
@@ -43,6 +45,10 @@ pub use provider::{
 pub use query::{
     resolve_max_results, Freshness, MaxResultsResolution, SafeSearch, SearchIntent,
     WebSearchRequest,
+};
+pub use repo_fetch::{
+    apply_line_range, github_browser_url, github_permalink_url, github_raw_url, gitlab_browser_url,
+    gitlab_raw_url, RepoFetchResponse, RepoFetchRequest, RepoFetchedLine, RepoLocator,
 };
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{
