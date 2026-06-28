@@ -9,6 +9,9 @@ pub mod adapter;
 /// Vendored HTML search engines. Internal; not part of the stable
 /// public API.
 pub mod engines;
+/// Local workspace search backend: bounded file walking, scoring, and
+/// SourceCard conversion.
+pub mod local_backend;
 #[cfg(feature = "mock")]
 pub mod mock;
 /// Package registry resolver: bounded HTTP lookups for crates.io, PyPI, npm.

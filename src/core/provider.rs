@@ -22,6 +22,7 @@ pub const KNOWN_PROVIDER_IDS: &[&str] = &[
     "github_issues",
     "github_releases",
     "osv",
+    "local_workspace",
 ];
 
 /// Whether the provider scrapes HTML or speaks a JSON API, or
@@ -35,6 +36,8 @@ pub enum ProviderKind {
     JsonApi,
     /// Requires an operator-supplied API key (reserved for future use).
     ApiKey,
+    /// Local filesystem search backend.
+    Local,
 }
 
 /// Feature capabilities that a provider may or may not support.
@@ -505,6 +508,33 @@ pub fn built_in_provider_descriptor(
                 supports_release_search: false,
                 supports_result_timestamps: false,
                 supports_security_search: true,
+            },
+        }),
+        "local_workspace" => Some(ProviderDescriptor {
+            id: "local_workspace".into(),
+            display_name: "Local Workspace".into(),
+            kind: ProviderKind::Local,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured,
+            capabilities: ProviderCapabilities {
+                supports_safe_search: false,
+                supports_freshness: false,
+                supports_language: false,
+                supports_region: false,
+                supports_domain_filters: false,
+                supports_news: false,
+                supports_code_search: true,
+                supports_repo_filter: false,
+                supports_org_filter: false,
+                supports_path_filter: true,
+                supports_language_filter: true,
+                supports_symbol_hint: false,
+                supports_issue_search: false,
+                supports_release_search: false,
+                supports_result_timestamps: false,
+                supports_security_search: false,
             },
         }),
         _ => None,

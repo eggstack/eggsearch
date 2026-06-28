@@ -9,6 +9,8 @@ pub mod config;
 pub mod document;
 pub mod error;
 pub mod fetch;
+/// Local workspace search types: config, file entries, and search requests.
+pub mod local;
 /// Package coordinate types and ecosystem resolution for repo_search.
 pub mod package;
 pub mod provider;
@@ -39,6 +41,9 @@ pub use error::{CoreError, CoreResult};
 pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
     WebFetchResponse,
+};
+pub use local::{
+    LocalConfig, LocalFileEntry, LocalMatch, LocalSearchRequest, LocalSearchResult,
 };
 pub use package::{
     ecosystem_to_osv, user_ecosystem_to_osv, PackageCoordinate, PackageEcosystem,

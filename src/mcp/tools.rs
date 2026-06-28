@@ -170,6 +170,9 @@ pub struct RepoSearchArgs {
     /// Optional. Include migration guide results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_migration_guides: Option<bool>,
+    /// Optional. Include local workspace results when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_local: Option<bool>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -539,6 +542,7 @@ pub async fn run_repo_search(
         include_security_context: args.include_security_context,
         include_changelog: args.include_changelog,
         include_migration_guides: args.include_migration_guides,
+        include_local: args.include_local,
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
@@ -566,7 +570,12 @@ pub async fn run_repo_search(
 
     let mut response = state
         .adapter
-        .repo_search(&req, effective_max, state.config.search.max_results_cap)
+        .repo_search(
+            &req,
+            effective_max,
+            state.config.search.max_results_cap,
+            state.local_backend.as_deref(),
+        )
         .await;
 
     // Merge profile warnings into response warnings
@@ -710,7 +719,15 @@ pub fn run_provider_status(
     state: Arc<ServerState>,
     _args: ProviderStatusArgs,
 ) -> Result<serde_json::Value, String> {
-    let descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
+    let mut descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
+
+    // Update local_workspace descriptor to reflect actual backend state
+    if let Some(desc) = descriptors.iter_mut().find(|d| d.id == "local_workspace") {
+        let backend_enabled = state.local_backend.is_some();
+        desc.enabled = backend_enabled;
+        desc.configured = backend_enabled;
+    }
+
     let payload = serde_json::json!({
         "providers": descriptors,
         "mode": mode_str(state.config.search.mode),

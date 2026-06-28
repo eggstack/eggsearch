@@ -77,6 +77,7 @@ eggsearch/
       code_evidence.rs   # CodeEvidence, SourceRole, EvidenceConfidence, URL derivation
       code_host_fetch.rs # resolve_code_host_fetch_target, CodeHostFetchTarget
       package.rs         # PackageEcosystem, PackageCoordinate, PackageResolution types
+      local.rs            # LocalConfig, LocalSearchRequest, LocalSearchResult types
     meta/                # MetadataSearchAdapter + vendored engines
       mod.rs             # re-exports
       adapter.rs         # MetadataSearchAdapter, convert_aggregated, provider_status
@@ -91,6 +92,7 @@ eggsearch/
       security_search.rs   # security search orchestration (run_security_search_plan)
       security_suggested_fetches.rs # suggested fetch URL generation for security groups
       package_resolver.rs  # bounded HTTP registry lookups for package resolution
+      local_backend.rs     # LocalWorkspaceBackend: bounded file walking, scoring, SourceCard conversion
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -141,7 +143,7 @@ eggsearch/
 
 ### Configuration
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
-- `AppConfig` is the root type, contains `SearchSection`
+- `AppConfig` is the root type, contains `SearchSection`, `FetchSection`, and `LocalConfig`
 - `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`, `profiles`
 - `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output, pdf_enabled, pdf_max_pages, pdf_max_chars_per_page, pdf_max_total_chars)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
@@ -150,12 +152,13 @@ eggsearch/
 - `Mode` enum: `Live` or `Off`
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 - Both `SearchSection` and `FetchSection` have `sanitize_output: bool` (default `true`). When `true`, Tier 2 (framing) and Tier 3 (marker scan) prompt-injection defenses are active. Tier 1 (control-char strip + length bound) is always on.
+- `LocalConfig` is the `[local]` section: `enabled`, `roots`, `max_file_bytes`, `max_indexed_files`, `include_hidden`, `respect_gitignore`, `follow_symlinks`
 
 ### Provider Model
-- `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`
+- `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`
 - `ProviderCapabilities` struct: 16 boolean flags for search option support
 - `ProviderDescriptor` struct: full provider metadata (id, display_name, kind, enabled, default, requires_api_key, configured, capabilities)
-- Known provider IDs: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`, `brave_api`, `github_code`, `github_issues`, `github_releases`, `osv`
+- Known provider IDs: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`, `brave_api`, `github_code`, `github_issues`, `github_releases`, `osv`, `local_workspace`
 - `built_in_provider_descriptor()` returns descriptors for all known providers
 - `MetadataSearchAdapter::provider_status()` returns `Vec<ProviderDescriptor>`
 - `resolve_providers()` validates explicit provider lists with distinct errors for disabled vs unknown providers
@@ -203,6 +206,7 @@ eggsearch/
   - `repo_fetch`: always `true` (structured repository file fetch by locator)
   - `document_fetch`: always `true` (structured document extraction)
   - `pdf_fetch`: `cfg!(feature = "pdf")` (only available when compiled with the `pdf` feature)
+  - `local_workspace`: `[local].enabled` (whether local workspace search is available)
 - This is the capability discovery endpoint for MCP clients. Clients
   can use it to determine which specialized tools are available before
   attempting to use them.
@@ -643,6 +647,52 @@ programmatic handling. See "Warning Prefixes" below for the full list.
 
 **Fallback:** if `security_search` is unavailable, use `web_search`
 with `intent = "security"`.
+
+### Local Workspace Search
+
+`repo_search` can optionally include local workspace source results when
+the operator has configured `[local]` in the config file.
+
+**Configuration** (`[local]` section):
+- `enabled` (bool, default `false`): whether local search is available
+- `roots` (Vec<String>): filesystem directories to index (canonicalized at startup)
+- `max_file_bytes` (usize, default 1048576): skip files larger than this
+- `max_indexed_files` (usize, default 50000): per-search file count cap
+- `include_hidden` (bool, default `false`): include dotfiles and hidden directories
+- `respect_gitignore` (bool, default `true`): skip gitignored paths
+- `follow_symlinks` (bool, default `false`): follow symbolic links
+
+**Request fields:**
+- `include_local: Option<bool>` on `RepoSearchRequest` controls whether
+  local results are included (default `true` when local backend is available)
+
+**Response behavior:**
+- Local results are `SourceCard` values with `trust = local_trusted`
+- `metadata.source_kind = source_file`
+- `metadata.code` and `metadata.code_evidence` populated with path,
+  language, source role, and line ranges when available
+- URL uses workspace pseudo-URL scheme: `workspace://root-name/path`
+- Local results are merged with remote results before grouping
+- `providers_queried` includes `"local_workspace"` when local backend participates
+
+**Telemetry:**
+- `providers_queried` includes `"local_workspace"` when active
+- Timeout/truncation warnings use `"local_workspace"` provider ID
+
+**Safety:**
+- Bounded by file count, file size, result count, and timeout
+- Skips common heavy/generated directories (`.git`, `target`, `node_modules`, etc.)
+- Skips binary files by extension
+- Only reads files within configured roots
+- Local source is more provenance-trusted than web content, but comments
+  and docs can still contain adversarial text
+
+**Provider status:**
+- `local_workspace` appears in `provider_status` when enabled
+- `kind: "local"`, `capabilities: code_search, path_filter, language_filter`
+
+**Deferred follow-up:** Symbol enrichment and local fetch integration
+are planned for a follow-up release.
 
 ### Research Search
 

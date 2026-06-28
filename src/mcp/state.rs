@@ -8,6 +8,7 @@ use tracing;
 use crate::core::config::AppConfig;
 use crate::fetch::FetchClient;
 use crate::meta::engines::kev::KevClient;
+use crate::meta::local_backend::LocalWorkspaceBackend;
 use crate::meta::MetadataSearchAdapter;
 
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
@@ -23,6 +24,8 @@ pub struct ServerState {
     pub fetch_client: Option<Arc<FetchClient>>,
     /// CISA KEV catalog client with TTL cache.
     pub kev_client: Arc<KevClient>,
+    /// Local workspace search backend. `None` when `[local].enabled = false`.
+    pub local_backend: Option<Arc<LocalWorkspaceBackend>>,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -32,6 +35,7 @@ impl std::fmt::Debug for ServerState {
             .field("providers", &self.adapter.provider_ids())
             .field("fetch_enabled", &self.config.fetch.enabled)
             .field("kev_client", &"<KevClient>")
+            .field("local_enabled", &self.local_backend.is_some())
             .finish()
     }
 }
@@ -132,11 +136,28 @@ impl ServerState {
 
         let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
 
+        // Build local workspace backend
+        let local_backend = match LocalWorkspaceBackend::new(config.local.clone()) {
+            Ok(backend) if backend.is_enabled() => {
+                tracing::info!(
+                    roots = ?config.local.roots.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+                    "local workspace search enabled"
+                );
+                Some(Arc::new(backend))
+            }
+            Ok(_) => None,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to build local workspace backend; local search will be unavailable");
+                None
+            }
+        };
+
         Ok(Self {
             config,
             adapter: Arc::new(adapter),
             fetch_client,
             kev_client,
+            local_backend,
         })
     }
 
@@ -165,6 +186,7 @@ impl ServerState {
             adapter,
             fetch_client,
             kev_client,
+            local_backend: None,
         }
     }
 

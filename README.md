@@ -28,6 +28,7 @@ for the default configuration.
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
 - 850+ fast tests (no network required)
+- **Local Workspace Search**: Optional local source-file discovery within configured workspace roots. Disabled by default; when enabled, `repo_search` can return local files alongside remote results with clear trust boundaries.
 
 ## Stable baseline
 
@@ -1119,6 +1120,28 @@ pdf_max_total_chars = 50000
 > as complete DNS-rebinding protection, because the post-connect peer
 > address is not independently verified.
 
+The `[local]` section configures optional local workspace search:
+
+```toml
+[local]
+enabled = true
+roots = ["/path/to/workspace"]
+max_file_bytes = 1048576
+max_indexed_files = 50000
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Whether local workspace search is available. |
+| `roots` | `[]` | Filesystem directories to index (canonicalized at startup). |
+| `max_file_bytes` | `1048576` | Skip files larger than this size. |
+| `max_indexed_files` | `50000` | Per-search file count cap. |
+| `include_hidden` | `false` | Include dotfiles and hidden directories. |
+| `respect_gitignore` | `true` | Skip gitignored paths. |
+| `follow_symlinks` | `false` | Follow symbolic links. |
+
+When `local.enabled = true`, `repo_search` can return local files alongside remote results. Local results use `trust = local_trusted` and workspace pseudo-URLs (`workspace://root-name/path`). Symbol enrichment and local fetch integration are planned for a follow-up release.
+
 ## Project Structure
 
 ```
@@ -1280,7 +1303,7 @@ conflate:
 
 - **Known provider IDs** are the identifiers the server understands:
   `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`,
-  `brave_api`, `github_code`, `github_issues`, `github_releases`, and `osv`. Unknown IDs are rejected.
+  `brave_api`, `github_code`, `github_issues`, `github_releases`, `osv`, and `local_workspace`. Unknown IDs are rejected.
 - **Enabled providers** are the subset of known IDs that the
   operator has switched on in `[search].providers` (and, for
   `searxng`, `brave_api`, `github_code`, `github_issues`, and `github_releases`, that also have their required

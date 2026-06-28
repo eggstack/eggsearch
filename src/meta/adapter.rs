@@ -658,6 +658,7 @@ impl MetadataSearchAdapter {
         req: &crate::core::repo_search::RepoSearchRequest,
         effective_max_results: usize,
         max_results_cap: usize,
+        local_backend: Option<&crate::meta::local_backend::LocalWorkspaceBackend>,
     ) -> crate::core::repo_search::RepoSearchResponse {
         use crate::core::repo_search::{
             RepoSearchSubqueryTelemetry, RepoSearchTelemetry,
@@ -724,8 +725,46 @@ impl MetadataSearchAdapter {
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
-        let cards =
+        let mut cards =
             aggregate_source_cards(dispatch.raw_results, candidate_limit, self.sanitize_output);
+
+        // Run local workspace search if enabled and requested
+        let mut local_warnings: Vec<SearchWarning> = Vec::new();
+        let mut local_queried = false;
+        if let Some(backend) = local_backend {
+            if backend.is_enabled() && req.include_local_enabled() {
+                let local_req = crate::core::local::LocalSearchRequest {
+                    query: req.query.clone(),
+                    path: req.path.clone(),
+                    language: req.language.clone(),
+                    file: req.file.clone(),
+                    symbol: req.symbol.clone(),
+                    max_results: Some(effective_max_results / 2),
+                    timeout_ms: req.timeout_ms,
+                };
+                let local_result = backend.search(&local_req).await;
+                let roots = backend.roots();
+                let local_cards =
+                    crate::meta::local_backend::LocalWorkspaceBackend::to_source_cards(
+                        &local_result.matches,
+                        &roots,
+                    );
+                if local_result.timed_out {
+                    local_warnings.push(SearchWarning::new(
+                        "local_workspace",
+                        "local_search_timeout: Local workspace search timed out",
+                    ));
+                }
+                if local_result.truncated {
+                    local_warnings.push(SearchWarning::new(
+                        "local_workspace",
+                        "local_search_truncated: Local workspace search results were truncated",
+                    ));
+                }
+                cards.extend(local_cards);
+                local_queried = true;
+            }
+        }
 
         let max_per_group = req.max_per_group.unwrap_or(5);
         let groups =
@@ -735,6 +774,9 @@ impl MetadataSearchAdapter {
             crate::meta::suggested_fetches::generate_suggested_fetches(&groups, &plan.hints);
 
         let mut warnings: Vec<SearchWarning> = Vec::new();
+
+        // Local workspace warnings
+        warnings.extend(local_warnings);
 
         // Package resolution warnings
         if let Some(pr) = &package_resolution {
@@ -946,6 +988,11 @@ impl MetadataSearchAdapter {
             None
         };
 
+        let mut providers_queried = queried_ids;
+        if local_queried && !providers_queried.contains(&"local_workspace".to_string()) {
+            providers_queried.push("local_workspace".to_string());
+        }
+
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
             mode: "repo_metasearch".to_string(),
@@ -953,7 +1000,7 @@ impl MetadataSearchAdapter {
             resolved_hints_summary: resolved_hints_str,
             groups,
             suggested_fetches,
-            providers_queried: queried_ids,
+            providers_queried,
             providers_failed,
             warnings,
             trust_markers,
@@ -3543,7 +3590,7 @@ mod tests {
             timeout_ms: Some(50),
             ..Default::default()
         };
-        let resp = adapter.repo_search(&req, 10, 50).await;
+        let resp = adapter.repo_search(&req, 10, 50, None).await;
 
         let deadline_warnings: Vec<_> = resp
             .warnings
@@ -3633,7 +3680,7 @@ mod tests {
             owner: Some("owner".to_string()),
             ..Default::default()
         };
-        let resp = adapter.repo_search(&req, 10, 50).await;
+        let resp = adapter.repo_search(&req, 10, 50, None).await;
 
         let deadline_warnings: Vec<_> = resp
             .warnings

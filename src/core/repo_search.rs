@@ -207,6 +207,10 @@ pub struct RepoSearchRequest {
     /// Optional. Include migration guide results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_migration_guides: Option<bool>,
+    /// Optional. Include local workspace results when local backend is enabled.
+    /// Default: None (uses profile-based default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_local: Option<bool>,
 }
 
 impl RepoSearchRequest {
@@ -310,6 +314,11 @@ impl RepoSearchRequest {
     /// Whether security context should be included (default false).
     pub fn include_security_context_enabled(&self) -> bool {
         self.include_security_context.unwrap_or(false)
+    }
+
+    /// Whether local results should be included (default true when local backend is available).
+    pub fn include_local_enabled(&self) -> bool {
+        self.include_local.unwrap_or(true)
     }
 
     /// Build a PackageCoordinate from the request fields if package fields are present.

@@ -298,6 +298,9 @@ pub struct AppConfig {
     /// The `[fetch]` section.
     #[serde(default)]
     pub fetch: FetchSection,
+    /// Optional `[local]` section for local workspace search.
+    #[serde(default)]
+    pub local: crate::core::local::LocalConfig,
 }
 
 impl AppConfig {
@@ -582,6 +585,39 @@ impl AppConfig {
                         )));
                     }
                 }
+            }
+        }
+
+        // Local config validation
+        if self.local.enabled {
+            if self.local.roots.is_empty() {
+                return Err(CoreError::Config(
+                    "[local].enabled is true but [local].roots is empty; at least one root is required".to_string(),
+                ));
+            }
+            for root in &self.local.roots {
+                if !root.exists() {
+                    return Err(CoreError::Config(format!(
+                        "[local].root '{}' does not exist",
+                        root.display()
+                    )));
+                }
+                if !root.is_dir() {
+                    return Err(CoreError::Config(format!(
+                        "[local].root '{}' is not a directory",
+                        root.display()
+                    )));
+                }
+            }
+            if self.local.max_file_bytes == 0 {
+                return Err(CoreError::Config(
+                    "[local].max_file_bytes must be > 0".to_string(),
+                ));
+            }
+            if self.local.max_indexed_files == 0 {
+                return Err(CoreError::Config(
+                    "[local].max_indexed_files must be > 0".to_string(),
+                ));
             }
         }
 
