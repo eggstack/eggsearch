@@ -5,126 +5,97 @@ use crate::core::repo_query::RepoQueryHints;
 use crate::core::repo_search::{RepoResultGroup, RepoResultGroupKind, RepoSuggestedFetch};
 use crate::core::source_card::SourceKind;
 
+const SUGGESTION_CAP: usize = 8;
+
+#[derive(Clone, Copy)]
+struct SuggestionRule {
+    group: RepoResultGroupKind,
+    reason: &'static str,
+    expected_kind: SourceKind,
+    extract_mode: Option<ExtractMode>,
+}
+
+const SUGGESTION_RULES: &[SuggestionRule] = &[
+    SuggestionRule {
+        group: RepoResultGroupKind::OfficialDocs,
+        reason: "official_docs",
+        expected_kind: SourceKind::OfficialDocs,
+        extract_mode: Some(ExtractMode::Markdown),
+    },
+    SuggestionRule {
+        group: RepoResultGroupKind::PackageRegistry,
+        reason: "package_registry",
+        expected_kind: SourceKind::PackageRegistry,
+        extract_mode: Some(ExtractMode::Markdown),
+    },
+    SuggestionRule {
+        group: RepoResultGroupKind::Readme,
+        reason: "readme",
+        expected_kind: SourceKind::SourceFile,
+        extract_mode: Some(ExtractMode::Markdown),
+    },
+    SuggestionRule {
+        group: RepoResultGroupKind::SourceFiles,
+        reason: "source_file_symbol_match",
+        expected_kind: SourceKind::SourceFile,
+        extract_mode: None,
+    },
+    SuggestionRule {
+        group: RepoResultGroupKind::Examples,
+        reason: "example_file",
+        expected_kind: SourceKind::SourceFile,
+        extract_mode: None,
+    },
+    SuggestionRule {
+        group: RepoResultGroupKind::Releases,
+        reason: "recent_release",
+        expected_kind: SourceKind::ReleaseNotes,
+        extract_mode: Some(ExtractMode::Markdown),
+    },
+    SuggestionRule {
+        group: RepoResultGroupKind::MigrationNotes,
+        reason: "migration_note",
+        expected_kind: SourceKind::Tutorial,
+        extract_mode: Some(ExtractMode::Markdown),
+    },
+    SuggestionRule {
+        group: RepoResultGroupKind::Issues,
+        reason: "issue_thread",
+        expected_kind: SourceKind::IssueThread,
+        extract_mode: None,
+    },
+];
+
 /// Generate suggested fetches from grouped results and resolved hints.
 pub fn generate_suggested_fetches(
     groups: &[RepoResultGroup],
     _hints: &RepoQueryHints,
 ) -> Vec<RepoSuggestedFetch> {
     let mut suggestions = Vec::new();
-    let mut priority: u8 = 1;
 
-    if let Some(group) = find_group(groups, RepoResultGroupKind::OfficialDocs) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "official_docs".to_string(),
-                group: RepoResultGroupKind::OfficialDocs,
-                expected_kind: SourceKind::OfficialDocs,
-                recommended_extract_mode: Some(ExtractMode::Markdown),
-                priority,
-            });
-            priority = priority.saturating_add(1);
+    for rule in SUGGESTION_RULES {
+        let Some(group) = find_group(groups, rule.group) else {
+            continue;
+        };
+        let Some(card) = group.results.first() else {
+            continue;
+        };
+
+        let priority = suggestions.len().saturating_add(1) as u8;
+        suggestions.push(RepoSuggestedFetch {
+            url: card.url.clone(),
+            reason: rule.reason.to_string(),
+            group: rule.group,
+            expected_kind: rule.expected_kind,
+            recommended_extract_mode: rule.extract_mode,
+            priority,
+        });
+
+        if suggestions.len() >= SUGGESTION_CAP {
+            break;
         }
     }
 
-    if let Some(group) = find_group(groups, RepoResultGroupKind::PackageRegistry) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "package_registry".to_string(),
-                group: RepoResultGroupKind::PackageRegistry,
-                expected_kind: SourceKind::PackageRegistry,
-                recommended_extract_mode: Some(ExtractMode::Markdown),
-                priority,
-            });
-            priority = priority.saturating_add(1);
-        }
-    }
-
-    if let Some(group) = find_group(groups, RepoResultGroupKind::Readme) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "readme".to_string(),
-                group: RepoResultGroupKind::Readme,
-                expected_kind: SourceKind::SourceFile,
-                recommended_extract_mode: Some(ExtractMode::Markdown),
-                priority,
-            });
-            priority = priority.saturating_add(1);
-        }
-    }
-
-    if let Some(group) = find_group(groups, RepoResultGroupKind::SourceFiles) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "source_file_symbol_match".to_string(),
-                group: RepoResultGroupKind::SourceFiles,
-                expected_kind: SourceKind::SourceFile,
-                recommended_extract_mode: None,
-                priority,
-            });
-            priority = priority.saturating_add(1);
-        }
-    }
-
-    if let Some(group) = find_group(groups, RepoResultGroupKind::Examples) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "example_file".to_string(),
-                group: RepoResultGroupKind::Examples,
-                expected_kind: SourceKind::SourceFile,
-                recommended_extract_mode: None,
-                priority,
-            });
-            priority = priority.saturating_add(1);
-        }
-    }
-
-    if let Some(group) = find_group(groups, RepoResultGroupKind::Releases) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "recent_release".to_string(),
-                group: RepoResultGroupKind::Releases,
-                expected_kind: SourceKind::ReleaseNotes,
-                recommended_extract_mode: Some(ExtractMode::Markdown),
-                priority,
-            });
-            priority = priority.saturating_add(1);
-        }
-    }
-
-    if let Some(group) = find_group(groups, RepoResultGroupKind::MigrationNotes) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "migration_note".to_string(),
-                group: RepoResultGroupKind::MigrationNotes,
-                expected_kind: SourceKind::Tutorial,
-                recommended_extract_mode: Some(ExtractMode::Markdown),
-                priority,
-            });
-            priority = priority.saturating_add(1);
-        }
-    }
-
-    if let Some(group) = find_group(groups, RepoResultGroupKind::Issues) {
-        if let Some(card) = group.results.first() {
-            suggestions.push(RepoSuggestedFetch {
-                url: card.url.clone(),
-                reason: "issue_thread".to_string(),
-                group: RepoResultGroupKind::Issues,
-                expected_kind: SourceKind::IssueThread,
-                recommended_extract_mode: None,
-                priority,
-            });
-        }
-    }
-
-    suggestions.truncate(8);
     suggestions
 }
 

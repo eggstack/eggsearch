@@ -265,7 +265,7 @@ fn ids_overlap(a: &VulnerabilityMetadata, b: &VulnerabilityMetadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::security::{SeverityLevel, VulnerabilitySource};
+    use crate::core::security::VulnerabilitySource;
 
     fn make_vuln(cve_id: &str) -> VulnerabilityMetadata {
         VulnerabilityMetadata {

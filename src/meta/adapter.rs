@@ -71,6 +71,26 @@ fn classify(err: &EngineError) -> ErrorClass {
 
 type EngineList = Vec<Arc<dyn SearchEngine>>;
 
+#[derive(Debug)]
+struct PlannedSubquery {
+    label: String,
+    query: String,
+}
+
+#[derive(Default, Debug)]
+struct RequestDeadlineStats {
+    exceeded: bool,
+    subqueries_skipped: usize,
+    subqueries_interrupted: usize,
+}
+
+#[derive(Default, Debug)]
+struct SubqueryDispatchResult {
+    raw_results: Vec<(String, Vec<SearchResult>)>,
+    raw_failures: Vec<(String, EngineError)>,
+    deadline: RequestDeadlineStats,
+}
+
 /// Constructed once at server startup. Holds the `SearchEngine`
 /// instances and the effective provider list.
 pub struct MetadataSearchAdapter {
@@ -246,6 +266,29 @@ impl MetadataSearchAdapter {
         &self.provider_ids
     }
 
+    fn effective_timeout(&self, timeout_ms: Option<u64>) -> Duration {
+        match timeout_ms {
+            Some(ms) => Duration::from_millis(ms).min(self.global_timeout),
+            None => self.global_timeout,
+        }
+    }
+
+    fn selected_engines(&self, provider_ids: &[String]) -> (EngineList, Vec<String>) {
+        if provider_ids.is_empty() {
+            return (self.engines.clone(), self.provider_ids.clone());
+        }
+
+        let (subset, unknown) = self.select_engines(provider_ids);
+        if !unknown.is_empty() {
+            warn!(
+                ?unknown,
+                "select_engines returned unknown ids; caller should have rejected these"
+            );
+        }
+        let ids = subset.iter().map(|e| e.name().to_string()).collect();
+        (subset, ids)
+    }
+
     /// Look up a vulnerability by ID using a native advisory provider.
     /// Returns `Ok(Some(metadata))` if found, `Ok(None)` if not found
     /// or no native provider supports advisory lookups.
@@ -383,32 +426,10 @@ impl MetadataSearchAdapter {
     ) -> WebSearchResponse {
         let final_max_results = effective_max_results;
         let candidate_cap = max_results_cap;
-        let (engines, queried_ids) = if req.providers.is_empty() {
-            (self.engines.clone(), self.provider_ids.clone())
-        } else {
-            let (subset, unknown) = self.select_engines(&req.providers);
-            if !unknown.is_empty() {
-                warn!(
-                    ?unknown,
-                    "select_engines returned unknown ids; caller should have rejected these"
-                );
-            }
-            let ids = subset.iter().map(|e| e.name().to_string()).collect();
-            (subset, ids)
-        };
+        let (engines, queried_ids) = self.selected_engines(&req.providers);
 
         // Per-request timeout override, bounded above by the global timeout.
-        let effective_timeout = match req.timeout_ms {
-            Some(ms) => {
-                let req_timeout = Duration::from_millis(ms);
-                if req_timeout < self.global_timeout {
-                    req_timeout
-                } else {
-                    self.global_timeout
-                }
-            }
-            None => self.global_timeout,
-        };
+        let effective_timeout = self.effective_timeout(req.timeout_ms);
 
         // Compute the candidate pool size BEFORE provider fan-out so
         // each provider is asked for the candidate limit rather than
@@ -640,31 +661,8 @@ impl MetadataSearchAdapter {
     ) -> crate::core::repo_search::RepoSearchResponse {
         let plan = crate::meta::repo_planner::build_repo_search_plan(req);
 
-        let effective_timeout = match req.timeout_ms {
-            Some(ms) => {
-                let req_timeout = Duration::from_millis(ms);
-                if req_timeout < self.global_timeout {
-                    req_timeout
-                } else {
-                    self.global_timeout
-                }
-            }
-            None => self.global_timeout,
-        };
-
-        let (engines, queried_ids) = if req.providers.is_empty() {
-            (self.engines.clone(), self.provider_ids.clone())
-        } else {
-            let (subset, unknown) = self.select_engines(&req.providers);
-            if !unknown.is_empty() {
-                warn!(
-                    ?unknown,
-                    "select_engines returned unknown ids; caller should have rejected these"
-                );
-            }
-            let ids = subset.iter().map(|e| e.name().to_string()).collect();
-            (subset, ids)
-        };
+        let effective_timeout = self.effective_timeout(req.timeout_ms);
+        let (engines, queried_ids) = self.selected_engines(&req.providers);
 
         let final_max = effective_max_results;
         let candidate_limit = candidate_pool_size(final_max, max_results_cap);
@@ -679,79 +677,25 @@ impl MetadataSearchAdapter {
             "dispatching repo_search"
         );
 
-        let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
-        let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
-        let overall_deadline = tokio::time::Instant::now() + effective_timeout;
-        let mut request_deadline_exceeded = false;
-        let mut subqueries_skipped = 0usize;
-        let mut subqueries_interrupted = 0usize;
+        let dispatch = dispatch_subqueries(
+            &engines,
+            plan.subqueries
+                .iter()
+                .map(|subquery| PlannedSubquery {
+                    label: subquery.label.to_string(),
+                    query: subquery.query.clone(),
+                })
+                .collect(),
+            candidate_limit,
+            effective_timeout,
+            "repo_search",
+        )
+        .await;
 
-        for subquery in &plan.subqueries {
-            let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                request_deadline_exceeded = true;
-                subqueries_skipped += 1;
-                continue;
-            }
-            let mut join_set = tokio::task::JoinSet::new();
-
-            for engine in &engines {
-                let engine = Arc::clone(engine);
-                let query = subquery.query.clone();
-                let limit = candidate_limit;
-                let engine_timeout = remaining;
-
-                join_set.spawn(async move {
-                    let result = engine.search(&query, limit, engine_timeout).await;
-                    (engine.name().to_string(), result)
-                });
-            }
-
-            loop {
-                let remaining =
-                    overall_deadline.saturating_duration_since(tokio::time::Instant::now());
-                if remaining.is_zero() {
-                    request_deadline_exceeded = true;
-                    subqueries_interrupted += 1;
-                    warn!(
-                        "repo_search subquery '{}' request deadline exceeded with {} engines still pending",
-                        subquery.label,
-                        join_set.len()
-                    );
-                    break;
-                }
-                match tokio::time::timeout(remaining, join_set.join_next()).await {
-                    Ok(Some(Ok((name, Ok(results))))) => {
-                        all_raw_results.push((name, results));
-                    }
-                    Ok(Some(Ok((name, Err(err))))) => {
-                        all_raw_failures.push((name, err));
-                    }
-                    Ok(Some(Err(join_err))) => {
-                        warn!(?join_err, "engine task panicked in repo_search");
-                    }
-                    Ok(None) => break,
-                    Err(_) => {
-                        request_deadline_exceeded = true;
-                        subqueries_interrupted += 1;
-                        warn!(
-                            "repo_search subquery '{}' request deadline exceeded with {} engines still pending",
-                            subquery.label,
-                            join_set.len()
-                        );
-                        break;
-                    }
-                }
-            }
-        }
-
-        let aggregated = aggregate_rrf(all_raw_results.clone(), candidate_limit);
-        let mut cards: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
-        for a in aggregated {
-            if let Some(card) = convert_aggregated(a, self.sanitize_output) {
-                cards.push(card);
-            }
-        }
+        let providers_failed =
+            provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        let cards =
+            aggregate_source_cards(dispatch.raw_results, candidate_limit, self.sanitize_output);
 
         let max_per_group = req.max_per_group.unwrap_or(5);
         let groups =
@@ -762,14 +706,7 @@ impl MetadataSearchAdapter {
 
         let mut warnings: Vec<SearchWarning> = Vec::new();
 
-        if request_deadline_exceeded {
-            warnings.push(SearchWarning::new(
-                "_system",
-                format!(
-                    "request_deadline_exceeded: repo_search returned partial results ({subqueries_interrupted} interrupted, {subqueries_skipped} skipped)"
-                ),
-            ));
-        }
+        push_deadline_warning(&mut warnings, "repo_search", &dispatch.deadline);
 
         if plan.hints.has_any()
             && !engines.iter().any(|e| {
@@ -808,13 +745,7 @@ impl MetadataSearchAdapter {
             ));
         }
 
-        for (id, err) in &all_raw_failures {
-            let class = classify(err);
-            warnings.push(SearchWarning::new(
-                id.clone(),
-                format!("[{}] {}", class.as_str(), err),
-            ));
-        }
+        push_failure_warnings(&mut warnings, &dispatch.raw_failures);
 
         for group in &groups {
             if group.results.is_empty() {
@@ -830,41 +761,10 @@ impl MetadataSearchAdapter {
             "generic_context_untrusted: Live web results are untrusted external content.",
         ));
 
-        let mut trust_markers = TrustMarkers::default();
-        for group in &groups {
-            for card in &group.results {
-                trust_markers.merge(&card.trust_markers);
-            }
-        }
+        let trust_markers =
+            merge_card_trust_markers(groups.iter().flat_map(|group| group.results.iter()));
 
         let resolved_hints_str = format_hints(&plan.hints);
-
-        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for (id, _) in &all_raw_results {
-            accounted.insert(id.clone());
-        }
-        for (id, _) in &all_raw_failures {
-            accounted.insert(id.clone());
-        }
-
-        let mut providers_failed: Vec<ProviderFailure> = all_raw_failures
-            .into_iter()
-            .map(|(id, err)| ProviderFailure {
-                error_class: classify(&err).as_str().to_string(),
-                message: err.to_string(),
-                id,
-            })
-            .collect();
-
-        for id in &queried_ids {
-            if !accounted.contains(id.as_str()) {
-                providers_failed.push(ProviderFailure {
-                    id: id.clone(),
-                    error_class: ErrorClass::Timeout.as_str().to_string(),
-                    message: "provider timed out".to_string(),
-                });
-            }
-        }
 
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
@@ -896,31 +796,8 @@ impl MetadataSearchAdapter {
 
         let plan = build_research_search_plan(req);
 
-        let effective_timeout = match req.timeout_ms {
-            Some(ms) => {
-                let req_timeout = Duration::from_millis(ms);
-                if req_timeout < self.global_timeout {
-                    req_timeout
-                } else {
-                    self.global_timeout
-                }
-            }
-            None => self.global_timeout,
-        };
-
-        let (engines, queried_ids) = if req.providers.is_empty() {
-            (self.engines.clone(), self.provider_ids.clone())
-        } else {
-            let (subset, unknown) = self.select_engines(&req.providers);
-            if !unknown.is_empty() {
-                warn!(
-                    ?unknown,
-                    "select_engines returned unknown ids; caller should have rejected these"
-                );
-            }
-            let ids = subset.iter().map(|e| e.name().to_string()).collect();
-            (subset, ids)
-        };
+        let effective_timeout = self.effective_timeout(req.timeout_ms);
+        let (engines, queried_ids) = self.selected_engines(&req.providers);
 
         let final_max = effective_max_results;
         let candidate_limit = candidate_pool_size(final_max, max_results_cap);
@@ -936,79 +813,25 @@ impl MetadataSearchAdapter {
             "dispatching research_search"
         );
 
-        let mut all_raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
-        let mut all_raw_failures: Vec<(String, EngineError)> = Vec::new();
-        let overall_deadline = tokio::time::Instant::now() + effective_timeout;
-        let mut request_deadline_exceeded = false;
-        let mut subqueries_skipped = 0usize;
-        let mut subqueries_interrupted = 0usize;
+        let dispatch = dispatch_subqueries(
+            &engines,
+            plan.subqueries
+                .iter()
+                .map(|subquery| PlannedSubquery {
+                    label: subquery.id.clone(),
+                    query: subquery.query.clone(),
+                })
+                .collect(),
+            candidate_limit,
+            effective_timeout,
+            "research_search",
+        )
+        .await;
 
-        for subquery in &plan.subqueries {
-            let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                request_deadline_exceeded = true;
-                subqueries_skipped += 1;
-                continue;
-            }
-            let mut join_set = tokio::task::JoinSet::new();
-
-            for engine in &engines {
-                let engine = Arc::clone(engine);
-                let query = subquery.query.clone();
-                let limit = candidate_limit;
-                let engine_timeout = remaining;
-
-                join_set.spawn(async move {
-                    let result = engine.search(&query, limit, engine_timeout).await;
-                    (engine.name().to_string(), result)
-                });
-            }
-
-            loop {
-                let remaining =
-                    overall_deadline.saturating_duration_since(tokio::time::Instant::now());
-                if remaining.is_zero() {
-                    request_deadline_exceeded = true;
-                    subqueries_interrupted += 1;
-                    warn!(
-                        "research_search subquery '{}' request deadline exceeded with {} engines still pending",
-                        subquery.id,
-                        join_set.len()
-                    );
-                    break;
-                }
-                match tokio::time::timeout(remaining, join_set.join_next()).await {
-                    Ok(Some(Ok((name, Ok(results))))) => {
-                        all_raw_results.push((name, results));
-                    }
-                    Ok(Some(Ok((name, Err(err))))) => {
-                        all_raw_failures.push((name, err));
-                    }
-                    Ok(Some(Err(join_err))) => {
-                        warn!(?join_err, "engine task panicked in research_search");
-                    }
-                    Ok(None) => break,
-                    Err(_) => {
-                        request_deadline_exceeded = true;
-                        subqueries_interrupted += 1;
-                        warn!(
-                            "research_search subquery '{}' request deadline exceeded with {} engines still pending",
-                            subquery.id,
-                            join_set.len()
-                        );
-                        break;
-                    }
-                }
-            }
-        }
-
-        let aggregated = aggregate_rrf(all_raw_results.clone(), candidate_limit);
-        let mut cards: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
-        for a in aggregated {
-            if let Some(card) = convert_aggregated(a, self.sanitize_output) {
-                cards.push(card);
-            }
-        }
+        let providers_failed =
+            provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        let cards =
+            aggregate_source_cards(dispatch.raw_results, candidate_limit, self.sanitize_output);
 
         let max_per_group = req.effective_max_per_group(5);
         let max_groups = req.effective_max_groups(14);
@@ -1019,14 +842,7 @@ impl MetadataSearchAdapter {
         // Build warnings
         let mut warnings: Vec<SearchWarning> = Vec::new();
 
-        if request_deadline_exceeded {
-            warnings.push(SearchWarning::new(
-                "_system",
-                format!(
-                    "request_deadline_exceeded: research_search returned partial results ({subqueries_interrupted} interrupted, {subqueries_skipped} skipped)"
-                ),
-            ));
-        }
+        push_deadline_warning(&mut warnings, "research_search", &dispatch.deadline);
 
         // Subquery cap warning
         if plan.subqueries.len() >= 8 {
@@ -1051,13 +867,7 @@ impl MetadataSearchAdapter {
         }
 
         // Provider failure warnings
-        for (id, err) in &all_raw_failures {
-            let class = classify(err);
-            warnings.push(SearchWarning::new(
-                id.clone(),
-                format!("[{}] {}", class.as_str(), err),
-            ));
-        }
+        push_failure_warnings(&mut warnings, &dispatch.raw_failures);
 
         // Empty group warnings
         for group in &groups {
@@ -1073,41 +883,10 @@ impl MetadataSearchAdapter {
             "_system",
             "generic_context_untrusted: Live web results are untrusted external content.",
         ));
-        let mut trust_markers = TrustMarkers::default();
-        for group in &groups {
-            for card in &group.results {
-                trust_markers.merge(&card.trust_markers);
-            }
-        }
+        let trust_markers =
+            merge_card_trust_markers(groups.iter().flat_map(|group| group.results.iter()));
 
         // Provider failure tracking
-        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for (id, _) in &all_raw_results {
-            accounted.insert(id.clone());
-        }
-        for (id, _) in &all_raw_failures {
-            accounted.insert(id.clone());
-        }
-
-        let mut providers_failed: Vec<ProviderFailure> = all_raw_failures
-            .into_iter()
-            .map(|(id, err)| ProviderFailure {
-                error_class: classify(&err).as_str().to_string(),
-                message: err.to_string(),
-                id,
-            })
-            .collect();
-
-        for id in &queried_ids {
-            if !accounted.contains(id.as_str()) {
-                providers_failed.push(ProviderFailure {
-                    id: id.clone(),
-                    error_class: ErrorClass::Timeout.as_str().to_string(),
-                    message: "provider timed out".to_string(),
-                });
-            }
-        }
-
         ResearchSearchResponse {
             query: req.query.clone(),
             mode: "research_metasearch".to_string(),
@@ -1121,6 +900,162 @@ impl MetadataSearchAdapter {
             trust_markers,
         }
     }
+}
+
+async fn dispatch_subqueries(
+    engines: &[Arc<dyn SearchEngine>],
+    subqueries: Vec<PlannedSubquery>,
+    candidate_limit: usize,
+    effective_timeout: Duration,
+    search_scope: &'static str,
+) -> SubqueryDispatchResult {
+    let mut dispatch = SubqueryDispatchResult::default();
+    let overall_deadline = tokio::time::Instant::now() + effective_timeout;
+
+    for subquery in subqueries {
+        let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            dispatch.deadline.exceeded = true;
+            dispatch.deadline.subqueries_skipped += 1;
+            continue;
+        }
+
+        let mut join_set = tokio::task::JoinSet::new();
+        for engine in engines {
+            let engine = Arc::clone(engine);
+            let query = subquery.query.clone();
+            let engine_timeout = remaining;
+
+            join_set.spawn(async move {
+                let result = engine.search(&query, candidate_limit, engine_timeout).await;
+                (engine.name().to_string(), result)
+            });
+        }
+
+        loop {
+            let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                dispatch.deadline.exceeded = true;
+                dispatch.deadline.subqueries_interrupted += 1;
+                warn!(
+                    scope = search_scope,
+                    subquery = subquery.label,
+                    pending_engines = join_set.len(),
+                    "request deadline exceeded with engines still pending"
+                );
+                break;
+            }
+
+            match tokio::time::timeout(remaining, join_set.join_next()).await {
+                Ok(Some(Ok((name, Ok(results))))) => {
+                    dispatch.raw_results.push((name, results));
+                }
+                Ok(Some(Ok((name, Err(err))))) => {
+                    dispatch.raw_failures.push((name, err));
+                }
+                Ok(Some(Err(join_err))) => {
+                    warn!(?join_err, scope = search_scope, "engine task panicked");
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    dispatch.deadline.exceeded = true;
+                    dispatch.deadline.subqueries_interrupted += 1;
+                    warn!(
+                        scope = search_scope,
+                        subquery = subquery.label,
+                        pending_engines = join_set.len(),
+                        "request deadline exceeded with engines still pending"
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    dispatch
+}
+
+fn aggregate_source_cards(
+    raw_results: Vec<(String, Vec<SearchResult>)>,
+    candidate_limit: usize,
+    sanitize_output: bool,
+) -> Vec<SourceCard> {
+    aggregate_rrf(raw_results, candidate_limit)
+        .into_iter()
+        .filter_map(|a| convert_aggregated(a, sanitize_output))
+        .collect()
+}
+
+fn push_deadline_warning(
+    warnings: &mut Vec<SearchWarning>,
+    scope: &str,
+    deadline: &RequestDeadlineStats,
+) {
+    if deadline.exceeded {
+        warnings.push(SearchWarning::new(
+            "_system",
+            format!(
+                "request_deadline_exceeded: {scope} returned partial results ({} interrupted, {} skipped)",
+                deadline.subqueries_interrupted, deadline.subqueries_skipped
+            ),
+        ));
+    }
+}
+
+fn push_failure_warnings(
+    warnings: &mut Vec<SearchWarning>,
+    raw_failures: &[(String, EngineError)],
+) {
+    for (id, err) in raw_failures {
+        let class = classify(err);
+        warnings.push(SearchWarning::new(
+            id.clone(),
+            format!("[{}] {}", class.as_str(), err),
+        ));
+    }
+}
+
+fn provider_failures(
+    queried_ids: &[String],
+    raw_results: &[(String, Vec<SearchResult>)],
+    raw_failures: &[(String, EngineError)],
+) -> Vec<ProviderFailure> {
+    let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (id, _) in raw_results {
+        accounted.insert(id.clone());
+    }
+    for (id, _) in raw_failures {
+        accounted.insert(id.clone());
+    }
+
+    let mut failures: Vec<ProviderFailure> = raw_failures
+        .iter()
+        .map(|(id, err)| ProviderFailure {
+            error_class: classify(err).as_str().to_string(),
+            message: err.to_string(),
+            id: id.clone(),
+        })
+        .collect();
+
+    for id in queried_ids {
+        if !accounted.contains(id.as_str()) {
+            failures.push(ProviderFailure {
+                id: id.clone(),
+                error_class: ErrorClass::Timeout.as_str().to_string(),
+                message: "provider timed out".to_string(),
+            });
+        }
+    }
+
+    failures
+}
+
+fn merge_card_trust_markers<'a>(cards: impl IntoIterator<Item = &'a SourceCard>) -> TrustMarkers {
+    let mut trust_markers = TrustMarkers::default();
+    for card in cards {
+        trust_markers.merge(&card.trust_markers);
+    }
+    trust_markers
 }
 
 fn format_hints(hints: &crate::core::repo_query::RepoQueryHints) -> String {
