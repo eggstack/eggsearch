@@ -58,7 +58,7 @@ eggsearch/
     lib.rs               # library root, re-exports core/meta/fetch/mcp
     config.rs            # CLI config loader (thin wrapper around core::config)
     commands/            # subcommands: doctor, search, providers, mcp, fetch
-    core/                # core types and logic
+    core/                # core types and logic, code evidence metadata
       mod.rs             # re-exports (AppConfig, WebSearchRequest, etc.)
       config.rs          # AppConfig, SearchSection, FetchSection, validation
       error.rs           # CoreError, CoreResult (thiserror)
@@ -73,6 +73,7 @@ eggsearch/
       provider.rs        # ProviderKind, ProviderCapabilities, ProviderDescriptor
       fetch.rs           # fetch-related types (ExtractMode, WebFetchRequest, etc.)
       code_metadata.rs   # CodeHost, CodeMetadata, deterministic URL parsing
+      code_evidence.rs   # CodeEvidence, SourceRole, EvidenceConfidence, URL derivation
       code_host_fetch.rs # resolve_code_host_fetch_target, CodeHostFetchTarget
     meta/                # MetadataSearchAdapter + vendored engines
       mod.rs             # re-exports
@@ -208,6 +209,8 @@ from native GitHub providers.
 Repo metadata is deterministic and advisory. Agents should use it to choose
 which result to fetch, but must still treat snippets and fetched content as
 untrusted data.
+
+When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence.
 
 ### Document Model
 

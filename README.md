@@ -279,6 +279,42 @@ the `metadata` object includes an optional `code` field with structured repo met
 
 The `code` field is `null` or omitted for non-code-host results.
 
+#### Code evidence metadata (optional)
+
+When a result comes from a code-hosting platform and has structured `code` metadata, the `metadata` object also includes an optional `code_evidence` field with derived URLs, source role, and match evidence:
+
+```json
+{
+  "id": "src_abc123",
+  "title": "src/lib.rs - tokio-rs/axum - GitHub",
+  "url": "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+  "metadata": {
+    "source_kind": "source_file",
+    "domain": "github.com",
+    "code": { ... },
+    "code_evidence": {
+      "host": "github",
+      "owner": "tokio-rs",
+      "repo": "axum",
+      "ref_name": "main",
+      "path": "src/lib.rs",
+      "language": "rust",
+      "source_role": "implementation",
+      "browser_url": "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+      "raw_url": "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs",
+      "evidence_confidence": "strong",
+      "evidence_reasons": ["repo_match", "language_match", "raw_url_derived", "source_role_inferred"]
+    }
+  }
+}
+```
+
+The `code_evidence` field is `null` or omitted for non-code-host results. Evidence fields are deterministic metadata derived from URL shape and existing parsed code metadata — they are not fetched content. Exact line/symbol match data is only as strong as the provider/URL allows.
+
+**Source roles:** `implementation`, `test`, `example`, `benchmark`, `configuration`, `build`, `documentation`, `readme`, `changelog`, `migration`, `unknown`.
+
+**Evidence confidence:** `exact` (line anchors from URL), `strong` (repo+path+language known), `weak` (URL-only inference), `unknown`.
+
 **Rules:**
 
 - `query` is required and must be non-empty.
@@ -883,7 +919,7 @@ eggsearch/
     lib.rs               # library root (modules: core, fetch, mcp, meta)
     config.rs            # CLI config loader
     commands/            # subcommands: doctor, search, providers, mcp, fetch
-    core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types
+    core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types, code evidence metadata
     fetch/               # HTTP fetch client and HTML extraction
     meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, + vendored engines
     mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, security_search, research_search

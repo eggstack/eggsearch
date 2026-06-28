@@ -2,6 +2,7 @@
 //! for eggsearch. This module is intentionally independent of any MCP,
 //! HTTP, or search-engine implementation.
 
+pub mod code_evidence;
 pub mod code_host_fetch;
 pub mod code_metadata;
 pub mod config;
@@ -19,6 +20,10 @@ pub mod sanitize;
 pub mod security;
 pub mod source_card;
 
+pub use code_evidence::{
+    build_code_evidence, infer_source_role, CodeEvidence, CodeEvidenceReason, EvidenceConfidence,
+    SourceRole, SymbolKind,
+};
 pub use code_host_fetch::{resolve_code_host_fetch_target, CodeHostFetchTarget};
 pub use code_metadata::{CodeHost, CodeMetadata};
 pub use config::{AppConfig, LiveConfig, Mode, SearchSection};

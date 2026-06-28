@@ -81,9 +81,16 @@ pub fn generate_suggested_fetches(
             continue;
         };
 
+        let fetch_url = card
+            .metadata
+            .code_evidence
+            .as_ref()
+            .and_then(|ce| ce.raw_url.as_deref().or(ce.permalink_url.as_deref()))
+            .unwrap_or(&card.url);
+
         let priority = suggestions.len().saturating_add(1) as u8;
         suggestions.push(RepoSuggestedFetch {
-            url: card.url.clone(),
+            url: fetch_url.to_string(),
             reason: rule.reason.to_string(),
             group: rule.group,
             expected_kind: rule.expected_kind,

@@ -220,6 +220,9 @@ pub struct SourceMetadata {
     /// Structured vulnerability metadata, present for native advisory provider results.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vulnerability: Option<Box<crate::core::security::VulnerabilityMetadata>>,
+    /// Structured code evidence with derived URLs, source role, and match metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_evidence: Option<crate::core::code_evidence::CodeEvidence>,
 }
 
 /// A single normalized result returned to MCP callers.
@@ -278,6 +281,7 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
         && m.issue.is_none()
         && m.release.is_none()
         && m.vulnerability.is_none()
+        && m.code_evidence.is_none()
 }
 
 impl SourceCard {
@@ -573,6 +577,7 @@ mod tests {
         assert!(m.issue.is_none());
         assert!(m.release.is_none());
         assert!(m.vulnerability.is_none());
+        assert!(m.code_evidence.is_none());
     }
 
     #[test]
@@ -613,5 +618,46 @@ mod tests {
             classify_source_kind("https://example.com/some/page"),
             SourceKind::Unknown
         );
+    }
+
+    #[test]
+    fn source_metadata_with_code_evidence_roundtrip() {
+        use crate::core::code_evidence::{
+            CodeEvidence, CodeEvidenceReason, EvidenceConfidence, SourceRole,
+        };
+
+        let evidence = CodeEvidence {
+            host: Some(crate::core::code_metadata::CodeHost::Github),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ref_name: Some("main".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            language: Some("rust".to_string()),
+            source_role: Some(SourceRole::Implementation),
+            browser_url: Some("https://github.com/tokio-rs/axum/blob/main/src/lib.rs".to_string()),
+            raw_url: Some(
+                "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs".to_string(),
+            ),
+            permalink_url: Some(
+                "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs".to_string(),
+            ),
+            evidence_confidence: Some(EvidenceConfidence::Strong),
+            evidence_reasons: vec![CodeEvidenceReason::RawUrlDerived, CodeEvidenceReason::LanguageMatch],
+            ..Default::default()
+        };
+
+        let meta = SourceMetadata {
+            source_kind: SourceKind::SourceFile,
+            domain: Some("github.com".to_string()),
+            code_evidence: Some(evidence.clone()),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("code_evidence"));
+        let parsed: SourceMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.code_evidence, Some(evidence));
+        assert_eq!(parsed.source_kind, SourceKind::SourceFile);
+        assert_eq!(parsed.domain.as_deref(), Some("github.com"));
     }
 }

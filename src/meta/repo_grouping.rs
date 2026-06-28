@@ -22,7 +22,9 @@ pub fn classify_group(card: &SourceCard) -> RepoResultGroupKind {
         SourceKind::ReleaseNotes => RepoResultGroupKind::Releases,
         SourceKind::Tag => RepoResultGroupKind::Releases,
         SourceKind::SecurityAdvisory => RepoResultGroupKind::Releases,
-        SourceKind::SourceFile => classify_source_file(code, &url_lower),
+        SourceKind::SourceFile => {
+            classify_source_file(code, card.metadata.code_evidence.as_ref(), &url_lower)
+        }
         SourceKind::IssueThread => {
             if card
                 .metadata
@@ -45,8 +47,22 @@ pub fn classify_group(card: &SourceCard) -> RepoResultGroupKind {
 
 fn classify_source_file(
     code: Option<&crate::core::code_metadata::CodeMetadata>,
+    code_evidence: Option<&crate::core::code_evidence::CodeEvidence>,
     url_lower: &str,
 ) -> RepoResultGroupKind {
+    if let Some(ce) = code_evidence {
+        if let Some(role) = ce.source_role {
+            use crate::core::code_evidence::SourceRole;
+            match role {
+                SourceRole::Readme => return RepoResultGroupKind::Readme,
+                SourceRole::Test => return RepoResultGroupKind::Tests,
+                SourceRole::Example => return RepoResultGroupKind::Examples,
+                SourceRole::Benchmark => return RepoResultGroupKind::Tests,
+                _ => {}
+            }
+        }
+    }
+
     let path_lower = code
         .and_then(|c| c.path.as_deref())
         .unwrap_or("")

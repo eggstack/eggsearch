@@ -1410,7 +1410,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
     Some(SourceCard {
         id,
         title,
-        url: a.url,
+        url: a.url.clone(),
         providers,
         score: Some(a.score),
         trust: TrustLevel::ExternalUntrusted,
@@ -1421,10 +1421,13 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             source_kind,
             domain,
             rank_reasons,
-            code,
+            code: code.clone(),
             issue,
             release,
             vulnerability,
+            code_evidence: code
+                .as_ref()
+                .and_then(|c| crate::core::code_evidence::build_code_evidence(c, Some(&a.url))),
         },
     })
 }
@@ -1993,6 +1996,7 @@ mod tests {
                 issue: None,
                 release: None,
                 vulnerability: None,
+                code_evidence: None,
             }),
             SourceCard::new(
                 "Docs.rs",
@@ -2009,6 +2013,7 @@ mod tests {
                 issue: None,
                 release: None,
                 vulnerability: None,
+                code_evidence: None,
             }),
         ];
         apply_intent_reranking(
