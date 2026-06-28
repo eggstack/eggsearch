@@ -549,8 +549,61 @@ pub async fn run_repo_search(
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
-    let (effective_providers, degraded, profile_warnings) =
+    let (effective_providers, degraded, mut profile_warnings) =
         state.config.resolve_profile_providers(req.profile, &req.providers);
+
+    // For profile requests (no explicit providers), filter through
+    // actual adapter availability. Config-level resolution may list
+    // providers that appear enabled but were not actually built
+    // (e.g. missing API key env var).
+    let effective_providers = if let Some(profile) = req.profile {
+        if req.providers.is_empty() {
+            let built_ids: std::collections::BTreeSet<&str> =
+                state.adapter.provider_ids().iter().map(|s| s.as_str()).collect();
+            let mut filtered = Vec::new();
+            let mut any_skipped = false;
+            for id in &effective_providers {
+                if built_ids.contains(id.as_str()) {
+                    filtered.push(id.clone());
+                } else {
+                    profile_warnings.push(crate::core::result::SearchWarning::new(
+                        "_system",
+                        format!("profile_provider_not_built: {id} is in {profile:?} profile but no engine was constructed"),
+                    ));
+                    any_skipped = true;
+                }
+            }
+
+            if filtered.is_empty() && !effective_providers.is_empty() {
+                // All profile providers were not built — degrade to defaults
+                profile_warnings.push(crate::core::result::SearchWarning::new(
+                    "_system",
+                    format!("profile_degraded: {profile:?} profile fell back to default providers"),
+                ));
+                match state.config.resolve_providers(&[]) {
+                    Ok(defaults) => defaults,
+                    Err(e) => {
+                        return Err(ToolError::Internal(format!(
+                            "default provider resolution failed: {e}"
+                        )));
+                    }
+                }
+            } else if any_skipped {
+                // Some providers were unavailable but others remain
+                profile_warnings.push(crate::core::result::SearchWarning::new(
+                    "_system",
+                    format!("profile_partial: {profile:?} profile skipped unavailable providers"),
+                ));
+                filtered
+            } else {
+                filtered
+            }
+        } else {
+            effective_providers
+        }
+    } else {
+        effective_providers
+    };
 
     let (_, unknown) = state.adapter.select_engines(&effective_providers);
     if !unknown.is_empty() {
@@ -582,16 +635,18 @@ pub async fn run_repo_search(
     response.warnings.extend(profile_warnings);
 
     // Populate telemetry provider selection
+    let has_partial_warning = response.warnings.iter().any(|w| w.message.starts_with("profile_partial:"));
+    let is_degraded = degraded || has_partial_warning;
     response.telemetry.provider_selection = crate::core::repo_search::ProviderSelectionTelemetry {
         profile_requested: req.profile,
         profile_applied: req.profile,
-        degraded,
+        degraded: is_degraded,
         reason: if degraded {
             Some("profile fell back to default providers".to_string())
-        } else if req.profile.is_some() {
-            Some(format!("using {} profile providers", req.profile.unwrap().as_str()))
+        } else if has_partial_warning {
+            Some(format!("{:?} profile skipped some unavailable providers", req.profile.unwrap_or_default()))
         } else {
-            None
+            req.profile.map(|p| format!("using {} profile providers", p.as_str()))
         },
     };
 
@@ -728,6 +783,8 @@ pub fn run_provider_status(
         desc.configured = backend_enabled;
     }
 
+    let local_enabled = state.local_backend.is_some();
+
     let payload = serde_json::json!({
         "providers": descriptors,
         "mode": mode_str(state.config.search.mode),
@@ -740,6 +797,26 @@ pub fn run_provider_status(
             "research_search": true,
             "document_fetch": true,
             "pdf_fetch": cfg!(feature = "pdf"),
+            "local_workspace": local_enabled,
+        },
+        "tool_capabilities": {
+            "repo_fetch": {
+                "remote_hosts": ["github", "gitlab"],
+                "workspace": local_enabled,
+                "line_ranges": true,
+                "context_lines": true,
+                "max_chars_enforced": true,
+            },
+            "repo_search": {
+                "profiles": ["generic", "coding", "security", "research"],
+                "package_resolution": ["crates_io", "pypi", "npm"],
+                "local_workspace": local_enabled,
+                "subquery_telemetry": true,
+            },
+            "local_workspace": {
+                "enabled": local_enabled,
+                "symbol_enrichment": "regex_heuristic",
+            },
         },
     });
     Ok(payload)
@@ -821,9 +898,9 @@ pub async fn run_repo_fetch(
     use crate::core::code_metadata::CodeHost;
     use crate::core::fetch::ExtractMode;
     use crate::core::repo_fetch::{
-        apply_line_range, github_browser_url, github_permalink_url, github_raw_url,
-        gitlab_browser_url, gitlab_raw_url, FetchTrust, RepoFetchResponse, RepoFetchRequest,
-        RepoLocator,
+        apply_line_range, github_browser_url, github_permalink_url,
+        github_raw_permalink_url, github_raw_url, gitlab_browser_url, gitlab_raw_url, FetchTrust,
+        RepoFetchResponse, RepoFetchRequest, RepoLocator,
     };
 
     // --- workspace:// local file fetch (bypasses fetch policy) ---
@@ -905,7 +982,18 @@ pub async fn run_repo_fetch(
         match effective_host {
             CodeHost::Github => github_permalink_url(owner, repo, sha, path),
             CodeHost::Gitlab => {
-                // GitLab permalink uses the same raw URL pattern with SHA.
+                // GitLab permalink uses the browser URL pattern with SHA.
+                gitlab_browser_url(owner, repo, sha, path)
+            }
+            _ => raw_url.clone(),
+        }
+    });
+
+    let raw_permalink_url = req.commit_sha.as_ref().map(|sha| {
+        match effective_host {
+            CodeHost::Github => github_raw_permalink_url(owner, repo, sha, path),
+            CodeHost::Gitlab => {
+                // GitLab raw permalink uses the raw URL pattern with SHA.
                 gitlab_raw_url(owner, repo, sha, path)
             }
             _ => raw_url.clone(),
@@ -913,12 +1001,14 @@ pub async fn run_repo_fetch(
     });
 
     let locator = RepoLocator {
-        host: effective_host,
-        owner: owner.to_string(),
-        repo: repo.to_string(),
-        ref_name: rn.to_string(),
+        kind: crate::core::repo_fetch::RepoLocatorKind::Remote,
+        host: Some(effective_host),
+        owner: Some(owner.to_string()),
+        repo: Some(repo.to_string()),
+        ref_name: Some(rn.to_string()),
         commit_sha: req.commit_sha.clone(),
         path: path.to_string(),
+        workspace_root: None,
     };
 
     let language = crate::core::code_metadata::language_from_extension(path)
@@ -1010,6 +1100,7 @@ pub async fn run_repo_fetch(
                 browser_url,
                 raw_url: raw_url.clone(),
                 permalink_url,
+                raw_permalink_url,
                 ref_resolved: Some(rn.to_string()),
                 line_start: req.line_start,
                 line_end: req.line_end,
@@ -1044,7 +1135,7 @@ async fn run_workspace_fetch(
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::code_evidence::infer_source_role;
     use crate::core::repo_fetch::{
-        apply_line_range, FetchTrust, RepoFetchResponse,
+        apply_line_range, clamp_lines_to_max_chars, FetchTrust, RepoFetchResponse,
     };
     use crate::core::sanitize::TrustMarkers;
 
@@ -1137,21 +1228,16 @@ async fn run_workspace_fetch(
             args.context_after.unwrap_or(0),
         );
 
-    // Build text from sliced lines
-    let sliced_text = if sliced_lines.is_empty() {
-        None
-    } else {
-        let t: String = sliced_lines
-            .iter()
-            .map(|l| l.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        Some(t)
-    };
+    // Build text from sliced lines, enforcing max_chars budget
+    let (mut clamped_lines, _initial_text, char_truncated) =
+        clamp_lines_to_max_chars(&sliced_lines, args.max_chars);
 
     let mut warnings: Vec<String> = Vec::new();
     if let Some(w) = line_warning {
         warnings.push(w);
+    }
+    if char_truncated {
+        warnings.push("workspace_fetch_truncated_by_max_chars".to_string());
     }
 
     let language = crate::core::code_metadata::language_from_extension(&relative_path)
@@ -1161,20 +1247,60 @@ async fn run_workspace_fetch(
     let pseudo_url = format!("workspace://{root_name}/{relative_path}");
 
     let locator = crate::core::repo_fetch::RepoLocator {
-        host: crate::core::code_metadata::CodeHost::Github, // placeholder, not meaningful for workspace
-        owner: root_name.clone(),
-        repo: relative_path.clone(),
-        ref_name: String::new(),
+        kind: crate::core::repo_fetch::RepoLocatorKind::Workspace,
+        host: None,
+        owner: None,
+        repo: None,
+        ref_name: None,
         commit_sha: None,
         path: relative_path.clone(),
+        workspace_root: Some(root_name.clone()),
     };
 
-    let truncated = sliced_text
-        .as_ref()
-        .map(|t| t.len() > args.max_chars.unwrap_or(usize::MAX))
-        .unwrap_or(false);
+    let truncated = char_truncated;
 
-    let trust_markers = TrustMarkers::default();
+    // Apply local trust-marker scanning: strip control chars and
+    // scan for injection markers. Do NOT frame local source code
+    // (no <<<EXTERNAL_UNTRUSTED>>> wrappers) — source lines must
+    // remain intact for agent copy-paste.
+    let mut trust_markers = TrustMarkers::default();
+    // Strip control chars from individual lines
+    let mut total_control_removed = 0usize;
+    for line in &mut clamped_lines {
+        let (cleaned, removed) = crate::core::sanitize::strip_control_chars(&line.text);
+        total_control_removed += removed;
+        line.text = cleaned;
+    }
+    trust_markers.control_chars_removed = total_control_removed;
+    if total_control_removed > 0 {
+        trust_markers.text_sanitized = true;
+    }
+    // Rebuild text from cleaned lines
+    let sliced_text = if clamped_lines.is_empty() {
+        None
+    } else {
+        Some(
+            clamped_lines
+                .iter()
+                .map(|l| l.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    };
+    // Scan for injection markers in the full text
+    if state.config.fetch.sanitize_output {
+        if let Some(ref text) = sliced_text {
+            let hits = crate::core::sanitize::scan_injection_markers(text);
+            trust_markers.injection_hits = hits.len();
+            if !hits.is_empty() {
+                warnings.push(format!(
+                    "local_content_marker_warning: possible prompt injection \
+                     markers detected in local workspace content ({} hits)",
+                    hits.len()
+                ));
+            }
+        }
+    }
 
     let fetch_response = RepoFetchResponse {
         locator,
@@ -1186,6 +1312,7 @@ async fn run_workspace_fetch(
         browser_url: pseudo_url.clone(),
         raw_url: pseudo_url.clone(),
         permalink_url: None,
+        raw_permalink_url: None,
         ref_resolved: None,
         line_start: args.line_start,
         line_end: args.line_end,
@@ -1193,7 +1320,7 @@ async fn run_workspace_fetch(
         returned_line_end: returned_end,
         total_lines,
         text: sliced_text,
-        lines: sliced_lines,
+        lines: clamped_lines,
         document: None,
         truncated,
         warnings,

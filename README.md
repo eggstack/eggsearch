@@ -305,6 +305,8 @@ When a result comes from a code-hosting platform and has structured `code` metad
       "source_role": "implementation",
       "browser_url": "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
       "raw_url": "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs",
+      "permalink_url": "https://github.com/tokio-rs/axum/blob/abc123def/src/lib.rs",
+      "raw_permalink_url": "https://raw.githubusercontent.com/tokio-rs/axum/abc123def/src/lib.rs",
       "matched_symbol": "router",
       "evidence_confidence": "strong",
       "evidence_reasons": ["language_match", "raw_url_derived", "source_role_inferred", "provider_text_match"]
@@ -313,7 +315,7 @@ When a result comes from a code-hosting platform and has structured `code` metad
 }
 ```
 
-The `code_evidence` field is `null` or omitted for non-code-host results. Evidence fields are deterministic metadata derived from URL shape, existing parsed code metadata, and provider text matches — they are not fetched content. Exact line/symbol match data is only as strong as the provider/URL allows. The `matched_symbol` field is populated when the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type).
+The `code_evidence` field is `null` or omitted for non-code-host results. Evidence fields are deterministic metadata derived from URL shape, existing parsed code metadata, and provider text matches — they are not fetched content. `permalink_url` is browser-viewable (e.g. `github.com/.../blob/{sha}/...`); `raw_permalink_url` is raw content at the commit SHA. Both are populated when `commit_sha` is known. The `matched_symbol` field is populated when the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type).
 
 **Source roles:** `implementation`, `test`, `example`, `benchmark`, `configuration`, `build`, `documentation`, `readme`, `changelog`, `migration`, `unknown`.
 
@@ -830,8 +832,12 @@ ecosystems: `crates.io`, `pypi`, `npm`.
 | `research` | Prefer diverse source discovery and broad web/API providers    |
 
 Profiles are advisory: they influence provider selection when no
-explicit `providers` list is given. Unavailable providers are skipped
-with warnings rather than fatal errors. The response `telemetry`
+explicit `providers` list is given. Profile requests filter providers
+through the adapter's available engines — only providers with
+constructed engines are used. Unavailable providers are skipped with
+`profile_provider_not_built` warnings rather than fatal errors. When
+all profile providers are not built, the profile degrades to default
+providers with a `profile_degraded` warning. The response `telemetry`
 object shows which profile was requested, applied, and whether the
 selection degraded to generic providers.
 
@@ -935,6 +941,18 @@ which repository file and line range you need.
 }
 ```
 
+**Workspace locator:**
+
+```json
+{
+  "host": "workspace",
+  "owner": "my-workspace",
+  "repo": "src/main.rs",
+  "line_start": 1,
+  "line_end": 50
+}
+```
+
 **Request fields:**
 
 Required:
@@ -943,9 +961,9 @@ Required:
 - `path`: file path within the repository (e.g. `src/lib.rs`).
 
 Optional:
-- `host`: code host (`github` or `gitlab`). Defaults to `github`.
+- `host`: code host (`github`, `gitlab`, or `workspace`). Defaults to `github`.
 - `ref_name`: branch or tag name. Defaults to `"main"`.
-- `commit_sha`: specific commit SHA to fetch (overrides `ref_name`).
+- `commit_sha`: specific commit SHA to fetch (preferred over `ref_name` for raw URL stability).
 - `line_start`: first line of the range to extract (1-indexed, inclusive).
 - `line_end`: last line of the range to extract (1-indexed, inclusive).
 - `context_before`: number of extra lines to include before `line_start`.
@@ -954,9 +972,18 @@ Optional:
 
 **Output:**
 
-The response uses the same `web_fetch` format: bounded extracted
-text, structured document blocks, and `external_untrusted` trust
-label.
+The response includes bounded extracted text, structured document
+blocks, and `external_untrusted` trust label. URL fields:
+- `browser_url`: human-viewable URL for the file.
+- `raw_url`: raw content URL that was fetched.
+- `permalink_url`: stable human-viewable URL pinned to commit SHA
+  (when `commit_sha` is provided).
+- `raw_permalink_url`: raw content URL pinned to commit SHA
+  (when `commit_sha` is provided).
+
+When a line range exceeds the file, it is silently clamped to the
+available lines. Context lines are applied after clamping. Workspace
+fetch results use `trust = local_trusted` and workspace pseudo-URLs.
 
 **End-to-end example (discover then fetch):**
 

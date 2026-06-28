@@ -14,22 +14,50 @@ use crate::core::code_metadata::CodeHost;
 use crate::core::document::FetchDocument;
 use crate::core::sanitize::TrustMarkers;
 
+/// Discriminator for repository locator kinds.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoLocatorKind {
+    /// Remote repository file (GitHub, GitLab, etc.).
+    #[default]
+    Remote,
+    /// Local workspace file.
+    Workspace,
+}
+
 /// Structured locator for a repository file.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RepoLocator {
-    /// The code host (GitHub, GitLab, etc.).
-    pub host: CodeHost,
+    /// Locator kind discriminator.
+    pub kind: RepoLocatorKind,
+    /// The code host (GitHub, GitLab, etc.). Present for remote
+    /// locators, absent for workspace locators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<CodeHost>,
     /// Repository owner (or namespace for GitLab nested groups).
-    pub owner: String,
-    /// Repository name.
-    pub repo: String,
+    /// Present for remote locators, absent for workspace locators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// Repository name. Present for remote locators, absent for
+    /// workspace locators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
     /// Branch, tag, or commit ref. Used for raw URL construction.
-    pub ref_name: String,
+    /// Present for remote locators, absent for workspace locators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_name: Option<String>,
     /// Full commit SHA, when known. Used for permalink construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_sha: Option<String>,
-    /// File path relative to repository root. Must not start with `/`.
+    /// File path. For remote locators, relative to repository root.
+    /// For workspace locators, relative to the workspace root.
     pub path: String,
+    /// Workspace root directory name. Present only for workspace
+    /// locators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_root: Option<String>,
 }
 
 /// Request type for the `repo_fetch` tool.
@@ -114,9 +142,12 @@ pub struct RepoFetchResponse {
     pub browser_url: String,
     /// Raw content URL fetched.
     pub raw_url: String,
-    /// Stable permalink URL (when commit SHA is known).
+    /// Stable permalink URL (human-viewable, when commit SHA is known).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permalink_url: Option<String>,
+    /// Raw content URL at the commit SHA (when commit SHA is known).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_permalink_url: Option<String>,
     /// The ref that was actually used for fetching (may differ from
     /// the requested ref if a redirect was followed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -275,8 +306,20 @@ pub fn github_raw_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> St
     )
 }
 
-/// Build a permalink URL for a GitHub source file at a specific commit SHA.
+/// Build a browser-viewable permalink URL for a GitHub source file at a specific commit SHA.
 pub fn github_permalink_url(owner: &str, repo: &str, commit_sha: &str, path: &str) -> String {
+    format!(
+        "https://github.com/{owner}/{repo}/blob/{commit_sha}/{path}"
+    )
+}
+
+/// Build a raw content permalink URL for a GitHub source file at a specific commit SHA.
+pub fn github_raw_permalink_url(
+    owner: &str,
+    repo: &str,
+    commit_sha: &str,
+    path: &str,
+) -> String {
     format!(
         "https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}"
     )
@@ -371,6 +414,94 @@ pub fn apply_line_range(
     };
 
     (sliced, Some(ctx_start), Some(ctx_end), truncated, warning)
+}
+
+/// Clamp a set of line-numbered slices to a character budget.
+///
+/// Builds text by joining line text with newlines, then truncates
+/// from the end when the result exceeds `max_chars`. Partial lines
+/// at the truncation boundary are omitted to preserve clean line
+/// semantics. If no full line fits within the budget, a bounded
+/// prefix of the first line is returned.
+///
+/// Returns `(clamped_lines, clamped_text, truncated)`.
+pub fn clamp_lines_to_max_chars(
+    lines: &[RepoFetchedLine],
+    max_chars: Option<usize>,
+) -> (Vec<RepoFetchedLine>, Option<String>, bool) {
+    let Some(max) = max_chars else {
+        // No budget — return everything.
+        let text = if lines.is_empty() {
+            None
+        } else {
+            Some(
+                lines
+                    .iter()
+                    .map(|l| l.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        };
+        return (lines.to_vec(), text, false);
+    };
+
+    if lines.is_empty() {
+        return (vec![], None, false);
+    }
+
+    // Build text and check if it fits.
+    let full_text: String = lines
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if full_text.len() <= max {
+        return (lines.to_vec(), Some(full_text), false);
+    }
+
+    // Truncate line by line from the end.
+    let mut used = 0usize;
+    let mut kept = Vec::new();
+    for line in lines {
+        let line_len = line.text.len();
+        // Account for newline separator (except before first line).
+        let cost = if kept.is_empty() {
+            line_len
+        } else {
+            line_len + 1 // +1 for '\n'
+        };
+
+        if used + cost <= max {
+            used += cost;
+            kept.push(line.clone());
+        } else {
+            // This line would exceed the budget — omit it (and all
+            // subsequent lines) to keep line semantics clean.
+            break;
+        }
+    }
+
+    if kept.is_empty() {
+        // No full line fits — return a bounded prefix of the first line.
+        let first = &lines[0];
+        let prefix: String = first.text.chars().take(max).collect();
+        let truncated_line = RepoFetchedLine {
+            number: first.number,
+            text: prefix,
+        };
+        let text = Some(truncated_line.text.clone());
+        return (vec![truncated_line], text, true);
+    }
+
+    let text = Some(
+        kept.iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    let truncated = kept.len() < lines.len();
+    (kept, text, truncated)
 }
 
 #[cfg(test)]
@@ -663,6 +794,15 @@ mod tests {
         let url = github_permalink_url("tokio-rs", "axum", "abc123def", "src/lib.rs");
         assert_eq!(
             url,
+            "https://github.com/tokio-rs/axum/blob/abc123def/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn github_raw_permalink_url_with_sha() {
+        let url = github_raw_permalink_url("tokio-rs", "axum", "abc123def", "src/lib.rs");
+        assert_eq!(
+            url,
             "https://raw.githubusercontent.com/tokio-rs/axum/abc123def/src/lib.rs"
         );
     }
@@ -771,5 +911,87 @@ mod tests {
         let w = warn.unwrap();
         assert!(w.contains("line_start (10)"));
         assert!(w.contains("line_end (15)"));
+    }
+
+    // --- clamp_lines_to_max_chars tests ---
+
+    fn make_fetched_lines(texts: &[&str]) -> Vec<RepoFetchedLine> {
+        texts
+            .iter()
+            .enumerate()
+            .map(|(i, t)| RepoFetchedLine {
+                number: (i + 1) as u32,
+                text: t.to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn clamp_no_budget_returns_all() {
+        let lines = make_fetched_lines(&["line 1", "line 2", "line 3"]);
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&lines, None);
+        assert_eq!(kept.len(), 3);
+        assert_eq!(text.as_deref(), Some("line 1\nline 2\nline 3"));
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn clamp_within_budget() {
+        let lines = make_fetched_lines(&["hi", "ok"]);
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&lines, Some(100));
+        assert_eq!(kept.len(), 2);
+        assert!(!truncated);
+        assert_eq!(text.as_deref(), Some("hi\nok"));
+    }
+
+    #[test]
+    fn clamp_truncates_from_end() {
+        let lines = make_fetched_lines(&["aaa", "bbb", "ccc", "ddd"]);
+        // "aaa\nbbb\nccc\nddd" = 3+1+3+1+3+1+3 = 15 chars
+        // Budget 7: "aaa\nbbb" = 7 chars (2 lines)
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&lines, Some(7));
+        assert_eq!(kept.len(), 2);
+        assert!(truncated);
+        assert_eq!(kept[0].number, 1);
+        assert_eq!(kept[1].number, 2);
+        assert_eq!(text.as_deref(), Some("aaa\nbbb"));
+    }
+
+    #[test]
+    fn clamp_empty_lines() {
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&[], Some(100));
+        assert!(kept.is_empty());
+        assert_eq!(text, None);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn clamp_no_line_fits_returns_prefix() {
+        let lines = make_fetched_lines(&["this is a very long line"]);
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&lines, Some(5));
+        assert_eq!(kept.len(), 1);
+        assert!(truncated);
+        assert_eq!(kept[0].text, "this ");
+        assert_eq!(text.as_deref(), Some("this "));
+    }
+
+    #[test]
+    fn clamp_preserves_line_numbers() {
+        let lines = make_fetched_lines(&["a", "b", "c", "d", "e"]);
+        let (kept, _, truncated) = clamp_lines_to_max_chars(&lines, Some(5));
+        // "a\nb\nc" = 5 chars (3 lines)
+        assert_eq!(kept.len(), 3);
+        assert_eq!(kept[0].number, 1);
+        assert_eq!(kept[2].number, 3);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn clamp_single_line_within_budget() {
+        let lines = make_fetched_lines(&["hello"]);
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&lines, Some(100));
+        assert_eq!(kept.len(), 1);
+        assert!(!truncated);
+        assert_eq!(text.as_deref(), Some("hello"));
     }
 }

@@ -185,7 +185,7 @@ eggsearch/
   - `issue_search_no_native_provider`: issues requested but no native issue provider selected
   - `release_search_no_native_provider`: releases requested but no native release provider selected
   - `coding_profile_degraded`: coding profile requested but no native code/issues/releases provider is available
-  - `profile_provider_unavailable`: provider in profile is not configured or enabled
+  - `profile_provider_not_built`: provider in profile has no constructed engine
   - `profile_degraded`: profile fell back to default providers
   - `freshness_unenforced`: freshness requested but no provider has timestamp support
 - Warnings are non-blocking — generic fallback search always works.
@@ -196,8 +196,9 @@ eggsearch/
 
 ### Server Capabilities Discovery
 - The `provider_status` MCP tool response includes a top-level
-  `server_capabilities` object alongside the provider list.
-- Fields:
+  `server_capabilities` object alongside the provider list, and a
+  `tool_capabilities` object with per-tool feature details.
+- `server_capabilities` fields:
   - `generic_search`: always `true` (generic HTML-scrape providers)
   - `explicit_fetch`: always `true` (`web_fetch` is available)
   - `repo_search`: `true` (structured repository evidence discovery)
@@ -207,6 +208,10 @@ eggsearch/
   - `document_fetch`: always `true` (structured document extraction)
   - `pdf_fetch`: `cfg!(feature = "pdf")` (only available when compiled with the `pdf` feature)
   - `local_workspace`: `[local].enabled` (whether local workspace search is available)
+- `tool_capabilities` fields:
+  - `repo_fetch`: `remote_hosts`, `workspace` (enabled), `line_ranges`, `context_lines`, `max_chars_enforced`
+  - `repo_search`: `profiles`, `package_resolution`, `local_workspace` (enabled), `subquery_telemetry`
+  - `local_workspace`: `enabled`, `symbol_enrichment`
 - This is the capability discovery endpoint for MCP clients. Clients
   can use it to determine which specialized tools are available before
   attempting to use them.
@@ -227,7 +232,7 @@ Repo metadata is deterministic and advisory. Agents should use it to choose
 which result to fetch, but must still treat snippets and fetched content as
 untrusted data.
 
-When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence. When the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type), `code_evidence` also includes a `matched_symbol` field with the matched text and `provider_text_match` in `evidence_reasons`.
+When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence. `permalink_url` is browser-viewable (e.g. `github.com/.../blob/{sha}/...`); `raw_permalink_url` is raw content at the commit SHA. When the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type), `code_evidence` also includes a `matched_symbol` field with the matched text and `provider_text_match` in `evidence_reasons`.
 
 ### Document Model
 
@@ -410,11 +415,15 @@ queries when the caller wants categorized results rather than a flat
 - `research`: prefer diverse source discovery and broad web/API providers
 
 Profiles are advisory: they influence provider selection when no
-explicit `providers` list is given. Unavailable providers are skipped
-with warnings (`profile_provider_unavailable`, `profile_degraded`)
-rather than fatal errors. The `telemetry.provider_selection` object
-shows which profile was requested, applied, and whether degradation
-occurred.
+explicit `providers` list is given. Profile requests filter providers
+through `adapter.provider_ids()` — only providers with constructed
+engines are used. Unavailable providers are skipped with warnings
+(`profile_provider_not_built`, `profile_degraded`) rather than fatal
+errors. When all profile providers are not built, the profile degrades
+to default providers (`profile_degraded`). The
+`telemetry.provider_selection` object shows which profile was
+requested, applied, and whether degradation occurred. Explicit
+`providers` lists remain strict and are not filtered.
 
 **Telemetry:**
 - `provider_selection.profile_requested`: profile from the request
@@ -526,20 +535,39 @@ when package-oriented fields are provided in the request.
 is the preferred tool for fetching source files from repositories
 when the caller has a structured locator rather than a URL.
 
+**Locator model** (`RepoLocator` in `src/core/repo_fetch.rs`):
+- `kind`: `RepoLocatorKind` discriminator — `Remote` (default) or
+  `Workspace`
+- `host`, `owner`, `repo`, `ref_name`: `Option<>` fields — present
+  for remote locators, absent for workspace locators
+- `workspace_root`: workspace root directory name — present only for
+  workspace locators
+- `path`: file path (relative to repo root for remote, relative to
+  workspace root for workspace)
+- `commit_sha`: optional full commit SHA for permalink construction
+
+Workspace locators serialize with `kind: "workspace"` and omit
+fake `host: "github"` fields.
+
 **Request type** (in `src/core/repo_fetch.rs`):
-- `RepoFetchRequest`: `host` (required: `github` or `gitlab`),
+- `RepoFetchRequest`: `host` (optional: `github` or `gitlab`),
   `owner` (required), `repo` (required), `path` (required file path),
-  optional `ref` (branch/tag/commit, defaults to repository default),
-  optional `line_start`, optional `line_end` (line range, 1-indexed),
-  optional `context_before` (lines of context before range),
-  optional `context_after` (lines of context after range),
-  optional `max_chars` (output cap)
+  optional `ref_name` (branch/tag/commit, defaults to repository
+  default), optional `commit_sha` (preferred over `ref_name` for
+  raw URL stability), optional `line_start`, optional `line_end`
+  (line range, 1-indexed), optional `context_before` (lines of
+  context before range), optional `context_after` (lines of context
+  after range), optional `max_chars` (output cap)
 
 **Response type:**
 - `RepoFetchResponse`: `locator` (echoed request locator), `text`
   (fetched content, sanitized), `lines` (optional line-numbered
   content), `line_start`/`line_end` (effective line range after
-  clamping), `text_truncated` (whether output was capped),
+  clamping), `returned_line_start`/`returned_line_end` (actual
+  lines returned after context expansion), `text_truncated`
+  (whether output was capped), `browser_url`, `raw_url`,
+  `permalink_url` (stable human-viewable URL at commit SHA),
+  `raw_permalink_url` (raw content URL at commit SHA),
   `trust_markers` (sanitization metadata)
 
 **Supported hosts:**
@@ -686,6 +714,14 @@ the operator has configured `[local]` in the config file.
 - Symbol matches receive a +30 point score boost to promote definition
   hits above generic path/text matches.
 
+**Content scoring:**
+- `score_file` accepts optional content text and scores content matches
+  alongside path/name matches.
+- Exact full-query content match: +50 points.
+- Token content match: +5 per token, capped at +30 total.
+- Files are read once and content reused for scoring, snippets, and
+  symbol matching.
+
 **Workspace fetch:**
 - `repo_fetch` with `host = "workspace"` reads files directly from the
   local filesystem. `owner` is the root directory name, `repo` is the
@@ -695,6 +731,14 @@ the operator has configured `[local]` in the config file.
 - Returns `trust = local_trusted` and uses workspace pseudo-URLs.
 - Bypasses `[fetch].enabled` policy since no network is involved.
 - Path traversal (`..`) and absolute paths are rejected.
+- `clamp_lines_to_max_chars` ensures text never exceeds the `max_chars`
+  budget; warning `workspace_fetch_truncated_by_max_chars` emitted when
+  clamped.
+- Control chars are stripped from local content. When `sanitize_output`
+  is enabled, injection markers are scanned and
+  `local_content_marker_warning` emitted on hits. Source lines are NOT
+  framed (no `<<<EXTERNAL_UNTRUSTED>>>` wrappers). `TrustMarkers` counts
+  are populated in the response.
 
 **Telemetry:**
 - `providers_queried` includes `"local_workspace"` when active

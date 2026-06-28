@@ -158,9 +158,12 @@ pub struct CodeEvidence {
     /// Raw content URL (e.g. raw.githubusercontent.com).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_url: Option<String>,
-    /// Stable permalink URL.
+    /// Stable permalink URL (human-viewable, when commit SHA is known).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permalink_url: Option<String>,
+    /// Raw content URL at the commit SHA (when commit SHA is known).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_permalink_url: Option<String>,
     /// Start line of the matched region.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub match_line_start: Option<u32>,
@@ -339,13 +342,13 @@ pub fn build_code_evidence(
             let browser = browser_url
                 .map(String::from)
                 .unwrap_or_else(|| derive_browser_url(owner, repo, ref_name, path));
-            let permalink = derive_github_raw_url(owner, repo, ref_name, path);
+            let permalink = derive_browser_url(owner, repo, ref_name, path);
             (Some(raw), Some(browser), Some(permalink))
         }
         CodeHost::Gitlab => {
             let raw = derive_gitlab_raw_url(owner, repo, ref_name, path);
             let browser = browser_url.map(String::from);
-            let permalink = Some(raw.clone());
+            let permalink = browser.clone();
             (Some(raw), browser, permalink)
         }
         _ => (None, browser_url.map(String::from), None),
@@ -379,6 +382,7 @@ pub fn build_code_evidence(
         browser_url: browser_url_value,
         raw_url,
         permalink_url,
+        raw_permalink_url: None,
         match_line_start: code.line_start,
         match_line_end: code.line_end,
         context_line_start: None,

@@ -320,36 +320,48 @@ impl LocalWorkspaceBackend {
                     }
                 }
 
+                // Read file content once for scoring, snippet, and
+                // symbol extraction. Avoids multiple reads per file.
+                let content_text = std::fs::read(&path)
+                    .ok()
+                    .filter(|b| b.len() <= config.max_file_bytes)
+                    .and_then(|bytes| {
+                        let s = String::from_utf8_lossy(&bytes).to_string();
+                        if s.is_empty() { None } else { Some(s) }
+                    });
+
                 let score = Self::score_file(
                     &file_entry,
                     query_lower,
                     query_tokens,
                     symbol_hint,
+                    content_text.as_deref(),
                 );
 
                 if score > 0.0 {
                     let (snippet, line_start, line_end, matched_symbol, symbol_kind, boosted_score) =
                         if let Some(sym_hint) = symbol_hint {
-                            if let Some((name, kind, sym_line)) =
-                                Self::find_symbol_match(&path, sym_hint, config.max_file_bytes)
-                            {
-                                // Re-read a snippet around the definition line
-                                let snippet = Self::find_text_match(
-                                    &path,
-                                    &name,
-                                    config.max_file_bytes,
-                                )
-                                .0;
-                                // Boost score for direct symbol definition match
-                                let boosted = score + 30.0;
-                                (
-                                    snippet,
-                                    Some(sym_line),
-                                    Some(sym_line),
-                                    Some(name),
-                                    Some(kind),
-                                    boosted,
-                                )
+                            if let Some(ref text) = content_text {
+                                if let Some((name, kind, sym_line)) =
+                                    Self::find_symbol_match_in_text(text, sym_hint)
+                                {
+                                    let snippet = Self::find_text_match_in_text(text, &name);
+                                    let boosted = score + 30.0;
+                                    (
+                                        snippet,
+                                        Some(sym_line),
+                                        Some(sym_line),
+                                        Some(name),
+                                        Some(kind),
+                                        boosted,
+                                    )
+                                } else if !query_lower.is_empty() {
+                                    let (s, ls, le) =
+                                        Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                    (s, ls, le, None, None, score)
+                                } else {
+                                    (None, None, None, None, None, score)
+                                }
                             } else if !query_lower.is_empty() {
                                 let (s, ls, le) =
                                     Self::find_text_match(&path, query_lower, config.max_file_bytes);
@@ -358,9 +370,14 @@ impl LocalWorkspaceBackend {
                                 (None, None, None, None, None, score)
                             }
                         } else if !query_lower.is_empty() {
-                            let (s, ls, le) =
-                                Self::find_text_match(&path, query_lower, config.max_file_bytes);
-                            (s, ls, le, None, None, score)
+                            if let Some(ref text) = content_text {
+                                let snippet = Self::find_text_match_in_text(text, query_lower);
+                                (snippet, None, None, None, None, score)
+                            } else {
+                                let (s, ls, le) =
+                                    Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                (s, ls, le, None, None, score)
+                            }
                         } else {
                             (None, None, None, None, None, score)
                         };
@@ -496,34 +513,49 @@ impl LocalWorkspaceBackend {
                     }
                 }
 
+                // Read file content once for scoring, snippet, and
+                // symbol extraction. Avoids multiple reads per file.
+                let content_text = std::fs::read(&path)
+                    .ok()
+                    .filter(|b| b.len() <= config.max_file_bytes)
+                    .and_then(|bytes| {
+                        let s = String::from_utf8_lossy(&bytes).to_string();
+                        if s.is_empty() { None } else { Some(s) }
+                    });
+
                 let score = Self::score_file(
                     &file_entry,
                     query_lower,
                     query_tokens,
                     symbol_hint,
+                    content_text.as_deref(),
                 );
 
                 if score > 0.0 {
                     let (snippet, line_start, line_end, matched_symbol, symbol_kind, boosted_score) =
                         if let Some(sym_hint) = symbol_hint {
-                            if let Some((name, kind, sym_line)) =
-                                Self::find_symbol_match(&path, sym_hint, config.max_file_bytes)
-                            {
-                                let snippet = Self::find_text_match(
-                                    &path,
-                                    &name,
-                                    config.max_file_bytes,
-                                )
-                                .0;
-                                let boosted = score + 30.0;
-                                (
-                                    snippet,
-                                    Some(sym_line),
-                                    Some(sym_line),
-                                    Some(name),
-                                    Some(kind),
-                                    boosted,
-                                )
+                            // Try symbol match using the already-read content
+                            if let Some(ref text) = content_text {
+                                if let Some((name, kind, sym_line)) =
+                                    Self::find_symbol_match_in_text(text, sym_hint)
+                                {
+                                    let snippet = Self::find_text_match_in_text(text, &name);
+                                    let boosted = score + 30.0;
+                                    (
+                                        snippet,
+                                        Some(sym_line),
+                                        Some(sym_line),
+                                        Some(name),
+                                        Some(kind),
+                                        boosted,
+                                    )
+                                } else if !query_lower.is_empty() {
+                                    let (s, ls, le) =
+                                        Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                    (s, ls, le, None, None, score)
+                                } else {
+                                    (None, None, None, None, None, score)
+                                }
                             } else if !query_lower.is_empty() {
                                 let (s, ls, le) =
                                     Self::find_text_match(&path, query_lower, config.max_file_bytes);
@@ -532,9 +564,15 @@ impl LocalWorkspaceBackend {
                                 (None, None, None, None, None, score)
                             }
                         } else if !query_lower.is_empty() {
-                            let (s, ls, le) =
-                                Self::find_text_match(&path, query_lower, config.max_file_bytes);
-                            (s, ls, le, None, None, score)
+                            // Try snippet extraction from already-read content
+                            if let Some(ref text) = content_text {
+                                let snippet = Self::find_text_match_in_text(text, query_lower);
+                                (snippet, None, None, None, None, score)
+                            } else {
+                                let (s, ls, le) =
+                                    Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                (s, ls, le, None, None, score)
+                            }
                         } else {
                             (None, None, None, None, None, score)
                         };
@@ -554,11 +592,16 @@ impl LocalWorkspaceBackend {
     }
 
     /// Score a file against the query. Returns 0.0 if no match.
+    ///
+    /// When `content_text` is provided, also scores content matches
+    /// (exact full-query and per-token) so that files containing the
+    /// query text are found even when path/name tokens don't match.
     fn score_file(
         file: &LocalFileEntry,
         query_lower: &str,
         query_tokens: &[&str],
         _symbol_hint: Option<&str>,
+        content_text: Option<&str>,
     ) -> f64 {
         let mut score: f64 = 0.0;
         let path_lower = file.relative_path.to_lowercase();
@@ -581,6 +624,29 @@ impl LocalWorkspaceBackend {
         // Language bonus only applies when there is already a path/filename match.
         if score > 0.0 && file.language.is_some() {
             score += 5.0;
+        }
+
+        // Content-based scoring: when file text is available, search
+        // for the full query and individual tokens. This ensures files
+        // containing the query text are found even when path tokens
+        // don't match.
+        if let Some(text) = content_text {
+            let text_lower = text.to_lowercase();
+
+            // Exact full-query content match
+            if !query_lower.is_empty() && text_lower.contains(query_lower) {
+                score += 50.0;
+            }
+
+            // Per-token content matches (capped to avoid huge files dominating)
+            let mut token_score: f64 = 0.0;
+            for token in query_tokens {
+                if text_lower.contains(token) {
+                    token_score += 5.0;
+                }
+            }
+            // Cap token content score at +30
+            score += token_score.min(30.0);
         }
 
         let penalty_extensions = ["lock", "min.js", "min.css", ".map"];
@@ -619,82 +685,64 @@ impl LocalWorkspaceBackend {
             Err(_) => return (None, None, None),
         };
 
+        let snippet = Self::find_text_match_in_text(&content, query);
+        let line_num = snippet.as_ref().and_then(|_| {
+            content
+                .lines()
+                .enumerate()
+                .find(|(_, line)| line.to_lowercase().contains(&query.to_lowercase()))
+                .map(|(i, _)| (i + 1) as u32)
+        });
+        (snippet, line_num, line_num)
+    }
+
+    /// Search for a text match in already-read content. Returns a
+    /// bounded snippet of the first matching line.
+    fn find_text_match_in_text(content: &str, query: &str) -> Option<String> {
         let query_lower = query.to_lowercase();
-        for (line_idx, line) in content.lines().enumerate() {
+        for line in content.lines() {
             if line.to_lowercase().contains(&query_lower) {
-                let line_num = (line_idx + 1) as u32;
                 let snippet = line.trim().to_string();
                 let snippet = if snippet.len() > 500 {
                     format!("{}...", &snippet[..500])
                 } else {
                     snippet
                 };
-                return (Some(snippet), Some(line_num), Some(line_num));
+                return Some(snippet);
             }
         }
-        (None, None, None)
+        None
     }
 
-    /// Scan file content for symbol definitions matching the hint.
+    /// Scan already-read text for symbol definitions matching the hint.
     ///
     /// Returns `(matched_symbol_name, SymbolKind, line_number)` for the
     /// first matching definition, or `None` if no match is found.
-    fn find_symbol_match(
-        path: &Path,
+    fn find_symbol_match_in_text(
+        text: &str,
         symbol_hint: &str,
-        max_file_bytes: usize,
     ) -> Option<(String, SymbolKind, u32)> {
-        let content = std::fs::read(path).ok()?;
-        if content.len() > max_file_bytes {
-            return None;
-        }
-        let text = String::from_utf8_lossy(&content);
         let hint_lower = symbol_hint.to_lowercase();
 
-        // Combined pattern: matches common definition forms across
-        // Rust, Python, JavaScript/TypeScript, Go, Java, C/C++.
-        // Group 1 = keyword, Group 2 = name.
-        // Order matters: check impl blocks before bare struct/enum/trait.
         let patterns: &[(&str, SymbolKind)] = &[
-            // Rust: fn name, pub fn name, pub(crate) fn name, async fn name
             (r"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)", SymbolKind::Function),
-            // Rust: struct Name
             (r"(?:pub\s+)?struct\s+(\w+)", SymbolKind::Struct),
-            // Rust: enum Name
             (r"(?:pub\s+)?enum\s+(\w+)", SymbolKind::Enum),
-            // Rust: trait Name
             (r"(?:pub\s+)?trait\s+(\w+)", SymbolKind::Trait),
-            // Rust: impl blocks (impl Type, impl Trait for Type)
             (r"impl(?:<[^>]*>)?\s+(?:dyn\s+)?(\w+)", SymbolKind::Struct),
-            // Rust: type alias
             (r"(?:pub\s+)?type\s+(\w+)", SymbolKind::TypeAlias),
-            // Rust: macro_rules!
             (r"macro_rules!\s+(\w+)", SymbolKind::Macro),
-            // Rust: const/static
             (r"(?:pub\s+)?(?:const|static)\s+(?:\w+\s*:)?\s*(\w+)", SymbolKind::Constant),
-            // Python: def name
             (r"(?:async\s+)?def\s+(\w+)", SymbolKind::Function),
-            // Python: class Name
             (r"class\s+(\w+)", SymbolKind::Class),
-            // JavaScript/TypeScript: function name, export function name
             (r"(?:export\s+)?(?:async\s+)?function\s+(\w+)", SymbolKind::Function),
-            // JavaScript/TypeScript: class Name
             (r"(?:export\s+)?class\s+(\w+)", SymbolKind::Class),
-            // JavaScript/TypeScript: interface Name
             (r"(?:export\s+)?interface\s+(\w+)", SymbolKind::Interface),
-            // JavaScript/TypeScript: type Name
             (r"(?:export\s+)?type\s+(\w+)", SymbolKind::TypeAlias),
-            // Go: func name, func (recv) name
             (r"func\s+(?:\([^)]*\)\s+)?(\w+)", SymbolKind::Function),
-            // Go: type Name struct/interface
             (r"type\s+(\w+)\s+(?:struct|interface)", SymbolKind::Struct),
-            // Java/C#: public/private/protected ... type Name
             (r"(?:public|private|protected|internal)\s+(?:static\s+)?(?:class|interface|enum)\s+(\w+)", SymbolKind::Class),
-            // C/C++: struct/class Name
             (r"(?:typedef\s+)?(?:struct|class)\s+(\w+)", SymbolKind::Struct),
-            // C: function-like (return_type name(params)) — only match
-            // identifiers followed by '(' on the same line, excluding
-            // keywords. This is intentionally coarse.
             (r"^(?:static|inline|extern|const)?\s*\w[\w\s\*]*\b(\w+)\s*\(", SymbolKind::Function),
         ];
 
@@ -772,6 +820,7 @@ impl LocalWorkspaceBackend {
                     browser_url: None,
                     raw_url: None,
                     permalink_url: None,
+                    raw_permalink_url: None,
                     match_line_start: m.line_start,
                     match_line_end: m.line_end,
                     context_line_start: None,
@@ -891,7 +940,7 @@ mod tests {
             size: 100,
             language: Some("rust".to_string()),
         };
-        let score = LocalWorkspaceBackend::score_file(&file, "main.rs", &["main.rs"], None);
+        let score = LocalWorkspaceBackend::score_file(&file, "main.rs", &["main.rs"], None, None);
         assert!(score >= 100.0, "score should be high for exact match: {score}");
     }
 
@@ -904,7 +953,7 @@ mod tests {
             size: 100,
             language: Some("rust".to_string()),
         };
-        let score = LocalWorkspaceBackend::score_file(&file, "engine", &["engine"], None);
+        let score = LocalWorkspaceBackend::score_file(&file, "engine", &["engine"], None, None);
         assert!(score > 0.0, "score should be positive for path match: {score}");
     }
 
@@ -917,7 +966,7 @@ mod tests {
             size: 100,
             language: Some("toml".to_string()),
         };
-        let score = LocalWorkspaceBackend::score_file(&file, "xyz", &["xyz"], None);
+        let score = LocalWorkspaceBackend::score_file(&file, "xyz", &["xyz"], None, None);
         assert_eq!(score, 0.0, "score should be 0 for no match");
     }
 
@@ -930,7 +979,7 @@ mod tests {
             size: 100,
             language: None,
         };
-        let score = LocalWorkspaceBackend::score_file(&file, "cargo.lock", &["cargo.lock"], None);
+        let score = LocalWorkspaceBackend::score_file(&file, "cargo.lock", &["cargo.lock"], None, None);
         assert!(score < 0.0, "score should be negative for lock file: {score}");
     }
 
@@ -995,8 +1044,8 @@ mod tests {
         )
         .unwrap();
 
-        let result =
-            LocalWorkspaceBackend::find_symbol_match(&file_path, "helper", 1048576);
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "helper");
         assert!(result.is_some());
         let (name, kind, line) = result.unwrap();
         assert_eq!(name, "helper");
@@ -1014,8 +1063,8 @@ mod tests {
         )
         .unwrap();
 
-        let result =
-            LocalWorkspaceBackend::find_symbol_match(&file_path, "User", 1048576);
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "User");
         assert!(result.is_some());
         let (name, kind, line) = result.unwrap();
         assert_eq!(name, "User");
@@ -1029,8 +1078,8 @@ mod tests {
         let file_path = dir.path().join("lib.rs");
         fs::write(&file_path, "fn main() {}\n").unwrap();
 
-        let result =
-            LocalWorkspaceBackend::find_symbol_match(&file_path, "nonexistent", 1048576);
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "nonexistent");
         assert!(result.is_none());
     }
 
@@ -1041,11 +1090,70 @@ mod tests {
         fs::write(&file_path, "def my_function():\n    pass\n").unwrap();
 
         // Hint is lowercase "my_function", symbol in code is also "my_function"
-        let result =
-            LocalWorkspaceBackend::find_symbol_match(&file_path, "my_function", 1048576);
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "my_function");
         assert!(result.is_some());
         let (name, kind, _line) = result.unwrap();
         assert_eq!(name, "my_function");
         assert_eq!(kind, SymbolKind::Function);
+    }
+
+    #[test]
+    fn score_file_content_match_finds_file_without_path_match() {
+        let file = LocalFileEntry {
+            path: PathBuf::from("/test/random_name.rs"),
+            relative_path: "random_name.rs".to_string(),
+            root_index: 0,
+            size: 100,
+            language: Some("rust".to_string()),
+        };
+        // File name doesn't match "my_function" at all, but content does
+        let content = "fn my_function() { let x = 1; }";
+        let score = LocalWorkspaceBackend::score_file(
+            &file,
+            "my_function",
+            &["my_function"],
+            None,
+            Some(content),
+        );
+        assert!(score >= 50.0, "content match should give substantial score: {score}");
+    }
+
+    #[test]
+    fn score_file_content_token_match_capped() {
+        let file = LocalFileEntry {
+            path: PathBuf::from("/test/other.rs"),
+            relative_path: "other.rs".to_string(),
+            root_index: 0,
+            size: 100,
+            language: Some("rust".to_string()),
+        };
+        // Multiple token matches in content, but capped at +30
+        let content = "foo bar baz qux";
+        let score = LocalWorkspaceBackend::score_file(
+            &file,
+            "foo bar baz",
+            &["foo", "bar", "baz"],
+            None,
+            Some(content),
+        );
+        // 50 (no full match since "foo bar baz" not in "foo bar baz qux" as substring)
+        // Actually "foo bar baz" IS in "foo bar baz qux" -> +50, plus tokens capped at +30
+        assert!(score >= 50.0, "content scoring should work: {score}");
+        assert!(score <= 100.0, "token score should be capped: {score}");
+    }
+
+    #[test]
+    fn score_file_no_content_matches_nothing() {
+        let file = LocalFileEntry {
+            path: PathBuf::from("/test/data.txt"),
+            relative_path: "data.txt".to_string(),
+            root_index: 0,
+            size: 100,
+            language: None,
+        };
+        // No path match, no content provided
+        let score = LocalWorkspaceBackend::score_file(&file, "special", &["special"], None, None);
+        assert_eq!(score, 0.0, "no match without content should be 0");
     }
 }

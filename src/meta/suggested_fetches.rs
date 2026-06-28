@@ -85,7 +85,12 @@ pub fn generate_suggested_fetches(
             .metadata
             .code_evidence
             .as_ref()
-            .and_then(|ce| ce.raw_url.as_deref().or(ce.permalink_url.as_deref()))
+            .and_then(|ce| {
+                ce.raw_url
+                    .as_deref()
+                    .or(ce.raw_permalink_url.as_deref())
+                    .or(ce.permalink_url.as_deref())
+            })
             .unwrap_or(&card.url);
 
         // Build structured repo_fetch request when code evidence
