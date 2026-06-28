@@ -5,6 +5,7 @@
 //! `TrustLevel::LocalTrusted` — they reflect operator-configured
 //! provenance, not instruction trust.
 
+use crate::core::code_evidence::SymbolKind;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -119,6 +120,9 @@ pub struct LocalMatch {
     pub snippet: Option<String>,
     /// Matched symbol name, if symbol match.
     pub matched_symbol: Option<String>,
+    /// Kind of the matched symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_kind: Option<SymbolKind>,
 }
 
 /// Result from a local workspace search.

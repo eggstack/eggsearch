@@ -168,6 +168,8 @@ pub enum FetchTrust {
     /// External untrusted content.
     #[default]
     ExternalUntrusted,
+    /// Local workspace content with operator-configured provenance.
+    LocalTrusted,
 }
 
 impl RepoFetchRequest {

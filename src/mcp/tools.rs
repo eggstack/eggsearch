@@ -826,6 +826,13 @@ pub async fn run_repo_fetch(
         RepoLocator,
     };
 
+    // --- workspace:// local file fetch (bypasses fetch policy) ---
+    if let Some(ref h) = args.host {
+        if h.to_lowercase() == "workspace" {
+            return run_workspace_fetch(state, args).await;
+        }
+    }
+
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
         return Err(ToolError::Internal(web_fetch_denied_message()));
     }
@@ -1024,6 +1031,179 @@ pub async fn run_repo_fetch(
         }
         Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
     }
+}
+
+/// Handle `repo_fetch` for `workspace://` local files.
+///
+/// When `host = "workspace"`, `owner` is the root name and `repo` is
+/// the root-relative file path. The file is read directly from the
+/// local filesystem via the workspace backend.
+async fn run_workspace_fetch(
+    state: Arc<ServerState>,
+    args: RepoFetchArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::code_evidence::infer_source_role;
+    use crate::core::repo_fetch::{
+        apply_line_range, FetchTrust, RepoFetchResponse,
+    };
+    use crate::core::sanitize::TrustMarkers;
+
+    let backend = state.local_backend.as_ref().ok_or_else(|| {
+        ToolError::Validation("local workspace search is not enabled".to_string())
+    })?;
+
+    if !backend.is_enabled() {
+        return Err(ToolError::Validation(
+            "local workspace search is not enabled".to_string(),
+        ));
+    }
+
+    let root_name = args.owner.clone();
+    let relative_path = args.repo.clone();
+
+    if relative_path.trim().is_empty() {
+        return Err(ToolError::Validation("repo (file path) must not be empty".to_string()));
+    }
+    if relative_path.contains("..") {
+        return Err(ToolError::Validation(
+            "path must not contain '..' (path traversal)".to_string(),
+        ));
+    }
+
+    // Find the root by name
+    let roots = backend.roots();
+    let root_entry = roots.iter().find(|(_, p)| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n == root_name)
+            .unwrap_or(false)
+    });
+
+    let (_, root_path) = root_entry.ok_or_else(|| {
+        ToolError::Validation(format!(
+            "unknown workspace root '{root_name}'; available roots: {}",
+            roots
+                .iter()
+                .filter_map(|(_, p)| p.file_name().and_then(|n| n.to_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })?;
+
+    let file_path = root_path.join(&relative_path);
+    if !file_path.is_file() {
+        return Err(ToolError::Validation(format!(
+            "file not found: {relative_path}"
+        )));
+    }
+
+    // Validate path is still under the root (defense in depth)
+    let canonical = file_path
+        .canonicalize()
+        .map_err(|e| ToolError::Internal(format!("failed to canonicalize path: {e}")))?;
+    if !canonical.starts_with(root_path) {
+        return Err(ToolError::Validation(
+            "path escapes workspace root".to_string(),
+        ));
+    }
+
+    // Validate line range
+    if let (Some(start), Some(end)) = (args.line_start, args.line_end) {
+        if start > end {
+            return Err(ToolError::Validation(format!(
+                "line_start ({start}) must be <= line_end ({end})"
+            )));
+        }
+    }
+
+    // Read file content
+    let content = std::fs::read_to_string(&canonical)
+        .map_err(|e| ToolError::Internal(format!("failed to read file: {e}")))?;
+
+    let all_lines: Vec<String> = content.lines().map(String::from).collect();
+    let total_lines = if all_lines.is_empty() {
+        None
+    } else {
+        Some(all_lines.len() as u32)
+    };
+
+    // Apply line range
+    let (sliced_lines, returned_start, returned_end, _line_truncated, line_warning) =
+        apply_line_range(
+            &all_lines,
+            args.line_start,
+            args.line_end,
+            args.context_before.unwrap_or(0),
+            args.context_after.unwrap_or(0),
+        );
+
+    // Build text from sliced lines
+    let sliced_text = if sliced_lines.is_empty() {
+        None
+    } else {
+        let t: String = sliced_lines
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Some(t)
+    };
+
+    let mut warnings: Vec<String> = Vec::new();
+    if let Some(w) = line_warning {
+        warnings.push(w);
+    }
+
+    let language = crate::core::code_metadata::language_from_extension(&relative_path)
+        .map(String::from);
+    let source_role = infer_source_role(&relative_path);
+
+    let pseudo_url = format!("workspace://{root_name}/{relative_path}");
+
+    let locator = crate::core::repo_fetch::RepoLocator {
+        host: crate::core::code_metadata::CodeHost::Github, // placeholder, not meaningful for workspace
+        owner: root_name.clone(),
+        repo: relative_path.clone(),
+        ref_name: String::new(),
+        commit_sha: None,
+        path: relative_path.clone(),
+    };
+
+    let truncated = sliced_text
+        .as_ref()
+        .map(|t| t.len() > args.max_chars.unwrap_or(usize::MAX))
+        .unwrap_or(false);
+
+    let trust_markers = TrustMarkers::default();
+
+    let fetch_response = RepoFetchResponse {
+        locator,
+        fetched: true,
+        status: None,
+        content_type: None,
+        language,
+        source_role: Some(source_role),
+        browser_url: pseudo_url.clone(),
+        raw_url: pseudo_url.clone(),
+        permalink_url: None,
+        ref_resolved: None,
+        line_start: args.line_start,
+        line_end: args.line_end,
+        returned_line_start: returned_start,
+        returned_line_end: returned_end,
+        total_lines,
+        text: sliced_text,
+        lines: sliced_lines,
+        document: None,
+        truncated,
+        warnings,
+        trust: FetchTrust::LocalTrusted,
+        trust_markers,
+    };
+
+    let value = serde_json::to_value(&fetch_response)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+    Ok(value)
 }
 
 /// Run the `security_search` tool.

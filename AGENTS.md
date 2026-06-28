@@ -670,10 +670,31 @@ the operator has configured `[local]` in the config file.
 - Local results are `SourceCard` values with `trust = local_trusted`
 - `metadata.source_kind = source_file`
 - `metadata.code` and `metadata.code_evidence` populated with path,
-  language, source role, and line ranges when available
+  language, source role, line ranges, and symbol metadata when available
 - URL uses workspace pseudo-URL scheme: `workspace://root-name/path`
 - Local results are merged with remote results before grouping
 - `providers_queried` includes `"local_workspace"` when local backend participates
+
+**Symbol enrichment:**
+- When a `symbol` hint is present in the request, the local backend
+  scans file content for function, struct, enum, trait, class, and
+  other definition patterns across Rust, Python, JavaScript/TypeScript,
+  Go, Java, and C/C++.
+- Matching definitions populate `matched_symbol` and `symbol_kind` on
+  `LocalMatch` and propagate to `CodeEvidence.symbol_kind` on the
+  `SourceCard`.
+- Symbol matches receive a +30 point score boost to promote definition
+  hits above generic path/text matches.
+
+**Workspace fetch:**
+- `repo_fetch` with `host = "workspace"` reads files directly from the
+  local filesystem. `owner` is the root directory name, `repo` is the
+  root-relative file path.
+- Supports `line_start`, `line_end`, `context_before`, `context_after`
+  for line-range extraction.
+- Returns `trust = local_trusted` and uses workspace pseudo-URLs.
+- Bypasses `[fetch].enabled` policy since no network is involved.
+- Path traversal (`..`) and absolute paths are rejected.
 
 **Telemetry:**
 - `providers_queried` includes `"local_workspace"` when active
@@ -684,15 +705,13 @@ the operator has configured `[local]` in the config file.
 - Skips common heavy/generated directories (`.git`, `target`, `node_modules`, etc.)
 - Skips binary files by extension
 - Only reads files within configured roots
+- Workspace fetch validates canonical path stays within root
 - Local source is more provenance-trusted than web content, but comments
   and docs can still contain adversarial text
 
 **Provider status:**
 - `local_workspace` appears in `provider_status` when enabled
 - `kind: "local"`, `capabilities: code_search, path_filter, language_filter`
-
-**Deferred follow-up:** Symbol enrichment and local fetch integration
-are planned for a follow-up release.
 
 ### Research Search
 

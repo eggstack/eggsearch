@@ -43,8 +43,9 @@ use eggsearch::core::config::{AppConfig, Mode};
 use eggsearch::core::fetch::ExtractMode;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
-    run_provider_status, run_repo_fetch, run_security_search, run_web_fetch, run_web_search,
-    ProviderStatusArgs, RepoFetchArgs, SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
+    run_provider_status, run_repo_fetch, run_repo_search, run_security_search, run_web_fetch,
+    run_web_search, ProviderStatusArgs, RepoFetchArgs, RepoSearchArgs, SecuritySearchArgs,
+    WebFetchArgs, WebSearchArgs,
 };
 use rmcp::ServerHandler;
 
@@ -5525,7 +5526,6 @@ mod provider_status {
 #[cfg(feature = "mock")]
 mod repo_search {
     use super::*;
-    use eggsearch::mcp::tools::{run_repo_search, RepoSearchArgs};
 
     #[cfg(feature = "mock")]
     fn repo_state_with_engines(
@@ -7929,4 +7929,338 @@ async fn repo_fetch_tool_in_server_capabilities() {
         true,
         "repo_fetch should be in server_capabilities: {caps:?}"
     );
+}
+
+// =========================================================================
+// Local Workspace Integration Tests
+// =========================================================================
+
+use std::fs;
+
+#[cfg(feature = "mock")]
+fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
+    let engines = vec![MockEngine::success("mock_a", vec![])];
+    let adapter = MetadataSearchAdapter::from_engines(
+        eggsearch::meta::mock::mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![temp_dir.to_path_buf()];
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
+        .expect("backend builds");
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(Arc::new(backend));
+    Arc::new(state)
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_with_local_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {\n    println!(\"hello\");\n}").unwrap();
+    fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    fs::write(root.join("README.md"), "# My Project\n\nA test project.").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let groups = v["groups"].as_array().expect("groups is array");
+
+    // Local results should appear in one of the groups
+    let all_results: Vec<&serde_json::Value> = groups
+        .iter()
+        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .collect();
+
+    let local_results: Vec<&serde_json::Value> = all_results
+        .iter()
+        .filter(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .copied()
+        .collect();
+
+    assert!(
+        !local_results.is_empty(),
+        "expected local results with workspace:// URLs, got: {all_results:?}"
+    );
+
+    // Local results should have trust = local_trusted
+    for r in &local_results {
+        assert_eq!(
+            r["trust"],
+            "local_trusted",
+            "local result should have local_trusted trust: {r:?}"
+        );
+    }
+
+    // providers_queried should include local_workspace
+    let queried = v["providers_queried"].as_array().expect("providers_queried");
+    let queried_ids: Vec<&str> = queried.iter().filter_map(|q| q.as_str()).collect();
+    assert!(
+        queried_ids.contains(&"local_workspace"),
+        "providers_queried should include local_workspace: {queried_ids:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_include_local_false_skips_local() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(false),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let groups = v["groups"].as_array().expect("groups is array");
+    let all_results: Vec<&serde_json::Value> = groups
+        .iter()
+        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .collect();
+
+    let local_results: Vec<&serde_json::Value> = all_results
+        .iter()
+        .filter(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .copied()
+        .collect();
+
+    assert!(
+        local_results.is_empty(),
+        "include_local=false should skip local results, got: {local_results:?}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_fetch_reads_local_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn sub(a: i32, b: i32) -> i32 {\n    a - b\n}\n",
+    )
+    .unwrap();
+
+    // Build a state with a local backend
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "lib.rs".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: Some(1),
+        line_end: Some(3),
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+    };
+
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("workspace fetch should succeed");
+
+    assert_eq!(v["trust"], "local_trusted");
+    assert_eq!(v["fetched"], true);
+
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("pub fn add"),
+        "fetched text should contain the function: {text}"
+    );
+
+    let lines = v["lines"].as_array().expect("lines should be array");
+    assert_eq!(lines.len(), 3, "should return lines 1-3, got: {lines:?}");
+    assert_eq!(lines[0]["number"], 1);
+    assert_eq!(lines[2]["number"], 3);
+}
+
+#[tokio::test]
+async fn workspace_fetch_rejects_unknown_root() {
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec!["/nonexistent".into()],
+            ..Default::default()
+        };
+        match eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg) {
+            Ok(b) => Arc::new(b),
+            Err(_) => {
+                // Root doesn't exist, use a real temp dir but with wrong name
+                let dir = tempfile::tempdir().unwrap();
+                let cfg = eggsearch::core::local::LocalConfig {
+                    enabled: true,
+                    roots: vec![dir.path().to_path_buf()],
+                    ..Default::default()
+                };
+                Arc::new(
+                    eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                        .expect("backend builds"),
+                )
+            }
+        }
+    };
+
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: "nonexistent_root".to_string(),
+        repo: "lib.rs".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+    };
+
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "unknown root should fail");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("unknown workspace root"),
+        "error should mention unknown root: {err}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_fetch_rejects_path_traversal() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("lib.rs"), "fn main() {}").unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "../../../etc/passwd".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "../../../etc/passwd".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+    };
+
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "path traversal should fail");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("traversal"),
+        "error should mention traversal: {err}"
+    );
+}
+
+#[test]
+fn provider_status_local_workspace_not_enabled_by_default() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let arr = v["providers"].as_array().expect("providers is array");
+    let local = arr
+        .iter()
+        .find(|p| p["id"].as_str() == Some("local_workspace"))
+        .expect("local_workspace should be listed");
+    // By default, local is not enabled
+    assert_eq!(local["enabled"], false);
+    assert_eq!(local["kind"], "local");
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn provider_status_local_workspace_enabled_when_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = eggsearch::core::local::LocalConfig {
+        enabled: true,
+        roots: vec![dir.path().to_path_buf()],
+        ..Default::default()
+    };
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+        .expect("backend builds");
+    let adapter = MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut app_cfg = AppConfig::default();
+    app_cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(app_cfg, Arc::new(adapter));
+    state.local_backend = Some(Arc::new(backend));
+    let state = Arc::new(state);
+
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let arr = v["providers"].as_array().expect("providers is array");
+    let local = arr
+        .iter()
+        .find(|p| p["id"].as_str() == Some("local_workspace"))
+        .expect("local_workspace should be listed");
+    assert_eq!(local["enabled"], true);
+    assert_eq!(local["configured"], true);
 }

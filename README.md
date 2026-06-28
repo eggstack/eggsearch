@@ -1140,7 +1140,9 @@ max_indexed_files = 50000
 | `respect_gitignore` | `true` | Skip gitignored paths. |
 | `follow_symlinks` | `false` | Follow symbolic links. |
 
-When `local.enabled = true`, `repo_search` can return local files alongside remote results. Local results use `trust = local_trusted` and workspace pseudo-URLs (`workspace://root-name/path`). Symbol enrichment and local fetch integration are planned for a follow-up release.
+When `local.enabled = true`, `repo_search` can return local files alongside remote results. Local results use `trust = local_trusted` and workspace pseudo-URLs (`workspace://root-name/path`). When a `symbol` hint is present, the backend scans file content for function, struct, enum, trait, and class definitions across Rust, Python, JavaScript/TypeScript, Go, Java, and C/C++. Symbol matches receive a score boost to promote definition hits above generic path/text matches.
+
+`repo_fetch` with `host = "workspace"` reads files directly from the local filesystem, supporting line-range extraction. This bypasses `[fetch].enabled` since no network is involved.
 
 ## Project Structure
 
