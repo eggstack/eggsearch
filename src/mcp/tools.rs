@@ -1,10 +1,11 @@
 //! MCP tool implementations for the metasearch server.
 //!
-//! Six tools are exposed:
+//! Seven tools are exposed:
 //! - `web_search`        — live metasearch.
 //! - `web_fetch`         — explicit URL fetch.
 //! - `provider_status`   — diagnostic report of configured providers.
 //! - `repo_search`       — structured repository evidence discovery.
+//! - `repo_fetch`        — structured repository file fetch by locator.
 //! - `security_search`   — security vulnerability and advisory search.
 //! - `research_search`   — research-oriented multi-source evidence discovery.
 
@@ -296,9 +297,6 @@ pub struct RepoFetchArgs {
     /// Timeout in milliseconds. Defaults to server config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    /// Whether to include full file metadata. Defaults to true.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub include_full_file_metadata: Option<bool>,
 }
 
 /// Run the `web_search` tool against the shared adapter. The response
@@ -783,7 +781,6 @@ pub async fn run_repo_fetch(
         context_after: args.context_after,
         max_chars: args.max_chars,
         timeout_ms: args.timeout_ms,
-        include_full_file_metadata: args.include_full_file_metadata,
     };
 
     req.validate(state.config.fetch.max_chars_cap)
@@ -870,13 +867,14 @@ pub async fn run_repo_fetch(
             };
 
             // Apply line range.
-            let (sliced_lines, returned_start, returned_end, _line_truncated) = apply_line_range(
-                &all_lines,
-                req.line_start,
-                req.line_end,
-                req.context_before.unwrap_or(0),
-                req.context_after.unwrap_or(0),
-            );
+            let (sliced_lines, returned_start, returned_end, _line_truncated, line_warning) =
+                apply_line_range(
+                    &all_lines,
+                    req.line_start,
+                    req.line_end,
+                    req.context_before.unwrap_or(0),
+                    req.context_after.unwrap_or(0),
+                );
 
             // Build text from sliced lines.
             let sliced_text = if sliced_lines.is_empty() {
@@ -890,6 +888,11 @@ pub async fn run_repo_fetch(
                 Some(t)
             };
 
+            let mut warnings = warnings;
+            if let Some(w) = line_warning {
+                warnings.push(w);
+            }
+
             let fetch_response = RepoFetchResponse {
                 locator,
                 fetched: resp.fetched,
@@ -900,7 +903,6 @@ pub async fn run_repo_fetch(
                 browser_url,
                 raw_url: raw_url.clone(),
                 permalink_url,
-                content_sha256: None,
                 ref_resolved: Some(rn.to_string()),
                 line_start: req.line_start,
                 line_end: req.line_end,
@@ -909,7 +911,7 @@ pub async fn run_repo_fetch(
                 total_lines,
                 text: sliced_text,
                 lines: sliced_lines,
-                document: None,
+                document: resp.document,
                 truncated,
                 warnings,
                 trust: FetchTrust::ExternalUntrusted,

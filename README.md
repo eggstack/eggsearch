@@ -852,6 +852,32 @@ The response uses the same `web_fetch` format: bounded extracted
 text, structured document blocks, and `external_untrusted` trust
 label.
 
+**End-to-end example (discover then fetch):**
+
+1. Use `repo_search` to find source files:
+
+```json
+{
+  "repo": "tokio-rs/axum",
+  "query": "Router layer middleware"
+}
+```
+
+2. Pick a `suggested_fetches` entry with `structured_repo_fetch` and
+   pass it to `repo_fetch`:
+
+```json
+{
+  "owner": "tokio-rs",
+  "repo": "axum",
+  "path": "src/routing/mod.rs",
+  "line_start": 100,
+  "line_end": 150,
+  "context_before": 5,
+  "context_after": 5
+}
+```
+
 **When to use each tool:**
 
 - Use `repo_search` to **discover** source evidence — it groups

@@ -79,10 +79,6 @@ pub struct RepoFetchRequest {
     /// Per-request timeout override in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    /// Whether to include full file metadata (total lines,
-    /// detected language, source role). Defaults to true.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub include_full_file_metadata: Option<bool>,
 }
 
 /// A single line in the fetched result.
@@ -121,9 +117,6 @@ pub struct RepoFetchResponse {
     /// Stable permalink URL (when commit SHA is known).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permalink_url: Option<String>,
-    /// SHA-256 hex digest of the fetched body (when available).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content_sha256: Option<String>,
     /// The ref that was actually used for fetching (may differ from
     /// the requested ref if a redirect was followed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -313,7 +306,8 @@ pub fn gitlab_raw_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> St
 }
 
 /// Apply line range and context to a list of lines, returning the
-/// sliced lines and the actual returned range.
+/// sliced lines, the actual returned range, whether the range was
+/// truncated, and an optional warning message.
 ///
 /// `lines` is 1-indexed (line 1 is at index 0).
 pub fn apply_line_range(
@@ -322,18 +316,41 @@ pub fn apply_line_range(
     line_end: Option<u32>,
     context_before: u32,
     context_after: u32,
-) -> (Vec<RepoFetchedLine>, Option<u32>, Option<u32>, bool) {
+) -> (Vec<RepoFetchedLine>, Option<u32>, Option<u32>, bool, Option<String>) {
     if lines.is_empty() {
-        return (vec![], None, None, false);
+        return (vec![], None, None, false, None);
     }
 
     let total = lines.len() as u32;
     let start = line_start.unwrap_or(1).max(1);
     let end = line_end.unwrap_or(total).min(total);
 
+    let mut warnings = Vec::new();
+
+    // Warn when the requested range exceeds the file and was clamped.
+    if let Some(req_end) = line_end {
+        if req_end > total {
+            warnings.push(format!(
+                "line_end ({req_end}) exceeds file length ({total}); \
+                 clamped to {total}"
+            ));
+        }
+    }
+    if let Some(req_start) = line_start {
+        if req_start > total {
+            warnings.push(format!(
+                "line_start ({req_start}) exceeds file length ({total}); \
+                 clamped to {total}"
+            ));
+        }
+    }
+
     // Apply context, clamped to file boundaries.
     let ctx_start = start.saturating_sub(context_before).max(1);
     let ctx_end = end.saturating_add(context_after).min(total);
+
+    let truncated = line_end.is_some_and(|e| e > total)
+        || line_start.is_some_and(|s| s > total);
 
     let sliced: Vec<RepoFetchedLine> = (ctx_start..=ctx_end)
         .filter_map(|n| {
@@ -345,7 +362,13 @@ pub fn apply_line_range(
         })
         .collect();
 
-    (sliced, Some(ctx_start), Some(ctx_end), false)
+    let warning = if warnings.is_empty() {
+        None
+    } else {
+        Some(warnings.join("; "))
+    };
+
+    (sliced, Some(ctx_start), Some(ctx_end), truncated, warning)
 }
 
 #[cfg(test)]
@@ -369,7 +392,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         req.validate(50000).unwrap();
     }
@@ -389,7 +411,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("owner"));
@@ -410,7 +431,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("repo"));
@@ -431,7 +451,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("path"));
@@ -452,7 +471,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("relative"));
@@ -473,7 +491,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("traversal"));
@@ -494,7 +511,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("line_start"));
@@ -515,7 +531,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -536,7 +551,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -557,7 +571,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("context_before"));
@@ -578,7 +591,6 @@ mod tests {
             context_after: None,
             max_chars: Some(60000),
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("exceeds server cap"));
@@ -599,7 +611,6 @@ mod tests {
             context_after: None,
             max_chars: Some(0),
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("> 0"));
@@ -620,7 +631,6 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
-            include_full_file_metadata: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("not supported"));
@@ -687,7 +697,8 @@ mod tests {
     #[test]
     fn apply_line_range_no_range_returns_all() {
         let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
-        let (sliced, start, end, _truncated) = apply_line_range(&lines, None, None, 0, 0);
+        let (sliced, start, end, _truncated, _warn) =
+            apply_line_range(&lines, None, None, 0, 0);
         assert_eq!(sliced.len(), 5);
         assert_eq!(start, Some(1));
         assert_eq!(end, Some(5));
@@ -696,7 +707,8 @@ mod tests {
     #[test]
     fn apply_line_range_specific_range() {
         let lines: Vec<String> = (1..=10).map(|n| format!("line {n}")).collect();
-        let (sliced, start, end, _truncated) = apply_line_range(&lines, Some(3), Some(5), 0, 0);
+        let (sliced, start, end, _truncated, _warn) =
+            apply_line_range(&lines, Some(3), Some(5), 0, 0);
         assert_eq!(sliced.len(), 3);
         assert_eq!(start, Some(3));
         assert_eq!(end, Some(5));
@@ -707,7 +719,7 @@ mod tests {
     #[test]
     fn apply_line_range_with_context() {
         let lines: Vec<String> = (1..=10).map(|n| format!("line {n}")).collect();
-        let (sliced, start, end, _truncated) =
+        let (sliced, start, end, _truncated, _warn) =
             apply_line_range(&lines, Some(3), Some(5), 1, 1);
         assert_eq!(sliced.len(), 5);
         assert_eq!(start, Some(2));
@@ -717,7 +729,7 @@ mod tests {
     #[test]
     fn apply_line_range_context_clamped() {
         let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
-        let (sliced, start, end, _truncated) =
+        let (sliced, start, end, _truncated, _warn) =
             apply_line_range(&lines, Some(1), Some(2), 10, 10);
         assert_eq!(start, Some(1));
         assert_eq!(end, Some(5));
@@ -727,7 +739,8 @@ mod tests {
     #[test]
     fn apply_line_range_empty_lines() {
         let lines: Vec<String> = vec![];
-        let (sliced, start, end, _truncated) = apply_line_range(&lines, None, None, 0, 0);
+        let (sliced, start, end, _truncated, _warn) =
+            apply_line_range(&lines, None, None, 0, 0);
         assert!(sliced.is_empty());
         assert_eq!(start, None);
         assert_eq!(end, None);
@@ -736,10 +749,25 @@ mod tests {
     #[test]
     fn apply_line_range_line_end_clamped() {
         let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
-        let (sliced, _start, end, _truncated) = apply_line_range(&lines, Some(3), Some(100), 0, 0);
+        let (sliced, _start, end, truncated, warn) =
+            apply_line_range(&lines, Some(3), Some(100), 0, 0);
         assert_eq!(end, Some(5));
         assert_eq!(sliced.len(), 3);
         assert_eq!(sliced[0].number, 3);
         assert_eq!(sliced[2].number, 5);
+        assert!(truncated);
+        assert!(warn.is_some());
+        assert!(warn.unwrap().contains("line_end (100)"));
+    }
+
+    #[test]
+    fn apply_line_range_line_start_exceeds_file() {
+        let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
+        let (_sliced, _start, _end, truncated, warn) =
+            apply_line_range(&lines, Some(10), Some(15), 0, 0);
+        assert!(truncated);
+        let w = warn.unwrap();
+        assert!(w.contains("line_start (10)"));
+        assert!(w.contains("line_end (15)"));
     }
 }

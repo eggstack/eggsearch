@@ -113,7 +113,6 @@ pub fn generate_suggested_fetches(
                     context_after: ce.context_line_end.map(|_| 3),
                     max_chars: None,
                     timeout_ms: None,
-                    include_full_file_metadata: None,
                 })
             });
 
