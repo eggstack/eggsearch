@@ -210,7 +210,7 @@ Repo metadata is deterministic and advisory. Agents should use it to choose
 which result to fetch, but must still treat snippets and fetched content as
 untrusted data.
 
-When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence.
+When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence. When the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type), `code_evidence` also includes a `matched_symbol` field with the matched text and `provider_text_match` in `evidence_reasons`.
 
 ### Document Model
 

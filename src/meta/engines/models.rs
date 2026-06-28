@@ -3,6 +3,20 @@ use serde::{Deserialize, Serialize};
 use crate::core::security::VulnerabilityMetadata;
 use crate::core::source_card::{IssueMetadata, ReleaseMetadata};
 
+/// Structured metadata from a code-search provider (e.g. GitHub Code Search).
+///
+/// Carries matched symbol and text fragment data that can be promoted
+/// into `CodeEvidence` during source-card conversion.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CodeSearchMetadata {
+    /// The matched text from the provider (e.g. function/struct name).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_symbol: Option<String>,
+    /// A snippet of the matching file content around the match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_fragment: Option<String>,
+}
+
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum ResultMetadata {
@@ -11,6 +25,7 @@ pub enum ResultMetadata {
     Issue(IssueMetadata),
     Release(ReleaseMetadata),
     Advisory(Box<VulnerabilityMetadata>),
+    CodeSearch(CodeSearchMetadata),
 }
 
 impl ResultMetadata {
@@ -44,6 +59,12 @@ impl ResultMetadata {
             // kinds (theoretically possible if a release URL is
             // misclassified), prefer the first non-`None` to keep
             // the original kind stable.
+            (ResultMetadata::CodeSearch(a), ResultMetadata::CodeSearch(b)) => {
+                ResultMetadata::CodeSearch(CodeSearchMetadata {
+                    matched_symbol: a.matched_symbol.or(b.matched_symbol),
+                    text_fragment: a.text_fragment.or(b.text_fragment),
+                })
+            }
             (ResultMetadata::None, other) => other,
             (this, ResultMetadata::None) => this,
             // Two different structured kinds: keep the left side. This
@@ -168,5 +189,41 @@ mod tests {
         let advisory = ResultMetadata::Advisory(Box::default());
         assert_eq!(advisory.clone().merge(ResultMetadata::None), advisory);
         assert_eq!(ResultMetadata::None.merge(advisory.clone()), advisory);
+    }
+
+    #[test]
+    fn merge_code_search_with_code_search_merges_fields() {
+        let a = ResultMetadata::CodeSearch(CodeSearchMetadata {
+            matched_symbol: Some("router".to_string()),
+            text_fragment: None,
+        });
+        let b = ResultMetadata::CodeSearch(CodeSearchMetadata {
+            matched_symbol: None,
+            text_fragment: Some("fn main() {}".to_string()),
+        });
+        let merged = a.merge(b);
+        match merged {
+            ResultMetadata::CodeSearch(m) => {
+                assert_eq!(m.matched_symbol.as_deref(), Some("router"));
+                assert_eq!(m.text_fragment.as_deref(), Some("fn main() {}"));
+            }
+            other => panic!("expected CodeSearch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn merge_none_into_code_search_keeps_code_search() {
+        let cs = ResultMetadata::CodeSearch(CodeSearchMetadata {
+            matched_symbol: Some("foo".to_string()),
+            text_fragment: None,
+        });
+        assert_eq!(
+            cs.clone().merge(ResultMetadata::None),
+            cs
+        );
+        assert_eq!(
+            ResultMetadata::None.merge(cs.clone()),
+            cs
+        );
     }
 }

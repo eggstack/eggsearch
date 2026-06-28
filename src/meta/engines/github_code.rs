@@ -9,7 +9,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
-use super::models::SearchResult;
+use super::models::{CodeSearchMetadata, ResultMetadata, SearchResult};
 
 const ENGINE: &str = "github_code";
 const DEFAULT_BASE_URL: &str = "https://api.github.com";
@@ -31,6 +31,22 @@ struct GithubCodeItem {
     repository: Option<GithubRepo>,
     #[allow(dead_code)]
     score: Option<f64>,
+    #[serde(default)]
+    text_matches: Vec<TextMatch>,
+}
+
+/// A text-match fragment returned by the GitHub Code Search API
+/// when using the `application/vnd.github.text-match+json` media type.
+#[derive(Debug, Deserialize)]
+struct TextMatch {
+    fragment: Option<String>,
+    #[serde(default)]
+    matches: Vec<TextMatchItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TextMatchItem {
+    text: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,7 +77,7 @@ pub async fn search(
         client
             .get(&url)
             .query(&[("q", query), ("per_page", &per_page.to_string())])
-            .header("Accept", "application/vnd.github+json")
+            .header("Accept", "application/vnd.github.text-match+json")
             .header("Authorization", format!("Bearer {api_key}"))
             .header("X-GitHub-Api-Version", "2022-11-28")
             .send(),
@@ -124,15 +140,44 @@ fn convert(items: Vec<GithubCodeItem>, max_results: usize) -> Vec<SearchResult> 
             .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
+
+        // Extract matched symbol and fragment from text_matches.
+        let (matched_symbol, text_fragment) = extract_text_match(&item.text_matches);
+
+        let metadata = if matched_symbol.is_some() || text_fragment.is_some() {
+            ResultMetadata::CodeSearch(CodeSearchMetadata {
+                matched_symbol,
+                text_fragment,
+            })
+        } else {
+            ResultMetadata::None
+        };
+
         out.push(SearchResult {
             title,
             url: html_url.clone(),
             snippet,
             source_engine: ENGINE.to_string(),
-            metadata: Default::default(),
+            metadata,
         });
     }
     out
+}
+
+/// Extract the first matched symbol and text fragment from text matches.
+fn extract_text_match(text_matches: &[TextMatch]) -> (Option<String>, Option<String>) {
+    for tm in text_matches {
+        let matched_text = tm
+            .matches
+            .iter()
+            .find_map(|m| m.text.clone())
+            .or_else(|| tm.fragment.clone());
+        if matched_text.is_some() {
+            let fragment = tm.fragment.clone();
+            return (matched_text, fragment);
+        }
+    }
+    (None, None)
 }
 
 fn build_title(path: Option<&str>, repo: Option<&GithubRepo>) -> Option<String> {
@@ -160,6 +205,7 @@ mod tests {
                     description: Some("A web framework".to_string()),
                 }),
                 score: Some(1.0),
+                text_matches: vec![],
             },
             GithubCodeItem {
                 name: Some("main.rs".to_string()),
@@ -172,6 +218,7 @@ mod tests {
                     description: None,
                 }),
                 score: Some(0.8),
+                text_matches: vec![],
             },
         ];
         let out = convert(items, 10);
@@ -201,6 +248,7 @@ mod tests {
                     description: None,
                 }),
                 score: None,
+                text_matches: vec![],
             })
             .collect();
         let out = convert(items, 2);
@@ -215,6 +263,7 @@ mod tests {
             html_url: None,
             repository: None,
             score: None,
+            text_matches: vec![],
         }];
         let out = convert(items, 10);
         assert!(out.is_empty());
@@ -228,6 +277,7 @@ mod tests {
             html_url: Some(String::new()),
             repository: None,
             score: None,
+            text_matches: vec![],
         }];
         let out = convert(items, 10);
         assert!(out.is_empty());
@@ -242,6 +292,7 @@ mod tests {
                 html_url: Some("ftp://example.com/a.rs".to_string()),
                 repository: None,
                 score: None,
+                text_matches: vec![],
             },
             GithubCodeItem {
                 name: Some("b.rs".to_string()),
@@ -252,6 +303,7 @@ mod tests {
                     description: None,
                 }),
                 score: None,
+                text_matches: vec![],
             },
         ];
         let out = convert(items, 10);
@@ -270,6 +322,7 @@ mod tests {
                 description: None,
             }),
             score: None,
+            text_matches: vec![],
         }];
         let out = convert(items, 10);
         assert!(out.is_empty());
@@ -286,6 +339,7 @@ mod tests {
                 description: Some(String::new()),
             }),
             score: None,
+            text_matches: vec![],
         }];
         let out = convert(items, 10);
         assert_eq!(out.len(), 1);
@@ -344,6 +398,86 @@ mod tests {
     fn test_max_results_zero_returns_empty() {
         let out = convert(vec![], 0);
         assert!(out.is_empty());
+    }
+
+    // --- Text-match extraction tests ---
+
+    #[test]
+    fn test_extract_text_match_with_matches() {
+        let matches = vec![TextMatch {
+            fragment: Some("pub fn router() -> Router {\n}".to_string()),
+            matches: vec![TextMatchItem {
+                text: Some("router".to_string()),
+            }],
+        }];
+        let (symbol, fragment) = extract_text_match(&matches);
+        assert_eq!(symbol.as_deref(), Some("router"));
+        assert!(fragment.is_some());
+    }
+
+    #[test]
+    fn test_extract_text_match_fragment_only() {
+        let matches = vec![TextMatch {
+            fragment: Some("fn main() {}".to_string()),
+            matches: vec![],
+        }];
+        let (symbol, fragment) = extract_text_match(&matches);
+        assert_eq!(symbol.as_deref(), Some("fn main() {}"));
+        assert!(fragment.is_some());
+    }
+
+    #[test]
+    fn test_extract_text_match_empty() {
+        let (symbol, fragment) = extract_text_match(&[]);
+        assert!(symbol.is_none());
+        assert!(fragment.is_none());
+    }
+
+    #[test]
+    fn test_convert_with_text_matches_produces_code_search_metadata() {
+        let items = vec![GithubCodeItem {
+            name: Some("lib.rs".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            html_url: Some("https://github.com/test/repo/blob/main/src/lib.rs".to_string()),
+            repository: Some(GithubRepo {
+                full_name: Some("test/repo".to_string()),
+                description: None,
+            }),
+            score: Some(1.0),
+            text_matches: vec![TextMatch {
+                fragment: Some("pub fn router() -> Router {\n}".to_string()),
+                matches: vec![TextMatchItem {
+                    text: Some("router".to_string()),
+                }],
+            }],
+        }];
+        let out = convert(items, 10);
+        assert_eq!(out.len(), 1);
+        match &out[0].metadata {
+            ResultMetadata::CodeSearch(m) => {
+                assert_eq!(m.matched_symbol.as_deref(), Some("router"));
+                assert!(m.text_fragment.is_some());
+            }
+            other => panic!("expected CodeSearch metadata, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_convert_without_text_matches_produces_none_metadata() {
+        let items = vec![GithubCodeItem {
+            name: Some("lib.rs".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            html_url: Some("https://github.com/test/repo/blob/main/src/lib.rs".to_string()),
+            repository: Some(GithubRepo {
+                full_name: Some("test/repo".to_string()),
+                description: None,
+            }),
+            score: Some(1.0),
+            text_matches: vec![],
+        }];
+        let out = convert(items, 10);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].metadata, ResultMetadata::None);
     }
 
     // -----------------------------------------------------------------------

@@ -5958,6 +5958,174 @@ mod repo_search {
         assert_eq!(total_results, 3, "all 3 results should be in groups");
     }
 
+    // ---- Code evidence tests ----
+
+    #[tokio::test]
+    async fn repo_search_code_host_source_file_has_code_evidence() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Axum Source",
+                "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let source_group = groups
+            .iter()
+            .find(|g| g["kind"].as_str() == Some("source_files"))
+            .expect("should have source_files group");
+        let results = source_group["results"]
+            .as_array()
+            .expect("results is array");
+        assert!(!results.is_empty(), "source_files group should have results");
+
+        let card = &results[0];
+        let metadata = card["metadata"].as_object().expect("metadata is object");
+        assert!(
+            metadata.contains_key("code_evidence"),
+            "code-host source-file result should have code_evidence: {metadata:?}"
+        );
+        let code_evidence = &metadata["code_evidence"];
+        assert_eq!(
+            code_evidence["host"].as_str(),
+            Some("github"),
+            "code_evidence.host should be github"
+        );
+        assert_eq!(
+            code_evidence["owner"].as_str(),
+            Some("tokio-rs"),
+            "code_evidence.owner should be tokio-rs"
+        );
+        assert_eq!(
+            code_evidence["repo"].as_str(),
+            Some("axum"),
+            "code_evidence.repo should be axum"
+        );
+        assert_eq!(
+            code_evidence["path"].as_str(),
+            Some("src/lib.rs"),
+            "code_evidence.path should be src/lib.rs"
+        );
+        assert!(
+            code_evidence["raw_url"].as_str().is_some(),
+            "code_evidence should have raw_url"
+        );
+        assert_eq!(
+            code_evidence["source_role"].as_str(),
+            Some("implementation"),
+            "code_evidence.source_role should be implementation"
+        );
+        assert!(
+            code_evidence["evidence_reasons"].as_array().is_some(),
+            "code_evidence should have evidence_reasons"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_non_code_host_result_has_no_code_evidence() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Axum Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let docs_group = groups
+            .iter()
+            .find(|g| g["kind"].as_str() == Some("official_docs"))
+            .expect("should have official_docs group");
+        let results = docs_group["results"]
+            .as_array()
+            .expect("results is array");
+        assert!(!results.is_empty());
+
+        let card = &results[0];
+        let metadata = card["metadata"].as_object().expect("metadata is object");
+        assert!(
+            !metadata.contains_key("code_evidence"),
+            "non-code-host result should NOT have code_evidence: {metadata:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_readme_file_has_readme_source_role() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "README",
+                "https://github.com/tokio-rs/axum/blob/main/README.md",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let readme_group = groups
+            .iter()
+            .find(|g| g["kind"].as_str() == Some("readme"))
+            .expect("should have readme group");
+        let results = readme_group["results"]
+            .as_array()
+            .expect("results is array");
+        assert!(!results.is_empty());
+
+        let card = &results[0];
+        let metadata = card["metadata"].as_object().expect("metadata is object");
+        let code_evidence = metadata
+            .get("code_evidence")
+            .expect("README should have code_evidence");
+        assert_eq!(
+            code_evidence["source_role"].as_str(),
+            Some("readme"),
+            "README source_role should be readme"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_search_test_file_has_test_source_role() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Test file",
+                "https://github.com/tokio-rs/axum/blob/main/tests/integration.rs",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        let tests_group = groups
+            .iter()
+            .find(|g| g["kind"].as_str() == Some("tests"))
+            .expect("should have tests group");
+        let results = tests_group["results"]
+            .as_array()
+            .expect("results is array");
+        assert!(!results.is_empty());
+
+        let card = &results[0];
+        let metadata = card["metadata"].as_object().expect("metadata is object");
+        let code_evidence = metadata
+            .get("code_evidence")
+            .expect("test file should have code_evidence");
+        assert_eq!(
+            code_evidence["source_role"].as_str(),
+            Some("test"),
+            "test file source_role should be test"
+        );
+    }
+
     #[tokio::test]
     async fn security_search_returns_structured_response() {
         let engines = vec![MockEngine::success(

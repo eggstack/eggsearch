@@ -302,14 +302,15 @@ When a result comes from a code-hosting platform and has structured `code` metad
       "source_role": "implementation",
       "browser_url": "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
       "raw_url": "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs",
+      "matched_symbol": "router",
       "evidence_confidence": "strong",
-      "evidence_reasons": ["repo_match", "language_match", "raw_url_derived", "source_role_inferred"]
+      "evidence_reasons": ["language_match", "raw_url_derived", "source_role_inferred", "provider_text_match"]
     }
   }
 }
 ```
 
-The `code_evidence` field is `null` or omitted for non-code-host results. Evidence fields are deterministic metadata derived from URL shape and existing parsed code metadata — they are not fetched content. Exact line/symbol match data is only as strong as the provider/URL allows.
+The `code_evidence` field is `null` or omitted for non-code-host results. Evidence fields are deterministic metadata derived from URL shape, existing parsed code metadata, and provider text matches — they are not fetched content. Exact line/symbol match data is only as strong as the provider/URL allows. The `matched_symbol` field is populated when the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type).
 
 **Source roles:** `implementation`, `test`, `example`, `benchmark`, `configuration`, `build`, `documentation`, `readme`, `changelog`, `migration`, `unknown`.
 

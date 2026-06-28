@@ -310,7 +310,15 @@ pub fn derive_browser_url(owner: &str, repo: &str, ref_name: &str, path: &str) -
 /// source_role, and evidence_reasons based on what information is
 /// available. Returns `None` when the metadata is too sparse to
 /// produce meaningful evidence (no owner/repo/path).
-pub fn build_code_evidence(code: &CodeMetadata, browser_url: Option<&str>) -> Option<CodeEvidence> {
+///
+/// When `matched_symbol` is provided (e.g. from a provider text match),
+/// it is included in the evidence with `ProviderTextMatch` as an
+/// additional evidence reason.
+pub fn build_code_evidence(
+    code: &CodeMetadata,
+    browser_url: Option<&str>,
+    matched_symbol: Option<&str>,
+) -> Option<CodeEvidence> {
     let owner = code.owner.as_deref()?;
     let repo = code.repo.as_deref()?;
     let ref_name = code.ref_name.as_deref().unwrap_or("main");
@@ -354,6 +362,11 @@ pub fn build_code_evidence(code: &CodeMetadata, browser_url: Option<&str>) -> Op
         evidence_reasons.push(CodeEvidenceReason::LanguageMatch);
     }
 
+    let matched = matched_symbol.map(String::from);
+    if matched.is_some() {
+        evidence_reasons.push(CodeEvidenceReason::ProviderTextMatch);
+    }
+
     Some(CodeEvidence {
         host: Some(host),
         owner: Some(owner.to_string()),
@@ -370,7 +383,7 @@ pub fn build_code_evidence(code: &CodeMetadata, browser_url: Option<&str>) -> Op
         match_line_end: code.line_end,
         context_line_start: None,
         context_line_end: None,
-        matched_symbol: code.symbol_hint.clone(),
+        matched_symbol: matched,
         symbol_kind: None,
         enclosing_symbol: None,
         evidence_confidence: Some(EvidenceConfidence::Strong),
@@ -502,7 +515,7 @@ mod tests {
             ..Default::default()
         };
 
-        let evidence = build_code_evidence(&code, None).unwrap();
+        let evidence = build_code_evidence(&code, None, None).unwrap();
         assert_eq!(evidence.host, Some(CodeHost::Github));
         assert_eq!(evidence.owner.as_deref(), Some("tokio-rs"));
         assert_eq!(evidence.repo.as_deref(), Some("axum"));
@@ -539,7 +552,7 @@ mod tests {
         };
 
         // No path => returns None
-        let result = build_code_evidence(&code, None);
+        let result = build_code_evidence(&code, None, None);
         assert!(result.is_none());
     }
 
@@ -552,8 +565,29 @@ mod tests {
             ..Default::default()
         };
 
-        let result = build_code_evidence(&code, None);
+        let result = build_code_evidence(&code, None, None);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn build_code_evidence_with_matched_symbol() {
+        let code = CodeMetadata {
+            host: Some(CodeHost::Github),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ref_name: Some("main".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            language: Some("rust".to_string()),
+            ..Default::default()
+        };
+
+        let evidence = build_code_evidence(&code, None, Some("router")).unwrap();
+        assert_eq!(evidence.matched_symbol.as_deref(), Some("router"));
+        assert!(
+            evidence
+                .evidence_reasons
+                .contains(&CodeEvidenceReason::ProviderTextMatch)
+        );
     }
 
     // --- Serialization roundtrip tests ---

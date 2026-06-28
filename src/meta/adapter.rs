@@ -1404,7 +1404,13 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             }
             (None, None, Some(m.clone()))
         }
-        ResultMetadata::None => (None, None, None),
+        ResultMetadata::CodeSearch(_) | ResultMetadata::None => (None, None, None),
+    };
+
+    // Extract matched_symbol from CodeSearch metadata for code evidence enrichment.
+    let code_search_symbol = match &a.metadata {
+        ResultMetadata::CodeSearch(m) => m.matched_symbol.as_deref(),
+        _ => None,
     };
 
     Some(SourceCard {
@@ -1425,9 +1431,13 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             issue,
             release,
             vulnerability,
-            code_evidence: code
-                .as_ref()
-                .and_then(|c| crate::core::code_evidence::build_code_evidence(c, Some(&a.url))),
+            code_evidence: code.as_ref().and_then(|c| {
+                crate::core::code_evidence::build_code_evidence(
+                    c,
+                    Some(&a.url),
+                    code_search_symbol,
+                )
+            }),
         },
     })
 }
