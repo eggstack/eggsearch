@@ -79,9 +79,10 @@ pub use repo_search::{
     RepoSuggestedFetch, SearchProfile,
 };
 pub use research::{
-    EvidenceQuality, ResearchDomain, ResearchResultGroup, ResearchResultGroupKind,
+    EvidenceQuality, ResearchCoverage, ResearchDepth, ResearchDimension, ResearchDomain,
+    ResearchGap, ResearchGapKind, ResearchResultGroup, ResearchResultGroupKind,
     ResearchSearchRequest, ResearchSearchResponse, ResearchSourceType, ResearchSubquery,
-    ResearchSuggestedFetch,
+    ResearchSuggestedFetch, ResearchTelemetry, ResearchWorkflow, ResearchWorkflowContext,
 };
 pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{

@@ -90,6 +90,7 @@ eggsearch/
       research_grouping.rs  # deterministic classification of research results
       research_planner.rs   # subquery generation for research search
       research_suggested_fetches.rs # suggested fetch URL generation for research groups
+      research_workflow.rs   # workflow dimension generation, coverage, gaps, diversity
       suggested_fetches.rs # suggested fetch URL generation for repo groups
       security_grouping.rs  # deterministic grouping of security search results
       security_search.rs   # security search orchestration (run_security_search_plan)
@@ -958,7 +959,14 @@ for complex architectural or technical questions where flat
   optional `desired_source_types`, optional `include_counterpoints`,
   `include_primary_sources`, `include_recent_discussion`,
   `include_security_considerations`, optional `max_results`, `max_groups`,
-  `max_per_group`, `freshness`, `timeout_ms`, `providers`
+  `max_per_group`, `freshness`, `timeout_ms`, `providers`,
+  optional `workflow: Option<ResearchWorkflow>` (research workflow type
+  for structured scaffolding), optional `depth: Option<ResearchDepth>`
+  (research depth: quick, standard, deep), optional
+  `compare_targets: Vec<String>` (compare targets for library comparison
+  workflows), optional `constraints: Vec<String>` (constraints or
+  requirements for the research), optional
+  `known_context: Option<String>` (known context the caller already has)
 - `ResearchSubquery`: transparent subquery with `id`, `source_type`,
   `query`, `intent`, `freshness`
 - `ResearchResultGroup`: grouped source cards by `kind`, `label`,
@@ -967,7 +975,11 @@ for complex architectural or technical questions where flat
   `evidence_quality`, `reason`, `recommended_extract_mode`, `priority`
 - `ResearchSearchResponse`: `query`, `mode`, `research_domain`,
   `subqueries`, `groups`, `suggested_fetches`, `providers_queried`,
-  `providers_failed`, `warnings`, `trust_markers`
+  `providers_failed`, `warnings`, `trust_markers`,
+  optional `workflow_context: Option<ResearchWorkflowContext>` (workflow
+  context block, present when workflow mode is active),
+  optional `telemetry: Option<ResearchTelemetry>` (research telemetry
+  for diagnostics)
 
 **Research domains:** `General` (default), `SoftwareArchitecture`,
 `ApiDesign`, `DistributedSystems`, `Security`, `Performance`,
@@ -979,10 +991,32 @@ for complex architectural or technical questions where flat
 `AcademicOrFormalSources`, `RecentNews`, `CommunityDiscussion`,
 `Counterpoints`
 
+**Research workflows:**
+- `ResearchWorkflow` enum: `General` (default), `ArchitectureDecision`,
+  `ApiEvaluation`, `LibraryComparison`, `MigrationPlanning`,
+  `SecurityReview`, `PerformanceInvestigation`, `EcosystemSurvey`
+- `ResearchDepth` enum: `Quick` (4 subqueries), `Standard` (8 subqueries),
+  `Deep` (12 subqueries)
+- Workflow dimensions are deterministic per workflow type — the set of
+  source types and research domains requested is derived from the
+  workflow without LLM inference
+- Coverage gaps are detected and reported as guidance, not errors —
+  missing source types or domains appear in `workflow_context.gaps`
+
 **Evidence quality tiers:** `OfficialPrimary`, `MaintainerPrimary`,
 `StandardsOrSpecification`, `VendorPrimary`, `PackageRegistry`,
 `AcademicOrFormal`, `BenchmarkOrMeasurement`, `SecurityAdvisory`,
 `CommunityDiscussion`, `NewsOrPress`, `BlogOrTutorial`, `Unknown`
+
+**Workflow mode:** When `workflow` is set on the request, the response
+includes a `workflow_context: Option<ResearchWorkflowContext>` block
+with the resolved workflow dimensions, coverage analysis, detected
+gaps, and recommended next fetches. Coverage gaps (e.g.
+`NoPrimarySources`, `NoCounterpoints`, `NoBenchmarks`) are guidance
+for the calling agent, not errors. Source diversity caps prevent one
+domain, provider, or source type from dominating the result set.
+Workflow mode is deterministic research scaffolding, not autonomous
+research — the agent decides which suggested fetches to act on.
 
 **Implementation:**
 - `src/core/research.rs`: Core request/response types and validation
@@ -993,9 +1027,17 @@ for complex architectural or technical questions where flat
   `max_groups` parameter and enforces it.
 - `src/meta/research_suggested_fetches.rs`: Priority-ordered fetch
   suggestions with domain diversity
+- `src/meta/research_workflow.rs`: workflow dimension generation,
+  coverage computation, gap detection, diversity caps
 
 The MCP `run_research_search` tool in `src/mcp/tools.rs` orchestrates
 the flow.
+
+**Workflow examples:**
+- Architecture decision: `workflow: "architecture_decision"`, `depth: "standard"`
+- Library comparison: `workflow: "library_comparison"`, `compare_targets: ["axum", "actix-web"]`
+- Migration planning: `workflow: "migration_planning"`
+- Security review: `workflow: "security_review"`
 
 **Request-level deadline:** `repo_search` and `research_search` share a
 request-level deadline. Each subquery consumes from a shared remaining

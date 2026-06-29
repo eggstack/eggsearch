@@ -279,6 +279,24 @@ pub struct ResearchSearchArgs {
     /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
+    /// Optional. Research workflow type for structured scaffolding.
+    /// Values: "general", "architecture_decision", "api_evaluation",
+    /// "library_comparison", "migration_planning", "security_review",
+    /// "performance_investigation", "ecosystem_survey".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
+    /// Optional. Research depth: "quick", "standard", or "deep".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<String>,
+    /// Optional. Compare targets for library comparison workflows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compare_targets: Vec<String>,
+    /// Optional. Constraints or requirements for the research.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<String>,
+    /// Optional. Known context the caller already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_context: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -729,7 +747,9 @@ pub async fn run_research_search(
     state: Arc<ServerState>,
     args: ResearchSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
-    use crate::core::research::{ResearchDomain, ResearchSearchRequest, ResearchSourceType};
+    use crate::core::research::{
+        ResearchDepth, ResearchDomain, ResearchSearchRequest, ResearchSourceType, ResearchWorkflow,
+    };
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
         return Err(ToolError::Validation(web_search_denied_message()));
@@ -752,6 +772,27 @@ pub async fn run_research_search(
                 "infrastructure" | "infra" => Some(ResearchDomain::Infrastructure),
                 _ => None,
             });
+
+    let workflow = args.workflow.as_deref().and_then(|w| match w.to_lowercase().as_str() {
+        "general" => Some(ResearchWorkflow::General),
+        "architecture_decision" | "architecture" => Some(ResearchWorkflow::ArchitectureDecision),
+        "api_evaluation" | "api" => Some(ResearchWorkflow::ApiEvaluation),
+        "library_comparison" | "comparison" => Some(ResearchWorkflow::LibraryComparison),
+        "migration_planning" | "migration" => Some(ResearchWorkflow::MigrationPlanning),
+        "security_review" | "security" => Some(ResearchWorkflow::SecurityReview),
+        "performance_investigation" | "performance" => {
+            Some(ResearchWorkflow::PerformanceInvestigation)
+        }
+        "ecosystem_survey" | "ecosystem" => Some(ResearchWorkflow::EcosystemSurvey),
+        _ => None,
+    });
+
+    let depth = args.depth.as_deref().and_then(|d| match d.to_lowercase().as_str() {
+        "quick" => Some(ResearchDepth::Quick),
+        "standard" => Some(ResearchDepth::Standard),
+        "deep" => Some(ResearchDepth::Deep),
+        _ => None,
+    });
 
     let desired_source_types: Vec<ResearchSourceType> = args
         .desired_source_types
@@ -800,6 +841,11 @@ pub async fn run_research_search(
         freshness,
         timeout_ms: args.timeout_ms,
         providers: args.providers,
+        workflow,
+        depth,
+        compare_targets: args.compare_targets,
+        constraints: args.constraints,
+        known_context: args.known_context,
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {

@@ -1156,6 +1156,9 @@ impl MetadataSearchAdapter {
         use crate::meta::research_grouping::group_research_results;
         use crate::meta::research_planner::build_research_search_plan;
         use crate::meta::research_suggested_fetches::generate_research_suggested_fetches;
+        use crate::meta::research_workflow::{
+            apply_diversity_caps, build_research_telemetry, build_workflow_context,
+        };
 
         let plan = build_research_search_plan(req);
 
@@ -1173,6 +1176,8 @@ impl MetadataSearchAdapter {
             timeout_ms = effective_timeout.as_millis(),
             subqueries = plan.subqueries.len(),
             domain = ?plan.domain,
+            workflow = ?req.workflow,
+            depth = ?req.depth,
             "dispatching research_search"
         );
 
@@ -1199,6 +1204,9 @@ impl MetadataSearchAdapter {
         let max_per_group = req.effective_max_per_group(5);
         let max_groups = req.effective_max_groups(14);
         let groups = group_research_results(cards, max_per_group, max_groups);
+
+        // Apply diversity caps
+        let (groups, diversity_warnings) = apply_diversity_caps(groups, max_per_group);
 
         let suggested_fetches = generate_research_suggested_fetches(&groups);
 
@@ -1229,6 +1237,11 @@ impl MetadataSearchAdapter {
             }
         }
 
+        // Diversity cap warnings
+        for w in &diversity_warnings {
+            warnings.push(SearchWarning::new("_system", w.clone()));
+        }
+
         // Provider failure warnings
         push_failure_warnings(&mut warnings, &dispatch.raw_failures);
 
@@ -1249,7 +1262,35 @@ impl MetadataSearchAdapter {
         let trust_markers =
             merge_card_trust_markers(groups.iter().flat_map(|group| group.results.iter()));
 
-        // Provider failure tracking
+        // Build workflow context if workflow is specified
+        let workflow_context = if req.workflow.is_some() {
+            Some(build_workflow_context(
+                req,
+                &groups,
+                &suggested_fetches,
+                &queried_ids,
+            ))
+        } else {
+            None
+        };
+
+        // Build telemetry
+        let dimensions = workflow_context
+            .as_ref()
+            .map(|ctx| ctx.dimensions.clone())
+            .unwrap_or_default();
+        let gaps = workflow_context
+            .as_ref()
+            .map(|ctx| ctx.gaps.clone())
+            .unwrap_or_default();
+        let telemetry = Some(build_research_telemetry(
+            req,
+            &dimensions,
+            plan.subqueries.len(),
+            &diversity_warnings,
+            &gaps,
+        ));
+
         ResearchSearchResponse {
             query: req.query.clone(),
             mode: "research_metasearch".to_string(),
@@ -1261,6 +1302,8 @@ impl MetadataSearchAdapter {
             providers_failed,
             warnings,
             trust_markers,
+            workflow_context,
+            telemetry,
         }
     }
 }

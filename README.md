@@ -777,6 +777,32 @@ inspect full content.
 - `max_results` (optional): maximum total source cards across all groups. Capped by server `max_results_cap`.
 - `max_groups` (optional): maximum number of evidence groups returned. This limit is enforced; the response will contain at most `max_groups` groups.
 - `max_per_group` (optional): maximum source cards per evidence group.
+- `workflow` (optional): research workflow type. When set, the response includes a `workflow_context` block with structured dimensions, coverage analysis, and gap detection. Valid values: `"general"` (default), `"architecture_decision"`, `"api_evaluation"`, `"library_comparison"`, `"migration_planning"`, `"security_review"`, `"performance_investigation"`, `"ecosystem_survey"`.
+- `depth` (optional): research depth controlling subquery count. `"quick"` (4 subqueries), `"standard"` (8 subqueries), `"deep"` (12 subqueries). Default is `"standard"`.
+- `compare_targets` (optional): list of targets for library comparison workflows (e.g. `["axum", "actix-web"]`). Used with `workflow: "library_comparison"`.
+- `constraints` (optional): list of constraints or requirements to guide the research (e.g. `["must support async", "no external dependencies"]`).
+- `known_context` (optional): known context the caller already has, allowing the planner to avoid redundant subqueries and focus on gaps.
+
+**Research Workflows:**
+
+When `workflow` is set on the request, the response includes a
+`workflow_context` block with the resolved workflow dimensions,
+coverage analysis, detected gaps, and recommended next fetches.
+Workflow mode is **deterministic research scaffolding**, not
+autonomous research -- the agent decides which suggested fetches
+to act on.
+
+Workflows generate structured dimensions (source types, research
+domains) derived deterministically from the workflow type, compute
+coverage across those dimensions, and report gaps. Coverage gaps
+(e.g. `NoPrimarySources`, `NoCounterpoints`, `NoBenchmarks`) are
+**guidance for the calling agent**, not errors -- they indicate
+which evidence types are missing from the result set so the agent
+can decide whether to fetch additional sources.
+
+Source diversity caps prevent one domain, provider, or source type
+from dominating the result set, ensuring broad evidence coverage
+across the requested dimensions.
 
 **Response fields:**
 

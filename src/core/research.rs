@@ -134,6 +134,150 @@ pub enum ResearchResultGroupKind {
     Unknown,
 }
 
+/// Research workflow classification for structured research scaffolding.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchWorkflow {
+    /// Architecture decision research (patterns, tradeoffs, RFCs).
+    #[default]
+    General,
+    /// Evaluate an API or library for adoption.
+    ApiEvaluation,
+    /// Compare two or more libraries or frameworks.
+    LibraryComparison,
+    /// Plan a migration between versions or systems.
+    MigrationPlanning,
+    /// Security-focused review (advisories, threat models, hardening).
+    SecurityReview,
+    /// Performance investigation (benchmarks, profiling, tuning).
+    PerformanceInvestigation,
+    /// Broad ecosystem survey across multiple tools or libraries.
+    EcosystemSurvey,
+    /// Architecture decision research (patterns, tradeoffs, RFCs).
+    ArchitectureDecision,
+}
+
+/// Research depth controls source diversity and subquery breadth.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchDepth {
+    /// Quick scan: fewer subqueries, limited source diversity.
+    Quick,
+    /// Standard depth (default): balanced breadth and diversity.
+    #[default]
+    Standard,
+    /// Deep dive: maximum subqueries and source diversity.
+    Deep,
+}
+
+/// A research dimension — a named aspect of the research question.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchDimension {
+    /// Short name for this dimension (e.g. "Official Docs").
+    pub name: String,
+    /// Purpose of this dimension in the research workflow.
+    pub purpose: String,
+    /// Source types that contribute to this dimension.
+    pub source_types: Vec<ResearchSourceType>,
+    /// Subqueries generated for this dimension.
+    pub subqueries: Vec<String>,
+}
+
+/// Aggregate coverage counts across source types.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchCoverage {
+    /// Number of primary/official source results found.
+    pub primary_sources_found: usize,
+    /// Number of official documentation results found.
+    pub official_docs_found: usize,
+    /// Number of implementation/reference source results found.
+    pub implementation_sources_found: usize,
+    /// Number of benchmark results found.
+    pub benchmark_sources_found: usize,
+    /// Number of security-related results found.
+    pub security_sources_found: usize,
+    /// Number of counterpoint/alternative viewpoint results found.
+    pub counterpoints_found: usize,
+    /// Number of recent/fresh results found.
+    pub recent_sources_found: usize,
+}
+
+/// Kind of coverage gap detected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchGapKind {
+    /// No primary or official sources found.
+    NoPrimarySources,
+    /// No recent sources found.
+    NoRecentSources,
+    /// No counterpoints found when requested.
+    NoCounterpoints,
+    /// No implementation evidence found.
+    NoImplementationEvidence,
+    /// No benchmark results found.
+    NoBenchmarks,
+    /// No security discussion found.
+    NoSecurityDiscussion,
+    /// No migration docs found.
+    NoMigrationDocs,
+    /// Limited provider coverage.
+    ProviderCoverageLimited,
+    /// Ambiguous or underspecified research question.
+    AmbiguousQuestion,
+}
+
+/// A coverage gap with guidance for the calling agent.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchGap {
+    /// Kind of gap detected.
+    pub kind: ResearchGapKind,
+    /// Human-readable description of the gap.
+    pub message: String,
+    /// Suggested query to fill the gap, if available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_query: Option<String>,
+}
+
+/// Workflow context block returned when workflow mode is active.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchWorkflowContext {
+    /// The workflow type used.
+    pub workflow: ResearchWorkflow,
+    /// Interpreted research question.
+    pub interpreted_question: String,
+    /// Research dimensions explored.
+    pub dimensions: Vec<ResearchDimension>,
+    /// Aggregate coverage counts.
+    pub coverage: ResearchCoverage,
+    /// Coverage gaps detected.
+    pub gaps: Vec<ResearchGap>,
+    /// Recommended next fetches for the calling agent.
+    pub recommended_next_fetches: Vec<ResearchSuggestedFetch>,
+    /// Workflow-specific warnings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+/// Telemetry for the research workflow.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchTelemetry {
+    /// Workflow type used, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<ResearchWorkflow>,
+    /// Research depth used.
+    pub depth: ResearchDepth,
+    /// Number of dimensions generated.
+    pub dimensions_generated: usize,
+    /// Number of subqueries generated.
+    pub subqueries_generated: usize,
+    /// Diversity caps that were applied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_diversity_caps_applied: Vec<String>,
+    /// Coverage gap kinds detected.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub coverage_gaps: Vec<ResearchGapKind>,
+}
+
 /// Structured request for research-oriented bundle search.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ResearchSearchRequest {
@@ -175,6 +319,22 @@ pub struct ResearchSearchRequest {
     /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
+
+    /// Optional. Research workflow type for structured scaffolding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<ResearchWorkflow>,
+    /// Optional. Research depth (quick, standard, deep).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<ResearchDepth>,
+    /// Optional. Compare targets for library comparison workflows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compare_targets: Vec<String>,
+    /// Optional. Constraints or requirements for the research.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<String>,
+    /// Optional. Known context the caller already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_context: Option<String>,
 }
 
 impl ResearchSearchRequest {
@@ -214,6 +374,16 @@ impl ResearchSearchRequest {
     /// Effective max_per_group, defaulting to the given default.
     pub fn effective_max_per_group(&self, default: usize) -> usize {
         self.max_per_group.unwrap_or(default).max(1)
+    }
+
+    /// Effective research depth, defaulting to Standard.
+    pub fn effective_depth(&self) -> ResearchDepth {
+        self.depth.unwrap_or_default()
+    }
+
+    /// Effective research workflow, defaulting to General.
+    pub fn effective_workflow(&self) -> ResearchWorkflow {
+        self.workflow.unwrap_or_default()
     }
 }
 
@@ -291,6 +461,12 @@ pub struct ResearchSearchResponse {
     pub warnings: Vec<SearchWarning>,
     /// Aggregate trust markers across all results.
     pub trust_markers: TrustMarkers,
+    /// Workflow context block (present when workflow mode is active).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_context: Option<ResearchWorkflowContext>,
+    /// Research telemetry for diagnostics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<ResearchTelemetry>,
 }
 
 #[cfg(test)]
@@ -483,10 +659,126 @@ mod tests {
             providers_failed: vec![],
             warnings: vec![],
             trust_markers: TrustMarkers::default(),
+            workflow_context: None,
+            telemetry: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.query, resp.query);
         assert_eq!(parsed.research_domain, resp.research_domain);
+    }
+
+    #[test]
+    fn workflow_default_is_general() {
+        assert_eq!(ResearchWorkflow::default(), ResearchWorkflow::General);
+    }
+
+    #[test]
+    fn depth_default_is_standard() {
+        assert_eq!(ResearchDepth::default(), ResearchDepth::Standard);
+    }
+
+    #[test]
+    fn effective_depth_defaults_to_standard() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_depth(), ResearchDepth::Standard);
+    }
+
+    #[test]
+    fn effective_depth_from_request() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            depth: Some(ResearchDepth::Deep),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_depth(), ResearchDepth::Deep);
+    }
+
+    #[test]
+    fn effective_workflow_defaults_to_general() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(req.effective_workflow(), ResearchWorkflow::General);
+    }
+
+    #[test]
+    fn effective_workflow_from_request() {
+        let req = ResearchSearchRequest {
+            query: "test".to_string(),
+            workflow: Some(ResearchWorkflow::LibraryComparison),
+            ..Default::default()
+        };
+        assert_eq!(
+            req.effective_workflow(),
+            ResearchWorkflow::LibraryComparison
+        );
+    }
+
+    #[test]
+    fn serde_roundtrip_request_with_workflow() {
+        let req = ResearchSearchRequest {
+            query: "compare axum vs actix".to_string(),
+            workflow: Some(ResearchWorkflow::LibraryComparison),
+            depth: Some(ResearchDepth::Deep),
+            compare_targets: vec!["axum".to_string(), "actix-web".to_string()],
+            constraints: vec!["must support HTTP/2".to_string()],
+            known_context: Some("already evaluated rocket".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: ResearchSearchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.workflow, Some(ResearchWorkflow::LibraryComparison));
+        assert_eq!(parsed.depth, Some(ResearchDepth::Deep));
+        assert_eq!(parsed.compare_targets, vec!["axum", "actix-web"]);
+        assert_eq!(parsed.constraints, vec!["must support HTTP/2"]);
+        assert_eq!(
+            parsed.known_context,
+            Some("already evaluated rocket".to_string())
+        );
+    }
+
+    #[test]
+    fn serde_roundtrip_response_with_workflow_context() {
+        let resp = ResearchSearchResponse {
+            query: "test".to_string(),
+            mode: "research_metasearch".to_string(),
+            research_domain: ResearchDomain::General,
+            subqueries: vec![],
+            groups: vec![],
+            suggested_fetches: vec![],
+            providers_queried: vec![],
+            providers_failed: vec![],
+            warnings: vec![],
+            trust_markers: TrustMarkers::default(),
+            workflow_context: Some(ResearchWorkflowContext {
+                workflow: ResearchWorkflow::ArchitectureDecision,
+                interpreted_question: "test question".to_string(),
+                dimensions: vec![],
+                coverage: ResearchCoverage::default(),
+                gaps: vec![],
+                recommended_next_fetches: vec![],
+                warnings: vec![],
+            }),
+            telemetry: Some(ResearchTelemetry {
+                workflow: Some(ResearchWorkflow::ArchitectureDecision),
+                depth: ResearchDepth::Standard,
+                dimensions_generated: 3,
+                subqueries_generated: 6,
+                source_diversity_caps_applied: vec![],
+                coverage_gaps: vec![ResearchGapKind::NoPrimarySources],
+            }),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();
+        let ctx = parsed.workflow_context.unwrap();
+        assert_eq!(ctx.workflow, ResearchWorkflow::ArchitectureDecision);
+        let telem = parsed.telemetry.unwrap();
+        assert_eq!(telem.dimensions_generated, 3);
+        assert_eq!(telem.coverage_gaps, vec![ResearchGapKind::NoPrimarySources]);
     }
 }
