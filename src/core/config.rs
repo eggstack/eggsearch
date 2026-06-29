@@ -140,6 +140,9 @@ pub struct SearchSection {
     /// configured, built-in defaults are used.
     #[serde(default)]
     pub profiles: std::collections::BTreeMap<String, ProfileConfig>,
+    /// Exact-error mode configuration for compiler/runtime error search.
+    #[serde(default)]
+    pub exact_error: crate::core::error_query::ExactErrorConfig,
 }
 
 impl Default for SearchSection {
@@ -169,6 +172,7 @@ impl Default for SearchSection {
             live: LiveConfig::default(),
             sanitize_output: default_sanitize_output(),
             profiles: std::collections::BTreeMap::new(),
+            exact_error: crate::core::error_query::ExactErrorConfig::default(),
         }
     }
 }

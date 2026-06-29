@@ -251,9 +251,10 @@ pub async fn run_security_search_plan(
             .iter()
             .any(|v| !v.affected_ranges.is_empty())
     {
-        source_quality
-            .tier_reasons
-            .push("version_affected_match: query includes version hint and advisory has affected ranges".to_string());
+        source_quality.tier_reasons.push(
+            "version_affected_match: query includes version hint and advisory has affected ranges"
+                .to_string(),
+        );
     }
 
     // Build affected package summaries from vulnerability metadata
@@ -316,8 +317,9 @@ pub async fn run_security_search_plan(
     // Build context warnings
     let mut context_warnings = Vec::new();
     if vulnerabilities.is_empty() && !resolved_ids.has_strong_identifier() {
-        context_warnings
-            .push("no native vulnerability data found; results are generic web search only".to_string());
+        context_warnings.push(
+            "no native vulnerability data found; results are generic web search only".to_string(),
+        );
     }
     if source_quality.tier == security::SecuritySourceTier::Unknown
         || matches!(

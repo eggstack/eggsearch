@@ -662,6 +662,8 @@ impl MetadataSearchAdapter {
     ) -> crate::core::repo_search::RepoSearchResponse {
         use crate::core::repo_search::{RepoSearchSubqueryTelemetry, RepoSearchTelemetry};
 
+        let is_exact_error = req.mode == Some(crate::core::repo_search::RepoSearchMode::ExactError);
+
         // Resolve package metadata if package fields are present
         let package_resolution = if let Some(coord) = req.package_coordinate() {
             let timeout = self.effective_timeout(req.timeout_ms);
@@ -684,10 +686,36 @@ impl MetadataSearchAdapter {
             None
         };
 
-        let plan = crate::meta::repo_planner::build_repo_search_plan_with_package(
-            req,
-            package_resolution.as_ref(),
-        );
+        // In exact-error mode, use the error planner for subqueries
+        let (plan, error_context) = if is_exact_error {
+            let error_config = crate::core::error_query::ExactErrorConfig::default();
+            let error_plan =
+                crate::meta::error_planner::build_error_plan(&req.query, &error_config);
+            let subqueries = crate::meta::error_planner::to_repo_subqueries(&error_plan.subqueries);
+            let error_ctx = crate::core::error_query::ErrorSearchContext {
+                original_error: error_plan.parts.original.clone(),
+                normalized_error: error_plan.parts.normalized.clone(),
+                error_codes: error_plan.parts.error_codes.clone(),
+                inferred_tools: error_plan.parts.tool_names.clone(),
+                inferred_language: error_plan.parts.language_hint.clone(),
+                redactions_applied: error_plan.parts.redactions_applied.clone(),
+                subqueries: error_plan.subqueries.clone(),
+                warnings: error_plan.warnings.clone(),
+            };
+            (
+                crate::meta::repo_planner::RepoSearchPlan {
+                    hints: req.resolved_hints(),
+                    subqueries,
+                },
+                Some(error_ctx),
+            )
+        } else {
+            let plan = crate::meta::repo_planner::build_repo_search_plan_with_package(
+                req,
+                package_resolution.as_ref(),
+            );
+            (plan, None)
+        };
 
         let effective_timeout = self.effective_timeout(req.timeout_ms);
         let (engines, queried_ids) = self.selected_engines(&req.providers);
@@ -902,7 +930,7 @@ impl MetadataSearchAdapter {
             .iter()
             .map(|sq| {
                 let intended_group = sq.target_groups.first().map(|s| s.to_string());
-                let required_capability = match sq.label {
+                let required_capability = match sq.label.as_str() {
                     "source" | "examples" => {
                         if has_native_code {
                             Some("code_search".to_string())
@@ -972,7 +1000,9 @@ impl MetadataSearchAdapter {
                             let identifiers = crate::core::security::build_identifier_list(
                                 &crate::core::security::SecurityIdentifiers {
                                     package: Some(pr.coordinate.name.clone()),
-                                    ecosystem: Some(pr.coordinate.ecosystem.osv_ecosystem().to_string()),
+                                    ecosystem: Some(
+                                        pr.coordinate.ecosystem.osv_ecosystem().to_string(),
+                                    ),
                                     version: pr.resolved_version.clone(),
                                     ..Default::default()
                                 },
@@ -1032,7 +1062,11 @@ impl MetadataSearchAdapter {
 
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
-            mode: "repo_metasearch".to_string(),
+            mode: if is_exact_error {
+                "exact_error".to_string()
+            } else {
+                "repo_metasearch".to_string()
+            },
             resolved_hints: plan.hints.clone(),
             resolved_hints_summary: resolved_hints_str,
             groups,
@@ -1044,6 +1078,7 @@ impl MetadataSearchAdapter {
             telemetry,
             package_resolution,
             security_context,
+            error_context,
         }
     }
 
@@ -1892,9 +1927,7 @@ fn apply_intent_reranking(
                     reasons.push(RankReason::SecurityPrimarySource);
                 } else if matches!(
                     kind,
-                    SourceKind::IssueThread
-                        | SourceKind::PullRequest
-                        | SourceKind::ReleaseNotes
+                    SourceKind::IssueThread | SourceKind::PullRequest | SourceKind::ReleaseNotes
                 ) {
                     reasons.push(RankReason::SecurityMaintainerSource);
                 }

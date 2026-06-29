@@ -6656,12 +6656,8 @@ mod repo_search {
                     "mock_a",
                 )
                 .with_snippet("A web framework for Rust"),
-                MockResult::new(
-                    "Axum Docs",
-                    "https://docs.rs/axum/latest/axum/",
-                    "mock_a",
-                )
-                .with_snippet("API documentation for axum"),
+                MockResult::new("Axum Docs", "https://docs.rs/axum/latest/axum/", "mock_a")
+                    .with_snippet("API documentation for axum"),
             ],
         )];
         let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));

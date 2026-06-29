@@ -174,6 +174,12 @@ pub struct RepoSearchArgs {
     /// Optional. Include local workspace results when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_local: Option<bool>,
+    /// Optional. Search mode. "normal" (default) uses standard repo-search
+    /// subqueries. "exact_error" optimizes for compiler/runtime error messages
+    /// with phrase-preserving subqueries, error-code extraction, and sensitive
+    /// token redaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -532,6 +538,11 @@ pub async fn run_repo_search(
         .as_deref()
         .and_then(crate::core::repo_search::SearchProfile::parse);
 
+    let mode = args
+        .mode
+        .as_deref()
+        .and_then(crate::core::repo_search::RepoSearchMode::parse);
+
     let req = RepoSearchRequest {
         query: args.query,
         host,
@@ -566,6 +577,7 @@ pub async fn run_repo_search(
         include_changelog: args.include_changelog,
         include_migration_guides: args.include_migration_guides,
         include_local: args.include_local,
+        mode,
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {

@@ -66,6 +66,7 @@ eggsearch/
       result.rs          # SearchWarning, TrustLevel
       repo_query.rs      # RepoQueryHints: structured repo hint parser
       repo_search.rs     # RepoSearchRequest, RepoResultGroup, RepoSearchResponse types
+      error_query.rs     # ErrorParts, ErrorContext, sensitive-token redaction
       repo_fetch.rs      # RepoFetchRequest, RepoFetchResponse: structured repo file fetch
       batch_fetch.rs     # BatchFetchRequest, BatchFetchItem, BatchFetchResponse types
       research.rs        # ResearchSearchRequest, ResearchDomain, ResearchSourceType, etc.
@@ -85,6 +86,7 @@ eggsearch/
       planner.rs         # SearchPlan, build_search_plan (intent-aware query rewriting)
       repo_grouping.rs   # deterministic grouping of SourceCards into repo bundles
       repo_planner.rs    # subquery generation for repo search bundles
+      error_planner.rs   # error-aware subquery generation for exact-error mode
       research_grouping.rs  # deterministic classification of research results
       research_planner.rs   # subquery generation for research search
       research_suggested_fetches.rs # suggested fetch URL generation for research groups
@@ -154,6 +156,7 @@ eggsearch/
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 - Both `SearchSection` and `FetchSection` have `sanitize_output: bool` (default `true`). When `true`, Tier 2 (framing) and Tier 3 (marker scan) prompt-injection defenses are active. Tier 1 (control-char strip + length bound) is always on.
 - `LocalConfig` is the `[local]` section: `enabled`, `roots`, `max_file_bytes`, `max_indexed_files`, `include_hidden`, `respect_gitignore`, `follow_symlinks`
+- `ExactErrorConfig` is the `[search].exact_error` section: `enabled` (default `true`), `max_phrase_length` (default 200), `redact_sensitive_tokens` (default `true`), `sensitive_token_patterns` (regex patterns for local paths, API keys, UUIDs, memory addresses)
 
 ### Provider Model
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`
@@ -222,7 +225,7 @@ eggsearch/
 ### Source Cards
 - `SourceCard` is the primary output type returned by `web_search`
 - Each card has a UUID-based `id` (`src_<uuid>`) unique per response
-- Each card includes deterministic `metadata` with `source_kind` (enum: `official_docs`, `package_registry`, `source_repository`, `repository_root`, `source_directory`, `source_file`, `issue_thread`, `pull_request`, `tag`, `commit`, `release_notes`, `security_advisory`, `reference`, `news`, `tutorial`, `forum`, `unknown`), `domain`, and `rank_reasons` (e.g. `rrf_multi_provider`, `intent_match`, `domain_prior_docs`, `security_primary_source`, `security_maintainer_source`, `version_affected_match`)
+- Each card includes deterministic `metadata` with `source_kind` (enum: `official_docs`, `package_registry`, `source_repository`, `repository_root`, `source_directory`, `source_file`, `issue_thread`, `pull_request`, `tag`, `commit`, `release_notes`, `security_advisory`, `reference`, `news`, `tutorial`, `forum`, `unknown`), `domain`, and `rank_reasons` (e.g. `rrf_multi_provider`, `intent_match`, `domain_prior_docs`, `security_primary_source`, `security_maintainer_source`, `version_affected_match`, `ExactErrorPhraseMatch`, `ErrorCodeMatch`, `ToolchainMatch`, `OfficialErrorDocs`, `MaintainerIssueMatch`, `RegressionReleaseMatch`)
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
 - `WebFetchResponse` is the output type returned by `web_fetch`; trust is always `external_untrusted` for live web content
@@ -394,16 +397,29 @@ queries when the caller wants categorized results rather than a flat
   (one of `generic`, `coding`, `security`, `research`),
   optional `ecosystem`, `package`, `version`, `version_requirement`,
   `compare_version`, `include_security_context`, `include_changelog`,
-  `include_migration_guides`
+  `include_migration_guides`, optional `mode`
+  (one of `default`, `exact_error`)
 - `RepoResultGroup`: `kind` (group kind enum), `label` (human-readable),
   `results` (Vec<SourceCard>), `truncated` (bool)
+- `RepoSearchMode` enum: `Default`, `ExactError`
 - `RepoSearchResponse`: `query`, `mode`, `resolved_hints`,
   `resolved_hints_summary`, `groups`, `suggested_fetches`,
   `providers_queried`, `providers_failed`, `warnings`, `trust_markers`,
   `telemetry`, optional `package_resolution: Option<PackageResolution>`,
-  optional `security_context: Option<Vec<VulnerabilityMetadata>>`
+  optional `security_context: Option<Vec<VulnerabilityMetadata>>`,
+  optional `error_context: Option<ErrorContext>`
+- `ErrorContext`: parsed error parts, redactions applied, subquery metadata
 - `RepoSuggestedFetch`: `url`, `reason`, `group`, `expected_kind`,
   `recommended_extract_mode`, `priority`, optional `structured_repo_fetch`
+
+**Exact-error mode:** When `mode: "exact_error"` is set on the request,
+the planner generates error-aware subqueries that preserve exact phrases,
+extract error codes (Rust E0xxx, TypeScript TSxxxx, Python exceptions,
+npm ERESOLVE, cargo errors, HTTP status codes), and target docs/issues/
+changelogs. Sensitive tokens (local paths, API keys, UUIDs, memory
+addresses) are redacted before provider dispatch. The response includes
+an `error_context` field with parsed error parts, redactions applied,
+and subquery metadata.
 
 **Suggested fetch URL priority (code evidence):** When a
 `SourceCard` has structured `code_evidence` metadata, suggested
@@ -503,11 +519,13 @@ sources for the package.
 - `src/core/repo_search.rs`: core types including `SearchProfile`,
   `RepoSearchTelemetry`, `ProviderSelectionTelemetry`,
   `RepoSearchSubqueryTelemetry`
+- `src/core/error_query.rs`: `ErrorParts`, `ErrorContext`, sensitive-token redaction for exact-error mode
 - `src/core/package.rs`: package coordinate types and ecosystem resolution
 - `src/meta/repo_grouping.rs`: deterministic classification of
   SourceCards into group kinds based on `source_kind` and URL heuristics
 - `src/meta/repo_planner.rs`: subquery generation for repo search
   bundles, producing per-aspect queries
+- `src/meta/error_planner.rs`: error-aware subquery generation for exact-error mode
 - `src/meta/package_resolver.rs`: bounded HTTP registry lookups
 - `src/meta/suggested_fetches.rs`: suggested fetch URL generation
   for each group based on result metadata

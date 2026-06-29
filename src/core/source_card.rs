@@ -102,6 +102,18 @@ pub enum RankReason {
     SecurityMaintainerSource,
     /// Result has affected version metadata matching the query version hint.
     VersionAffectedMatch,
+    /// Result title/snippet contains the exact error phrase.
+    ExactErrorPhraseMatch,
+    /// Result matches the extracted error code (e.g. E0277, TS2345).
+    ErrorCodeMatch,
+    /// Result matches the detected toolchain (e.g. cargo, npm, rustc).
+    ToolchainMatch,
+    /// Result is official documentation for the error code.
+    OfficialErrorDocs,
+    /// Result is from a maintainer issue/PR discussing the error.
+    MaintainerIssueMatch,
+    /// Result is a release/changelog entry mentioning the error.
+    RegressionReleaseMatch,
 }
 
 /// Structured issue metadata from native GitHub issues providers.

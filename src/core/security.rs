@@ -414,9 +414,8 @@ static ECOSYSTEM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(ecosystem):([a-zA-Z0-9_\-\.]+)\b").unwrap());
 static CWE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(CWE-\d{2,4})\b").unwrap());
-static SYMBOL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)\b(symbol):([a-zA-Z0-9_\-\.:\[\]<>,]+)\b").unwrap()
-});
+static SYMBOL_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)\b(symbol):([a-zA-Z0-9_\-\.:\[\]<>,]+)\b").unwrap());
 static VERSION_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(version):([0-9]+[a-zA-Z0-9_\-\.]*)\b").unwrap());
 
@@ -685,9 +684,12 @@ pub fn assess_source_quality(results: &[crate::core::SourceCard]) -> SecuritySou
     // Emit warning-level reasons for low-quality tiers
     if matches!(
         overall_tier,
-        SecuritySourceTier::NewsOrBlog | SecuritySourceTier::CommunityDiscussion | SecuritySourceTier::Unknown
+        SecuritySourceTier::NewsOrBlog
+            | SecuritySourceTier::CommunityDiscussion
+            | SecuritySourceTier::Unknown
     ) {
-        reasons.push("only low-tier sources found; results may lack advisory authority".to_string());
+        reasons
+            .push("only low-tier sources found; results may lack advisory authority".to_string());
     }
 
     SecuritySourceQuality {
@@ -788,9 +790,7 @@ pub struct SecurityIdentifier {
 }
 
 /// Type of security identifier.
-#[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SecurityIdentifierKind {
     /// Common Vulnerabilities and Exposures identifier.
@@ -1644,12 +1644,22 @@ mod tests {
         assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::CVE));
         assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::GHSA));
         assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::OSV));
-        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::RustSec));
+        assert!(list
+            .iter()
+            .any(|i| i.kind == SecurityIdentifierKind::RustSec));
         assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::CWE));
-        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::Package));
-        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::Ecosystem));
-        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::Version));
-        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::FunctionOrApi));
+        assert!(list
+            .iter()
+            .any(|i| i.kind == SecurityIdentifierKind::Package));
+        assert!(list
+            .iter()
+            .any(|i| i.kind == SecurityIdentifierKind::Ecosystem));
+        assert!(list
+            .iter()
+            .any(|i| i.kind == SecurityIdentifierKind::Version));
+        assert!(list
+            .iter()
+            .any(|i| i.kind == SecurityIdentifierKind::FunctionOrApi));
     }
 
     #[test]
@@ -1746,20 +1756,35 @@ mod tests {
         assert_eq!(SecurityIdentifierKind::CVE.as_str(), "cve");
         assert_eq!(SecurityIdentifierKind::CWE.as_str(), "cwe");
         assert_eq!(SecurityIdentifierKind::Package.as_str(), "package");
-        assert_eq!(SecurityIdentifierKind::FunctionOrApi.as_str(), "function_or_api");
+        assert_eq!(
+            SecurityIdentifierKind::FunctionOrApi.as_str(),
+            "function_or_api"
+        );
     }
 
     #[test]
     fn security_source_tier_as_str() {
-        assert_eq!(SecuritySourceTier::PrimaryAdvisory.as_str(), "primary_advisory");
-        assert_eq!(SecuritySourceTier::VendorAdvisory.as_str(), "vendor_advisory");
+        assert_eq!(
+            SecuritySourceTier::PrimaryAdvisory.as_str(),
+            "primary_advisory"
+        );
+        assert_eq!(
+            SecuritySourceTier::VendorAdvisory.as_str(),
+            "vendor_advisory"
+        );
         assert_eq!(SecuritySourceTier::Unknown.as_str(), "unknown");
     }
 
     #[test]
     fn defensive_guidance_category_as_str() {
-        assert_eq!(DefensiveGuidanceCategory::UpgradeOrPin.as_str(), "upgrade_or_pin");
-        assert_eq!(DefensiveGuidanceCategory::XssHardening.as_str(), "xss_hardening");
+        assert_eq!(
+            DefensiveGuidanceCategory::UpgradeOrPin.as_str(),
+            "upgrade_or_pin"
+        );
+        assert_eq!(
+            DefensiveGuidanceCategory::XssHardening.as_str(),
+            "xss_hardening"
+        );
         assert_eq!(DefensiveGuidanceCategory::Unknown.as_str(), "unknown");
     }
 
@@ -1820,8 +1845,8 @@ mod tests {
 
     #[test]
     fn assess_source_quality_with_authoritative() {
-        use crate::core::SourceCard;
         use crate::core::result::TrustLevel;
+        use crate::core::SourceCard;
 
         let cards = vec![SourceCard::new(
             "NVD",
@@ -1837,8 +1862,8 @@ mod tests {
 
     #[test]
     fn assess_source_quality_with_blog_only() {
-        use crate::core::SourceCard;
         use crate::core::result::TrustLevel;
+        use crate::core::SourceCard;
 
         let cards = vec![SourceCard::new(
             "Blog Post",
@@ -1849,9 +1874,6 @@ mod tests {
         )];
         let quality = assess_source_quality(&cards);
         assert_eq!(quality.tier, SecuritySourceTier::NewsOrBlog);
-        assert!(quality
-            .tier_reasons
-            .iter()
-            .any(|r| r.contains("low-tier")));
+        assert!(quality.tier_reasons.iter().any(|r| r.contains("low-tier")));
     }
 }

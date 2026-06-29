@@ -9,6 +9,8 @@ pub mod adapter;
 /// Vendored HTML search engines. Internal; not part of the stable
 /// public API.
 pub mod engines;
+/// Exact-error planner: generates targeted subqueries for compiler/runtime error messages.
+pub mod error_planner;
 /// Local workspace search backend: bounded file walking, scoring, and
 /// SourceCard conversion.
 pub mod local_backend;

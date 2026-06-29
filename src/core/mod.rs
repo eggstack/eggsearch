@@ -9,6 +9,8 @@ pub mod code_metadata;
 pub mod config;
 pub mod document;
 pub mod error;
+/// Deterministic error-message parser and subquery generator for exact-error search mode.
+pub mod error_query;
 pub mod fetch;
 /// Local workspace search types: config, file entries, and search requests.
 pub mod local;
@@ -40,6 +42,9 @@ pub use document::{
     FetchRenderMetadata, RenderFormat, RenderedBlock,
 };
 pub use error::{CoreError, CoreResult};
+pub use error_query::{
+    ErrorCode, ErrorQueryParts, ErrorSearchContext, ErrorSubquery, ExactErrorConfig, StackFrameHint,
+};
 pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
     WebFetchResponse,
@@ -62,9 +67,9 @@ pub use repo_fetch::{
 };
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{
-    ProviderSelectionTelemetry, RepoResultGroup, RepoResultGroupKind, RepoSearchRequest,
-    RepoSearchResponse, RepoSearchSubqueryTelemetry, RepoSearchTelemetry, RepoSuggestedFetch,
-    SearchProfile,
+    ProviderSelectionTelemetry, RepoResultGroup, RepoResultGroupKind, RepoSearchMode,
+    RepoSearchRequest, RepoSearchResponse, RepoSearchSubqueryTelemetry, RepoSearchTelemetry,
+    RepoSuggestedFetch, SearchProfile,
 };
 pub use research::{
     EvidenceQuality, ResearchDomain, ResearchResultGroup, ResearchResultGroupKind,
@@ -77,7 +82,7 @@ pub use sanitize::{
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
 };
 pub use security::{
-    build_identifier_list, classify_query_kind, classify_source_tier, assess_source_quality,
+    assess_source_quality, build_identifier_list, classify_query_kind, classify_source_tier,
     AffectedPackageSummary, CompactSecurityContext, DefensiveGuidance, DefensiveGuidanceCategory,
     KevMetadata, SecurityContext, SecurityIdentifier, SecurityIdentifierKind, SecurityIdentifiers,
     SecurityQueryKind, SecurityResultGroup, SecurityResultGroupKind, SecuritySearchRequest,

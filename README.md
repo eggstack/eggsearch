@@ -21,6 +21,7 @@ for the default configuration.
 - Per-request timeout support with partial-result preservation
 - `web_search` MCP tool: live metasearch with intent/freshness retrieval hints and deterministic `SourceCard` metadata
 - `repo_search` MCP tool: structured repository evidence discovery with grouped result bundles, search profiles, subquery telemetry, and suggested fetches
+- `repo_search` now supports `mode: "exact_error"` for compiler/runtime error search with phrase-preserving subqueries, error-code extraction, and sensitive token redaction
 - `security_search` MCP tool: security-oriented retrieval with normalized vulnerability metadata from OSV and grouped source cards
 - `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches
 - `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text, classified links with deterministic kind/rel/same-domain metadata, and optional PDF text extraction (feature-gated)
@@ -38,7 +39,9 @@ for the default configuration.
 Generic search (`intent = web`) is first-class and will remain the
 default path. `repo_search` provides structured repository evidence
 discovery with grouped result bundles, search profiles for provider
-selection, and subquery telemetry for debugging. `security_search` provides
+selection, and subquery telemetry for debugging. `repo_search` with
+`mode: "exact_error"` provides targeted retrieval for compiler errors,
+runtime exceptions, and opaque toolchain messages. `security_search` provides
 security-oriented retrieval with normalized vulnerability metadata and
 grouped source cards. `research_search` provides research-oriented
 multi-source evidence discovery with subquery transparency,
@@ -61,6 +64,9 @@ on:
 - **Code/repo search (preferred)**: call `repo_search` with
   `repo:owner/name` and optionally `profile: "coding"` for
   structured, grouped repository evidence with provider selection.
+- **Error search**: call `repo_search` with `mode: "exact_error"` and
+  the error message as the query. Returns parsed error codes, redacted
+  paths, and targeted subqueries for docs, issues, and changelogs.
 - **Code/repo fallback**: call `web_search` with `intent = code` and
   repo hints (e.g. `repo:owner/name`). Results are source cards, not
   structured code intelligence.

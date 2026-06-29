@@ -9,7 +9,7 @@ use crate::core::repo_search::RepoSearchRequest;
 #[derive(Clone, Debug)]
 pub struct RepoSubquery {
     /// Label for this subquery (used in debugging and optional metadata).
-    pub label: &'static str,
+    pub label: String,
     /// The query text to send to providers.
     pub query: String,
     /// Which groups this subquery targets (used for filtering/classification).
@@ -71,7 +71,7 @@ pub fn build_repo_search_plan_with_package(
         let q = build_docs_query(&residual, &owner_repo, pkg_name);
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
-                label: "docs",
+                label: "docs".to_string(),
                 query,
                 target_groups: vec!["official_docs"],
             });
@@ -83,7 +83,7 @@ pub fn build_repo_search_plan_with_package(
         let q = build_registry_query(&residual, &owner_repo, hints.language.as_deref(), pkg_name);
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
-                label: "registry",
+                label: "registry".to_string(),
                 query,
                 target_groups: vec!["package_registry"],
             });
@@ -99,7 +99,7 @@ pub fn build_repo_search_plan_with_package(
         let q = build_source_query(&residual, &owner_repo, &hints);
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
-                label: "source",
+                label: "source".to_string(),
                 query,
                 target_groups: vec!["repository", "readme", "examples", "tests", "source_files"],
             });
@@ -111,7 +111,7 @@ pub fn build_repo_search_plan_with_package(
         let q = build_examples_query(&residual, &owner_repo);
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
-                label: "examples",
+                label: "examples".to_string(),
                 query,
                 target_groups: vec!["examples"],
             });
@@ -123,7 +123,7 @@ pub fn build_repo_search_plan_with_package(
         let q = build_issues_query(&residual, &owner_repo, hints.host);
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
-                label: "issues",
+                label: "issues".to_string(),
                 query,
                 target_groups: vec!["issues", "pull_requests"],
             });
@@ -135,7 +135,7 @@ pub fn build_repo_search_plan_with_package(
         let q = build_releases_query(&residual, &owner_repo, hints.host, package_resolution);
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
-                label: "releases",
+                label: "releases".to_string(),
                 query,
                 target_groups: vec!["releases", "migration_notes", "changelog"],
             });
@@ -147,7 +147,7 @@ pub fn build_repo_search_plan_with_package(
         let q = build_changelog_query(&owner_repo, package_resolution, &req.compare_version);
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
-                label: "changelog",
+                label: "changelog".to_string(),
                 query,
                 target_groups: vec!["changelog", "migration_notes"],
             });
@@ -411,7 +411,7 @@ mod tests {
         assert!(plan.hints.repo.is_some());
         // Should have docs, registry, source, examples, issues, releases
         assert!(plan.subqueries.len() >= 5);
-        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label).collect();
+        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label.as_str()).collect();
         assert!(labels.contains(&"docs"));
         assert!(labels.contains(&"registry"));
         assert!(labels.contains(&"source"));
@@ -431,7 +431,7 @@ mod tests {
             ..Default::default()
         };
         let plan = build_repo_search_plan(&req);
-        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label).collect();
+        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label.as_str()).collect();
         assert!(!labels.contains(&"docs"));
         assert!(!labels.contains(&"registry"));
         assert!(!labels.contains(&"issues"));
@@ -453,7 +453,7 @@ mod tests {
         // When query is empty, hints are all None and residual is empty
         let plan = build_repo_search_plan(&req);
         // No owner/repo, no residual -> docs and registry should be skipped
-        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label).collect();
+        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label.as_str()).collect();
         assert!(!labels.contains(&"docs"));
         assert!(!labels.contains(&"registry"));
     }
@@ -581,7 +581,7 @@ mod tests {
             ..Default::default()
         };
         let plan = build_repo_search_plan(&req);
-        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label).collect();
+        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label.as_str()).collect();
         assert!(labels.contains(&"docs"));
         assert!(labels.contains(&"source"));
     }
@@ -662,7 +662,7 @@ mod tests {
             ..Default::default()
         };
         let plan = build_repo_search_plan(&req);
-        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label).collect();
+        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label.as_str()).collect();
         assert!(labels.contains(&"changelog"));
         let changelog = plan
             .subqueries
@@ -681,7 +681,7 @@ mod tests {
             ..Default::default()
         };
         let plan = build_repo_search_plan(&req);
-        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label).collect();
+        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label.as_str()).collect();
         assert!(!labels.contains(&"changelog"));
     }
 

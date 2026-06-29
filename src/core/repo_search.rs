@@ -11,6 +11,32 @@ use crate::core::source_card::{SourceCard, SourceKind};
 use crate::meta::response::ProviderFailure;
 use serde::{Deserialize, Serialize};
 
+/// Search mode for `repo_search`. Controls subquery generation and ranking.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoSearchMode {
+    /// Default mode: general-purpose repo search with docs/source/issues/releases subqueries.
+    #[default]
+    Normal,
+    /// Exact-error mode: optimized for compiler errors, runtime exceptions, linker errors,
+    /// and opaque toolchain messages. Preserves exact phrases, extracts error codes, and
+    /// generates targeted subqueries for docs, issues, and changelogs.
+    ExactError,
+}
+
+impl RepoSearchMode {
+    /// Parse a mode string.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "normal" | "default" | "repo_metasearch" => Some(Self::Normal),
+            "exact_error" | "exact-error" | "error" => Some(Self::ExactError),
+            _ => None,
+        }
+    }
+}
+
 /// Named search profile that controls provider selection behavior.
 ///
 /// Profiles are advisory: they influence which providers are selected
@@ -218,6 +244,12 @@ pub struct RepoSearchRequest {
     /// Default: None (uses profile-based default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_local: Option<bool>,
+    /// Optional. Search mode. `"normal"` (default) uses standard repo-search
+    /// subqueries. `"exact_error"` optimizes for compiler/runtime error messages
+    /// with phrase-preserving subqueries, error-code extraction, and sensitive
+    /// token redaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<RepoSearchMode>,
 }
 
 impl RepoSearchRequest {
@@ -226,8 +258,14 @@ impl RepoSearchRequest {
         if self.query.trim().is_empty() {
             return Err("query must not be empty".to_string());
         }
-        if self.query.chars().count() > max_query_chars {
-            return Err(format!("query must be <= {max_query_chars} characters"));
+        // In exact-error mode, use the configured max_error_chars cap
+        let effective_max = if self.mode == Some(RepoSearchMode::ExactError) {
+            max_query_chars.max(8000) // exact-error mode allows larger queries
+        } else {
+            max_query_chars
+        };
+        if self.query.chars().count() > effective_max {
+            return Err(format!("query must be <= {effective_max} characters"));
         }
         if let Some(0) = self.max_results {
             return Err("max_results must be > 0".to_string());
@@ -446,6 +484,10 @@ pub struct RepoSearchResponse {
     /// Optional compact security context when include_security_context is true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub security_context: Option<crate::core::security::CompactSecurityContext>,
+    /// Optional error search context when mode is `exact_error`.
+    /// Contains the parsed error parts, redactions, and generated subqueries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_context: Option<crate::core::error_query::ErrorSearchContext>,
 }
 
 #[cfg(test)]
