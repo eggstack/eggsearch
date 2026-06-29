@@ -16,7 +16,7 @@ for the default configuration.
 
 - Single Rust binary that speaks MCP over stdio
 - Queries DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, and optionally a self-hosted SearXNG instance (no API keys required)
-- Optional API-backed providers (Brave Search API, GitHub Code Search, GitHub Issues Search, GitHub Releases) with env-var secret loading
+- Optional API-backed providers (Brave Search API, GitHub Code/Issues/Releases, GitLab Code/Issues/Releases, Gitea/Forgejo Code) with env-var secret loading
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
 - `web_search` MCP tool: live metasearch with intent/freshness retrieval hints and deterministic `SourceCard` metadata
@@ -915,7 +915,7 @@ ecosystems: `crates.io`, `pypi`, `npm`.
 | Profile    | Behavior                                                       |
 |------------|----------------------------------------------------------------|
 | `generic`  | Default: use configured default providers                      |
-| `coding`   | Prefer native code/issues/releases providers, then API/web     |
+| `coding`   | Prefer native code/issues/releases providers (GitHub, GitLab), then API/web |
 | `security` | Prefer OSV and security-capable providers                      |
 | `research` | Prefer diverse source discovery and broad web/API providers    |
 
@@ -1282,6 +1282,21 @@ base_url      = "https://api.github.com"
 enabled       = false
 api_key_env   = "GITHUB_TOKEN"
 base_url      = "https://api.github.com"
+
+[search.api.gitlab_com]
+enabled       = false
+api_key_env   = "GITLAB_TOKEN"
+base_url      = "https://gitlab.com"
+
+[search.api.company_gitlab]
+enabled       = false
+api_key_env   = "COMPANY_GITLAB_TOKEN"
+base_url      = "https://gitlab.example.com"
+
+[search.api.forgejo_local]
+enabled       = false
+api_key_env   = "FORGEJO_TOKEN"
+base_url      = "https://git.example.com"
 ```
 
 | Field | Default | Description |
@@ -1537,10 +1552,14 @@ conflate:
 
 - **Known provider IDs** are the identifiers the server understands:
   `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`,
-  `brave_api`, `github_code`, `github_issues`, `github_releases`, `osv`, and `local_workspace`. Unknown IDs are rejected.
+  `brave_api`, `github_code`, `github_issues`, `github_releases`,
+  `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`,
+  `osv`, and `local_workspace`. Unknown IDs are rejected.
 - **Enabled providers** are the subset of known IDs that the
   operator has switched on in `[search].providers` (and, for
-  `searxng`, `brave_api`, `github_code`, `github_issues`, and `github_releases`, that also have their required
+  `searxng`, `brave_api`, `github_code`, `github_issues`,
+  `github_releases`, `gitlab_code`, `gitlab_issues`,
+  `gitlab_releases`, and `gitea_code`, that also have their required
   configuration present).
 - **Default providers** are the subset of enabled IDs listed in
   `[search].default_providers`; they are queried automatically when
@@ -1621,13 +1640,70 @@ parsed when available. The `osv` provider is enabled by default
 and is used by the `security_search` tool for native advisory
 metadata.
 
+### Host-Native Code Providers
+
+In addition to GitHub, eggsearch supports GitLab and Gitea/Forgejo
+native API providers for code search, issue search, and release
+search. These providers query the host's REST API directly, returning
+structured results with metadata (file paths, issue state, release
+tags, timestamps).
+
+**Configuration:**
+
+All host-native providers use the `[search.api.<id>]` section:
+
+```toml
+[search.api.gitlab_com]
+enabled       = true
+api_key_env   = "GITLAB_TOKEN"
+base_url      = "https://gitlab.com"
+
+[search.api.company_gitlab]
+enabled       = false
+api_key_env   = "COMPANY_GITLAB_TOKEN"
+base_url      = "https://gitlab.example.com"
+
+[search.api.forgejo_local]
+enabled       = false
+api_key_env   = "FORGEJO_TOKEN"
+base_url      = "https://git.example.com"
+```
+
+**Capability matrix:**
+
+| Provider        | Code Search | Issue Search | Release Search | Requires API Key |
+|-----------------|:-----------:|:------------:|:--------------:|:----------------:|
+| `github_code`   | yes         | -            | -              | yes              |
+| `github_issues` | -           | yes          | -              | yes              |
+| `github_releases` | -         | -            | yes            | yes              |
+| `gitlab_code`   | yes         | -            | -              | yes              |
+| `gitlab_issues` | -           | yes          | -              | yes              |
+| `gitlab_releases` | -         | -            | yes            | yes              |
+| `gitea_code`    | yes         | -            | -              | yes              |
+
+**Self-hosted instances:**
+
+Set `base_url` to your self-hosted instance URL. The provider sends
+API requests to `<base_url>/api/v4/...` (GitLab) or
+`<base_url>/api/v1/...` (Gitea/Forgejo). Each instance is a
+separate provider entry — you can configure multiple GitLab or
+Gitea instances with distinct IDs.
+
+**Fallback behavior:**
+
+When a host-native provider is not configured or unavailable, the
+planner falls through to generic web providers with the planned
+query. This is identical to the GitHub fallback — generic search
+always works as a safety net. The `coding` profile includes
+GitLab providers alongside GitHub when available.
+
 ### Default provider set
 
 The default provider set covers `duckduckgo`, `startpage`, and
 `yahoo` (the engines listed in `[search].default_providers`). `brave`
 is enabled but not in the default set; it can be selected per-request
 via the `providers` argument. Mojeek, SearXNG, Brave Search API,
-GitHub Code Search, GitHub Issues Search, GitHub Releases, and OSV are all disabled
+GitHub Code Search, GitHub Issues Search, GitHub Releases, GitLab Code/Issues/Releases, Gitea Code, and OSV are all disabled
 by default; operators enable them in `[search].providers` and (for SearXNG,
 Brave API, and GitHub providers) configure the corresponding
 `[search].searxng]` or `[search].api.<id>]` sections.

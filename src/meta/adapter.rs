@@ -1464,8 +1464,9 @@ pub fn build_default_engines(
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
     use crate::meta::engines::{
-        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GithubCodeEngine, GithubIssuesEngine,
-        GithubReleasesEngine, MojeekEngine, OsvEngine, SearxngEngine, StartpageEngine, YahooEngine,
+        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GiteaCodeEngine, GithubCodeEngine,
+        GithubIssuesEngine, GithubReleasesEngine, GitlabCodeEngine, GitlabIssuesEngine,
+        GitlabReleasesEngine, MojeekEngine, OsvEngine, SearxngEngine, StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -1544,6 +1545,39 @@ pub fn build_default_engines(
                     client: client.clone(),
                     api_key,
                     base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "gitlab_code" => {
+                engines.push(Arc::new(GitlabCodeEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "gitlab_issues" => {
+                engines.push(Arc::new(GitlabIssuesEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "gitlab_releases" => {
+                engines.push(Arc::new(GitlabReleasesEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "gitea_code" => {
+                let base = api_cfg.base_url.clone().unwrap_or_default();
+                if base.is_empty() {
+                    skipped.push(id.clone());
+                    continue;
+                }
+                engines.push(Arc::new(GiteaCodeEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: base,
                 }));
             }
             _ => {

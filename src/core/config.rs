@@ -604,8 +604,19 @@ impl AppConfig {
         }
 
         // API provider validation
-        let known_api: std::collections::BTreeSet<&str> =
-            ["brave_api", "github_code", "osv"].into_iter().collect();
+        let known_api: std::collections::BTreeSet<&str> = [
+            "brave_api",
+            "github_code",
+            "github_issues",
+            "github_releases",
+            "gitlab_code",
+            "gitlab_issues",
+            "gitlab_releases",
+            "gitea_code",
+            "osv",
+        ]
+        .into_iter()
+        .collect();
         for (id, api_cfg) in &self.search.api {
             if !known_api.contains(id.as_str()) {
                 tracing::warn!(
@@ -771,6 +782,9 @@ impl AppConfig {
                 "github_code".to_string(),
                 "github_issues".to_string(),
                 "github_releases".to_string(),
+                "gitlab_code".to_string(),
+                "gitlab_issues".to_string(),
+                "gitlab_releases".to_string(),
                 "brave_api".to_string(),
                 "searxng".to_string(),
                 "duckduckgo".to_string(),

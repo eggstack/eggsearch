@@ -254,6 +254,7 @@ const FUTURE_REPO_PROVIDER_IDS: &[&str] = &[
     "gitlab_issues",
     "gitlab_releases",
     "codeberg_code",
+    "gitea_code",
 ];
 
 /// Build per-provider query overrides for future repo-host providers.
@@ -301,6 +302,7 @@ fn build_provider_specific_query(
             Some(build_gitlab_releases_query(hints))
         }
         "codeberg_code" if intent == SearchIntent::Code => Some(build_codeberg_code_query(hints)),
+        "gitea_code" if intent == SearchIntent::Code => Some(build_gitea_code_query(hints)),
         _ => None,
     }
 }
@@ -459,6 +461,37 @@ fn build_gitlab_releases_query(hints: &RepoQueryHints) -> String {
 // --- Codeberg provider queries ---
 
 fn build_codeberg_code_query(hints: &RepoQueryHints) -> String {
+    let mut parts = Vec::new();
+    if let Some(sym) = &hints.symbol {
+        parts.push(sym.clone());
+    }
+    if let Some(path) = &hints.path {
+        parts.push(path.clone());
+    }
+    if let Some(file) = &hints.file {
+        parts.push(file.clone());
+    }
+    if let Some(lang) = &hints.language {
+        parts.push(lang.clone());
+    }
+    if let (Some(owner), Some(repo)) = (&hints.owner, &hints.repo) {
+        parts.push(format!("{owner}/{repo}"));
+    } else if let Some(org) = &hints.org {
+        parts.push(org.clone());
+    }
+    let residual = hints.residual_query.trim();
+    if !residual.is_empty() {
+        parts.push(residual.to_string());
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    dedupe_terms(parts).join(" ")
+}
+
+// --- Gitea/Forgejo provider queries ---
+
+fn build_gitea_code_query(hints: &RepoQueryHints) -> String {
     let mut parts = Vec::new();
     if let Some(sym) = &hints.symbol {
         parts.push(sym.clone());

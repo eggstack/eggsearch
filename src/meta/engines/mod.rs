@@ -8,9 +8,13 @@ pub mod brave;
 pub mod brave_api;
 pub mod duckduckgo;
 pub mod error;
+pub mod gitea_code;
 pub mod github_code;
 pub mod github_issues;
 pub mod github_releases;
+pub mod gitlab_code;
+pub mod gitlab_issues;
+pub mod gitlab_releases;
 pub mod kev;
 pub mod models;
 pub mod mojeek;
@@ -118,6 +122,30 @@ pub struct GithubReleasesEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: Option<String>,
+}
+
+pub struct GitlabCodeEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+pub struct GitlabIssuesEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+pub struct GitlabReleasesEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+pub struct GiteaCodeEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: String,
 }
 
 pub struct OsvEngine {
@@ -319,6 +347,106 @@ impl SearchEngine for GithubReleasesEngine {
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GitlabCodeEngine {
+    fn name(&self) -> &'static str {
+        "gitlab_code"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            gitlab_code::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GitlabIssuesEngine {
+    fn name(&self) -> &'static str {
+        "gitlab_issues"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            gitlab_issues::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GitlabReleasesEngine {
+    fn name(&self) -> &'static str {
+        "gitlab_releases"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            gitlab_releases::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GiteaCodeEngine {
+    fn name(&self) -> &'static str {
+        "gitea_code"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            gitea_code::search(
+                &self.client,
+                &self.api_key,
+                Some(self.base_url.as_str()),
                 query,
                 max_results,
                 timeout,
