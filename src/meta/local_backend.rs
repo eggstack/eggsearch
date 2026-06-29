@@ -68,10 +68,7 @@ impl LocalWorkspaceBackend {
                 .canonicalize()
                 .map_err(|e| format!("failed to canonicalize root {}: {e}", root.display()))?;
             if !canonical.is_dir() {
-                return Err(format!(
-                    "root {} is not a directory",
-                    root.display()
-                ));
+                return Err(format!("root {} is not a directory", root.display()));
             }
             roots.push((i, canonical));
         }
@@ -186,7 +183,11 @@ impl LocalWorkspaceBackend {
             }
         }
 
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         if matches.len() > max_results {
             matches.truncate(max_results);
@@ -327,7 +328,11 @@ impl LocalWorkspaceBackend {
                     .filter(|b| b.len() <= config.max_file_bytes)
                     .and_then(|bytes| {
                         let s = String::from_utf8_lossy(&bytes).to_string();
-                        if s.is_empty() { None } else { Some(s) }
+                        if s.is_empty() {
+                            None
+                        } else {
+                            Some(s)
+                        }
                     });
 
                 let score = Self::score_file(
@@ -356,15 +361,21 @@ impl LocalWorkspaceBackend {
                                         boosted,
                                     )
                                 } else if !query_lower.is_empty() {
-                                    let (s, ls, le) =
-                                        Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                    let (s, ls, le) = Self::find_text_match(
+                                        &path,
+                                        query_lower,
+                                        config.max_file_bytes,
+                                    );
                                     (s, ls, le, None, None, score)
                                 } else {
                                     (None, None, None, None, None, score)
                                 }
                             } else if !query_lower.is_empty() {
-                                let (s, ls, le) =
-                                    Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                let (s, ls, le) = Self::find_text_match(
+                                    &path,
+                                    query_lower,
+                                    config.max_file_bytes,
+                                );
                                 (s, ls, le, None, None, score)
                             } else {
                                 (None, None, None, None, None, score)
@@ -374,8 +385,11 @@ impl LocalWorkspaceBackend {
                                 let snippet = Self::find_text_match_in_text(text, query_lower);
                                 (snippet, None, None, None, None, score)
                             } else {
-                                let (s, ls, le) =
-                                    Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                let (s, ls, le) = Self::find_text_match(
+                                    &path,
+                                    query_lower,
+                                    config.max_file_bytes,
+                                );
                                 (s, ls, le, None, None, score)
                             }
                         } else {
@@ -520,7 +534,11 @@ impl LocalWorkspaceBackend {
                     .filter(|b| b.len() <= config.max_file_bytes)
                     .and_then(|bytes| {
                         let s = String::from_utf8_lossy(&bytes).to_string();
-                        if s.is_empty() { None } else { Some(s) }
+                        if s.is_empty() {
+                            None
+                        } else {
+                            Some(s)
+                        }
                     });
 
                 let score = Self::score_file(
@@ -550,15 +568,21 @@ impl LocalWorkspaceBackend {
                                         boosted,
                                     )
                                 } else if !query_lower.is_empty() {
-                                    let (s, ls, le) =
-                                        Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                    let (s, ls, le) = Self::find_text_match(
+                                        &path,
+                                        query_lower,
+                                        config.max_file_bytes,
+                                    );
                                     (s, ls, le, None, None, score)
                                 } else {
                                     (None, None, None, None, None, score)
                                 }
                             } else if !query_lower.is_empty() {
-                                let (s, ls, le) =
-                                    Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                let (s, ls, le) = Self::find_text_match(
+                                    &path,
+                                    query_lower,
+                                    config.max_file_bytes,
+                                );
                                 (s, ls, le, None, None, score)
                             } else {
                                 (None, None, None, None, None, score)
@@ -569,8 +593,11 @@ impl LocalWorkspaceBackend {
                                 let snippet = Self::find_text_match_in_text(text, query_lower);
                                 (snippet, None, None, None, None, score)
                             } else {
-                                let (s, ls, le) =
-                                    Self::find_text_match(&path, query_lower, config.max_file_bytes);
+                                let (s, ls, le) = Self::find_text_match(
+                                    &path,
+                                    query_lower,
+                                    config.max_file_bytes,
+                                );
                                 (s, ls, le, None, None, score)
                             }
                         } else {
@@ -725,25 +752,43 @@ impl LocalWorkspaceBackend {
         let hint_lower = symbol_hint.to_lowercase();
 
         let patterns: &[(&str, SymbolKind)] = &[
-            (r"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)", SymbolKind::Function),
+            (
+                r"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)",
+                SymbolKind::Function,
+            ),
             (r"(?:pub\s+)?struct\s+(\w+)", SymbolKind::Struct),
             (r"(?:pub\s+)?enum\s+(\w+)", SymbolKind::Enum),
             (r"(?:pub\s+)?trait\s+(\w+)", SymbolKind::Trait),
             (r"impl(?:<[^>]*>)?\s+(?:dyn\s+)?(\w+)", SymbolKind::Struct),
             (r"(?:pub\s+)?type\s+(\w+)", SymbolKind::TypeAlias),
             (r"macro_rules!\s+(\w+)", SymbolKind::Macro),
-            (r"(?:pub\s+)?(?:const|static)\s+(?:\w+\s*:)?\s*(\w+)", SymbolKind::Constant),
+            (
+                r"(?:pub\s+)?(?:const|static)\s+(?:\w+\s*:)?\s*(\w+)",
+                SymbolKind::Constant,
+            ),
             (r"(?:async\s+)?def\s+(\w+)", SymbolKind::Function),
             (r"class\s+(\w+)", SymbolKind::Class),
-            (r"(?:export\s+)?(?:async\s+)?function\s+(\w+)", SymbolKind::Function),
+            (
+                r"(?:export\s+)?(?:async\s+)?function\s+(\w+)",
+                SymbolKind::Function,
+            ),
             (r"(?:export\s+)?class\s+(\w+)", SymbolKind::Class),
             (r"(?:export\s+)?interface\s+(\w+)", SymbolKind::Interface),
             (r"(?:export\s+)?type\s+(\w+)", SymbolKind::TypeAlias),
             (r"func\s+(?:\([^)]*\)\s+)?(\w+)", SymbolKind::Function),
             (r"type\s+(\w+)\s+(?:struct|interface)", SymbolKind::Struct),
-            (r"(?:public|private|protected|internal)\s+(?:static\s+)?(?:class|interface|enum)\s+(\w+)", SymbolKind::Class),
-            (r"(?:typedef\s+)?(?:struct|class)\s+(\w+)", SymbolKind::Struct),
-            (r"^(?:static|inline|extern|const)?\s*\w[\w\s\*]*\b(\w+)\s*\(", SymbolKind::Function),
+            (
+                r"(?:public|private|protected|internal)\s+(?:static\s+)?(?:class|interface|enum)\s+(\w+)",
+                SymbolKind::Class,
+            ),
+            (
+                r"(?:typedef\s+)?(?:struct|class)\s+(\w+)",
+                SymbolKind::Struct,
+            ),
+            (
+                r"^(?:static|inline|extern|const)?\s*\w[\w\s\*]*\b(\w+)\s*\(",
+                SymbolKind::Function,
+            ),
         ];
 
         for (line_idx, line) in text.lines().enumerate() {
@@ -790,15 +835,13 @@ impl LocalWorkspaceBackend {
                     })
                     .unwrap_or_else(|| "workspace".to_string());
 
-                let pseudo_url = format!(
-                    "workspace://{}/{}",
-                    root_name, m.file.relative_path
-                );
+                let pseudo_url = format!("workspace://{}/{}", root_name, m.file.relative_path);
 
                 let title = m.file.relative_path.clone();
 
                 let language = m.file.language.clone();
-                let source_role = crate::core::code_evidence::infer_source_role(&m.file.relative_path);
+                let source_role =
+                    crate::core::code_evidence::infer_source_role(&m.file.relative_path);
 
                 let code_metadata = CodeMetadata {
                     host: None,
@@ -847,9 +890,10 @@ impl LocalWorkspaceBackend {
                     code_evidence: Some(code_evidence),
                 };
 
-                let raw_snippet = m.snippet.clone().unwrap_or_else(|| {
-                    format!("Local file: {}", m.file.relative_path)
-                });
+                let raw_snippet = m
+                    .snippet
+                    .clone()
+                    .unwrap_or_else(|| format!("Local file: {}", m.file.relative_path));
 
                 // Sanitize snippet: strip control chars and scan for
                 // injection markers. Do NOT frame — source lines must
@@ -877,10 +921,16 @@ impl LocalWorkspaceBackend {
                     (raw_snippet, TrustMarkers::default())
                 };
 
-                SourceCard::new(title, &pseudo_url, vec!["local_workspace".to_string()], Some(m.score), TrustLevel::LocalTrusted)
-                    .with_snippet(snippet)
-                    .with_trust_markers(trust_markers)
-                    .with_metadata(metadata)
+                SourceCard::new(
+                    title,
+                    &pseudo_url,
+                    vec!["local_workspace".to_string()],
+                    Some(m.score),
+                    TrustLevel::LocalTrusted,
+                )
+                .with_snippet(snippet)
+                .with_trust_markers(trust_markers)
+                .with_metadata(metadata)
             })
             .collect()
     }
@@ -895,17 +945,33 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
-        fs::write(root.join("main.rs"), "fn main() {\n    println!(\"hello\");\n}").unwrap();
-        fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+        fs::write(
+            root.join("main.rs"),
+            "fn main() {\n    println!(\"hello\");\n}",
+        )
+        .unwrap();
+        fs::write(
+            root.join("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+        )
+        .unwrap();
         fs::write(root.join("README.md"), "# My Project\n\nA test project.").unwrap();
         fs::write(root.join("config.toml"), "[server]\nport = 8080").unwrap();
 
         fs::create_dir_all(root.join("src")).unwrap();
-        fs::write(root.join("src/engine.rs"), "pub struct Engine {\n    name: String,\n}").unwrap();
+        fs::write(
+            root.join("src/engine.rs"),
+            "pub struct Engine {\n    name: String,\n}",
+        )
+        .unwrap();
         fs::write(root.join("src/utils.rs"), "pub fn helper() -> i32 { 42 }").unwrap();
 
         fs::create_dir_all(root.join("tests")).unwrap();
-        fs::write(root.join("tests/integration.rs"), "#[test]\nfn test_add() { assert_eq!(1 + 1, 2); }").unwrap();
+        fs::write(
+            root.join("tests/integration.rs"),
+            "#[test]\nfn test_add() { assert_eq!(1 + 1, 2); }",
+        )
+        .unwrap();
 
         fs::write(root.join(".hidden"), "secret").unwrap();
         fs::write(root.join("data.bin"), vec![0u8; 100]).unwrap();
@@ -963,7 +1029,10 @@ mod tests {
             language: Some("rust".to_string()),
         };
         let score = LocalWorkspaceBackend::score_file(&file, "main.rs", &["main.rs"], None, None);
-        assert!(score >= 100.0, "score should be high for exact match: {score}");
+        assert!(
+            score >= 100.0,
+            "score should be high for exact match: {score}"
+        );
     }
 
     #[test]
@@ -976,7 +1045,10 @@ mod tests {
             language: Some("rust".to_string()),
         };
         let score = LocalWorkspaceBackend::score_file(&file, "engine", &["engine"], None, None);
-        assert!(score > 0.0, "score should be positive for path match: {score}");
+        assert!(
+            score > 0.0,
+            "score should be positive for path match: {score}"
+        );
     }
 
     #[test]
@@ -1001,8 +1073,12 @@ mod tests {
             size: 100,
             language: None,
         };
-        let score = LocalWorkspaceBackend::score_file(&file, "cargo.lock", &["cargo.lock"], None, None);
-        assert!(score < 0.0, "score should be negative for lock file: {score}");
+        let score =
+            LocalWorkspaceBackend::score_file(&file, "cargo.lock", &["cargo.lock"], None, None);
+        assert!(
+            score < 0.0,
+            "score should be negative for lock file: {score}"
+        );
     }
 
     #[test]
@@ -1138,7 +1214,10 @@ mod tests {
             None,
             Some(content),
         );
-        assert!(score >= 50.0, "content match should give substantial score: {score}");
+        assert!(
+            score >= 50.0,
+            "content match should give substantial score: {score}"
+        );
     }
 
     #[test]

@@ -642,7 +642,10 @@ mod tests {
                 "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs".to_string(),
             ),
             evidence_confidence: Some(EvidenceConfidence::Strong),
-            evidence_reasons: vec![CodeEvidenceReason::RawUrlDerived, CodeEvidenceReason::LanguageMatch],
+            evidence_reasons: vec![
+                CodeEvidenceReason::RawUrlDerived,
+                CodeEvidenceReason::LanguageMatch,
+            ],
             ..Default::default()
         };
 

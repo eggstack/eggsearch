@@ -61,8 +61,8 @@ pub fn build_repo_search_plan_with_package(
         _ => None,
     };
 
-    let pkg_name = package_resolution
-        .and_then(|pr| pr.verified.then_some(pr.coordinate.name.as_str()));
+    let pkg_name =
+        package_resolution.and_then(|pr| pr.verified.then_some(pr.coordinate.name.as_str()));
 
     let mut subqueries: Vec<RepoSubquery> = Vec::new();
 
@@ -173,7 +173,11 @@ fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
     }
 }
 
-fn build_docs_query(residual: &str, owner_repo: &Option<String>, pkg_name: Option<&str>) -> Option<String> {
+fn build_docs_query(
+    residual: &str,
+    owner_repo: &Option<String>,
+    pkg_name: Option<&str>,
+) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     if !residual.is_empty() {
         parts.push(residual.to_string());
@@ -721,14 +725,14 @@ mod tests {
 
     #[test]
     fn parse_github_owner_repo_non_github() {
-        assert_eq!(parse_github_owner_repo("https://gitlab.com/user/repo"), None);
+        assert_eq!(
+            parse_github_owner_repo("https://gitlab.com/user/repo"),
+            None
+        );
     }
 
     #[test]
     fn parse_github_owner_repo_too_few_segments() {
-        assert_eq!(
-            parse_github_owner_repo("https://github.com/tokio-rs"),
-            None
-        );
+        assert_eq!(parse_github_owner_repo("https://github.com/tokio-rs"), None);
     }
 }

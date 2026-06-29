@@ -15,9 +15,7 @@ use crate::core::document::FetchDocument;
 use crate::core::sanitize::TrustMarkers;
 
 /// Discriminator for repository locator kinds.
-#[derive(
-    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RepoLocatorKind {
     /// Remote repository file (GitHub, GitLab, etc.).
@@ -148,6 +146,11 @@ pub struct RepoFetchResponse {
     /// Raw content URL at the commit SHA (when commit SHA is known).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_permalink_url: Option<String>,
+    /// The actual URL used for the network fetch. Differs from
+    /// `raw_url` when `commit_sha` is provided (fetches from
+    /// `raw_permalink_url`) or when `test_fetch_url` overrides the URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetched_url: Option<String>,
     /// The ref that was actually used for fetching (may differ from
     /// the requested ref if a redirect was followed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -252,9 +255,7 @@ impl RepoFetchRequest {
                 return Err("line_end must be >= 1 (1-indexed)".to_string());
             }
             if start > end {
-                return Err(format!(
-                    "line_start ({start}) must be <= line_end ({end})"
-                ));
+                return Err(format!("line_start ({start}) must be <= line_end ({end})"));
             }
         } else if let Some(start) = self.line_start {
             if start == 0 {
@@ -301,37 +302,21 @@ pub fn github_browser_url(owner: &str, repo: &str, ref_name: &str, path: &str) -
 
 /// Build a raw content URL for a GitHub source file.
 pub fn github_raw_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> String {
-    format!(
-        "https://raw.githubusercontent.com/{owner}/{repo}/{ref_name}/{path}"
-    )
+    format!("https://raw.githubusercontent.com/{owner}/{repo}/{ref_name}/{path}")
 }
 
 /// Build a browser-viewable permalink URL for a GitHub source file at a specific commit SHA.
 pub fn github_permalink_url(owner: &str, repo: &str, commit_sha: &str, path: &str) -> String {
-    format!(
-        "https://github.com/{owner}/{repo}/blob/{commit_sha}/{path}"
-    )
+    format!("https://github.com/{owner}/{repo}/blob/{commit_sha}/{path}")
 }
 
 /// Build a raw content permalink URL for a GitHub source file at a specific commit SHA.
-pub fn github_raw_permalink_url(
-    owner: &str,
-    repo: &str,
-    commit_sha: &str,
-    path: &str,
-) -> String {
-    format!(
-        "https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}"
-    )
+pub fn github_raw_permalink_url(owner: &str, repo: &str, commit_sha: &str, path: &str) -> String {
+    format!("https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}")
 }
 
 /// Build a browser-viewable URL for a GitLab source file.
-pub fn gitlab_browser_url(
-    owner: &str,
-    repo: &str,
-    ref_name: &str,
-    path: &str,
-) -> String {
+pub fn gitlab_browser_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> String {
     let namespace = if owner.is_empty() {
         repo.to_string()
     } else {
@@ -361,7 +346,13 @@ pub fn apply_line_range(
     line_end: Option<u32>,
     context_before: u32,
     context_after: u32,
-) -> (Vec<RepoFetchedLine>, Option<u32>, Option<u32>, bool, Option<String>) {
+) -> (
+    Vec<RepoFetchedLine>,
+    Option<u32>,
+    Option<u32>,
+    bool,
+    Option<String>,
+) {
     if lines.is_empty() {
         return (vec![], None, None, false, None);
     }
@@ -394,8 +385,7 @@ pub fn apply_line_range(
     let ctx_start = start.saturating_sub(context_before).max(1);
     let ctx_end = end.saturating_add(context_after).min(total);
 
-    let truncated = line_end.is_some_and(|e| e > total)
-        || line_start.is_some_and(|s| s > total);
+    let truncated = line_end.is_some_and(|e| e > total) || line_start.is_some_and(|s| s > total);
 
     let sliced: Vec<RepoFetchedLine> = (ctx_start..=ctx_end)
         .filter_map(|n| {
@@ -774,10 +764,7 @@ mod tests {
     #[test]
     fn github_browser_url_basic() {
         let url = github_browser_url("tokio-rs", "axum", "main", "src/lib.rs");
-        assert_eq!(
-            url,
-            "https://github.com/tokio-rs/axum/blob/main/src/lib.rs"
-        );
+        assert_eq!(url, "https://github.com/tokio-rs/axum/blob/main/src/lib.rs");
     }
 
     #[test]
@@ -871,8 +858,7 @@ mod tests {
     #[test]
     fn apply_line_range_no_range_returns_all() {
         let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
-        let (sliced, start, end, _truncated, _warn) =
-            apply_line_range(&lines, None, None, 0, 0);
+        let (sliced, start, end, _truncated, _warn) = apply_line_range(&lines, None, None, 0, 0);
         assert_eq!(sliced.len(), 5);
         assert_eq!(start, Some(1));
         assert_eq!(end, Some(5));
@@ -913,8 +899,7 @@ mod tests {
     #[test]
     fn apply_line_range_empty_lines() {
         let lines: Vec<String> = vec![];
-        let (sliced, start, end, _truncated, _warn) =
-            apply_line_range(&lines, None, None, 0, 0);
+        let (sliced, start, end, _truncated, _warn) = apply_line_range(&lines, None, None, 0, 0);
         assert!(sliced.is_empty());
         assert_eq!(start, None);
         assert_eq!(end, None);

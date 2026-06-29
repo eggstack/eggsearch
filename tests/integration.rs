@@ -5986,7 +5986,10 @@ mod repo_search {
         let results = source_group["results"]
             .as_array()
             .expect("results is array");
-        assert!(!results.is_empty(), "source_files group should have results");
+        assert!(
+            !results.is_empty(),
+            "source_files group should have results"
+        );
 
         let card = &results[0];
         let metadata = card["metadata"].as_object().expect("metadata is object");
@@ -6048,9 +6051,7 @@ mod repo_search {
             .iter()
             .find(|g| g["kind"].as_str() == Some("official_docs"))
             .expect("should have official_docs group");
-        let results = docs_group["results"]
-            .as_array()
-            .expect("results is array");
+        let results = docs_group["results"].as_array().expect("results is array");
         assert!(!results.is_empty());
 
         let card = &results[0];
@@ -6114,9 +6115,7 @@ mod repo_search {
             .iter()
             .find(|g| g["kind"].as_str() == Some("tests"))
             .expect("should have tests group");
-        let results = tests_group["results"]
-            .as_array()
-            .expect("results is array");
+        let results = tests_group["results"].as_array().expect("results is array");
         assert!(!results.is_empty());
 
         let card = &results[0];
@@ -6146,7 +6145,9 @@ mod repo_search {
         let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
         let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
 
-        let telemetry = v["telemetry"].as_object().expect("telemetry should be an object");
+        let telemetry = v["telemetry"]
+            .as_object()
+            .expect("telemetry should be an object");
         assert!(
             telemetry.contains_key("provider_selection"),
             "telemetry should have provider_selection"
@@ -6188,14 +6189,8 @@ mod repo_search {
             .expect("subqueries is array");
         assert!(!subqueries.is_empty(), "should have subqueries");
         for sq in subqueries {
-            assert!(
-                sq.get("label").is_some(),
-                "subquery should have label"
-            );
-            assert!(
-                sq.get("query").is_some(),
-                "subquery should have query"
-            );
+            assert!(sq.get("label").is_some(), "subquery should have label");
+            assert!(sq.get("query").is_some(), "subquery should have query");
             assert!(
                 sq.get("providers_attempted").is_some(),
                 "subquery should have providers_attempted"
@@ -6226,7 +6221,9 @@ mod repo_search {
         .await
         .expect("ok");
 
-        let telemetry = v["telemetry"].as_object().expect("telemetry should be an object");
+        let telemetry = v["telemetry"]
+            .as_object()
+            .expect("telemetry should be an object");
         let provider_selection = telemetry["provider_selection"]
             .as_object()
             .expect("provider_selection should be an object");
@@ -6287,7 +6284,9 @@ mod repo_search {
         );
         // subqueries_interrupted and subqueries_skipped are skipped when 0
         assert_ne!(
-            telemetry.get("subqueries_interrupted").and_then(|v| v.as_u64()),
+            telemetry
+                .get("subqueries_interrupted")
+                .and_then(|v| v.as_u64()),
             Some(1),
             "subqueries_interrupted should not be > 0"
         );
@@ -6320,7 +6319,9 @@ mod repo_search {
         .await
         .expect("ok");
 
-        let warnings = v["warnings"].as_array().expect("warnings should be an array");
+        let warnings = v["warnings"]
+            .as_array()
+            .expect("warnings should be an array");
         // Warnings are SearchWarning objects with {provider_id, message} fields
         let has_native_warning = warnings.iter().any(|w| {
             w["message"]
@@ -7497,14 +7498,16 @@ async fn repo_fetch_via_web_fetch_full_file() {
     });
 
     let v = run_web_fetch(
-        Arc::new(ServerState::build({
-            let mut cfg = AppConfig::default();
-            cfg.fetch.allow_localhost = true;
-            cfg.fetch.allow_private_network = true;
-            cfg.fetch.sanitize_output = false;
-            cfg
-        })
-        .expect("state")),
+        Arc::new(
+            ServerState::build({
+                let mut cfg = AppConfig::default();
+                cfg.fetch.allow_localhost = true;
+                cfg.fetch.allow_private_network = true;
+                cfg.fetch.sanitize_output = false;
+                cfg
+            })
+            .expect("state"),
+        ),
         WebFetchArgs {
             url: server.url("/src/main.rs"),
             max_chars: Some(5000),
@@ -7533,14 +7536,16 @@ async fn repo_fetch_via_web_fetch_404() {
     });
 
     let result = run_web_fetch(
-        Arc::new(ServerState::build({
-            let mut cfg = AppConfig::default();
-            cfg.fetch.allow_localhost = true;
-            cfg.fetch.allow_private_network = true;
-            cfg.fetch.sanitize_output = false;
-            cfg
-        })
-        .expect("state")),
+        Arc::new(
+            ServerState::build({
+                let mut cfg = AppConfig::default();
+                cfg.fetch.allow_localhost = true;
+                cfg.fetch.allow_private_network = true;
+                cfg.fetch.sanitize_output = false;
+                cfg
+            })
+            .expect("state"),
+        ),
         WebFetchArgs {
             url: server.url("/missing.rs"),
             max_chars: Some(5000),
@@ -7571,14 +7576,16 @@ async fn repo_fetch_via_web_fetch_429() {
     });
 
     let result = run_web_fetch(
-        Arc::new(ServerState::build({
-            let mut cfg = AppConfig::default();
-            cfg.fetch.allow_localhost = true;
-            cfg.fetch.allow_private_network = true;
-            cfg.fetch.sanitize_output = false;
-            cfg
-        })
-        .expect("state")),
+        Arc::new(
+            ServerState::build({
+                let mut cfg = AppConfig::default();
+                cfg.fetch.allow_localhost = true;
+                cfg.fetch.allow_private_network = true;
+                cfg.fetch.sanitize_output = false;
+                cfg
+            })
+            .expect("state"),
+        ),
         WebFetchArgs {
             url: server.url("/rate-limited.rs"),
             max_chars: Some(5000),
@@ -7634,10 +7641,7 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
         .expect("trust_markers should be an object");
     // Tier 3 injection scan should detect "ignore the previous"
     let hits = markers["injection_hits"].as_u64().unwrap_or(0);
-    assert!(
-        hits > 0,
-        "should detect injection markers: {markers:?}"
-    );
+    assert!(hits > 0, "should detect injection markers: {markers:?}");
 }
 
 #[tokio::test]
@@ -7645,7 +7649,10 @@ async fn repo_fetch_via_web_fetch_truncation() {
     use httpmock::prelude::*;
 
     let server = MockServer::start();
-    let long_body: String = (1..=200).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+    let long_body: String = (1..=200)
+        .map(|i| format!("line{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     server.mock(|when, then| {
         when.method(GET).path("/long.rs");
         then.status(200)
@@ -7653,14 +7660,16 @@ async fn repo_fetch_via_web_fetch_truncation() {
             .body(long_body);
     });
 
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg.fetch.sanitize_output = false;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
 
     let v = run_web_fetch(
         state,
@@ -7692,17 +7701,21 @@ async fn repo_fetch_line_range_via_mock() {
         when.method(GET).path("/src/main.rs");
         then.status(200)
             .header("content-type", "text/plain; charset=utf-8")
-            .body("line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n");
+            .body(
+                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n",
+            );
     });
 
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg.fetch.sanitize_output = false;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
 
     // Request lines 3-6 (1-indexed, inclusive) — should return exactly 4 lines.
     let v = run_repo_fetch(
@@ -7743,9 +7756,7 @@ async fn repo_fetch_line_range_via_mock() {
     assert_eq!(total, 10, "file has 10 lines");
 
     // Verify line content via the lines array.
-    let lines = v["lines"]
-        .as_array()
-        .expect("lines should be an array");
+    let lines = v["lines"].as_array().expect("lines should be an array");
     assert_eq!(lines.len(), 4, "should have 4 lines (3,4,5,6)");
     assert_eq!(lines[0]["number"], 3);
     assert_eq!(lines[0]["text"], "line 3");
@@ -7754,8 +7765,14 @@ async fn repo_fetch_line_range_via_mock() {
 
     // Verify the text field also contains only those lines.
     let text = v["text"].as_str().expect("text should be present");
-    assert!(text.contains("line 3"), "text should contain line 3: {text}");
-    assert!(text.contains("line 6"), "text should contain line 6: {text}");
+    assert!(
+        text.contains("line 3"),
+        "text should contain line 3: {text}"
+    );
+    assert!(
+        text.contains("line 6"),
+        "text should contain line 6: {text}"
+    );
     assert!(
         !text.contains("line 1"),
         "text should NOT contain line 1: {text}"
@@ -7775,17 +7792,21 @@ async fn repo_fetch_line_range_with_context_via_mock() {
         when.method(GET).path("/src/main.rs");
         then.status(200)
             .header("content-type", "text/plain; charset=utf-8")
-            .body("line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n");
+            .body(
+                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n",
+            );
     });
 
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg.fetch.sanitize_output = false;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
 
     // Request lines 5-7 with context_before=2, context_after=1
     // Should return lines 3-8 (5-2=3 start, 7+1=8 end).
@@ -7813,15 +7834,11 @@ async fn repo_fetch_line_range_with_context_via_mock() {
     let returned_start = v["returned_line_start"]
         .as_u64()
         .expect("returned_line_start");
-    let returned_end = v["returned_line_end"]
-        .as_u64()
-        .expect("returned_line_end");
+    let returned_end = v["returned_line_end"].as_u64().expect("returned_line_end");
     assert_eq!(returned_start, 3, "context should expand start to line 3");
     assert_eq!(returned_end, 8, "context should expand end to line 8");
 
-    let lines = v["lines"]
-        .as_array()
-        .expect("lines should be an array");
+    let lines = v["lines"].as_array().expect("lines should be an array");
     assert_eq!(lines.len(), 6, "should have 6 lines (3..=8)");
     assert_eq!(lines[0]["text"], "line 3");
     assert_eq!(lines[5]["text"], "line 8");
@@ -7837,14 +7854,16 @@ async fn repo_fetch_429_via_run_repo_fetch() {
         then.status(429).body("Rate Limited");
     });
 
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg.fetch.sanitize_output = false;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
 
     let result = run_repo_fetch(
         state,
@@ -7910,13 +7929,15 @@ async fn repo_fetch_fetch_disabled_by_policy() {
 
 #[tokio::test]
 async fn repo_fetch_tool_in_server_capabilities() {
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg
+        })
+        .expect("state"),
+    );
 
     let v = run_provider_status(state, ProviderStatusArgs { probe: false })
         .expect("provider_status should succeed");
@@ -7925,8 +7946,7 @@ async fn repo_fetch_tool_in_server_capabilities() {
         .as_object()
         .expect("server_capabilities should be object");
     assert_eq!(
-        caps["repo_fetch"],
-        true,
+        caps["repo_fetch"], true,
         "repo_fetch should be in server_capabilities: {caps:?}"
     );
 }
@@ -7961,8 +7981,16 @@ async fn repo_search_with_local_results() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
 
-    fs::write(root.join("main.rs"), "fn main() {\n    println!(\"hello\");\n}").unwrap();
-    fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    fs::write(
+        root.join("main.rs"),
+        "fn main() {\n    println!(\"hello\");\n}",
+    )
+    .unwrap();
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+    )
+    .unwrap();
     fs::write(root.join("README.md"), "# My Project\n\nA test project.").unwrap();
 
     let state = state_with_local_backend(root);
@@ -7979,7 +8007,12 @@ async fn repo_search_with_local_results() {
     // Local results should appear in one of the groups
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
 
     let local_results: Vec<&serde_json::Value> = all_results
@@ -7996,14 +8029,15 @@ async fn repo_search_with_local_results() {
     // Local results should have trust = local_trusted
     for r in &local_results {
         assert_eq!(
-            r["trust"],
-            "local_trusted",
+            r["trust"], "local_trusted",
             "local result should have local_trusted trust: {r:?}"
         );
     }
 
     // providers_queried should include local_workspace
-    let queried = v["providers_queried"].as_array().expect("providers_queried");
+    let queried = v["providers_queried"]
+        .as_array()
+        .expect("providers_queried");
     let queried_ids: Vec<&str> = queried.iter().filter_map(|q| q.as_str()).collect();
     assert!(
         queried_ids.contains(&"local_workspace"),
@@ -8031,7 +8065,12 @@ async fn repo_search_include_local_false_skips_local() {
     let groups = v["groups"].as_array().expect("groups is array");
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
 
     let local_results: Vec<&serde_json::Value> = all_results
@@ -8070,7 +8109,8 @@ async fn workspace_fetch_reads_local_file() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
@@ -8139,7 +8179,8 @@ async fn workspace_fetch_rejects_unknown_root() {
         }
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
@@ -8190,7 +8231,8 @@ async fn workspace_fetch_rejects_path_traversal() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
@@ -8246,8 +8288,8 @@ fn provider_status_local_workspace_enabled_when_configured() {
         roots: vec![dir.path().to_path_buf()],
         ..Default::default()
     };
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
-        .expect("backend builds");
+    let backend =
+        eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg).expect("backend builds");
     let adapter = MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut app_cfg = AppConfig::default();
     app_cfg.fetch.enabled = false;
@@ -8283,14 +8325,16 @@ async fn repo_fetch_github_locator_serializes_as_remote() {
             .body("fn main() {}");
     });
 
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg.fetch.sanitize_output = false;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
 
     let v = run_repo_fetch(
         state,
@@ -8314,8 +8358,14 @@ async fn repo_fetch_github_locator_serializes_as_remote() {
     .expect("repo_fetch should succeed");
 
     let locator = v["locator"].as_object().expect("locator should be object");
-    assert_eq!(locator["kind"], "remote", "GitHub locator kind should be remote");
-    assert_eq!(locator["host"], "github", "GitHub locator host should be github");
+    assert_eq!(
+        locator["kind"], "remote",
+        "GitHub locator kind should be remote"
+    );
+    assert_eq!(
+        locator["host"], "github",
+        "GitHub locator host should be github"
+    );
     assert_eq!(locator["owner"], "test-owner");
     assert_eq!(locator["repo"], "test-repo");
 }
@@ -8332,14 +8382,16 @@ async fn repo_fetch_gitlab_locator_serializes_as_remote() {
             .body("fn main() {}");
     });
 
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg.fetch.sanitize_output = false;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
 
     let v = run_repo_fetch(
         state,
@@ -8363,8 +8415,14 @@ async fn repo_fetch_gitlab_locator_serializes_as_remote() {
     .expect("repo_fetch should succeed");
 
     let locator = v["locator"].as_object().expect("locator should be object");
-    assert_eq!(locator["kind"], "remote", "GitLab locator kind should be remote");
-    assert_eq!(locator["host"], "gitlab", "GitLab locator host should be gitlab");
+    assert_eq!(
+        locator["kind"], "remote",
+        "GitLab locator kind should be remote"
+    );
+    assert_eq!(
+        locator["host"], "gitlab",
+        "GitLab locator host should be gitlab"
+    );
     assert_eq!(locator["owner"], "group");
     assert_eq!(locator["repo"], "project");
 }
@@ -8387,7 +8445,8 @@ async fn repo_fetch_workspace_locator_serializes_as_workspace() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
@@ -8417,7 +8476,10 @@ async fn repo_fetch_workspace_locator_serializes_as_workspace() {
     .expect("workspace fetch should succeed");
 
     let locator = v["locator"].as_object().expect("locator should be object");
-    assert_eq!(locator["kind"], "workspace", "workspace locator kind should be workspace");
+    assert_eq!(
+        locator["kind"], "workspace",
+        "workspace locator kind should be workspace"
+    );
     assert_eq!(
         locator.get("host"),
         None,
@@ -8462,7 +8524,8 @@ async fn workspace_fetch_enforces_max_chars() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
@@ -8501,7 +8564,9 @@ async fn workspace_fetch_enforces_max_chars() {
     assert_eq!(v["truncated"], true, "should be truncated");
     let warnings = v["warnings"].as_array().expect("warnings should be array");
     assert!(
-        warnings.iter().any(|w| w.as_str() == Some("workspace_fetch_truncated_by_max_chars")),
+        warnings
+            .iter()
+            .any(|w| w.as_str() == Some("workspace_fetch_truncated_by_max_chars")),
         "should have workspace_fetch_truncated_by_max_chars warning: {warnings:?}"
     );
 }
@@ -8528,7 +8593,8 @@ async fn workspace_fetch_max_chars_lines_text_consistency() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
@@ -8566,7 +8632,11 @@ async fn workspace_fetch_max_chars_lines_text_consistency() {
         .collect::<Vec<_>>()
         .join("\n");
     assert_eq!(text, reconstructed, "text and lines should be consistent");
-    assert!(text.len() <= 40, "text should be within budget: len={}", text.len());
+    assert!(
+        text.len() <= 40,
+        "text should be within budget: len={}",
+        text.len()
+    );
 }
 
 #[tokio::test]
@@ -8591,7 +8661,8 @@ async fn workspace_fetch_with_context_and_line_range() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
@@ -8659,7 +8730,8 @@ async fn workspace_fetch_scans_injection_markers() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     cfg.fetch.sanitize_output = true;
@@ -8710,7 +8782,11 @@ async fn workspace_fetch_scans_injection_markers() {
 async fn workspace_fetch_trust_markers_populated() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    fs::write(root.join("clean.rs"), "fn main() {\n    println!(\"hello\");\n}\n").unwrap();
+    fs::write(
+        root.join("clean.rs"),
+        "fn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .unwrap();
 
     let backend = {
         let cfg = eggsearch::core::local::LocalConfig {
@@ -8724,7 +8800,8 @@ async fn workspace_fetch_trust_markers_populated() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     cfg.fetch.sanitize_output = true;
@@ -8758,15 +8835,25 @@ async fn workspace_fetch_trust_markers_populated() {
         .as_object()
         .expect("trust_markers should be present");
     // Clean file should have zero hits and no sanitization
-    assert_eq!(markers["injection_hits"], 0, "clean file should have 0 injection hits");
-    assert_eq!(markers["control_chars_removed"], 0, "clean file should have 0 control chars removed");
+    assert_eq!(
+        markers["injection_hits"], 0,
+        "clean file should have 0 injection hits"
+    );
+    assert_eq!(
+        markers["control_chars_removed"], 0,
+        "clean file should have 0 control chars removed"
+    );
 }
 
 #[tokio::test]
 async fn workspace_fetch_source_not_framed() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    fs::write(root.join("code.rs"), "fn main() {\n    println!(\"hello\");\n}\n").unwrap();
+    fs::write(
+        root.join("code.rs"),
+        "fn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .unwrap();
 
     let backend = {
         let cfg = eggsearch::core::local::LocalConfig {
@@ -8780,7 +8867,8 @@ async fn workspace_fetch_source_not_framed() {
         )
     };
 
-    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     cfg.fetch.sanitize_output = true;
@@ -8856,7 +8944,9 @@ async fn repo_search_coding_profile_partial_not_fully_degraded() {
     .await
     .expect("repo_search with coding profile should succeed");
 
-    let telemetry = v["telemetry"].as_object().expect("telemetry should be object");
+    let telemetry = v["telemetry"]
+        .as_object()
+        .expect("telemetry should be object");
     let provider_selection = telemetry["provider_selection"]
         .as_object()
         .expect("provider_selection should be object");
@@ -8867,9 +8957,7 @@ async fn repo_search_coding_profile_partial_not_fully_degraded() {
     );
     // When no native providers are built, the profile degrades to defaults
     // This is expected — but should not be a validation error
-    let profile_applied = provider_selection["profile_applied"]
-        .as_str()
-        .unwrap_or("");
+    let profile_applied = provider_selection["profile_applied"].as_str().unwrap_or("");
     assert!(
         !profile_applied.is_empty(),
         "profile_applied should be set: {provider_selection:?}"
@@ -8890,14 +8978,16 @@ async fn repo_fetch_commit_sha_populates_both_permalink_fields() {
             .body("fn main() {}");
     });
 
-    let state = Arc::new(ServerState::build({
-        let mut cfg = AppConfig::default();
-        cfg.fetch.allow_localhost = true;
-        cfg.fetch.allow_private_network = true;
-        cfg.fetch.sanitize_output = false;
-        cfg
-    })
-    .expect("state"));
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
 
     let v = run_repo_fetch(
         state,
@@ -8934,11 +9024,15 @@ async fn repo_fetch_commit_sha_populates_both_permalink_fields() {
     );
     // raw_permalink_url should be raw content
     assert!(
-        raw_permalink.contains("raw.githubusercontent.com/test-owner/test-repo/abc123def456/src/main.rs"),
+        raw_permalink
+            .contains("raw.githubusercontent.com/test-owner/test-repo/abc123def456/src/main.rs"),
         "raw_permalink_url should be raw content: {raw_permalink}"
     );
     // They should be different
-    assert_ne!(permalink, raw_permalink, "permalink_url and raw_permalink_url should differ");
+    assert_ne!(
+        permalink, raw_permalink,
+        "permalink_url and raw_permalink_url should differ"
+    );
 }
 
 #[cfg(feature = "mock")]
@@ -8983,8 +9077,7 @@ async fn repo_search_code_evidence_has_raw_permalink_url() {
     // whether the URL has a commit SHA, but permalink_url should
     // be present for code-host URLs
     assert!(
-        code_evidence.get("permalink_url").is_some()
-            || code_evidence.get("raw_url").is_some(),
+        code_evidence.get("permalink_url").is_some() || code_evidence.get("raw_url").is_some(),
         "code_evidence should have URL fields: {code_evidence:?}"
     );
 }
@@ -9023,7 +9116,12 @@ async fn repo_search_local_symbol_match_outranks_content_only() {
     let groups = v["groups"].as_array().expect("groups is array");
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
 
     let local_results: Vec<&serde_json::Value> = all_results
@@ -9038,21 +9136,11 @@ async fn repo_search_local_symbol_match_outranks_content_only() {
     // the docs.txt (content-only match)
     let engine_result = local_results
         .iter()
-        .find(|r| {
-            r["url"]
-                .as_str()
-                .unwrap_or("")
-                .contains("engine.rs")
-        })
+        .find(|r| r["url"].as_str().unwrap_or("").contains("engine.rs"))
         .expect("should have engine.rs result");
     let docs_result = local_results
         .iter()
-        .find(|r| {
-            r["url"]
-                .as_str()
-                .unwrap_or("")
-                .contains("docs.txt")
-        })
+        .find(|r| r["url"].as_str().unwrap_or("").contains("docs.txt"))
         .expect("should have docs.txt result");
 
     let engine_score = engine_result["score"].as_f64().unwrap_or(0.0);
@@ -9086,7 +9174,12 @@ async fn repo_search_binary_file_excluded_from_results() {
     let groups = v["groups"].as_array().expect("groups is array");
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
 
     let local_results: Vec<&serde_json::Value> = all_results
@@ -9161,7 +9254,12 @@ async fn repo_search_local_snippet_trust_markers_populated() {
     let groups = v["groups"].as_array().expect("groups is array");
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
 
     let local_results: Vec<&serde_json::Value> = all_results
@@ -9212,7 +9310,12 @@ async fn repo_search_local_snippet_trust_markers_not_scanned_when_disabled() {
     let groups = v["groups"].as_array().expect("groups is array");
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
 
     let local_results: Vec<&serde_json::Value> = all_results
@@ -9247,15 +9350,14 @@ async fn repo_search_coding_profile_partial_degradation_succeeds() {
     cfg.search
         .providers
         .insert("github_issues".to_string(), true);
-    cfg.search
-        .providers
-        .insert("duckduckgo".to_string(), true);
+    cfg.search.providers.insert("duckduckgo".to_string(), true);
 
     let engines = vec![
         MockEngine::success("github_issues", vec![]),
         MockEngine::success("duckduckgo", vec![]),
     ];
-    let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
+    let adapter =
+        MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
     let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
 
     let args = RepoSearchArgs {
@@ -9281,13 +9383,17 @@ async fn repo_search_coding_profile_partial_degradation_succeeds() {
         "should have profile_partial warning for unavailable coding providers"
     );
 
-    // Telemetry should reflect degraded state
+    // Telemetry should reflect partial state (not degraded)
     let selection = v["telemetry"]["provider_selection"]
         .as_object()
         .expect("provider_selection is object");
     assert_eq!(
-        selection["degraded"], true,
-        "telemetry should show degraded=true"
+        selection["degraded"], false,
+        "telemetry should show degraded=false for partial case"
+    );
+    assert_eq!(
+        selection["partial"], true,
+        "telemetry should show partial=true when some providers are skipped"
     );
 }
 
@@ -9330,7 +9436,10 @@ fn provider_status_includes_tool_capabilities() {
     let rf = tc["repo_fetch"]
         .as_object()
         .expect("repo_fetch capabilities");
-    assert_eq!(rf["workspace"], false, "workspace should be false without local backend");
+    assert_eq!(
+        rf["workspace"], false,
+        "workspace should be false without local backend"
+    );
     assert_eq!(rf["line_ranges"], true);
     assert_eq!(rf["context_lines"], true);
     assert_eq!(rf["max_chars_enforced"], true);
@@ -9340,13 +9449,19 @@ fn provider_status_includes_tool_capabilities() {
         .as_object()
         .expect("repo_search capabilities");
     assert!(rs["profiles"].is_array(), "profiles should be array");
-    assert!(rs["package_resolution"].is_array(), "package_resolution should be array");
+    assert!(
+        rs["package_resolution"].is_array(),
+        "package_resolution should be array"
+    );
 
     // local_workspace capabilities
     let lw = tc["local_workspace"]
         .as_object()
         .expect("local_workspace capabilities");
-    assert_eq!(lw["enabled"], false, "enabled should be false without local backend");
+    assert_eq!(
+        lw["enabled"], false,
+        "enabled should be false without local backend"
+    );
     assert_eq!(lw["symbol_enrichment"], "regex_heuristic");
 }
 
@@ -9360,8 +9475,8 @@ fn provider_status_tool_capabilities_local_enabled() {
         roots: vec![dir.path().to_path_buf()],
         ..Default::default()
     };
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
-        .expect("backend builds");
+    let backend =
+        eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg).expect("backend builds");
     let adapter = MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
     let app_cfg = AppConfig::default();
     let mut state = ServerState::with_adapter(app_cfg, Arc::new(adapter));
@@ -9374,10 +9489,16 @@ fn provider_status_tool_capabilities_local_enabled() {
         .expect("tool_capabilities");
 
     let rf = tc["repo_fetch"].as_object().expect("repo_fetch");
-    assert_eq!(rf["workspace"], true, "workspace should be true with local backend");
+    assert_eq!(
+        rf["workspace"], true,
+        "workspace should be true with local backend"
+    );
 
     let lw = tc["local_workspace"].as_object().expect("local_workspace");
-    assert_eq!(lw["enabled"], true, "enabled should be true with local backend");
+    assert_eq!(
+        lw["enabled"], true,
+        "enabled should be true with local backend"
+    );
 }
 
 /// Step 6: large file exceeding max_file_bytes is excluded from local scoring.
@@ -9406,7 +9527,12 @@ async fn repo_search_local_large_file_excluded() {
     let groups = v["groups"].as_array().expect("groups is array");
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
 
     let local_results: Vec<&serde_json::Value> = all_results
@@ -9450,7 +9576,9 @@ async fn repo_search_suggested_fetch_structured_locator_shape() {
     .await
     .expect("ok");
 
-    let suggested = v["suggested_fetches"].as_array().expect("suggested is array");
+    let suggested = v["suggested_fetches"]
+        .as_array()
+        .expect("suggested is array");
     let structured = suggested
         .iter()
         .find(|s| s.get("structured_repo_fetch").is_some())
@@ -9506,5 +9634,306 @@ async fn repo_fetch_remote_max_chars_enforced() {
         text.len() <= 200,
         "text should respect max_chars (got {} chars)",
         text.len()
+    );
+}
+
+// ---- Cleanup item 5: GitLab URL, locator, and profile regression tests ----
+
+#[tokio::test]
+async fn repo_fetch_gitlab_commit_sha_populates_permalink_fields() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("fn main() {}");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("gitlab".into()),
+            owner: "group".into(),
+            repo: "project".into(),
+            ref_name: Some("main".into()),
+            commit_sha: Some("abc123def456".into()),
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let permalink = v["permalink_url"]
+        .as_str()
+        .expect("permalink_url should be present");
+    let raw_permalink = v["raw_permalink_url"]
+        .as_str()
+        .expect("raw_permalink_url should be present");
+
+    // GitLab permalink uses browser URL pattern with SHA
+    assert!(
+        permalink.contains("gitlab.com/group/project/-/blob/abc123def456/src/main.rs"),
+        "GitLab permalink_url should use blob URL with SHA: {permalink}"
+    );
+    // GitLab raw permalink uses raw URL pattern with SHA
+    assert!(
+        raw_permalink.contains("gitlab.com/group/project/-/raw/abc123def456/src/main.rs"),
+        "GitLab raw_permalink_url should use raw URL with SHA: {raw_permalink}"
+    );
+    assert_ne!(
+        permalink, raw_permalink,
+        "permalink_url and raw_permalink_url should differ"
+    );
+
+    // fetched_url should reflect the test override
+    let fetched_url = v["fetched_url"]
+        .as_str()
+        .expect("fetched_url should be present");
+    assert_eq!(
+        fetched_url,
+        server.url("/src/main.rs"),
+        "fetched_url should be the test override"
+    );
+}
+
+#[tokio::test]
+async fn repo_fetch_gitlab_nested_namespace_locator() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("fn main() {}");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("gitlab".into()),
+            owner: "group/subgroup".into(),
+            repo: "project".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let locator = v["locator"].as_object().expect("locator should be object");
+    assert_eq!(locator["kind"], "remote");
+    assert_eq!(locator["host"], "gitlab");
+    assert_eq!(
+        locator["owner"], "group/subgroup",
+        "nested owner should be preserved"
+    );
+    assert_eq!(locator["repo"], "project");
+    assert_eq!(locator["path"], "src/main.rs");
+
+    // Browser URL should contain the full nested namespace
+    let browser_url = v["browser_url"]
+        .as_str()
+        .expect("browser_url should be present");
+    assert!(
+        browser_url.contains("gitlab.com/group/subgroup/project/-/blob/main/src/main.rs"),
+        "browser URL should contain nested namespace: {browser_url}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn suggested_fetch_prefers_raw_permalink_over_raw_url() {
+    use eggsearch::core::code_evidence::CodeEvidence;
+    use eggsearch::core::code_metadata::CodeHost;
+    use eggsearch::core::repo_search::{RepoResultGroup, RepoResultGroupKind};
+    use eggsearch::core::source_card::{SourceCard, SourceMetadata};
+    use eggsearch::meta::suggested_fetches::generate_suggested_fetches;
+
+    let mut card = SourceCard::new(
+        "lib.rs",
+        "https://github.com/owner/repo/blob/main/src/lib.rs",
+        vec!["test".to_string()],
+        None,
+        eggsearch::core::result::TrustLevel::ExternalUntrusted,
+    );
+    card.metadata = SourceMetadata {
+        source_kind: eggsearch::core::source_card::SourceKind::SourceFile,
+        code_evidence: Some(CodeEvidence {
+            host: Some(CodeHost::Github),
+            owner: Some("owner".to_string()),
+            repo: Some("repo".to_string()),
+            ref_name: Some("main".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            raw_url: Some(
+                "https://raw.githubusercontent.com/owner/repo/main/src/lib.rs".to_string(),
+            ),
+            raw_permalink_url: Some(
+                "https://raw.githubusercontent.com/owner/repo/abc123/src/lib.rs".to_string(),
+            ),
+            permalink_url: Some("https://github.com/owner/repo/blob/abc123/src/lib.rs".to_string()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let groups = vec![RepoResultGroup {
+        kind: RepoResultGroupKind::SourceFiles,
+        label: "source_files".to_string(),
+        results: vec![card],
+        truncated: false,
+    }];
+
+    let hints = eggsearch::core::repo_query::RepoQueryHints::default();
+    let fetches = generate_suggested_fetches(&groups, &hints);
+
+    assert!(
+        !fetches.is_empty(),
+        "should have at least one suggested fetch"
+    );
+    assert_eq!(
+        fetches[0].url, "https://raw.githubusercontent.com/owner/repo/abc123/src/lib.rs",
+        "suggested fetch should prefer raw_permalink_url over raw_url"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn suggested_fetch_falls_back_to_raw_url_when_no_permalink() {
+    use eggsearch::core::code_evidence::CodeEvidence;
+    use eggsearch::core::code_metadata::CodeHost;
+    use eggsearch::core::repo_search::{RepoResultGroup, RepoResultGroupKind};
+    use eggsearch::core::source_card::{SourceCard, SourceMetadata};
+    use eggsearch::meta::suggested_fetches::generate_suggested_fetches;
+
+    let mut card = SourceCard::new(
+        "lib.rs",
+        "https://github.com/owner/repo/blob/main/src/lib.rs",
+        vec!["test".to_string()],
+        None,
+        eggsearch::core::result::TrustLevel::ExternalUntrusted,
+    );
+    card.metadata = SourceMetadata {
+        source_kind: eggsearch::core::source_card::SourceKind::SourceFile,
+        code_evidence: Some(CodeEvidence {
+            host: Some(CodeHost::Github),
+            owner: Some("owner".to_string()),
+            repo: Some("repo".to_string()),
+            ref_name: Some("main".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            raw_url: Some(
+                "https://raw.githubusercontent.com/owner/repo/main/src/lib.rs".to_string(),
+            ),
+            // No raw_permalink_url or permalink_url
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let groups = vec![RepoResultGroup {
+        kind: RepoResultGroupKind::SourceFiles,
+        label: "source_files".to_string(),
+        results: vec![card],
+        truncated: false,
+    }];
+
+    let hints = eggsearch::core::repo_query::RepoQueryHints::default();
+    let fetches = generate_suggested_fetches(&groups, &hints);
+
+    assert!(!fetches.is_empty());
+    assert_eq!(
+        fetches[0].url, "https://raw.githubusercontent.com/owner/repo/main/src/lib.rs",
+        "suggested fetch should fall back to raw_url when no permalink"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_profile_all_providers_available_is_not_degraded_or_partial() {
+    // When all coding profile providers are available, telemetry
+    // should show degraded=false, partial=false.
+    let engines = vec![
+        MockEngine::success("github_code", vec![]),
+        MockEngine::success("github_issues", vec![]),
+        MockEngine::success("github_releases", vec![]),
+        MockEngine::success("brave_api", vec![]),
+        MockEngine::success("searxng", vec![]),
+        MockEngine::success("duckduckgo", vec![]),
+        MockEngine::success("startpage", vec![]),
+    ];
+    let mut cfg = test_cfg();
+    for id in [
+        "github_code",
+        "github_issues",
+        "github_releases",
+        "brave_api",
+        "searxng",
+        "duckduckgo",
+        "startpage",
+    ] {
+        cfg.search.providers.insert(id.to_string(), true);
+    }
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let v = run_repo_search(
+        state,
+        RepoSearchArgs {
+            query: "tokio-rs/axum".into(),
+            providers: vec![],
+            profile: Some("coding".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search should succeed");
+
+    let selection = v["telemetry"]["provider_selection"]
+        .as_object()
+        .expect("provider_selection should be object");
+    assert_eq!(
+        selection["degraded"], false,
+        "all-available should not be degraded"
+    );
+    assert!(
+        selection.get("partial").is_none() || selection["partial"] == false,
+        "all-available should not be partial"
     );
 }

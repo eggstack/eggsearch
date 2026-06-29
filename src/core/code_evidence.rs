@@ -216,12 +216,31 @@ pub fn infer_source_role(path: &str) -> SourceRole {
 
     // Configuration files by exact name
     match lower_filename.as_str() {
-        "cargo.toml" | "pyproject.toml" | "package.json" | "setup.py" | "setup.cfg"
-        | "requirements.txt" | "go.mod" | "go.sum" | "pom.xml" | "build.gradle"
-        | "build.gradle.kts" | "dockerfile" | "docker-compose.yml"
-        | "docker-compose.yaml" | "makefile" | "justfile" | ".gitignore"
-        | ".gitattributes" | ".editorconfig" | "rustfmt.toml" | ".rustfmt.toml"
-        | "clippy.toml" | ".clippy.toml" | "deny.toml" | "release.toml" => {
+        "cargo.toml"
+        | "pyproject.toml"
+        | "package.json"
+        | "setup.py"
+        | "setup.cfg"
+        | "requirements.txt"
+        | "go.mod"
+        | "go.sum"
+        | "pom.xml"
+        | "build.gradle"
+        | "build.gradle.kts"
+        | "dockerfile"
+        | "docker-compose.yml"
+        | "docker-compose.yaml"
+        | "makefile"
+        | "justfile"
+        | ".gitignore"
+        | ".gitattributes"
+        | ".editorconfig"
+        | "rustfmt.toml"
+        | ".rustfmt.toml"
+        | "clippy.toml"
+        | ".clippy.toml"
+        | "deny.toml"
+        | "release.toml" => {
             return SourceRole::Configuration;
         }
         _ => {}
@@ -245,16 +264,21 @@ pub fn infer_source_role(path: &str) -> SourceRole {
     }
 
     // CI config files anywhere in the path
-    if lower_path.contains(".github/workflows/") || lower_path.contains(".circleci/")
-        || lower_path.contains(".travis") || lower_path.contains("jenkinsfile")
+    if lower_path.contains(".github/workflows/")
+        || lower_path.contains(".circleci/")
+        || lower_path.contains(".travis")
+        || lower_path.contains("jenkinsfile")
     {
         return SourceRole::Build;
     }
 
     // Test files by suffix pattern
-    if lower_filename.ends_with("_test.rs") || lower_filename.ends_with("_test.py")
-        || lower_filename.ends_with(".test.ts") || lower_filename.ends_with(".test.js")
-        || lower_filename.ends_with(".spec.ts") || lower_filename.ends_with(".spec.js")
+    if lower_filename.ends_with("_test.rs")
+        || lower_filename.ends_with("_test.py")
+        || lower_filename.ends_with(".test.ts")
+        || lower_filename.ends_with(".test.js")
+        || lower_filename.ends_with(".spec.ts")
+        || lower_filename.ends_with(".spec.js")
         || lower_filename.starts_with("test_")
     {
         return SourceRole::Test;
@@ -268,8 +292,8 @@ pub fn infer_source_role(path: &str) -> SourceRole {
     // Recognized source code extensions default to Implementation
     let ext = filename.rsplit('.').next().unwrap_or("");
     match ext {
-        "rs" | "py" | "ts" | "tsx" | "js" | "jsx" | "go" | "java" | "kt" | "c" | "h"
-        | "cpp" | "cc" | "hpp" | "rb" | "php" | "swift" | "m" | "mm" => {
+        "rs" | "py" | "ts" | "tsx" | "js" | "jsx" | "go" | "java" | "kt" | "c" | "h" | "cpp"
+        | "cc" | "hpp" | "rb" | "php" | "swift" | "m" | "mm" => {
             return SourceRole::Implementation;
         }
         _ => {}
@@ -283,9 +307,7 @@ pub fn infer_source_role(path: &str) -> SourceRole {
 /// Returns the raw content URL. Caller must ensure owner, repo,
 /// ref, and path are known (this function does not return `Option`).
 pub fn derive_github_raw_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> String {
-    format!(
-        "https://raw.githubusercontent.com/{owner}/{repo}/{ref_name}/{path}"
-    )
+    format!("https://raw.githubusercontent.com/{owner}/{repo}/{ref_name}/{path}")
 }
 
 /// Derive a GitLab raw URL from GitLab metadata.
@@ -295,16 +317,12 @@ pub fn derive_gitlab_raw_url(owner: &str, repo: &str, ref_name: &str, path: &str
     } else {
         format!("{owner}/{repo}")
     };
-    format!(
-        "https://gitlab.com/{namespace}/-/raw/{ref_name}/{path}"
-    )
+    format!("https://gitlab.com/{namespace}/-/raw/{ref_name}/{path}")
 }
 
 /// Derive a stable browser URL from raw URL metadata (GitHub blob URL).
 pub fn derive_browser_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> String {
-    format!(
-        "https://github.com/{owner}/{repo}/blob/{ref_name}/{path}"
-    )
+    format!("https://github.com/{owner}/{repo}/blob/{ref_name}/{path}")
 }
 
 /// Build `CodeEvidence` from existing `CodeMetadata`.
@@ -408,10 +426,7 @@ mod tests {
 
     #[test]
     fn infer_source_role_test_by_dir() {
-        assert_eq!(
-            infer_source_role("tests/integration.rs"),
-            SourceRole::Test
-        );
+        assert_eq!(infer_source_role("tests/integration.rs"), SourceRole::Test);
     }
 
     #[test]
@@ -421,18 +436,12 @@ mod tests {
 
     #[test]
     fn infer_source_role_example() {
-        assert_eq!(
-            infer_source_role("examples/server.rs"),
-            SourceRole::Example
-        );
+        assert_eq!(infer_source_role("examples/server.rs"), SourceRole::Example);
     }
 
     #[test]
     fn infer_source_role_configuration() {
-        assert_eq!(
-            infer_source_role("Cargo.toml"),
-            SourceRole::Configuration
-        );
+        assert_eq!(infer_source_role("Cargo.toml"), SourceRole::Configuration);
     }
 
     #[test]
@@ -455,10 +464,7 @@ mod tests {
 
     #[test]
     fn infer_source_role_benchmark() {
-        assert_eq!(
-            infer_source_role("benches/foo.rs"),
-            SourceRole::Benchmark
-        );
+        assert_eq!(infer_source_role("benches/foo.rs"), SourceRole::Benchmark);
     }
 
     #[test]
@@ -497,10 +503,7 @@ mod tests {
     #[test]
     fn derive_browser_url_basic() {
         let url = derive_browser_url("tokio-rs", "axum", "main", "src/lib.rs");
-        assert_eq!(
-            url,
-            "https://github.com/tokio-rs/axum/blob/main/src/lib.rs"
-        );
+        assert_eq!(url, "https://github.com/tokio-rs/axum/blob/main/src/lib.rs");
     }
 
     // --- build_code_evidence tests ---
@@ -534,16 +537,12 @@ mod tests {
             Some("https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs")
         );
         assert!(evidence.browser_url.is_some());
-        assert!(
-            evidence
-                .evidence_reasons
-                .contains(&CodeEvidenceReason::RawUrlDerived)
-        );
-        assert!(
-            evidence
-                .evidence_reasons
-                .contains(&CodeEvidenceReason::LanguageMatch)
-        );
+        assert!(evidence
+            .evidence_reasons
+            .contains(&CodeEvidenceReason::RawUrlDerived));
+        assert!(evidence
+            .evidence_reasons
+            .contains(&CodeEvidenceReason::LanguageMatch));
     }
 
     #[test]
@@ -587,11 +586,9 @@ mod tests {
 
         let evidence = build_code_evidence(&code, None, Some("router")).unwrap();
         assert_eq!(evidence.matched_symbol.as_deref(), Some("router"));
-        assert!(
-            evidence
-                .evidence_reasons
-                .contains(&CodeEvidenceReason::ProviderTextMatch)
-        );
+        assert!(evidence
+            .evidence_reasons
+            .contains(&CodeEvidenceReason::ProviderTextMatch));
     }
 
     // --- Serialization roundtrip tests ---

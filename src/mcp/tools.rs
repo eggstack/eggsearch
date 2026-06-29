@@ -549,8 +549,9 @@ pub async fn run_repo_search(
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
-    let (effective_providers, degraded, mut profile_warnings) =
-        state.config.resolve_profile_providers(req.profile, &req.providers);
+    let (effective_providers, degraded, mut profile_warnings) = state
+        .config
+        .resolve_profile_providers(req.profile, &req.providers);
 
     // Explicit providers must be strict: unknown or disabled providers
     // are a hard error, not a degraded fallback.
@@ -567,16 +568,23 @@ pub async fn run_repo_search(
     // actual adapter availability. Config-level resolution may list
     // providers that appear enabled but were not actually built
     // (e.g. missing API key env var).
+    let mut skipped_provider_ids = Vec::new();
+    let mut profile_degraded = false;
     let effective_providers = if let Some(profile) = req.profile {
         if req.providers.is_empty() {
-            let built_ids: std::collections::BTreeSet<&str> =
-                state.adapter.provider_ids().iter().map(|s| s.as_str()).collect();
+            let built_ids: std::collections::BTreeSet<&str> = state
+                .adapter
+                .provider_ids()
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
             let mut filtered = Vec::new();
             let mut any_skipped = false;
             for id in &effective_providers {
                 if built_ids.contains(id.as_str()) {
                     filtered.push(id.clone());
                 } else {
+                    skipped_provider_ids.push(id.clone());
                     profile_warnings.push(crate::core::result::SearchWarning::new(
                         "_system",
                         format!("profile_provider_not_built: {id} is in {profile:?} profile but no engine was constructed"),
@@ -587,6 +595,7 @@ pub async fn run_repo_search(
 
             if filtered.is_empty() && !effective_providers.is_empty() {
                 // All profile providers were not built — degrade to defaults
+                profile_degraded = true;
                 profile_warnings.push(crate::core::result::SearchWarning::new(
                     "_system",
                     format!("profile_degraded: {profile:?} profile fell back to default providers"),
@@ -645,19 +654,32 @@ pub async fn run_repo_search(
     // Merge profile warnings into response warnings
     response.warnings.extend(profile_warnings);
 
-    // Populate telemetry provider selection
-    let has_partial_warning = response.warnings.iter().any(|w| w.message.starts_with("profile_partial:"));
-    let is_degraded = degraded || has_partial_warning;
+    // Populate telemetry provider selection.
+    // `degraded` from config means explicit providers failed.
+    // `profile_degraded` means all profile providers were unavailable
+    // and execution fell back to default providers.
+    // `has_partial_warning` means some providers were skipped but others remain.
+    let is_degraded = degraded || profile_degraded;
+    let has_partial_warning = response
+        .warnings
+        .iter()
+        .any(|w| w.message.starts_with("profile_partial:"));
     response.telemetry.provider_selection = crate::core::repo_search::ProviderSelectionTelemetry {
         profile_requested: req.profile,
         profile_applied: req.profile,
         degraded: is_degraded,
-        reason: if degraded {
+        partial: has_partial_warning && !is_degraded,
+        skipped_providers: skipped_provider_ids,
+        reason: if is_degraded {
             Some("profile fell back to default providers".to_string())
         } else if has_partial_warning {
-            Some(format!("{:?} profile skipped some unavailable providers", req.profile.unwrap_or_default()))
+            Some(format!(
+                "{:?} profile skipped unavailable providers",
+                req.profile.unwrap_or_default()
+            ))
         } else {
-            req.profile.map(|p| format!("using {} profile providers", p.as_str()))
+            req.profile
+                .map(|p| format!("using {} profile providers", p.as_str()))
         },
     };
 
@@ -909,9 +931,9 @@ pub async fn run_repo_fetch(
     use crate::core::code_metadata::CodeHost;
     use crate::core::fetch::ExtractMode;
     use crate::core::repo_fetch::{
-        apply_line_range, github_browser_url, github_permalink_url,
-        github_raw_permalink_url, github_raw_url, gitlab_browser_url, gitlab_raw_url, FetchTrust,
-        RepoFetchResponse, RepoFetchRequest, RepoLocator,
+        apply_line_range, github_browser_url, github_permalink_url, github_raw_permalink_url,
+        github_raw_url, gitlab_browser_url, gitlab_raw_url, FetchTrust, RepoFetchRequest,
+        RepoFetchResponse, RepoLocator,
     };
 
     // --- workspace:// local file fetch (bypasses fetch policy) ---
@@ -1022,8 +1044,7 @@ pub async fn run_repo_fetch(
         workspace_root: None,
     };
 
-    let language = crate::core::code_metadata::language_from_extension(path)
-        .map(String::from);
+    let language = crate::core::code_metadata::language_from_extension(path).map(String::from);
     let source_role = infer_source_role(path);
 
     let max_chars = req.max_chars;
@@ -1032,21 +1053,23 @@ pub async fn run_repo_fetch(
     })?;
 
     // Use per-request timeout override when provided.
-    let client: Arc<FetchClient> = if let Some(ms) = req.timeout_ms {
-        Arc::new(
+    let client: Arc<FetchClient> =
+        if let Some(ms) = req.timeout_ms {
+            Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
+                ToolError::Internal(format!("failed to create timeout override: {e}"))
+            })?)
+        } else {
             base_client
-                .with_timeout_ms(ms)
-                .map_err(|e| ToolError::Internal(format!("failed to create timeout override: {e}")))?,
-        )
-    } else {
-        base_client
-    };
+        };
 
-    // Fetch the raw URL (or test override).
+    // When commit_sha is provided, prefer the stable raw permalink URL
+    // for exact evidence retrieval. Test override always wins.
+    let cloned_permalink = raw_permalink_url.clone();
+    let canonical_fetch_url = cloned_permalink.as_deref().unwrap_or(&raw_url);
     let fetch_url = args
         .test_fetch_url
         .as_deref()
-        .unwrap_or(&raw_url);
+        .unwrap_or(canonical_fetch_url);
 
     let response = client
         .fetch(fetch_url, max_chars, ExtractMode::Text, false)
@@ -1112,6 +1135,7 @@ pub async fn run_repo_fetch(
                 raw_url: raw_url.clone(),
                 permalink_url,
                 raw_permalink_url,
+                fetched_url: Some(fetch_url.to_string()),
                 ref_resolved: Some(rn.to_string()),
                 line_start: req.line_start,
                 line_end: req.line_end,
@@ -1164,7 +1188,9 @@ async fn run_workspace_fetch(
     let relative_path = args.repo.clone();
 
     if relative_path.trim().is_empty() {
-        return Err(ToolError::Validation("repo (file path) must not be empty".to_string()));
+        return Err(ToolError::Validation(
+            "repo (file path) must not be empty".to_string(),
+        ));
     }
     if relative_path.contains("..") {
         return Err(ToolError::Validation(
@@ -1251,8 +1277,8 @@ async fn run_workspace_fetch(
         warnings.push("workspace_fetch_truncated_by_max_chars".to_string());
     }
 
-    let language = crate::core::code_metadata::language_from_extension(&relative_path)
-        .map(String::from);
+    let language =
+        crate::core::code_metadata::language_from_extension(&relative_path).map(String::from);
     let source_role = infer_source_role(&relative_path);
 
     let pseudo_url = format!("workspace://{root_name}/{relative_path}");
@@ -1324,6 +1350,7 @@ async fn run_workspace_fetch(
         raw_url: pseudo_url.clone(),
         permalink_url: None,
         raw_permalink_url: None,
+        fetched_url: None,
         ref_resolved: None,
         line_start: args.line_start,
         line_end: args.line_end,

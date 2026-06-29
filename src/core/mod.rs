@@ -42,12 +42,9 @@ pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
     WebFetchResponse,
 };
-pub use local::{
-    LocalConfig, LocalFileEntry, LocalMatch, LocalSearchRequest, LocalSearchResult,
-};
+pub use local::{LocalConfig, LocalFileEntry, LocalMatch, LocalSearchRequest, LocalSearchResult};
 pub use package::{
-    ecosystem_to_osv, user_ecosystem_to_osv, PackageCoordinate, PackageEcosystem,
-    PackageResolution,
+    ecosystem_to_osv, user_ecosystem_to_osv, PackageCoordinate, PackageEcosystem, PackageResolution,
 };
 pub use provider::{
     built_in_provider_descriptor, ProviderCapabilities, ProviderDescriptor, ProviderKind,
@@ -59,7 +56,7 @@ pub use query::{
 };
 pub use repo_fetch::{
     apply_line_range, github_browser_url, github_permalink_url, github_raw_url, gitlab_browser_url,
-    gitlab_raw_url, RepoFetchResponse, RepoFetchRequest, RepoFetchedLine, RepoLocator,
+    gitlab_raw_url, RepoFetchRequest, RepoFetchResponse, RepoFetchedLine, RepoLocator,
 };
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{

@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 /// Profiles are advisory: they influence which providers are selected
 /// when no explicit `providers` list is given, and they emit telemetry
 /// so callers can observe degradation.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchProfile {
     /// Default behavior: use configured default providers.
@@ -72,8 +74,13 @@ pub struct ProviderSelectionTelemetry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_applied: Option<SearchProfile>,
     /// Whether the profile fell back to generic providers.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub degraded: bool,
+    /// Whether some providers were skipped but others remain active.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+    /// Provider IDs that were skipped (e.g. not built or disabled).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_providers: Vec<String>,
     /// Human-readable reason for the provider selection or degradation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -600,13 +607,22 @@ mod tests {
 
     #[test]
     fn search_profile_parse_aliases() {
-        assert_eq!(SearchProfile::parse("generic"), Some(SearchProfile::Generic));
-        assert_eq!(SearchProfile::parse("default"), Some(SearchProfile::Generic));
+        assert_eq!(
+            SearchProfile::parse("generic"),
+            Some(SearchProfile::Generic)
+        );
+        assert_eq!(
+            SearchProfile::parse("default"),
+            Some(SearchProfile::Generic)
+        );
         assert_eq!(SearchProfile::parse("web"), Some(SearchProfile::Generic));
         assert_eq!(SearchProfile::parse("coding"), Some(SearchProfile::Coding));
         assert_eq!(SearchProfile::parse("code"), Some(SearchProfile::Coding));
         assert_eq!(SearchProfile::parse("repo"), Some(SearchProfile::Coding));
-        assert_eq!(SearchProfile::parse("repository"), Some(SearchProfile::Coding));
+        assert_eq!(
+            SearchProfile::parse("repository"),
+            Some(SearchProfile::Coding)
+        );
         assert_eq!(SearchProfile::parse("project"), Some(SearchProfile::Coding));
         assert_eq!(
             SearchProfile::parse("security"),
@@ -836,6 +852,8 @@ mod tests {
                 profile_requested: Some(SearchProfile::Coding),
                 profile_applied: Some(SearchProfile::Coding),
                 degraded: false,
+                partial: false,
+                skipped_providers: vec![],
                 reason: Some("using coding profile providers".to_string()),
             },
             subqueries: vec![RepoSearchSubqueryTelemetry {

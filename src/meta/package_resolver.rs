@@ -39,12 +39,10 @@ async fn resolve_crates_io(
     let api_url = PackageEcosystem::CratesIo.registry_api_url(&coord.name);
 
     match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_crates_io_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("crates.io JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_crates_io_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("crates.io JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("crates.io API returned status {}", resp.status()),
@@ -54,7 +52,10 @@ async fn resolve_crates_io(
 }
 
 /// Parse a crates.io API response into PackageResolution.
-fn parse_crates_io_response(coord: &PackageCoordinate, val: &serde_json::Value) -> PackageResolution {
+fn parse_crates_io_response(
+    coord: &PackageCoordinate,
+    val: &serde_json::Value,
+) -> PackageResolution {
     let krate = val.get("crate").unwrap_or(val);
 
     let latest_version = krate
@@ -63,19 +64,13 @@ fn parse_crates_io_response(coord: &PackageCoordinate, val: &serde_json::Value) 
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let resolved_version = coord
-        .version
-        .clone()
-        .or_else(|| latest_version.clone());
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
 
-    let registry_url = Some(format!(
-        "https://crates.io/crates/{}",
-        coord.name
-    ));
+    let registry_url = Some(format!("https://crates.io/crates/{}", coord.name));
 
-    let docs_url = resolved_version.as_ref().map(|v| {
-        format!("https://docs.rs/{}/{}", coord.name, v)
-    });
+    let docs_url = resolved_version
+        .as_ref()
+        .map(|v| format!("https://docs.rs/{}/{}", coord.name, v));
 
     let source_repository_url = krate
         .get("repository")
@@ -127,12 +122,10 @@ async fn resolve_pypi(
     let api_url = PackageEcosystem::Pypi.registry_api_url(&coord.name);
 
     match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_pypi_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("PyPI JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_pypi_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("PyPI JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("PyPI API returned status {}", resp.status()),
@@ -150,15 +143,9 @@ fn parse_pypi_response(coord: &PackageCoordinate, val: &serde_json::Value) -> Pa
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let resolved_version = coord
-        .version
-        .clone()
-        .or_else(|| latest_version.clone());
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
 
-    let registry_url = Some(format!(
-        "https://pypi.org/project/{}/",
-        coord.name
-    ));
+    let registry_url = Some(format!("https://pypi.org/project/{}/", coord.name));
 
     // PyPI project_urls is a map of label -> url
     let project_urls = info.get("project_urls").and_then(|v| v.as_object());
@@ -183,17 +170,16 @@ fn parse_pypi_response(coord: &PackageCoordinate, val: &serde_json::Value) -> Pa
             })
         });
 
-    let source_repository_url = project_urls
-        .and_then(|urls| {
-            urls.get("Source")
-                .or_else(|| urls.get("source"))
-                .or_else(|| urls.get("Repository"))
-                .or_else(|| urls.get("repository"))
-                .or_else(|| urls.get("GitHub"))
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-        });
+    let source_repository_url = project_urls.and_then(|urls| {
+        urls.get("Source")
+            .or_else(|| urls.get("source"))
+            .or_else(|| urls.get("Repository"))
+            .or_else(|| urls.get("repository"))
+            .or_else(|| urls.get("GitHub"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    });
 
     let homepage_url = info
         .get("home_page")
@@ -252,16 +238,13 @@ async fn resolve_npm(
     let api_url = PackageEcosystem::Npm.registry_api_url(&coord.name);
 
     match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_npm_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("npm JSON parse error: {e}")),
-            }
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_npm_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("npm JSON parse error: {e}")),
+        },
+        Ok(resp) => {
+            fallback_with_warning(coord, &format!("npm API returned status {}", resp.status()))
         }
-        Ok(resp) => fallback_with_warning(
-            coord,
-            &format!("npm API returned status {}", resp.status()),
-        ),
         Err(e) => fallback_with_warning(coord, &format!("npm API error: {e}")),
     }
 }
@@ -274,15 +257,9 @@ fn parse_npm_response(coord: &PackageCoordinate, val: &serde_json::Value) -> Pac
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let resolved_version = coord
-        .version
-        .clone()
-        .or_else(|| latest_version.clone());
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
 
-    let registry_url = Some(format!(
-        "https://www.npmjs.com/package/{}",
-        coord.name
-    ));
+    let registry_url = Some(format!("https://www.npmjs.com/package/{}", coord.name));
 
     let repository_url = val
         .get("repository")
@@ -297,10 +274,7 @@ fn parse_npm_response(coord: &PackageCoordinate, val: &serde_json::Value) -> Pac
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    let docs_url = Some(format!(
-        "https://www.npmjs.com/package/{}",
-        coord.name
-    ));
+    let docs_url = Some(format!("https://www.npmjs.com/package/{}", coord.name));
 
     let license = val
         .get("license")
@@ -350,17 +324,12 @@ fn normalize_npm_repo_url(url: &str) -> String {
 fn fallback_with_warning(coord: &PackageCoordinate, warning: &str) -> PackageResolution {
     let registry_url = Some(coord.ecosystem.registry_base_url().to_string());
     let docs_url = match coord.ecosystem {
-        PackageEcosystem::CratesIo => coord.version.as_ref().map(|v| {
-            format!("https://docs.rs/{}/{}", coord.name, v)
-        }),
-        PackageEcosystem::Pypi => Some(format!(
-            "https://pypi.org/project/{}/",
-            coord.name
-        )),
-        PackageEcosystem::Npm => Some(format!(
-            "https://www.npmjs.com/package/{}",
-            coord.name
-        )),
+        PackageEcosystem::CratesIo => coord
+            .version
+            .as_ref()
+            .map(|v| format!("https://docs.rs/{}/{}", coord.name, v)),
+        PackageEcosystem::Pypi => Some(format!("https://pypi.org/project/{}/", coord.name)),
+        PackageEcosystem::Npm => Some(format!("https://www.npmjs.com/package/{}", coord.name)),
     };
 
     PackageResolution {

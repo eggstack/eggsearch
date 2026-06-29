@@ -217,13 +217,7 @@ mod tests {
             matched_symbol: Some("foo".to_string()),
             text_fragment: None,
         });
-        assert_eq!(
-            cs.clone().merge(ResultMetadata::None),
-            cs
-        );
-        assert_eq!(
-            ResultMetadata::None.merge(cs.clone()),
-            cs
-        );
+        assert_eq!(cs.clone().merge(ResultMetadata::None), cs);
+        assert_eq!(ResultMetadata::None.merge(cs.clone()), cs);
     }
 }

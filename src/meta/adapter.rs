@@ -660,9 +660,7 @@ impl MetadataSearchAdapter {
         max_results_cap: usize,
         local_backend: Option<&crate::meta::local_backend::LocalWorkspaceBackend>,
     ) -> crate::core::repo_search::RepoSearchResponse {
-        use crate::core::repo_search::{
-            RepoSearchSubqueryTelemetry, RepoSearchTelemetry,
-        };
+        use crate::core::repo_search::{RepoSearchSubqueryTelemetry, RepoSearchTelemetry};
 
         // Resolve package metadata if package fields are present
         let package_resolution = if let Some(coord) = req.package_coordinate() {
@@ -782,7 +780,10 @@ impl MetadataSearchAdapter {
         // Package resolution warnings
         if let Some(pr) = &package_resolution {
             for w in &pr.warnings {
-                warnings.push(SearchWarning::new("_system", format!("package_resolution: {w}")));
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    format!("package_resolution: {w}"),
+                ));
             }
             if !pr.verified {
                 warnings.push(SearchWarning::new(
@@ -822,7 +823,9 @@ impl MetadataSearchAdapter {
         }
 
         // Repo/path/language hint with no native provider
-        if (plan.hints.owner.is_some() || plan.hints.path.is_some() || plan.hints.language.is_some())
+        if (plan.hints.owner.is_some()
+            || plan.hints.path.is_some()
+            || plan.hints.language.is_some())
             && !engines.iter().any(|e| {
                 let n = e.name();
                 n == "github_code"
@@ -966,7 +969,9 @@ impl MetadataSearchAdapter {
                         Err(e) => {
                             warnings.push(SearchWarning::new(
                                 "_system",
-                                format!("package_security_lookup_failed: Advisory lookup failed: {e}"),
+                                format!(
+                                    "package_security_lookup_failed: Advisory lookup failed: {e}"
+                                ),
                             ));
                             None
                         }
@@ -1663,11 +1668,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             release,
             vulnerability,
             code_evidence: code.as_ref().and_then(|c| {
-                crate::core::code_evidence::build_code_evidence(
-                    c,
-                    Some(&a.url),
-                    code_search_symbol,
-                )
+                crate::core::code_evidence::build_code_evidence(c, Some(&a.url), code_search_symbol)
             }),
         },
     })

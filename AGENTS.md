@@ -404,7 +404,7 @@ queries when the caller wants categorized results rather than a flat
 - `RepoSearchTelemetry`: `provider_selection`, `subqueries`,
   `deadline_exceeded`, `subqueries_interrupted`, `subqueries_skipped`
 - `ProviderSelectionTelemetry`: `profile_requested`, `profile_applied`,
-  `degraded`, `reason`
+  `degraded`, `partial`, `skipped_providers`, `reason`
 - `RepoSearchSubqueryTelemetry`: `label`, `query`, `intended_group`,
   `required_capability`, `providers_attempted`
 
@@ -429,6 +429,10 @@ requested, applied, and whether degradation occurred. Explicit
 - `provider_selection.profile_requested`: profile from the request
 - `provider_selection.profile_applied`: profile actually used
 - `provider_selection.degraded`: whether fallback to defaults occurred
+- `provider_selection.partial`: whether some profile providers were
+  skipped but at least one remains (not degraded)
+- `provider_selection.skipped_providers`: provider IDs that were
+  skipped (not built or not available)
 - `provider_selection.reason`: human-readable explanation
 - `subqueries`: list of generated subqueries with labels, queries,
   intended groups, required capabilities, and providers attempted
@@ -568,6 +572,8 @@ fake `host: "github"` fields.
   (whether output was capped), `browser_url`, `raw_url`,
   `permalink_url` (stable human-viewable URL at commit SHA),
   `raw_permalink_url` (raw content URL at commit SHA),
+  `fetched_url` (the actual URL used for the network fetch;
+  differs from `raw_url` when `commit_sha` is provided),
   `trust_markers` (sanitization metadata)
 
 **Supported hosts:**

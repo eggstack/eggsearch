@@ -140,9 +140,7 @@ pub struct LocalSearchResult {
 
 /// Supported language detection from file extensions.
 pub fn language_from_extension(path: &str) -> Option<&'static str> {
-    let ext = std::path::Path::new(path)
-        .extension()?
-        .to_str()?;
+    let ext = std::path::Path::new(path).extension()?.to_str()?;
     match ext {
         "rs" => Some("rust"),
         "py" => Some("python"),
@@ -188,20 +186,27 @@ pub fn language_from_extension(path: &str) -> Option<&'static str> {
 
 /// Directories to skip during local workspace walking.
 pub const SKIP_DIRS: &[&str] = &[
-    ".git", "target", "node_modules", ".venv", "venv", "dist",
-    "build", ".mypy_cache", ".pytest_cache", "__pycache__", ".next",
-    ".turbo", "coverage",
+    ".git",
+    "target",
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
+    "__pycache__",
+    ".next",
+    ".turbo",
+    "coverage",
 ];
 
 /// Binary file extensions to skip.
 pub const BINARY_EXTENSIONS: &[&str] = &[
-    "exe", "dll", "so", "dylib", "o", "a", "lib",
-    "png", "jpg", "jpeg", "gif", "bmp", "ico", "svg", "webp",
-    "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac",
-    "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
-    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-    "bin", "dat", "db", "sqlite", "woff", "woff2", "ttf", "otf",
-    "wasm",
+    "exe", "dll", "so", "dylib", "o", "a", "lib", "png", "jpg", "jpeg", "gif", "bmp", "ico", "svg",
+    "webp", "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "zip", "tar", "gz", "bz2", "xz",
+    "7z", "rar", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "bin", "dat", "db", "sqlite",
+    "woff", "woff2", "ttf", "otf", "wasm",
 ];
 
 /// Whether a file extension indicates a binary file.

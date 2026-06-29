@@ -740,9 +740,8 @@ impl AppConfig {
 
         for id in &candidate_list {
             let id_str = id.as_str();
-            let is_known = known.contains(id_str)
-                || configured.contains(id_str)
-                || api_known.contains(id_str);
+            let is_known =
+                known.contains(id_str) || configured.contains(id_str) || api_known.contains(id_str);
             let is_enabled = enabled.contains(id_str) || api_known.contains(id_str);
 
             if !is_known {
@@ -1456,8 +1455,7 @@ mod tests {
     #[test]
     fn resolve_profile_providers_no_profile_no_explicit() {
         let c = AppConfig::default();
-        let (providers, degraded, warnings) =
-            c.resolve_profile_providers(None, &[]);
+        let (providers, degraded, warnings) = c.resolve_profile_providers(None, &[]);
         assert!(!providers.is_empty());
         assert!(!degraded);
         assert!(warnings.is_empty());
@@ -1467,11 +1465,10 @@ mod tests {
     #[test]
     fn resolve_profile_providers_explicit_overrides_profile() {
         let c = AppConfig::default();
-        let (providers, degraded, warnings) =
-            c.resolve_profile_providers(
-                Some(crate::core::repo_search::SearchProfile::Coding),
-                &["duckduckgo".to_string()],
-            );
+        let (providers, degraded, warnings) = c.resolve_profile_providers(
+            Some(crate::core::repo_search::SearchProfile::Coding),
+            &["duckduckgo".to_string()],
+        );
         assert_eq!(providers, vec!["duckduckgo".to_string()]);
         assert!(!degraded);
         assert!(warnings.is_empty());
@@ -1481,10 +1478,7 @@ mod tests {
     fn resolve_profile_providers_coding_profile_uses_builtins() {
         let c = AppConfig::default();
         let (providers, _degraded, warnings) =
-            c.resolve_profile_providers(
-                Some(crate::core::repo_search::SearchProfile::Coding),
-                &[],
-            );
+            c.resolve_profile_providers(Some(crate::core::repo_search::SearchProfile::Coding), &[]);
         // Coding profile built-in defaults include github_code, github_issues, etc.
         // Most won't be enabled in default config, so some will be skipped with warnings
         assert!(!providers.is_empty());
@@ -1510,10 +1504,7 @@ mod tests {
             },
         );
         let (providers, degraded, _warnings) =
-            c.resolve_profile_providers(
-                Some(crate::core::repo_search::SearchProfile::Coding),
-                &[],
-            );
+            c.resolve_profile_providers(Some(crate::core::repo_search::SearchProfile::Coding), &[]);
         assert_eq!(providers, vec!["duckduckgo", "startpage"]);
         assert!(!degraded);
     }
@@ -1521,11 +1512,8 @@ mod tests {
     #[test]
     fn resolve_profile_providers_generic_falls_back_to_defaults() {
         let c = AppConfig::default();
-        let (providers, degraded, _warnings) =
-            c.resolve_profile_providers(
-                Some(crate::core::repo_search::SearchProfile::Generic),
-                &[],
-            );
+        let (providers, degraded, _warnings) = c
+            .resolve_profile_providers(Some(crate::core::repo_search::SearchProfile::Generic), &[]);
         assert_eq!(providers, c.search.default_providers);
         assert!(!degraded);
     }
@@ -1536,7 +1524,9 @@ mod tests {
         let (_providers, degraded, warnings) =
             c.resolve_profile_providers(None, &["ghost_provider".to_string()]);
         assert!(degraded);
-        assert!(warnings.iter().any(|w| w.message.contains("provider_resolution_failed")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.message.contains("provider_resolution_failed")));
     }
 
     #[test]
@@ -1578,7 +1568,13 @@ providers = ["osv", "duckduckgo"]
     fn search_profile_parse_case_insensitive() {
         use crate::core::repo_search::SearchProfile;
         assert_eq!(SearchProfile::parse("Coding"), Some(SearchProfile::Coding));
-        assert_eq!(SearchProfile::parse("SECURITY"), Some(SearchProfile::Security));
-        assert_eq!(SearchProfile::parse("Research"), Some(SearchProfile::Research));
+        assert_eq!(
+            SearchProfile::parse("SECURITY"),
+            Some(SearchProfile::Security)
+        );
+        assert_eq!(
+            SearchProfile::parse("Research"),
+            Some(SearchProfile::Research)
+        );
     }
 }

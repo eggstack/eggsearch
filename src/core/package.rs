@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// Each variant maps to a specific registry API and URL scheme.
 /// Aliases are accepted during parsing (e.g. "cargo" -> `CratesIo`).
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PackageEcosystem {
     /// crates.io / docs.rs for Rust crates.
@@ -80,7 +82,9 @@ impl std::fmt::Display for PackageEcosystem {
 }
 
 /// Typed package coordinates for package-aware repo searches.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 pub struct PackageCoordinate {
     /// The package ecosystem (crates.io, pypi, npm).
     pub ecosystem: PackageEcosystem,
@@ -200,18 +204,12 @@ mod tests {
 
     #[test]
     fn parse_ecosystem_npm_aliases() {
-        assert_eq!(
-            PackageEcosystem::parse("npm"),
-            Some(PackageEcosystem::Npm)
-        );
+        assert_eq!(PackageEcosystem::parse("npm"), Some(PackageEcosystem::Npm));
         assert_eq!(
             PackageEcosystem::parse("javascript"),
             Some(PackageEcosystem::Npm)
         );
-        assert_eq!(
-            PackageEcosystem::parse("node"),
-            Some(PackageEcosystem::Npm)
-        );
+        assert_eq!(PackageEcosystem::parse("node"), Some(PackageEcosystem::Npm));
     }
 
     #[test]
@@ -231,10 +229,7 @@ mod tests {
             PackageEcosystem::parse("PyPI"),
             Some(PackageEcosystem::Pypi)
         );
-        assert_eq!(
-            PackageEcosystem::parse("NPM"),
-            Some(PackageEcosystem::Npm)
-        );
+        assert_eq!(PackageEcosystem::parse("NPM"), Some(PackageEcosystem::Npm));
     }
 
     #[test]
@@ -264,7 +259,10 @@ mod tests {
             PackageEcosystem::CratesIo.registry_base_url(),
             "https://crates.io"
         );
-        assert_eq!(PackageEcosystem::Pypi.registry_base_url(), "https://pypi.org");
+        assert_eq!(
+            PackageEcosystem::Pypi.registry_base_url(),
+            "https://pypi.org"
+        );
         assert_eq!(
             PackageEcosystem::Npm.registry_base_url(),
             "https://www.npmjs.com"

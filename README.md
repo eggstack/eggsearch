@@ -851,6 +851,10 @@ selection degraded to generic providers.
 - `provider_selection.profile_requested`: profile from the request
 - `provider_selection.profile_applied`: profile actually used
 - `provider_selection.degraded`: whether fallback to defaults occurred
+- `provider_selection.partial`: whether some profile providers were
+  skipped but at least one remains (not degraded)
+- `provider_selection.skipped_providers`: provider IDs that were
+  skipped (not built or not available)
 - `provider_selection.reason`: human-readable explanation
 - `subqueries`: list of generated subqueries with labels, queries,
   intended groups, and providers attempted
@@ -975,11 +979,14 @@ Optional:
 The response includes bounded extracted text, structured document
 blocks, and `external_untrusted` trust label. URL fields:
 - `browser_url`: human-viewable URL for the file.
-- `raw_url`: raw content URL that was fetched.
+- `raw_url`: raw content URL for the requested ref.
 - `permalink_url`: stable human-viewable URL pinned to commit SHA
   (when `commit_sha` is provided).
 - `raw_permalink_url`: raw content URL pinned to commit SHA
   (when `commit_sha` is provided).
+- `fetched_url`: the actual URL used for the network fetch (differs
+  from `raw_url` when `commit_sha` is provided, or when
+  `test_fetch_url` overrides the URL).
 
 When a line range exceeds the file, it is silently clamped to the
 available lines. Context lines are applied after clamping. Workspace
