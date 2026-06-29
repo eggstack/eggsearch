@@ -683,11 +683,13 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"gitlab_issues"));
     assert!(ids.contains(&"gitlab_releases"));
     assert!(ids.contains(&"gitea_code"));
+    assert!(ids.contains(&"gitea_issues"));
+    assert!(ids.contains(&"gitea_releases"));
     assert!(ids.contains(&"osv"));
     assert!(ids.contains(&"local_workspace"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 16);
+    assert_eq!(ids.len(), 18);
 }
 
 #[cfg(feature = "mock")]

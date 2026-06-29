@@ -915,7 +915,7 @@ ecosystems: `crates.io`, `pypi`, `npm`.
 | Profile    | Behavior                                                       |
 |------------|----------------------------------------------------------------|
 | `generic`  | Default: use configured default providers                      |
-| `coding`   | Prefer native code/issues/releases providers (GitHub, GitLab), then API/web |
+| `coding`   | Prefer native code/issues/releases providers (GitHub, GitLab, Gitea), then API/web |
 | `security` | Prefer OSV and security-capable providers                      |
 | `research` | Prefer diverse source discovery and broad web/API providers    |
 
@@ -1554,12 +1554,13 @@ conflate:
   `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`,
   `brave_api`, `github_code`, `github_issues`, `github_releases`,
   `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`,
-  `osv`, and `local_workspace`. Unknown IDs are rejected.
+  `gitea_issues`, `gitea_releases`, `osv`, and `local_workspace`. Unknown IDs are rejected.
 - **Enabled providers** are the subset of known IDs that the
   operator has switched on in `[search].providers` (and, for
   `searxng`, `brave_api`, `github_code`, `github_issues`,
   `github_releases`, `gitlab_code`, `gitlab_issues`,
-  `gitlab_releases`, and `gitea_code`, that also have their required
+  `gitlab_releases`, `gitea_code`, `gitea_issues`,
+  `gitea_releases`, that also have their required
   configuration present).
 - **Default providers** are the subset of enabled IDs listed in
   `[search].default_providers`; they are queried automatically when
@@ -1680,6 +1681,8 @@ base_url      = "https://git.example.com"
 | `gitlab_issues` | -           | yes          | -              | yes              |
 | `gitlab_releases` | -         | -            | yes            | yes              |
 | `gitea_code`    | yes         | -            | -              | yes              |
+| `gitea_issues`  | -           | yes          | -              | yes              |
+| `gitea_releases` | -          | -            | yes            | yes              |
 
 **Self-hosted instances:**
 
@@ -1695,7 +1698,7 @@ When a host-native provider is not configured or unavailable, the
 planner falls through to generic web providers with the planned
 query. This is identical to the GitHub fallback — generic search
 always works as a safety net. The `coding` profile includes
-GitLab providers alongside GitHub when available.
+GitLab and Gitea providers alongside GitHub when available.
 
 ### Default provider set
 
@@ -1703,7 +1706,7 @@ The default provider set covers `duckduckgo`, `startpage`, and
 `yahoo` (the engines listed in `[search].default_providers`). `brave`
 is enabled but not in the default set; it can be selected per-request
 via the `providers` argument. Mojeek, SearXNG, Brave Search API,
-GitHub Code Search, GitHub Issues Search, GitHub Releases, GitLab Code/Issues/Releases, Gitea Code, and OSV are all disabled
+GitHub Code Search, GitHub Issues Search, GitHub Releases, GitLab Code/Issues/Releases, Gitea Code/Issues/Releases, and OSV are all disabled
 by default; operators enable them in `[search].providers` and (for SearXNG,
 Brave API, and GitHub providers) configure the corresponding
 `[search].searxng]` or `[search].api.<id>]` sections.

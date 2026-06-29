@@ -865,10 +865,16 @@ impl MetadataSearchAdapter {
         // Capability-aware warnings
         let has_native_code = engines.iter().any(|e| {
             let n = e.name();
-            n == "github_code"
+            n == "github_code" || n == "gitea_code"
         });
-        let has_native_issues = engines.iter().any(|e| e.name() == "github_issues");
-        let has_native_releases = engines.iter().any(|e| e.name() == "github_releases");
+        let has_native_issues = engines.iter().any(|e| {
+            let n = e.name();
+            n == "github_issues" || n == "gitea_issues"
+        });
+        let has_native_releases = engines.iter().any(|e| {
+            let n = e.name();
+            n == "github_releases" || n == "gitea_releases"
+        });
         let has_any_native = has_native_code || has_native_issues || has_native_releases;
 
         if plan.hints.has_any() && !has_any_native {
@@ -892,7 +898,7 @@ impl MetadataSearchAdapter {
             || plan.hints.language.is_some())
             && !engines.iter().any(|e| {
                 let n = e.name();
-                n == "github_code"
+                n == "github_code" || n == "gitea_code"
             })
         {
             warnings.push(SearchWarning::new(
@@ -1464,9 +1470,10 @@ pub fn build_default_engines(
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
 ) -> anyhow::Result<(EngineList, Vec<String>)> {
     use crate::meta::engines::{
-        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GiteaCodeEngine, GithubCodeEngine,
-        GithubIssuesEngine, GithubReleasesEngine, GitlabCodeEngine, GitlabIssuesEngine,
-        GitlabReleasesEngine, MojeekEngine, OsvEngine, SearxngEngine, StartpageEngine, YahooEngine,
+        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GiteaCodeEngine, GiteaIssuesEngine,
+        GiteaReleasesEngine, GithubCodeEngine, GithubIssuesEngine, GithubReleasesEngine,
+        GitlabCodeEngine, GitlabIssuesEngine, GitlabReleasesEngine, MojeekEngine, OsvEngine,
+        SearxngEngine, StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -1575,6 +1582,30 @@ pub fn build_default_engines(
                     continue;
                 }
                 engines.push(Arc::new(GiteaCodeEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: base,
+                }));
+            }
+            "gitea_issues" => {
+                let base = api_cfg.base_url.clone().unwrap_or_default();
+                if base.is_empty() {
+                    skipped.push(id.clone());
+                    continue;
+                }
+                engines.push(Arc::new(GiteaIssuesEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: base,
+                }));
+            }
+            "gitea_releases" => {
+                let base = api_cfg.base_url.clone().unwrap_or_default();
+                if base.is_empty() {
+                    skipped.push(id.clone());
+                    continue;
+                }
+                engines.push(Arc::new(GiteaReleasesEngine {
                     client: client.clone(),
                     api_key,
                     base_url: base,

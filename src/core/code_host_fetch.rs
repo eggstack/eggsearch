@@ -261,6 +261,38 @@ mod tests {
     }
 
     #[test]
+    fn gitlab_deeply_nested_namespace_blob_resolves() {
+        let target = resolve_code_host_fetch_target(
+            "https://gitlab.com/org/subgroup/nested/project/-/blob/develop/src/main.rs",
+        )
+        .unwrap();
+        assert_eq!(
+            target.raw_url.as_deref(),
+            Some("https://gitlab.com/org/subgroup/nested/project/-/raw/develop/src/main.rs")
+        );
+        let code = target.code.unwrap();
+        assert_eq!(code.owner.as_deref(), Some("org/subgroup/nested"));
+        assert_eq!(code.repo.as_deref(), Some("project"));
+        assert_eq!(code.ref_name.as_deref(), Some("develop"));
+        assert_eq!(code.path.as_deref(), Some("src/main.rs"));
+    }
+
+    #[test]
+    fn gitlab_nested_namespace_tag_ref_resolves() {
+        let target = resolve_code_host_fetch_target(
+            "https://gitlab.com/group/subgroup/project/-/blob/v1.2.3/Cargo.toml",
+        )
+        .unwrap();
+        assert_eq!(
+            target.raw_url.as_deref(),
+            Some("https://gitlab.com/group/subgroup/project/-/raw/v1.2.3/Cargo.toml")
+        );
+        let code = target.code.unwrap();
+        assert_eq!(code.ref_name.as_deref(), Some("v1.2.3"));
+        assert_eq!(code.path.as_deref(), Some("Cargo.toml"));
+    }
+
+    #[test]
     fn gitlab_blob_with_line_anchor_resolves() {
         let target = resolve_code_host_fetch_target(
             "https://gitlab.com/group/project/-/blob/main/src/lib.rs#L10-L25",

@@ -255,6 +255,8 @@ const FUTURE_REPO_PROVIDER_IDS: &[&str] = &[
     "gitlab_releases",
     "codeberg_code",
     "gitea_code",
+    "gitea_issues",
+    "gitea_releases",
 ];
 
 /// Build per-provider query overrides for future repo-host providers.
@@ -303,6 +305,10 @@ fn build_provider_specific_query(
         }
         "codeberg_code" if intent == SearchIntent::Code => Some(build_codeberg_code_query(hints)),
         "gitea_code" if intent == SearchIntent::Code => Some(build_gitea_code_query(hints)),
+        "gitea_issues" if intent == SearchIntent::Issues => Some(build_gitea_issues_query(hints)),
+        "gitea_releases" if intent == SearchIntent::Releases => {
+            Some(build_gitea_releases_query(hints))
+        }
         _ => None,
     }
 }
@@ -514,6 +520,48 @@ fn build_gitea_code_query(hints: &RepoQueryHints) -> String {
     if !residual.is_empty() {
         parts.push(residual.to_string());
     }
+    if parts.is_empty() {
+        return String::new();
+    }
+    dedupe_terms(parts).join(" ")
+}
+
+fn build_gitea_issues_query(hints: &RepoQueryHints) -> String {
+    let mut parts = Vec::new();
+    let residual = hints.residual_query.trim();
+    if !residual.is_empty() {
+        parts.push(residual.to_string());
+    }
+    if let Some(sym) = &hints.symbol {
+        parts.push(sym.clone());
+    }
+    if let (Some(owner), Some(repo)) = (&hints.owner, &hints.repo) {
+        parts.push(format!("{owner}/{repo}"));
+    } else if let Some(org) = &hints.org {
+        parts.push(org.clone());
+    }
+    parts.push("issues".to_string());
+    if parts.is_empty() {
+        return String::new();
+    }
+    dedupe_terms(parts).join(" ")
+}
+
+fn build_gitea_releases_query(hints: &RepoQueryHints) -> String {
+    let mut parts = Vec::new();
+    let residual = hints.residual_query.trim();
+    if !residual.is_empty() {
+        parts.push(residual.to_string());
+    }
+    if let (Some(owner), Some(repo)) = (&hints.owner, &hints.repo) {
+        parts.push(format!("repo:{owner}/{repo}"));
+    } else if let Some(org) = &hints.org {
+        parts.push(org.clone());
+    }
+    if let Some(file) = &hints.file {
+        parts.push(file.clone());
+    }
+    parts.push("releases".to_string());
     if parts.is_empty() {
         return String::new();
     }

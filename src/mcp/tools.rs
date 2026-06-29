@@ -853,8 +853,12 @@ pub fn run_provider_status(
 
     let local_enabled = state.local_backend.is_some();
 
+    // Build code_hosts summary from provider descriptors
+    let code_hosts = build_code_hosts_summary(&descriptors);
+
     let payload = serde_json::json!({
         "providers": descriptors,
+        "code_hosts": code_hosts,
         "mode": mode_str(state.config.search.mode),
         "server_capabilities": {
             "generic_search": true,
@@ -897,6 +901,69 @@ pub fn run_provider_status(
         },
     });
     Ok(payload)
+}
+
+/// Build a `code_hosts` summary grouping providers by host kind.
+///
+/// Each host kind gets an entry with aggregated capability flags.
+fn build_code_hosts_summary(descriptors: &[ProviderDescriptor]) -> Vec<serde_json::Value> {
+    struct HostSummary {
+        kind: String,
+        id: String,
+        enabled: bool,
+        configured: bool,
+        code_search: bool,
+        issue_search: bool,
+        release_search: bool,
+    }
+
+    let mut hosts: std::collections::BTreeMap<String, HostSummary> =
+        std::collections::BTreeMap::new();
+
+    for desc in descriptors {
+        let kind = match desc.id.as_str() {
+            "github_code" | "github_issues" | "github_releases" => "github",
+            "gitlab_code" | "gitlab_issues" | "gitlab_releases" => "gitlab",
+            "gitea_code" | "gitea_issues" | "gitea_releases" => "gitea",
+            _ => continue,
+        };
+
+        let host_kind = kind.to_string();
+        let entry = hosts
+            .entry(host_kind.clone())
+            .or_insert_with(|| HostSummary {
+                kind: host_kind,
+                id: kind.to_string(),
+                enabled: false,
+                configured: false,
+                code_search: false,
+                issue_search: false,
+                release_search: false,
+            });
+
+        entry.enabled = entry.enabled || desc.enabled;
+        entry.configured = entry.configured || desc.configured;
+        entry.code_search = entry.code_search || desc.capabilities.supports_code_search;
+        entry.issue_search = entry.issue_search || desc.capabilities.supports_issue_search;
+        entry.release_search = entry.release_search || desc.capabilities.supports_release_search;
+    }
+
+    hosts
+        .into_values()
+        .map(|h| {
+            serde_json::json!({
+                "kind": h.kind,
+                "id": h.id,
+                "enabled": h.enabled,
+                "configured": h.configured,
+                "capabilities": {
+                    "code_search": h.code_search,
+                    "issue_search": h.issue_search,
+                    "release_search": h.release_search,
+                },
+            })
+        })
+        .collect()
 }
 
 /// Run the `web_fetch` tool.

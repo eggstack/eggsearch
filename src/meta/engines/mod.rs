@@ -9,6 +9,8 @@ pub mod brave_api;
 pub mod duckduckgo;
 pub mod error;
 pub mod gitea_code;
+pub mod gitea_issues;
+pub mod gitea_releases;
 pub mod github_code;
 pub mod github_issues;
 pub mod github_releases;
@@ -143,6 +145,18 @@ pub struct GitlabReleasesEngine {
 }
 
 pub struct GiteaCodeEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: String,
+}
+
+pub struct GiteaIssuesEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: String,
+}
+
+pub struct GiteaReleasesEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: String,
@@ -444,6 +458,56 @@ impl SearchEngine for GiteaCodeEngine {
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             gitea_code::search(
+                &self.client,
+                &self.api_key,
+                Some(self.base_url.as_str()),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GiteaIssuesEngine {
+    fn name(&self) -> &'static str {
+        "gitea_issues"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            gitea_issues::search(
+                &self.client,
+                &self.api_key,
+                Some(self.base_url.as_str()),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for GiteaReleasesEngine {
+    fn name(&self) -> &'static str {
+        "gitea_releases"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            gitea_releases::search(
                 &self.client,
                 &self.api_key,
                 Some(self.base_url.as_str()),

@@ -613,6 +613,8 @@ impl AppConfig {
             "gitlab_issues",
             "gitlab_releases",
             "gitea_code",
+            "gitea_issues",
+            "gitea_releases",
             "osv",
         ]
         .into_iter()
@@ -785,6 +787,9 @@ impl AppConfig {
                 "gitlab_code".to_string(),
                 "gitlab_issues".to_string(),
                 "gitlab_releases".to_string(),
+                "gitea_code".to_string(),
+                "gitea_issues".to_string(),
+                "gitea_releases".to_string(),
                 "brave_api".to_string(),
                 "searxng".to_string(),
                 "duckduckgo".to_string(),
