@@ -1156,4 +1156,46 @@ mod tests {
         let score = LocalWorkspaceBackend::score_file(&file, "special", &["special"], None, None);
         assert_eq!(score, 0.0, "no match without content should be 0");
     }
+
+    #[test]
+    fn symbol_match_outranks_content_only_match() {
+        // File with symbol definition match (engine.rs has "Engine" in path)
+        let symbol_file = LocalFileEntry {
+            path: PathBuf::from("/test/engine.rs"),
+            relative_path: "engine.rs".to_string(),
+            root_index: 0,
+            size: 100,
+            language: Some("rust".to_string()),
+        };
+        let symbol_content = "pub struct Engine {\n    name: String,\n}";
+        let symbol_score = LocalWorkspaceBackend::score_file(
+            &symbol_file,
+            "engine",
+            &["engine"],
+            Some("Engine"),
+            Some(symbol_content),
+        );
+
+        // File with content-only match (docs.txt has no path match)
+        let content_file = LocalFileEntry {
+            path: PathBuf::from("/test/docs.txt"),
+            relative_path: "docs.txt".to_string(),
+            root_index: 0,
+            size: 100,
+            language: None,
+        };
+        let content_text = "This discusses the engine component in detail.";
+        let content_score = LocalWorkspaceBackend::score_file(
+            &content_file,
+            "engine",
+            &["engine"],
+            None,
+            Some(content_text),
+        );
+
+        assert!(
+            symbol_score > content_score,
+            "symbol match (score={symbol_score}) should outrank content-only match (score={content_score})"
+        );
+    }
 }
