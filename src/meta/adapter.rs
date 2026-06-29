@@ -748,6 +748,7 @@ impl MetadataSearchAdapter {
                     crate::meta::local_backend::LocalWorkspaceBackend::to_source_cards(
                         &local_result.matches,
                         &roots,
+                        self.sanitize_output,
                     );
                 if local_result.timed_out {
                     local_warnings.push(SearchWarning::new(
