@@ -21,16 +21,16 @@ for the default configuration.
 - Per-request timeout support with partial-result preservation
 - `web_search` MCP tool: live metasearch with intent/freshness retrieval hints and deterministic `SourceCard` metadata
 - `repo_search` MCP tool: structured repository evidence discovery with grouped result bundles, search profiles, subquery telemetry, and suggested fetches
-- `repo_search` now supports `mode: "exact_error"` for compiler/runtime error search with phrase-preserving subqueries, error-code extraction, and sensitive token redaction
+- `repo_search` now supports `mode: "exact_error"` for compiler/runtime error search with phrase-preserving subqueries, error-code extraction, and sensitive token redaction (configurable via `[search].exact_error`)
 - `security_search` MCP tool: security-oriented retrieval with normalized vulnerability metadata from OSV and grouped source cards
 - `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches
 - `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text, classified links with deterministic kind/rel/same-domain metadata, and optional PDF text extraction (feature-gated)
-- `batch_fetch` MCP tool: bounded batch fetch over explicit URLs or structured repo locators in a single call with per-item results and trust markers (not a crawler)
+- `batch_fetch` MCP tool: bounded batch fetch over explicit URLs or structured repo locators in a single call with per-item results, trust markers, and bounded concurrency with ordered waves (not a crawler)
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - **Result Quality and Uncertainty**: Deterministic per-result quality metadata (confidence, relevance, authority, freshness, evidence strength) with uncertainty reasons and group-level quality summaries
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 850+ fast tests (no network required)
+- 1700+ fast tests (no network required)
 - **Local Workspace Search**: Optional local source-file discovery within configured workspace roots. Disabled by default; when enabled, `repo_search` can return local files alongside remote results with clear trust boundaries.
 
 ## Stable baseline
@@ -42,7 +42,8 @@ default path. `repo_search` provides structured repository evidence
 discovery with grouped result bundles, search profiles for provider
 selection, and subquery telemetry for debugging. `repo_search` with
 `mode: "exact_error"` provides targeted retrieval for compiler errors,
-runtime exceptions, and opaque toolchain messages. `security_search` provides
+runtime exceptions, and opaque toolchain messages (configurable via
+`[search].exact_error`). `security_search` provides
 security-oriented retrieval with normalized vulnerability metadata and
 grouped source cards. `research_search` provides research-oriented
 multi-source evidence discovery with subquery transparency,
@@ -1248,8 +1249,8 @@ caller.
   cap 200000) and per-item output by `batch_max_chars_per_item`
   (default 12000).
 - Maximum items per request is `batch_max_items` (default 10,
-  cap 25). Concurrent fetches are bounded by `batch_concurrency`
-  (default 5).
+  cap 25). Items are fetched in bounded concurrent waves of
+  `batch_concurrency` (default 5) size, preserving input order.
 - A failure on one item does not abort the remaining items
   (`continue_on_error` semantics). Each item result includes its
   own `trust` label and `trust_markers`.

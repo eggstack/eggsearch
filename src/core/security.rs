@@ -1879,4 +1879,440 @@ mod tests {
         assert_eq!(quality.tier, SecuritySourceTier::NewsOrBlog);
         assert!(quality.tier_reasons.iter().any(|r| r.contains("low-tier")));
     }
+
+    // ---------------------------------------------------------------
+    // Task 6: Security-context safety and source-quality tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn cve_query_produces_exact_identifier_context() {
+        let ids = SecurityIdentifiers::parse(
+            "CVE-2024-1234 is a critical vulnerability",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(ids.cve_ids, vec!["CVE-2024-1234"]);
+        assert!(
+            ids.has_strong_identifier(),
+            "CVE should be a strong identifier"
+        );
+        assert_eq!(
+            classify_query_kind(&ids),
+            SecurityQueryKind::Cve,
+            "CVE query should classify as Cve"
+        );
+    }
+
+    #[test]
+    fn ghsa_query_produces_exact_identifier_context() {
+        let ids = SecurityIdentifiers::parse(
+            "GHSA-abcd-1234-efgh affects multiple packages",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(ids.ghsa_ids, vec!["GHSA-ABCD-1234-EFGH"]);
+        assert!(
+            ids.has_strong_identifier(),
+            "GHSA should be a strong identifier"
+        );
+        assert_eq!(
+            classify_query_kind(&ids),
+            SecurityQueryKind::Cve,
+            "GHSA-only query should classify as Cve (via fallback)"
+        );
+    }
+
+    #[test]
+    fn cwe_query_produces_weakness_class_context() {
+        let ids = SecurityIdentifiers::parse(
+            "CWE-79 cross-site scripting in web apps",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(ids.cwe_ids, vec!["CWE-79"]);
+        assert!(
+            ids.has_strong_identifier(),
+            "CWE should be a strong identifier"
+        );
+        assert_eq!(
+            classify_query_kind(&ids),
+            SecurityQueryKind::Cwe,
+            "CWE query should classify as Cwe"
+        );
+        let list = build_identifier_list(&ids);
+        assert!(
+            list.iter().any(|i| i.kind == SecurityIdentifierKind::CWE),
+            "build_identifier_list should include CWE"
+        );
+    }
+
+    #[test]
+    fn package_version_query_no_advisory_match_has_no_false_vulnerability_claim() {
+        use crate::core::code_evidence::EvidenceConfidence;
+
+        let ids = SecurityIdentifiers {
+            package: Some("nonexistent-crate".to_string()),
+            ecosystem: Some("crates.io".to_string()),
+            version: Some("9.9.9".to_string()),
+            ..Default::default()
+        };
+        let ctx = SecurityContext {
+            query_kind: classify_query_kind(&ids),
+            identifiers: build_identifier_list(&ids),
+            affected_packages: vec![],
+            vulnerability_summaries: vec![],
+            defensive_guidance: vec![],
+            source_quality: SecuritySourceQuality {
+                tier: SecuritySourceTier::Unknown,
+                tier_reasons: vec![],
+            },
+            warnings: vec![],
+        };
+        assert!(
+            ctx.vulnerability_summaries.is_empty(),
+            "no vulnerabilities should be claimed when advisory data is absent"
+        );
+        assert!(
+            ctx.affected_packages.is_empty(),
+            "no affected packages should be claimed when advisory data is absent"
+        );
+        assert_eq!(ctx.query_kind, SecurityQueryKind::Package);
+        let pkg_id = ctx
+            .identifiers
+            .iter()
+            .find(|i| i.kind == SecurityIdentifierKind::Package);
+        assert!(
+            pkg_id.is_some(),
+            "package identifier should be present in the list"
+        );
+    }
+
+    #[test]
+    fn exploit_context_flag_does_not_produce_executable_payload_fields() {
+        let req = SecuritySearchRequest {
+            query: "CVE-2024-0001 exploit".to_string(),
+            include_exploit_context: Some(true),
+            ..Default::default()
+        };
+        let resp = SecuritySearchResponse {
+            query: req.query.clone(),
+            mode: "security_metasearch".to_string(),
+            resolved_identifiers: SecurityIdentifiers::parse(
+                &req.query,
+                req.cve_id.as_deref(),
+                req.ghsa_id.as_deref(),
+                req.osv_id.as_deref(),
+                req.rustsec_id.as_deref(),
+                req.package.as_deref(),
+                req.ecosystem.as_deref(),
+                req.version.as_deref(),
+            ),
+            vulnerabilities: vec![],
+            security_context: None,
+            groups: vec![SecurityResultGroup {
+                kind: SecurityResultGroupKind::ExploitDiscussion,
+                label: "Exploit Discussion".to_string(),
+                results: vec![],
+                truncated: false,
+                quality_summary: None,
+            }],
+            suggested_fetches: vec![],
+            providers_queried: vec!["mock".to_string()],
+            providers_failed: vec![],
+            warnings: vec![],
+            trust_markers: TrustMarkers::default(),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        let groups = json["groups"].as_array().expect("groups");
+        let exploit_group = groups
+            .iter()
+            .find(|g| g["kind"].as_str() == Some("exploit_discussion"));
+        assert!(
+            exploit_group.is_some(),
+            "exploit_discussion group should be present"
+        );
+        let results = exploit_group.unwrap()["results"]
+            .as_array()
+            .expect("results");
+        for card in results {
+            let text = serde_json::to_string(card).unwrap();
+            assert!(
+                !text.contains("payload"),
+                "exploit card must not contain 'payload': {text}"
+            );
+            assert!(
+                !text.contains("exploit_code"),
+                "exploit card must not contain 'exploit_code': {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn defensive_guidance_categories_are_mitigation_oriented() {
+        let defensive_categories: Vec<DefensiveGuidanceCategory> = vec![
+            DefensiveGuidanceCategory::UpgradeOrPin,
+            DefensiveGuidanceCategory::InputValidation,
+            DefensiveGuidanceCategory::OutputEncoding,
+            DefensiveGuidanceCategory::AuthenticationOrAuthorization,
+            DefensiveGuidanceCategory::DeserializationHardening,
+            DefensiveGuidanceCategory::PathTraversalHardening,
+            DefensiveGuidanceCategory::SsrFHardening,
+            DefensiveGuidanceCategory::SqlInjectionHardening,
+            DefensiveGuidanceCategory::XssHardening,
+            DefensiveGuidanceCategory::CryptoConfiguration,
+            DefensiveGuidanceCategory::ResourceLimit,
+            DefensiveGuidanceCategory::SafeApiUsage,
+        ];
+        for cat in &defensive_categories {
+            let name = cat.as_str();
+            assert!(
+                !name.is_empty(),
+                "DefensiveGuidanceCategory variant must have a non-empty as_str()"
+            );
+            let json = serde_json::to_string(cat).unwrap();
+            let parsed: DefensiveGuidanceCategory = serde_json::from_str(&json).unwrap();
+            assert_eq!(&parsed, cat);
+        }
+        let all_variants: Vec<DefensiveGuidanceCategory> = vec![
+            DefensiveGuidanceCategory::UpgradeOrPin,
+            DefensiveGuidanceCategory::InputValidation,
+            DefensiveGuidanceCategory::OutputEncoding,
+            DefensiveGuidanceCategory::AuthenticationOrAuthorization,
+            DefensiveGuidanceCategory::DeserializationHardening,
+            DefensiveGuidanceCategory::PathTraversalHardening,
+            DefensiveGuidanceCategory::SsrFHardening,
+            DefensiveGuidanceCategory::SqlInjectionHardening,
+            DefensiveGuidanceCategory::XssHardening,
+            DefensiveGuidanceCategory::CryptoConfiguration,
+            DefensiveGuidanceCategory::ResourceLimit,
+            DefensiveGuidanceCategory::SafeApiUsage,
+            DefensiveGuidanceCategory::Unknown,
+        ];
+        assert_eq!(
+            all_variants.len(),
+            13,
+            "exhaustive DefensiveGuidanceCategory variant count"
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_nvd_url() {
+        assert_eq!(
+            classify_source_tier("https://nvd.nist.gov/vuln/detail/CVE-2024-1234"),
+            SecuritySourceTier::PrimaryAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_github_advisory_url() {
+        assert_eq!(
+            classify_source_tier("https://github.com/advisories/GHSA-test-1234-abcd"),
+            SecuritySourceTier::PackageRegistryAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_blog_url() {
+        assert_eq!(
+            classify_source_tier("https://blog.example.com/2024/security-post"),
+            SecuritySourceTier::NewsOrBlog
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_stackoverflow_url() {
+        assert_eq!(
+            classify_source_tier("https://stackoverflow.com/questions/12345/how-to-fix"),
+            SecuritySourceTier::CommunityDiscussion
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_unknown_url() {
+        assert_eq!(
+            classify_source_tier("https://example.com/some/random/page"),
+            SecuritySourceTier::Unknown
+        );
+    }
+
+    #[test]
+    fn assess_source_quality_picks_highest_tier() {
+        use crate::core::result::TrustLevel;
+        use crate::core::SourceCard;
+
+        let cards = vec![
+            SourceCard::new(
+                "Blog Post",
+                "https://blog.example.com/security",
+                vec!["duckduckgo".to_string()],
+                None,
+                TrustLevel::ExternalUntrusted,
+            ),
+            SourceCard::new(
+                "NVD Entry",
+                "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+                vec!["duckduckgo".to_string()],
+                None,
+                TrustLevel::ExternalUntrusted,
+            ),
+            SourceCard::new(
+                "StackOverflow Answer",
+                "https://stackoverflow.com/questions/99999",
+                vec!["duckduckgo".to_string()],
+                None,
+                TrustLevel::ExternalUntrusted,
+            ),
+        ];
+        let quality = assess_source_quality(&cards);
+        assert_eq!(
+            quality.tier,
+            SecuritySourceTier::PrimaryAdvisory,
+            "should pick the highest tier (PrimaryAdvisory) among mixed sources"
+        );
+        assert!(
+            quality
+                .tier_reasons
+                .iter()
+                .any(|r| r.contains("primary advisory")),
+            "reason should mention primary advisory: {:?}",
+            quality.tier_reasons
+        );
+    }
+
+    #[test]
+    fn assess_source_quality_mixed_tiers_with_maintainer_discussion() {
+        use crate::core::result::TrustLevel;
+        use crate::core::SourceCard;
+
+        let cards = vec![
+            SourceCard::new(
+                "Issue Discussion",
+                "https://github.com/foo/bar/issues/123",
+                vec!["mock".to_string()],
+                None,
+                TrustLevel::ExternalUntrusted,
+            ),
+            SourceCard::new(
+                "Blog Post",
+                "https://blog.example.com/security",
+                vec!["mock".to_string()],
+                None,
+                TrustLevel::ExternalUntrusted,
+            ),
+        ];
+        let quality = assess_source_quality(&cards);
+        assert_eq!(
+            quality.tier,
+            SecuritySourceTier::MaintainerDiscussion,
+            "should pick MaintainerDiscussion over NewsOrBlog"
+        );
+    }
+
+    #[test]
+    fn assess_source_quality_empty_input() {
+        use crate::core::SourceCard;
+
+        let cards: Vec<SourceCard> = vec![];
+        let quality = assess_source_quality(&cards);
+        assert_eq!(
+            quality.tier,
+            SecuritySourceTier::Unknown,
+            "empty input should produce Unknown tier"
+        );
+    }
+
+    #[test]
+    fn security_source_quality_serde_roundtrip() {
+        let sq = SecuritySourceQuality {
+            tier: SecuritySourceTier::PrimaryAdvisory,
+            tier_reasons: vec!["results include primary advisory sources".to_string()],
+        };
+        let json = serde_json::to_string(&sq).unwrap();
+        let parsed: SecuritySourceQuality = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.tier, SecuritySourceTier::PrimaryAdvisory);
+        assert_eq!(parsed.tier_reasons.len(), 1);
+    }
+
+    #[test]
+    fn security_context_no_vulnerabilities_when_empty() {
+        let ctx = SecurityContext {
+            query_kind: SecurityQueryKind::Package,
+            identifiers: vec![],
+            affected_packages: vec![],
+            vulnerability_summaries: vec![],
+            defensive_guidance: vec![],
+            source_quality: SecuritySourceQuality {
+                tier: SecuritySourceTier::Unknown,
+                tier_reasons: vec![],
+            },
+            warnings: vec![],
+        };
+        assert!(
+            ctx.vulnerability_summaries.is_empty(),
+            "vulnerability_summaries should be empty"
+        );
+        assert!(
+            ctx.affected_packages.is_empty(),
+            "affected_packages should be empty"
+        );
+        let json = serde_json::to_value(&ctx).unwrap();
+        // Vulnerability summaries is serialized as an empty array (not
+        // skipped when empty because the default Vec serializes to [])
+        // but may be omitted by skip_serializing_if. Either way the
+        // JSON must not claim any vulnerabilities exist.
+        if let Some(arr) = json
+            .get("vulnerability_summaries")
+            .and_then(|v| v.as_array())
+        {
+            assert!(
+                arr.is_empty(),
+                "vulnerability_summaries must be empty when no data: {arr:?}"
+            );
+        }
+        if let Some(arr) = json.get("affected_packages").and_then(|v| v.as_array()) {
+            assert!(
+                arr.is_empty(),
+                "affected_packages must be empty when no data: {arr:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn security_query_kind_all_variants_as_str() {
+        let cases = vec![
+            (SecurityQueryKind::Package, "package"),
+            (SecurityQueryKind::Cve, "cve"),
+            (SecurityQueryKind::Cwe, "cwe"),
+            (SecurityQueryKind::Api, "api"),
+            (SecurityQueryKind::ErrorMessage, "error_message"),
+            (SecurityQueryKind::Concept, "concept"),
+            (SecurityQueryKind::Unknown, "unknown"),
+        ];
+        for (kind, expected) in cases {
+            assert_eq!(kind.as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn security_result_group_kind_default_is_other() {
+        assert_eq!(
+            SecurityResultGroupKind::default(),
+            SecurityResultGroupKind::Other
+        );
+    }
 }

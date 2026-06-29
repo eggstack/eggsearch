@@ -62,7 +62,7 @@ pub struct ErrorQueryParts {
 }
 
 /// Configuration for exact-error mode behavior.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ExactErrorConfig {
     /// Whether exact-error mode is enabled.
     #[serde(default = "default_true")]

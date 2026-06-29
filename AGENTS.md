@@ -254,7 +254,9 @@ When a result has structured `code` metadata (from a code-host URL), `SourceMeta
 ### Result Quality and Uncertainty
 
 Each `SourceCard` includes an optional `quality: Option<ResultQuality>` field
-with deterministic heuristic metadata. **Quality fields are NOT truth
+with deterministic heuristic metadata. `compute_card_quality()` runs for
+every `SourceCard` after aggregation and grouping, so quality is fully
+populated (not just structurally present). **Quality fields are NOT truth
 judgments or factual correctness claims.** They help agents decide when
 to fetch more evidence, not as proof of accuracy.
 
@@ -274,7 +276,9 @@ with aggregate counts (`high_confidence_count`, `low_confidence_count`,
 
 `repo_search` telemetry includes an `uncertainty_summary: Option<SearchUncertaintySummary>`
 with aggregate provider failure counts, degraded selection flags, and
-low-confidence result counts.
+low-confidence result counts. `degraded_provider_selection` and
+`partial_provider_selection` reflect actual provider selection state
+from profile telemetry, not hardcoded defaults.
 
 **Agent guidance:**
 - Prefer `high` confidence code spans with raw permalinks
@@ -462,7 +466,12 @@ npm ERESOLVE, cargo errors, HTTP status codes), and target docs/issues/
 changelogs. Sensitive tokens (local paths, API keys, UUIDs, memory
 addresses) are redacted before provider dispatch. The response includes
 an `error_context` field with parsed error parts, redactions applied,
-and subquery metadata.
+and subquery metadata. Config values from `[search].exact_error` are
+used at runtime: `enabled` controls whether exact-error mode is
+available, `max_error_chars` controls the validation cap,
+`max_subqueries` bounds the number of subqueries,
+`redact_sensitive_tokens` controls redaction, and
+`prefer_official_docs` influences subquery targeting.
 
 **Suggested fetch URL priority (code evidence):** When a
 `SourceCard` has structured `code_evidence` metadata, suggested
@@ -515,7 +524,7 @@ requested, applied, and whether degradation occurred. Explicit
 - `subqueries_skipped`: subqueries never started due to deadline
 
 **Capability-aware warnings:**
-- `native_code_search_unavailable`: repo hints present but no GitHub provider
+- `native_code_search_unavailable`: repo hints present but no GitHub/GitLab/Gitea provider configured
 - `symbol_hint_no_native_provider`: symbol hint but no code search provider
 - `repo_hints_not_enforced_natively`: repo/path/language hints with no native filter support
 - `issue_search_no_native_provider`: issues requested but no issue provider
@@ -702,13 +711,19 @@ caller.
   `warnings`
 
 **Execution model:**
-- Bounded concurrency via semaphore (`batch_concurrency` config field)
-- Input order is preserved in the output
+- True bounded concurrency using ordered waves of `batch_concurrency`
+  size. Each wave spawns tasks via `tokio::task::JoinSet` for concurrent
+  execution. When `continue_on_error=false`, effective concurrency is
+  set to 1 (sequential abort-on-first-failure).
+- Input order is always preserved in the output.
+- Budget is tracked between waves: remaining total-char budget is
+  recomputed before each item in a wave is scheduled, preventing
+  races where concurrent items assume the same remaining budget.
 - `continue_on_error` semantics: a failure on one item does not
-  abort the remaining items
+  abort the remaining items (unless `continue_on_error=false`).
 - Per-item results include `trust = external_untrusted` for web/remote
-  URLs and `trust = local_trusted` for workspace locators
-- Each item result includes its own `trust_markers`
+  URLs and `trust = local_trusted` for workspace locators.
+- Each item result includes its own `trust_markers`.
 
 **Config fields** in `[fetch]`:
 - `batch_max_items` (default 10): maximum number of items per request
@@ -800,7 +815,9 @@ that identifier type is skipped to avoid duplicates.
 
 **Source quality tiering:**
 Security sources are classified into quality tiers to help agents
-assess advisory reliability:
+assess advisory reliability. Tiers are derived from URL classification
+via `classify_source_tier()` and aggregate across all result cards in
+the response:
 - `Tier1Authoritative`: Official CVE/NVD entries, vendor security advisories
 - `Tier2Vendor`: Vendor-published patches, release notes, package registry advisories
 - `Tier3Community`: Community discussion, blog posts, security researcher writeups
@@ -1000,8 +1017,10 @@ for complex architectural or technical questions where flat
 - Workflow dimensions are deterministic per workflow type — the set of
   source types and research domains requested is derived from the
   workflow without LLM inference
-- Coverage gaps are detected and reported as guidance, not errors —
+- Coverage gaps are workflow-aware and detected and reported as guidance, not errors —
   missing source types or domains appear in `workflow_context.gaps`
+- Diversity caps are enforced to prevent one domain, provider, or
+  source type from dominating the result set
 
 **Evidence quality tiers:** `OfficialPrimary`, `MaintainerPrimary`,
 `StandardsOrSpecification`, `VendorPrimary`, `PackageRegistry`,

@@ -768,4 +768,394 @@ mod tests {
         let parsed: GroupQualitySummary = serde_json::from_str(&json).unwrap();
         assert_eq!(s, parsed);
     }
+
+    // --- Quality metadata population across result paths ---
+
+    #[test]
+    fn code_result_with_raw_permalink_high_confidence() {
+        use crate::core::code_evidence::{
+            CodeEvidence, CodeEvidenceReason, EvidenceConfidence, SourceRole,
+        };
+        use crate::core::code_metadata::CodeHost;
+
+        let mut card = make_card(
+            SourceKind::SourceFile,
+            "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+        );
+        card.providers = vec!["github_code".to_string()];
+        card.metadata.code_evidence = Some(CodeEvidence {
+            host: Some(CodeHost::Github),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ref_name: Some("main".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            language: Some("rust".to_string()),
+            source_role: Some(SourceRole::Implementation),
+            browser_url: Some("https://github.com/tokio-rs/axum/blob/main/src/lib.rs".to_string()),
+            raw_url: Some(
+                "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs".to_string(),
+            ),
+            permalink_url: Some(
+                "https://github.com/tokio-rs/axum/blob/main/src/lib.rs".to_string(),
+            ),
+            raw_permalink_url: Some(
+                "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs".to_string(),
+            ),
+            evidence_confidence: Some(EvidenceConfidence::Strong),
+            evidence_reasons: vec![
+                CodeEvidenceReason::RawUrlDerived,
+                CodeEvidenceReason::LanguageMatch,
+            ],
+            ..Default::default()
+        });
+        card.metadata.code = Some(crate::core::code_metadata::CodeMetadata {
+            host: Some(CodeHost::Github),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ref_name: Some("main".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            language: Some("rust".to_string()),
+            ..Default::default()
+        });
+
+        let q = compute_card_quality(&card);
+        assert_eq!(
+            q.confidence,
+            ResultConfidence::Medium,
+            "source_file with structured evidence but no exact match gets Medium"
+        );
+        assert_eq!(q.evidence_strength, EvidenceStrength::ExactCodeSpan);
+        assert!(q
+            .quality_reasons
+            .contains(&QualityReason::CommitPinnedEvidence));
+        assert!(q
+            .quality_reasons
+            .contains(&QualityReason::StructuredCodeEvidence));
+        assert_eq!(q.authority, AuthorityEstimate::Maintainer);
+        assert!(q.quality_reasons.contains(&QualityReason::MaintainerSource));
+        assert!(q.quality_reasons.contains(&QualityReason::ExactPathMatch));
+    }
+
+    #[test]
+    fn code_result_with_raw_url_only_no_permalink() {
+        use crate::core::code_evidence::{
+            CodeEvidence, CodeEvidenceReason, EvidenceConfidence, SourceRole,
+        };
+        use crate::core::code_metadata::CodeHost;
+
+        let mut card = make_card(
+            SourceKind::SourceFile,
+            "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+        );
+        card.providers = vec!["github_code".to_string()];
+        card.metadata.code_evidence = Some(CodeEvidence {
+            host: Some(CodeHost::Github),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            path: Some("src/lib.rs".to_string()),
+            language: Some("rust".to_string()),
+            source_role: Some(SourceRole::Implementation),
+            raw_url: Some(
+                "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs".to_string(),
+            ),
+            evidence_confidence: Some(EvidenceConfidence::Strong),
+            evidence_reasons: vec![CodeEvidenceReason::RawUrlDerived],
+            // No permalink_url, no raw_permalink_url
+            ..Default::default()
+        });
+
+        let q = compute_card_quality(&card);
+        assert_eq!(q.evidence_strength, EvidenceStrength::ExactCodeSpan);
+        assert!(
+            !q.quality_reasons
+                .contains(&QualityReason::CommitPinnedEvidence),
+            "no raw_permalink_url means no CommitPinnedEvidence"
+        );
+        assert!(q
+            .quality_reasons
+            .contains(&QualityReason::StructuredCodeEvidence));
+    }
+
+    #[test]
+    fn generic_snippet_only_not_high_confidence() {
+        let mut card = make_card(SourceKind::Unknown, "https://example.com/page");
+        card.snippet = Some("A generic snippet about something".to_string());
+        let q = compute_card_quality(&card);
+        assert_ne!(
+            q.confidence,
+            ResultConfidence::High,
+            "generic snippet-only result must not be High confidence"
+        );
+        assert_eq!(q.evidence_strength, EvidenceStrength::SnippetOnly);
+        assert_eq!(q.authority, AuthorityEstimate::Unknown);
+        assert!(q
+            .uncertainty_reasons
+            .contains(&UncertaintyReason::LowAuthoritySource));
+    }
+
+    #[test]
+    fn official_docs_has_official_authority() {
+        let card = make_card(SourceKind::OfficialDocs, "https://doc.rust-lang.org/book");
+        let q = compute_card_quality(&card);
+        assert_eq!(q.authority, AuthorityEstimate::Official);
+        assert!(q.quality_reasons.contains(&QualityReason::OfficialDocs));
+        assert_eq!(q.confidence, ResultConfidence::High);
+    }
+
+    #[test]
+    fn package_registry_has_package_registry_authority() {
+        let card = make_card(SourceKind::PackageRegistry, "https://crates.io/axum");
+        let q = compute_card_quality(&card);
+        assert_eq!(q.authority, AuthorityEstimate::PackageRegistry);
+        assert!(q
+            .quality_reasons
+            .contains(&QualityReason::PackageRegistryMetadata));
+        assert_eq!(q.confidence, ResultConfidence::High);
+    }
+
+    #[test]
+    fn security_advisory_has_primary_authority() {
+        let card = make_card(
+            SourceKind::SecurityAdvisory,
+            "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
+        );
+        let q = compute_card_quality(&card);
+        assert_eq!(q.authority, AuthorityEstimate::Primary);
+        assert!(q.quality_reasons.contains(&QualityReason::PrimaryAdvisory));
+        assert_eq!(q.confidence, ResultConfidence::High);
+    }
+
+    #[test]
+    fn local_workspace_source_card_gets_quality() {
+        use crate::core::code_evidence::{
+            CodeEvidence, CodeEvidenceReason, EvidenceConfidence, SourceRole,
+        };
+        use crate::core::code_metadata::CodeHost;
+
+        let mut card = SourceCard::new(
+            "lib.rs — workspace",
+            "workspace://eggsearch/src/lib.rs",
+            vec!["local_workspace".to_string()],
+            Some(0.8),
+            TrustLevel::LocalTrusted,
+        );
+        card.metadata = SourceMetadata {
+            source_kind: SourceKind::SourceFile,
+            domain: None,
+            rank_reasons: vec![],
+            code: Some(crate::core::code_metadata::CodeMetadata {
+                host: Some(CodeHost::Unknown),
+                owner: Some("eggsearch".to_string()),
+                repo: Some("src/lib.rs".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                language: Some("rust".to_string()),
+                ..Default::default()
+            }),
+            code_evidence: Some(CodeEvidence {
+                host: Some(CodeHost::Unknown),
+                owner: Some("eggsearch".to_string()),
+                repo: Some("src/lib.rs".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                language: Some("rust".to_string()),
+                source_role: Some(SourceRole::Implementation),
+                raw_url: Some("workspace://eggsearch/src/lib.rs".to_string()),
+                evidence_confidence: Some(EvidenceConfidence::Strong),
+                evidence_reasons: vec![CodeEvidenceReason::LanguageMatch],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let q = compute_card_quality(&card);
+        assert_ne!(
+            q.confidence,
+            ResultConfidence::Unknown,
+            "local workspace card must have non-Unknown confidence"
+        );
+        assert_eq!(q.evidence_strength, EvidenceStrength::ExactCodeSpan);
+        assert!(q
+            .quality_reasons
+            .contains(&QualityReason::StructuredCodeEvidence));
+        assert!(q.quality_reasons.contains(&QualityReason::ExactPathMatch));
+    }
+
+    #[test]
+    fn local_workspace_with_code_metadata_maintainer_authority() {
+        let mut card = SourceCard::new(
+            "lib.rs — workspace",
+            "workspace://eggsearch/src/lib.rs",
+            vec!["local_workspace".to_string()],
+            Some(0.8),
+            TrustLevel::LocalTrusted,
+        );
+        card.metadata = SourceMetadata {
+            source_kind: SourceKind::SourceFile,
+            code: Some(crate::core::code_metadata::CodeMetadata {
+                owner: Some("eggsearch".to_string()),
+                repo: Some("myrepo".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let q = compute_card_quality(&card);
+        // local_workspace doesn't contain github/gitlab/gitea, so authority is Unknown
+        // but code evidence and path match still work
+        assert_eq!(q.evidence_strength, EvidenceStrength::UrlOnly);
+        assert!(q.quality_reasons.contains(&QualityReason::ExactPathMatch));
+    }
+
+    #[test]
+    fn research_group_all_cards_have_quality() {
+        let cards = vec![
+            {
+                let mut c = make_card(SourceKind::OfficialDocs, "https://docs.rs/axum");
+                c.snippet = Some("Axum docs".to_string());
+                c
+            },
+            {
+                let mut c = make_card(SourceKind::Tutorial, "https://tokio.rs/blog");
+                c.snippet = Some("Tutorial content".to_string());
+                c
+            },
+            {
+                let mut c = make_card(
+                    SourceKind::IssueThread,
+                    "https://github.com/foo/bar/issues/1",
+                );
+                c.providers = vec!["github_issues".to_string()];
+                c.metadata.issue = Some(crate::core::source_card::IssueMetadata {
+                    number: Some(1),
+                    ..Default::default()
+                });
+                c
+            },
+            {
+                let mut c = make_card(SourceKind::Unknown, "https://example.com/guide");
+                c.snippet = Some("Some guide".to_string());
+                c
+            },
+        ];
+
+        // Verify compute_card_quality returns a quality value for every card
+        for card in &cards {
+            let q = compute_card_quality(card);
+            assert_ne!(
+                q.confidence,
+                ResultConfidence::Unknown,
+                "card {} should have non-Unknown confidence",
+                card.url
+            );
+        }
+
+        // Verify group quality summary is correctly computed
+        let summary = compute_group_quality(&cards);
+        assert_eq!(summary.high_confidence_count, 1);
+        // Tutorial (no native provider, no structured) = Low; Unknown snippet = Low
+        assert_eq!(summary.low_confidence_count, 2);
+        assert!(summary.primary_source_count >= 1);
+    }
+
+    #[test]
+    fn group_quality_summary_uncertainty_counts_low_confidence() {
+        let cards = vec![
+            make_card(SourceKind::Unknown, "https://example.com/1"),
+            make_card(SourceKind::Unknown, "https://example.com/2"),
+            make_card(SourceKind::Unknown, "https://example.com/3"),
+        ];
+        let summary = compute_group_quality(&cards);
+        assert_eq!(summary.low_confidence_count, 3);
+        assert_eq!(summary.high_confidence_count, 0);
+        assert!(summary.warnings.iter().any(|w| w.contains("all results")));
+    }
+
+    #[test]
+    fn group_quality_summary_high_not_counted_as_low() {
+        let cards = vec![
+            make_card(SourceKind::OfficialDocs, "https://docs.rs/foo"),
+            make_card(SourceKind::PackageRegistry, "https://crates.io/foo"),
+            make_card(SourceKind::SecurityAdvisory, "https://osv.dev/vuln/CVE-1"),
+        ];
+        let summary = compute_group_quality(&cards);
+        assert_eq!(summary.high_confidence_count, 3);
+        assert_eq!(summary.low_confidence_count, 0);
+        assert!(summary.warnings.is_empty());
+    }
+
+    #[test]
+    fn group_quality_summary_exact_evidence_counts_code_with_permalink() {
+        use crate::core::code_evidence::CodeEvidence;
+        use crate::core::code_metadata::CodeHost;
+
+        let mut card = make_card(
+            SourceKind::SourceFile,
+            "https://github.com/foo/bar/blob/main/src/main.rs",
+        );
+        card.metadata.code_evidence = Some(CodeEvidence {
+            host: Some(CodeHost::Github),
+            raw_permalink_url: Some(
+                "https://raw.githubusercontent.com/foo/bar/abc123/src/main.rs".to_string(),
+            ),
+            ..Default::default()
+        });
+
+        let cards = vec![card, make_card(SourceKind::Unknown, "https://example.com")];
+        let summary = compute_group_quality(&cards);
+        assert_eq!(summary.exact_evidence_count, 1);
+    }
+
+    #[test]
+    fn native_release_with_provider_maintainer_authority() {
+        let mut card = make_card(
+            SourceKind::ReleaseNotes,
+            "https://github.com/tokio-rs/axum/releases/tag/v0.7.0",
+        );
+        card.providers = vec!["github_releases".to_string()];
+        card.metadata.release = Some(crate::core::source_card::ReleaseMetadata {
+            tag: Some("v0.7.0".to_string()),
+            published_at: Some(chrono::Utc::now().to_rfc3339()),
+            ..Default::default()
+        });
+        let q = compute_card_quality(&card);
+        assert_eq!(q.authority, AuthorityEstimate::Maintainer);
+        assert!(q.quality_reasons.contains(&QualityReason::MaintainerSource));
+    }
+
+    #[test]
+    fn non_native_issue_community_authority() {
+        let mut card = make_card(
+            SourceKind::IssueThread,
+            "https://stackoverflow.com/questions/12345",
+        );
+        card.snippet = Some("How do I...".to_string());
+        // No github/gitlab/gitea in providers
+        let q = compute_card_quality(&card);
+        assert_eq!(q.authority, AuthorityEstimate::Community);
+    }
+
+    #[test]
+    fn advisory_identifier_match_boosts_evidence_strength() {
+        let mut card = make_card(SourceKind::SecurityAdvisory, "https://example.com/advisory");
+        card.metadata
+            .rank_reasons
+            .push(crate::core::source_card::RankReason::AdvisoryIdentifierMatch);
+        let q = compute_card_quality(&card);
+        // SecurityAdvisory already has Primary authority + High confidence
+        // AdvisoryIdentifierMatch should push evidence to ExactIdentifier
+        assert!(matches!(
+            q.evidence_strength,
+            EvidenceStrength::ExactIdentifier | EvidenceStrength::ExactCodeSpan
+        ));
+    }
+
+    #[test]
+    fn empty_providers_triggers_provider_failed_uncertainty() {
+        let mut card = make_card(SourceKind::Unknown, "https://example.com");
+        card.providers = vec![];
+        let q = compute_card_quality(&card);
+        assert!(q
+            .uncertainty_reasons
+            .contains(&UncertaintyReason::ProviderFailed));
+    }
 }

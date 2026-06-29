@@ -253,6 +253,10 @@ pub struct RepoSearchRequest {
     /// token redaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<RepoSearchMode>,
+    /// Exact-error configuration propagated from server config.
+    /// Populated by the MCP layer; not set by callers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exact_error_config: Option<crate::core::error_query::ExactErrorConfig>,
 }
 
 impl RepoSearchRequest {
@@ -263,7 +267,15 @@ impl RepoSearchRequest {
         }
         // In exact-error mode, use the configured max_error_chars cap
         let effective_max = if self.mode == Some(RepoSearchMode::ExactError) {
-            max_query_chars.max(8000) // exact-error mode allows larger queries
+            let ee_config = self
+                .exact_error_config
+                .as_ref()
+                .cloned()
+                .unwrap_or_default();
+            if !ee_config.enabled {
+                return Err("exact-error mode is disabled in server configuration".to_string());
+            }
+            max_query_chars.max(ee_config.max_error_chars)
         } else {
             max_query_chars
         };

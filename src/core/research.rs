@@ -135,7 +135,9 @@ pub enum ResearchResultGroupKind {
 }
 
 /// Research workflow classification for structured research scaffolding.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ResearchWorkflow {
     /// Architecture decision research (patterns, tradeoffs, RFCs).
@@ -158,7 +160,9 @@ pub enum ResearchWorkflow {
 }
 
 /// Research depth controls source diversity and subquery breadth.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ResearchDepth {
     /// Quick scan: fewer subqueries, limited source diversity.

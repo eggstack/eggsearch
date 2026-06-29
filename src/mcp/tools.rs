@@ -596,6 +596,7 @@ pub async fn run_repo_search(
         include_migration_guides: args.include_migration_guides,
         include_local: args.include_local,
         mode,
+        exact_error_config: Some(state.config.search.exact_error.clone()),
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
@@ -773,26 +774,34 @@ pub async fn run_research_search(
                 _ => None,
             });
 
-    let workflow = args.workflow.as_deref().and_then(|w| match w.to_lowercase().as_str() {
-        "general" => Some(ResearchWorkflow::General),
-        "architecture_decision" | "architecture" => Some(ResearchWorkflow::ArchitectureDecision),
-        "api_evaluation" | "api" => Some(ResearchWorkflow::ApiEvaluation),
-        "library_comparison" | "comparison" => Some(ResearchWorkflow::LibraryComparison),
-        "migration_planning" | "migration" => Some(ResearchWorkflow::MigrationPlanning),
-        "security_review" | "security" => Some(ResearchWorkflow::SecurityReview),
-        "performance_investigation" | "performance" => {
-            Some(ResearchWorkflow::PerformanceInvestigation)
-        }
-        "ecosystem_survey" | "ecosystem" => Some(ResearchWorkflow::EcosystemSurvey),
-        _ => None,
-    });
+    let workflow = args
+        .workflow
+        .as_deref()
+        .and_then(|w| match w.to_lowercase().as_str() {
+            "general" => Some(ResearchWorkflow::General),
+            "architecture_decision" | "architecture" => {
+                Some(ResearchWorkflow::ArchitectureDecision)
+            }
+            "api_evaluation" | "api" => Some(ResearchWorkflow::ApiEvaluation),
+            "library_comparison" | "comparison" => Some(ResearchWorkflow::LibraryComparison),
+            "migration_planning" | "migration" => Some(ResearchWorkflow::MigrationPlanning),
+            "security_review" | "security" => Some(ResearchWorkflow::SecurityReview),
+            "performance_investigation" | "performance" => {
+                Some(ResearchWorkflow::PerformanceInvestigation)
+            }
+            "ecosystem_survey" | "ecosystem" => Some(ResearchWorkflow::EcosystemSurvey),
+            _ => None,
+        });
 
-    let depth = args.depth.as_deref().and_then(|d| match d.to_lowercase().as_str() {
-        "quick" => Some(ResearchDepth::Quick),
-        "standard" => Some(ResearchDepth::Standard),
-        "deep" => Some(ResearchDepth::Deep),
-        _ => None,
-    });
+    let depth = args
+        .depth
+        .as_deref()
+        .and_then(|d| match d.to_lowercase().as_str() {
+            "quick" => Some(ResearchDepth::Quick),
+            "standard" => Some(ResearchDepth::Standard),
+            "deep" => Some(ResearchDepth::Deep),
+            _ => None,
+        });
 
     let desired_source_types: Vec<ResearchSourceType> = args
         .desired_source_types
@@ -1434,71 +1443,211 @@ pub async fn run_batch_fetch(
     let concurrency = state.config.fetch.batch_concurrency;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
 
-    // Execute fetches with bounded concurrency, preserving input order
+    // Execute fetches in ordered bounded waves, preserving input order.
+    //
+    // When continue_on_error=true (default): each wave spawns up to
+    // `concurrency` tasks concurrently via JoinSet. Budget tracking
+    // and abort checks happen between waves.
+    //
+    // When continue_on_error=false: effective_concurrency is set to 1
+    // so items are fetched one at a time, preserving strict
+    // abort-on-first-failure semantics.
+    let effective_concurrency = if continue_on_error { concurrency } else { 1 };
     let mut results: Vec<BatchFetchResult> = Vec::with_capacity(effective_items.len());
     let mut total_chars: usize = 0;
     let mut budget_exhausted = false;
-    let mut failed_once = false;
+    let mut aborted = false;
 
-    for (i, item) in effective_items.iter().enumerate() {
-        // Check total budget
+    for wave_start in (0..effective_items.len()).step_by(effective_concurrency) {
+        // Pre-wave checks: skip remaining items if aborted or budget exhausted
+        if aborted || budget_exhausted {
+            for (i, item) in effective_items.iter().enumerate().skip(wave_start) {
+                let msg = if budget_exhausted {
+                    "total character budget exhausted".to_string()
+                } else {
+                    "batch aborted due to previous failure".to_string()
+                };
+                results.push(BatchFetchResult {
+                    index: i,
+                    item_type: match item {
+                        BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
+                        BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                    },
+                    label: item.label(),
+                    ok: false,
+                    response: None,
+                    error: Some(msg),
+                    chars_returned: 0,
+                    truncated: false,
+                });
+            }
+            break;
+        }
+
+        let wave_end = (wave_start + effective_concurrency).min(effective_items.len());
+        let remaining_budget = total_cap.saturating_sub(total_chars);
+
+        let mut join_set = tokio::task::JoinSet::new();
+        let mut wave_indices = Vec::new();
+
+        for (i, item) in effective_items
+            .iter()
+            .enumerate()
+            .take(wave_end)
+            .skip(wave_start)
+        {
+            if budget_exhausted {
+                results.push(BatchFetchResult {
+                    index: i,
+                    item_type: match item {
+                        BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
+                        BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                    },
+                    label: item.label(),
+                    ok: false,
+                    response: None,
+                    error: Some("total character budget exhausted".to_string()),
+                    chars_returned: 0,
+                    truncated: false,
+                });
+                continue;
+            }
+
+            let item_max_chars = per_item_cap.min(remaining_budget);
+            wave_indices.push(i);
+
+            let fetch_future = make_batch_fetch_future(
+                i,
+                item,
+                item_max_chars,
+                state.clone(),
+                client.clone(),
+                semaphore.clone(),
+                item.label(),
+                args.timeout_ms,
+                state.config.fetch.include_links_default,
+            );
+
+            join_set.spawn(fetch_future);
+        }
+
+        // Collect wave results in input order and accumulate budget
+        for idx in &wave_indices {
+            if let Some(result) = join_set.join_next().await {
+                match result {
+                    Ok(Ok(mut batch_result)) => {
+                        if batch_result.index != *idx {
+                            batch_result.index = *idx;
+                        }
+                        if !batch_result.ok {
+                            aborted = true;
+                        }
+                        total_chars += batch_result.chars_returned;
+                        results.push(batch_result);
+                    }
+                    Ok(Err(tool_err)) => {
+                        aborted = true;
+                        results.push(BatchFetchResult {
+                            index: *idx,
+                            item_type: BatchFetchItemType::Web,
+                            label: effective_items[*idx].label(),
+                            ok: false,
+                            response: None,
+                            error: Some(tool_err.to_string()),
+                            chars_returned: 0,
+                            truncated: false,
+                        });
+                    }
+                    Err(join_err) => {
+                        aborted = true;
+                        results.push(BatchFetchResult {
+                            index: *idx,
+                            item_type: BatchFetchItemType::Web,
+                            label: effective_items[*idx].label(),
+                            ok: false,
+                            response: None,
+                            error: Some(format!("task panicked: {join_err}")),
+                            chars_returned: 0,
+                            truncated: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Check budget after wave completes
         if total_chars >= total_cap {
             budget_exhausted = true;
-            results.push(BatchFetchResult {
-                index: i,
-                item_type: match item {
-                    BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
-                    BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
-                },
-                label: item.label(),
-                ok: false,
-                response: None,
-                error: Some("total character budget exhausted".to_string()),
-                chars_returned: 0,
-                truncated: false,
-            });
-            continue;
         }
+    }
 
-        if failed_once && !continue_on_error {
-            results.push(BatchFetchResult {
-                index: i,
-                item_type: match item {
-                    BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
-                    BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
-                },
-                label: item.label(),
-                ok: false,
-                response: None,
-                error: Some("batch aborted due to previous failure".to_string()),
-                chars_returned: 0,
-                truncated: false,
-            });
-            continue;
-        }
+    if budget_exhausted {
+        warnings.push(format!(
+            "batch_total_budget_exhausted: total character budget of {total_cap} was reached; remaining items skipped"
+        ));
+    }
 
-        // Acquire semaphore permit for bounded concurrency
-        let _permit = semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
+    let fetched = results.iter().filter(|r| r.ok).count();
+    let failed = results.iter().filter(|r| !r.ok).count();
+    let truncated = results.iter().any(|r| r.truncated);
 
-        let remaining_budget = total_cap.saturating_sub(total_chars);
-        let item_max_chars = per_item_cap.min(remaining_budget);
+    let response = BatchFetchResponse {
+        fetched,
+        failed,
+        truncated,
+        total_chars_returned: total_chars,
+        results,
+        warnings,
+    };
 
-        let result = match item {
-            BatchFetchItem::Web {
-                url,
-                extract_mode,
-                include_links,
-                max_chars,
-            } => {
-                let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
-                let em = effective_max.max(1);
-                let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
-                let il = include_links.unwrap_or(state.config.fetch.include_links_default);
-                let response = client.fetch(url, Some(em), mode, il).await;
+    let value = serde_json::to_value(&response)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+    Ok(value)
+}
+
+/// Build a boxed future that fetches a single batch item.
+///
+/// The future acquires a semaphore permit, executes the fetch, and
+/// returns a `BatchFetchResult`. Extracted so both concurrent-wave
+/// and sequential-mode paths can share the same fetch logic.
+#[allow(clippy::too_many_arguments)]
+fn make_batch_fetch_future(
+    i: usize,
+    item: &crate::core::batch_fetch::BatchFetchItem,
+    item_max_chars: usize,
+    state: Arc<ServerState>,
+    client: Arc<FetchClient>,
+    semaphore: Arc<tokio::sync::Semaphore>,
+    label: String,
+    timeout_ms: Option<u64>,
+    include_links_default: bool,
+) -> std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = Result<crate::core::batch_fetch::BatchFetchResult, ToolError>,
+            > + Send,
+    >,
+> {
+    use crate::core::batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResult};
+
+    match item {
+        BatchFetchItem::Web {
+            url,
+            extract_mode,
+            include_links,
+            max_chars,
+        } => {
+            let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
+            let em = effective_max.max(1);
+            let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
+            let il = include_links.unwrap_or(include_links_default);
+            let url = url.clone();
+            Box::pin(async move {
+                let _permit = semaphore
+                    .acquire_owned()
+                    .await
+                    .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
+                let response = client.fetch(&url, Some(em), mode, il).await;
                 match response {
                     Ok(resp) => {
                         let text_len = resp
@@ -1527,62 +1676,65 @@ pub async fn run_batch_fetch(
                             "document": resp.document,
                             "fetch_transform": resp.fetch_transform,
                         });
-                        BatchFetchResult {
+                        Ok(BatchFetchResult {
                             index: i,
                             item_type: BatchFetchItemType::Web,
-                            label: item.label(),
+                            label,
                             ok: true,
                             response: Some(payload),
                             error: None,
                             chars_returned: text_len,
                             truncated,
-                        }
+                        })
                     }
-                    Err(e) => {
-                        failed_once = true;
-                        BatchFetchResult {
-                            index: i,
-                            item_type: BatchFetchItemType::Web,
-                            label: item.label(),
-                            ok: false,
-                            response: None,
-                            error: Some(format!("{}: {}", e.error_code(), e)),
-                            chars_returned: 0,
-                            truncated: false,
-                        }
-                    }
+                    Err(e) => Ok(BatchFetchResult {
+                        index: i,
+                        item_type: BatchFetchItemType::Web,
+                        label,
+                        ok: false,
+                        response: None,
+                        error: Some(format!("{}: {}", e.error_code(), e)),
+                        chars_returned: 0,
+                        truncated: false,
+                    }),
                 }
-            }
-            BatchFetchItem::Repo {
-                host,
-                owner,
-                repo,
-                ref_name,
-                commit_sha,
-                path,
-                line_start,
-                line_end,
-                context_before,
-                context_after,
-                max_chars,
-            } => {
-                let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
-                let repo_args = RepoFetchArgs {
-                    host: host.clone(),
-                    owner: owner.clone(),
-                    repo: repo.clone(),
-                    ref_name: ref_name.clone(),
-                    commit_sha: commit_sha.clone(),
-                    path: path.clone(),
-                    line_start: *line_start,
-                    line_end: *line_end,
-                    context_before: *context_before,
-                    context_after: *context_after,
-                    max_chars: Some(effective_max),
-                    timeout_ms: args.timeout_ms,
-                    test_fetch_url: None,
-                };
-                match run_repo_fetch(state.clone(), repo_args).await {
+            })
+        }
+        BatchFetchItem::Repo {
+            host,
+            owner,
+            repo,
+            ref_name,
+            commit_sha,
+            path,
+            line_start,
+            line_end,
+            context_before,
+            context_after,
+            max_chars,
+        } => {
+            let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
+            let repo_args = RepoFetchArgs {
+                host: host.clone(),
+                owner: owner.clone(),
+                repo: repo.clone(),
+                ref_name: ref_name.clone(),
+                commit_sha: commit_sha.clone(),
+                path: path.clone(),
+                line_start: *line_start,
+                line_end: *line_end,
+                context_before: *context_before,
+                context_after: *context_after,
+                max_chars: Some(effective_max),
+                timeout_ms,
+                test_fetch_url: None,
+            };
+            Box::pin(async move {
+                let _permit = semaphore
+                    .acquire_owned()
+                    .await
+                    .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
+                match run_repo_fetch(state, repo_args).await {
                     Ok(payload) => {
                         let text_len = payload
                             .get("text")
@@ -1593,60 +1745,31 @@ pub async fn run_batch_fetch(
                             .get("truncated")
                             .and_then(|t| t.as_bool())
                             .unwrap_or(false);
-                        BatchFetchResult {
+                        Ok(BatchFetchResult {
                             index: i,
                             item_type: BatchFetchItemType::Repo,
-                            label: item.label(),
+                            label,
                             ok: true,
                             response: Some(payload),
                             error: None,
                             chars_returned: text_len,
                             truncated,
-                        }
+                        })
                     }
-                    Err(e) => {
-                        failed_once = true;
-                        BatchFetchResult {
-                            index: i,
-                            item_type: BatchFetchItemType::Repo,
-                            label: item.label(),
-                            ok: false,
-                            response: None,
-                            error: Some(e.to_string()),
-                            chars_returned: 0,
-                            truncated: false,
-                        }
-                    }
+                    Err(e) => Ok(BatchFetchResult {
+                        index: i,
+                        item_type: BatchFetchItemType::Repo,
+                        label,
+                        ok: false,
+                        response: None,
+                        error: Some(e.to_string()),
+                        chars_returned: 0,
+                        truncated: false,
+                    }),
                 }
-            }
-        };
-
-        total_chars += result.chars_returned;
-        results.push(result);
+            })
+        }
     }
-
-    if budget_exhausted {
-        warnings.push(format!(
-            "batch_total_budget_exhausted: total character budget of {total_cap} was reached; remaining items skipped"
-        ));
-    }
-
-    let fetched = results.iter().filter(|r| r.ok).count();
-    let failed = results.iter().filter(|r| !r.ok).count();
-    let truncated = results.iter().any(|r| r.truncated);
-
-    let response = BatchFetchResponse {
-        fetched,
-        failed,
-        truncated,
-        total_chars_returned: total_chars,
-        results,
-        warnings,
-    };
-
-    let value = serde_json::to_value(&response)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
-    Ok(value)
 }
 
 /// Handle `repo_fetch` for `workspace://` local files.

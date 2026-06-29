@@ -10859,3 +10859,296 @@ async fn batch_fetch_workspace_item_retains_local_trusted_and_marker_scan() {
         "should have local_content_marker_warning in item warnings: {item_warnings:?}"
     );
 }
+
+// =========================================================================
+// Task 6: Security-context safety and source-quality integration tests
+// =========================================================================
+
+#[cfg(feature = "mock")]
+mod security_context_safety {
+    use super::*;
+
+    #[cfg(feature = "mock")]
+    fn sec_state_with_engines(
+        cfg: AppConfig,
+        engines: Vec<MockEngine>,
+        timeout: Duration,
+    ) -> Arc<ServerState> {
+        let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
+        Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+    }
+
+    /// Verify that a CVE query produces an exact identifier context with
+    /// `query_kind = "cve"` and a CVE identifier in the resolved list.
+    #[tokio::test]
+    async fn cve_query_produces_exact_identifier_context() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "CVE-2024-1234 Advisory",
+                "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
+                "mock_a",
+            )
+            .with_snippet("A critical vulnerability")],
+        )];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-1234 vulnerability in openssl".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let resolved = v["resolved_identifiers"]
+            .as_object()
+            .expect("resolved_identifiers");
+        let cve_ids = resolved["cve_ids"].as_array().expect("cve_ids");
+        assert!(
+            cve_ids
+                .iter()
+                .any(|id| id.as_str() == Some("CVE-2024-1234")),
+            "should resolve CVE-2024-1234: {cve_ids:?}"
+        );
+
+        // query_kind should be "cve" (not "unknown" or "concept")
+        let security_ctx = v.get("security_context").and_then(|c| c.as_object());
+        if let Some(ctx) = security_ctx {
+            assert_eq!(
+                ctx["query_kind"].as_str(),
+                Some("cve"),
+                "query_kind should be cve: {ctx:?}"
+            );
+        }
+    }
+
+    /// Verify that a GHSA query produces an exact identifier context with
+    /// a GHSA identifier in the resolved list.
+    #[tokio::test]
+    async fn ghsa_query_produces_exact_identifier_context() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "GHSA Advisory",
+                "https://github.com/advisories/GHSA-abcd-1234-efgh",
+                "mock_a",
+            )
+            .with_snippet("GHSA advisory details")],
+        )];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("GHSA-abcd-1234-efgh affects serde_json".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let resolved = v["resolved_identifiers"]
+            .as_object()
+            .expect("resolved_identifiers");
+        let ghsa_ids = resolved["ghsa_ids"].as_array().expect("ghsa_ids");
+        assert!(
+            ghsa_ids
+                .iter()
+                .any(|id| id.as_str() == Some("GHSA-ABCD-1234-EFGH")),
+            "should resolve GHSA-ABCD-1234-EFGH: {ghsa_ids:?}"
+        );
+    }
+
+    /// Verify that a CWE query produces a weakness-class context with
+    /// a CWE identifier in the resolved list and query_kind = "cwe".
+    #[tokio::test]
+    async fn cwe_query_produces_weakness_class_context() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "CWE-79 XSS",
+                "https://cwe.mitre.org/data/definitions/79.html",
+                "mock_a",
+            )
+            .with_snippet("Cross-site scripting weakness")],
+        )];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CWE-79 cross-site scripting in web apps".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let resolved = v["resolved_identifiers"]
+            .as_object()
+            .expect("resolved_identifiers");
+        let cwe_ids = resolved["cwe_ids"].as_array().expect("cwe_ids");
+        assert!(
+            cwe_ids.iter().any(|id| id.as_str() == Some("CWE-79")),
+            "should resolve CWE-79: {cwe_ids:?}"
+        );
+
+        let security_ctx = v.get("security_context").and_then(|c| c.as_object());
+        if let Some(ctx) = security_ctx {
+            assert_eq!(
+                ctx["query_kind"].as_str(),
+                Some("cwe"),
+                "query_kind should be cwe: {ctx:?}"
+            );
+        }
+    }
+
+    /// When a package query returns no results, the response must not
+    /// claim vulnerabilities exist. The vulnerabilities array must be
+    /// empty and the security_context must have zero vulnerability_summaries.
+    #[tokio::test]
+    async fn package_version_no_match_produces_no_false_vulnerability_claim() {
+        let engines = vec![MockEngine::success("mock_a", vec![])];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("nonexistent-crate-xyz vulnerability".into()),
+                package: Some("nonexistent-crate-xyz".into()),
+                ecosystem: Some("crates.io".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        // vulnerabilities may be omitted (skip_serializing_if) or empty
+        let has_vulns = v
+            .get("vulnerabilities")
+            .and_then(|v| v.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
+        assert!(
+            !has_vulns,
+            "vulnerabilities must be empty when no match: {v:?}"
+        );
+
+        // security_context.vulnerability_summaries must be empty or absent
+        let has_vuln_summaries = v
+            .get("security_context")
+            .and_then(|c| c.get("vulnerability_summaries"))
+            .and_then(|s| s.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
+        assert!(
+            !has_vuln_summaries,
+            "vulnerability_summaries must be empty when no match: {v:?}"
+        );
+    }
+
+    /// The `include_exploit_context` flag must only add source-card
+    /// context groups, not produce executable/procedural exploit payload
+    /// fields. Verify that result cards do not contain `payload`,
+    /// `exploit_code`, or `code` with executable content.
+    #[tokio::test]
+    async fn exploit_context_flag_does_not_produce_executable_payload_fields() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "Exploit Discussion",
+                    "https://exploit-db.com/exploits/12345",
+                    "mock_a",
+                )
+                .with_snippet("Discussion about CVE-2024-0001 exploitability"),
+                MockResult::new(
+                    "NVD Entry",
+                    "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+                    "mock_a",
+                )
+                .with_snippet("NVD advisory for CVE-2024-0001"),
+            ],
+        )];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001 exploit".into()),
+                include_exploit_context: Some(true),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        // Verify the exploit_discussion group exists
+        let groups = v["groups"].as_array().expect("groups");
+        let exploit_group = groups
+            .iter()
+            .find(|g| g["kind"].as_str() == Some("exploit_discussion"));
+        assert!(
+            exploit_group.is_some(),
+            "exploit_discussion group should be present: {groups:?}"
+        );
+
+        // Verify no card contains payload/exploit_code fields
+        let all_json = serde_json::to_string(&v).unwrap();
+        assert!(
+            !all_json.contains("\"payload\""),
+            "response must not contain 'payload' field: {all_json}"
+        );
+        assert!(
+            !all_json.contains("\"exploit_code\""),
+            "response must not contain 'exploit_code' field: {all_json}"
+        );
+    }
+
+    /// Source quality tiers should be correctly classified in the
+    /// security search response. When results include NVD URLs, the
+    /// security_context.source_quality.tier should reflect that.
+    #[tokio::test]
+    async fn security_search_source_quality_reflects_advisory_sources() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "NVD Entry",
+                    "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+                    "mock_a",
+                ),
+                MockResult::new("Blog Post", "https://blog.example.com/security", "mock_a"),
+            ],
+        )];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let security_ctx = v.get("security_context").and_then(|c| c.as_object());
+        if let Some(ctx) = security_ctx {
+            let source_quality = ctx["source_quality"]
+                .as_object()
+                .expect("source_quality should be present");
+            let tier = source_quality["tier"]
+                .as_str()
+                .expect("tier should be a string");
+            // With an NVD URL in results, tier should be primary_advisory
+            assert_eq!(
+                tier, "primary_advisory",
+                "source quality tier should be primary_advisory when NVD is present: {source_quality:?}"
+            );
+        }
+    }
+}

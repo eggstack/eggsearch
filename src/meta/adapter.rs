@@ -688,7 +688,7 @@ impl MetadataSearchAdapter {
 
         // In exact-error mode, use the error planner for subqueries
         let (plan, error_context) = if is_exact_error {
-            let error_config = crate::core::error_query::ExactErrorConfig::default();
+            let error_config = req.exact_error_config.clone().unwrap_or_default();
             let error_plan =
                 crate::meta::error_planner::build_error_plan(&req.query, &error_config);
             let subqueries = crate::meta::error_planner::to_repo_subqueries(&error_plan.subqueries);
@@ -865,22 +865,22 @@ impl MetadataSearchAdapter {
         // Capability-aware warnings
         let has_native_code = engines.iter().any(|e| {
             let n = e.name();
-            n == "github_code" || n == "gitea_code"
+            n == "github_code" || n == "gitlab_code" || n == "gitea_code"
         });
         let has_native_issues = engines.iter().any(|e| {
             let n = e.name();
-            n == "github_issues" || n == "gitea_issues"
+            n == "github_issues" || n == "gitlab_issues" || n == "gitea_issues"
         });
         let has_native_releases = engines.iter().any(|e| {
             let n = e.name();
-            n == "github_releases" || n == "gitea_releases"
+            n == "github_releases" || n == "gitlab_releases" || n == "gitea_releases"
         });
         let has_any_native = has_native_code || has_native_issues || has_native_releases;
 
         if plan.hints.has_any() && !has_any_native {
             warnings.push(SearchWarning::new(
                 "_system",
-                "native_code_search_unavailable: Repo hints parsed but no native GitHub provider configured; using generic web providers.",
+                "native_code_search_unavailable: Repo hints parsed but no native code-host provider configured; using generic web providers.",
             ));
         }
 
@@ -898,7 +898,7 @@ impl MetadataSearchAdapter {
             || plan.hints.language.is_some())
             && !engines.iter().any(|e| {
                 let n = e.name();
-                n == "github_code" || n == "gitea_code"
+                n == "github_code" || n == "gitlab_code" || n == "gitea_code"
             })
         {
             warnings.push(SearchWarning::new(
