@@ -241,12 +241,17 @@ pub struct SecurityIdentifiers {
     pub osv_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rustsec_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cwe_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ecosystem: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Optional function or API name extracted from `symbol:` hints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_or_api: Option<String>,
     pub residual_query: String,
 }
 
@@ -256,6 +261,7 @@ impl SecurityIdentifiers {
             || !self.ghsa_ids.is_empty()
             || !self.osv_ids.is_empty()
             || !self.rustsec_ids.is_empty()
+            || !self.cwe_ids.is_empty()
             || (self.package.is_some() && self.ecosystem.is_some())
     }
 
@@ -330,6 +336,28 @@ impl SecurityIdentifiers {
                 }
             }
         }
+        // CWE IDs: only parse from query if not already provided explicitly
+        if result.cwe_ids.is_empty() {
+            for cap in CWE_RE.find_iter(query) {
+                let id = normalize_cwe(cap.as_str());
+                if !id.is_empty() && !result.cwe_ids.contains(&id) {
+                    result.cwe_ids.push(id);
+                }
+            }
+        }
+        // Function/API names from symbol: hints
+        if result.function_or_api.is_none() {
+            for cap in SYMBOL_RE.find_iter(query) {
+                let m = cap.as_str();
+                if let Some(pos) = m.find(':') {
+                    let name = &m[pos + 1..];
+                    if !name.is_empty() {
+                        result.function_or_api = Some(name.to_string());
+                    }
+                }
+            }
+        }
+
         // Package/ecosystem/version: only parse from query if not explicit
         for cap in PACKAGE_RE.find_iter(query) {
             if result.package.is_none() {
@@ -384,6 +412,11 @@ static PACKAGE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 static ECOSYSTEM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(ecosystem):([a-zA-Z0-9_\-\.]+)\b").unwrap());
+static CWE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)\b(CWE-\d{2,4})\b").unwrap());
+static SYMBOL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\b(symbol):([a-zA-Z0-9_\-\.:\[\]<>,]+)\b").unwrap()
+});
 static VERSION_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(version):([0-9]+[a-zA-Z0-9_\-\.]*)\b").unwrap());
 
@@ -427,6 +460,242 @@ fn normalize_ecosystem(raw: &str) -> String {
     }
 }
 
+fn normalize_cwe(raw: &str) -> String {
+    let upper = raw.to_uppercase();
+    if CWE_RE.is_match(&upper) {
+        upper
+    } else {
+        String::new()
+    }
+}
+
+/// Classify the query intent based on parsed identifiers.
+pub fn classify_query_kind(ids: &SecurityIdentifiers) -> SecurityQueryKind {
+    if !ids.cve_ids.is_empty() {
+        return SecurityQueryKind::Cve;
+    }
+    if !ids.cwe_ids.is_empty() {
+        return SecurityQueryKind::Cwe;
+    }
+    if ids.package.is_some() && ids.ecosystem.is_some() {
+        return SecurityQueryKind::Package;
+    }
+    if ids.function_or_api.is_some() {
+        return SecurityQueryKind::Api;
+    }
+    if !ids.ghsa_ids.is_empty() || !ids.osv_ids.is_empty() || !ids.rustsec_ids.is_empty() {
+        return SecurityQueryKind::Cve;
+    }
+    // Heuristic: check residual query for concept-like patterns
+    let residual = ids.residual_query.to_lowercase();
+    if residual.contains("vulnerability")
+        || residual.contains("exploit")
+        || residual.contains("attack")
+        || residual.contains("security")
+    {
+        return SecurityQueryKind::Concept;
+    }
+    SecurityQueryKind::Unknown
+}
+
+/// Convert parsed `SecurityIdentifiers` into the normalized
+/// `SecurityIdentifier` list format.
+pub fn build_identifier_list(ids: &SecurityIdentifiers) -> Vec<SecurityIdentifier> {
+    use crate::core::code_evidence::EvidenceConfidence;
+
+    let mut result = Vec::new();
+    for id in &ids.cve_ids {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::CVE,
+            value: id.clone(),
+            confidence: EvidenceConfidence::Exact,
+        });
+    }
+    for id in &ids.ghsa_ids {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::GHSA,
+            value: id.clone(),
+            confidence: EvidenceConfidence::Exact,
+        });
+    }
+    for id in &ids.osv_ids {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::OSV,
+            value: id.clone(),
+            confidence: EvidenceConfidence::Exact,
+        });
+    }
+    for id in &ids.rustsec_ids {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::RustSec,
+            value: id.clone(),
+            confidence: EvidenceConfidence::Exact,
+        });
+    }
+    for id in &ids.cwe_ids {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::CWE,
+            value: id.clone(),
+            confidence: EvidenceConfidence::Exact,
+        });
+    }
+    if let Some(ref pkg) = ids.package {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::Package,
+            value: pkg.clone(),
+            confidence: EvidenceConfidence::Strong,
+        });
+    }
+    if let Some(ref eco) = ids.ecosystem {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::Ecosystem,
+            value: eco.clone(),
+            confidence: EvidenceConfidence::Strong,
+        });
+    }
+    if let Some(ref ver) = ids.version {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::Version,
+            value: ver.clone(),
+            confidence: EvidenceConfidence::Strong,
+        });
+    }
+    if let Some(ref api) = ids.function_or_api {
+        result.push(SecurityIdentifier {
+            kind: SecurityIdentifierKind::FunctionOrApi,
+            value: api.clone(),
+            confidence: EvidenceConfidence::Weak,
+        });
+    }
+    result
+}
+
+/// Classify a URL's source tier for security context.
+pub fn classify_source_tier(url: &str) -> SecuritySourceTier {
+    let url_lower = url.to_lowercase();
+
+    // Primary advisory databases
+    if url_lower.contains("nvd.nist.gov")
+        || url_lower.contains("osv.dev")
+        || url_lower.contains("rustsec.org")
+        || url_lower.contains("cve.mitre.org")
+        || url_lower.contains("cwe.mitre.org")
+    {
+        return SecuritySourceTier::PrimaryAdvisory;
+    }
+
+    // Package registry advisories
+    if url_lower.contains("github.com/advisories")
+        || url_lower.contains("ghsa")
+        || url_lower.contains("security.snyk.io")
+    {
+        return SecuritySourceTier::PackageRegistryAdvisory;
+    }
+
+    // Vendor advisories
+    if url_lower.contains("advisory") || url_lower.contains("/security/advisories") {
+        return SecuritySourceTier::VendorAdvisory;
+    }
+
+    // Release notes
+    if url_lower.contains("release") || url_lower.contains("changelog") {
+        return SecuritySourceTier::ReleaseNotes;
+    }
+
+    // Maintainer discussion
+    if (url_lower.contains("github.com") || url_lower.contains("gitlab.com"))
+        && (url_lower.contains("/issues/") || url_lower.contains("/pull/"))
+    {
+        return SecuritySourceTier::MaintainerDiscussion;
+    }
+
+    // Security research
+    if url_lower.contains("exploit")
+        || url_lower.contains("poc")
+        || url_lower.contains("proof-of-concept")
+        || url_lower.contains("research")
+        || url_lower.contains("analysis")
+    {
+        return SecuritySourceTier::SecurityResearch;
+    }
+
+    // Community discussion
+    if url_lower.contains("stackoverflow.com")
+        || url_lower.contains("stackexchange.com")
+        || url_lower.contains("forum")
+        || url_lower.contains("discourse")
+        || url_lower.contains("reddit.com")
+    {
+        return SecuritySourceTier::CommunityDiscussion;
+    }
+
+    // News/blogs
+    if url_lower.contains("blog")
+        || url_lower.contains("news")
+        || url_lower.contains("medium.com")
+        || url_lower.contains("dev.to")
+    {
+        return SecuritySourceTier::NewsOrBlog;
+    }
+
+    SecuritySourceTier::Unknown
+}
+
+/// Build a `SecuritySourceQuality` assessment for a set of source cards.
+pub fn assess_source_quality(results: &[crate::core::SourceCard]) -> SecuritySourceQuality {
+    use std::collections::HashSet;
+
+    let mut tiers: HashSet<SecuritySourceTier> = HashSet::new();
+    let mut reasons = Vec::new();
+
+    for card in results {
+        let tier = classify_source_tier(&card.url);
+        tiers.insert(tier);
+    }
+
+    // Determine the overall tier: prefer the highest-quality tier found
+    let overall_tier = if tiers.contains(&SecuritySourceTier::PrimaryAdvisory) {
+        reasons.push("results include primary advisory sources".to_string());
+        SecuritySourceTier::PrimaryAdvisory
+    } else if tiers.contains(&SecuritySourceTier::PackageRegistryAdvisory) {
+        reasons.push("results include package registry advisory sources".to_string());
+        SecuritySourceTier::PackageRegistryAdvisory
+    } else if tiers.contains(&SecuritySourceTier::VendorAdvisory) {
+        reasons.push("results include vendor advisory sources".to_string());
+        SecuritySourceTier::VendorAdvisory
+    } else if tiers.contains(&SecuritySourceTier::MaintainerDiscussion) {
+        reasons.push("results include maintainer discussion sources".to_string());
+        SecuritySourceTier::MaintainerDiscussion
+    } else if tiers.contains(&SecuritySourceTier::ReleaseNotes) {
+        reasons.push("results include release notes".to_string());
+        SecuritySourceTier::ReleaseNotes
+    } else if tiers.contains(&SecuritySourceTier::SecurityResearch) {
+        reasons.push("results include security research sources".to_string());
+        SecuritySourceTier::SecurityResearch
+    } else if tiers.contains(&SecuritySourceTier::CommunityDiscussion) {
+        reasons.push("results include community discussion sources".to_string());
+        SecuritySourceTier::CommunityDiscussion
+    } else if tiers.contains(&SecuritySourceTier::NewsOrBlog) {
+        reasons.push("results include news or blog sources only".to_string());
+        SecuritySourceTier::NewsOrBlog
+    } else {
+        SecuritySourceTier::Unknown
+    };
+
+    // Emit warning-level reasons for low-quality tiers
+    if matches!(
+        overall_tier,
+        SecuritySourceTier::NewsOrBlog | SecuritySourceTier::CommunityDiscussion | SecuritySourceTier::Unknown
+    ) {
+        reasons.push("only low-tier sources found; results may lack advisory authority".to_string());
+    }
+
+    SecuritySourceQuality {
+        tier: overall_tier,
+        tier_reasons: reasons,
+    }
+}
+
 fn remove_identifier_tokens(text: &str) -> String {
     let mut result = text.to_string();
     for cap in CVE_RE.find_iter(text) {
@@ -442,6 +711,12 @@ fn remove_identifier_tokens(text: &str) -> String {
         result = result.replace(cap.as_str(), "");
     }
     for cap in ECOSYSTEM_RE.find_iter(&result.clone()) {
+        result = result.replace(cap.as_str(), "");
+    }
+    for cap in CWE_RE.find_iter(&result.clone()) {
+        result = result.replace(cap.as_str(), "");
+    }
+    for cap in SYMBOL_RE.find_iter(&result.clone()) {
         result = result.replace(cap.as_str(), "");
     }
     for cap in VERSION_RE.find_iter(&result.clone()) {
@@ -462,6 +737,294 @@ fn remove_identifier_tokens(text: &str) -> String {
         }
     }
     out
+}
+
+/// Classification of the security query's intent.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityQueryKind {
+    /// Query targets a specific package or dependency.
+    Package,
+    /// Query targets a specific CVE identifier.
+    Cve,
+    /// Query targets a CWE weakness class.
+    Cwe,
+    /// Query targets an API or function name.
+    Api,
+    /// Query is about an error message or symptom.
+    ErrorMessage,
+    /// Query is about a general security concept.
+    Concept,
+    #[default]
+    /// Query intent could not be determined.
+    Unknown,
+}
+
+impl SecurityQueryKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Package => "package",
+            Self::Cve => "cve",
+            Self::Cwe => "cwe",
+            Self::Api => "api",
+            Self::ErrorMessage => "error_message",
+            Self::Concept => "concept",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// A parsed security identifier with its kind and confidence.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SecurityIdentifier {
+    /// The type of identifier.
+    pub kind: SecurityIdentifierKind,
+    /// The normalized value (e.g. `CVE-2024-0001`, `CWE-79`).
+    pub value: String,
+    /// How confidently this identifier was parsed.
+    pub confidence: crate::core::code_evidence::EvidenceConfidence,
+}
+
+/// Type of security identifier.
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityIdentifierKind {
+    /// Common Vulnerabilities and Exposures identifier.
+    CVE,
+    /// Common Weakness Enumeration identifier.
+    CWE,
+    /// GitHub Security Advisory identifier.
+    GHSA,
+    /// Open Source Vulnerabilities identifier.
+    OSV,
+    /// RustSec advisory identifier.
+    RustSec,
+    /// Package or dependency name.
+    Package,
+    /// Ecosystem (crates.io, npm, pypi, etc.).
+    Ecosystem,
+    /// Specific version or version range.
+    Version,
+    /// Function, method, or API name.
+    FunctionOrApi,
+}
+
+impl SecurityIdentifierKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::CVE => "cve",
+            Self::CWE => "cwe",
+            Self::GHSA => "ghsa",
+            Self::OSV => "osv",
+            Self::RustSec => "rustsec",
+            Self::Package => "package",
+            Self::Ecosystem => "ecosystem",
+            Self::Version => "version",
+            Self::FunctionOrApi => "function_or_api",
+        }
+    }
+}
+
+/// Deterministic source quality tier for security results.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SecuritySourceTier {
+    /// Primary advisory databases (NVD, OSV, RustSec).
+    PrimaryAdvisory,
+    /// Vendor or project security pages.
+    VendorAdvisory,
+    /// Package registry advisory data (GitHub Advisories).
+    PackageRegistryAdvisory,
+    /// Maintainer discussion (issues, PRs).
+    MaintainerDiscussion,
+    /// Release notes and changelogs.
+    ReleaseNotes,
+    /// Security research and analysis.
+    SecurityResearch,
+    /// News articles or blog posts.
+    NewsOrBlog,
+    /// Community discussion (forums, StackOverflow).
+    CommunityDiscussion,
+    #[default]
+    /// Source tier could not be determined.
+    Unknown,
+}
+
+impl SecuritySourceTier {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PrimaryAdvisory => "primary_advisory",
+            Self::VendorAdvisory => "vendor_advisory",
+            Self::PackageRegistryAdvisory => "package_registry_advisory",
+            Self::MaintainerDiscussion => "maintainer_discussion",
+            Self::ReleaseNotes => "release_notes",
+            Self::SecurityResearch => "security_research",
+            Self::NewsOrBlog => "news_or_blog",
+            Self::CommunityDiscussion => "community_discussion",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Deterministic source quality metadata for a security result.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SecuritySourceQuality {
+    /// The determined source tier.
+    pub tier: SecuritySourceTier,
+    /// Deterministic reasons for the tier classification.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tier_reasons: Vec<String>,
+}
+
+/// A deterministic defensive guidance entry derived from source evidence.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DefensiveGuidance {
+    /// The category of defensive guidance.
+    pub category: DefensiveGuidanceCategory,
+    /// Short summary derived from source evidence.
+    pub summary: String,
+    /// Source URLs that support this guidance.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_urls: Vec<String>,
+    /// Confidence in the guidance classification.
+    pub confidence: crate::core::code_evidence::EvidenceConfidence,
+}
+
+/// Category of defensive guidance.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DefensiveGuidanceCategory {
+    /// Upgrade or pin to a fixed version.
+    UpgradeOrPin,
+    /// Input validation hardening.
+    InputValidation,
+    /// Output encoding or escaping.
+    OutputEncoding,
+    /// Authentication or authorization hardening.
+    AuthenticationOrAuthorization,
+    /// Deserialization hardening.
+    DeserializationHardening,
+    /// Path traversal prevention.
+    PathTraversalHardening,
+    /// SSRF prevention.
+    SsrFHardening,
+    /// SQL injection prevention.
+    SqlInjectionHardening,
+    /// XSS prevention.
+    XssHardening,
+    /// Cryptographic configuration.
+    CryptoConfiguration,
+    /// Resource limit enforcement.
+    ResourceLimit,
+    /// Safe API usage patterns.
+    SafeApiUsage,
+    #[default]
+    /// Category could not be determined.
+    Unknown,
+}
+
+impl DefensiveGuidanceCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::UpgradeOrPin => "upgrade_or_pin",
+            Self::InputValidation => "input_validation",
+            Self::OutputEncoding => "output_encoding",
+            Self::AuthenticationOrAuthorization => "authentication_or_authorization",
+            Self::DeserializationHardening => "deserialization_hardening",
+            Self::PathTraversalHardening => "path_traversal_hardening",
+            Self::SsrFHardening => "ssrf_hardening",
+            Self::SqlInjectionHardening => "sql_injection_hardening",
+            Self::XssHardening => "xss_hardening",
+            Self::CryptoConfiguration => "crypto_configuration",
+            Self::ResourceLimit => "resource_limit",
+            Self::SafeApiUsage => "safe_api_usage",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Aggregated security context returned with `security_search` responses.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SecurityContext {
+    /// Classified query intent.
+    pub query_kind: SecurityQueryKind,
+    /// All parsed identifiers from the query.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identifiers: Vec<SecurityIdentifier>,
+    /// Summary of affected packages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affected_packages: Vec<AffectedPackageSummary>,
+    /// Summary of known vulnerabilities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vulnerability_summaries: Vec<VulnerabilitySummary>,
+    /// Defensive guidance derived from source evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub defensive_guidance: Vec<DefensiveGuidance>,
+    /// Aggregate source quality assessment.
+    pub source_quality: SecuritySourceQuality,
+    /// Context-specific warnings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+/// Compact security context for `repo_search` responses.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompactSecurityContext {
+    /// Classified query intent.
+    pub query_kind: SecurityQueryKind,
+    /// Parsed identifiers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identifiers: Vec<SecurityIdentifier>,
+    /// Number of known vulnerabilities found.
+    pub vulnerability_count: usize,
+    /// Highest severity among known vulnerabilities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highest_severity: Option<SeverityLevel>,
+    /// Aggregate source quality assessment.
+    pub source_quality: SecuritySourceQuality,
+    /// Context-specific warnings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+/// Summary of an affected package from advisory data.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AffectedPackageSummary {
+    /// Package name.
+    pub package: String,
+    /// Ecosystem.
+    pub ecosystem: String,
+    /// Affected version ranges.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affected_ranges: Vec<String>,
+    /// Patched versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub patched_versions: Vec<String>,
+}
+
+/// Summary of a known vulnerability.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct VulnerabilitySummary {
+    /// Primary identifier (CVE, GHSA, etc.).
+    pub id: String,
+    /// Severity level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity: Option<SeverityLevel>,
+    /// Brief description or title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Source that provided this vulnerability.
+    pub source: VulnerabilitySource,
+    /// Whether this is in the CISA KEV catalog.
+    pub kev: bool,
 }
 
 /// Classification for security result groups.
@@ -582,6 +1145,10 @@ pub struct SecuritySearchResponse {
     pub mode: String,
     pub resolved_identifiers: SecurityIdentifiers,
     pub vulnerabilities: Vec<VulnerabilityMetadata>,
+    /// Aggregated security context with source quality, defensive
+    /// guidance, and normalized identifiers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_context: Option<SecurityContext>,
     pub groups: Vec<SecurityResultGroup>,
     pub suggested_fetches: Vec<SecuritySuggestedFetch>,
     pub providers_queried: Vec<String>,
@@ -949,5 +1516,342 @@ mod tests {
         assert!(!cleaned.contains("CVE-2024-0001"));
         assert!(cleaned.contains("openssl"));
         assert!(cleaned.contains("vulnerability"));
+    }
+
+    #[test]
+    fn normalize_cwe_valid() {
+        assert_eq!(normalize_cwe("CWE-79"), "CWE-79");
+        assert_eq!(normalize_cwe("cwe-89"), "CWE-89");
+        assert_eq!(normalize_cwe("CWE-1234"), "CWE-1234");
+    }
+
+    #[test]
+    fn normalize_cwe_invalid() {
+        assert_eq!(normalize_cwe("CWE-0"), "");
+        assert_eq!(normalize_cwe("CWE-"), "");
+        assert_eq!(normalize_cwe("not a cwe"), "");
+    }
+
+    #[test]
+    fn identifiers_parse_cwe_from_query() {
+        let ids = SecurityIdentifiers::parse(
+            "CWE-79 cross-site scripting vulnerability",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(ids.cwe_ids, vec!["CWE-79"]);
+        assert!(ids.residual_query.contains("cross-site scripting"));
+        assert!(!ids.residual_query.contains("CWE-79"));
+    }
+
+    #[test]
+    fn identifiers_parse_symbol_hint() {
+        let ids = SecurityIdentifiers::parse(
+            "symbol:Router::layer vulnerability",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(ids.function_or_api.as_deref(), Some("Router::layer"));
+    }
+
+    #[test]
+    fn has_strong_identifier_true_for_cwe() {
+        let ids = SecurityIdentifiers {
+            cwe_ids: vec!["CWE-79".to_string()],
+            ..Default::default()
+        };
+        assert!(ids.has_strong_identifier());
+    }
+
+    #[test]
+    fn classify_query_kind_cve() {
+        let ids = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(classify_query_kind(&ids), SecurityQueryKind::Cve);
+    }
+
+    #[test]
+    fn classify_query_kind_cwe() {
+        let ids = SecurityIdentifiers {
+            cwe_ids: vec!["CWE-79".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(classify_query_kind(&ids), SecurityQueryKind::Cwe);
+    }
+
+    #[test]
+    fn classify_query_kind_package() {
+        let ids = SecurityIdentifiers {
+            package: Some("openssl".to_string()),
+            ecosystem: Some("crates.io".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(classify_query_kind(&ids), SecurityQueryKind::Package);
+    }
+
+    #[test]
+    fn classify_query_kind_api() {
+        let ids = SecurityIdentifiers {
+            function_or_api: Some("Router::layer".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(classify_query_kind(&ids), SecurityQueryKind::Api);
+    }
+
+    #[test]
+    fn classify_query_kind_concept() {
+        let ids = SecurityIdentifiers {
+            residual_query: "security vulnerability in authentication".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(classify_query_kind(&ids), SecurityQueryKind::Concept);
+    }
+
+    #[test]
+    fn classify_query_kind_unknown() {
+        let ids = SecurityIdentifiers::default();
+        assert_eq!(classify_query_kind(&ids), SecurityQueryKind::Unknown);
+    }
+
+    #[test]
+    fn build_identifier_list_all_types() {
+        let ids = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            ghsa_ids: vec!["GHSA-test-1234-abcd".to_string()],
+            osv_ids: vec!["GHSA-osv-1234-efgh".to_string()],
+            rustsec_ids: vec!["RUSTSEC-2024-0001".to_string()],
+            cwe_ids: vec!["CWE-79".to_string()],
+            package: Some("openssl".to_string()),
+            ecosystem: Some("crates.io".to_string()),
+            version: Some("1.0.0".to_string()),
+            function_or_api: Some("connect".to_string()),
+            ..Default::default()
+        };
+        let list = build_identifier_list(&ids);
+        assert_eq!(list.len(), 9);
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::CVE));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::GHSA));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::OSV));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::RustSec));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::CWE));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::Package));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::Ecosystem));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::Version));
+        assert!(list.iter().any(|i| i.kind == SecurityIdentifierKind::FunctionOrApi));
+    }
+
+    #[test]
+    fn classify_source_tier_nvd() {
+        assert_eq!(
+            classify_source_tier("https://nvd.nist.gov/vuln/detail/CVE-2024-0001"),
+            SecuritySourceTier::PrimaryAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_osv() {
+        assert_eq!(
+            classify_source_tier("https://osv.dev/vulnerability/GHSA-test"),
+            SecuritySourceTier::PrimaryAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_github_advisory() {
+        assert_eq!(
+            classify_source_tier("https://github.com/advisories/GHSA-test"),
+            SecuritySourceTier::PackageRegistryAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_vendor_advisory() {
+        assert_eq!(
+            classify_source_tier("https://example.com/security/advisory"),
+            SecuritySourceTier::VendorAdvisory
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_release_notes() {
+        assert_eq!(
+            classify_source_tier("https://github.com/foo/bar/releases/tag/v1.0"),
+            SecuritySourceTier::ReleaseNotes
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_maintainer_discussion() {
+        assert_eq!(
+            classify_source_tier("https://github.com/foo/bar/issues/123"),
+            SecuritySourceTier::MaintainerDiscussion
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_exploit_research() {
+        assert_eq!(
+            classify_source_tier("https://example.com/exploit/poc"),
+            SecuritySourceTier::SecurityResearch
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_community() {
+        assert_eq!(
+            classify_source_tier("https://stackoverflow.com/questions/123"),
+            SecuritySourceTier::CommunityDiscussion
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_blog() {
+        assert_eq!(
+            classify_source_tier("https://blog.example.com/security"),
+            SecuritySourceTier::NewsOrBlog
+        );
+    }
+
+    #[test]
+    fn classify_source_tier_unknown() {
+        assert_eq!(
+            classify_source_tier("https://example.com/some/page"),
+            SecuritySourceTier::Unknown
+        );
+    }
+
+    #[test]
+    fn security_query_kind_as_str() {
+        assert_eq!(SecurityQueryKind::Package.as_str(), "package");
+        assert_eq!(SecurityQueryKind::Cve.as_str(), "cve");
+        assert_eq!(SecurityQueryKind::Cwe.as_str(), "cwe");
+        assert_eq!(SecurityQueryKind::Api.as_str(), "api");
+        assert_eq!(SecurityQueryKind::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn security_identifier_kind_as_str() {
+        assert_eq!(SecurityIdentifierKind::CVE.as_str(), "cve");
+        assert_eq!(SecurityIdentifierKind::CWE.as_str(), "cwe");
+        assert_eq!(SecurityIdentifierKind::Package.as_str(), "package");
+        assert_eq!(SecurityIdentifierKind::FunctionOrApi.as_str(), "function_or_api");
+    }
+
+    #[test]
+    fn security_source_tier_as_str() {
+        assert_eq!(SecuritySourceTier::PrimaryAdvisory.as_str(), "primary_advisory");
+        assert_eq!(SecuritySourceTier::VendorAdvisory.as_str(), "vendor_advisory");
+        assert_eq!(SecuritySourceTier::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn defensive_guidance_category_as_str() {
+        assert_eq!(DefensiveGuidanceCategory::UpgradeOrPin.as_str(), "upgrade_or_pin");
+        assert_eq!(DefensiveGuidanceCategory::XssHardening.as_str(), "xss_hardening");
+        assert_eq!(DefensiveGuidanceCategory::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn security_context_serde_roundtrip() {
+        let ctx = SecurityContext {
+            query_kind: SecurityQueryKind::Package,
+            identifiers: vec![SecurityIdentifier {
+                kind: SecurityIdentifierKind::CVE,
+                value: "CVE-2024-0001".to_string(),
+                confidence: crate::core::code_evidence::EvidenceConfidence::Exact,
+            }],
+            affected_packages: vec![AffectedPackageSummary {
+                package: "openssl".to_string(),
+                ecosystem: "crates.io".to_string(),
+                affected_ranges: vec!["< 1.0.0".to_string()],
+                patched_versions: vec!["1.0.0".to_string()],
+            }],
+            vulnerability_summaries: vec![VulnerabilitySummary {
+                id: "CVE-2024-0001".to_string(),
+                severity: Some(SeverityLevel::High),
+                description: None,
+                source: VulnerabilitySource::Osv,
+                kev: false,
+            }],
+            defensive_guidance: vec![],
+            source_quality: SecuritySourceQuality {
+                tier: SecuritySourceTier::PrimaryAdvisory,
+                tier_reasons: vec!["results include primary advisory sources".to_string()],
+            },
+            warnings: vec![],
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let parsed: SecurityContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.query_kind, SecurityQueryKind::Package);
+        assert_eq!(parsed.identifiers.len(), 1);
+        assert_eq!(parsed.vulnerability_summaries.len(), 1);
+    }
+
+    #[test]
+    fn compact_security_context_serde_roundtrip() {
+        let ctx = CompactSecurityContext {
+            query_kind: SecurityQueryKind::Package,
+            identifiers: vec![],
+            vulnerability_count: 3,
+            highest_severity: Some(SeverityLevel::High),
+            source_quality: SecuritySourceQuality {
+                tier: SecuritySourceTier::PackageRegistryAdvisory,
+                tier_reasons: vec![],
+            },
+            warnings: vec![],
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let parsed: CompactSecurityContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.vulnerability_count, 3);
+        assert_eq!(parsed.highest_severity, Some(SeverityLevel::High));
+    }
+
+    #[test]
+    fn assess_source_quality_with_authoritative() {
+        use crate::core::SourceCard;
+        use crate::core::result::TrustLevel;
+
+        let cards = vec![SourceCard::new(
+            "NVD",
+            "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+            vec!["osv".to_string()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        )];
+        let quality = assess_source_quality(&cards);
+        assert_eq!(quality.tier, SecuritySourceTier::PrimaryAdvisory);
+        assert!(!quality.tier_reasons.is_empty());
+    }
+
+    #[test]
+    fn assess_source_quality_with_blog_only() {
+        use crate::core::SourceCard;
+        use crate::core::result::TrustLevel;
+
+        let cards = vec![SourceCard::new(
+            "Blog Post",
+            "https://blog.example.com/security",
+            vec!["duckduckgo".to_string()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        )];
+        let quality = assess_source_quality(&cards);
+        assert_eq!(quality.tier, SecuritySourceTier::NewsOrBlog);
+        assert!(quality
+            .tier_reasons
+            .iter()
+            .any(|r| r.contains("low-tier")));
     }
 }

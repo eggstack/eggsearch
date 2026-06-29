@@ -7,9 +7,11 @@
 
 use std::collections::HashSet;
 
+use crate::core::code_evidence::EvidenceConfidence;
 use crate::core::query::SearchIntent;
 use crate::core::security::{
-    SecurityIdentifiers, SecuritySearchRequest, SecuritySearchResponse, VulnerabilityMetadata,
+    self, AffectedPackageSummary, SecurityContext, SecurityIdentifiers, SecuritySearchRequest,
+    SecuritySearchResponse, VulnerabilityMetadata, VulnerabilitySummary,
 };
 use crate::core::SearchWarning;
 use crate::core::WebSearchRequest;
@@ -223,11 +225,103 @@ pub async fn run_security_search_plan(
         req.package.as_deref(),
     );
 
+    // 9. Build security context
+    let query_kind = security::classify_query_kind(&resolved_ids);
+    let identifiers = security::build_identifier_list(&resolved_ids);
+    let source_quality = security::assess_source_quality(&web_resp.results);
+
+    // Build affected package summaries from vulnerability metadata
+    let affected_packages: Vec<AffectedPackageSummary> = {
+        let mut seen = std::collections::HashSet::new();
+        let mut packages = Vec::new();
+        for vuln in &vulnerabilities {
+            if let (Some(ref pkg), Some(ref eco)) = (&vuln.package, &vuln.ecosystem) {
+                let key = format!("{eco}:{pkg}");
+                if seen.insert(key) {
+                    packages.push(AffectedPackageSummary {
+                        package: pkg.clone(),
+                        ecosystem: eco.clone(),
+                        affected_ranges: vuln.affected_ranges.clone(),
+                        patched_versions: vuln.patched_versions.clone(),
+                    });
+                }
+            }
+        }
+        packages
+    };
+
+    // Build vulnerability summaries
+    let vulnerability_summaries: Vec<VulnerabilitySummary> = vulnerabilities
+        .iter()
+        .map(|vuln| {
+            let id = vuln
+                .cve_ids
+                .first()
+                .or(vuln.ghsa_ids.first())
+                .or(vuln.osv_ids.first())
+                .or(vuln.rustsec_ids.first())
+                .cloned()
+                .unwrap_or_default();
+            VulnerabilitySummary {
+                id,
+                severity: vuln.severity,
+                description: None,
+                source: vuln.source,
+                kev: vuln.kev.is_some(),
+            }
+        })
+        .collect();
+
+    // Build defensive guidance from grouping results
+    let mut defensive_guidance = Vec::new();
+    for group in &groups {
+        if group.kind == crate::core::security::SecurityResultGroupKind::DefensiveGuidance {
+            for card in &group.results {
+                defensive_guidance.push(security::DefensiveGuidance {
+                    category: security::DefensiveGuidanceCategory::Unknown,
+                    summary: card.title.clone(),
+                    source_urls: vec![card.url.clone()],
+                    confidence: EvidenceConfidence::Weak,
+                });
+            }
+        }
+    }
+
+    // Build context warnings
+    let mut context_warnings = Vec::new();
+    if vulnerabilities.is_empty() && !resolved_ids.has_strong_identifier() {
+        context_warnings
+            .push("no native vulnerability data found; results are generic web search only".to_string());
+    }
+    if source_quality.tier == security::SecuritySourceTier::Unknown
+        || matches!(
+            source_quality.tier,
+            security::SecuritySourceTier::NewsOrBlog
+                | security::SecuritySourceTier::CommunityDiscussion
+        )
+    {
+        context_warnings.push(format!(
+            "source quality is low ({}); advisory authority may be limited",
+            source_quality.tier.as_str()
+        ));
+    }
+
+    let security_context = SecurityContext {
+        query_kind,
+        identifiers,
+        affected_packages,
+        vulnerability_summaries,
+        defensive_guidance,
+        source_quality,
+        warnings: context_warnings,
+    };
+
     SecuritySearchResponse {
         query: req.query.clone(),
         mode: "security_metasearch".to_string(),
         resolved_identifiers: resolved_ids,
         vulnerabilities,
+        security_context: Some(security_context),
         groups,
         suggested_fetches,
         providers_queried: web_resp.providers_queried,

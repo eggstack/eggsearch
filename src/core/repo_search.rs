@@ -443,9 +443,9 @@ pub struct RepoSearchResponse {
     /// Optional package resolution metadata when package fields were provided.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_resolution: Option<PackageResolution>,
-    /// Optional security context when include_security_context is true.
+    /// Optional compact security context when include_security_context is true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub security_context: Option<Vec<crate::core::security::VulnerabilityMetadata>>,
+    pub security_context: Option<crate::core::security::CompactSecurityContext>,
 }
 
 #[cfg(test)]

@@ -685,7 +685,28 @@ web search results.
 - `VulnerabilityMetadata`: normalized advisory metadata (IDs, affected
   ranges, patched versions, severity, CVSS, KEV, timestamps, references)
 - `SecurityResultGroup`: grouped source cards by category
-- `SecuritySearchResponse`: vulnerabilities + groups + suggested fetches
+- `SecuritySearchResponse`: vulnerabilities + groups + suggested fetches + security context
+- `SecurityContext`: structured security context with `query_kind`, `identifiers`,
+  `affected_packages`, `vulnerability_summaries`, `defensive_guidance`,
+  `source_quality`, `warnings`
+- `CompactSecurityContext`: compact form for `repo_search` with `include_security_context`
+- `SecurityQueryKind`: classifier for the security query type (vulnerability_id,
+  package_advisory, cwe_pattern, general)
+- `SecurityIdentifier`: parsed identifier with `kind` and `value`
+- `SecurityIdentifierKind`: enum — `Cve`, `Ghsa`, `Osv`, `RustSec`, `Cwe`,
+  `Package`, `Ecosystem`, `Version`
+- `SecuritySourceTier`: source quality tier — `Tier1Authoritative`, `Tier2Vendor`,
+  `Tier3Community`, `Tier4Reference`, `Tier5Unknown`
+- `SecuritySourceQuality`: aggregated quality assessment with `tiers_present`,
+  `tier_count`, `highest_tier`, `has_authoritative_source`
+- `DefensiveGuidance`: structured defensive advice with `category`, `title`,
+  `description`, `mitigations`, `workarounds`, `references`
+- `DefensiveGuidanceCategory`: enum — `Mitigation`, `Workaround`, `ConfigurationChange`,
+  `Patching`, `Monitoring`, `AccessControl`, `InputValidation`, `General`
+- `AffectedPackageSummary`: per-package summary with `name`, `ecosystem`,
+  `affected_versions`, `patched_versions`, `severity`, `latest_advisory`
+- `VulnerabilitySummary`: compact vulnerability summary with `id`, `severity`,
+  `cvss_score`, `affected_packages`, `summary`, `published_at`
 
 **Group kinds:** `AuthoritativeAdvisories`, `VendorAdvisories`,
 `PackageAdvisories`, `KevEntries`, `PatchCommitsOrReleases`,
@@ -708,12 +729,42 @@ web search results.
 - CVE: `CVE-YYYY-NNNN...` (case-insensitive, normalized to uppercase)
 - GHSA: `GHSA-xxxx-xxxx-xxxx` (case-insensitive, normalized to uppercase)
 - RustSec: `RUSTSEC-YYYY-NNNN` (case-insensitive, normalized to uppercase)
+- CWE: `CWE-NNN` (case-insensitive, normalized to uppercase; e.g. `CWE-79`, `CWE-89`)
 - Package hints: `package:name`, `crate:name`, `pypi:name`, `npm:name`
 - Ecosystem hints: `ecosystem:name`
 - Version hints: `version:x.y.z`
 
 When explicit identifier fields are provided, query-text parsing for
 that identifier type is skipped to avoid duplicates.
+
+**Source quality tiering:**
+Security sources are classified into quality tiers to help agents
+assess advisory reliability:
+- `Tier1Authoritative`: Official CVE/NVD entries, vendor security advisories
+- `Tier2Vendor`: Vendor-published patches, release notes, package registry advisories
+- `Tier3Community`: Community discussion, blog posts, security researcher writeups
+- `Tier4Reference`: Secondary references, documentation, general context
+- `Tier5Unknown`: Unclassified or untrusted sources
+
+`SecuritySourceQuality` aggregates tier information: `tiers_present`
+lists unique tiers found, `tier_count` counts distinct tiers,
+`highest_tier` is the best tier present, `has_authoritative_source`
+indicates whether any Tier1 source was found. Agents should prefer
+fetching from higher-tier sources.
+
+**Defensive guidance categories:**
+`DefensiveGuidance` entries are classified by `DefensiveGuidanceCategory`:
+- `Mitigation`: actions to reduce impact or likelihood
+- `Workaround`: temporary alternative to patching
+- `ConfigurationChange`: settings or hardening adjustments
+- `Patching`: version upgrade or backport instructions
+- `Monitoring`: detection rules, log patterns, alerting
+- `AccessControl`: network/permission restrictions
+- `InputValidation`: input sanitization or boundary checks
+- `General`: uncategorized defensive advice
+
+Each `DefensiveGuidance` entry includes `title`, `description`,
+`mitigations` (actionable steps), `workarounds`, and `references`.
 
 **Warnings:**
 - `no_native_advisory_provider`: only generic web search was used
@@ -723,6 +774,7 @@ that identifier type is skipped to avoid duplicates.
 - `kev_absent_not_proof`: no CVE(s) found (absence is not proof)
 - `kev_lookup_failed`: catalog lookup failed
 - `kev_lookup_skipped`: no CVE identifiers available for lookup
+- `source_quality_low:` when only low-tier (Tier4/Tier5) sources were found
 
 The MCP `run_security_search` tool in `src/mcp/tools.rs` orchestrates
 the flow: parse identifiers, run web_search with security intent,
@@ -740,6 +792,14 @@ Security grouping and suggested-fetch logic live in
 prefixes (e.g. `native_advisory_search_unavailable:`, `kev_match:`,
 `version_match_unavailable:`). Agents can match on these prefixes for
 programmatic handling. See "Warning Prefixes" below for the full list.
+
+**Security context is retrieval context, not exploitability determination:**
+The `security_context` field and `SecurityContext` type provide structured
+retrieval context about identified vulnerabilities, affected packages,
+and defensive guidance. This is **evidence aggregation**, not
+exploitability assessment. Agents must not treat the presence or absence
+of a CVE identifier, severity rating, or defensive guidance as a
+determination of actual exploitability or risk in a specific deployment.
 
 **Fallback:** if `security_search` is unavailable, use `web_search`
 with `intent = "security"`.

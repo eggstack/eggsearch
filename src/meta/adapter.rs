@@ -958,7 +958,38 @@ impl MetadataSearchAdapter {
                         )
                         .await
                     {
-                        Ok(vulns) if !vulns.is_empty() => Some(vulns),
+                        Ok(vulns) if !vulns.is_empty() => {
+                            let highest_severity = vulns
+                                .iter()
+                                .filter_map(|v| v.severity)
+                                .max_by_key(|s| match s {
+                                    crate::core::security::SeverityLevel::Critical => 4,
+                                    crate::core::security::SeverityLevel::High => 3,
+                                    crate::core::security::SeverityLevel::Medium => 2,
+                                    crate::core::security::SeverityLevel::Low => 1,
+                                    crate::core::security::SeverityLevel::Unknown => 0,
+                                });
+                            let identifiers = crate::core::security::build_identifier_list(
+                                &crate::core::security::SecurityIdentifiers {
+                                    package: Some(pr.coordinate.name.clone()),
+                                    ecosystem: Some(pr.coordinate.ecosystem.osv_ecosystem().to_string()),
+                                    version: pr.resolved_version.clone(),
+                                    ..Default::default()
+                                },
+                            );
+                            let source_quality = crate::core::security::SecuritySourceQuality {
+                                tier: crate::core::security::SecuritySourceTier::PackageRegistryAdvisory,
+                                tier_reasons: vec!["vulnerabilities sourced from native advisory provider".to_string()],
+                            };
+                            Some(crate::core::security::CompactSecurityContext {
+                                query_kind: crate::core::security::SecurityQueryKind::Package,
+                                identifiers,
+                                vulnerability_count: vulns.len(),
+                                highest_severity,
+                                source_quality,
+                                warnings: vec![],
+                            })
+                        }
                         Ok(_) => {
                             warnings.push(SearchWarning::new(
                                 "_system",

@@ -64,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `repo_search` explicit JSON fields (e.g. `repo`, `aspects`) now override any hints parsed from the `query` text.
 - `research_search` `max_groups` limit is now enforced; the response contains at most `max_groups` groups.
 - Security grouping and suggested-fetch logic moved from `src/mcp/tools.rs` to `src/meta/security_grouping.rs` and `src/meta/security_suggested_fetches.rs` for better module organization.
+- Security search now returns a normalized `security_context` object with query classification, parsed identifiers, source quality tiering, vulnerability summaries, and defensive guidance
+- CWE IDs (e.g. CWE-79, CWE-89) are now parsed from query text alongside CVE, GHSA, OSV, and RustSec identifiers
+- Source quality tiering classifies security results into primary_advisory, vendor_advisory, package_registry_advisory, maintainer_discussion, release_notes, security_research, community_discussion, and news_or_blog tiers
+- `repo_search(include_security_context = true)` now returns a `CompactSecurityContext` with query kind, vulnerability count, and highest severity instead of raw vulnerability metadata
+- Defensive guidance categories (upgrade_or_pin, input_validation, xss_hardening, etc.) are extracted from security result groups
 
 ### Added
 - `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches with domain diversity constraints.
@@ -124,6 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PDF text extraction** (feature-gated behind `pdf`, opt-in, not default): `web_fetch` detects PDF responses via `Content-Type: application/pdf` or `.pdf` URL extension and extracts text using the `lopdf` crate. Per-page indexed blocks with `page_break` markers, per-page chunks. Bounded by `pdf_max_pages` (default 25), `pdf_max_chars_per_page` (default 12000), and `pdf_max_total_chars` (default 50000). New config fields: `pdf_enabled`, `pdf_max_pages`, `pdf_max_chars_per_page`, `pdf_max_total_chars` in `[fetch]`. New error variants: `pdf_not_compiled_in`, `pdf_disabled`, `pdf_parse_error`, `pdf_encrypted`, `pdf_no_extractable_text`. Limit hits produce a warning and partial content rather than a hard error. MSRV bumped from 1.80 to 1.85 (lopdf 0.42 requirement). No OCR, no embedded file extraction, no JavaScript.
 - **Code-host source-file fetch**: `web_fetch` now recognizes source-file browser URLs from GitHub, GitLab, and Codeberg and internally rewrites them to raw content URLs for fetching. GitHub blob URLs are rewritten to `raw.githubusercontent.com`, GitLab blob URLs to `/-/raw/`, and Codeberg src URLs to `/raw/branch/`. The response includes a `fetch_transform` object (`kind`, `original_url`, `transformed_url`) when a rewrite occurs. Both the original and rewritten URLs pass the same SSRF/localhost/private-network validation. New types: `FetchTransform`, `FetchTransformKind` in `src/core/fetch.rs`; `resolve_code_host_fetch_target` in `src/core/code_host_fetch.rs`.
 - 10 new unit tests for URL resolution (GitHub/GitLab/Codeberg blob URLs, non-file URLs, line anchors, safety validation) and 7 new integration tests for code-host fetch (transform metadata, serde roundtrips, response shape).
+- Security context types: `SecurityContext`, `CompactSecurityContext`, `SecurityQueryKind`, `SecurityIdentifier`, `SecurityIdentifierKind`, `SecuritySourceTier`, `SecuritySourceQuality`, `DefensiveGuidance`, `DefensiveGuidanceCategory`, `AffectedPackageSummary`, `VulnerabilitySummary`
+- Deterministic source quality classification functions: `classify_source_tier()`, `assess_source_quality()`, `classify_query_kind()`, `build_identifier_list()`
 
 ## [0.3.4] - Unreleased
 

@@ -77,8 +77,12 @@ pub use sanitize::{
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
 };
 pub use security::{
-    KevMetadata, SecurityIdentifiers, SecurityResultGroup, SecurityResultGroupKind,
-    SecuritySearchRequest, SecuritySearchResponse, SecuritySuggestedFetch, SeverityLevel,
-    VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
+    build_identifier_list, classify_query_kind, classify_source_tier, assess_source_quality,
+    AffectedPackageSummary, CompactSecurityContext, DefensiveGuidance, DefensiveGuidanceCategory,
+    KevMetadata, SecurityContext, SecurityIdentifier, SecurityIdentifierKind, SecurityIdentifiers,
+    SecurityQueryKind, SecurityResultGroup, SecurityResultGroupKind, SecuritySearchRequest,
+    SecuritySearchResponse, SecuritySourceQuality, SecuritySourceTier, SecuritySuggestedFetch,
+    SeverityLevel, VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
+    VulnerabilitySummary,
 };
 pub use source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
