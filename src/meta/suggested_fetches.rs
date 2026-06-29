@@ -90,6 +90,7 @@ pub fn generate_suggested_fetches(
                     .as_deref()
                     .or(ce.raw_url.as_deref())
                     .or(ce.permalink_url.as_deref())
+                    .or(ce.browser_url.as_deref())
             })
             .unwrap_or(&card.url);
 
@@ -236,5 +237,110 @@ mod tests {
         let hints = crate::core::repo_query::RepoQueryHints::default();
         let fetches = generate_suggested_fetches(&groups, &hints);
         assert!(fetches.is_empty());
+    }
+
+    #[test]
+    fn code_evidence_browser_url_wins_over_card_url() {
+        use crate::core::code_evidence::CodeEvidence;
+        use crate::core::code_metadata::CodeHost;
+        use crate::core::source_card::SourceMetadata;
+
+        let mut card = make_card("Source", "https://example.com/raw/card-url");
+        card.metadata = SourceMetadata {
+            source_kind: SourceKind::SourceFile,
+            code_evidence: Some(CodeEvidence {
+                host: Some(CodeHost::Github),
+                owner: Some("owner".to_string()),
+                repo: Some("repo".to_string()),
+                ref_name: Some("main".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                browser_url: Some("https://github.com/owner/repo/blob/main/src/lib.rs".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let groups = vec![make_group(RepoResultGroupKind::SourceFiles, vec![card])];
+        let hints = crate::core::repo_query::RepoQueryHints::default();
+        let fetches = generate_suggested_fetches(&groups, &hints);
+
+        assert!(!fetches.is_empty());
+        assert_eq!(
+            fetches[0].url, "https://github.com/owner/repo/blob/main/src/lib.rs",
+            "suggested fetch should use code_evidence.browser_url before card.url"
+        );
+    }
+
+    #[test]
+    fn card_url_remains_final_fallback() {
+        use crate::core::code_evidence::CodeEvidence;
+        use crate::core::code_metadata::CodeHost;
+        use crate::core::source_card::SourceMetadata;
+
+        let mut card = make_card("Source", "https://example.com/raw/card-url");
+        card.metadata = SourceMetadata {
+            source_kind: SourceKind::SourceFile,
+            code_evidence: Some(CodeEvidence {
+                host: Some(CodeHost::Github),
+                owner: Some("owner".to_string()),
+                repo: Some("repo".to_string()),
+                ref_name: Some("main".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                // No URLs populated; code evidence is present but sparse.
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let groups = vec![make_group(RepoResultGroupKind::SourceFiles, vec![card])];
+        let hints = crate::core::repo_query::RepoQueryHints::default();
+        let fetches = generate_suggested_fetches(&groups, &hints);
+
+        assert!(!fetches.is_empty());
+        assert_eq!(
+            fetches[0].url, "https://example.com/raw/card-url",
+            "card.url should be the final fallback when no code-evidence URL is set"
+        );
+    }
+
+    #[test]
+    fn code_evidence_url_priority_order() {
+        use crate::core::code_evidence::CodeEvidence;
+        use crate::core::code_metadata::CodeHost;
+        use crate::core::source_card::SourceMetadata;
+
+        // All URLs populated: raw_permalink_url must win.
+        let mut card = make_card("Source", "https://example.com/raw/card-url");
+        card.metadata = SourceMetadata {
+            source_kind: SourceKind::SourceFile,
+            code_evidence: Some(CodeEvidence {
+                host: Some(CodeHost::Github),
+                owner: Some("owner".to_string()),
+                repo: Some("repo".to_string()),
+                ref_name: Some("main".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                browser_url: Some("https://github.com/owner/repo/blob/main/src/lib.rs".to_string()),
+                raw_url: Some(
+                    "https://raw.githubusercontent.com/owner/repo/main/src/lib.rs".to_string(),
+                ),
+                permalink_url: Some(
+                    "https://github.com/owner/repo/blob/abc/src/lib.rs".to_string(),
+                ),
+                raw_permalink_url: Some(
+                    "https://raw.githubusercontent.com/owner/repo/abc/src/lib.rs".to_string(),
+                ),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let groups = vec![make_group(RepoResultGroupKind::SourceFiles, vec![card])];
+        let hints = crate::core::repo_query::RepoQueryHints::default();
+        let fetches = generate_suggested_fetches(&groups, &hints);
+
+        assert_eq!(
+            fetches[0].url, "https://raw.githubusercontent.com/owner/repo/abc/src/lib.rs",
+            "raw_permalink_url must win over raw_url, permalink_url, and browser_url"
+        );
     }
 }

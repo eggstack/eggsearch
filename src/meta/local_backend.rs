@@ -941,6 +941,7 @@ mod tests {
     use super::*;
     use std::fs;
 
+    #[allow(dead_code)]
     fn make_temp_workspace() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

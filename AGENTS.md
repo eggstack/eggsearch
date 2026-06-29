@@ -401,6 +401,18 @@ queries when the caller wants categorized results rather than a flat
   optional `security_context: Option<Vec<VulnerabilityMetadata>>`
 - `RepoSuggestedFetch`: `url`, `reason`, `group`, `expected_kind`,
   `recommended_extract_mode`, `priority`, optional `structured_repo_fetch`
+
+**Suggested fetch URL priority (code evidence):** When a
+`SourceCard` has structured `code_evidence` metadata, suggested
+fetch URLs are selected in this order:
+
+1. `code_evidence.raw_permalink_url` — commit-stable raw content
+2. `code_evidence.raw_url` — mutable raw content for the ref
+3. `code_evidence.permalink_url` — commit-stable browser URL
+4. `code_evidence.browser_url` — mutable browser URL for the ref
+5. `card.url` — final fallback for non-code results
+
+The priority is implemented in `src/meta/suggested_fetches.rs`.
 - `RepoSearchTelemetry`: `provider_selection`, `subqueries`,
   `deadline_exceeded`, `subqueries_interrupted`, `subqueries_skipped`
 - `ProviderSelectionTelemetry`: `profile_requested`, `profile_applied`,

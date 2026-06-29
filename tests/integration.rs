@@ -8964,6 +8964,66 @@ async fn repo_search_coding_profile_partial_not_fully_degraded() {
     );
 }
 
+/// When NONE of the coding profile's built-in providers are available,
+/// the response should fall back to default providers and report
+/// `degraded = true`, `partial = false`, with the resolved defaults
+/// actually used.
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_profile_all_unavailable_is_fully_degraded() {
+    let engines = vec![MockEngine::success("yahoo", vec![])];
+    let mut cfg = test_cfg();
+    // Register only yahoo. yahoo is NOT in the coding profile's
+    // built-in candidate list, so all profile providers resolve to
+    // nothing and we exercise the full-degradation path.
+    cfg.search.providers.insert("yahoo".to_string(), true);
+    // Restrict default_providers to yahoo so the fallback path
+    // doesn't try to use un-built engines.
+    cfg.search.default_providers = vec!["yahoo".to_string()];
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let v = run_repo_search(
+        state,
+        RepoSearchArgs {
+            query: "tokio-rs/axum".into(),
+            providers: vec![],
+            profile: Some("coding".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search with fully-degraded coding profile should succeed");
+
+    let selection = v["telemetry"]["provider_selection"]
+        .as_object()
+        .expect("provider_selection should be object");
+    assert_eq!(
+        selection["profile_requested"], "coding",
+        "profile_requested should be coding"
+    );
+    assert_eq!(
+        selection["degraded"], true,
+        "all profile providers unavailable -> degraded should be true: {selection:?}"
+    );
+    assert!(
+        selection.get("partial").is_none() || selection["partial"] == false,
+        "all profile providers unavailable -> partial should be false: {selection:?}"
+    );
+
+    // Default providers should be queried (yahoo is not in the coding
+    // profile, so it must come from the fallback path).
+    let providers_queried = v["providers_queried"]
+        .as_array()
+        .expect("providers_queried should be array");
+    let queried: Vec<&str> = providers_queried
+        .iter()
+        .filter_map(|p| p.as_str())
+        .collect();
+    assert!(
+        queried.contains(&"yahoo"),
+        "fallback provider yahoo should be queried: {queried:?}"
+    );
+}
+
 // ---- URL semantics tests (Step 5) ----
 
 #[tokio::test]
@@ -9395,6 +9455,37 @@ async fn repo_search_coding_profile_partial_degradation_succeeds() {
         selection["partial"], true,
         "telemetry should show partial=true when some providers are skipped"
     );
+
+    // skipped_providers should list the coding profile providers that
+    // were not built. The exact set depends on which providers are
+    // configured/built in the test fixture, but the array must be
+    // non-empty and must contain at least one profile provider id.
+    let skipped = selection["skipped_providers"]
+        .as_array()
+        .expect("skipped_providers should be array");
+    let skipped_ids: Vec<&str> = skipped.iter().filter_map(|s| s.as_str()).collect();
+    assert!(
+        !skipped_ids.is_empty(),
+        "skipped_providers should be non-empty when some coding profile providers are missing, got {skipped_ids:?}"
+    );
+    // The skipped ids should be drawn from the coding profile's
+    // built-in candidate list (github_code, github_issues,
+    // github_releases, brave_api, searxng, duckduckgo, startpage).
+    let coding_candidates = [
+        "github_code",
+        "github_issues",
+        "github_releases",
+        "brave_api",
+        "searxng",
+        "duckduckgo",
+        "startpage",
+    ];
+    for id in &skipped_ids {
+        assert!(
+            coding_candidates.contains(id),
+            "skipped provider {id} should be from the coding profile candidate list, got {skipped_ids:?}"
+        );
+    }
 }
 
 /// Step 4: explicit unknown provider in repo_search is a hard error
@@ -9936,4 +10027,14 @@ async fn repo_search_profile_all_providers_available_is_not_degraded_or_partial(
         selection.get("partial").is_none() || selection["partial"] == false,
         "all-available should not be partial"
     );
+    // skipped_providers is omitted from the response when empty
+    // (skip_serializing_if = "Vec::is_empty"). Confirm the field is
+    // either absent or an empty array.
+    match selection.get("skipped_providers") {
+        None => {}
+        Some(serde_json::Value::Array(arr)) if arr.is_empty() => {}
+        Some(other) => {
+            panic!("all-available should have absent or empty skipped_providers, got {other:?}")
+        }
+    }
 }

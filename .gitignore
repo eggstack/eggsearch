@@ -15,3 +15,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Stray root-level binary artifacts
+# `test_struct` was a Mach-O binary accidentally committed at the
+# repo root. It is not a project fixture; do not re-introduce it.
+/test_struct

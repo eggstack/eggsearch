@@ -846,6 +846,20 @@ selection degraded to generic providers.
 `PullRequests`, `Releases`, `MigrationNotes`, `Changelog`,
 `CommunityDiscussion`, `Other`.
 
+**Suggested fetch URL priority (code evidence):** When a
+`SourceCard` has structured `code_evidence` metadata, suggested
+fetch URLs are selected in this order:
+
+1. `code_evidence.raw_permalink_url` — commit-stable raw content
+2. `code_evidence.raw_url` — mutable raw content for the ref
+3. `code_evidence.permalink_url` — commit-stable browser URL
+4. `code_evidence.browser_url` — mutable browser URL for the ref
+5. `card.url` — final fallback for non-code results
+
+This ordering lets coding agents prefer commit-stable raw URLs
+when available, while retaining sensible fallbacks for sparse
+code-evidence.
+
 **Telemetry fields:**
 
 - `provider_selection.profile_requested`: profile from the request
