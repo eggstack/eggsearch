@@ -93,8 +93,14 @@ pub fn group_security_results(
                 label: security_group_label(kind),
                 results: vec![card.clone()],
                 truncated: false,
+                quality_summary: None,
             });
         }
+    }
+
+    // Compute quality summaries after all cards are grouped.
+    for group in groups.iter_mut() {
+        group.quality_summary = Some(crate::core::quality::compute_group_quality(&group.results));
     }
 
     // Sort groups by kind for deterministic output

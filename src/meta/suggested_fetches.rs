@@ -164,6 +164,7 @@ mod tests {
             label: format!("{kind:?}"),
             results: cards,
             truncated: false,
+            quality_summary: None,
         }
     }
 

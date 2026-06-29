@@ -27,6 +27,7 @@ for the default configuration.
 - `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text, classified links with deterministic kind/rel/same-domain metadata, and optional PDF text extraction (feature-gated)
 - `batch_fetch` MCP tool: bounded batch fetch over explicit URLs or structured repo locators in a single call with per-item results and trust markers (not a crawler)
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
+- **Result Quality and Uncertainty**: Deterministic per-result quality metadata (confidence, relevance, authority, freshness, evidence strength) with uncertainty reasons and group-level quality summaries
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
 - 850+ fast tests (no network required)

@@ -9965,6 +9965,7 @@ async fn suggested_fetch_prefers_raw_permalink_over_raw_url() {
         label: "source_files".to_string(),
         results: vec![card],
         truncated: false,
+        quality_summary: None,
     }];
 
     let hints = eggsearch::core::repo_query::RepoQueryHints::default();
@@ -10018,6 +10019,7 @@ async fn suggested_fetch_falls_back_to_raw_url_when_no_permalink() {
         label: "source_files".to_string(),
         results: vec![card],
         truncated: false,
+        quality_summary: None,
     }];
 
     let hints = eggsearch::core::repo_query::RepoQueryHints::default();

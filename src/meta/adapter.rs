@@ -1012,6 +1012,25 @@ impl MetadataSearchAdapter {
             deadline_exceeded: dispatch.deadline.exceeded,
             subqueries_interrupted: dispatch.deadline.subqueries_interrupted,
             subqueries_skipped: dispatch.deadline.subqueries_skipped,
+            uncertainty_summary: Some(crate::core::quality::SearchUncertaintySummary {
+                provider_failures: providers_failed.len(),
+                degraded_provider_selection: false,
+                partial_provider_selection: false,
+                low_confidence_results: groups
+                    .iter()
+                    .flat_map(|g| &g.results)
+                    .filter(|c| {
+                        c.quality.as_ref().is_some_and(|q| {
+                            matches!(
+                                q.confidence,
+                                crate::core::quality::ResultConfidence::Low
+                                    | crate::core::quality::ResultConfidence::Unknown
+                            )
+                        })
+                    })
+                    .count(),
+                warnings: Vec::new(),
+            }),
         };
 
         // Security context: query advisories when requested and package is present
@@ -1816,7 +1835,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         _ => None,
     };
 
-    Some(SourceCard {
+    let mut source_card = SourceCard {
         id,
         title,
         url: a.url.clone(),
@@ -1838,7 +1857,13 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
                 crate::core::code_evidence::build_code_evidence(c, Some(&a.url), code_search_symbol)
             }),
         },
-    })
+        quality: None,
+    };
+
+    // Compute deterministic quality metadata for the card.
+    source_card.quality = Some(crate::core::quality::compute_card_quality(&source_card));
+
+    Some(source_card)
 }
 
 /// Sanitize a single field of untrusted search-result text.

@@ -243,6 +243,9 @@ pub struct ResearchResultGroup {
     pub results: Vec<SourceCard>,
     /// Whether additional results were truncated.
     pub truncated: bool,
+    /// Aggregate quality summary for this group's results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_summary: Option<crate::core::quality::GroupQualitySummary>,
 }
 
 /// A suggested URL for the caller to fetch.

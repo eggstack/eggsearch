@@ -373,11 +373,13 @@ pub fn group_research_results(
                 .get(&kind)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("{kind:?}"));
+            let quality_summary = Some(crate::core::quality::compute_group_quality(&results));
             groups.push(ResearchResultGroup {
                 kind,
                 label,
                 results,
                 truncated,
+                quality_summary,
             });
         }
     }

@@ -145,6 +145,9 @@ pub struct RepoSearchTelemetry {
     /// Number of subqueries that were skipped (never started).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub subqueries_skipped: usize,
+    /// Aggregate uncertainty summary for the response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uncertainty_summary: Option<crate::core::quality::SearchUncertaintySummary>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -427,6 +430,9 @@ pub struct RepoResultGroup {
     pub results: Vec<SourceCard>,
     /// Whether additional results were truncated.
     pub truncated: bool,
+    /// Aggregate quality summary for this group's results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_summary: Option<crate::core::quality::GroupQualitySummary>,
 }
 
 /// A suggested URL for the caller to fetch.
@@ -908,6 +914,7 @@ mod tests {
             deadline_exceeded: false,
             subqueries_interrupted: 0,
             subqueries_skipped: 0,
+            uncertainty_summary: None,
         };
         let json = serde_json::to_string(&telemetry).unwrap();
         let parsed: RepoSearchTelemetry = serde_json::from_str(&json).unwrap();

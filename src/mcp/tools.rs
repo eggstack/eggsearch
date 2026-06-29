@@ -872,6 +872,12 @@ pub fn run_provider_status(
             "pdf_fetch": cfg!(feature = "pdf"),
             "local_workspace": local_enabled,
         },
+        "quality_metadata": {
+            "enabled": true,
+            "per_result": true,
+            "group_summary": true,
+            "uses_model_judging": false,
+        },
         "tool_capabilities": {
             "repo_fetch": {
                 "remote_hosts": ["github", "gitlab"],

@@ -250,6 +250,38 @@ untrusted data.
 
 When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence. `permalink_url` is browser-viewable (e.g. `github.com/.../blob/{sha}/...`); `raw_permalink_url` is raw content at the commit SHA. When the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type), `code_evidence` also includes a `matched_symbol` field with the matched text and `provider_text_match` in `evidence_reasons`.
 
+### Result Quality and Uncertainty
+
+Each `SourceCard` includes an optional `quality: Option<ResultQuality>` field
+with deterministic heuristic metadata. **Quality fields are NOT truth
+judgments or factual correctness claims.** They help agents decide when
+to fetch more evidence, not as proof of accuracy.
+
+Key fields on `ResultQuality`:
+- `confidence`: `high`, `medium`, `low`, or `unknown` — overall confidence the result is relevant and accurate
+- `relevance`: `exact`, `strong`, `partial`, `weak`, or `unknown` — how well the result matches the query
+- `authority`: `primary`, `official`, `maintainer`, `package_registry`, `community`, `news_or_blog`, or `unknown` — authority tier of the source
+- `freshness`: `current`, `recent`, `historical`, `undated`, `stale`, or `unknown` — how recent the content is
+- `evidence_strength`: `exact_code_span`, `exact_identifier`, `structured_metadata`, `snippet_only`, `url_only`, or `unknown`
+- `uncertainty_reasons`: deterministic reasons for uncertainty (e.g. `no_snippet`, `no_timestamp`, `generic_provider_only`, `fuzzy_query_match`, `low_authority_source`)
+- `quality_reasons`: deterministic reasons for high quality (e.g. `official_docs`, `maintainer_source`, `primary_advisory`, `fresh_timestamp`, `commit_pinned_evidence`, `structured_code_evidence`)
+
+Grouped responses (`repo_search`, `security_search`, `research_search`)
+include a `quality_summary: Option<GroupQualitySummary>` on each group
+with aggregate counts (`high_confidence_count`, `low_confidence_count`,
+`primary_source_count`, `exact_evidence_count`).
+
+`repo_search` telemetry includes an `uncertainty_summary: Option<SearchUncertaintySummary>`
+with aggregate provider failure counts, degraded selection flags, and
+low-confidence result counts.
+
+**Agent guidance:**
+- Prefer `high` confidence code spans with raw permalinks
+- Prefer official/maintainer docs for API semantics
+- Prefer primary advisories for vulnerability facts
+- Fetch more evidence when `uncertainty_reasons` includes `no_snippet`, `fuzzy_query_match`, or `generic_provider_only`
+- Treat low authority + no exact match as weak evidence
+
 ### Document Model
 
 `web_fetch` returns an optional `document: Option<FetchDocument>` alongside the legacy `text` field. Existing agents can keep reading `text`; newer agents can inspect the structured `document` object.

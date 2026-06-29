@@ -289,6 +289,11 @@ pub struct SourceCard {
     /// inspect first. Populated by the adapter after aggregation.
     #[serde(default, skip_serializing_if = "is_default_metadata")]
     pub metadata: SourceMetadata,
+    /// Deterministic quality and uncertainty metadata. Populated by
+    /// the adapter after aggregation. Agents use this to decide when
+    /// to fetch more evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<crate::core::quality::ResultQuality>,
 }
 
 fn is_default_metadata(m: &SourceMetadata) -> bool {
@@ -343,6 +348,7 @@ impl SourceCard {
             fetched: false,
             trust_markers: TrustMarkers::default(),
             metadata: SourceMetadata::default(),
+            quality: None,
         }
     }
 
@@ -365,6 +371,12 @@ impl SourceCard {
     /// Attach deterministic source metadata to this card.
     pub fn with_metadata(mut self, m: SourceMetadata) -> Self {
         self.metadata = m;
+        self
+    }
+
+    /// Attach deterministic quality metadata to this card.
+    pub fn with_quality(mut self, q: crate::core::quality::ResultQuality) -> Self {
+        self.quality = Some(q);
         self
     }
 }

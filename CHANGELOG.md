@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Provider capability audit: searxng and brave_api capabilities corrected to reflect what the adapter actually forwards (not what the upstream API supports); github_releases `org_filter` corrected to false
 - Capability warnings emitted when requests ask for behavior providers cannot enforce (safe_search, freshness, intent without native providers)
+- Within-group reranking now includes quality-based boosts (high confidence, exact evidence, official authority)
 
 ### Added
 
@@ -21,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RankReason::SecurityPrimarySource`, `RankReason::SecurityMaintainerSource`, `RankReason::VersionAffectedMatch` variants for security search ranking metadata
 - `version_mismatch` warning when package found but no advisory has affected version ranges matching the supplied version
 - Integration test for `repo_search` with `include_security_context` flag
+- **Result quality and uncertainty metadata**: `ResultQuality` per-result quality block on `SourceCard` with `confidence`, `relevance`, `authority`, `freshness`, `evidence_strength`, `uncertainty_reasons`, and `quality_reasons`
+- `GroupQualitySummary` on `RepoResultGroup`, `ResearchResultGroup`, `SecurityResultGroup` with aggregate confidence/evidence counts
+- `SearchUncertaintySummary` in `RepoSearchTelemetry` with provider failure counts and low-confidence result counts
+- `quality_metadata` object in `provider_status` response advertising quality metadata capabilities
+- Deterministic quality computation from URL heuristics, provider signals, and structured metadata (no model-based judging)
 
 ### Added
 

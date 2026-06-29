@@ -249,6 +249,30 @@ fn rerank_group(cards: &mut [SourceCard], hints: &RepoQueryHints) {
             _ => {}
         }
 
+        // --- quality-based boosts (small, bounded) ---
+        if let Some(ref q) = card.quality {
+            // High confidence gets a small boost
+            if q.confidence == crate::core::quality::ResultConfidence::High {
+                boost += boost_unit * 0.5;
+            }
+            // Exact evidence strength gets a small boost
+            if matches!(
+                q.evidence_strength,
+                crate::core::quality::EvidenceStrength::ExactCodeSpan
+                    | crate::core::quality::EvidenceStrength::ExactIdentifier
+            ) {
+                boost += boost_unit * 0.5;
+            }
+            // Official/primary authority gets a small boost
+            if matches!(
+                q.authority,
+                crate::core::quality::AuthorityEstimate::Official
+                    | crate::core::quality::AuthorityEstimate::Primary
+            ) {
+                boost += boost_unit * 0.3;
+            }
+        }
+
         if boost > 0.0 {
             card.score = Some(base + boost);
         }
@@ -434,11 +458,13 @@ pub fn group_results(cards: Vec<SourceCard>, max_per_group: usize) -> Vec<RepoRe
                 .get(&kind)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("{kind:?}"));
+            let quality_summary = Some(crate::core::quality::compute_group_quality(&results));
             groups.push(RepoResultGroup {
                 kind,
                 label,
                 results,
                 truncated,
+                quality_summary,
             });
         }
     }
@@ -517,11 +543,13 @@ pub fn group_results_with_hints(
                 .get(&kind)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("{kind:?}"));
+            let quality_summary = Some(crate::core::quality::compute_group_quality(&results));
             groups.push(RepoResultGroup {
                 kind,
                 label,
                 results,
                 truncated,
+                quality_summary,
             });
         }
     }

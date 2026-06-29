@@ -17,6 +17,8 @@ pub mod local;
 /// Package coordinate types and ecosystem resolution for repo_search.
 pub mod package;
 pub mod provider;
+/// Deterministic result quality and uncertainty metadata.
+pub mod quality;
 pub mod query;
 /// Structured repository fetch request/response types and validation.
 pub mod repo_fetch;
@@ -56,6 +58,11 @@ pub use package::{
 pub use provider::{
     built_in_provider_descriptor, ProviderCapabilities, ProviderDescriptor, ProviderKind,
     KNOWN_PROVIDER_IDS,
+};
+pub use quality::{
+    compute_card_quality, compute_group_quality, AuthorityEstimate, EvidenceStrength,
+    FreshnessEstimate, GroupQualitySummary, QualityReason, RelevanceEstimate, ResultConfidence,
+    ResultQuality, SearchUncertaintySummary, UncertaintyReason,
 };
 pub use query::{
     resolve_max_results, Freshness, MaxResultsResolution, SafeSearch, SearchIntent,
