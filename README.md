@@ -1041,6 +1041,10 @@ fetch results use `trust = local_trusted` and workspace pseudo-URLs.
 - Use `repo_fetch` to **fetch a known** repository file or line
   range — it takes structured locator fields (owner, repo, path,
   line range) and returns bounded extracted text.
+- Use `batch_fetch` to **fetch multiple** suggested URLs or repo
+  locators in a single call — feed `suggested_fetches` entries
+  from `repo_search` directly into `batch_fetch` for controlled
+  fan-out over several files.
 - Use `web_fetch` for **arbitrary URLs** and non-repository pages —
   documentation sites, blog posts, API endpoints, and any other
   HTTP(S) URL not tied to a repository source file.
