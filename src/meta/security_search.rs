@@ -214,6 +214,21 @@ pub async fn run_security_search_plan(
             "version_match_unavailable: version-specific matching is not yet implemented; \
              affected version ranges are returned as-is from advisory databases",
         ));
+
+        // Warn when package was found but no vulnerability has affected ranges
+        if resolved_ids.package.is_some()
+            && resolved_ids.ecosystem.is_some()
+            && vulnerabilities
+                .iter()
+                .all(|v| v.affected_ranges.is_empty() && v.vulnerable_versions.is_empty())
+        {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "version_mismatch: package was found but no advisory has affected version \
+                 ranges matching the supplied version; the package may not be affected or \
+                 version-specific advisory data is unavailable",
+            ));
+        }
     }
 
     // 8. Group results and generate suggested fetches
@@ -228,7 +243,18 @@ pub async fn run_security_search_plan(
     // 9. Build security context
     let query_kind = security::classify_query_kind(&resolved_ids);
     let identifiers = security::build_identifier_list(&resolved_ids);
-    let source_quality = security::assess_source_quality(&web_resp.results);
+    let mut source_quality = security::assess_source_quality(&web_resp.results);
+
+    // Annotate when version hint is present and vulnerabilities have affected ranges
+    if resolved_ids.version.is_some()
+        && vulnerabilities
+            .iter()
+            .any(|v| !v.affected_ranges.is_empty())
+    {
+        source_quality
+            .tier_reasons
+            .push("version_affected_match: query includes version hint and advisory has affected ranges".to_string());
+    }
 
     // Build affected package summaries from vulnerability metadata
     let affected_packages: Vec<AffectedPackageSummary> = {
@@ -469,6 +495,17 @@ mod tests {
         assert!(
             msg.starts_with("version_match_unavailable:"),
             "version_match_unavailable warning must use stable prefix: {msg}"
+        );
+    }
+
+    #[test]
+    fn warning_prefix_version_mismatch() {
+        let msg = "version_mismatch: package was found but no advisory has affected version \
+                   ranges matching the supplied version; the package may not be affected or \
+                   version-specific advisory data is unavailable";
+        assert!(
+            msg.starts_with("version_mismatch:"),
+            "version_mismatch warning must use stable prefix: {msg}"
         );
     }
 

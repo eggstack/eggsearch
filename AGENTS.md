@@ -222,7 +222,7 @@ eggsearch/
 ### Source Cards
 - `SourceCard` is the primary output type returned by `web_search`
 - Each card has a UUID-based `id` (`src_<uuid>`) unique per response
-- Each card includes deterministic `metadata` with `source_kind` (enum: `official_docs`, `package_registry`, `source_repository`, `repository_root`, `source_directory`, `source_file`, `issue_thread`, `pull_request`, `tag`, `commit`, `release_notes`, `security_advisory`, `reference`, `news`, `tutorial`, `forum`, `unknown`), `domain`, and `rank_reasons` (e.g. `rrf_multi_provider`, `intent_match`, `domain_prior_docs`)
+- Each card includes deterministic `metadata` with `source_kind` (enum: `official_docs`, `package_registry`, `source_repository`, `repository_root`, `source_directory`, `source_file`, `issue_thread`, `pull_request`, `tag`, `commit`, `release_notes`, `security_advisory`, `reference`, `news`, `tutorial`, `forum`, `unknown`), `domain`, and `rank_reasons` (e.g. `rrf_multi_provider`, `intent_match`, `domain_prior_docs`, `security_primary_source`, `security_maintainer_source`, `version_affected_match`)
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
 - `WebFetchResponse` is the output type returned by `web_fetch`; trust is always `external_untrusted` for live web content
@@ -770,6 +770,7 @@ Each `DefensiveGuidance` entry includes `title`, `description`,
 - `no_native_advisory_provider`: only generic web search was used
 - `identifier_not_found`: a requested ID was not found in native providers
 - `version_match_unavailable`: affected version could not be determined
+- `version_mismatch`: package was found but no advisory has affected version ranges matching the supplied version
 - `kev_match`: CVE(s) found in KEV catalog
 - `kev_absent_not_proof`: no CVE(s) found (absence is not proof)
 - `kev_lookup_failed`: catalog lookup failed

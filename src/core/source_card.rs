@@ -96,6 +96,12 @@ pub enum RankReason {
     PackageAdvisory,
     /// Result is defensive guidance or hardening documentation.
     DefensiveGuidance,
+    /// Result is from a primary advisory source (NVD, OSV, RustSec).
+    SecurityPrimarySource,
+    /// Result is from a maintainer discussion source (issue, PR, project security page).
+    SecurityMaintainerSource,
+    /// Result has affected version metadata matching the query version hint.
+    VersionAffectedMatch,
 }
 
 /// Structured issue metadata from native GitHub issues providers.

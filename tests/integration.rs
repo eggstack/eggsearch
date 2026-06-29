@@ -6645,6 +6645,53 @@ mod repo_search {
         );
     }
 
+    #[tokio::test]
+    async fn repo_search_with_include_security_context() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "axum on crates.io",
+                    "https://crates.io/crates/axum",
+                    "mock_a",
+                )
+                .with_snippet("A web framework for Rust"),
+                MockResult::new(
+                    "Axum Docs",
+                    "https://docs.rs/axum/latest/axum/",
+                    "mock_a",
+                )
+                .with_snippet("API documentation for axum"),
+            ],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "axum".into(),
+                providers: vec!["mock_a".into()],
+                include_security_context: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        assert_eq!(v["query"], "axum");
+        // Without package resolution, security_context is absent (skipped when None).
+        // With package resolution + advisory data, it would be a populated object.
+        assert!(
+            v.get("security_context").is_none(),
+            "security_context should be absent when no package resolution is available"
+        );
+        // Verify the rest of the response structure is intact
+        assert!(v["groups"].is_array(), "groups should be an array");
+        assert!(
+            v["suggested_fetches"].is_array(),
+            "suggested_fetches should be an array"
+        );
+    }
+
     #[cfg(feature = "mock")]
     fn security_state_with_engines(
         cfg: AppConfig,

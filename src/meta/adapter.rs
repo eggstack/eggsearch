@@ -1889,6 +1889,14 @@ fn apply_intent_reranking(
                     boost += boost_unit * 3.0;
                     reasons.push(RankReason::IntentMatch);
                     reasons.push(RankReason::DomainPriorSecurity);
+                    reasons.push(RankReason::SecurityPrimarySource);
+                } else if matches!(
+                    kind,
+                    SourceKind::IssueThread
+                        | SourceKind::PullRequest
+                        | SourceKind::ReleaseNotes
+                ) {
+                    reasons.push(RankReason::SecurityMaintainerSource);
                 }
             }
             SearchIntent::News => {

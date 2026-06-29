@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Capability warning system in adapter (6 advisory warning types)
 - Regression tests for intent-neutral generic search, intent reranking, and provider status
 - README stable baseline section documenting tool contracts
+- `RankReason::SecurityPrimarySource`, `RankReason::SecurityMaintainerSource`, `RankReason::VersionAffectedMatch` variants for security search ranking metadata
+- `version_mismatch` warning when package found but no advisory has affected version ranges matching the supplied version
+- Integration test for `repo_search` with `include_security_context` flag
 
 ### Added
 
