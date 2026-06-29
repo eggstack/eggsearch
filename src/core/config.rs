@@ -206,6 +206,24 @@ fn default_pdf_max_chars_per_page() -> usize {
 fn default_pdf_max_total_chars() -> usize {
     50000
 }
+fn default_batch_max_items() -> usize {
+    8
+}
+fn default_batch_max_items_cap() -> usize {
+    20
+}
+fn default_batch_max_chars_per_item() -> usize {
+    12000
+}
+fn default_batch_max_total_chars() -> usize {
+    50000
+}
+fn default_batch_max_total_chars_cap() -> usize {
+    120000
+}
+fn default_batch_concurrency() -> usize {
+    4
+}
 
 /// The `[fetch]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -264,6 +282,32 @@ pub struct FetchSection {
     /// Default: 50000.
     #[serde(default = "default_pdf_max_total_chars")]
     pub pdf_max_total_chars: usize,
+
+    // --- Batch fetch configuration ---
+    /// Default maximum number of items in a batch fetch request.
+    /// Callers can request fewer items but not more than `batch_max_items_cap`.
+    /// Default: 8.
+    #[serde(default = "default_batch_max_items")]
+    pub batch_max_items: usize,
+    /// Hard cap on the number of items in a batch fetch request.
+    /// Requests exceeding this are rejected. Default: 20.
+    #[serde(default = "default_batch_max_items_cap")]
+    pub batch_max_items_cap: usize,
+    /// Default per-item character extraction cap for batch fetch.
+    /// Default: 12000.
+    #[serde(default = "default_batch_max_chars_per_item")]
+    pub batch_max_chars_per_item: usize,
+    /// Default total character budget across all batch fetch items.
+    /// Default: 50000.
+    #[serde(default = "default_batch_max_total_chars")]
+    pub batch_max_total_chars: usize,
+    /// Hard cap on total characters across all batch fetch items.
+    /// Requests exceeding this are rejected. Default: 120000.
+    #[serde(default = "default_batch_max_total_chars_cap")]
+    pub batch_max_total_chars_cap: usize,
+    /// Maximum concurrent fetches in a batch request. Default: 4.
+    #[serde(default = "default_batch_concurrency")]
+    pub batch_concurrency: usize,
 }
 
 impl Default for FetchSection {
@@ -284,6 +328,12 @@ impl Default for FetchSection {
             pdf_max_pages: default_pdf_max_pages(),
             pdf_max_chars_per_page: default_pdf_max_chars_per_page(),
             pdf_max_total_chars: default_pdf_max_total_chars(),
+            batch_max_items: default_batch_max_items(),
+            batch_max_items_cap: default_batch_max_items_cap(),
+            batch_max_chars_per_item: default_batch_max_chars_per_item(),
+            batch_max_total_chars: default_batch_max_total_chars(),
+            batch_max_total_chars_cap: default_batch_max_total_chars_cap(),
+            batch_concurrency: default_batch_concurrency(),
         }
     }
 }
@@ -586,6 +636,40 @@ impl AppConfig {
                     }
                 }
             }
+        }
+
+        // Batch fetch config validation
+        if self.fetch.batch_max_items == 0 {
+            return Err(CoreError::Config(
+                "[fetch].batch_max_items must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.batch_max_items_cap == 0 {
+            return Err(CoreError::Config(
+                "[fetch].batch_max_items_cap must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.batch_max_items_cap < self.fetch.batch_max_items {
+            return Err(CoreError::Config(format!(
+                "[fetch].batch_max_items_cap ({}) must be >= [fetch].batch_max_items ({})",
+                self.fetch.batch_max_items_cap, self.fetch.batch_max_items
+            )));
+        }
+        if self.fetch.batch_max_total_chars == 0 {
+            return Err(CoreError::Config(
+                "[fetch].batch_max_total_chars must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.batch_max_total_chars_cap < self.fetch.batch_max_total_chars {
+            return Err(CoreError::Config(format!(
+                "[fetch].batch_max_total_chars_cap ({}) must be >= [fetch].batch_max_total_chars ({})",
+                self.fetch.batch_max_total_chars_cap, self.fetch.batch_max_total_chars
+            )));
+        }
+        if self.fetch.batch_concurrency == 0 {
+            return Err(CoreError::Config(
+                "[fetch].batch_concurrency must be > 0".to_string(),
+            ));
         }
 
         // Local config validation
@@ -1576,5 +1660,121 @@ providers = ["osv", "duckduckgo"]
             SearchProfile::parse("Research"),
             Some(SearchProfile::Research)
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch fetch config tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn default_batch_config_values() {
+        let c = AppConfig::default();
+        assert_eq!(c.fetch.batch_max_items, 8);
+        assert_eq!(c.fetch.batch_max_items_cap, 20);
+        assert_eq!(c.fetch.batch_max_chars_per_item, 12000);
+        assert_eq!(c.fetch.batch_max_total_chars, 50000);
+        assert_eq!(c.fetch.batch_max_total_chars_cap, 120000);
+        assert_eq!(c.fetch.batch_concurrency, 4);
+    }
+
+    #[test]
+    fn validate_accepts_default_batch_config() {
+        let c = AppConfig::default();
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_zero_batch_max_items() {
+        let mut c = AppConfig::default();
+        c.fetch.batch_max_items = 0;
+        let err = c.validate().expect_err("expected batch_max_items failure");
+        assert!(err.to_string().contains("batch_max_items"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_zero_batch_max_items_cap() {
+        let mut c = AppConfig::default();
+        c.fetch.batch_max_items_cap = 0;
+        let err = c
+            .validate()
+            .expect_err("expected batch_max_items_cap failure");
+        assert!(
+            err.to_string().contains("batch_max_items_cap"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_batch_max_items_cap_below_batch_max_items() {
+        let mut c = AppConfig::default();
+        c.fetch.batch_max_items = 10;
+        c.fetch.batch_max_items_cap = 5;
+        let err = c
+            .validate()
+            .expect_err("expected cap below default failure");
+        assert!(
+            err.to_string().contains("batch_max_items_cap"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_zero_batch_max_total_chars() {
+        let mut c = AppConfig::default();
+        c.fetch.batch_max_total_chars = 0;
+        let err = c
+            .validate()
+            .expect_err("expected batch_max_total_chars failure");
+        assert!(
+            err.to_string().contains("batch_max_total_chars"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_batch_max_total_chars_cap_below_batch_max_total_chars() {
+        let mut c = AppConfig::default();
+        c.fetch.batch_max_total_chars = 50000;
+        c.fetch.batch_max_total_chars_cap = 10000;
+        let err = c.validate().expect_err("expected total chars cap failure");
+        assert!(
+            err.to_string().contains("batch_max_total_chars_cap"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_zero_batch_concurrency() {
+        let mut c = AppConfig::default();
+        c.fetch.batch_concurrency = 0;
+        let err = c
+            .validate()
+            .expect_err("expected batch_concurrency failure");
+        assert!(err.to_string().contains("batch_concurrency"), "got: {err}");
+    }
+
+    #[test]
+    fn batch_config_toml_roundtrip() {
+        let c = AppConfig::default();
+        let text = toml::to_string(&c).unwrap();
+        let parsed: AppConfig = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.fetch.batch_max_items, c.fetch.batch_max_items);
+        assert_eq!(
+            parsed.fetch.batch_max_items_cap,
+            c.fetch.batch_max_items_cap
+        );
+        assert_eq!(
+            parsed.fetch.batch_max_chars_per_item,
+            c.fetch.batch_max_chars_per_item
+        );
+        assert_eq!(
+            parsed.fetch.batch_max_total_chars,
+            c.fetch.batch_max_total_chars
+        );
+        assert_eq!(
+            parsed.fetch.batch_max_total_chars_cap,
+            c.fetch.batch_max_total_chars_cap
+        );
+        assert_eq!(parsed.fetch.batch_concurrency, c.fetch.batch_concurrency);
     }
 }

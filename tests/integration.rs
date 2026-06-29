@@ -43,9 +43,9 @@ use eggsearch::core::config::{AppConfig, Mode};
 use eggsearch::core::fetch::ExtractMode;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
-    run_provider_status, run_repo_fetch, run_repo_search, run_security_search, run_web_fetch,
-    run_web_search, ProviderStatusArgs, RepoFetchArgs, RepoSearchArgs, SecuritySearchArgs,
-    WebFetchArgs, WebSearchArgs,
+    run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_search, run_security_search,
+    run_web_fetch, run_web_search, BatchFetchArgs, ProviderStatusArgs, RepoFetchArgs,
+    RepoSearchArgs, SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
 };
 use rmcp::ServerHandler;
 
@@ -1386,14 +1386,14 @@ async fn web_search_uses_default_max_results_when_omitted() {
 
 #[cfg(feature = "mock")]
 #[test]
-fn mcp_tool_surface_all_seven_tools_with_mock_state() {
+fn mcp_tool_surface_all_eight_tools_with_mock_state() {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 7, "expected exactly 7 tools, got: {names:?}");
+    assert_eq!(names.len(), 8, "expected exactly 8 tools, got: {names:?}");
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
@@ -1421,6 +1421,10 @@ fn mcp_tool_surface_all_seven_tools_with_mock_state() {
     assert!(
         names.contains(&"research_search".to_string()),
         "missing research_search: {names:?}"
+    );
+    assert!(
+        names.contains(&"batch_fetch".to_string()),
+        "missing batch_fetch: {names:?}"
     );
 
     // Verify the tools have non-empty descriptions (MCP contract).
@@ -10037,4 +10041,564 @@ async fn repo_search_profile_all_providers_available_is_not_degraded_or_partial(
             panic!("all-available should have absent or empty skipped_providers, got {other:?}")
         }
     }
+}
+
+// =========================================================================
+// Phase 6: batch_fetch tests
+// =========================================================================
+
+#[tokio::test]
+async fn batch_fetch_empty_items_returns_validation_error() {
+    let state = state_with_default();
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for empty items");
+    assert!(
+        err.to_string().contains("items must not be empty"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_disabled_by_policy_returns_error() {
+    let state = fetch_disabled_state();
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "https://example.com".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected policy denial");
+    assert!(err.to_string().contains("disabled by policy"), "got: {err}");
+}
+
+#[tokio::test]
+async fn batch_fetch_over_item_cap_returns_validation_error() {
+    let state = state_with_default();
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..100)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: format!("https://example.com/{i}"),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected cap error");
+    assert!(
+        err.to_string().contains("exceeds batch_max_items_cap"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_single_web_item_succeeds() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head>\
+                  <title>Batch Test</title>\
+                  </head><body>\
+                  <p>Hello from batch</p>\
+                  </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: server.url("/page"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    assert_eq!(v["fetched"], 1);
+    assert_eq!(v["failed"], 0);
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["ok"], true);
+    assert_eq!(results[0]["index"], 0);
+    assert_eq!(results[0]["item_type"], "web");
+    let resp = results[0]["response"]
+        .as_object()
+        .expect("response present");
+    assert_eq!(resp["status"], 200);
+    assert!(resp["text"].as_str().unwrap().contains("Hello from batch"));
+}
+
+#[tokio::test]
+async fn batch_fetch_multiple_web_items_return_in_order() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    for i in 0..3 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/page{i}"));
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(format!(
+                    "<!DOCTYPE html><html><head><title>P{i}</title></head><body><p>Content {i}</p></body></html>"
+                ).as_bytes());
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..3)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/page{i}")),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    assert_eq!(v["fetched"], 3);
+    assert_eq!(v["failed"], 0);
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(results.len(), 3);
+    // Verify input order preserved
+    for (i, r) in results.iter().enumerate() {
+        assert_eq!(r["index"], i, "result {i} should have index {i}");
+        assert_eq!(r["ok"], true);
+    }
+}
+
+#[tokio::test]
+async fn batch_fetch_web_item_failure_with_continue_on_error() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/ok");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(b"<!DOCTYPE html><html><body><p>OK</p></body></html>");
+    });
+    // /fail will 404
+    server.mock(|when, then| {
+        when.method(GET).path("/fail");
+        then.status(404)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(b"Not found");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/fail"),
+                    extract_mode: None,
+                    include_links: None,
+                    max_chars: None,
+                },
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/ok"),
+                    extract_mode: None,
+                    include_links: None,
+                    max_chars: None,
+                },
+            ],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: Some(true),
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    assert_eq!(v["fetched"], 1);
+    assert_eq!(v["failed"], 1);
+    let results = v["results"].as_array().expect("results");
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0]["ok"], false);
+    assert_eq!(results[1]["ok"], true);
+}
+
+#[tokio::test]
+async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/ok");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(b"<!DOCTYPE html><html><body><p>OK</p></body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: "https://198.51.100.1/nope".to_string(),
+                    extract_mode: None,
+                    include_links: None,
+                    max_chars: None,
+                },
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/ok"),
+                    extract_mode: None,
+                    include_links: None,
+                    max_chars: None,
+                },
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/ok"),
+                    extract_mode: None,
+                    include_links: None,
+                    max_chars: None,
+                },
+            ],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: Some(false),
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results");
+    // First should fail, remaining should be skipped
+    assert_eq!(results[0]["ok"], false);
+    assert_eq!(results[1]["ok"], false);
+    assert!(
+        results[1]["error"].as_str().unwrap().contains("aborted"),
+        "second item should report abort: {:?}",
+        results[1]["error"]
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_per_item_max_chars_enforced() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/big");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><body>\
+                  <p>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</p>\
+                  </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: server.url("/big"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: Some(20),
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results");
+    assert_eq!(results[0]["ok"], true);
+    let resp = results[0]["response"].as_object().expect("response");
+    let text = resp["text"].as_str().unwrap_or("");
+    let char_count = text.chars().count();
+    assert!(
+        char_count <= 30,
+        "text chars {char_count} should be bounded by per-item cap, got: {text:?}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_total_budget_enforced() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    for i in 0..5 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/page{i}"));
+            then.status(200)
+                .header("content-type", "text/plain; charset=utf-8")
+                .body(format!("Content for page {i} here.\n"));
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..5)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/page{i}")),
+            extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+            include_links: None,
+            max_chars: Some(50),
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(60),
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let warnings = v.get("warnings").and_then(|w| w.as_array());
+    let has_budget_warning = warnings
+        .map(|arr| {
+            arr.iter()
+                .any(|w| w.as_str().unwrap_or("").contains("budget"))
+        })
+        .unwrap_or(false);
+    assert!(
+        has_budget_warning,
+        "should have budget exhaustion warning: {v:?}"
+    );
+}
+
+#[test]
+fn batch_fetch_provider_status_capability() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let caps = v["server_capabilities"]
+        .as_object()
+        .expect("server_capabilities");
+    assert_eq!(caps["batch_fetch"], serde_json::json!(true));
+
+    let tcaps = v["tool_capabilities"]
+        .as_object()
+        .expect("tool_capabilities");
+    let batch = tcaps["batch_fetch"]
+        .as_object()
+        .expect("batch_fetch capability");
+    assert_eq!(batch["supports_web"], true);
+    assert_eq!(batch["supports_repo"], true);
+    assert_eq!(batch["preserves_item_trust"], true);
+    assert!(batch["max_items_cap"].is_number());
+    assert!(batch["max_total_chars_cap"].is_number());
+}
+
+#[tokio::test]
+async fn batch_fetch_empty_web_url_returns_error_in_result() {
+    let state = state_with_default();
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "  ".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for empty url");
+    assert!(
+        err.to_string().contains("url must not be empty"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_invalid_repo_host_returns_error() {
+    let state = state_with_default();
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
+                host: Some("bitbucket".to_string()),
+                owner: "test".to_string(),
+                repo: "repo".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "file.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected host validation error");
+    assert!(err.to_string().contains("unknown host"), "got: {err}");
+}
+
+#[tokio::test]
+async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    for i in 0..4 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/p{i}"));
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body(format!("page {i} content"));
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.batch_concurrency = 2;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..4)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/p{i}")),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results");
+    assert_eq!(results.len(), 4);
+    // Even with concurrency=2, results must be in input order
+    for (i, r) in results.iter().enumerate() {
+        assert_eq!(r["index"], i);
+        let label = r["label"].as_str().unwrap();
+        assert!(
+            label.contains(&format!("/p{i}")),
+            "result {i} label should reference /p{i}, got: {label}"
+        );
+    }
+}
+
+#[test]
+fn batch_fetch_server_instructions_mention_batch_fetch() {
+    let state = state_with_default();
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let info = server.get_info();
+    let instructions = info.instructions.unwrap_or_default();
+    assert!(
+        instructions.contains("batch_fetch"),
+        "instructions should mention batch_fetch: {instructions}"
+    );
 }

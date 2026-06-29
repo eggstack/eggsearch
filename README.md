@@ -24,6 +24,7 @@ for the default configuration.
 - `security_search` MCP tool: security-oriented retrieval with normalized vulnerability metadata from OSV and grouped source cards
 - `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches
 - `web_fetch` MCP tool and CLI command: bounded extraction of one explicit HTTP(S) URL with structured HTML rendering, Markdown mode, line-preserving rendering for source code, JSON, TOML, YAML, diffs/patches, and plain text, classified links with deterministic kind/rel/same-domain metadata, and optional PDF text extraction (feature-gated)
+- `batch_fetch` MCP tool: bounded batch fetch over explicit URLs or structured repo locators in a single call with per-item results and trust markers (not a crawler)
 - Compact `SourceCard` output with title, URL, snippet, providers, and trust label
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
@@ -33,7 +34,7 @@ for the default configuration.
 ## Stable baseline
 
 `web_search`, `web_fetch`, `provider_status`, `repo_search`,
-`security_search`, and `research_search` are the six stable MCP tools.
+`batch_fetch`, `security_search`, and `research_search` are the seven stable MCP tools.
 Generic search (`intent = web`) is first-class and will remain the
 default path. `repo_search` provides structured repository evidence
 discovery with grouped result bundles, search profiles for provider
@@ -1055,6 +1056,92 @@ fetch results use `trust = local_trusted` and workspace pseudo-URLs.
   to `web_fetch` with a code-host source-file URL derived from
   the owner/repo/path fields.
 
+### `batch_fetch`
+
+Bounded batch fetch tool. Fetches multiple explicit HTTP(S) URLs or
+structured repository file locators in a single call, returning
+per-item results with trust markers. This is NOT a crawler — every
+item must be an explicit URL or structured locator provided by the
+caller.
+
+**Minimal call:**
+
+```json
+{
+  "items": [
+    "https://docs.rs/tower-http/latest/tower_http/",
+    "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs"
+  ]
+}
+```
+
+**With structured repo locators:**
+
+```json
+{
+  "items": [
+    {
+      "owner": "tokio-rs",
+      "repo": "axum",
+      "path": "src/lib.rs",
+      "line_start": 1,
+      "line_end": 50
+    },
+    "https://docs.rs/axum/latest/axum/"
+  ],
+  "max_chars": 8000
+}
+```
+
+**Output:**
+
+```json
+{
+  "fetched": 2,
+  "failed": 0,
+  "truncated": false,
+  "total_chars_returned": 14500,
+  "results": [
+    {
+      "url": "https://docs.rs/tower-http/latest/tower_http/",
+      "fetched": true,
+      "trust": "external_untrusted",
+      "text": "...bounded extracted text...",
+      "trust_markers": { ... }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs",
+      "fetched": true,
+      "trust": "external_untrusted",
+      "text": "...bounded extracted text...",
+      "trust_markers": { ... }
+    }
+  ],
+  "warnings": []
+}
+```
+
+**Rules:**
+
+- `items` is required and must contain at least one entry.
+- Items must be explicit URLs or structured locators — no crawling,
+  no link following, no directory listing.
+- Total output is bounded by `batch_max_total_chars` (default 50000,
+  cap 200000) and per-item output by `batch_max_chars_per_item`
+  (default 12000).
+- Maximum items per request is `batch_max_items` (default 10,
+  cap 25). Concurrent fetches are bounded by `batch_concurrency`
+  (default 5).
+- A failure on one item does not abort the remaining items
+  (`continue_on_error` semantics). Each item result includes its
+  own `trust` label and `trust_markers`.
+- All web/remote content is `external_untrusted`. Workspace locator
+  results are `local_trusted`.
+- Reuses existing fetch safety limits (SSRF, localhost, private
+  network validation) from `web_fetch`.
+- If `batch_fetch` is unavailable (e.g. older server), fall back
+  to multiple `web_fetch` calls.
+
 ## Configuration
 
 Default config path: `$XDG_CONFIG_HOME/eggsearch/config.toml`
@@ -1156,6 +1243,12 @@ pdf_max_total_chars = 50000
 | `pdf_max_pages` | `25` | Maximum number of PDF pages to extract text from. |
 | `pdf_max_chars_per_page` | `12000` | Maximum characters extracted per PDF page. |
 | `pdf_max_total_chars` | `50000` | Maximum total characters extracted from a PDF document. |
+| `batch_max_items` | `10` | Maximum number of items per `batch_fetch` request. |
+| `batch_max_items_cap` | `25` | Server-enforced upper bound on `batch_fetch` items. |
+| `batch_max_chars_per_item` | `12000` | Per-item extraction cap for `batch_fetch`. |
+| `batch_max_total_chars` | `50000` | Total character budget across all items in `batch_fetch`. |
+| `batch_max_total_chars_cap` | `200000` | Server-enforced upper bound on total chars for `batch_fetch`. |
+| `batch_concurrency` | `5` | Maximum concurrent fetches for `batch_fetch`. |
 
 > **Note.** The `[search].live.user_agent` and `[search].live.respect_robots_txt` config fields are parsed but have no effect in the current build. The vendored HTML engines use a hard-coded browser-like user agent that upstream providers expect. Setting either field logs a startup warning.
 
@@ -1201,10 +1294,10 @@ eggsearch/
     lib.rs               # library root (modules: core, fetch, mcp, meta)
     config.rs            # CLI config loader
     commands/            # subcommands: doctor, search, providers, mcp, fetch
-    core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types, code evidence metadata
+    core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types, batch fetch types, code evidence metadata
     fetch/               # HTTP fetch client and HTML extraction
     meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, + vendored engines
-    mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, security_search, research_search
+    mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, batch_fetch, security_search, research_search
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 

@@ -1,8 +1,9 @@
 //! MCP tool implementations for the metasearch server.
 //!
-//! Seven tools are exposed:
+//! Eight tools are exposed:
 //! - `web_search`        — live metasearch.
 //! - `web_fetch`         — explicit URL fetch.
+//! - `batch_fetch`       — bounded batch fetch over explicit URLs/locators.
 //! - `provider_status`   — diagnostic report of configured providers.
 //! - `repo_search`       — structured repository evidence discovery.
 //! - `repo_fetch`        — structured repository file fetch by locator.
@@ -291,6 +292,28 @@ pub struct WebFetchArgs {
     /// `[fetch].include_links_default` config value when omitted.
     #[serde(default)]
     pub include_links: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct BatchFetchArgs {
+    /// Items to fetch. Must be non-empty.
+    pub items: Vec<crate::core::batch_fetch::BatchFetchItem>,
+    /// Maximum number of items to process. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_items: Option<usize>,
+    /// Per-item character extraction cap. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_chars_per_item: Option<usize>,
+    /// Total character budget across all items. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_total_chars: Option<usize>,
+    /// Timeout in milliseconds. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Whether to continue fetching remaining items after a failure.
+    /// Defaults to `true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continue_on_error: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -828,6 +851,7 @@ pub fn run_provider_status(
             "repo_fetch": true,
             "security_search": true,
             "research_search": true,
+            "batch_fetch": true,
             "document_fetch": true,
             "pdf_fetch": cfg!(feature = "pdf"),
             "local_workspace": local_enabled,
@@ -849,6 +873,14 @@ pub fn run_provider_status(
             "local_workspace": {
                 "enabled": local_enabled,
                 "symbol_enrichment": "regex_heuristic",
+            },
+            "batch_fetch": {
+                "enabled": state.config.fetch.enabled,
+                "max_items_cap": state.config.fetch.batch_max_items_cap,
+                "max_total_chars_cap": state.config.fetch.batch_max_total_chars_cap,
+                "supports_web": true,
+                "supports_repo": true,
+                "preserves_item_trust": true,
             },
         },
     });
@@ -1157,6 +1189,333 @@ pub async fn run_repo_fetch(
         }
         Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
     }
+}
+
+/// Run the `batch_fetch` tool.
+pub async fn run_batch_fetch(
+    state: Arc<ServerState>,
+    args: BatchFetchArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::batch_fetch::{
+        BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult,
+    };
+
+    // Policy check
+    if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
+        return Err(ToolError::Internal(web_fetch_denied_message()));
+    }
+
+    // Validate items non-empty
+    if args.items.is_empty() {
+        return Err(ToolError::Validation("items must not be empty".to_string()));
+    }
+
+    // Resolve effective limits
+    let batch_max_items = args
+        .max_items
+        .unwrap_or(state.config.fetch.batch_max_items)
+        .min(state.config.fetch.batch_max_items_cap);
+    let per_item_cap = args
+        .max_chars_per_item
+        .unwrap_or(state.config.fetch.batch_max_chars_per_item);
+    let total_cap = args
+        .max_total_chars
+        .unwrap_or(state.config.fetch.batch_max_total_chars)
+        .min(state.config.fetch.batch_max_total_chars_cap);
+    let continue_on_error = args.continue_on_error.unwrap_or(true);
+
+    // Validate item count
+    if args.items.len() > state.config.fetch.batch_max_items_cap {
+        return Err(ToolError::Validation(format!(
+            "items count ({}) exceeds batch_max_items_cap ({})",
+            args.items.len(),
+            state.config.fetch.batch_max_items_cap
+        )));
+    }
+
+    // Clamp to effective max_items
+    let effective_items: Vec<&BatchFetchItem> = args.items.iter().take(batch_max_items).collect();
+    let mut warnings = Vec::new();
+    if effective_items.len() < args.items.len() {
+        warnings.push(format!(
+            "batch_item_count_truncated: requested {} items, processing {} (batch_max_items={})",
+            args.items.len(),
+            effective_items.len(),
+            batch_max_items
+        ));
+    }
+
+    // Pre-validate all items before launching any fetches
+    for (i, item) in effective_items.iter().enumerate() {
+        match item {
+            BatchFetchItem::Web { url, .. } => {
+                if url.trim().is_empty() {
+                    return Err(ToolError::Validation(format!(
+                        "item {i}: url must not be empty"
+                    )));
+                }
+            }
+            BatchFetchItem::Repo {
+                owner,
+                repo,
+                path,
+                host,
+                ..
+            } => {
+                if owner.trim().is_empty() {
+                    return Err(ToolError::Validation(format!(
+                        "item {i}: owner must not be empty"
+                    )));
+                }
+                if repo.trim().is_empty() {
+                    return Err(ToolError::Validation(format!(
+                        "item {i}: repo must not be empty"
+                    )));
+                }
+                if path.trim().is_empty() {
+                    return Err(ToolError::Validation(format!(
+                        "item {i}: path must not be empty"
+                    )));
+                }
+                if path.contains("..") {
+                    return Err(ToolError::Validation(format!(
+                        "item {i}: path must not contain '..'"
+                    )));
+                }
+                if let Some(h) = host {
+                    match h.to_lowercase().as_str() {
+                        "github" | "gh" | "gitlab" | "gl" | "workspace" => {}
+                        other => {
+                            return Err(ToolError::Validation(format!(
+                                "item {i}: unknown host '{other}'; accepted: github (gh), gitlab (gl), workspace"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
+        ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
+    })?;
+
+    let concurrency = state.config.fetch.batch_concurrency;
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+
+    // Execute fetches with bounded concurrency, preserving input order
+    let mut results: Vec<BatchFetchResult> = Vec::with_capacity(effective_items.len());
+    let mut total_chars: usize = 0;
+    let mut budget_exhausted = false;
+    let mut failed_once = false;
+
+    for (i, item) in effective_items.iter().enumerate() {
+        // Check total budget
+        if total_chars >= total_cap {
+            budget_exhausted = true;
+            results.push(BatchFetchResult {
+                index: i,
+                item_type: match item {
+                    BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
+                    BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                },
+                label: item.label(),
+                ok: false,
+                response: None,
+                error: Some("total character budget exhausted".to_string()),
+                chars_returned: 0,
+                truncated: false,
+            });
+            continue;
+        }
+
+        if failed_once && !continue_on_error {
+            results.push(BatchFetchResult {
+                index: i,
+                item_type: match item {
+                    BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
+                    BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                },
+                label: item.label(),
+                ok: false,
+                response: None,
+                error: Some("batch aborted due to previous failure".to_string()),
+                chars_returned: 0,
+                truncated: false,
+            });
+            continue;
+        }
+
+        // Acquire semaphore permit for bounded concurrency
+        let _permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
+
+        let remaining_budget = total_cap.saturating_sub(total_chars);
+        let item_max_chars = per_item_cap.min(remaining_budget);
+
+        let result = match item {
+            BatchFetchItem::Web {
+                url,
+                extract_mode,
+                include_links,
+                max_chars,
+            } => {
+                let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
+                let em = effective_max.max(1);
+                let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
+                let il = include_links.unwrap_or(state.config.fetch.include_links_default);
+                let response = client.fetch(url, Some(em), mode, il).await;
+                match response {
+                    Ok(resp) => {
+                        let text_len = resp
+                            .document
+                            .as_ref()
+                            .map(|d| d.text_chars_returned)
+                            .unwrap_or_else(|| resp.text.as_ref().map(|t| t.len()).unwrap_or(0));
+                        let truncated = resp.truncated;
+                        let payload = serde_json::json!({
+                            "url": resp.url,
+                            "final_url": resp.final_url,
+                            "title": resp.title,
+                            "description": resp.description,
+                            "content_type": resp.content_type,
+                            "status": resp.status,
+                            "fetched": resp.fetched,
+                            "truncated": resp.truncated,
+                            "trust": "external_untrusted",
+                            "text": resp.text,
+                            "links": resp.links,
+                            "links_seen": resp.links_seen,
+                            "links_truncated": resp.links_truncated,
+                            "warnings": resp.warnings,
+                            "trust_markers": serde_json::to_value(&resp.trust_markers)
+                                .unwrap_or(serde_json::json!({})),
+                            "document": resp.document,
+                            "fetch_transform": resp.fetch_transform,
+                        });
+                        BatchFetchResult {
+                            index: i,
+                            item_type: BatchFetchItemType::Web,
+                            label: item.label(),
+                            ok: true,
+                            response: Some(payload),
+                            error: None,
+                            chars_returned: text_len,
+                            truncated,
+                        }
+                    }
+                    Err(e) => {
+                        failed_once = true;
+                        BatchFetchResult {
+                            index: i,
+                            item_type: BatchFetchItemType::Web,
+                            label: item.label(),
+                            ok: false,
+                            response: None,
+                            error: Some(format!("{}: {}", e.error_code(), e)),
+                            chars_returned: 0,
+                            truncated: false,
+                        }
+                    }
+                }
+            }
+            BatchFetchItem::Repo {
+                host,
+                owner,
+                repo,
+                ref_name,
+                commit_sha,
+                path,
+                line_start,
+                line_end,
+                context_before,
+                context_after,
+                max_chars,
+            } => {
+                let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
+                let repo_args = RepoFetchArgs {
+                    host: host.clone(),
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    ref_name: ref_name.clone(),
+                    commit_sha: commit_sha.clone(),
+                    path: path.clone(),
+                    line_start: *line_start,
+                    line_end: *line_end,
+                    context_before: *context_before,
+                    context_after: *context_after,
+                    max_chars: Some(effective_max),
+                    timeout_ms: args.timeout_ms,
+                    test_fetch_url: None,
+                };
+                match run_repo_fetch(state.clone(), repo_args).await {
+                    Ok(payload) => {
+                        let text_len = payload
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .map(|s| s.len())
+                            .unwrap_or(0);
+                        let truncated = payload
+                            .get("truncated")
+                            .and_then(|t| t.as_bool())
+                            .unwrap_or(false);
+                        BatchFetchResult {
+                            index: i,
+                            item_type: BatchFetchItemType::Repo,
+                            label: item.label(),
+                            ok: true,
+                            response: Some(payload),
+                            error: None,
+                            chars_returned: text_len,
+                            truncated,
+                        }
+                    }
+                    Err(e) => {
+                        failed_once = true;
+                        BatchFetchResult {
+                            index: i,
+                            item_type: BatchFetchItemType::Repo,
+                            label: item.label(),
+                            ok: false,
+                            response: None,
+                            error: Some(e.to_string()),
+                            chars_returned: 0,
+                            truncated: false,
+                        }
+                    }
+                }
+            }
+        };
+
+        total_chars += result.chars_returned;
+        results.push(result);
+    }
+
+    if budget_exhausted {
+        warnings.push(format!(
+            "batch_total_budget_exhausted: total character budget of {total_cap} was reached; remaining items skipped"
+        ));
+    }
+
+    let fetched = results.iter().filter(|r| r.ok).count();
+    let failed = results.iter().filter(|r| !r.ok).count();
+    let truncated = results.iter().any(|r| r.truncated);
+
+    let response = BatchFetchResponse {
+        fetched,
+        failed,
+        truncated,
+        total_chars_returned: total_chars,
+        results,
+        warnings,
+    };
+
+    let value = serde_json::to_value(&response)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+    Ok(value)
 }
 
 /// Handle `repo_fetch` for `workspace://` local files.

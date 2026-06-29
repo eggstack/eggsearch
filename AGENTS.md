@@ -58,7 +58,7 @@ eggsearch/
     lib.rs               # library root, re-exports core/meta/fetch/mcp
     config.rs            # CLI config loader (thin wrapper around core::config)
     commands/            # subcommands: doctor, search, providers, mcp, fetch
-    core/                # core types and logic, code evidence metadata
+    core/                # core types and logic, batch fetch types, code evidence metadata
       mod.rs             # re-exports (AppConfig, WebSearchRequest, etc.)
       config.rs          # AppConfig, SearchSection, FetchSection, validation
       error.rs           # CoreError, CoreResult (thiserror)
@@ -67,6 +67,7 @@ eggsearch/
       repo_query.rs      # RepoQueryHints: structured repo hint parser
       repo_search.rs     # RepoSearchRequest, RepoResultGroup, RepoSearchResponse types
       repo_fetch.rs      # RepoFetchRequest, RepoFetchResponse: structured repo file fetch
+      batch_fetch.rs     # BatchFetchRequest, BatchFetchItem, BatchFetchResponse types
       research.rs        # ResearchSearchRequest, ResearchDomain, ResearchSourceType, etc.
       source_card.rs     # SourceCard output type
       document.rs        # FetchDocument, DocumentKind, RenderFormat, BlockKind, etc.
@@ -105,7 +106,7 @@ eggsearch/
     mcp/                 # MCP server (rmcp)
       mod.rs             # re-exports
       server.rs          # EggsearchServer, tool_router, EGGSEARCH_INSTRUCTIONS
-      tools.rs           # run_web_search, run_web_fetch, run_provider_status
+      tools.rs           # run_web_search, run_web_fetch, run_provider_status, run_batch_fetch
       state.rs           # ServerState (Arc<AppConfig> + Arc<MetadataSearchAdapter>)
       policy.rs          # live_allowed, fetch_allowed, deny messages
   tests/integration.rs   # end-to-end tool tests with mock engines
@@ -134,7 +135,7 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `repo_fetch` (fetches repository files by structured locator with optional line ranges), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), and `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles)
+- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `repo_fetch` (fetches repository files by structured locator with optional line ranges), `batch_fetch` (bounded batch fetch over explicit URLs or structured repo locators, returns per-item results with trust markers; not a crawler), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), and `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 - The `provider_status` response includes a `server_capabilities`
@@ -145,7 +146,7 @@ eggsearch/
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
 - `AppConfig` is the root type, contains `SearchSection`, `FetchSection`, and `LocalConfig`
 - `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`, `profiles`
-- `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output, pdf_enabled, pdf_max_pages, pdf_max_chars_per_page, pdf_max_total_chars)
+- `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output, pdf_enabled, pdf_max_pages, pdf_max_chars_per_page, pdf_max_total_chars, batch_max_items, batch_max_items_cap, batch_max_chars_per_item, batch_max_total_chars, batch_max_total_chars_cap, batch_concurrency)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
 - `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`). Known API-key providers: `brave`, `github_code`, `github_issues`, `github_releases`.
 - `ProfileConfig` is the `[search.profiles.<name>]` section: named provider list for search profiles (`providers`). Built-in defaults exist for `generic`, `coding`, `security`, and `research` profiles when not configured.
@@ -201,6 +202,7 @@ eggsearch/
 - `server_capabilities` fields:
   - `generic_search`: always `true` (generic HTML-scrape providers)
   - `explicit_fetch`: always `true` (`web_fetch` is available)
+  - `batch_fetch`: always `true` (bounded batch fetch over explicit URLs/locators)
   - `repo_search`: `true` (structured repository evidence discovery)
   - `security_search`: `true` (security-oriented retrieval with normalized vulnerability metadata)
   - `research_search`: `true` (research-oriented multi-source evidence discovery)
@@ -211,6 +213,7 @@ eggsearch/
 - `tool_capabilities` fields:
   - `repo_fetch`: `remote_hosts`, `workspace` (enabled), `line_ranges`, `context_lines`, `max_chars_enforced`
   - `repo_search`: `profiles`, `package_resolution`, `local_workspace` (enabled), `subquery_telemetry`
+  - `batch_fetch`: `max_items`, `max_items_cap`, `max_chars_per_item`, `max_total_chars`, `concurrency`
   - `local_workspace`: `enabled`, `symbol_enrichment`
 - This is the capability discovery endpoint for MCP clients. Clients
   can use it to determine which specialized tools are available before
@@ -616,6 +619,53 @@ fake `host: "github"` fields.
 - Absolute paths (paths starting with `/`)
 - Inverted line ranges (`line_end` < `line_start`)
 - Excessive `context_before`/`context_after` or `max_chars` values
+
+### Batch Fetch
+
+`batch_fetch` provides bounded batch fetch over explicit URLs or
+structured repo locators in a single call. It is NOT a crawler —
+items must be explicit URLs or structured locators provided by the
+caller.
+
+**Request types** (in `src/core/batch_fetch.rs`):
+- `BatchFetchRequest`: `items` (Vec<BatchFetchItem>), optional
+  `max_chars` (per-item output cap), optional `timeout_ms`
+- `BatchFetchItem`: one of a URL string, or a structured
+  `RepoLocator` (owner/repo/path with optional ref, line range)
+
+**Response type:**
+- `BatchFetchResponse`: `fetched` (count of successful items),
+  `failed` (count of failed items), `truncated` (whether output was
+  capped), `total_chars_returned` (total extracted characters),
+  `results` (Vec of per-item results with trust markers),
+  `warnings`
+
+**Execution model:**
+- Bounded concurrency via semaphore (`batch_concurrency` config field)
+- Input order is preserved in the output
+- `continue_on_error` semantics: a failure on one item does not
+  abort the remaining items
+- Per-item results include `trust = external_untrusted` for web/remote
+  URLs and `trust = local_trusted` for workspace locators
+- Each item result includes its own `trust_markers`
+
+**Config fields** in `[fetch]`:
+- `batch_max_items` (default 10): maximum number of items per request
+- `batch_max_items_cap` (default 25): server-enforced upper bound on items
+- `batch_max_chars_per_item` (default 12000): per-item extraction cap
+- `batch_max_total_chars` (default 50000): total character budget across all items
+- `batch_max_total_chars_cap` (default 200000): server-enforced upper bound on total chars
+- `batch_concurrency` (default 5): maximum concurrent fetches
+
+**Rules:**
+- Items must be explicit URLs or structured locators — no crawling,
+  no link following, no directory listing
+- Total output is bounded by `batch_max_total_chars` and per-item
+  output by `batch_max_chars_per_item`
+- Reuses existing fetch safety limits (SSRF, localhost, private
+  network validation) from `web_fetch`
+- Workspace locators bypass `[fetch].enabled` policy since no
+  network is involved
 
 ### Security Search
 
