@@ -834,6 +834,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn gitlab_browser_url_with_sha_is_permalink() {
+        let sha = "abc123def456";
+        let url = gitlab_browser_url("group", "project", sha, "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://gitlab.com/group/project/-/blob/abc123def456/src/lib.rs"
+        );
+        assert!(url.contains("blob"));
+    }
+
+    #[test]
+    fn gitlab_raw_url_with_sha_is_raw_permalink() {
+        let sha = "abc123def456";
+        let url = gitlab_raw_url("group", "project", sha, "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://gitlab.com/group/project/-/raw/abc123def456/src/lib.rs"
+        );
+        assert!(url.contains("raw"));
+    }
+
+    #[test]
+    fn gitlab_permalink_urls_are_distinct() {
+        let sha = "abc123def456";
+        let browser = gitlab_browser_url("g", "p", sha, "src/lib.rs");
+        let raw = gitlab_raw_url("g", "p", sha, "src/lib.rs");
+        assert_ne!(browser, raw);
+        assert!(browser.contains("/blob/"));
+        assert!(raw.contains("/raw/"));
+    }
+
     // --- Line range tests ---
 
     #[test]

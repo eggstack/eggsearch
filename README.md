@@ -1458,6 +1458,16 @@ prefixes. Agents can match on these prefixes for programmatic handling.
 **Deadline warnings:**
 - `request_deadline_exceeded:` — subquery budget exhausted; reports interrupted and skipped counts
 
+**Profile resolution warnings** (from `repo_search`):
+- `profile_provider_not_built:` — provider in profile has no constructed engine (skipped, non-blocking)
+- `profile_degraded:` — profile fell back to default providers
+- `profile_partial:` — profile skipped some unavailable providers but retains others
+- `provider_resolution_failed:` — explicit provider list contains unknown or disabled providers (hard error in `repo_search`)
+
+**Local fetch warnings:**
+- `local_content_marker_warning:` — prompt injection markers detected in local workspace content
+- `workspace_fetch_truncated_by_max_chars` — local file output was clamped to max_chars budget
+
 ## Testing
 
 ```bash

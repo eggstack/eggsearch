@@ -552,6 +552,17 @@ pub async fn run_repo_search(
     let (effective_providers, degraded, mut profile_warnings) =
         state.config.resolve_profile_providers(req.profile, &req.providers);
 
+    // Explicit providers must be strict: unknown or disabled providers
+    // are a hard error, not a degraded fallback.
+    if !req.providers.is_empty() && degraded {
+        let msg = profile_warnings
+            .iter()
+            .find(|w| w.message.starts_with("provider_resolution_failed:"))
+            .map(|w| w.message.clone())
+            .unwrap_or_else(|| "provider resolution failed".to_string());
+        return Err(ToolError::Validation(msg));
+    }
+
     // For profile requests (no explicit providers), filter through
     // actual adapter availability. Config-level resolution may list
     // providers that appear enabled but were not actually built

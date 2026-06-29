@@ -9291,11 +9291,11 @@ async fn repo_search_coding_profile_partial_degradation_succeeds() {
     );
 }
 
-/// Step 4: explicit unknown provider in repo_search degrades with a
-/// warning rather than hard-erroring (behavior differs from web_search).
+/// Step 4: explicit unknown provider in repo_search is a hard error
+/// (same strict behavior as web_search).
 #[cfg(feature = "mock")]
 #[tokio::test]
-async fn repo_search_explicit_unknown_provider_degrades_with_warning() {
+async fn repo_search_explicit_unknown_provider_errors() {
     let state = state_with_default();
 
     let args = RepoSearchArgs {
@@ -9304,19 +9304,15 @@ async fn repo_search_explicit_unknown_provider_degrades_with_warning() {
         ..Default::default()
     };
 
-    let v = run_repo_search(state, args)
-        .await
-        .expect("repo_search should succeed with degraded warning");
-    let warnings = v["warnings"].as_array().expect("warnings is array");
-    let has_resolution_warning = warnings.iter().any(|w| {
-        w["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("provider_resolution_failed:")
-    });
+    let err = run_repo_search(state, args).await;
     assert!(
-        has_resolution_warning,
-        "should have provider_resolution_failed warning for unknown provider"
+        err.is_err(),
+        "repo_search should error on unknown explicit provider"
+    );
+    let msg = err.unwrap_err().to_string();
+    assert!(
+        msg.contains("provider_resolution_failed") || msg.contains("unknown provider"),
+        "error should mention provider resolution failure: {msg}"
     );
 }
 
@@ -9367,7 +9363,7 @@ fn provider_status_tool_capabilities_local_enabled() {
     let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
         .expect("backend builds");
     let adapter = MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
-    let mut app_cfg = AppConfig::default();
+    let app_cfg = AppConfig::default();
     let mut state = ServerState::with_adapter(app_cfg, Arc::new(adapter));
     state.local_backend = Some(Arc::new(backend));
     let state = Arc::new(state);
@@ -9427,4 +9423,88 @@ async fn repo_search_local_large_file_excluded() {
             "large file should not appear in results: {url}"
         );
     }
+}
+
+/// Suggested fetches with code evidence should have a structured_repo_fetch
+/// with a valid RepoLocator shape (kind, host, owner, repo, path).
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_suggested_fetch_structured_locator_shape() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "Axum Source",
+            "https://github.com/tokio-rs/axum/blob/abc123/src/lib.rs",
+            "mock_a",
+        )],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_repo_search(
+        state,
+        RepoSearchArgs {
+            query: "axum".into(),
+            providers: vec!["mock_a".into()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("ok");
+
+    let suggested = v["suggested_fetches"].as_array().expect("suggested is array");
+    let structured = suggested
+        .iter()
+        .find(|s| s.get("structured_repo_fetch").is_some())
+        .expect("should have at least one suggested fetch with structured_repo_fetch");
+
+    let locator = &structured["structured_repo_fetch"];
+    // Should have the repo_fetch request fields, not workspace locator fields
+    assert!(
+        locator.get("owner").is_some(),
+        "structured_repo_fetch should have owner field"
+    );
+    assert!(
+        locator.get("repo").is_some(),
+        "structured_repo_fetch should have repo field"
+    );
+    assert!(
+        locator.get("path").is_some(),
+        "structured_repo_fetch should have path field"
+    );
+    // Host should be present for remote locators
+    assert!(
+        locator.get("host").is_some(),
+        "structured_repo_fetch should have host field for remote locators"
+    );
+}
+
+/// Remote repo_fetch respects max_chars when fetching via web_fetch.
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_remote_max_chars_enforced() {
+    let state = state_with_default();
+    let args = RepoFetchArgs {
+        host: Some("github".to_string()),
+        owner: "tokio-rs".to_string(),
+        repo: "axum".to_string(),
+        ref_name: Some("main".to_string()),
+        commit_sha: None,
+        path: "README.md".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: Some(100),
+        timeout_ms: None,
+        test_fetch_url: None,
+    };
+
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("repo_fetch should succeed");
+    let text = v["text"].as_str().unwrap_or("");
+    assert!(
+        text.len() <= 200,
+        "text should respect max_chars (got {} chars)",
+        text.len()
+    );
 }
