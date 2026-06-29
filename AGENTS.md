@@ -156,7 +156,7 @@ eggsearch/
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 - Both `SearchSection` and `FetchSection` have `sanitize_output: bool` (default `true`). When `true`, Tier 2 (framing) and Tier 3 (marker scan) prompt-injection defenses are active. Tier 1 (control-char strip + length bound) is always on.
 - `LocalConfig` is the `[local]` section: `enabled`, `roots`, `max_file_bytes`, `max_indexed_files`, `include_hidden`, `respect_gitignore`, `follow_symlinks`
-- `ExactErrorConfig` is the `[search].exact_error` section: `enabled` (default `true`), `max_phrase_length` (default 200), `redact_sensitive_tokens` (default `true`), `sensitive_token_patterns` (regex patterns for local paths, API keys, UUIDs, memory addresses)
+- `ExactErrorConfig` is the `[search].exact_error` section: `enabled` (default `true`), `max_subqueries` (default 6), `max_error_chars` (default 8000), `redact_sensitive_tokens` (default `true`), `prefer_official_docs` (default `true`)
 
 ### Provider Model
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`

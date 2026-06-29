@@ -794,8 +794,44 @@ impl MetadataSearchAdapter {
         }
 
         let max_per_group = req.max_per_group.unwrap_or(5);
-        let groups =
+        let mut groups =
             crate::meta::repo_grouping::group_results_with_hints(cards, max_per_group, &plan.hints);
+
+        // Apply exact-error reranking within each group when in exact-error mode
+        if is_exact_error {
+            if let Some(ref ec) = error_context {
+                for group in groups.iter_mut() {
+                    crate::meta::repo_grouping::apply_error_reranking(
+                        &mut group.results,
+                        &crate::core::error_query::ErrorQueryParts {
+                            original: ec.original_error.clone(),
+                            normalized: ec.normalized_error.clone(),
+                            quoted_exact: ec
+                                .subqueries
+                                .iter()
+                                .find(|s| s.label == "exact_phrase")
+                                .map(|s| {
+                                    // Strip surrounding quotes from the exact_phrase query
+                                    let q = &s.query;
+                                    if q.starts_with('"') && q.ends_with('"') && q.len() >= 2 {
+                                        q[1..q.len() - 1].to_string()
+                                    } else {
+                                        q.clone()
+                                    }
+                                })
+                                .unwrap_or_default(),
+                            error_codes: ec.error_codes.clone(),
+                            tool_names: ec.inferred_tools.clone(),
+                            package_names: Vec::new(),
+                            language_hint: ec.inferred_language.clone(),
+                            stack_frames: Vec::new(),
+                            path_fragments: Vec::new(),
+                            redactions_applied: ec.redactions_applied.clone(),
+                        },
+                    );
+                }
+            }
+        }
 
         let suggested_fetches =
             crate::meta::suggested_fetches::generate_suggested_fetches(&groups, &plan.hints);

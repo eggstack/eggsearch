@@ -515,7 +515,11 @@ fn detect_tools(text: &str, codes: &[ErrorCode]) -> Vec<String> {
     if text_lower.contains("python") || text_lower.contains("pip") {
         tools.insert("python".to_string());
     }
-    if text_lower.contains("gcc") || text_lower.contains("clang") || text_lower.contains("linker") || text_lower.contains("ld:") {
+    if text_lower.contains("gcc")
+        || text_lower.contains("clang")
+        || text_lower.contains("linker")
+        || text_lower.contains("ld:")
+    {
         tools.insert("linker".to_string());
     }
     if text_lower.contains("docker") {

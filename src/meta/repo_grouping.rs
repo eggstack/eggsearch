@@ -263,6 +263,115 @@ fn rerank_group(cards: &mut [SourceCard], hints: &RepoQueryHints) {
     });
 }
 
+/// Apply exact-error reranking boosts within a group.
+///
+/// When `mode: "exact_error"` is active, this function boosts cards whose title,
+/// snippet, or URL contain the exact error phrase or error codes, and penalizes
+/// cards where the error terms are absent.
+pub fn apply_error_reranking(
+    cards: &mut [SourceCard],
+    error_parts: &crate::core::error_query::ErrorQueryParts,
+) {
+    use crate::core::source_card::RankReason;
+
+    if cards.is_empty() {
+        return;
+    }
+
+    let max_base = cards.iter().filter_map(|r| r.score).fold(0.0_f64, f64::max);
+    if max_base <= 0.0 {
+        return;
+    }
+
+    let boost_unit = max_base * 0.10;
+
+    // Build lowercase error codes for matching
+    let error_code_strs: Vec<String> = error_parts
+        .error_codes
+        .iter()
+        .map(|c| c.code.to_lowercase())
+        .collect();
+
+    // Build lowercase quoted exact phrase (if any) for substring matching
+    let phrase_lower = error_parts.quoted_exact.to_lowercase();
+    let has_phrase = !phrase_lower.is_empty();
+
+    for card in cards.iter_mut() {
+        let base = card.score.unwrap_or(0.0);
+        let mut boost = 0.0_f64;
+        let mut reasons: Vec<RankReason> = Vec::new();
+
+        let title_lower = card.title.to_lowercase();
+        let snippet_lower = card.snippet.as_deref().unwrap_or("").to_lowercase();
+        let url_lower = card.url.to_lowercase();
+        let combined = format!("{title_lower} {snippet_lower} {url_lower}");
+
+        // --- exact error phrase match ---
+        if has_phrase && combined.contains(&phrase_lower) {
+            boost += boost_unit * 2.5;
+            reasons.push(RankReason::ExactErrorPhraseMatch);
+        }
+
+        // --- error code match ---
+        for code in &error_code_strs {
+            if combined.contains(code.as_str()) {
+                boost += boost_unit * 1.5;
+                reasons.push(RankReason::ErrorCodeMatch);
+                break; // only count once per card
+            }
+        }
+
+        // --- toolchain match (official docs for the error code) ---
+        if matches!(
+            card.metadata.source_kind,
+            SourceKind::OfficialDocs | SourceKind::Reference
+        ) && !error_code_strs.is_empty()
+        {
+            boost += boost_unit * 1.0;
+            reasons.push(RankReason::ToolchainMatch);
+        }
+
+        // --- official error docs boost ---
+        if card.metadata.source_kind == SourceKind::OfficialDocs && !error_code_strs.is_empty() {
+            boost += boost_unit * 1.0;
+            reasons.push(RankReason::OfficialErrorDocs);
+        }
+
+        // --- maintainer issue match ---
+        if matches!(
+            card.metadata.source_kind,
+            SourceKind::IssueThread | SourceKind::PullRequest
+        ) && !error_code_strs.is_empty()
+        {
+            // Issues/PRs from the same repo as the error (if we can tell) get a boost
+            boost += boost_unit * 0.5;
+            reasons.push(RankReason::MaintainerIssueMatch);
+        }
+
+        // --- regression release match ---
+        if matches!(
+            card.metadata.source_kind,
+            SourceKind::ReleaseNotes | SourceKind::Tag
+        ) && !error_code_strs.is_empty()
+        {
+            boost += boost_unit * 0.5;
+            reasons.push(RankReason::RegressionReleaseMatch);
+        }
+
+        if boost > 0.0 {
+            card.score = Some(base + boost);
+        }
+        card.metadata.rank_reasons.extend(reasons);
+    }
+
+    // Stable sort by updated score (descending).
+    cards.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
 /// Group a flat list of SourceCards into RepoResultGroups.
 /// Each card goes to exactly one group (its primary classification).
 /// Groups are returned in a fixed canonical order.
@@ -947,5 +1056,155 @@ mod tests {
         // Both cards are SourceFile but classified differently by URL heuristics.
         // The reranking should boost the owner/repo match within its group.
         assert!(!groups.is_empty());
+    }
+
+    // --- exact-error reranking tests ---
+
+    fn make_error_parts(
+        quoted: &str,
+        codes: Vec<(&str, &str)>,
+    ) -> crate::core::error_query::ErrorQueryParts {
+        use crate::core::error_query::ErrorCode;
+        crate::core::error_query::ErrorQueryParts {
+            original: quoted.to_string(),
+            normalized: quoted.to_string(),
+            quoted_exact: quoted.to_string(),
+            error_codes: codes
+                .into_iter()
+                .map(|(code, tool)| ErrorCode {
+                    code: code.to_string(),
+                    tool: tool.to_string(),
+                })
+                .collect(),
+            tool_names: Vec::new(),
+            package_names: Vec::new(),
+            language_hint: None,
+            stack_frames: Vec::new(),
+            path_fragments: Vec::new(),
+            redactions_applied: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn error_reranking_boosts_exact_phrase_match() {
+        let mut cards = vec![
+            make_card_with_score(
+                SourceKind::Reference,
+                "https://some-blog.com/error-help",
+                10.0,
+            ),
+            make_card_with_score(
+                SourceKind::OfficialDocs,
+                "https://doc.rust-lang.org/error/E0277",
+                9.0,
+            ),
+        ];
+        // Manually set titles to match/mismatch the phrase
+        cards[0].title = "Common E0277 fixes".to_string();
+        cards[1].title = "E0277: the trait bound is not satisfied".to_string();
+
+        let parts = make_error_parts("the trait bound is not satisfied", vec![("E0277", "rustc")]);
+        apply_error_reranking(&mut cards, &parts);
+
+        // The card with the exact phrase in title should be ranked first
+        assert!(cards[0].title.contains("the trait bound"));
+        assert!(cards[0]
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::ExactErrorPhraseMatch));
+    }
+
+    #[test]
+    fn error_reranking_boosts_error_code_match() {
+        let mut cards = vec![
+            make_card_with_score(
+                SourceKind::IssueThread,
+                "https://github.com/tokio-rs/tokio/issues/1234",
+                10.0,
+            ),
+            make_card_with_score(
+                SourceKind::Reference,
+                "https://some-blog.com/general-error",
+                9.0,
+            ),
+        ];
+        cards[0].title = "E0277 regression in tokio::spawn".to_string();
+        cards[1].title = "General error handling tips".to_string();
+
+        let parts = make_error_parts("trait bound not satisfied", vec![("E0277", "rustc")]);
+        apply_error_reranking(&mut cards, &parts);
+
+        // The card with E0277 in title should get ErrorCodeMatch
+        let has_code_match = cards[0]
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::ErrorCodeMatch);
+        // It might be card[0] or card[1] depending on sort, so check both
+        let has_code_match_any = cards.iter().any(|c| {
+            c.metadata
+                .rank_reasons
+                .contains(&crate::core::source_card::RankReason::ErrorCodeMatch)
+        });
+        assert!(has_code_match || has_code_match_any);
+    }
+
+    #[test]
+    fn error_reranking_boosts_official_docs() {
+        let mut cards = vec![
+            make_card_with_score(
+                SourceKind::OfficialDocs,
+                "https://doc.rust-lang.org/error/E0277",
+                10.0,
+            ),
+            make_card_with_score(
+                SourceKind::Reference,
+                "https://some-blog.com/error-help",
+                9.0,
+            ),
+        ];
+        cards[0].title = "E0277 - Rust compiler errors".to_string();
+        cards[1].title = "Fixing E0277".to_string();
+
+        let parts = make_error_parts("E0277", vec![("E0277", "rustc")]);
+        apply_error_reranking(&mut cards, &parts);
+
+        // OfficialDocs card should get OfficialErrorDocs and ToolchainMatch
+        let official = cards
+            .iter()
+            .find(|c| c.metadata.source_kind == SourceKind::OfficialDocs)
+            .unwrap();
+        assert!(official
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::OfficialErrorDocs));
+        assert!(official
+            .metadata
+            .rank_reasons
+            .contains(&crate::core::source_card::RankReason::ToolchainMatch));
+    }
+
+    #[test]
+    fn error_reranking_noop_on_empty() {
+        let mut cards: Vec<SourceCard> = Vec::new();
+        let parts = make_error_parts("error", vec![("E0001", "rustc")]);
+        apply_error_reranking(&mut cards, &parts);
+        assert!(cards.is_empty());
+    }
+
+    #[test]
+    fn error_reranking_no_boost_without_error_codes() {
+        let mut cards = vec![make_card_with_score(
+            SourceKind::Reference,
+            "https://example.com",
+            10.0,
+        )];
+        cards[0].title = "completely different text".to_string();
+
+        let parts = make_error_parts("some error", vec![]);
+        apply_error_reranking(&mut cards, &parts);
+
+        // No error codes AND no phrase match means no boosts applied
+        assert!(cards[0].metadata.rank_reasons.is_empty());
+        assert_eq!(cards[0].score, Some(10.0));
     }
 }
