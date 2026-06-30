@@ -11,6 +11,70 @@ use crate::core::source_card::{SourceCard, SourceKind};
 use crate::meta::response::ProviderFailure;
 use serde::{Deserialize, Serialize};
 
+/// Canonical resolved repository identity.
+///
+/// A single resolution path for repository identity across validation,
+/// planning, local matching, and warnings. The identity can originate
+/// from explicit request fields, slash-form `repo` normalization, or
+/// query-hint parsing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedRepoIdentity {
+    /// Repository owner (or namespace for GitLab nested groups).
+    pub owner: String,
+    /// Repository name.
+    pub repo: String,
+    /// How this identity was resolved.
+    pub source: RepoIdentitySource,
+}
+
+/// How a repository identity was resolved from the request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepoIdentitySource {
+    /// Explicit `owner` + `repo` fields were both present.
+    ExplicitOwnerRepo,
+    /// `repo` contained `owner/name` (slash-form normalization).
+    RepoSlashName,
+    /// Identity parsed from query-hint syntax (e.g. `repo:owner/name`).
+    QueryHint,
+}
+
+impl ResolvedRepoIdentity {
+    /// Resolve a repository identity from request fields and query text.
+    pub fn resolve(owner: &Option<String>, repo: &Option<String>, query: &str) -> Option<Self> {
+        if let (Some(o), Some(r)) = (owner, repo) {
+            if !o.trim().is_empty() && !r.trim().is_empty() {
+                return Some(Self {
+                    owner: o.clone(),
+                    repo: r.clone(),
+                    source: RepoIdentitySource::ExplicitOwnerRepo,
+                });
+            }
+        }
+        if owner.is_none() {
+            if let Some(r) = repo {
+                if let Some((o, name)) = r.split_once('/') {
+                    if !o.trim().is_empty() && !name.trim().is_empty() {
+                        return Some(Self {
+                            owner: o.to_string(),
+                            repo: name.to_string(),
+                            source: RepoIdentitySource::RepoSlashName,
+                        });
+                    }
+                }
+            }
+        }
+        let hints = RepoQueryHints::parse(query);
+        if let (Some(o), Some(r)) = (hints.owner, hints.repo) {
+            return Some(Self {
+                owner: o,
+                repo: r,
+                source: RepoIdentitySource::QueryHint,
+            });
+        }
+        None
+    }
+}
+
 /// Search mode for `repo_search`. Controls subquery generation and ranking.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
@@ -261,6 +325,15 @@ pub struct RepoSearchRequest {
 }
 
 impl RepoSearchRequest {
+    /// Resolve a canonical repository identity from explicit fields or parsed query hints.
+    ///
+    /// Returns `Some(ResolvedRepoIdentity)` when a locator can be determined.
+    /// This is the single canonical resolution path — use this instead of
+    /// accessing `self.owner`/`self.repo` directly for identity-sensitive logic.
+    pub fn resolved_repo_identity(&self) -> Option<ResolvedRepoIdentity> {
+        ResolvedRepoIdentity::resolve(&self.owner, &self.repo, &self.query)
+    }
+
     /// Resolve a repository locator from explicit fields or parsed query hints.
     ///
     /// Returns `Some((owner, repo))` when a locator can be determined:
@@ -268,23 +341,7 @@ impl RepoSearchRequest {
     /// - `repo` containing `owner/name` (split on first `/`)
     /// - `RepoQueryHints::parse(&self.query)` when hints have owner+repo
     pub fn resolved_repo_locator(&self) -> Option<(String, String)> {
-        if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
-            return Some((owner.clone(), repo.clone()));
-        }
-        if self.owner.is_none() {
-            if let Some(repo) = &self.repo {
-                if let Some((o, r)) = repo.split_once('/') {
-                    if !o.is_empty() && !r.is_empty() {
-                        return Some((o.to_string(), r.to_string()));
-                    }
-                }
-            }
-        }
-        let hints = RepoQueryHints::parse(&self.query);
-        if let (Some(owner), Some(repo)) = (hints.owner, hints.repo) {
-            return Some((owner, repo));
-        }
-        None
+        self.resolved_repo_identity().map(|id| (id.owner, id.repo))
     }
 
     /// Validate the request, returning an error if invalid.

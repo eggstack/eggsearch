@@ -14325,3 +14325,705 @@ async fn local_repo_match_same_owner_repo_different_host_no_redirect() {
         "different host should not trigger local match: {warnings:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// WS1: exact-error mode with empty query and repo locator
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_exact_error_empty_query_with_repo_locator_fails() {
+    let engines = vec![MockEngine::success("mock_a", vec![])];
+    let adapter = MetadataSearchAdapter::from_engines(
+        eggsearch::meta::mock::mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+
+    let args = RepoSearchArgs {
+        query: String::new(),
+        providers: vec!["mock_a".to_string()],
+        host: Some("github".to_string()),
+        owner: Some("tokio-rs".to_string()),
+        repo: Some("axum".to_string()),
+        mode: Some("exact_error".to_string()),
+        ..Default::default()
+    };
+
+    let result = run_repo_search(state, args).await;
+    assert!(
+        result.is_err(),
+        "exact-error with empty query should fail even with repo locator"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("exact-error mode requires a non-empty error query"),
+        "error should mention exact-error query requirement: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// WS1: ResolvedRepoIdentity unit tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolved_repo_identity_explicit_owner_repo() {
+    let id = eggsearch::core::repo_search::ResolvedRepoIdentity::resolve(
+        &Some("tokio-rs".to_string()),
+        &Some("axum".to_string()),
+        "",
+    );
+    let id = id.expect("should resolve");
+    assert_eq!(id.owner, "tokio-rs");
+    assert_eq!(id.repo, "axum");
+    assert_eq!(
+        id.source,
+        eggsearch::core::repo_search::RepoIdentitySource::ExplicitOwnerRepo
+    );
+}
+
+#[test]
+fn resolved_repo_identity_slash_form() {
+    let id = eggsearch::core::repo_search::ResolvedRepoIdentity::resolve(
+        &None,
+        &Some("tokio-rs/axum".to_string()),
+        "",
+    );
+    let id = id.expect("should resolve");
+    assert_eq!(id.owner, "tokio-rs");
+    assert_eq!(id.repo, "axum");
+    assert_eq!(
+        id.source,
+        eggsearch::core::repo_search::RepoIdentitySource::RepoSlashName
+    );
+}
+
+#[test]
+fn resolved_repo_identity_query_hint() {
+    let id = eggsearch::core::repo_search::ResolvedRepoIdentity::resolve(
+        &None,
+        &None,
+        "repo:tokio-rs/axum Router",
+    );
+    let id = id.expect("should resolve");
+    assert_eq!(id.owner, "tokio-rs");
+    assert_eq!(id.repo, "axum");
+    assert_eq!(
+        id.source,
+        eggsearch::core::repo_search::RepoIdentitySource::QueryHint
+    );
+}
+
+#[test]
+fn resolved_repo_identity_explicit_overrides_query_hint() {
+    let id = eggsearch::core::repo_search::ResolvedRepoIdentity::resolve(
+        &Some("explicit-owner".to_string()),
+        &Some("explicit-repo".to_string()),
+        "repo:hint-owner/hint-repo something",
+    );
+    let id = id.expect("should resolve");
+    assert_eq!(id.owner, "explicit-owner");
+    assert_eq!(id.repo, "explicit-repo");
+    assert_eq!(
+        id.source,
+        eggsearch::core::repo_search::RepoIdentitySource::ExplicitOwnerRepo
+    );
+}
+
+#[test]
+fn resolved_repo_identity_none_when_empty() {
+    let id = eggsearch::core::repo_search::ResolvedRepoIdentity::resolve(&None, &None, "no hints");
+    assert!(
+        id.is_none(),
+        "should return None when no identity available"
+    );
+}
+
+#[test]
+fn resolved_repo_identity_empty_slash_form_rejected() {
+    let id = eggsearch::core::repo_search::ResolvedRepoIdentity::resolve(
+        &None,
+        &Some("/axum".to_string()),
+        "",
+    );
+    assert!(id.is_none(), "empty owner in slash form should return None");
+}
+
+// ---------------------------------------------------------------------------
+// WS3: repo_map include_files/include_directories suppression
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn repo_map_include_files_false_suppresses_file_entries() {
+    let state = state_with_default();
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: Some(false),
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    // In fallback mode, root_entries may still exist from web search,
+    // but important_files should be empty when include_files=false
+    let important_files = v["important_files"].as_array().cloned().unwrap_or_default();
+    assert!(
+        important_files.is_empty(),
+        "important_files should be empty when include_files=false, got: {}",
+        important_files.len()
+    );
+}
+
+#[tokio::test]
+async fn repo_map_include_directories_false_suppresses_dir_entries() {
+    let state = state_with_default();
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: Some(false),
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    let important_dirs = v["important_directories"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        important_dirs.is_empty(),
+        "important_directories should be empty when include_directories=false, got: {}",
+        important_dirs.len()
+    );
+}
+
+#[tokio::test]
+async fn repo_map_include_ci_false_suppresses_ci_entries() {
+    let state = state_with_default();
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: Some(false),
+        include_security: None,
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    let ci = v["ci"].as_array().cloned().unwrap_or_default();
+    assert!(
+        ci.is_empty(),
+        "ci entries should be empty when include_ci=false, got: {}",
+        ci.len()
+    );
+}
+
+#[tokio::test]
+async fn repo_map_include_security_false_suppresses_security_entries() {
+    let state = state_with_default();
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: Some(false),
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    let security = &v["security"];
+    assert!(
+        security.is_null() || security.as_array().is_none_or(|a| a.is_empty()),
+        "security should be null or empty when include_security=false, got: {security}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// WS3: repo_map local_checkout manifest and dirty-state
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_map_local_checkout_includes_manifests_and_dirty_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"test-pkg\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("package.json"), "{\"name\":\"test-npm\"}\n").unwrap();
+
+    // Initialize git repo
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Initial commit
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    // Make dirty by adding an untracked file
+    fs::write(root.join("untracked.txt"), "dirty").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    let local_checkout = v["local_checkout"]
+        .as_object()
+        .expect("local_checkout should be present");
+
+    // Check dirty state
+    assert_eq!(
+        local_checkout["dirty_state"].as_str(),
+        Some("dirty"),
+        "dirty_state should be 'dirty' with untracked file"
+    );
+
+    // Check manifests
+    let manifests = local_checkout["manifests"]
+        .as_array()
+        .expect("manifests should be array");
+    let manifest_paths: Vec<&str> = manifests
+        .iter()
+        .filter_map(|m| m["path"].as_str())
+        .collect();
+    assert!(
+        manifest_paths.iter().any(|p| p.contains("Cargo.toml")),
+        "should detect Cargo.toml manifest: {manifest_paths:?}"
+    );
+    assert!(
+        manifest_paths.iter().any(|p| p.contains("package.json")),
+        "should detect package.json manifest: {manifest_paths:?}"
+    );
+
+    // Check other fields
+    assert_eq!(local_checkout["remote_owner"].as_str(), Some("test-owner"));
+    assert_eq!(local_checkout["remote_repo"].as_str(), Some("test-repo"));
+    assert!(
+        local_checkout["branch"].as_str().is_some(),
+        "branch should be present"
+    );
+    assert!(
+        local_checkout["commit"].as_str().is_some(),
+        "commit should be present"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// WS5: dirty-state detection
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_dirty_state_detected_in_local_match() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("lib.rs"), "pub fn helper() {}").unwrap();
+
+    // Initialize git repo
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Initial commit
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    // Make dirty
+    fs::write(root.join("untracked.txt"), "dirty").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "helper".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+
+    // Should have a local_repo_dirty warning
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_dirty_warning = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_dirty"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_dirty_warning,
+        "should warn about dirty local checkout: {warnings:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// WS5: local match metadata completeness
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_local_match_metadata_has_all_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    // Initialize git repo
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Initial commit
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let groups = v["groups"].as_array().expect("groups is array");
+
+    // Find local result across all groups
+    let local_card = groups.iter().find_map(|g| {
+        g["results"].as_array().and_then(|results| {
+            results.iter().find(|c| {
+                c["trust"]
+                    .as_str()
+                    .map(|t| t == "local_trusted")
+                    .unwrap_or(false)
+            })
+        })
+    });
+    assert!(local_card.is_some(), "should have a local result");
+
+    let local_card = local_card.unwrap();
+    let meta = local_card["metadata"]
+        .as_object()
+        .expect("metadata should be object");
+
+    // Check local_repo_match is present
+    let local_repo_match = meta.get("local_repo_match");
+    assert!(
+        local_repo_match.is_some(),
+        "local result should have local_repo_match metadata"
+    );
+    let lrm = local_repo_match.unwrap().as_object().unwrap();
+    assert!(
+        lrm.get("branch").is_some(),
+        "local_repo_match should have branch"
+    );
+    assert!(
+        lrm.get("commit").is_some(),
+        "local_repo_match should have commit"
+    );
+    assert!(
+        lrm.get("dirty_state").is_some(),
+        "local_repo_match should have dirty_state"
+    );
+    assert!(
+        lrm.get("remote_host").is_some(),
+        "local_repo_match should have remote_host"
+    );
+    assert!(
+        lrm.get("remote_owner").is_some(),
+        "local_repo_match should have remote_owner"
+    );
+    assert!(
+        lrm.get("remote_repo").is_some(),
+        "local_repo_match should have remote_repo"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// WS5: unknown Git state
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_local_match_unknown_dirty_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    // Initialize git repo
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Corrupt the git index to make git status fail
+    let git_index = root.join(".git").join("index");
+    fs::write(&git_index, "corrupted").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+
+    // Should either have dirty_state "unknown" or a local_repo_state_unknown warning
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_unknown_warning = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_state_unknown"))
+            .unwrap_or(false)
+    });
+
+    // Also check the local result metadata
+    let groups = v["groups"].as_array().expect("groups is array");
+    let local_card = groups.iter().find_map(|g| {
+        g["results"].as_array().and_then(|results| {
+            results.iter().find(|c| {
+                c["trust"]
+                    .as_str()
+                    .map(|t| t == "local_trusted")
+                    .unwrap_or(false)
+            })
+        })
+    });
+
+    if let Some(card) = local_card {
+        let lrm = card["metadata"]["local_repo_match"]
+            .as_object()
+            .expect("local_repo_match");
+        let dirty = lrm["dirty_state"].as_str().unwrap_or("unknown");
+        // With a corrupted index, dirty state should be "unknown"
+        assert!(
+            dirty == "unknown" || has_unknown_warning,
+            "corrupted git should produce unknown dirty state or warning, got: dirty={dirty}, warnings={has_unknown_warning}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WS6: provider_status includes new tool_capabilities fields
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn provider_status_repo_fetch_includes_symbol_capabilities() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let tool_caps = v["tool_capabilities"]
+        .as_object()
+        .expect("tool_capabilities");
+    let repo_fetch_caps = tool_caps["repo_fetch"]
+        .as_object()
+        .expect("repo_fetch tool_capabilities");
+
+    assert_eq!(
+        repo_fetch_caps["symbol_search"],
+        serde_json::json!(true),
+        "repo_fetch should report symbol_search capability"
+    );
+    assert_eq!(
+        repo_fetch_caps["expand_to_block"],
+        serde_json::json!(true),
+        "repo_fetch should report expand_to_block capability"
+    );
+    assert_eq!(
+        repo_fetch_caps["max_block_lines"],
+        serde_json::json!(true),
+        "repo_fetch should report max_block_lines capability"
+    );
+}
+
+#[tokio::test]
+async fn provider_status_repo_search_includes_supported_hosts() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let tool_caps = v["tool_capabilities"]
+        .as_object()
+        .expect("tool_capabilities");
+    let repo_search_caps = tool_caps["repo_search"]
+        .as_object()
+        .expect("repo_search tool_capabilities");
+
+    let hosts = repo_search_caps["supported_hosts"]
+        .as_array()
+        .expect("supported_hosts should be array");
+    assert!(
+        hosts.iter().any(|h| h.as_str() == Some("github")),
+        "should include github in supported_hosts: {hosts:?}"
+    );
+    assert!(
+        hosts.iter().any(|h| h.as_str() == Some("gitlab")),
+        "should include gitlab in supported_hosts: {hosts:?}"
+    );
+}
+
+#[tokio::test]
+async fn provider_status_repo_map_tool_capabilities() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let tool_caps = v["tool_capabilities"]
+        .as_object()
+        .expect("tool_capabilities");
+    let repo_map_caps = tool_caps["repo_map"]
+        .as_object()
+        .expect("repo_map tool_capabilities");
+
+    let hosts = repo_map_caps["supported_hosts"]
+        .as_array()
+        .expect("supported_hosts should be array");
+    assert!(
+        hosts.iter().any(|h| h.as_str() == Some("github")),
+        "repo_map should include github in supported_hosts: {hosts:?}"
+    );
+}

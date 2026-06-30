@@ -884,6 +884,31 @@ The response also includes capability discovery metadata:
       "supports_web": true,
       "supports_repo": true,
       "preserves_item_trust": true
+    },
+    "repo_fetch": {
+      "remote_hosts": ["github", "gitlab"],
+      "workspace": false,
+      "line_ranges": true,
+      "context_lines": true,
+      "max_chars_enforced": true,
+      "symbol_search": true,
+      "expand_to_block": true,
+      "max_block_lines": true
+    },
+    "repo_search": {
+      "profiles": ["generic", "coding", "security", "research"],
+      "package_resolution": ["crates_io", "pypi", "npm"],
+      "local_workspace": false,
+      "subquery_telemetry": true,
+      "supported_hosts": ["github", "gitlab", "codeberg"]
+    },
+    "repo_map": {
+      "supported_hosts": ["github", "gitlab"],
+      "local_checkout": false
+    },
+    "local_workspace": {
+      "enabled": false,
+      "symbol_enrichment": "regex_heuristic"
     }
   }
 }

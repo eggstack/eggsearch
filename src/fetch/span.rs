@@ -2383,4 +2383,285 @@ mod tests {
         assert_eq!(span.line_end, 6);
         assert!(span.truncated_by_max_block_lines);
     }
+
+    // -----------------------------------------------------------------------
+    // WS4: malformed braces do not panic or overrun
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn malformed_unbalanced_braces_do_not_panic() {
+        let input = lines(
+            "fn foo() {\n\
+             \x20\x20let x = 1;\n\
+             \x20\x20let y = 2;\n\
+             \x20\x20// missing closing brace\n\
+             \x20\x20let z = 3;",
+        );
+        // No closing brace — should still return a span, not panic
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("foo"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        );
+        assert!(span.is_some(), "unbalanced braces should not return None");
+        let span = span.unwrap();
+        assert!(
+            span.line_start >= 1,
+            "line_start should be >= 1, got {}",
+            span.line_start
+        );
+        assert!(
+            span.line_end <= input.len() as u32,
+            "line_end should be <= total lines, got {}",
+            span.line_end
+        );
+    }
+
+    #[test]
+    fn malformed_only_closing_braces() {
+        let input = lines(
+            "fn foo() {\n\
+             \x20\x20let x = 1;\n\
+             }\n\
+             }\n\
+             }",
+        );
+        // Extra closing braces — should not panic
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("foo"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        );
+        assert!(
+            span.is_some(),
+            "extra closing braces should not return None"
+        );
+        let span = span.unwrap();
+        assert!(span.line_start >= 1);
+        assert!(span.line_end <= input.len() as u32);
+    }
+
+    #[test]
+    fn malformed_empty_file_returns_none() {
+        let input: Vec<String> = vec![];
+        let span = select_span(&input, None, None, None, None, None, None, false, None);
+        assert!(span.is_none(), "empty file should return None");
+    }
+
+    // -----------------------------------------------------------------------
+    // WS4: UTF-8 multibyte characters preserve line boundaries
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn utf8_multibyte_preserves_line_boundaries() {
+        let input = lines(
+            "fn hello() {\n\
+             \x20\x20println!(\"\u{1f600}\");\n\
+             \x20\x20let \u{00e9} = 42;\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("hello"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 4);
+        assert_eq!(span.selection_kind, SpanSelectionKind::SymbolDefinition);
+    }
+
+    #[test]
+    fn utf8_cjk_characters_in_match_text() {
+        let input = lines(
+            "// \u{4f60}\u{597d}\u{4e16}\u{754c}\n\
+             fn greet() {\n\
+             \x20\x20println!(\"hello\");\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("rust"),
+            None,
+            None,
+            Some("\u{4f60}\u{597d}"),
+            None,
+            None,
+            true,
+            None,
+        );
+        assert!(span.is_some(), "UTF-8 match text should be found");
+        let span = span.unwrap();
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.selection_kind, SpanSelectionKind::MatchText);
+    }
+
+    // -----------------------------------------------------------------------
+    // WS4: missing symbol returns None with predictable behavior
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn missing_symbol_returns_none() {
+        let input = lines(
+            "fn foo() {\n\
+             \x20\x20let x = 1;\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("nonexistent_function"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        );
+        assert!(
+            span.is_none(),
+            "missing symbol should return None, not a span"
+        );
+    }
+
+    #[test]
+    fn missing_symbol_with_match_text_fallback() {
+        let input = lines(
+            "fn foo() {\n\
+             \x20\x20let x = 1;\n\
+             }",
+        );
+        // Symbol not found, but match_text is provided as fallback
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("nonexistent"),
+            None,
+            Some("let x"),
+            None,
+            None,
+            true,
+            None,
+        );
+        assert!(
+            span.is_some(),
+            "missing symbol with match_text fallback should return a span"
+        );
+        let span = span.unwrap();
+        assert_eq!(span.selection_kind, SpanSelectionKind::MatchText);
+    }
+
+    // -----------------------------------------------------------------------
+    // WS4: max_block_lines truncation is bounded
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn max_block_lines_truncates_large_block() {
+        let input = lines(
+            "fn big() {\n\
+             \x20\x20let a = 1;\n\
+             \x20\x20let b = 2;\n\
+             \x20\x20let c = 3;\n\
+             \x20\x20let d = 4;\n\
+             \x20\x20let e = 5;\n\
+             \x20\x20let f = 6;\n\
+             \x20\x20let g = 7;\n\
+             \x20\x20let h = 8;\n\
+             \x20\x20let i = 9;\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("big"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            Some(3), // max 3 lines
+        )
+        .unwrap();
+        let line_count = span.line_end - span.line_start + 1;
+        assert!(
+            line_count <= 3,
+            "should truncate to max_block_lines=3, got {line_count} lines"
+        );
+        assert!(span.truncated_by_max_block_lines);
+    }
+
+    // -----------------------------------------------------------------------
+    // WS4: symbol in comment does not match as definition
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn symbol_in_comment_not_matched_as_definition() {
+        let input = lines(
+            "// fn helper() {}\n\
+             fn actual() {\n\
+             \x20\x20let x = 1;\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("helper"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        );
+        // helper is only in a comment, should not match
+        assert!(
+            span.is_none(),
+            "symbol in comment should not match as definition"
+        );
+    }
+
+    #[test]
+    fn doc_comment_above_fn_is_included_in_expansion() {
+        let input = lines(
+            "/// This is a doc comment.\n\
+             /// It describes the function.\n\
+             fn documented() {\n\
+             \x20\x20let x = 1;\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("rust"),
+            Some("documented"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        // Doc comments should be included in the expanded block,
+        // and the block includes the full function body.
+        assert_eq!(span.line_start, 1, "doc comments should be included");
+        assert_eq!(span.line_end, 5);
+    }
 }

@@ -82,9 +82,9 @@ pub use repo_map::{
 };
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{
-    ProviderSelectionTelemetry, RepoResultGroup, RepoResultGroupKind, RepoSearchMode,
-    RepoSearchRequest, RepoSearchResponse, RepoSearchSubqueryTelemetry, RepoSearchTelemetry,
-    RepoSuggestedFetch, SearchProfile,
+    ProviderSelectionTelemetry, RepoIdentitySource, RepoResultGroup, RepoResultGroupKind,
+    RepoSearchMode, RepoSearchRequest, RepoSearchResponse, RepoSearchSubqueryTelemetry,
+    RepoSearchTelemetry, RepoSuggestedFetch, ResolvedRepoIdentity, SearchProfile,
 };
 pub use research::{
     EvidenceQuality, ResearchCoverage, ResearchDepth, ResearchDimension, ResearchDomain,

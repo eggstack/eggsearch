@@ -237,8 +237,9 @@ eggsearch/
   `issue_search`, `release_search`). Clients can use this to discover
   which code hosts have which capabilities available.
 - `tool_capabilities` fields:
-  - `repo_fetch`: `remote_hosts`, `workspace` (enabled), `line_ranges`, `context_lines`, `max_chars_enforced`
-  - `repo_search`: `profiles`, `package_resolution`, `local_workspace` (enabled), `subquery_telemetry`
+  - `repo_fetch`: `remote_hosts`, `workspace` (enabled), `line_ranges`, `context_lines`, `max_chars_enforced`, `symbol_search`, `expand_to_block`, `max_block_lines`
+  - `repo_search`: `profiles`, `package_resolution`, `local_workspace` (enabled), `subquery_telemetry`, `supported_hosts`
+  - `repo_map`: `supported_hosts`, `local_checkout`
   - `batch_fetch`: `max_items`, `max_items_cap`, `max_chars_per_item`, `max_total_chars`, `concurrency`
   - `local_workspace`: `enabled`, `symbol_enrichment` (includes `local_repo_match` metadata)
 - This is the capability discovery endpoint for MCP clients. Clients
@@ -1089,8 +1090,16 @@ and adds `local_repo_match` metadata to local `SourceCard` results when
 a local checkout matches the requested repo identity. All three locator
 forms — explicit `owner`+`repo`, slash-form `repo: "owner/name"`, and
 query-hint `repo:owner/name` — correctly trigger local matching via
-`resolved_repo_locator()`. Matched local results receive a +50 score
+`resolved_repo_identity()`. Matched local results receive a +50 score
 boost to promote them above remote results.
+
+**Canonical resolution:** `RepoSearchRequest::resolved_repo_identity()`
+returns `Option<ResolvedRepoIdentity>` with `owner`, `repo`, and
+`source` (one of `ExplicitOwnerRepo`, `RepoSlashName`, `QueryHint`).
+This is the single canonical resolution path — use this instead of
+accessing `req.owner`/`req.repo` directly for identity-sensitive logic.
+`resolved_repo_locator()` is a convenience wrapper returning
+`Option<(String, String)>`.
 
 **Warnings:**
 - `local_repo_match:` — local checkout found matching the requested repo

@@ -974,12 +974,20 @@ pub fn run_provider_status(
                 "line_ranges": true,
                 "context_lines": true,
                 "max_chars_enforced": true,
+                "symbol_search": true,
+                "expand_to_block": true,
+                "max_block_lines": true,
             },
             "repo_search": {
                 "profiles": ["generic", "coding", "security", "research"],
                 "package_resolution": ["crates_io", "pypi", "npm"],
                 "local_workspace": local_enabled,
                 "subquery_telemetry": true,
+                "supported_hosts": ["github", "gitlab", "codeberg"],
+            },
+            "repo_map": {
+                "supported_hosts": ["github", "gitlab"],
+                "local_checkout": local_enabled,
             },
             "local_workspace": {
                 "enabled": local_enabled,
