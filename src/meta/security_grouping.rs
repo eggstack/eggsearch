@@ -7,6 +7,19 @@
 use crate::core::security::{SecurityResultGroup, SecurityResultGroupKind};
 use crate::core::SourceCard;
 use crate::core::SourceKind;
+use crate::meta::grouping::{build_card_groups, BuiltGroup};
+
+const CANONICAL_GROUP_ORDER: &[SecurityResultGroupKind] = &[
+    SecurityResultGroupKind::AuthoritativeAdvisories,
+    SecurityResultGroupKind::DefensiveGuidance,
+    SecurityResultGroupKind::ExploitDiscussion,
+    SecurityResultGroupKind::GeneralContext,
+    SecurityResultGroupKind::KevEntries,
+    SecurityResultGroupKind::Other,
+    SecurityResultGroupKind::PackageAdvisories,
+    SecurityResultGroupKind::PatchCommitsOrReleases,
+    SecurityResultGroupKind::VendorAdvisories,
+];
 
 /// Classify a single source card into a security result group.
 pub fn classify_security_result(card: &SourceCard) -> SecurityResultGroupKind {
@@ -41,7 +54,7 @@ pub fn classify_security_result(card: &SourceCard) -> SecurityResultGroupKind {
 
     // Exploit discussion
     if url_lower.contains("exploit")
-        || url_lower.contains("poc")
+        || url_contains_token(&url_lower, "poc")
         || url_lower.contains("proof-of-concept")
         || url_lower.contains("metasploit")
     {
@@ -68,44 +81,30 @@ pub fn classify_security_result(card: &SourceCard) -> SecurityResultGroupKind {
     SecurityResultGroupKind::GeneralContext
 }
 
+fn url_contains_token(url_lower: &str, token: &str) -> bool {
+    url_lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|part| part == token)
+}
+
 /// Group source cards into security result groups.
 pub fn group_security_results(
     results: &[SourceCard],
     max_per_group: Option<usize>,
 ) -> Vec<SecurityResultGroup> {
-    let mut groups: Vec<SecurityResultGroup> = Vec::new();
-
-    for card in results {
-        let kind = classify_security_result(card);
-
-        // Find or create group
-        let group = groups.iter_mut().find(|g| g.kind == kind);
-        if let Some(group) = group {
-            let at_limit = max_per_group.is_some_and(|cap| group.results.len() >= cap);
-            if !at_limit {
-                group.results.push(card.clone());
-            } else {
-                group.truncated = true;
-            }
-        } else {
-            groups.push(SecurityResultGroup {
-                kind,
-                label: security_group_label(kind),
-                results: vec![card.clone()],
-                truncated: false,
-                quality_summary: None,
-            });
-        }
-    }
-
-    // Compute quality summaries after all cards are grouped.
-    for group in groups.iter_mut() {
-        group.quality_summary = Some(crate::core::quality::compute_group_quality(&group.results));
-    }
-
-    // Sort groups by kind for deterministic output
-    groups.sort_by_key(|g| format!("{:?}", g.kind));
-    groups
+    let max_per_group = max_per_group.unwrap_or(usize::MAX);
+    build_card_groups(
+        results.to_vec(),
+        classify_security_result,
+        CANONICAL_GROUP_ORDER,
+        security_group_label,
+        max_per_group,
+        None,
+        |_, _| {},
+    )
+    .into_iter()
+    .map(into_security_group)
+    .collect()
 }
 
 /// Map a security result group kind to a human-readable label.
@@ -120,6 +119,16 @@ pub fn security_group_label(kind: SecurityResultGroupKind) -> String {
         SecurityResultGroupKind::DefensiveGuidance => "Defensive Guidance".to_string(),
         SecurityResultGroupKind::GeneralContext => "General Context".to_string(),
         SecurityResultGroupKind::Other => "Other".to_string(),
+    }
+}
+
+fn into_security_group(group: BuiltGroup<SecurityResultGroupKind>) -> SecurityResultGroup {
+    SecurityResultGroup {
+        kind: group.kind,
+        label: group.label,
+        results: group.results,
+        truncated: group.truncated,
+        quality_summary: Some(group.quality_summary),
     }
 }
 
@@ -210,6 +219,15 @@ mod tests {
     }
 
     #[test]
+    fn classify_poc_only_as_token() {
+        let card = make_card(SourceKind::Reference, "https://example.com/pocket-guide");
+        assert_eq!(
+            classify_security_result(&card),
+            SecurityResultGroupKind::GeneralContext
+        );
+    }
+
+    #[test]
     fn classify_mitigation_as_defensive() {
         let card = make_card(
             SourceKind::Reference,
@@ -273,6 +291,22 @@ mod tests {
             .unwrap();
         assert_eq!(auth_group.results.len(), 2);
         assert!(auth_group.truncated);
+    }
+
+    #[test]
+    fn group_results_zero_max_per_group_yields_empty_truncated_group() {
+        let cards = vec![make_card(
+            SourceKind::SecurityAdvisory,
+            "https://osv.dev/vuln/one",
+        )];
+        let groups = group_security_results(&cards, Some(0));
+        let auth_group = groups
+            .iter()
+            .find(|g| g.kind == SecurityResultGroupKind::AuthoritativeAdvisories)
+            .unwrap();
+        assert!(auth_group.results.is_empty());
+        assert!(auth_group.truncated);
+        assert!(auth_group.quality_summary.is_some());
     }
 
     #[test]

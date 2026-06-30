@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provider capability audit: searxng and brave_api capabilities corrected to reflect what the adapter actually forwards (not what the upstream API supports); github_releases `org_filter` corrected to false
 - Capability warnings emitted when requests ask for behavior providers cannot enforce (safe_search, freshness, intent without native providers)
 - Within-group reranking now includes quality-based boosts (high confidence, exact evidence, official authority)
+- Shared grouping helper now powers repo, research, and security result groups, keeping truncation and aggregate quality-summary behavior consistent across specialized tools
 
 ### Added
 
@@ -42,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **UTF-8-safe snippet truncation in `github_issues` and `github_releases` engines**: the legacy `truncate_body` helper sliced on byte offsets and panicked when the slice landed inside a multi-byte code point (e.g. CJK characters or emoji). The new implementation counts Unicode scalar values and only returns substrings at valid char boundaries, preserving the historical word-boundary trim semantics. Added 10 new unit tests covering multibyte UTF-8, CJK, emoji-only text, zero `max_chars`, and word-boundary-with-emoji cases.
+- Repo grouping no longer misclassifies filenames such as `contest.rs` as tests solely because they contain the substring `test`
+- Security grouping now treats short exploit markers such as `poc` as URL tokens, avoiding false positives such as `pocket-guide`
+- Security group truncation now applies consistently even when called with `max_per_group = 0`
+- README stable-tool and research response documentation updated to match the current eight-tool MCP surface and `quality_summary` response shape
 
 ## [0.4.0] - Unreleased
 
@@ -88,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Adapter orchestration: bounded subquery fan-out with global timeout, RRF aggregation, and deduplication.
   - Warning system: subquery cap, freshness approximate, provider failures, empty groups.
   - Server capabilities: `research_search` advertised in `provider_status` response.
-- `src/mcp/mod.rs` module doc comment updated to list all six MCP tools: `web_search`, `web_fetch`, `provider_status`, `repo_search`, `security_search`, `research_search`.
+- `src/mcp/mod.rs` module doc comment updated to list the MCP tool surface.
 - `repo_search` MCP tool for structured repository evidence discovery with grouped result bundles and suggested fetch URLs
 - `RepoSearchRequest`, `RepoResultGroup`, `RepoSearchResponse`, `RepoSuggestedFetch` types in `src/core/repo_search.rs`
 - `repo_grouping` deterministic classification of SourceCards into group kinds (OfficialDocs, PackageRegistry, Repository, Readme, Examples, Tests, SourceFiles, Issues, PullRequests, Releases, MigrationNotes, Changelog, CommunityDiscovery, Other)

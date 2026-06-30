@@ -16,7 +16,7 @@ for the default configuration.
 
 - Single Rust binary that speaks MCP over stdio
 - Queries DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, and optionally a self-hosted SearXNG instance (no API keys required)
-- Optional API-backed providers (Brave Search API, GitHub Code/Issues/Releases, GitLab Code/Issues/Releases, Gitea/Forgejo Code) with env-var secret loading
+- Optional API-backed providers (Brave Search API, GitHub Code/Issues/Releases, GitLab Code/Issues/Releases, Gitea/Forgejo Code/Issues/Releases) with env-var secret loading
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
 - Per-request timeout support with partial-result preservation
 - `web_search` MCP tool: live metasearch with intent/freshness retrieval hints and deterministic `SourceCard` metadata
@@ -36,7 +36,8 @@ for the default configuration.
 ## Stable baseline
 
 `web_search`, `web_fetch`, `provider_status`, `repo_search`,
-`batch_fetch`, `security_search`, and `research_search` are the seven stable MCP tools.
+`repo_fetch`, `batch_fetch`, `security_search`, and `research_search`
+are the eight stable MCP tools.
 Generic search (`intent = web`) is first-class and will remain the
 default path. `repo_search` provides structured repository evidence
 discovery with grouped result bundles, search profiles for provider
@@ -114,8 +115,8 @@ responsibility:
   and inline formatting. This is a rendering mode, not summarization
   -- it preserves the original content structure.
 
-A third tool, `provider_status`, is a non-probing diagnostic that
-reports which providers are configured, enabled, and available.
+Use `provider_status` as a non-probing diagnostic that reports which
+providers are configured, enabled, and available.
 
 ## Install
 
@@ -808,7 +809,7 @@ across the requested dimensions.
 **Response fields:**
 
 - `subqueries`: transparent bounded subqueries used to retrieve evidence. Each subquery includes the query text and the source types it targeted.
-- `groups`: source candidates grouped by evidence type. Each group includes a `kind`, human-readable `label`, `quality` classification (`high`, `medium`, `low`), source-card `results`, and `suggested_fetches`.
+- `groups`: source candidates grouped by evidence type. Each group includes a `kind`, human-readable `label`, source-card `results`, truncation status, and an aggregate `quality_summary`.
 - `suggested_fetches`: top-level priority-ordered fetch suggestions across all groups, with per-domain diversity caps to avoid over-indexing on a single site.
 - `providers_queried` / `providers_failed`: provider status for the search fan-out.
 - `warnings`: non-fatal advisory messages (e.g. subquery cap hit, freshness approximate, provider failures, empty groups, request deadline exceeded with interrupted subquery counts).

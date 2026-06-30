@@ -3,6 +3,24 @@
 use crate::core::repo_query::RepoQueryHints;
 use crate::core::repo_search::{RepoResultGroup, RepoResultGroupKind};
 use crate::core::source_card::{SourceCard, SourceKind};
+use crate::meta::grouping::{build_card_groups, BuiltGroup};
+
+const CANONICAL_GROUP_ORDER: &[RepoResultGroupKind] = &[
+    RepoResultGroupKind::OfficialDocs,
+    RepoResultGroupKind::PackageRegistry,
+    RepoResultGroupKind::Repository,
+    RepoResultGroupKind::Readme,
+    RepoResultGroupKind::Examples,
+    RepoResultGroupKind::Tests,
+    RepoResultGroupKind::SourceFiles,
+    RepoResultGroupKind::Issues,
+    RepoResultGroupKind::PullRequests,
+    RepoResultGroupKind::Releases,
+    RepoResultGroupKind::MigrationNotes,
+    RepoResultGroupKind::Changelog,
+    RepoResultGroupKind::CommunityDiscussion,
+    RepoResultGroupKind::Other,
+];
 
 /// Classify a SourceCard into its primary group.
 pub fn classify_group(card: &SourceCard) -> RepoResultGroupKind {
@@ -85,7 +103,10 @@ fn classify_source_file(
 }
 
 fn is_test_path(path: &str) -> bool {
-    if path.contains("test") || path.contains("tests") {
+    if path
+        .split('/')
+        .any(|part| part == "test" || part == "tests")
+    {
         return true;
     }
     if let Some(filename) = path.rsplit('/').next() {
@@ -109,6 +130,36 @@ fn is_test_path(path: &str) -> bool {
 
 fn is_test_url_pattern(url_lower: &str) -> bool {
     url_lower.contains("/tests/") || url_lower.contains("/test/")
+}
+
+fn repo_group_label(kind: RepoResultGroupKind) -> String {
+    match kind {
+        RepoResultGroupKind::OfficialDocs => "Official Documentation",
+        RepoResultGroupKind::PackageRegistry => "Package Registry",
+        RepoResultGroupKind::Repository => "Repository",
+        RepoResultGroupKind::Readme => "README",
+        RepoResultGroupKind::Examples => "Examples",
+        RepoResultGroupKind::Tests => "Tests",
+        RepoResultGroupKind::SourceFiles => "Source Files",
+        RepoResultGroupKind::Issues => "Issues",
+        RepoResultGroupKind::PullRequests => "Pull Requests",
+        RepoResultGroupKind::Releases => "Releases",
+        RepoResultGroupKind::MigrationNotes => "Migration Notes",
+        RepoResultGroupKind::Changelog => "Changelog",
+        RepoResultGroupKind::CommunityDiscussion => "Community Discussion",
+        RepoResultGroupKind::Other => "Other",
+    }
+    .to_string()
+}
+
+fn into_repo_group(group: BuiltGroup<RepoResultGroupKind>) -> RepoResultGroup {
+    RepoResultGroup {
+        kind: group.kind,
+        label: group.label,
+        results: group.results,
+        truncated: group.truncated,
+        quality_summary: Some(group.quality_summary),
+    }
 }
 
 fn classify_fallback(
@@ -400,76 +451,18 @@ pub fn apply_error_reranking(
 /// Each card goes to exactly one group (its primary classification).
 /// Groups are returned in a fixed canonical order.
 pub fn group_results(cards: Vec<SourceCard>, max_per_group: usize) -> Vec<RepoResultGroup> {
-    use std::collections::HashMap;
-
-    let mut buckets: HashMap<RepoResultGroupKind, Vec<SourceCard>> = HashMap::new();
-    for card in cards {
-        let kind = classify_group(&card);
-        buckets.entry(kind).or_default().push(card);
-    }
-
-    let canonical_order: Vec<RepoResultGroupKind> = vec![
-        RepoResultGroupKind::OfficialDocs,
-        RepoResultGroupKind::PackageRegistry,
-        RepoResultGroupKind::Repository,
-        RepoResultGroupKind::Readme,
-        RepoResultGroupKind::Examples,
-        RepoResultGroupKind::Tests,
-        RepoResultGroupKind::SourceFiles,
-        RepoResultGroupKind::Issues,
-        RepoResultGroupKind::PullRequests,
-        RepoResultGroupKind::Releases,
-        RepoResultGroupKind::MigrationNotes,
-        RepoResultGroupKind::Changelog,
-        RepoResultGroupKind::CommunityDiscussion,
-        RepoResultGroupKind::Other,
-    ];
-
-    let labels: Vec<(RepoResultGroupKind, &str)> = vec![
-        (RepoResultGroupKind::OfficialDocs, "Official Documentation"),
-        (RepoResultGroupKind::PackageRegistry, "Package Registry"),
-        (RepoResultGroupKind::Repository, "Repository"),
-        (RepoResultGroupKind::Readme, "README"),
-        (RepoResultGroupKind::Examples, "Examples"),
-        (RepoResultGroupKind::Tests, "Tests"),
-        (RepoResultGroupKind::SourceFiles, "Source Files"),
-        (RepoResultGroupKind::Issues, "Issues"),
-        (RepoResultGroupKind::PullRequests, "Pull Requests"),
-        (RepoResultGroupKind::Releases, "Releases"),
-        (RepoResultGroupKind::MigrationNotes, "Migration Notes"),
-        (RepoResultGroupKind::Changelog, "Changelog"),
-        (
-            RepoResultGroupKind::CommunityDiscussion,
-            "Community Discussion",
-        ),
-        (RepoResultGroupKind::Other, "Other"),
-    ];
-
-    let label_map: std::collections::HashMap<RepoResultGroupKind, &str> =
-        labels.into_iter().collect();
-
-    let mut groups = Vec::new();
-    for kind in canonical_order {
-        if let Some(mut results) = buckets.remove(&kind) {
-            let full_count = results.len();
-            results.truncate(max_per_group);
-            let truncated = full_count > max_per_group;
-            let label = label_map
-                .get(&kind)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("{kind:?}"));
-            let quality_summary = Some(crate::core::quality::compute_group_quality(&results));
-            groups.push(RepoResultGroup {
-                kind,
-                label,
-                results,
-                truncated,
-                quality_summary,
-            });
-        }
-    }
-
-    groups
+    build_card_groups(
+        cards,
+        classify_group,
+        CANONICAL_GROUP_ORDER,
+        repo_group_label,
+        max_per_group,
+        None,
+        |_, _| {},
+    )
+    .into_iter()
+    .map(into_repo_group)
+    .collect()
 }
 
 /// Group a flat list of SourceCards into RepoResultGroups with within-group reranking.
@@ -480,81 +473,18 @@ pub fn group_results_with_hints(
     max_per_group: usize,
     hints: &RepoQueryHints,
 ) -> Vec<RepoResultGroup> {
-    use std::collections::HashMap;
-
-    let mut buckets: HashMap<RepoResultGroupKind, Vec<SourceCard>> = HashMap::new();
-    for card in cards {
-        let kind = classify_group(&card);
-        buckets.entry(kind).or_default().push(card);
-    }
-
-    // Apply within-group reranking before truncation.
-    for bucket in buckets.values_mut() {
-        rerank_group(bucket, hints);
-    }
-
-    let canonical_order: Vec<RepoResultGroupKind> = vec![
-        RepoResultGroupKind::OfficialDocs,
-        RepoResultGroupKind::PackageRegistry,
-        RepoResultGroupKind::Repository,
-        RepoResultGroupKind::Readme,
-        RepoResultGroupKind::Examples,
-        RepoResultGroupKind::Tests,
-        RepoResultGroupKind::SourceFiles,
-        RepoResultGroupKind::Issues,
-        RepoResultGroupKind::PullRequests,
-        RepoResultGroupKind::Releases,
-        RepoResultGroupKind::MigrationNotes,
-        RepoResultGroupKind::Changelog,
-        RepoResultGroupKind::CommunityDiscussion,
-        RepoResultGroupKind::Other,
-    ];
-
-    let labels: Vec<(RepoResultGroupKind, &str)> = vec![
-        (RepoResultGroupKind::OfficialDocs, "Official Documentation"),
-        (RepoResultGroupKind::PackageRegistry, "Package Registry"),
-        (RepoResultGroupKind::Repository, "Repository"),
-        (RepoResultGroupKind::Readme, "README"),
-        (RepoResultGroupKind::Examples, "Examples"),
-        (RepoResultGroupKind::Tests, "Tests"),
-        (RepoResultGroupKind::SourceFiles, "Source Files"),
-        (RepoResultGroupKind::Issues, "Issues"),
-        (RepoResultGroupKind::PullRequests, "Pull Requests"),
-        (RepoResultGroupKind::Releases, "Releases"),
-        (RepoResultGroupKind::MigrationNotes, "Migration Notes"),
-        (RepoResultGroupKind::Changelog, "Changelog"),
-        (
-            RepoResultGroupKind::CommunityDiscussion,
-            "Community Discussion",
-        ),
-        (RepoResultGroupKind::Other, "Other"),
-    ];
-
-    let label_map: std::collections::HashMap<RepoResultGroupKind, &str> =
-        labels.into_iter().collect();
-
-    let mut groups = Vec::new();
-    for kind in canonical_order {
-        if let Some(mut results) = buckets.remove(&kind) {
-            let full_count = results.len();
-            results.truncate(max_per_group);
-            let truncated = full_count > max_per_group;
-            let label = label_map
-                .get(&kind)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("{kind:?}"));
-            let quality_summary = Some(crate::core::quality::compute_group_quality(&results));
-            groups.push(RepoResultGroup {
-                kind,
-                label,
-                results,
-                truncated,
-                quality_summary,
-            });
-        }
-    }
-
-    groups
+    build_card_groups(
+        cards,
+        classify_group,
+        CANONICAL_GROUP_ORDER,
+        repo_group_label,
+        max_per_group,
+        None,
+        |_, bucket| rerank_group(bucket, hints),
+    )
+    .into_iter()
+    .map(into_repo_group)
+    .collect()
 }
 
 #[cfg(test)]
@@ -687,6 +617,16 @@ mod tests {
             SourceKind::SourceFile,
             "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
             "src/lib.rs",
+        );
+        assert_eq!(classify_group(&card), RepoResultGroupKind::SourceFiles);
+    }
+
+    #[test]
+    fn classify_contest_file_as_source_not_test() {
+        let card = make_card_with_code(
+            SourceKind::SourceFile,
+            "https://github.com/foo/bar/blob/main/src/contest.rs",
+            "src/contest.rs",
         );
         assert_eq!(classify_group(&card), RepoResultGroupKind::SourceFiles);
     }

@@ -4,6 +4,24 @@ use crate::core::research::{
     EvidenceQuality, ResearchResultGroup, ResearchResultGroupKind, ResearchSourceType,
 };
 use crate::core::source_card::{SourceCard, SourceKind};
+use crate::meta::grouping::{build_card_groups, BuiltGroup};
+
+const CANONICAL_GROUP_ORDER: &[ResearchResultGroupKind] = &[
+    ResearchResultGroupKind::PrimarySources,
+    ResearchResultGroupKind::OfficialDocs,
+    ResearchResultGroupKind::Specifications,
+    ResearchResultGroupKind::ReferenceImplementations,
+    ResearchResultGroupKind::DesignDiscussions,
+    ResearchResultGroupKind::Benchmarks,
+    ResearchResultGroupKind::SecurityConsiderations,
+    ResearchResultGroupKind::IssueThreads,
+    ResearchResultGroupKind::ReleaseNotes,
+    ResearchResultGroupKind::AcademicOrFormalSources,
+    ResearchResultGroupKind::RecentNews,
+    ResearchResultGroupKind::CommunityDiscussion,
+    ResearchResultGroupKind::Counterpoints,
+    ResearchResultGroupKind::Unknown,
+];
 
 /// Classify a SourceCard into its evidence quality tier.
 ///
@@ -287,6 +305,36 @@ fn classify_unknown_group(
     ResearchResultGroupKind::Unknown
 }
 
+fn research_group_label(kind: ResearchResultGroupKind) -> String {
+    match kind {
+        ResearchResultGroupKind::PrimarySources => "Primary Sources",
+        ResearchResultGroupKind::OfficialDocs => "Official Documentation",
+        ResearchResultGroupKind::Specifications => "Specifications",
+        ResearchResultGroupKind::ReferenceImplementations => "Reference Implementations",
+        ResearchResultGroupKind::DesignDiscussions => "Design Discussions",
+        ResearchResultGroupKind::Benchmarks => "Benchmarks",
+        ResearchResultGroupKind::SecurityConsiderations => "Security Considerations",
+        ResearchResultGroupKind::IssueThreads => "Issue Threads",
+        ResearchResultGroupKind::ReleaseNotes => "Release Notes",
+        ResearchResultGroupKind::AcademicOrFormalSources => "Academic & Formal Sources",
+        ResearchResultGroupKind::RecentNews => "Recent News",
+        ResearchResultGroupKind::CommunityDiscussion => "Community Discussion",
+        ResearchResultGroupKind::Counterpoints => "Counterpoints",
+        ResearchResultGroupKind::Unknown => "Other",
+    }
+    .to_string()
+}
+
+fn into_research_group(group: BuiltGroup<ResearchResultGroupKind>) -> ResearchResultGroup {
+    ResearchResultGroup {
+        kind: group.kind,
+        label: group.label,
+        results: group.results,
+        truncated: group.truncated,
+        quality_summary: Some(group.quality_summary),
+    }
+}
+
 /// Group a flat list of SourceCards into ResearchResultGroups.
 ///
 /// Each card goes to exactly one group (its primary classification).
@@ -297,94 +345,18 @@ pub fn group_research_results(
     max_per_group: usize,
     max_groups: usize,
 ) -> Vec<ResearchResultGroup> {
-    use std::collections::HashMap;
-
-    let mut buckets: HashMap<ResearchResultGroupKind, Vec<SourceCard>> = HashMap::new();
-    for card in cards {
-        let kind = classify_research_group(&card, None);
-        buckets.entry(kind).or_default().push(card);
-    }
-
-    let canonical_order: Vec<ResearchResultGroupKind> = vec![
-        ResearchResultGroupKind::PrimarySources,
-        ResearchResultGroupKind::OfficialDocs,
-        ResearchResultGroupKind::Specifications,
-        ResearchResultGroupKind::ReferenceImplementations,
-        ResearchResultGroupKind::DesignDiscussions,
-        ResearchResultGroupKind::Benchmarks,
-        ResearchResultGroupKind::SecurityConsiderations,
-        ResearchResultGroupKind::IssueThreads,
-        ResearchResultGroupKind::ReleaseNotes,
-        ResearchResultGroupKind::AcademicOrFormalSources,
-        ResearchResultGroupKind::RecentNews,
-        ResearchResultGroupKind::CommunityDiscussion,
-        ResearchResultGroupKind::Counterpoints,
-        ResearchResultGroupKind::Unknown,
-    ];
-
-    let labels: Vec<(ResearchResultGroupKind, &str)> = vec![
-        (ResearchResultGroupKind::PrimarySources, "Primary Sources"),
-        (
-            ResearchResultGroupKind::OfficialDocs,
-            "Official Documentation",
-        ),
-        (ResearchResultGroupKind::Specifications, "Specifications"),
-        (
-            ResearchResultGroupKind::ReferenceImplementations,
-            "Reference Implementations",
-        ),
-        (
-            ResearchResultGroupKind::DesignDiscussions,
-            "Design Discussions",
-        ),
-        (ResearchResultGroupKind::Benchmarks, "Benchmarks"),
-        (
-            ResearchResultGroupKind::SecurityConsiderations,
-            "Security Considerations",
-        ),
-        (ResearchResultGroupKind::IssueThreads, "Issue Threads"),
-        (ResearchResultGroupKind::ReleaseNotes, "Release Notes"),
-        (
-            ResearchResultGroupKind::AcademicOrFormalSources,
-            "Academic & Formal Sources",
-        ),
-        (ResearchResultGroupKind::RecentNews, "Recent News"),
-        (
-            ResearchResultGroupKind::CommunityDiscussion,
-            "Community Discussion",
-        ),
-        (ResearchResultGroupKind::Counterpoints, "Counterpoints"),
-        (ResearchResultGroupKind::Unknown, "Other"),
-    ];
-
-    let label_map: std::collections::HashMap<ResearchResultGroupKind, &str> =
-        labels.into_iter().collect();
-
-    let mut groups = Vec::new();
-    for kind in canonical_order {
-        if groups.len() >= max_groups {
-            break;
-        }
-        if let Some(mut results) = buckets.remove(&kind) {
-            let full_count = results.len();
-            results.truncate(max_per_group);
-            let truncated = full_count > max_per_group;
-            let label = label_map
-                .get(&kind)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("{kind:?}"));
-            let quality_summary = Some(crate::core::quality::compute_group_quality(&results));
-            groups.push(ResearchResultGroup {
-                kind,
-                label,
-                results,
-                truncated,
-                quality_summary,
-            });
-        }
-    }
-
-    groups
+    build_card_groups(
+        cards,
+        |card| classify_research_group(card, None),
+        CANONICAL_GROUP_ORDER,
+        research_group_label,
+        max_per_group,
+        Some(max_groups),
+        |_, _| {},
+    )
+    .into_iter()
+    .map(into_research_group)
+    .collect()
 }
 
 #[cfg(test)]

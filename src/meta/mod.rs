@@ -11,6 +11,7 @@ pub mod adapter;
 pub mod engines;
 /// Exact-error planner: generates targeted subqueries for compiler/runtime error messages.
 pub mod error_planner;
+mod grouping;
 /// Local workspace search backend: bounded file walking, scoring, and
 /// SourceCard conversion.
 pub mod local_backend;
