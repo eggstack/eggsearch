@@ -6,6 +6,8 @@
 //! here. Callers receive `crate::core::SourceCard` values.
 
 pub mod adapter;
+/// Bounded parallel dispatch for multi-subquery searches.
+pub(crate) mod dispatch;
 /// Deterministic ranking pipeline for suggested fetch candidates.
 pub mod fetch_ranking;
 /// Vendored HTML search engines. Internal; not part of the stable

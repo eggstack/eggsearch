@@ -75,20 +75,8 @@ type EngineList = Vec<Arc<dyn SearchEngine>>;
 struct PlannedSubquery {
     label: String,
     query: String,
-}
-
-#[derive(Default, Debug)]
-struct RequestDeadlineStats {
-    exceeded: bool,
-    subqueries_skipped: usize,
-    subqueries_interrupted: usize,
-}
-
-#[derive(Default, Debug)]
-struct SubqueryDispatchResult {
-    raw_results: Vec<(String, Vec<SearchResult>)>,
-    raw_failures: Vec<(String, EngineError)>,
-    deadline: RequestDeadlineStats,
+    /// Lower number = higher priority. Ties broken by order.
+    priority: i32,
 }
 
 /// Constructed once at server startup. Holds the `SearchEngine`
@@ -738,9 +726,13 @@ impl MetadataSearchAdapter {
             &engines,
             plan.subqueries
                 .iter()
-                .map(|subquery| PlannedSubquery {
-                    label: subquery.label.to_string(),
-                    query: subquery.query.clone(),
+                .map(|subquery| {
+                    let priority = repo_subquery_priority(&subquery.label, is_exact_error);
+                    PlannedSubquery {
+                        label: subquery.label.to_string(),
+                        query: subquery.query.clone(),
+                        priority,
+                    }
                 })
                 .collect(),
             candidate_limit,
@@ -1185,9 +1177,13 @@ impl MetadataSearchAdapter {
             &engines,
             plan.subqueries
                 .iter()
-                .map(|subquery| PlannedSubquery {
-                    label: subquery.id.clone(),
-                    query: subquery.query.clone(),
+                .map(|subquery| {
+                    let priority = research_subquery_priority(&subquery.source_type);
+                    PlannedSubquery {
+                        label: subquery.id.clone(),
+                        query: subquery.query.clone(),
+                        priority,
+                    }
                 })
                 .collect(),
             candidate_limit,
@@ -1313,72 +1309,86 @@ async fn dispatch_subqueries(
     subqueries: Vec<PlannedSubquery>,
     candidate_limit: usize,
     effective_timeout: Duration,
-    search_scope: &'static str,
-) -> SubqueryDispatchResult {
-    let mut dispatch = SubqueryDispatchResult::default();
-    let overall_deadline = tokio::time::Instant::now() + effective_timeout;
+    search_scope: &str,
+) -> crate::meta::dispatch::DispatchOutput {
+    use crate::meta::dispatch::{dispatch_parallel, DispatchConfig, DispatchJob};
 
-    for subquery in subqueries {
-        let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            dispatch.deadline.exceeded = true;
-            dispatch.deadline.subqueries_skipped += 1;
-            continue;
-        }
+    let max_concurrent_jobs = subqueries.len().clamp(1, 8) * engines.len().clamp(1, 4);
+    let max_concurrent_per_provider = 2;
 
-        let mut join_set = tokio::task::JoinSet::new();
-        for engine in engines {
-            let engine = Arc::clone(engine);
-            let query = subquery.query.clone();
-            let engine_timeout = remaining;
+    let config = DispatchConfig {
+        candidate_limit,
+        global_timeout: effective_timeout,
+        max_concurrent_jobs,
+        max_concurrent_per_provider,
+    };
 
-            join_set.spawn(async move {
-                let result = engine.search(&query, candidate_limit, engine_timeout).await;
-                (engine.name().to_string(), result)
+    // Build flat job list: one (subquery, provider) pair per job
+    let mut jobs = Vec::new();
+    for (subquery_idx, subquery) in subqueries.iter().enumerate() {
+        for (provider_idx, engine) in engines.iter().enumerate() {
+            jobs.push(DispatchJob {
+                subquery_id: subquery.label.clone(),
+                query: subquery.query.clone(),
+                provider_id: engine.name().to_string(),
+                provider: Arc::clone(engine),
+                priority: subquery.priority,
+                subquery_order: subquery_idx,
+                provider_order: provider_idx,
             });
-        }
-
-        loop {
-            let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                dispatch.deadline.exceeded = true;
-                dispatch.deadline.subqueries_interrupted += 1;
-                warn!(
-                    scope = search_scope,
-                    subquery = subquery.label,
-                    pending_engines = join_set.len(),
-                    "request deadline exceeded with engines still pending"
-                );
-                break;
-            }
-
-            match tokio::time::timeout(remaining, join_set.join_next()).await {
-                Ok(Some(Ok((name, Ok(results))))) => {
-                    dispatch.raw_results.push((name, results));
-                }
-                Ok(Some(Ok((name, Err(err))))) => {
-                    dispatch.raw_failures.push((name, err));
-                }
-                Ok(Some(Err(join_err))) => {
-                    warn!(?join_err, scope = search_scope, "engine task panicked");
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    dispatch.deadline.exceeded = true;
-                    dispatch.deadline.subqueries_interrupted += 1;
-                    warn!(
-                        scope = search_scope,
-                        subquery = subquery.label,
-                        pending_engines = join_set.len(),
-                        "request deadline exceeded with engines still pending"
-                    );
-                    break;
-                }
-            }
         }
     }
 
-    dispatch
+    dispatch_parallel(jobs, config, search_scope).await
+}
+
+/// Assign priority for repo_search subqueries. Lower = higher priority.
+///
+/// Normal mode: source (with hints) > docs/registry > examples > issues > releases.
+/// Exact-error mode: exact_phrase > error_code > error_package > error_issues > error_releases > error_docs.
+fn repo_subquery_priority(label: &str, is_exact_error: bool) -> i32 {
+    if is_exact_error {
+        match label {
+            "error_exact" => 0,
+            "error_code" => 1,
+            "error_package" => 2,
+            "error_issues" => 3,
+            "error_releases" => 4,
+            "error_docs" => 5,
+            _ => 10,
+        }
+    } else {
+        match label {
+            "source" => 0,
+            "docs" => 1,
+            "registry" => 2,
+            "examples" => 3,
+            "issues" => 4,
+            "releases" => 5,
+            "changelog" => 6,
+            _ => 10,
+        }
+    }
+}
+
+/// Assign priority for research_search subqueries. Lower = higher priority.
+fn research_subquery_priority(source_type: &crate::core::research::ResearchSourceType) -> i32 {
+    use crate::core::research::ResearchSourceType;
+    match source_type {
+        ResearchSourceType::PrimarySources => 0,
+        ResearchSourceType::OfficialDocs => 1,
+        ResearchSourceType::Specifications => 2,
+        ResearchSourceType::ReferenceImplementations => 3,
+        ResearchSourceType::SecurityConsiderations => 4,
+        ResearchSourceType::Benchmarks => 5,
+        ResearchSourceType::DesignDiscussions => 6,
+        ResearchSourceType::IssueThreads => 7,
+        ResearchSourceType::ReleaseNotes => 8,
+        ResearchSourceType::RecentNews => 9,
+        ResearchSourceType::CommunityDiscussion => 10,
+        ResearchSourceType::Counterpoints => 11,
+        ResearchSourceType::AcademicOrFormalSources => 2,
+    }
 }
 
 fn aggregate_source_cards(
@@ -1395,7 +1405,7 @@ fn aggregate_source_cards(
 fn push_deadline_warning(
     warnings: &mut Vec<SearchWarning>,
     scope: &str,
-    deadline: &RequestDeadlineStats,
+    deadline: &crate::meta::dispatch::RequestDeadlineStats,
 ) {
     if deadline.exceeded {
         warnings.push(SearchWarning::new(

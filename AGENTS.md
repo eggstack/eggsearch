@@ -104,6 +104,7 @@ eggsearch/
       security_suggested_fetches.rs # suggested fetch URL generation for security groups
       package_resolver.rs  # bounded HTTP registry lookups for package resolution
       local_backend.rs     # LocalWorkspaceBackend: bounded file walking, scoring, SourceCard conversion
+      dispatch.rs          # bounded parallel dispatch for multi-subquery searches
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -623,6 +624,7 @@ sources for the package.
 - `src/meta/repo_planner.rs`: subquery generation for repo search
   bundles, producing per-aspect queries
 - `src/meta/error_planner.rs`: error-aware subquery generation for exact-error mode
+- `src/meta/dispatch.rs`: bounded parallel dispatch for multi-subquery searches
 - `src/meta/fetch_ranking.rs`: deterministic scoring model for suggested fetch candidates
 - `src/meta/package_resolver.rs`: bounded HTTP registry lookups
 - `src/meta/suggested_fetches.rs`: suggested fetch URL generation
@@ -1341,7 +1343,10 @@ point for the MCP `web_search` tool. The flow is:
    per-engine `max_results` argument. Each provider receives the
    planned query from `provider_queries` (if present) or
    `generic_query`. No page bodies are fetched — the extra headroom
-   is only used to expand the compact candidate pool.
+   is only used to expand the compact candidate pool. For specialized
+   search tools (`repo_search`, `research_search`), subqueries are
+   dispatched in parallel via `src/meta/dispatch.rs` (see
+   "Parallel Subquery Dispatch").
 4. Aggregate the provider results via the vendored `aggregate_rrf`
    up to `candidate_limit` (URL-normalized dedup). On dedup, the
    richer `ResultMetadata` wins (e.g. an `IssueMetadata` payload
@@ -1360,6 +1365,31 @@ The MCP `run_web_search` caller passes
 pool is config-aware. The CLI `search` and `doctor` paths pass the
 same value from `AppConfig`. Provider fan-out logs distinguish
 `final_max_results` from `candidate_limit` for debugging.
+
+### Parallel Subquery Dispatch
+
+Specialized search tools (`repo_search`, `research_search`) now use
+bounded parallel dispatch instead of sequential subquery execution.
+Each `(subquery, provider)` pair is a dispatch job. Jobs are sorted
+by `(priority, subquery_order, provider_order)` and executed
+concurrently within global and per-provider concurrency caps.
+
+**Priority model:**
+
+- `repo_search` normal mode: `source` (0) > `docs` (1) > `registry` (2) > `examples` (3) > `issues` (4) > `releases` (5) > `changelog` (6)
+- `repo_search` exact-error mode: `error_exact` (0) > `error_code` (1) > `error_package` (2) > `error_issues` (3) > `error_releases` (4) > `error_docs` (5)
+- `research_search`: `PrimarySources` (0) > `OfficialDocs` (1) > `Specifications`/`AcademicOrFormalSources` (2) > `ReferenceImplementations` (3) > `SecurityConsiderations` (4) > `Benchmarks` (5) > `DesignDiscussions` (6)
+
+**Concurrency controls:**
+
+- `max_concurrent_jobs`: total in-flight jobs (computed as `subqueries.clamp(1,8) * engines.clamp(1,4)`)
+- `max_concurrent_per_provider`: per-provider cap (default 2)
+- Global request deadline still bounds the entire dispatch
+
+**Determinism:**
+
+Results are sorted by `(subquery_order, provider_order)` before
+aggregation so completion order does not affect output.
 
 ### Prompt-injection Hardening
 - Untrusted text from search and fetch flows through three tiers of

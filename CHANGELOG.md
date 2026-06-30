@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Result-quality metadata on `SourceCard`, group quality summaries, and repo-search uncertainty summaries.
 - `provider_status` capability discovery metadata: `server_capabilities`, `tool_capabilities`, `code_hosts`, and `quality_metadata`.
 - Stable advisory warning prefixes for capability limits, security context, KEV outcomes, profile degradation, deadline interruptions, and local fetch constraints.
+- Bounded parallel subquery dispatch for `repo_search`, `security_search`, and `research_search`. Each (subquery, provider) pair is a dispatch job sorted by priority and executed concurrently with per-provider concurrency limits (`max_concurrent_per_provider`, default 2). Results are sorted deterministically before aggregation. New module: `src/meta/dispatch.rs`.
 
 ### Changed
 

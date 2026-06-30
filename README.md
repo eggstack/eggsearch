@@ -23,6 +23,7 @@ for the default configuration.
 - `web_search` MCP tool: live metasearch with intent/freshness retrieval hints and deterministic `SourceCard` metadata
 - `repo_search` MCP tool: structured repository evidence discovery with grouped result bundles, search profiles, subquery telemetry, and suggested fetches
 - `repo_search` now supports `mode: "exact_error"` for compiler/runtime error search with phrase-preserving subqueries, error-code extraction, and sensitive token redaction (configurable via `[search].exact_error`)
+- Bounded parallel subquery dispatch for `repo_search`, `security_search`, and `research_search` — each (subquery, provider) pair is a dispatch job sorted by priority and executed concurrently with per-provider concurrency limits, replacing sequential subquery execution
 - `security_search` MCP tool: security-oriented retrieval with normalized vulnerability metadata from OSV and grouped source cards
 - `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches
 - `repo_map` MCP tool: bounded repository structure discovery with important-file classification and suggested fetches
@@ -703,7 +704,9 @@ Research-oriented multi-source evidence discovery tool. Plans and
 retrieves candidate sources for complex architectural or technical
 questions, returning transparent subqueries, grouped source-card
 bundles by evidence type, suggested fetches ranked by information gain
-with domain diversity constraints, and provider status.
+with domain diversity constraints, and provider status. Subqueries are
+dispatched in **bounded parallel** with per-provider concurrency
+limits.
 
 This tool does **not** synthesize answers, fetch pages automatically,
 crawl, or summarize. It plans bounded subqueries and retrieves
@@ -890,9 +893,11 @@ The response also includes capability discovery metadata:
 
 Structured repository evidence discovery tool. Groups search results
 by category (docs, registry, README, source files, issues, releases,
-etc.) and returns suggested fetch URLs for each group. Supports
-**search profiles** for provider selection and returns **telemetry**
-showing generated subqueries and provider degradation.
+etc.) and returns suggested fetch URLs for each group. Subqueries are
+dispatched in **bounded parallel** with per-provider concurrency
+limits, replacing sequential execution. Supports **search profiles**
+for provider selection and returns **telemetry** showing generated
+subqueries and provider degradation.
 
 **Minimal call:**
 
@@ -1663,7 +1668,7 @@ eggsearch/
     commands/            # subcommands: doctor, search, providers, mcp, fetch
     core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types, batch fetch types, code evidence metadata, repo map types
     fetch/               # HTTP fetch client and HTML extraction
-    meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, repo mapping, + vendored engines
+    meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, repo mapping, bounded parallel subquery dispatch, + vendored engines
     mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, repo_fetch, repo_map, batch_fetch, security_search, research_search
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
