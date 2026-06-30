@@ -5527,6 +5527,159 @@ mod provider_status {
             );
         }
     }
+
+    #[test]
+    fn capability_cross_checks_gitlab_code() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+        let desc = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some("gitlab_code"))
+            .expect("gitlab_code should be present");
+        let caps = &desc["capabilities"];
+        assert!(caps["supports_code_search"].as_bool().unwrap());
+        assert!(caps["supports_repo_filter"].as_bool().unwrap());
+        assert!(caps["supports_org_filter"].as_bool().unwrap());
+        assert!(caps["supports_path_filter"].as_bool().unwrap());
+        assert!(!caps["supports_issue_search"].as_bool().unwrap());
+        assert!(!caps["supports_release_search"].as_bool().unwrap());
+        assert!(!caps["supports_result_timestamps"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn capability_cross_checks_gitlab_issues() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+        let desc = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some("gitlab_issues"))
+            .expect("gitlab_issues should be present");
+        let caps = &desc["capabilities"];
+        assert!(caps["supports_issue_search"].as_bool().unwrap());
+        assert!(caps["supports_repo_filter"].as_bool().unwrap());
+        assert!(caps["supports_result_timestamps"].as_bool().unwrap());
+        assert!(!caps["supports_code_search"].as_bool().unwrap());
+        assert!(!caps["supports_release_search"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn capability_cross_checks_gitlab_releases() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+        let desc = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some("gitlab_releases"))
+            .expect("gitlab_releases should be present");
+        let caps = &desc["capabilities"];
+        assert!(caps["supports_release_search"].as_bool().unwrap());
+        assert!(caps["supports_repo_filter"].as_bool().unwrap());
+        assert!(caps["supports_result_timestamps"].as_bool().unwrap());
+        assert!(!caps["supports_code_search"].as_bool().unwrap());
+        assert!(!caps["supports_issue_search"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn capability_cross_checks_gitea_code() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+        let desc = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some("gitea_code"))
+            .expect("gitea_code should be present");
+        let caps = &desc["capabilities"];
+        assert!(caps["supports_code_search"].as_bool().unwrap());
+        assert!(!caps["supports_repo_filter"].as_bool().unwrap());
+        assert!(!caps["supports_issue_search"].as_bool().unwrap());
+        assert!(!caps["supports_release_search"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn capability_cross_checks_gitea_issues() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+        let desc = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some("gitea_issues"))
+            .expect("gitea_issues should be present");
+        let caps = &desc["capabilities"];
+        assert!(caps["supports_issue_search"].as_bool().unwrap());
+        assert!(caps["supports_result_timestamps"].as_bool().unwrap());
+        assert!(!caps["supports_code_search"].as_bool().unwrap());
+        assert!(!caps["supports_release_search"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn capability_cross_checks_gitea_releases() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let arr = v["providers"].as_array().unwrap();
+        let desc = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some("gitea_releases"))
+            .expect("gitea_releases should be present");
+        let caps = &desc["capabilities"];
+        assert!(caps["supports_release_search"].as_bool().unwrap());
+        assert!(caps["supports_result_timestamps"].as_bool().unwrap());
+        assert!(!caps["supports_code_search"].as_bool().unwrap());
+        assert!(!caps["supports_issue_search"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn code_hosts_summary_includes_gitlab_gitea() {
+        let state = state_with_default();
+        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let code_hosts = v["code_hosts"]
+            .as_array()
+            .expect("code_hosts should be array");
+
+        let github = code_hosts
+            .iter()
+            .find(|h| h["kind"].as_str() == Some("github"))
+            .expect("github host should be present");
+        assert!(
+            github["capabilities"]["code_search"].as_bool().unwrap(),
+            "github should have code_search"
+        );
+
+        let gitlab = code_hosts
+            .iter()
+            .find(|h| h["kind"].as_str() == Some("gitlab"))
+            .expect("gitlab host should be present");
+        assert!(
+            gitlab["capabilities"]["code_search"].as_bool().unwrap(),
+            "gitlab should have code_search"
+        );
+        assert!(
+            gitlab["capabilities"]["issue_search"].as_bool().unwrap(),
+            "gitlab should have issue_search"
+        );
+        assert!(
+            gitlab["capabilities"]["release_search"].as_bool().unwrap(),
+            "gitlab should have release_search"
+        );
+
+        let gitea = code_hosts
+            .iter()
+            .find(|h| h["kind"].as_str() == Some("gitea"))
+            .expect("gitea host should be present");
+        assert!(
+            gitea["capabilities"]["code_search"].as_bool().unwrap(),
+            "gitea should have code_search"
+        );
+        assert!(
+            gitea["capabilities"]["issue_search"].as_bool().unwrap(),
+            "gitea should have issue_search"
+        );
+        assert!(
+            gitea["capabilities"]["release_search"].as_bool().unwrap(),
+            "gitea should have release_search"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -6894,6 +7047,282 @@ mod repo_search {
         assert!(
             error_context.is_some(),
             "exact_error mode should include error_context"
+        );
+    }
+
+    /// When redact_sensitive_tokens is disabled, home paths, API tokens,
+    /// and UUIDs should NOT be redacted in the normalized error.
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_redact_disabled() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("Results", "https://example.com", "mock_a")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "error in /Users/john/project/src/main.rs".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let error_context = v["error_context"]
+            .as_object()
+            .expect("error_context should exist");
+        let redactions = error_context["redactions_applied"]
+            .as_array()
+            .expect("redactions_applied should be array");
+        assert!(
+            !redactions.is_empty(),
+            "default config should redact sensitive tokens: {error_context:?}"
+        );
+    }
+
+    /// max_subqueries config is respected: generating many error codes
+    /// should be capped by the configured limit.
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_max_subqueries_config() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("Results", "https://example.com", "mock_a")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "error[E0277]: the trait bound is not satisfied".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let error_context = v["error_context"]
+            .as_object()
+            .expect("error_context should exist");
+        let subqueries = error_context["subqueries"]
+            .as_array()
+            .expect("subqueries should be array");
+        assert!(
+            subqueries.len() <= 6,
+            "subqueries should respect max_subqueries config: {}",
+            subqueries.len()
+        );
+    }
+
+    /// TypeScript error parsing through MCP: TS error codes should be
+    /// detected and language_hint should be typescript.
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_typescript_parsing() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("TS docs", "https://typescriptlang.org", "mock_a")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let error_context = v["error_context"]
+            .as_object()
+            .expect("error_context should exist");
+        let codes = error_context["error_codes"]
+            .as_array()
+            .expect("error_codes should be array");
+        assert!(
+            codes.iter().any(|c| c["code"].as_str() == Some("TS2345")),
+            "should detect TS2345: {codes:?}"
+        );
+        let language = error_context["inferred_language"].as_str();
+        assert_eq!(
+            language,
+            Some("typescript"),
+            "inferred_language should be typescript: {error_context:?}"
+        );
+    }
+
+    /// npm ERESOLVE error parsing through MCP.
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_npm_parsing() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("npm docs", "https://npmjs.com", "mock_a")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "npm ERR! ERESOLVE could not resolve dependency tree\nnpm ERR! Found: react@17.0.2".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let error_context = v["error_context"]
+            .as_object()
+            .expect("error_context should exist");
+        let codes = error_context["error_codes"]
+            .as_array()
+            .expect("error_codes should be array");
+        assert!(
+            codes
+                .iter()
+                .any(|c| c["code"].as_str() == Some("ERESOLVE")),
+            "should detect ERESOLVE: {codes:?}"
+        );
+        let language = error_context["inferred_language"].as_str();
+        assert_eq!(
+            language,
+            Some("javascript"),
+            "inferred_language should be javascript: {error_context:?}"
+        );
+    }
+
+    /// Python exception parsing through MCP.
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_python_parsing() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("Python docs", "https://python.org", "mock_a")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n    result = data[key]\nKeyError: 'missing_key'".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let error_context = v["error_context"]
+            .as_object()
+            .expect("error_context should exist");
+        let codes = error_context["error_codes"]
+            .as_array()
+            .expect("error_codes should be array");
+        assert!(
+            codes.iter().any(|c| c["code"].as_str() == Some("KeyError")),
+            "should detect KeyError: {codes:?}"
+        );
+        let language = error_context["inferred_language"].as_str();
+        assert_eq!(
+            language,
+            Some("python"),
+            "inferred_language should be python: {error_context:?}"
+        );
+    }
+
+    /// Strengthened redaction test: verify that specific sensitive tokens
+    /// are actually removed from the normalized error in the response.
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_redaction_removes_tokens() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("Results", "https://example.com", "mock_a")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let error_with_uuid = "error at 0x7fff5fbff8d0 request-id: 550e8400-e29b-41d4-a716-446655440000";
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: error_with_uuid.into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let error_context = v["error_context"]
+            .as_object()
+            .expect("error_context should exist");
+        let redactions = error_context["redactions_applied"]
+            .as_array()
+            .expect("redactions_applied should be array");
+        assert!(
+            !redactions.is_empty(),
+            "should have redactions applied: {error_context:?}"
+        );
+
+        let normalized = error_context["normalized_error"]
+            .as_str()
+            .expect("normalized_error should be a string");
+        assert!(
+            !normalized.contains("0x7fff5fbff8d0"),
+            "normalized_error should redact memory address: {normalized}"
+        );
+        assert!(
+            !normalized.contains("550e8400-e29b-41d4-a716-446655440000"),
+            "normalized_error should redact UUID: {normalized}"
+        );
+    }
+
+    /// When degraded/partial provider selection occurs in repo_search,
+    /// the uncertainty_summary fields should reflect the actual state.
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_uncertainty_summary_reflects_provider_selection() {
+        let engines = vec![MockEngine::success("yahoo", vec![])];
+        let mut cfg = test_cfg();
+        cfg.search.providers.insert("yahoo".to_string(), true);
+        cfg.search.default_providers = vec!["yahoo".to_string()];
+        let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "tokio-rs/axum".into(),
+                providers: vec![],
+                profile: Some("coding".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("repo_search with degraded coding profile should succeed");
+
+        let selection = v["telemetry"]["provider_selection"]
+            .as_object()
+            .expect("provider_selection should be object");
+        assert_eq!(
+            selection["degraded"], true,
+            "all profile providers unavailable -> degraded should be true"
+        );
+
+        let uncertainty = v["telemetry"]["uncertainty_summary"]
+            .as_object()
+            .expect("uncertainty_summary should be object");
+        assert_eq!(
+            uncertainty["degraded_provider_selection"],
+            true,
+            "uncertainty_summary.degraded_provider_selection should be true"
         );
     }
 
@@ -11289,6 +11718,43 @@ async fn batch_fetch_rejects_absolute_repo_path() {
     let err = res.expect_err("expected validation error for absolute path");
     assert!(
         err.to_string().contains("must not be absolute"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_path_traversal() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
+                host: None,
+                owner: "test".to_string(),
+                repo: "repo".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "../etc/passwd".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for path traversal");
+    assert!(
+        err.to_string().contains("must not contain '..'"),
         "got: {err}"
     );
 }

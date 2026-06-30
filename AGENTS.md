@@ -163,7 +163,7 @@ eggsearch/
 - `ServerState` holds `Arc<AppConfig>` + `Arc<MetadataSearchAdapter>`
 - Both `SearchSection` and `FetchSection` have `sanitize_output: bool` (default `true`). When `true`, Tier 2 (framing) and Tier 3 (marker scan) prompt-injection defenses are active. Tier 1 (control-char strip + length bound) is always on.
 - `LocalConfig` is the `[local]` section: `enabled`, `roots`, `max_file_bytes`, `max_indexed_files`, `include_hidden`, `respect_gitignore`, `follow_symlinks`
-- `ExactErrorConfig` is the `[search].exact_error` section: `enabled` (default `true`), `max_subqueries` (default 6), `max_error_chars` (default 8000), `redact_sensitive_tokens` (default `true`), `prefer_official_docs` (default `true`)
+- `ExactErrorConfig` is the `[search].exact_error` section: `enabled` (default `true`), `max_subqueries` (default 6), `max_error_chars` (default 8000), `redact_sensitive_tokens` (default `true`)
 
 ### Provider Model
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`
@@ -469,9 +469,8 @@ an `error_context` field with parsed error parts, redactions applied,
 and subquery metadata. Config values from `[search].exact_error` are
 used at runtime: `enabled` controls whether exact-error mode is
 available, `max_error_chars` controls the validation cap,
-`max_subqueries` bounds the number of subqueries,
-`redact_sensitive_tokens` controls redaction, and
-`prefer_official_docs` influences subquery targeting.
+`max_subqueries` bounds the number of subqueries, and
+`redact_sensitive_tokens` controls redaction.
 
 **Suggested fetch URL priority (code evidence):** When a
 `SourceCard` has structured `code_evidence` metadata, suggested

@@ -921,4 +921,34 @@ mod tests {
         .await
         .expect("search should succeed");
     }
+
+    #[test]
+    fn test_provider_descriptor_for_gitlab_releases() {
+        use crate::core::provider::built_in_provider_descriptor;
+
+        let desc = built_in_provider_descriptor("gitlab_releases", true, false, true).unwrap();
+        assert_eq!(desc.id, "gitlab_releases");
+        assert_eq!(desc.display_name, "GitLab Releases");
+        assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);
+        assert!(desc.requires_api_key);
+        assert!(desc.configured);
+        assert!(desc.enabled);
+        assert!(!desc.default);
+        assert!(desc.capabilities.supports_release_search);
+        assert!(desc.capabilities.supports_repo_filter);
+        assert!(desc.capabilities.supports_result_timestamps);
+        assert!(!desc.capabilities.supports_code_search);
+        assert!(!desc.capabilities.supports_issue_search);
+        assert!(!desc.capabilities.supports_org_filter);
+        assert!(!desc.capabilities.supports_path_filter);
+    }
+
+    #[test]
+    fn test_provider_descriptor_gitlab_releases_unconfigured_when_disabled() {
+        use crate::core::provider::built_in_provider_descriptor;
+
+        let desc = built_in_provider_descriptor("gitlab_releases", false, false, true).unwrap();
+        assert!(!desc.configured);
+        assert!(!desc.enabled);
+    }
 }

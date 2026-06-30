@@ -800,4 +800,36 @@ mod tests {
         .await
         .expect("search should succeed");
     }
+
+    #[test]
+    fn test_provider_descriptor_for_gitlab_code() {
+        use crate::core::provider::built_in_provider_descriptor;
+
+        let desc = built_in_provider_descriptor("gitlab_code", true, false, true).unwrap();
+        assert_eq!(desc.id, "gitlab_code");
+        assert_eq!(desc.display_name, "GitLab Code Search");
+        assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);
+        assert!(desc.requires_api_key);
+        assert!(desc.configured);
+        assert!(desc.enabled);
+        assert!(!desc.default);
+        assert!(desc.capabilities.supports_code_search);
+        assert!(desc.capabilities.supports_repo_filter);
+        assert!(desc.capabilities.supports_org_filter);
+        assert!(desc.capabilities.supports_path_filter);
+        assert!(!desc.capabilities.supports_language_filter);
+        assert!(!desc.capabilities.supports_symbol_hint);
+        assert!(!desc.capabilities.supports_issue_search);
+        assert!(!desc.capabilities.supports_release_search);
+        assert!(!desc.capabilities.supports_result_timestamps);
+    }
+
+    #[test]
+    fn test_provider_descriptor_gitlab_code_unconfigured_when_disabled() {
+        use crate::core::provider::built_in_provider_descriptor;
+
+        let desc = built_in_provider_descriptor("gitlab_code", false, false, true).unwrap();
+        assert!(!desc.configured);
+        assert!(!desc.enabled);
+    }
 }
