@@ -633,10 +633,7 @@ fn build_repo_identity(repo_root: &Path) -> Option<LocalRepoIdentity> {
         .map(|(_, id)| (Some(id.host), Some(id.owner.clone()), Some(id.repo.clone())))
         .unwrap_or((None, None, None));
 
-    let remotes: Vec<NormalizedRepoId> = remotes_data
-        .into_iter()
-        .map(|(_, id)| id)
-        .collect();
+    let remotes: Vec<NormalizedRepoId> = remotes_data.into_iter().map(|(_, id)| id).collect();
 
     let current_branch = read_head_branch(repo_root);
     let current_commit = read_head_commit(repo_root);
@@ -710,8 +707,7 @@ mod tests {
 
     #[test]
     fn normalize_ssh_url() {
-        let id =
-            normalize_remote_url("ssh://git@github.com/tokio-rs/axum.git").unwrap();
+        let id = normalize_remote_url("ssh://git@github.com/tokio-rs/axum.git").unwrap();
         assert_eq!(id.host, CodeHost::Github);
         assert_eq!(id.owner, "tokio-rs");
         assert_eq!(id.repo, "axum");
@@ -719,8 +715,7 @@ mod tests {
 
     #[test]
     fn normalize_git_protocol() {
-        let id =
-            normalize_remote_url("git://github.com/tokio-rs/axum.git").unwrap();
+        let id = normalize_remote_url("git://github.com/tokio-rs/axum.git").unwrap();
         assert_eq!(id.host, CodeHost::Github);
         assert_eq!(id.owner, "tokio-rs");
         assert_eq!(id.repo, "axum");
@@ -744,8 +739,7 @@ mod tests {
 
     #[test]
     fn normalize_self_hosted_gitlab() {
-        let id =
-            normalize_remote_url("https://gitlab.example.com/team/project.git").unwrap();
+        let id = normalize_remote_url("https://gitlab.example.com/team/project.git").unwrap();
         assert_eq!(id.host, CodeHost::Gitlab);
         assert_eq!(id.host_domain.as_deref(), Some("gitlab.example.com"));
         assert_eq!(id.owner, "team");
@@ -829,11 +823,7 @@ mod tests {
     fn read_head_branch_detached() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-        std::fs::write(
-            dir.path().join(".git").join("HEAD"),
-            "abc123def456789\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join(".git").join("HEAD"), "abc123def456789\n").unwrap();
         assert_eq!(read_head_branch(dir.path()), None);
     }
 
@@ -961,21 +951,19 @@ mod tests {
 
     #[test]
     fn match_local_repo_finds_match() {
-        let identities = vec![
-            LocalRepoIdentity {
-                root_name: "axum".to_string(),
-                root_path: PathBuf::from("/tmp/axum"),
-                worktree_path: PathBuf::from("/tmp/axum"),
-                remotes: vec![],
-                matched_host: Some(CodeHost::Github),
-                matched_owner: Some("tokio-rs".to_string()),
-                matched_repo: Some("axum".to_string()),
-                current_branch: None,
-                current_commit: None,
-                dirty_state: LocalDirtyState::Unknown,
-                manifests: vec![],
-            },
-        ];
+        let identities = vec![LocalRepoIdentity {
+            root_name: "axum".to_string(),
+            root_path: PathBuf::from("/tmp/axum"),
+            worktree_path: PathBuf::from("/tmp/axum"),
+            remotes: vec![],
+            matched_host: Some(CodeHost::Github),
+            matched_owner: Some("tokio-rs".to_string()),
+            matched_repo: Some("axum".to_string()),
+            current_branch: None,
+            current_commit: None,
+            dirty_state: LocalDirtyState::Unknown,
+            manifests: vec![],
+        }];
         let found = match_local_repo(&identities, Some(&CodeHost::Github), "tokio-rs", "axum");
         assert!(found.is_some());
         assert_eq!(found.unwrap().root_name, "axum");
@@ -983,21 +971,19 @@ mod tests {
 
     #[test]
     fn match_local_repo_no_match() {
-        let identities = vec![
-            LocalRepoIdentity {
-                root_name: "axum".to_string(),
-                root_path: PathBuf::from("/tmp/axum"),
-                worktree_path: PathBuf::from("/tmp/axum"),
-                remotes: vec![],
-                matched_host: Some(CodeHost::Github),
-                matched_owner: Some("tokio-rs".to_string()),
-                matched_repo: Some("axum".to_string()),
-                current_branch: None,
-                current_commit: None,
-                dirty_state: LocalDirtyState::Unknown,
-                manifests: vec![],
-            },
-        ];
+        let identities = vec![LocalRepoIdentity {
+            root_name: "axum".to_string(),
+            root_path: PathBuf::from("/tmp/axum"),
+            worktree_path: PathBuf::from("/tmp/axum"),
+            remotes: vec![],
+            matched_host: Some(CodeHost::Github),
+            matched_owner: Some("tokio-rs".to_string()),
+            matched_repo: Some("axum".to_string()),
+            current_branch: None,
+            current_commit: None,
+            dirty_state: LocalDirtyState::Unknown,
+            manifests: vec![],
+        }];
         let found = match_local_repo(&identities, Some(&CodeHost::Github), "other", "repo");
         assert!(found.is_none());
     }
@@ -1086,7 +1072,6 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
         let resolved = resolve_git_dir(dir.path()).unwrap();
         assert!(resolved.is_dir());
-        assert!(resolved.join("config").exists() || true); // dir exists
     }
 
     #[test]
@@ -1267,7 +1252,9 @@ mod tests {
 
         // Should find the root repo but skip the gitignored subdirectory
         assert!(
-            repos.iter().any(|r| r.root_name == dir.path().file_name().unwrap().to_str().unwrap()),
+            repos
+                .iter()
+                .any(|r| r.root_name == dir.path().file_name().unwrap().to_str().unwrap()),
             "should find root repo"
         );
         // The ignored_repo should not be found

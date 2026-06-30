@@ -265,9 +265,7 @@ pub(crate) fn is_pinned_permalink(url: &str) -> bool {
 /// Determine if a URL is a raw content URL.
 #[allow(dead_code)]
 pub(crate) fn is_raw_url(url: &str) -> bool {
-    url.contains("raw.githubusercontent.com")
-        || url.contains("/raw/")
-        || url.contains("raw.")
+    url.contains("raw.githubusercontent.com") || url.contains("/raw/") || url.contains("raw.")
 }
 
 /// Score provenance and stability signals.
@@ -291,13 +289,10 @@ fn score_provenance(candidate: &mut FetchCandidate) {
         candidate.reasons.push(FetchRankReason::MutableRawUrl);
     } else if candidate.is_browser_url {
         candidate.score += 5;
-        candidate.reasons
-            .push(FetchRankReason::MutableBrowserUrl);
+        candidate.reasons.push(FetchRankReason::MutableBrowserUrl);
     } else {
         candidate.score += 0;
-        candidate
-            .reasons
-            .push(FetchRankReason::GenericWebUrl);
+        candidate.reasons.push(FetchRankReason::GenericWebUrl);
     }
 
     // Penalize sparse code evidence (present but no URLs derived)
@@ -305,9 +300,7 @@ fn score_provenance(candidate: &mut FetchCandidate) {
         && candidate.source_kind == SourceKind::SourceFile
     {
         candidate.score -= 5;
-        candidate
-            .reasons
-            .push(FetchRankReason::SparseCodeEvidence);
+        candidate.reasons.push(FetchRankReason::SparseCodeEvidence);
     }
 }
 
@@ -316,15 +309,11 @@ fn score_evidence_confidence(candidate: &mut FetchCandidate) {
     match candidate.evidence_confidence {
         Some(EvidenceConfidence::Exact) => {
             candidate.score += 15;
-            candidate
-                .reasons
-                .push(FetchRankReason::ExactConfidence);
+            candidate.reasons.push(FetchRankReason::ExactConfidence);
         }
         Some(EvidenceConfidence::Strong) => {
             candidate.score += 10;
-            candidate
-                .reasons
-                .push(FetchRankReason::StrongConfidence);
+            candidate.reasons.push(FetchRankReason::StrongConfidence);
         }
         Some(EvidenceConfidence::Weak) => {
             candidate.score += 5;
@@ -332,9 +321,7 @@ fn score_evidence_confidence(candidate: &mut FetchCandidate) {
         }
         Some(EvidenceConfidence::Unknown) => {
             candidate.score -= 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::UnknownConfidence);
+            candidate.reasons.push(FetchRankReason::UnknownConfidence);
         }
         None => {}
     }
@@ -369,21 +356,15 @@ fn score_source_role_normal(candidate: &mut FetchCandidate) {
         }
         Some(SourceRole::Changelog) => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::SourceRoleChangelog);
+            candidate.reasons.push(FetchRankReason::SourceRoleChangelog);
         }
         Some(SourceRole::Migration) => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::SourceRoleMigration);
+            candidate.reasons.push(FetchRankReason::SourceRoleMigration);
         }
         Some(SourceRole::Benchmark) => {
             candidate.score += 3;
-            candidate
-                .reasons
-                .push(FetchRankReason::SourceRoleBenchmark);
+            candidate.reasons.push(FetchRankReason::SourceRoleBenchmark);
         }
         Some(SourceRole::Configuration) => {
             candidate.score += 2;
@@ -400,39 +381,27 @@ fn score_source_kind_normal(candidate: &mut FetchCandidate) {
     match candidate.source_kind {
         SourceKind::OfficialDocs => {
             candidate.score += 10;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindOfficialDocs);
+            candidate.reasons.push(FetchRankReason::KindOfficialDocs);
         }
         SourceKind::PackageRegistry => {
             candidate.score += 8;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindPackageRegistry);
+            candidate.reasons.push(FetchRankReason::KindPackageRegistry);
         }
         SourceKind::ReleaseNotes => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindReleaseNotes);
+            candidate.reasons.push(FetchRankReason::KindReleaseNotes);
         }
         SourceKind::IssueThread => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindIssueThread);
+            candidate.reasons.push(FetchRankReason::KindIssueThread);
         }
         SourceKind::PullRequest => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindPullRequest);
+            candidate.reasons.push(FetchRankReason::KindPullRequest);
         }
         SourceKind::SourceFile => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindSourceFile);
+            candidate.reasons.push(FetchRankReason::KindSourceFile);
         }
         _ => {}
     }
@@ -444,33 +413,23 @@ fn score_exact_error(candidate: &mut FetchCandidate) {
     match candidate.source_kind {
         SourceKind::IssueThread => {
             candidate.score += 25;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindIssueThread);
+            candidate.reasons.push(FetchRankReason::KindIssueThread);
         }
         SourceKind::PullRequest => {
             candidate.score += 20;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindPullRequest);
+            candidate.reasons.push(FetchRankReason::KindPullRequest);
         }
         SourceKind::ReleaseNotes => {
             candidate.score += 15;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindReleaseNotes);
+            candidate.reasons.push(FetchRankReason::KindReleaseNotes);
         }
         SourceKind::SourceFile => {
             candidate.score += 10;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindSourceFile);
+            candidate.reasons.push(FetchRankReason::KindSourceFile);
         }
         SourceKind::OfficialDocs => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindOfficialDocs);
+            candidate.reasons.push(FetchRankReason::KindOfficialDocs);
         }
         _ => {}
     }
@@ -479,15 +438,11 @@ fn score_exact_error(candidate: &mut FetchCandidate) {
     match candidate.source_role {
         Some(SourceRole::Changelog) => {
             candidate.score += 10;
-            candidate
-                .reasons
-                .push(FetchRankReason::SourceRoleChangelog);
+            candidate.reasons.push(FetchRankReason::SourceRoleChangelog);
         }
         Some(SourceRole::Migration) => {
             candidate.score += 8;
-            candidate
-                .reasons
-                .push(FetchRankReason::SourceRoleMigration);
+            candidate.reasons.push(FetchRankReason::SourceRoleMigration);
         }
         _ => {}
     }
@@ -498,27 +453,19 @@ fn score_package_migration(candidate: &mut FetchCandidate) {
     match candidate.source_kind {
         SourceKind::PackageRegistry => {
             candidate.score += 15;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindPackageRegistry);
+            candidate.reasons.push(FetchRankReason::KindPackageRegistry);
         }
         SourceKind::ReleaseNotes => {
             candidate.score += 20;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindReleaseNotes);
+            candidate.reasons.push(FetchRankReason::KindReleaseNotes);
         }
         SourceKind::OfficialDocs => {
             candidate.score += 10;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindOfficialDocs);
+            candidate.reasons.push(FetchRankReason::KindOfficialDocs);
         }
         SourceKind::SourceFile => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindSourceFile);
+            candidate.reasons.push(FetchRankReason::KindSourceFile);
         }
         _ => {}
     }
@@ -526,15 +473,11 @@ fn score_package_migration(candidate: &mut FetchCandidate) {
     match candidate.source_role {
         Some(SourceRole::Changelog) => {
             candidate.score += 15;
-            candidate
-                .reasons
-                .push(FetchRankReason::SourceRoleChangelog);
+            candidate.reasons.push(FetchRankReason::SourceRoleChangelog);
         }
         Some(SourceRole::Migration) => {
             candidate.score += 15;
-            candidate
-                .reasons
-                .push(FetchRankReason::SourceRoleMigration);
+            candidate.reasons.push(FetchRankReason::SourceRoleMigration);
         }
         _ => {}
     }
@@ -554,15 +497,11 @@ fn score_security(candidate: &mut FetchCandidate) {
         }
         SourceKind::ReleaseNotes => {
             candidate.score += 15;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindReleaseNotes);
+            candidate.reasons.push(FetchRankReason::KindReleaseNotes);
         }
         SourceKind::IssueThread => {
             candidate.score += 10;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindIssueThread);
+            candidate.reasons.push(FetchRankReason::KindIssueThread);
         }
         _ => {}
     }
@@ -591,18 +530,14 @@ fn score_research(candidate: &mut FetchCandidate) {
         }
         SourceKind::ReleaseNotes => {
             candidate.score += 5;
-            candidate
-                .reasons
-                .push(FetchRankReason::KindReleaseNotes);
+            candidate.reasons.push(FetchRankReason::KindReleaseNotes);
         }
         _ => {}
     }
 
     if let Some(SourceRole::Benchmark) = candidate.source_role {
         candidate.score += 10;
-        candidate
-            .reasons
-            .push(FetchRankReason::BenchmarkSource);
+        candidate.reasons.push(FetchRankReason::BenchmarkSource);
     }
 }
 
@@ -610,9 +545,7 @@ fn score_research(candidate: &mut FetchCandidate) {
 fn score_query_context(candidate: &mut FetchCandidate, ctx: &RankContext) {
     if ctx.has_symbol_hint && candidate.source_kind == SourceKind::SourceFile {
         candidate.score += 10;
-        candidate
-            .reasons
-            .push(FetchRankReason::SymbolHintMatch);
+        candidate.reasons.push(FetchRankReason::SymbolHintMatch);
     }
     if ctx.has_path_hint {
         candidate.score += 8;
@@ -620,9 +553,7 @@ fn score_query_context(candidate: &mut FetchCandidate, ctx: &RankContext) {
     }
     if ctx.has_language_hint {
         candidate.score += 5;
-        candidate
-            .reasons
-            .push(FetchRankReason::LanguageHintMatch);
+        candidate.reasons.push(FetchRankReason::LanguageHintMatch);
     }
     if ctx.has_file_hint {
         candidate.score += 5;
@@ -630,9 +561,7 @@ fn score_query_context(candidate: &mut FetchCandidate, ctx: &RankContext) {
     }
     if ctx.has_error_context {
         candidate.score += 10;
-        candidate
-            .reasons
-            .push(FetchRankReason::ErrorContextMatch);
+        candidate.reasons.push(FetchRankReason::ErrorContextMatch);
     }
     if ctx.has_version_context {
         candidate.score += 5;
@@ -642,9 +571,7 @@ fn score_query_context(candidate: &mut FetchCandidate, ctx: &RankContext) {
     }
     if ctx.has_package_name {
         candidate.score += 8;
-        candidate
-            .reasons
-            .push(FetchRankReason::PackageNameMatch);
+        candidate.reasons.push(FetchRankReason::PackageNameMatch);
     }
 }
 
@@ -744,14 +671,10 @@ pub fn rank_and_select(
 
         // Update counts
         if config.max_per_domain > 0 {
-            *domain_counts
-                .entry(candidate.domain.clone())
-                .or_insert(0) += 1;
+            *domain_counts.entry(candidate.domain.clone()).or_insert(0) += 1;
         }
         if config.max_per_group > 0 {
-            *group_counts
-                .entry(candidate.group.clone())
-                .or_insert(0) += 1;
+            *group_counts.entry(candidate.group.clone()).or_insert(0) += 1;
         }
 
         // Compute information gain based on domain/group diversity
@@ -1220,9 +1143,18 @@ mod tests {
 
     #[test]
     fn fetch_rank_reason_as_str_is_stable() {
-        assert_eq!(FetchRankReason::PinnedRawPermalink.as_str(), "pinned_raw_permalink");
-        assert_eq!(FetchRankReason::ExactConfidence.as_str(), "exact_confidence");
-        assert_eq!(FetchRankReason::AuthoritativeAdvisory.as_str(), "authoritative_advisory");
+        assert_eq!(
+            FetchRankReason::PinnedRawPermalink.as_str(),
+            "pinned_raw_permalink"
+        );
+        assert_eq!(
+            FetchRankReason::ExactConfidence.as_str(),
+            "exact_confidence"
+        );
+        assert_eq!(
+            FetchRankReason::AuthoritativeAdvisory.as_str(),
+            "authoritative_advisory"
+        );
         assert_eq!(
             FetchRankReason::PrimaryResearchSource.as_str(),
             "primary_research_source"
@@ -1246,7 +1178,9 @@ mod tests {
             "https://raw.githubusercontent.com/owner/repo/main/src/lib.rs"
         ));
         assert!(is_raw_url("https://example.com/raw/file.rs"));
-        assert!(!is_raw_url("https://github.com/owner/repo/blob/main/src/lib.rs"));
+        assert!(!is_raw_url(
+            "https://github.com/owner/repo/blob/main/src/lib.rs"
+        ));
     }
 
     #[test]

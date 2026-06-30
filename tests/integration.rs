@@ -9126,7 +9126,7 @@ async fn workspace_fetch_reads_local_file() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
-            prefer_local: None,
+        prefer_local: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -9201,7 +9201,7 @@ async fn workspace_fetch_rejects_unknown_root() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
-            prefer_local: None,
+        prefer_local: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -9260,7 +9260,7 @@ async fn workspace_fetch_rejects_path_traversal() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
-            prefer_local: None,
+        prefer_local: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -9321,8 +9321,16 @@ async fn repo_search_local_results_boosted_when_matching_repo() {
     let root = dir.path();
 
     // Create files that will match the query
-    fs::write(root.join("main.rs"), "fn main() {\n    println!(\"hello\");\n}").unwrap();
-    fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    fs::write(
+        root.join("main.rs"),
+        "fn main() {\n    println!(\"hello\");\n}",
+    )
+    .unwrap();
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+    )
+    .unwrap();
 
     // Initialize git repo with a remote URL
     std::process::Command::new("git")
@@ -9416,7 +9424,11 @@ async fn repo_search_local_results_have_repo_match_metadata() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
 
-    fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+    )
+    .unwrap();
 
     // Initialize git repo with a remote URL
     std::process::Command::new("git")
@@ -9450,10 +9462,7 @@ async fn repo_search_local_results_have_repo_match_metadata() {
         .filter(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
         .collect();
 
-    assert!(
-        !local_cards.is_empty(),
-        "should have local results"
-    );
+    assert!(!local_cards.is_empty(), "should have local results");
 
     for card in &local_cards {
         let meta = card["metadata"]
@@ -9462,7 +9471,10 @@ async fn repo_search_local_results_have_repo_match_metadata() {
         let lrm = meta["local_repo_match"]
             .as_object()
             .expect("local_repo_match should be present");
-        assert_eq!(lrm["matched"], true, "local_repo_match.matched should be true");
+        assert_eq!(
+            lrm["matched"], true,
+            "local_repo_match.matched should be true"
+        );
         assert_eq!(
             lrm["remote_owner"].as_str(),
             Some("tokio-rs"),
@@ -11105,7 +11117,7 @@ async fn repo_fetch_remote_max_chars_enforced() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
-            prefer_local: None,
+        prefer_local: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -13311,11 +13323,11 @@ async fn repo_fetch_symbol_definition_via_mock() {
         .as_u64()
         .expect("line_end should be present");
     assert!(
-        line_start >= 3 && line_start <= 4,
+        (3..=4).contains(&line_start),
         "struct Config should start around line 3-4, got {line_start}"
     );
     assert!(
-        line_end >= 6 && line_end <= 7,
+        (6..=7).contains(&line_end),
         "struct Config should end around line 6-7, got {line_end}"
     );
 
@@ -13465,10 +13477,7 @@ async fn repo_fetch_match_text_via_mock() {
     );
 
     let text = v["text"].as_str().expect("text should be present");
-    assert!(
-        text.contains("MyApp"),
-        "text should contain MyApp: {text}"
-    );
+    assert!(text.contains("MyApp"), "text should contain MyApp: {text}");
 }
 
 #[tokio::test]
@@ -13570,7 +13579,9 @@ async fn repo_fetch_symbol_not_found_warns() {
     .await
     .expect("repo_fetch should succeed");
 
-    let warnings = v["warnings"].as_array().expect("warnings should be present");
+    let warnings = v["warnings"]
+        .as_array()
+        .expect("warnings should be present");
     let has_no_match_warning = warnings.iter().any(|w| {
         w.as_str()
             .map(|s| s.contains("no match found"))
@@ -13672,7 +13683,11 @@ async fn repo_map_with_local_checkout() {
     let root = dir.path();
 
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
-    fs::write(root.join("Cargo.toml"), "[package]\nname = \"test\"\nversion = \"0.1.0\"\n").unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"test\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
 
     // Initialize git repo with a remote URL
     std::process::Command::new("git")
@@ -13771,5 +13786,542 @@ async fn repo_map_with_local_checkout() {
     assert!(
         has_match_warning,
         "should have local_checkout_match warning: {warnings:?}"
+    );
+}
+
+// =========================================================================
+// Corrective Plan Phase 1-6: Workstream 1 -- Centralized repo identity
+// =========================================================================
+
+/// Helper: create a temp git repo with a remote URL for local matching tests.
+fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        format!("[remote \"origin\"]\n\turl = {remote_url}\n"),
+    )
+    .unwrap();
+
+    // Create initial commit so dirty state detection works
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_repo_slash_form_triggers_local_matching() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    setup_git_repo_with_remote(
+        root,
+        "https://github.com/test-owner/test-repo.git",
+        "test-owner",
+        "test-repo",
+    );
+
+    let state = state_with_local_backend(root);
+    // Use repo = "test-owner/test-repo" without explicit owner
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        repo: Some("test-owner/test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_match = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_match"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_match,
+        "repo='owner/name' should trigger local matching: {warnings:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_query_hint_triggers_local_matching() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    setup_git_repo_with_remote(
+        root,
+        "https://github.com/test-owner/test-repo.git",
+        "test-owner",
+        "test-repo",
+    );
+
+    let state = state_with_local_backend(root);
+    // Use query hint repo:test-owner/test-repo with no explicit owner/repo
+    let args = RepoSearchArgs {
+        query: "repo:test-owner/test-repo main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_match = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_match"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_match,
+        "query hint repo:owner/name should trigger local matching: {warnings:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_explicit_owner_repo_overrides_query_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    setup_git_repo_with_remote(
+        root,
+        "https://github.com/test-owner/test-repo.git",
+        "test-owner",
+        "test-repo",
+    );
+
+    let state = state_with_local_backend(root);
+    // Explicit owner/repo should override the different owner/repo in query hint
+    let args = RepoSearchArgs {
+        query: "repo:other-org/other-repo main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_match = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_match"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_match,
+        "explicit owner/repo should override query hint and match local: {warnings:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_local_match_equivalence_all_locator_forms() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    setup_git_repo_with_remote(
+        root,
+        "https://github.com/tokio-rs/axum.git",
+        "tokio-rs",
+        "axum",
+    );
+
+    // Form 1: explicit owner + repo
+    let state1 = state_with_local_backend(root);
+    let args1 = RepoSearchArgs {
+        query: "lib.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("tokio-rs".to_string()),
+        repo: Some("axum".to_string()),
+        ..Default::default()
+    };
+    let v1 = run_repo_search(state1, args1)
+        .await
+        .expect("repo_search ok");
+    let match1 = v1["warnings"].as_array().unwrap().iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_match"))
+            .unwrap_or(false)
+    });
+
+    // Form 2: repo = "owner/name"
+    let state2 = state_with_local_backend(root);
+    let args2 = RepoSearchArgs {
+        query: "lib.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        repo: Some("tokio-rs/axum".to_string()),
+        ..Default::default()
+    };
+    let v2 = run_repo_search(state2, args2)
+        .await
+        .expect("repo_search ok");
+    let match2 = v2["warnings"].as_array().unwrap().iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_match"))
+            .unwrap_or(false)
+    });
+
+    // Form 3: query hint repo:owner/name
+    let state3 = state_with_local_backend(root);
+    let args3 = RepoSearchArgs {
+        query: "repo:tokio-rs/axum lib.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        ..Default::default()
+    };
+    let v3 = run_repo_search(state3, args3)
+        .await
+        .expect("repo_search ok");
+    let match3 = v3["warnings"].as_array().unwrap().iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_match"))
+            .unwrap_or(false)
+    });
+
+    assert!(match1, "Form 1 (explicit owner+repo) should match");
+    assert!(match2, "Form 2 (repo=owner/name) should match");
+    assert!(match3, "Form 3 (query hint) should match");
+}
+
+// =========================================================================
+// Corrective Plan Phase 1-6: Workstream 4 -- max_block_lines validation
+// =========================================================================
+
+#[tokio::test]
+async fn repo_fetch_validation_error_zero_max_block_lines() {
+    let state = repo_fetch_state();
+    let result = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: None,
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: Some(0),
+            prefer_local: None,
+        },
+    )
+    .await;
+
+    assert!(result.is_err(), "max_block_lines=0 should fail");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("max_block_lines"),
+        "error should mention max_block_lines: {err}"
+    );
+}
+
+// =========================================================================
+// Corrective Plan Phase 1-6: Workstream 3 -- repo_map verification
+// =========================================================================
+
+#[test]
+fn provider_status_includes_repo_map_and_repo_fetch_capabilities() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let caps = v["server_capabilities"]
+        .as_object()
+        .expect("server_capabilities is object");
+
+    assert_eq!(caps["repo_map"], serde_json::json!(true));
+    assert_eq!(caps["repo_fetch"], serde_json::json!(true));
+    assert_eq!(caps["batch_fetch"], serde_json::json!(true));
+}
+
+#[test]
+fn provider_status_tool_capabilities_repo_fetch() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let tcaps = v["tool_capabilities"]
+        .as_object()
+        .expect("tool_capabilities is object");
+
+    let rf = tcaps["repo_fetch"]
+        .as_object()
+        .expect("repo_fetch tool_capabilities");
+    let hosts = rf["remote_hosts"]
+        .as_array()
+        .expect("remote_hosts should be array");
+    assert!(
+        hosts.contains(&serde_json::json!("github")),
+        "should list github: {hosts:?}"
+    );
+    assert!(
+        hosts.contains(&serde_json::json!("gitlab")),
+        "should list gitlab: {hosts:?}"
+    );
+    assert_eq!(rf["line_ranges"], serde_json::json!(true));
+    assert_eq!(rf["context_lines"], serde_json::json!(true));
+}
+
+#[tokio::test]
+async fn repo_map_fallback_mode_warns_no_native_provider() {
+    let state = state_with_default();
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    assert_eq!(v["mode"], "fallback_search", "should be in fallback mode");
+
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_native_warning = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("no_native_tree_provider"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_native_warning,
+        "should warn about no native tree provider: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn repo_map_suggested_fetches_are_bounded() {
+    let state = state_with_default();
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    let fetches = v["suggested_fetches"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        fetches.len() <= 8,
+        "suggested fetches should be bounded to <= 8, got: {}",
+        fetches.len()
+    );
+
+    // Each suggested fetch should have required fields
+    for f in fetches {
+        assert!(
+            f["url"].is_string(),
+            "suggested fetch should have url: {f:?}"
+        );
+        assert!(
+            f["reason"].is_string(),
+            "suggested fetch should have reason: {f:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn repo_map_tool_in_server_surface() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let caps = v["server_capabilities"]
+        .as_object()
+        .expect("server_capabilities");
+
+    assert_eq!(
+        caps["repo_map"],
+        serde_json::json!(true),
+        "repo_map should be in server_capabilities"
+    );
+}
+
+// =========================================================================
+// Corrective Plan Phase 1-6: Workstream 5 -- local workspace routing
+// =========================================================================
+
+#[tokio::test]
+async fn prefer_local_rejects_path_traversal() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+    )
+    .unwrap();
+
+    // Initialize git repo with a remote URL
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = true;
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    // Try to use prefer_local with path traversal
+    let args = RepoFetchArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: Some("main".to_string()),
+        commit_sha: None,
+        path: "../../../etc/passwd".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: Some(true),
+    };
+
+    let result = run_repo_fetch(state, args).await;
+    assert!(
+        result.is_err(),
+        "path traversal via prefer_local should fail"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn local_repo_match_same_owner_repo_different_host_no_redirect() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    // Initialize git repo with a GitLab remote
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://gitlab.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    let state = state_with_local_backend(root);
+    // Request with github host but local repo is on gitlab
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        host: Some("github".to_string()),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_match = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_repo_match"))
+            .unwrap_or(false)
+    });
+    // Should NOT match because host differs (github vs gitlab)
+    assert!(
+        !has_match,
+        "different host should not trigger local match: {warnings:?}"
     );
 }

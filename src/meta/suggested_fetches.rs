@@ -11,8 +11,8 @@ use crate::core::repo_search::{RepoResultGroup, RepoResultGroupKind, RepoSuggest
 use crate::core::source_card::SourceKind;
 
 use super::fetch_ranking::{
-    extract_domain, is_pinned_permalink, is_raw_url, DiversityConfig, FetchCandidate,
-    FetchRankMode, RankContext, rank_and_select,
+    extract_domain, is_pinned_permalink, is_raw_url, rank_and_select, DiversityConfig,
+    FetchCandidate, FetchRankMode, RankContext,
 };
 
 /// Resolve the fetch URL from a card using the code_evidence URL priority.
@@ -32,9 +32,7 @@ fn resolve_fetch_url(card: &crate::core::source_card::SourceCard) -> &str {
 
 /// Build a structured `RepoFetchRequest` when code evidence has all
 /// required locator fields.
-fn build_structured_fetch(
-    card: &crate::core::source_card::SourceCard,
-) -> Option<RepoFetchRequest> {
+fn build_structured_fetch(card: &crate::core::source_card::SourceCard) -> Option<RepoFetchRequest> {
     let ce = card.metadata.code_evidence.as_ref()?;
     let host = ce.host?;
     let owner = ce.owner.as_deref()?;
@@ -180,9 +178,7 @@ pub fn generate_suggested_fetches_with_mode(
                 .copied()
                 .unwrap_or(RepoResultGroupKind::Other);
 
-            let structured_repo_fetch = structured_fetch_map
-                .remove(&candidate.url)
-                .flatten();
+            let structured_repo_fetch = structured_fetch_map.remove(&candidate.url).flatten();
 
             let reason = candidate
                 .reasons
@@ -469,10 +465,7 @@ mod tests {
 
     #[test]
     fn exact_error_mode_boosts_issues() {
-        let issue_card = make_card(
-            "Issue #123",
-            "https://github.com/owner/repo/issues/123",
-        );
+        let issue_card = make_card("Issue #123", "https://github.com/owner/repo/issues/123");
         let docs_card = make_card("Docs", "https://docs.example.com/api");
 
         let groups = vec![
@@ -530,10 +523,7 @@ mod tests {
             make_card("d", "https://d.example.com/4"),
         ];
 
-        let groups = vec![make_group(
-            RepoResultGroupKind::SourceFiles,
-            cards,
-        )];
+        let groups = vec![make_group(RepoResultGroupKind::SourceFiles, cards)];
         let hints = crate::core::repo_query::RepoQueryHints::default();
         let fetches = generate_suggested_fetches(&groups, &hints);
 
@@ -556,7 +546,10 @@ mod tests {
             ),
             make_group(
                 RepoResultGroupKind::SourceFiles,
-                vec![make_card("Source", "https://github.com/foo/bar/blob/main/src/lib.rs")],
+                vec![make_card(
+                    "Source",
+                    "https://github.com/foo/bar/blob/main/src/lib.rs",
+                )],
             ),
         ];
         let hints = crate::core::repo_query::RepoQueryHints::default();
@@ -666,11 +659,8 @@ mod tests {
             make_group(RepoResultGroupKind::OfficialDocs, vec![docs_card]),
         ];
         let hints = crate::core::repo_query::RepoQueryHints::default();
-        let fetches = generate_suggested_fetches_with_mode(
-            &groups,
-            &hints,
-            FetchRankMode::PackageMigration,
-        );
+        let fetches =
+            generate_suggested_fetches_with_mode(&groups, &hints, FetchRankMode::PackageMigration);
 
         assert!(fetches.len() >= 2);
         assert_eq!(

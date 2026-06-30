@@ -6,7 +6,7 @@ use crate::core::research::{
 };
 use crate::core::source_card::SourceKind;
 use crate::meta::fetch_ranking::{
-    DiversityConfig, FetchCandidate, FetchRankMode, RankContext, extract_domain, rank_and_select,
+    extract_domain, rank_and_select, DiversityConfig, FetchCandidate, FetchRankMode, RankContext,
 };
 use crate::meta::research_grouping::classify_evidence_quality;
 
@@ -96,8 +96,7 @@ pub fn generate_research_suggested_fetches(
         .enumerate()
         .map(|(i, candidate)| {
             let group_kind = group_from_str(&candidate.group);
-            let card = find_group(groups, group_kind)
-                .and_then(|g| g.results.first());
+            let card = find_group(groups, group_kind).and_then(|g| g.results.first());
             let evidence_quality = card
                 .map(classify_evidence_quality)
                 .unwrap_or(EvidenceQuality::Unknown);
@@ -117,7 +116,11 @@ pub fn generate_research_suggested_fetches(
                 recommended_extract_mode: candidate.recommended_extract_mode,
                 priority: (i + 1) as u8,
                 score: Some(candidate.score),
-                rank_reasons: candidate.reasons.iter().map(|r| r.as_str().to_string()).collect(),
+                rank_reasons: candidate
+                    .reasons
+                    .iter()
+                    .map(|r| r.as_str().to_string())
+                    .collect(),
                 information_gain: Some(candidate.information_gain),
             }
         })

@@ -782,7 +782,9 @@ impl MetadataSearchAdapter {
                 let local_result = backend.search(&local_req).await;
                 let roots = backend.roots();
 
-                // Discover local repo identities and match to request
+                // Discover local repo identities and match to request.
+                // Use resolved_repo_locator() so that `repo: "owner/name"`
+                // (without explicit owner) correctly triggers local matching.
                 let inventory = crate::meta::local_inventory::discover_local_repos(
                     &crate::core::local::LocalConfig {
                         enabled: true,
@@ -791,15 +793,13 @@ impl MetadataSearchAdapter {
                     },
                     2,
                 );
-                let matched_repo = req.owner.as_deref().and_then(|owner| {
-                    req.repo.as_deref().and_then(|repo| {
-                        crate::meta::local_inventory::match_local_repo(
-                            &inventory,
-                            req.host.as_ref(),
-                            owner,
-                            repo,
-                        )
-                    })
+                let matched_repo = req.resolved_repo_locator().and_then(|(owner, repo)| {
+                    crate::meta::local_inventory::match_local_repo(
+                        &inventory,
+                        req.host.as_ref(),
+                        &owner,
+                        &repo,
+                    )
                 });
 
                 if let Some(rid) = matched_repo {
@@ -850,7 +850,12 @@ impl MetadataSearchAdapter {
                 // Boost local results that match the requested repo
                 // so they rank above remote results in grouping.
                 for card in &mut cards {
-                    if card.metadata.local_repo_match.as_ref().is_some_and(|m| m.matched) {
+                    if card
+                        .metadata
+                        .local_repo_match
+                        .as_ref()
+                        .is_some_and(|m| m.matched)
+                    {
                         if let Some(ref mut score) = card.score {
                             *score += 50.0;
                         }
@@ -1265,11 +1270,8 @@ impl MetadataSearchAdapter {
         push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
 
         // Aggregate into SourceCards
-        let cards = aggregate_source_cards(
-            dispatch.raw_results,
-            candidate_limit,
-            self.sanitize_output,
-        );
+        let cards =
+            aggregate_source_cards(dispatch.raw_results, candidate_limit, self.sanitize_output);
         let mut trust_markers = TrustMarkers::default();
         for card in &cards {
             trust_markers.merge(&card.trust_markers);
@@ -1577,7 +1579,8 @@ fn push_failure_warnings(
     raw_failures: &[(String, EngineError)],
 ) {
     // Count successes per provider to detect partial failures
-    let mut success_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut success_count: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for (id, _) in raw_results {
         *success_count.entry(id.clone()).or_insert(0) += 1;
     }
@@ -1612,16 +1615,22 @@ fn provider_failures(
     raw_failures: &[(String, EngineError)],
 ) -> Vec<ProviderFailure> {
     // Count successes and failures per provider, and track the last error class/message
-    let mut success_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut failure_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut last_error_info: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    let mut success_count: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut failure_count: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut last_error_info: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
 
     for (id, _) in raw_results {
         *success_count.entry(id.clone()).or_insert(0) += 1;
     }
     for (id, err) in raw_failures {
         *failure_count.entry(id.clone()).or_insert(0) += 1;
-        last_error_info.insert(id.clone(), (classify(err).as_str().to_string(), err.to_string()));
+        last_error_info.insert(
+            id.clone(),
+            (classify(err).as_str().to_string(), err.to_string()),
+        );
     }
 
     // A provider is only failed if ALL its jobs failed (no successes)
@@ -4314,12 +4323,12 @@ mod tests {
 
         let queried = vec!["p1".to_string(), "p2".to_string()];
         // p1: one success, one failure (partial) — should NOT be in providers_failed
-        let raw_results: Vec<(String, Vec<SearchResult>)> =
-            vec![("p1".to_string(), vec![mk_result("T", "https://e.com", "p1")])];
-        let raw_failures: Vec<(String, EngineError)> = vec![(
+        let raw_results: Vec<(String, Vec<SearchResult>)> = vec![(
             "p1".to_string(),
-            EngineError::Timeout { engine: "p1" },
+            vec![mk_result("T", "https://e.com", "p1")],
         )];
+        let raw_failures: Vec<(String, EngineError)> =
+            vec![("p1".to_string(), EngineError::Timeout { engine: "p1" })];
 
         let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
         // p1 should NOT be in failures because it had a success
@@ -4337,10 +4346,8 @@ mod tests {
 
         let queried = vec!["p1".to_string()];
         let raw_results: Vec<(String, Vec<SearchResult>)> = vec![];
-        let raw_failures: Vec<(String, EngineError)> = vec![(
-            "p1".to_string(),
-            EngineError::Timeout { engine: "p1" },
-        )];
+        let raw_failures: Vec<(String, EngineError)> =
+            vec![("p1".to_string(), EngineError::Timeout { engine: "p1" })];
 
         let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
         assert_eq!(failures.len(), 1);
@@ -4354,8 +4361,10 @@ mod tests {
 
         let queried = vec!["p1".to_string(), "p2".to_string()];
         // p1 succeeded, p2 never responded
-        let raw_results: Vec<(String, Vec<SearchResult>)> =
-            vec![("p1".to_string(), vec![mk_result("T", "https://e.com", "p1")])];
+        let raw_results: Vec<(String, Vec<SearchResult>)> = vec![(
+            "p1".to_string(),
+            vec![mk_result("T", "https://e.com", "p1")],
+        )];
         let raw_failures: Vec<(String, EngineError)> = vec![];
 
         let failures = super::provider_failures(&queried, &raw_results, &raw_failures);

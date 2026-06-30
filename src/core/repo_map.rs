@@ -454,7 +454,8 @@ pub fn classify_important_file(path: &str) -> (ImportantFileKind, Vec<String>) {
         reasons.push("gitlab_ci_config".to_string());
         return (ImportantFileKind::CiConfig, reasons);
     }
-    if lower_path.starts_with(".forgejo/workflows/") || lower_path.starts_with(".gitea/workflows/") {
+    if lower_path.starts_with(".forgejo/workflows/") || lower_path.starts_with(".gitea/workflows/")
+    {
         reasons.push("forgejo_gitea_ci_config".to_string());
         return (ImportantFileKind::CiConfig, reasons);
     }
@@ -532,7 +533,10 @@ pub fn classify_important_file(path: &str) -> (ImportantFileKind, Vec<String>) {
         reasons.push("nodejs_manifest".to_string());
         return (ImportantFileKind::Manifest, reasons);
     }
-    if lower_basename == "pyproject.toml" || lower_basename == "setup.py" || lower_basename == "setup.cfg" {
+    if lower_basename == "pyproject.toml"
+        || lower_basename == "setup.py"
+        || lower_basename == "setup.cfg"
+    {
         reasons.push("python_manifest".to_string());
         return (ImportantFileKind::Manifest, reasons);
     }

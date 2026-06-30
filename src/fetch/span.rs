@@ -101,8 +101,7 @@ static RUST_TYPE_RE: LazyLock<Regex> =
 
 static PYTHON_DEF_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?:async\s+)?def\s+(\w+)").unwrap());
-static PYTHON_CLASS_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"class\s+(\w+)").unwrap());
+static PYTHON_CLASS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"class\s+(\w+)").unwrap());
 
 static JS_FUNCTION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?:export\s+)?(?:async\s+)?function\s+(\w+)").unwrap());
@@ -133,8 +132,7 @@ static CPP_STRUCT_RE: LazyLock<Regex> =
 
 static MARKDOWN_HEADING_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.*)").unwrap());
-static TOML_TABLE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\[([^\]]+)\]").unwrap());
+static TOML_TABLE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[([^\]]+)\]").unwrap());
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -209,9 +207,7 @@ pub fn select_span(
     let mut symbol_not_found = false;
     if let Some(sym) = symbol {
         let lang = language.unwrap_or("");
-        if let Some((line_idx, kind, conf, mut reasons)) =
-            find_symbol_line(all_lines, sym, lang)
-        {
+        if let Some((line_idx, kind, conf, mut reasons)) = find_symbol_line(all_lines, sym, lang) {
             let (block_start, block_end) = expand_to_enclosing_block(all_lines, line_idx, lang);
             let sel_kind = if kind == SymbolKind::Unknown {
                 SpanSelectionKind::SymbolReference
@@ -259,12 +255,8 @@ pub fn select_span(
             let context = max_block_lines.unwrap_or(10).min(20) / 2;
             let start = line_idx.saturating_sub(context);
             let end = (line_idx + context).min(all_lines.len().saturating_sub(1));
-            let (ls, le, truncated) =
-                clamp_and_truncate(start, end, max_block_lines, &mut reasons);
-            reasons.push(format!(
-                "context window: lines {}-{} around match",
-                ls, le
-            ));
+            let (ls, le, truncated) = clamp_and_truncate(start, end, max_block_lines, &mut reasons);
+            reasons.push(format!("context window: lines {}-{} around match", ls, le));
             return Some(SelectedSpan {
                 line_start: ls,
                 line_end: le,
@@ -286,8 +278,12 @@ pub fn select_span(
         return None;
     }
     let mut reasons = vec!["whole file (no symbol or match_text provided)".to_string()];
-    let (ls, le, truncated) =
-        clamp_and_truncate(0, all_lines.len().saturating_sub(1), max_block_lines, &mut reasons);
+    let (ls, le, truncated) = clamp_and_truncate(
+        0,
+        all_lines.len().saturating_sub(1),
+        max_block_lines,
+        &mut reasons,
+    );
     Some(SelectedSpan {
         line_start: ls,
         line_end: le,
@@ -341,8 +337,7 @@ fn find_symbol_line(
     for (line_idx, line) in all_lines.iter().enumerate() {
         let trimmed = line.trim_start();
         // Skip pure comments for definition matching but not doc comments.
-        if trimmed.starts_with("//") && !trimmed.starts_with("///") && !trimmed.starts_with("//!")
-        {
+        if trimmed.starts_with("//") && !trimmed.starts_with("///") && !trimmed.starts_with("//!") {
             continue;
         }
 
@@ -439,10 +434,7 @@ fn try_match_symbol_in_line(
     }
 }
 
-fn try_match_rust(
-    line: &str,
-    symbol: &str,
-) -> Option<(SymbolKind, SpanConfidence, Vec<String>)> {
+fn try_match_rust(line: &str, symbol: &str) -> Option<(SymbolKind, SpanConfidence, Vec<String>)> {
     let checks: &[(&Regex, SymbolKind, &str)] = &[
         (&RUST_FN_RE, SymbolKind::Function, "rust fn"),
         (&RUST_STRUCT_RE, SymbolKind::Struct, "rust struct"),
@@ -476,10 +468,7 @@ fn try_match_rust(
     None
 }
 
-fn try_match_python(
-    line: &str,
-    symbol: &str,
-) -> Option<(SymbolKind, SpanConfidence, Vec<String>)> {
+fn try_match_python(line: &str, symbol: &str) -> Option<(SymbolKind, SpanConfidence, Vec<String>)> {
     // Class
     if let Some(caps) = PYTHON_CLASS_RE.captures(line) {
         if let Some(m) = caps.get(1) {
@@ -536,10 +525,7 @@ fn try_match_javascript(
     None
 }
 
-fn try_match_go(
-    line: &str,
-    symbol: &str,
-) -> Option<(SymbolKind, SpanConfidence, Vec<String>)> {
+fn try_match_go(line: &str, symbol: &str) -> Option<(SymbolKind, SpanConfidence, Vec<String>)> {
     // type X struct/interface
     if let Some(caps) = GO_TYPE_RE.captures(line) {
         if let Some(m) = caps.get(1) {
@@ -772,7 +758,9 @@ fn expand_indentation_block(all_lines: &[String], line_idx: usize) -> (usize, us
             continue;
         }
         if indent == base_indent
-            && (trimmed.starts_with("def ") || trimmed.starts_with("async ") || trimmed.starts_with("class "))
+            && (trimmed.starts_with("def ")
+                || trimmed.starts_with("async ")
+                || trimmed.starts_with("class "))
         {
             start = i;
             break;
@@ -857,7 +845,9 @@ fn expand_statement_block(all_lines: &[String], line_idx: usize) -> (usize, usiz
     // If the current line already terminates the statement (with `;`, `}`, or `{`),
     // the statement is complete on this line — no forward scan needed.
     let current_trimmed = all_lines[line_idx].trim();
-    if current_trimmed.ends_with(';') || current_trimmed.ends_with('}') || current_trimmed.ends_with('{')
+    if current_trimmed.ends_with(';')
+        || current_trimmed.ends_with('}')
+        || current_trimmed.ends_with('{')
     {
         return (start, line_idx);
     }
@@ -898,8 +888,7 @@ fn expand_markdown_heading(all_lines: &[String], line_idx: usize) -> (usize, usi
 
     let current_level = {
         let caps = MARKDOWN_HEADING_RE.captures(&all_lines[line_idx]);
-        caps.map(|c| c.get(1).unwrap().as_str().len())
-            .unwrap_or(6)
+        caps.map(|c| c.get(1).unwrap().as_str().len()).unwrap_or(6)
     };
 
     let start = line_idx;
@@ -1809,18 +1798,7 @@ mod tests {
     #[test]
     fn whole_file_respects_max_block_lines() {
         let input = lines("a\nb\nc\nd\ne");
-        let span = select_span(
-            &input,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            true,
-            Some(3),
-        )
-        .unwrap();
+        let span = select_span(&input, None, None, None, None, None, None, true, Some(3)).unwrap();
         assert_eq!(span.selection_kind, SpanSelectionKind::WholeFileBounded);
         assert_eq!(span.line_start, 1);
         assert_eq!(span.line_end, 3);
@@ -1953,18 +1931,7 @@ mod tests {
     #[test]
     fn no_inputs_returns_whole_file() {
         let input = lines("line 1\nline 2\nline 3");
-        let span = select_span(
-            &input,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            true,
-            None,
-        )
-        .unwrap();
+        let span = select_span(&input, None, None, None, None, None, None, true, None).unwrap();
         assert_eq!(span.selection_kind, SpanSelectionKind::WholeFileBounded);
         assert_eq!(span.line_start, 1);
         assert_eq!(span.line_end, 3);

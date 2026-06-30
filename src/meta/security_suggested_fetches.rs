@@ -5,9 +5,7 @@ use crate::core::security::{
     SecurityIdentifiers, SecurityResultGroup, SecurityResultGroupKind, SecuritySuggestedFetch,
 };
 use crate::core::source_card::SourceKind;
-use crate::meta::fetch_ranking::{
-    extract_domain, FetchCandidate, FetchRankMode, RankContext,
-};
+use crate::meta::fetch_ranking::{extract_domain, FetchCandidate, FetchRankMode, RankContext};
 
 /// Generate suggested fetches for security groups.
 ///
@@ -358,7 +356,7 @@ mod tests {
 
     #[test]
     fn advisory_sources_outrank_community_discussion_in_security_mode() {
-        let groups = vec![
+        let groups = [
             make_group(
                 SecurityResultGroupKind::GeneralContext,
                 vec![make_card(
@@ -375,7 +373,12 @@ mod tests {
             ),
         ];
         let ids = SecurityIdentifiers::default();
-        let fetches = generate_security_suggested_fetches(&[groups[0].clone(), groups[1].clone()], &ids, None, None);
+        let fetches = generate_security_suggested_fetches(
+            &[groups[0].clone(), groups[1].clone()],
+            &ids,
+            None,
+            None,
+        );
 
         // The authoritative advisory should rank higher than the blog post
         let advisory_pos = fetches
@@ -445,7 +448,10 @@ mod tests {
     fn information_gain_is_populated() {
         let groups = vec![make_group(
             SecurityResultGroupKind::AuthoritativeAdvisories,
-            vec![make_card("Advisory", "https://osv.dev/vulnerability/CVE-2024-0001")],
+            vec![make_card(
+                "Advisory",
+                "https://osv.dev/vulnerability/CVE-2024-0001",
+            )],
         )];
         let ids = SecurityIdentifiers::default();
         let fetches = generate_security_suggested_fetches(&groups, &ids, None, None);
@@ -467,13 +473,9 @@ mod tests {
             evidence_confidence: Some(EvidenceConfidence::Strong),
             ..Default::default()
         });
-        let group = make_group(
-            SecurityResultGroupKind::AuthoritativeAdvisories,
-            vec![card],
-        );
+        let group = make_group(SecurityResultGroupKind::AuthoritativeAdvisories, vec![card]);
         let ids = SecurityIdentifiers::default();
-        let fetches =
-            generate_security_suggested_fetches(&[group], &ids, None, None);
+        let fetches = generate_security_suggested_fetches(&[group], &ids, None, None);
         // The advisory should be scored and ranked
         let advisory = fetches
             .iter()

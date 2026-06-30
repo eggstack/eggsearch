@@ -311,6 +311,13 @@ impl RepoFetchRequest {
             }
         }
 
+        // Validate max_block_lines.
+        if let Some(mbl) = self.max_block_lines {
+            if mbl == 0 {
+                return Err("max_block_lines must be > 0".to_string());
+            }
+        }
+
         // Validate max_chars.
         if let Some(max) = self.max_chars {
             if max == 0 {

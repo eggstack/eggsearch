@@ -8,13 +8,13 @@
 pub mod adapter;
 /// Bounded parallel dispatch for multi-subquery searches.
 pub(crate) mod dispatch;
-/// Deterministic ranking pipeline for suggested fetch candidates.
-pub mod fetch_ranking;
 /// Vendored HTML search engines. Internal; not part of the stable
 /// public API.
 pub mod engines;
 /// Exact-error planner: generates targeted subqueries for compiler/runtime error messages.
 pub mod error_planner;
+/// Deterministic ranking pipeline for suggested fetch candidates.
+pub mod fetch_ranking;
 mod grouping;
 /// Local workspace search backend: bounded file walking, scoring, and
 /// SourceCard conversion.

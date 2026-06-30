@@ -795,6 +795,7 @@ fake `host: "github"` fields.
 - Absolute paths (paths starting with `/`)
 - Inverted line ranges (`line_end` < `line_start`)
 - Excessive `context_before`/`context_after` or `max_chars` values
+- `max_block_lines = 0` when provided
 
 ### Batch Fetch
 
@@ -1085,8 +1086,11 @@ manifest detection for local checkouts. It lets `repo_search` and
 
 **Integration:** The adapter's `repo_search` flow discovers local repos
 and adds `local_repo_match` metadata to local `SourceCard` results when
-a local checkout matches the requested repo identity. Matched local
-results receive a +50 score boost to promote them above remote results.
+a local checkout matches the requested repo identity. All three locator
+forms — explicit `owner`+`repo`, slash-form `repo: "owner/name"`, and
+query-hint `repo:owner/name` — correctly trigger local matching via
+`resolved_repo_locator()`. Matched local results receive a +50 score
+boost to promote them above remote results.
 
 **Warnings:**
 - `local_repo_match:` — local checkout found matching the requested repo
@@ -1527,7 +1531,7 @@ per-provider concurrency caps.
 - `max_concurrent_jobs`: total in-flight jobs (computed as `subqueries.clamp(1,8) * engines.clamp(1,4)`)
 - `max_concurrent_per_provider`: per-provider cap (default 2)
 - Configurable via `[search].multiquery_concurrency` (default 8) and `[search].multiquery_provider_concurrency` (default 2)
-- Global request deadline still bounds the entire dispatch
+- Global request deadline bounds the entire dispatch; per-engine timeout passed to providers is a dummy duration (the dispatch loop enforces the real deadline via task abort)
 
 **Determinism:**
 

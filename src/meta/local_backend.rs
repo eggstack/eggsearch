@@ -885,10 +885,13 @@ impl LocalWorkspaceBackend {
                     evidence_reasons: vec![CodeEvidenceReason::ProviderPathMatch],
                 };
 
-                let local_repo_match = repo_identity.map(|rid| {
-                    crate::core::source_card::LocalRepoMatch {
+                let local_repo_match =
+                    repo_identity.map(|rid| crate::core::source_card::LocalRepoMatch {
                         matched: true,
-                        remote_host: rid.matched_host.as_ref().map(|h| format!("{:?}", h).to_lowercase()),
+                        remote_host: rid
+                            .matched_host
+                            .as_ref()
+                            .map(|h| format!("{:?}", h).to_lowercase()),
                         remote_owner: rid.matched_owner.clone(),
                         remote_repo: rid.matched_repo.clone(),
                         branch: rid.current_branch.clone(),
@@ -896,8 +899,7 @@ impl LocalWorkspaceBackend {
                         dirty_state: Some(rid.dirty_state.to_string()),
                         root_name: Some(rid.root_name.clone()),
                         root_path: Some(rid.root_path.display().to_string()),
-                    }
-                });
+                    });
 
                 let metadata = SourceMetadata {
                     source_kind: SourceKind::SourceFile,

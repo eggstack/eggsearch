@@ -33,6 +33,7 @@ pub mod sanitize;
 pub mod security;
 pub mod source_card;
 
+pub use crate::fetch::span::SelectedSpan;
 pub use batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult};
 pub use code_evidence::{
     build_code_evidence, infer_source_role, CodeEvidence, CodeEvidenceReason, EvidenceConfidence,
@@ -74,11 +75,10 @@ pub use repo_fetch::{
     apply_line_range, github_browser_url, github_permalink_url, github_raw_url, gitlab_browser_url,
     gitlab_raw_url, RepoFetchRequest, RepoFetchResponse, RepoFetchedLine, RepoLocator,
 };
-pub use crate::fetch::span::SelectedSpan;
 pub use repo_map::{
     classify_important_directory, classify_important_file, ImportantDirKind, ImportantFileKind,
-    RepoMapEntry, RepoMapEntryKind, RepoMapMode, RepoMapRequest, RepoMapResponse,
-    RepoMapSuggestedFetch, RepoImportantDirectory, RepoImportantFile, RepoPathSummary,
+    RepoImportantDirectory, RepoImportantFile, RepoMapEntry, RepoMapEntryKind, RepoMapMode,
+    RepoMapRequest, RepoMapResponse, RepoMapSuggestedFetch, RepoPathSummary,
 };
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{

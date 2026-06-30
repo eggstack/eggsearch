@@ -15,17 +15,19 @@ use crate::core::sanitize::TrustMarkers;
 const MAX_SUGGESTED_FETCHES: usize = 8;
 
 /// Build a raw-content URL for the given host, owner, repo, ref, and path.
-pub fn build_raw_url(host: CodeHost, owner: &str, repo: &str, ref_name: &str, path: &str) -> String {
+pub fn build_raw_url(
+    host: CodeHost,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    path: &str,
+) -> String {
     match host {
         CodeHost::Github => {
-            format!(
-                "https://raw.githubusercontent.com/{owner}/{repo}/{ref_name}/{path}"
-            )
+            format!("https://raw.githubusercontent.com/{owner}/{repo}/{ref_name}/{path}")
         }
         CodeHost::Gitlab => {
-            format!(
-                "https://gitlab.com/{owner}/{repo}/-/raw/{ref_name}/{path}"
-            )
+            format!("https://gitlab.com/{owner}/{repo}/-/raw/{ref_name}/{path}")
         }
         _ => String::new(),
     }
@@ -74,9 +76,7 @@ fn build_structured_fetch(
 /// 5. Changelog / migration files (important_files where kind is Changelog)
 /// 6. Security policy (security)
 /// 7. Test entrypoints (tests)
-pub fn build_repo_map_suggested_fetches(
-    response: &RepoMapResponse,
-) -> Vec<RepoMapSuggestedFetch> {
+pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoMapSuggestedFetch> {
     let mut suggestions = Vec::new();
     let owner = &response.owner;
     let repo = &response.repo;
@@ -168,8 +168,7 @@ pub fn build_repo_map_suggested_fetches(
     if suggestions.len() < MAX_SUGGESTED_FETCHES {
         if let Some(ref security) = response.security {
             let url = build_raw_url(host, owner, repo, ref_name, &security.path);
-            let structured =
-                build_structured_fetch(host, owner, repo, ref_name, &security.path);
+            let structured = build_structured_fetch(host, owner, repo, ref_name, &security.path);
             suggestions.push(RepoMapSuggestedFetch {
                 url,
                 reason: format!("Security policy for {owner}/{repo}"),
@@ -277,7 +276,9 @@ pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
 }
 
 /// A search subquery for fallback discovery.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub struct RepoMapSearchSubquery {
     /// Human-readable label for this subquery.
     pub label: String,
@@ -349,7 +350,13 @@ mod tests {
 
     #[test]
     fn build_raw_url_gitlab() {
-        let url = build_raw_url(CodeHost::Gitlab, "mygroup", "myproject", "v1.0", "src/main.rs");
+        let url = build_raw_url(
+            CodeHost::Gitlab,
+            "mygroup",
+            "myproject",
+            "v1.0",
+            "src/main.rs",
+        );
         assert_eq!(
             url,
             "https://gitlab.com/mygroup/myproject/-/raw/v1.0/src/main.rs"

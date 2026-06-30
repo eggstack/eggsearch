@@ -1168,11 +1168,14 @@ pub async fn run_repo_fetch(
                 );
                 let matched = crate::meta::local_inventory::match_local_repo(
                     &inventory,
-                    args.host.as_ref().and_then(|h| match h.to_lowercase().as_str() {
-                        "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
-                        "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
-                        _ => None,
-                    }).as_ref(),
+                    args.host
+                        .as_ref()
+                        .and_then(|h| match h.to_lowercase().as_str() {
+                            "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
+                            "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
+                            _ => None,
+                        })
+                        .as_ref(),
                     &args.owner,
                     &args.repo,
                 );
@@ -1432,9 +1435,7 @@ pub async fn run_repo_fetch(
             if let Some(w) = line_warning {
                 warnings.push(w);
             }
-            if selected_span.is_none()
-                && (req.symbol.is_some() || req.match_text.is_some())
-            {
+            if selected_span.is_none() && (req.symbol.is_some() || req.match_text.is_some()) {
                 warnings.push(format!(
                     "span_selection: no match found for {}",
                     if req.symbol.is_some() {
@@ -1553,49 +1554,60 @@ pub async fn run_repo_map(
                 response.local_checkout = Some(crate::core::repo_map::RepoMapLocalCheckout {
                     root_name: rid.root_name.clone(),
                     root_path: rid.root_path.display().to_string(),
-                    remote_host: rid.matched_host.as_ref().map(|h| format!("{:?}", h).to_lowercase()),
+                    remote_host: rid
+                        .matched_host
+                        .as_ref()
+                        .map(|h| format!("{:?}", h).to_lowercase()),
                     remote_owner: rid.matched_owner.clone(),
                     remote_repo: rid.matched_repo.clone(),
                     branch: rid.current_branch.clone(),
                     commit: rid.current_commit.clone(),
                     dirty_state: rid.dirty_state.to_string(),
-                    manifests: rid.manifests.iter().map(|m| {
-                        crate::core::repo_map::RepoMapLocalManifest {
+                    manifests: rid
+                        .manifests
+                        .iter()
+                        .map(|m| crate::core::repo_map::RepoMapLocalManifest {
                             path: m.path.clone(),
                             ecosystem: m.ecosystem.to_string(),
                             package_name: m.package_name.clone(),
-                        }
-                    }).collect(),
+                        })
+                        .collect(),
                 });
-                response.warnings.push(crate::core::result::SearchWarning::new(
-                    "local_workspace",
-                    format!(
-                        "local_checkout_match: local checkout found for {}/{} at {}",
-                        req.owner, req.repo,
-                        rid.root_path.display(),
-                    ),
-                ));
-                if rid.dirty_state == crate::meta::local_inventory::LocalDirtyState::Dirty {
-                    response.warnings.push(crate::core::result::SearchWarning::new(
+                response
+                    .warnings
+                    .push(crate::core::result::SearchWarning::new(
                         "local_workspace",
-                        "local_repo_dirty: local checkout has uncommitted changes",
+                        format!(
+                            "local_checkout_match: local checkout found for {}/{} at {}",
+                            req.owner,
+                            req.repo,
+                            rid.root_path.display(),
+                        ),
                     ));
+                if rid.dirty_state == crate::meta::local_inventory::LocalDirtyState::Dirty {
+                    response
+                        .warnings
+                        .push(crate::core::result::SearchWarning::new(
+                            "local_workspace",
+                            "local_repo_dirty: local checkout has uncommitted changes",
+                        ));
                 }
             }
         }
     }
 
     // Add fallback subqueries as informational context
-    let subqueries =
-        crate::meta::repo_mapper::generate_fallback_subqueries(&req.owner, &req.repo);
+    let subqueries = crate::meta::repo_mapper::generate_fallback_subqueries(&req.owner, &req.repo);
     if !subqueries.is_empty() {
-        response.warnings.push(crate::core::result::SearchWarning::new(
-            "_system",
-            format!(
-                "fallback_subqueries: {} search-based discovery subqueries generated",
-                subqueries.len()
-            ),
-        ));
+        response
+            .warnings
+            .push(crate::core::result::SearchWarning::new(
+                "_system",
+                format!(
+                    "fallback_subqueries: {} search-based discovery subqueries generated",
+                    subqueries.len()
+                ),
+            ));
     }
 
     let value = serde_json::to_value(&response)
@@ -2262,9 +2274,7 @@ async fn run_workspace_fetch(
     if char_truncated {
         warnings.push("workspace_fetch_truncated_by_max_chars".to_string());
     }
-    if selected_span.is_none()
-        && (args.symbol.is_some() || args.match_text.is_some())
-    {
+    if selected_span.is_none() && (args.symbol.is_some() || args.match_text.is_some()) {
         warnings.push(format!(
             "span_selection: no match found for {}",
             if args.symbol.is_some() {

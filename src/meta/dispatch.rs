@@ -174,7 +174,9 @@ pub(crate) async fn dispatch_parallel(
                 .await
                 .expect("semaphore closed unexpectedly");
 
-            let result = provider.search(&query, candidate_limit, candidate_limit_duration()).await;
+            let result = provider
+                .search(&query, candidate_limit, candidate_limit_duration())
+                .await;
 
             (
                 subquery_id,
@@ -222,7 +224,13 @@ pub(crate) async fn dispatch_parallel(
         }
 
         match tokio::time::timeout(remaining, join_set.join_next()).await {
-            Ok(Some(Ok((subquery_id, subquery_order, provider_id, provider_order, Ok(results))))) => {
+            Ok(Some(Ok((
+                subquery_id,
+                subquery_order,
+                provider_id,
+                provider_order,
+                Ok(results),
+            )))) => {
                 dispatched_results.push(DispatchedResult {
                     subquery_id,
                     subquery_order,
@@ -358,11 +366,7 @@ mod tests {
             _timeout: Duration,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
         {
-            Box::pin(async {
-                Err(EngineError::Timeout {
-                    engine: "mock",
-                })
-            })
+            Box::pin(async { Err(EngineError::Timeout { engine: "mock" }) })
         }
     }
 
@@ -389,8 +393,10 @@ mod tests {
     #[tokio::test]
     async fn parallel_dispatch_runs_jobs_concurrently() {
         // Two slow engines should run concurrently, not sequentially
-        let engine_a: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("a", Duration::from_millis(100)));
-        let engine_b: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("b", Duration::from_millis(100)));
+        let engine_a: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("a", Duration::from_millis(100)));
+        let engine_b: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("b", Duration::from_millis(100)));
 
         let jobs = vec![
             make_job("sq1", "query1", "a", Arc::clone(&engine_a), 0, 0, 0),
@@ -420,7 +426,8 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_dispatch_respects_per_provider_concurrency() {
-        let engine: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("p", Duration::from_millis(50)));
+        let engine: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("p", Duration::from_millis(50)));
 
         // 4 jobs for the same provider, max 2 concurrent
         let jobs: Vec<DispatchJob> = (0..4)
@@ -485,8 +492,10 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_dispatch_deterministic_output_order() {
-        let engine_a: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("a", Duration::from_millis(10)));
-        let engine_b: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("b", Duration::from_millis(10)));
+        let engine_a: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("a", Duration::from_millis(10)));
+        let engine_b: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("b", Duration::from_millis(10)));
 
         // Create jobs in reverse order; output should be sorted by subquery_order
         let jobs = vec![
@@ -522,7 +531,8 @@ mod tests {
     #[tokio::test]
     async fn parallel_dispatch_failures_are_tracked() {
         let failing: Arc<dyn SearchEngine> = Arc::new(FailingEngine { name: "fail1" });
-        let good: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("good", Duration::from_millis(10)));
+        let good: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("good", Duration::from_millis(10)));
 
         let jobs = vec![
             make_job("sq1", "q1", "fail1", Arc::clone(&failing), 0, 0, 0),
@@ -546,7 +556,8 @@ mod tests {
     #[tokio::test]
     async fn parallel_dispatch_priority_ordering() {
         // Verify that higher priority (lower number) jobs are dispatched first
-        let engine: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("e", Duration::from_millis(10)));
+        let engine: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("e", Duration::from_millis(10)));
 
         // Priority 0 should come before priority 1
         let jobs = vec![
@@ -571,7 +582,8 @@ mod tests {
     async fn parallel_dispatch_partial_failure_one_success_one_fail() {
         // Provider "p" has two jobs: one succeeds, one fails.
         // The dispatch output should contain both a result and a failure for "p".
-        let good: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("good", Duration::from_millis(10)));
+        let good: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("good", Duration::from_millis(10)));
         let failing: Arc<dyn SearchEngine> = Arc::new(FailingEngine { name: "fail" });
 
         let jobs = vec![
