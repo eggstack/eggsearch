@@ -643,7 +643,7 @@ fn expand_to_enclosing_block(
     match lang {
         LanguageFamily::Rust => expand_brace_block_with_attrs(all_lines, line_idx),
         LanguageFamily::Python => expand_indentation_block(all_lines, line_idx),
-        LanguageFamily::JavaScript => expand_brace_block(all_lines, line_idx),
+        LanguageFamily::JavaScript => expand_statement_block(all_lines, line_idx),
         LanguageFamily::Go => expand_brace_block(all_lines, line_idx),
         LanguageFamily::Java
         | LanguageFamily::Kotlin
@@ -812,6 +812,69 @@ fn expand_indentation_block(all_lines: &[String], line_idx: usize) -> (usize, us
 
     if end < start {
         end = start;
+    }
+
+    (start, end)
+}
+
+/// Expand to a statement-bounded block for JavaScript/TypeScript.
+///
+/// First tries brace matching. If no braces are found (non-brace arrow
+/// functions like `const f = x => x + 1`), falls back to a heuristic that
+/// walks backward/forward to the nearest statement boundary: a semicolon,
+/// closing brace, opening brace, blank line, or end of file.
+fn expand_statement_block(all_lines: &[String], line_idx: usize) -> (usize, usize) {
+    if all_lines.is_empty() {
+        return (0, 0);
+    }
+
+    let file_has_braces = all_lines.iter().any(|l| l.contains('{') || l.contains('}'));
+
+    if file_has_braces {
+        // Brace matching applies — functions, classes, and arrow functions
+        // with `{ }` bodies all have braces somewhere in the file.
+        return expand_brace_block(all_lines, line_idx);
+    }
+
+    // No braces anywhere in the file. This is a non-brace expression
+    // (e.g. `const f = x => x + 1`). Use statement-boundary heuristic.
+
+    // Walk backward: stop at semicolon, closing brace, opening brace,
+    // blank line, or start of file.
+    let mut start = line_idx;
+    for i in (0..line_idx).rev() {
+        let trimmed = all_lines[i].trim();
+        if trimmed.is_empty()
+            || trimmed.ends_with(';')
+            || trimmed.ends_with('}')
+            || trimmed.ends_with('{')
+        {
+            break;
+        }
+        start = i;
+    }
+
+    // If the current line already terminates the statement (with `;`, `}`, or `{`),
+    // the statement is complete on this line — no forward scan needed.
+    let current_trimmed = all_lines[line_idx].trim();
+    if current_trimmed.ends_with(';') || current_trimmed.ends_with('}') || current_trimmed.ends_with('{')
+    {
+        return (start, line_idx);
+    }
+
+    // Walk forward: stop at semicolon, closing brace, opening brace,
+    // blank line, or end of file. Include the terminating line in the range.
+    let mut end = line_idx;
+    for (i, line) in all_lines.iter().enumerate().skip(line_idx + 1) {
+        let trimmed = line.trim();
+        if trimmed.ends_with(';') || trimmed == "}" || trimmed == "{" {
+            end = i;
+            break;
+        }
+        if trimmed.is_empty() {
+            break;
+        }
+        end = i;
     }
 
     (start, end)
@@ -1365,6 +1428,108 @@ mod tests {
         assert_eq!(span.line_start, 1);
         assert_eq!(span.line_end, 9);
         assert_eq!(span.symbol_kind, Some(SymbolKind::Class));
+    }
+
+    #[test]
+    fn js_arrow_function_no_braces() {
+        let input = lines(
+            "const add = (a, b) => a + b;\n\
+             \n\
+             const result = add(1, 2);",
+        );
+        let span = select_span(
+            &input,
+            Some("javascript"),
+            Some("add"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        // Statement-bounded: first line to second line (blank line stops forward scan)
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 1);
+        assert_eq!(span.symbol_kind, Some(SymbolKind::Function));
+    }
+
+    #[test]
+    fn js_arrow_function_no_braces_among_statements() {
+        let input = lines(
+            "const x = 1;\n\
+             const add = (a, b) => a + b;\n\
+             const y = 2;",
+        );
+        let span = select_span(
+            &input,
+            Some("javascript"),
+            Some("add"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        // Backward stops at `const x = 1;` (ends with ;), forward stops at `const y = 2;` (ends with ;)
+        assert_eq!(span.line_start, 2);
+        assert_eq!(span.line_end, 2);
+        assert_eq!(span.symbol_kind, Some(SymbolKind::Function));
+    }
+
+    #[test]
+    fn js_arrow_function_no_braces_multiline() {
+        let input = lines(
+            "const pipe = (f, g) =>\n\
+             \x20 (x) => g(f(x));\n\
+             \n\
+             export default pipe;",
+        );
+        let span = select_span(
+            &input,
+            Some("javascript"),
+            Some("pipe"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        // Backward: line 1 is start. Forward: semicolon on line 4 stops scan at line 3.
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 2);
+        assert_eq!(span.symbol_kind, Some(SymbolKind::Function));
+    }
+
+    #[test]
+    fn js_const_var_in_block() {
+        let input = lines(
+            "function setup() {\n\
+             \x20   const handler = (e) => e.target.value;\n\
+             \x20   return handler;\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("javascript"),
+            Some("handler"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        // Brace matching finds `{...}` block. handler is inside, expands to enclosing block.
+        // Backward from line 2 hits `}` on line 1 → stop. Forward hits `}` on line 4 → stop.
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 4);
     }
 
     // --- Go function expansion ---
