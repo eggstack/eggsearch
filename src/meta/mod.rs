@@ -21,6 +21,7 @@ pub mod mock;
 pub mod package_resolver;
 pub mod planner;
 pub mod repo_grouping;
+pub mod repo_mapper;
 pub mod repo_planner;
 pub mod research_grouping;
 pub mod research_planner;

@@ -12,10 +12,10 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler
 
 use crate::mcp::state::ServerState;
 use crate::mcp::tools::{
-    run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_search, run_research_search,
-    run_security_search, run_web_fetch, run_web_search, BatchFetchArgs, ProviderStatusArgs,
-    RepoFetchArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, ToolError, WebFetchArgs,
-    WebSearchArgs,
+    run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_map, run_repo_search,
+    run_research_search, run_security_search, run_web_fetch, run_web_search, BatchFetchArgs,
+    ProviderStatusArgs, RepoFetchArgs, RepoMapArgs, RepoSearchArgs, ResearchSearchArgs,
+    SecuritySearchArgs, ToolError, WebFetchArgs, WebSearchArgs,
 };
 
 #[derive(Clone)]
@@ -184,6 +184,23 @@ impl EggsearchServer {
             Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
         }
     }
+
+    #[tool(
+        name = "repo_map",
+        description = "Repository structure discovery. Returns the root-level layout, important files, and important directories for a repository without fetching file contents. Use this to understand what a repository contains before searching or fetching. When no native tree API is available, falls back to search-based discovery. Returns suggested fetches prioritized by importance."
+    )]
+    async fn repo_map(
+        &self,
+        Parameters(args): Parameters<RepoMapArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let state = self.state.clone();
+        let res = run_repo_map(state, args).await;
+        match res {
+            Ok(v) => Self::json_result(v),
+            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
+            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -223,12 +240,14 @@ Tools:
 - provider_status: diagnostic provider report; not needed for normal research.
 - repo_search: structured repository evidence discovery. Returns grouped source-card bundles (official docs, package registry, README, source files, issues, releases, etc.) with suggested fetches. Use this when you need organized context for a specific codebase. A query is not required when a repo locator is provided.
 - repo_fetch: fetch a specific file or line range from a repository by structured locator (owner, repo, path, ref). Returns source text with stable line numbers. Use after repo_search to inspect a known file/span.
+- repo_map: repository structure discovery. Returns root-level layout, important files, and important directories without fetching file contents. Use this to understand what a repository contains before searching or fetching.
 - security_search: security vulnerability and advisory search. Returns grouped source-card bundles for vulnerabilities, advisories, exploits, and defensive guidance. Supports CVE, GHSA, RustSec, and OSV identifiers.
 - research_search: research-oriented multi-source evidence discovery. Returns grouped source-card bundles with subquery transparency, evidence-quality classification, and suggested fetches. Use for complex architectural questions.
 
 Agent discipline:
 - Use web_search for generic discovery. The minimum call is {\"query\": \"...\"}.
 - Use repo_search for repository/API/codebase discovery. Minimum call: {\"repo\": \"owner/name\"}. Supports query, profile, and package fields.
+- Use repo_map to understand repository structure before repo_search. Minimum call: {\"owner\": \"name\", \"repo\": \"name\"}.
 - Use repo_search with mode=\"exact_error\" for compiler/runtime/toolchain errors with the error as the query.
 - Use repo_fetch for known repository file paths or line ranges.
 - Use batch_fetch only for explicit selected URLs/locators.

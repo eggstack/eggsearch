@@ -1392,14 +1392,14 @@ async fn web_search_uses_default_max_results_when_omitted() {
 
 #[cfg(feature = "mock")]
 #[test]
-fn mcp_tool_surface_all_eight_tools_with_mock_state() {
+fn mcp_tool_surface_all_nine_tools_with_mock_state() {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 8, "expected exactly 8 tools, got: {names:?}");
+    assert_eq!(names.len(), 9, "expected exactly 9 tools, got: {names:?}");
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
@@ -1419,6 +1419,10 @@ fn mcp_tool_surface_all_eight_tools_with_mock_state() {
     assert!(
         names.contains(&"repo_fetch".to_string()),
         "missing repo_fetch: {names:?}"
+    );
+    assert!(
+        names.contains(&"repo_map".to_string()),
+        "missing repo_map: {names:?}"
     );
     assert!(
         names.contains(&"security_search".to_string()),

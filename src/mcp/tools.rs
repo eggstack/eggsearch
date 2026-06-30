@@ -1,12 +1,13 @@
 //! MCP tool implementations for the metasearch server.
 //!
-//! Eight tools are exposed:
+//! Nine tools are exposed:
 //! - `web_search`        — live metasearch.
 //! - `web_fetch`         — explicit URL fetch.
 //! - `batch_fetch`       — bounded batch fetch over explicit URLs/locators.
 //! - `provider_status`   — diagnostic report of configured providers.
 //! - `repo_search`       — structured repository evidence discovery.
 //! - `repo_fetch`        — structured repository file fetch by locator.
+//! - `repo_map`          — repository structure discovery.
 //! - `security_search`   — security vulnerability and advisory search.
 //! - `research_search`   — research-oriented multi-source evidence discovery.
 
@@ -381,6 +382,47 @@ pub struct RepoFetchArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub test_fetch_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoMapArgs {
+    /// Code host. Optional; accepted values: github, gitlab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// Repository owner.
+    pub owner: String,
+    /// Repository name.
+    pub repo: String,
+    /// Branch, tag, or commit ref. Defaults to repository default when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_name: Option<String>,
+    /// Full commit SHA for stable permalink construction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_sha: Option<String>,
+    /// Maximum root entries to return. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_entries: Option<usize>,
+    /// Maximum directory depth to traverse. Defaults to server config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_depth: Option<usize>,
+    /// Whether to include file entries (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_files: Option<bool>,
+    /// Whether to include directory entries (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_directories: Option<bool>,
+    /// Whether to include CI configuration details (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_ci: Option<bool>,
+    /// Whether to include security policy details (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_security: Option<bool>,
+    /// Per-request timeout override in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Explicit provider ID list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub providers: Vec<String>,
 }
 
 /// Run the `web_search` tool against the shared adapter. The response
@@ -889,6 +931,7 @@ pub fn run_provider_status(
             "explicit_fetch": true,
             "repo_search": true,
             "repo_fetch": true,
+            "repo_map": true,
             "security_search": true,
             "research_search": true,
             "batch_fetch": true,
@@ -1302,6 +1345,74 @@ pub async fn run_repo_fetch(
         }
         Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
     }
+}
+
+/// Run the `repo_map` tool.
+pub async fn run_repo_map(
+    state: Arc<ServerState>,
+    args: RepoMapArgs,
+) -> Result<serde_json::Value, ToolError> {
+    use crate::core::repo_map::RepoMapRequest;
+
+    if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
+        return Err(ToolError::Validation(web_search_denied_message()));
+    }
+
+    let host = if let Some(h) = &args.host {
+        match h.to_lowercase().as_str() {
+            "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
+            "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
+            "codeberg" | "cb" => Some(crate::core::code_metadata::CodeHost::Codeberg),
+            other => {
+                return Err(ToolError::Validation(format!(
+                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb)"
+                )));
+            }
+        }
+    } else {
+        None
+    };
+
+    let req = RepoMapRequest {
+        query: String::new(),
+        host,
+        owner: args.owner,
+        repo: args.repo,
+        ref_name: args.ref_name,
+        commit_sha: args.commit_sha,
+        max_entries: args.max_entries,
+        max_depth: args.max_depth,
+        include_files: args.include_files,
+        include_directories: args.include_directories,
+        include_ci: args.include_ci,
+        include_security: args.include_security,
+        timeout_ms: args.timeout_ms,
+        providers: args.providers,
+    };
+
+    if let Err(e) = req.validate() {
+        return Err(ToolError::Validation(format!("invalid request: {e}")));
+    }
+
+    // Currently always use fallback mode since no native tree API provider exists.
+    let mut response = crate::meta::repo_mapper::build_fallback_response(&req);
+
+    // Add fallback subqueries as informational context
+    let subqueries =
+        crate::meta::repo_mapper::generate_fallback_subqueries(&req.owner, &req.repo);
+    if !subqueries.is_empty() {
+        response.warnings.push(crate::core::result::SearchWarning::new(
+            "_system",
+            format!(
+                "fallback_subqueries: {} search-based discovery subqueries generated",
+                subqueries.len()
+            ),
+        ));
+    }
+
+    let value = serde_json::to_value(&response)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+    Ok(value)
 }
 
 /// Run the `batch_fetch` tool.

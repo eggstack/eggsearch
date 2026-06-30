@@ -22,6 +22,8 @@ pub mod quality;
 pub mod query;
 /// Structured repository fetch request/response types and validation.
 pub mod repo_fetch;
+/// Repository map types for structured repo discovery.
+pub mod repo_map;
 /// Repo-oriented query hint parser for structured search.
 pub mod repo_query;
 pub mod repo_search;
@@ -71,6 +73,11 @@ pub use query::{
 pub use repo_fetch::{
     apply_line_range, github_browser_url, github_permalink_url, github_raw_url, gitlab_browser_url,
     gitlab_raw_url, RepoFetchRequest, RepoFetchResponse, RepoFetchedLine, RepoLocator,
+};
+pub use repo_map::{
+    classify_important_directory, classify_important_file, ImportantDirKind, ImportantFileKind,
+    RepoMapEntry, RepoMapEntryKind, RepoMapMode, RepoMapRequest, RepoMapResponse,
+    RepoMapSuggestedFetch, RepoImportantDirectory, RepoImportantFile, RepoPathSummary,
 };
 pub use repo_query::RepoQueryHints;
 pub use repo_search::{
