@@ -1257,8 +1257,10 @@ mod tests {
         );
 
         // With primary sources present
-        let mut coverage = ResearchCoverage::default();
-        coverage.primary_sources_found = 3;
+        let coverage = ResearchCoverage {
+            primary_sources_found: 3,
+            ..Default::default()
+        };
         let gaps = detect_gaps(
             ResearchWorkflow::ArchitectureDecision,
             &req,

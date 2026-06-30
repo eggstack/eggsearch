@@ -275,7 +275,7 @@ impl RepoSearchRequest {
             if !ee_config.enabled {
                 return Err("exact-error mode is disabled in server configuration".to_string());
             }
-            max_query_chars.max(ee_config.max_error_chars)
+            ee_config.max_error_chars
         } else {
             max_query_chars
         };

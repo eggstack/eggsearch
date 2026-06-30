@@ -716,8 +716,8 @@ caller.
   set to 1 (sequential abort-on-first-failure).
 - Input order is always preserved in the output.
 - Budget is tracked between waves: remaining total-char budget is
-  recomputed before each item in a wave is scheduled, preventing
-  races where concurrent items assume the same remaining budget.
+  divided across wave items before scheduling, preventing concurrent
+  items from collectively overshooting the total cap.
 - `continue_on_error` semantics: a failure on one item does not
   abort the remaining items (unless `continue_on_error=false`).
 - Per-item results include `trust = external_untrusted` for web/remote

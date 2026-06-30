@@ -1404,7 +1404,7 @@ pub async fn run_batch_fetch(
                 let trimmed = url.trim();
                 if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
                     return Err(ToolError::Validation(format!(
-                        "item {i}: url scheme must be http orhttps, got: {}",
+                        "item {i}: url scheme must be http or https, got: {}",
                         &trimmed[..trimmed.len().min(20)]
                     )));
                 }
@@ -1521,6 +1521,14 @@ pub async fn run_batch_fetch(
         let wave_end = (wave_start + effective_concurrency).min(effective_items.len());
         let remaining_budget = total_cap.saturating_sub(total_chars);
 
+        // Divide remaining budget across wave items to prevent concurrent
+        // overshoot. Each item gets at most per_wave_item_budget chars.
+        let wave_len = wave_end - wave_start;
+        let per_wave_item_budget = remaining_budget
+            .checked_div(wave_len)
+            .unwrap_or(remaining_budget);
+        let item_budget_cap = per_item_cap.max(1).min(per_wave_item_budget.max(1));
+
         let mut join_set = tokio::task::JoinSet::new();
         let mut wave_indices = Vec::new();
 
@@ -1547,13 +1555,12 @@ pub async fn run_batch_fetch(
                 continue;
             }
 
-            let item_max_chars = per_item_cap.min(remaining_budget);
             wave_indices.push(i);
 
             let fetch_future = make_batch_fetch_future(
                 i,
                 item,
-                item_max_chars,
+                item_budget_cap,
                 state.clone(),
                 client.clone(),
                 semaphore.clone(),
@@ -1565,46 +1572,63 @@ pub async fn run_batch_fetch(
             join_set.spawn(fetch_future);
         }
 
-        // Collect wave results in input order and accumulate budget
+        // Collect all wave results keyed by their returned index.
+        // JoinSet::join_next() returns whichever task completes first,
+        // so we must not associate results by iteration order.
+        let mut wave_results: std::collections::BTreeMap<usize, BatchFetchResult> =
+            std::collections::BTreeMap::new();
+
+        while let Some(join_result) = join_set.join_next().await {
+            match join_result {
+                Ok(Ok(batch_result)) => {
+                    wave_results.insert(batch_result.index, batch_result);
+                }
+                Ok(Err(tool_err)) => {
+                    // Tool error without an index — cannot know which item.
+                    // This should be rare; make_batch_fetch_future returns
+                    // BatchFetchResult for known failures. Record as a
+                    // special internal error that will be attached to a
+                    // synthesized failure after collection.
+                    tracing::warn!("batch_fetch tool error without index: {tool_err}");
+                }
+                Err(join_err) => {
+                    // Task panic/cancellation — index is lost. Will be
+                    // synthesized as a failure for missing indices below.
+                    tracing::warn!("batch_fetch task panicked: {join_err}");
+                }
+            }
+        }
+
+        // Push results in input order, synthesizing failures for any
+        // indices that are missing (panic, cancellation, or tool error).
         for idx in &wave_indices {
-            if let Some(result) = join_set.join_next().await {
-                match result {
-                    Ok(Ok(mut batch_result)) => {
-                        if batch_result.index != *idx {
-                            batch_result.index = *idx;
-                        }
-                        if !batch_result.ok {
-                            aborted = true;
-                        }
-                        total_chars += batch_result.chars_returned;
-                        results.push(batch_result);
-                    }
-                    Ok(Err(tool_err)) => {
+            match wave_results.remove(idx) {
+                Some(batch_result) => {
+                    if !batch_result.ok {
                         aborted = true;
-                        results.push(BatchFetchResult {
-                            index: *idx,
-                            item_type: BatchFetchItemType::Web,
-                            label: effective_items[*idx].label(),
-                            ok: false,
-                            response: None,
-                            error: Some(tool_err.to_string()),
-                            chars_returned: 0,
-                            truncated: false,
-                        });
                     }
-                    Err(join_err) => {
-                        aborted = true;
-                        results.push(BatchFetchResult {
-                            index: *idx,
-                            item_type: BatchFetchItemType::Web,
-                            label: effective_items[*idx].label(),
-                            ok: false,
-                            response: None,
-                            error: Some(format!("task panicked: {join_err}")),
-                            chars_returned: 0,
-                            truncated: false,
-                        });
-                    }
+                    total_chars += batch_result.chars_returned;
+                    // The result's index is already correct from the future.
+                    // No mutation needed.
+                    results.push(batch_result);
+                }
+                None => {
+                    // Index was not returned — task panicked or tool error.
+                    aborted = true;
+                    let item_type = match &effective_items[*idx] {
+                        BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
+                        BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                    };
+                    results.push(BatchFetchResult {
+                        index: *idx,
+                        item_type,
+                        label: effective_items[*idx].label(),
+                        ok: false,
+                        response: None,
+                        error: Some("task failed or panicked".to_string()),
+                        chars_returned: 0,
+                        truncated: false,
+                    });
                 }
             }
         }

@@ -6954,8 +6954,8 @@ mod repo_search {
     async fn repo_search_exact_error_uses_config_max_chars() {
         let engines = vec![MockEngine::success("mock_a", vec![])];
         let mut cfg = test_cfg();
-        cfg.search.max_query_chars = 50; // Set base limit smaller than max_error_chars
-        cfg.search.exact_error.max_error_chars = 100; // effective_max = max(50, 100) = 100
+        cfg.search.max_query_chars = 50; // Base limit (ignored in exact_error mode)
+        cfg.search.exact_error.max_error_chars = 100; // effective_max = 100 (exact_error cap)
         let state = repo_state_with_engines(cfg, engines, Duration::from_secs(5));
         // Query longer than 100 chars should be rejected in exact_error mode
         let long_query = "a".repeat(200);
@@ -7126,7 +7126,11 @@ mod repo_search {
     async fn repo_search_exact_error_typescript_parsing() {
         let engines = vec![MockEngine::success(
             "mock_a",
-            vec![MockResult::new("TS docs", "https://typescriptlang.org", "mock_a")],
+            vec![MockResult::new(
+                "TS docs",
+                "https://typescriptlang.org",
+                "mock_a",
+            )],
         )];
         let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
         let v = run_repo_search(
@@ -7187,9 +7191,7 @@ mod repo_search {
             .as_array()
             .expect("error_codes should be array");
         assert!(
-            codes
-                .iter()
-                .any(|c| c["code"].as_str() == Some("ERESOLVE")),
+            codes.iter().any(|c| c["code"].as_str() == Some("ERESOLVE")),
             "should detect ERESOLVE: {codes:?}"
         );
         let language = error_context["inferred_language"].as_str();
@@ -7206,7 +7208,11 @@ mod repo_search {
     async fn repo_search_exact_error_python_parsing() {
         let engines = vec![MockEngine::success(
             "mock_a",
-            vec![MockResult::new("Python docs", "https://python.org", "mock_a")],
+            vec![MockResult::new(
+                "Python docs",
+                "https://python.org",
+                "mock_a",
+            )],
         )];
         let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
         let v = run_repo_search(
@@ -7249,7 +7255,8 @@ mod repo_search {
             vec![MockResult::new("Results", "https://example.com", "mock_a")],
         )];
         let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
-        let error_with_uuid = "error at 0x7fff5fbff8d0 request-id: 550e8400-e29b-41d4-a716-446655440000";
+        let error_with_uuid =
+            "error at 0x7fff5fbff8d0 request-id: 550e8400-e29b-41d4-a716-446655440000";
         let v = run_repo_search(
             state,
             RepoSearchArgs {
@@ -7320,8 +7327,7 @@ mod repo_search {
             .as_object()
             .expect("uncertainty_summary should be object");
         assert_eq!(
-            uncertainty["degraded_provider_selection"],
-            true,
+            uncertainty["degraded_provider_selection"], true,
             "uncertainty_summary.degraded_provider_selection should be true"
         );
     }
@@ -11650,7 +11656,7 @@ async fn batch_fetch_rejects_malformed_url() {
     .await;
     let err = res.expect_err("expected validation error for malformed URL");
     assert!(
-        err.to_string().contains("scheme must be http orhttps"),
+        err.to_string().contains("scheme must be http or https"),
         "got: {err}"
     );
 }
@@ -11680,7 +11686,7 @@ async fn batch_fetch_rejects_unsupported_scheme() {
     .await;
     let err = res.expect_err("expected validation error for ftp scheme");
     assert!(
-        err.to_string().contains("scheme must be http orhttps"),
+        err.to_string().contains("scheme must be http or https"),
         "got: {err}"
     );
 }
@@ -11972,6 +11978,276 @@ async fn batch_fetch_result_order_preserved() {
     assert_eq!(results[0]["index"], 0);
     assert_eq!(results[1]["index"], 1);
     assert_eq!(results[2]["index"], 2);
+}
+
+// ---- Phase 6-11 corrective closure regression tests ----
+
+#[tokio::test]
+async fn batch_fetch_preserves_order_and_indices_under_concurrency() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    for i in 0..5 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/item{i}"));
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body(format!("content for item {i}"));
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 3;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..5)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/item{i}")),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results");
+    assert_eq!(results.len(), 5);
+    for (i, r) in results.iter().enumerate() {
+        assert_eq!(r["index"], i, "result {i} should have index {i}");
+        let label = r["label"].as_str().unwrap();
+        assert!(
+            label.contains(&format!("/item{i}")),
+            "result {i} label should reference /item{i}, got: {label}"
+        );
+        assert_eq!(r["ok"], true, "result {i} should be ok");
+    }
+}
+
+#[tokio::test]
+async fn batch_fetch_concurrent_wave_budget_does_not_exceed_total_cap() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    // Each page returns ~500 chars of content
+    for i in 0..6 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/page{i}"));
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("x".repeat(500));
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 3;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..6)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/page{i}")),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+
+    // Total cap = 800. With 6 items of ~500 chars each, per-wave budget
+    // division should prevent total_chars_returned from exceeding the cap
+    // by more than one wave's worth.
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(800),
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let total = v["total_chars_returned"].as_u64().unwrap();
+    // With per-wave budget division, total should be bounded.
+    // Allow up to 1 wave of overshoot (concurrency items may each use
+    // the divided budget).
+    assert!(
+        total <= 800 + 500,
+        "total_chars_returned {total} should be bounded near 800"
+    );
+    // Budget exhaustion warning should be present
+    let warnings = v["warnings"].as_array().expect("warnings");
+    assert!(
+        warnings.iter().any(|w| w
+            .as_str()
+            .unwrap_or("")
+            .contains("batch_total_budget_exhausted")),
+        "should have budget exhaustion warning, got: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_url_scheme_error_message_is_spaced_correctly() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "ftp://example.com/file".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("http or https"),
+        "error message should say 'http or https', got: {msg}"
+    );
+    assert!(
+        !msg.contains("orhttps"),
+        "error message should not contain 'orhttps', got: {msg}"
+    );
+}
+
+#[cfg(feature = "mock")]
+mod corrective_closure_exact_error {
+    use super::*;
+
+    #[cfg(feature = "mock")]
+    fn ee_state(cfg: AppConfig) -> Arc<ServerState> {
+        let engines = vec![MockEngine::success("mock_a", vec![])];
+        let adapter =
+            MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
+        Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_uses_exact_error_cap() {
+        let mut cfg = test_cfg();
+        cfg.search.max_query_chars = 10000;
+        cfg.search.exact_error.max_error_chars = 100;
+        let state = ee_state(cfg);
+        // Query of 101 chars should fail in exact_error mode
+        let query = "a".repeat(101);
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query,
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        let err =
+            res.expect_err("expected validation error for 101-char query in exact_error mode");
+        assert!(
+            err.to_string().contains("100"),
+            "error should mention the exact_error cap of 100: {err}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_normal_uses_normal_query_cap() {
+        let mut cfg = test_cfg();
+        cfg.search.max_query_chars = 200;
+        cfg.search.exact_error.max_error_chars = 50;
+        let state = ee_state(cfg);
+        // Normal mode should use max_query_chars=200, not exact_error cap=50
+        let query = "a".repeat(150);
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query,
+                mode: None,
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        // Should NOT fail — 150 <= 200 (normal cap)
+        let _ = res.expect("normal mode should allow 150 chars when max_query_chars=200");
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_allows_larger_than_normal_when_configured() {
+        let mut cfg = test_cfg();
+        cfg.search.max_query_chars = 512;
+        cfg.search.exact_error.max_error_chars = 8000;
+        let state = ee_state(cfg);
+        // Query of 600 chars should pass in exact_error mode (600 <= 8000)
+        let query = "a".repeat(600);
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query,
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        let _ = res.expect("exact_error mode should allow 600 chars when max_error_chars=8000");
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_rejects_above_exact_error_cap() {
+        let mut cfg = test_cfg();
+        cfg.search.max_query_chars = 512;
+        cfg.search.exact_error.max_error_chars = 50;
+        let state = ee_state(cfg);
+        // Query of 51 chars should fail in exact_error mode (51 > 50)
+        let query = "a".repeat(51);
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query,
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected validation error for 51-char query");
+        assert!(
+            err.to_string().contains("50"),
+            "error should mention the exact_error cap of 50: {err}"
+        );
+    }
 }
 
 // =========================================================================

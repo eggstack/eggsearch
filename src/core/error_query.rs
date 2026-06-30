@@ -76,7 +76,6 @@ pub struct ExactErrorConfig {
     /// Whether to redact sensitive tokens (paths, usernames, keys).
     #[serde(default = "default_true")]
     pub redact_sensitive_tokens: bool,
-
 }
 
 fn default_true() -> bool {
@@ -96,7 +95,6 @@ impl Default for ExactErrorConfig {
             max_subqueries: default_max_subqueries(),
             max_error_chars: default_max_error_chars(),
             redact_sensitive_tokens: true,
-
         }
     }
 }
@@ -875,7 +873,6 @@ mod tests {
         assert_eq!(cfg.max_subqueries, 6);
         assert_eq!(cfg.max_error_chars, 8000);
         assert!(cfg.redact_sensitive_tokens);
-
     }
 
     #[test]

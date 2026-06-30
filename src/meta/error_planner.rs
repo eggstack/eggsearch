@@ -133,16 +133,20 @@ mod tests {
 
     #[test]
     fn build_error_plan_no_redaction_when_disabled() {
-        let mut config = ExactErrorConfig::default();
-        config.redact_sensitive_tokens = false;
+        let config = ExactErrorConfig {
+            redact_sensitive_tokens: false,
+            ..Default::default()
+        };
         let plan = build_error_plan("error in /Users/john/project/src/main.rs", &config);
         assert!(plan.parts.redactions_applied.is_empty());
     }
 
     #[test]
     fn build_error_plan_respects_max_subqueries() {
-        let mut config = ExactErrorConfig::default();
-        config.max_subqueries = 2;
+        let config = ExactErrorConfig {
+            max_subqueries: 2,
+            ..Default::default()
+        };
         let plan = build_error_plan(
             "error[E0277]: the trait bound is not satisfied\npackage `tokio` not found",
             &config,

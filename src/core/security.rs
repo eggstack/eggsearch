@@ -1963,8 +1963,6 @@ mod tests {
 
     #[test]
     fn package_version_query_no_advisory_match_has_no_false_vulnerability_claim() {
-        use crate::core::code_evidence::EvidenceConfidence;
-
         let ids = SecurityIdentifiers {
             package: Some("nonexistent-crate".to_string()),
             ecosystem: Some("crates.io".to_string()),
