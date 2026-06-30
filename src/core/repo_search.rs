@@ -392,16 +392,27 @@ impl RepoSearchRequest {
 
     /// Merge explicit fields with parsed hints from the query string.
     /// Explicit fields always override parsed query hints.
+    /// Slash-form repo identity (e.g. `repo = "owner/name"`) is normalized
+    /// into separate owner/repo hints via [`resolved_repo_identity`].
     pub fn resolved_hints(&self) -> RepoQueryHints {
         let mut hints = RepoQueryHints::parse(&self.query);
+        // Normalize repo identity: slash-form repo is split into owner/repo,
+        // and explicit owner+repo overrides any parsed identity.
+        if let Some(identity) = self.resolved_repo_identity() {
+            hints.owner = Some(identity.owner);
+            hints.repo = Some(identity.repo);
+        } else {
+            // No resolved identity — preserve explicit fields as-is
+            if self.owner.is_some() {
+                hints.owner = self.owner.clone();
+            }
+            if self.repo.is_some() {
+                hints.repo = self.repo.clone();
+            }
+        }
+        // Non-identity fields: explicit fields always override parsed hints
         if self.host.is_some() {
             hints.host = self.host;
-        }
-        if self.owner.is_some() {
-            hints.owner = self.owner.clone();
-        }
-        if self.repo.is_some() {
-            hints.repo = self.repo.clone();
         }
         if self.org.is_some() {
             hints.org = self.org.clone();
@@ -1169,5 +1180,54 @@ mod tests {
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("telemetry"));
         assert!(json.contains("provider_selection"));
+    }
+
+    #[test]
+    fn resolved_hints_explicit_owner_repo() {
+        let req = RepoSearchRequest {
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            query: "Router::layer".to_string(),
+            ..Default::default()
+        };
+        let hints = req.resolved_hints();
+        assert_eq!(hints.owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(hints.repo.as_deref(), Some("axum"));
+    }
+
+    #[test]
+    fn resolved_hints_slash_form_repo() {
+        let req = RepoSearchRequest {
+            repo: Some("tokio-rs/axum".to_string()),
+            query: "Router::layer".to_string(),
+            ..Default::default()
+        };
+        let hints = req.resolved_hints();
+        assert_eq!(hints.owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(hints.repo.as_deref(), Some("axum"));
+    }
+
+    #[test]
+    fn resolved_hints_query_hint_repo() {
+        let req = RepoSearchRequest {
+            query: "repo:tokio-rs/axum Router::layer".to_string(),
+            ..Default::default()
+        };
+        let hints = req.resolved_hints();
+        assert_eq!(hints.owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(hints.repo.as_deref(), Some("axum"));
+    }
+
+    #[test]
+    fn resolved_hints_explicit_overrides_query_hint() {
+        let req = RepoSearchRequest {
+            owner: Some("other-owner".to_string()),
+            repo: Some("other-repo".to_string()),
+            query: "repo:tokio-rs/axum Router::layer".to_string(),
+            ..Default::default()
+        };
+        let hints = req.resolved_hints();
+        assert_eq!(hints.owner.as_deref(), Some("other-owner"));
+        assert_eq!(hints.repo.as_deref(), Some("other-repo"));
     }
 }

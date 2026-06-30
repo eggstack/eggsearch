@@ -599,8 +599,8 @@ requested, applied, and whether degradation occurred. Explicit
 - `subqueries`: list of generated subqueries with labels, queries,
   intended groups, required capabilities, and providers attempted
 - `deadline_exceeded`: whether the request-level deadline was hit
-- `subqueries_interrupted`: subqueries cut short by deadline
-- `subqueries_skipped`: subqueries never started due to deadline
+- `subqueries_interrupted`: unique subquery IDs cut short by deadline (counts distinct subqueries, not raw provider jobs)
+- `subqueries_skipped`: unique subquery IDs never started before deadline (counts distinct subqueries, not raw provider jobs)
 
 **Capability-aware warnings:**
 - `native_code_search_unavailable`: repo hints present but no GitHub/GitLab/Gitea provider configured
@@ -1101,6 +1101,12 @@ accessing `req.owner`/`req.repo` directly for identity-sensitive logic.
 `resolved_repo_locator()` is a convenience wrapper returning
 `Option<(String, String)>`.
 
+**Slash-form hint normalization:** `resolved_hints()` now consults
+`resolved_repo_identity()` to normalize slash-form repo identity
+(e.g. `repo = "owner/name"` with no explicit owner) into separate
+owner/repo hints. This prevents the planner from treating
+`"owner/name"` as a single repo name.
+
 **Warnings:**
 - `local_repo_match:` — local checkout found matching the requested repo
 - `local_repo_dirty:` — local checkout is dirty (uncommitted changes)
@@ -1540,7 +1546,7 @@ per-provider concurrency caps.
 - `max_concurrent_jobs`: total in-flight jobs (computed as `subqueries.clamp(1,8) * engines.clamp(1,4)`)
 - `max_concurrent_per_provider`: per-provider cap (default 2)
 - Configurable via `[search].multiquery_concurrency` (default 8) and `[search].multiquery_provider_concurrency` (default 2)
-- Global request deadline bounds the entire dispatch; per-engine timeout passed to providers is a dummy duration (the dispatch loop enforces the real deadline via task abort)
+- Global request deadline bounds the entire dispatch; after semaphore acquisition, each provider receives the real remaining request budget (`overall_deadline.saturating_duration_since(Instant::now())`) as its timeout — no hardcoded 30s timeout
 
 **Determinism:**
 
@@ -1552,7 +1558,9 @@ aggregation so completion order does not affect output.
 A provider is only reported as `providers_failed` if ALL its jobs
 fail or if it never responds (timed out). Mixed success/failure is
 reported as a warning with `(partial: N job(s) succeeded for this
-provider)` suffix instead of marking the provider as failed.
+provider)` suffix instead of marking the provider as failed. This
+distinction is implemented in `adapter.rs::provider_failures()` and
+`adapter.rs::push_failure_warnings()`.
 
 ### Prompt-injection Hardening
 - Untrusted text from search and fetch flows through three tiers of

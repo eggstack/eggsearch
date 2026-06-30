@@ -1078,8 +1078,8 @@ code-evidence.
 - `subqueries`: list of generated subqueries with labels, queries,
   intended groups, and providers attempted
 - `deadline_exceeded`: whether the request-level deadline was hit
-- `subqueries_interrupted`: subqueries cut short by deadline
-- `subqueries_skipped`: subqueries never started due to deadline
+- `subqueries_interrupted`: unique subquery IDs cut short by deadline (counts distinct subqueries, not raw provider jobs)
+- `subqueries_skipped`: unique subquery IDs never started before deadline (counts distinct subqueries, not raw provider jobs)
 
 **Capability warnings:**
 

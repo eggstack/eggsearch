@@ -174,9 +174,21 @@ pub(crate) async fn dispatch_parallel(
                 .await
                 .expect("semaphore closed unexpectedly");
 
-            let result = provider
-                .search(&query, candidate_limit, candidate_limit_duration())
-                .await;
+            // Compute remaining request budget after semaphore wait
+            let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return (
+                    subquery_id,
+                    subquery_order,
+                    provider_id,
+                    provider_order,
+                    Err(EngineError::Timeout {
+                        engine: provider.name(),
+                    }),
+                );
+            }
+
+            let result = provider.search(&query, candidate_limit, remaining).await;
 
             (
                 subquery_id,
@@ -196,14 +208,6 @@ pub(crate) async fn dispatch_parallel(
         let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             deadline.exceeded = true;
-            // Count interrupted (started but didn't finish) and skipped (never started)
-            let pending = join_set.len();
-            if pending > 0 {
-                // We can't easily tell which subqueries these belong to without
-                // tracking, so we increment by the number of pending tasks
-                deadline.subqueries_interrupted += pending;
-            }
-            // Count skipped subqueries (those with no results and not interrupted)
             let completed_ids: std::collections::HashSet<String> = dispatched_results
                 .iter()
                 .map(|r| r.subquery_id.clone())
@@ -211,7 +215,7 @@ pub(crate) async fn dispatch_parallel(
                 .collect();
             for sid in &total_subqueries {
                 if !completed_ids.contains(sid) {
-                    deadline.subqueries_skipped += 1;
+                    deadline.subqueries_interrupted += 1;
                 }
             }
             warn!(
@@ -254,11 +258,19 @@ pub(crate) async fn dispatch_parallel(
             Ok(None) => break,
             Err(_) => {
                 deadline.exceeded = true;
-                let pending = join_set.len();
-                deadline.subqueries_interrupted += pending;
+                let completed_ids: std::collections::HashSet<String> = dispatched_results
+                    .iter()
+                    .map(|r| r.subquery_id.clone())
+                    .chain(dispatched_failures.iter().map(|f| f.subquery_id.clone()))
+                    .collect();
+                for sid in &total_subqueries {
+                    if !completed_ids.contains(sid) {
+                        deadline.subqueries_interrupted += 1;
+                    }
+                }
                 warn!(
                     scope = search_scope,
-                    pending_jobs = pending,
+                    pending_jobs = join_set.len(),
                     "request deadline exceeded with jobs still pending"
                 );
                 join_set.abort_all();
@@ -295,12 +307,6 @@ pub(crate) async fn dispatch_parallel(
         raw_failures,
         deadline,
     }
-}
-
-/// Dummy duration for per-engine timeout when not used for deadline control.
-/// The global deadline is enforced at the dispatch level, not per-engine.
-fn candidate_limit_duration() -> Duration {
-    Duration::from_secs(30)
 }
 
 #[cfg(test)]
@@ -603,5 +609,137 @@ mod tests {
         assert_eq!(output.raw_failures.len(), 1);
         assert_eq!(output.raw_results[0].0, "good");
         assert_eq!(output.raw_failures[0].0, "fail");
+    }
+
+    /// A mock engine that records the timeout passed to search().
+    struct RecordingEngine {
+        name: &'static str,
+        recorded_timeout: Arc<std::sync::Mutex<Option<Duration>>>,
+    }
+
+    impl RecordingEngine {
+        fn new(name: &'static str) -> Self {
+            Self {
+                name,
+                recorded_timeout: Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+    }
+
+    impl SearchEngine for RecordingEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn search<'a>(
+            &'a self,
+            _query: &'a str,
+            _max_results: usize,
+            timeout: Duration,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
+        {
+            let recorded = Arc::clone(&self.recorded_timeout);
+            Box::pin(async move {
+                *recorded.lock().unwrap() = Some(timeout);
+                Ok(vec![])
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn parallel_dispatch_provider_receives_real_timeout() {
+        // Provider should receive the real remaining budget, not a hardcoded 30s
+        let engine = Arc::new(RecordingEngine::new("rec"));
+        let recorded = Arc::clone(&engine.recorded_timeout);
+
+        let jobs = vec![make_job("sq1", "q1", "rec", engine, 0, 0, 0)];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(200),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        let timeout = recorded
+            .lock()
+            .unwrap()
+            .expect("timeout should be recorded");
+        // Timeout should be close to 200ms, definitely not 30s
+        assert!(
+            timeout <= Duration::from_millis(250),
+            "provider timeout should be derived from request budget, got {:?}",
+            timeout
+        );
+        assert!(
+            timeout > Duration::from_millis(50),
+            "provider timeout should reflect real remaining budget, got {:?}",
+            timeout
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_dispatch_deadline_counts_unique_subqueries() {
+        // One subquery with three provider jobs should count as 1 interrupted, not 3
+        let slow: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("slow", Duration::from_secs(10)));
+
+        // Three jobs for the same subquery across different providers
+        let jobs = vec![
+            make_job("sq1", "q1", "slow", Arc::clone(&slow), 0, 0, 0),
+            make_job("sq1", "q1", "slow2", Arc::clone(&slow), 0, 0, 1),
+            make_job("sq1", "q1", "slow3", Arc::clone(&slow), 0, 0, 2),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(100),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(output.deadline.exceeded);
+        // The subquery "sq1" should be counted as 1 interrupted, not 3
+        assert_eq!(
+            output.deadline.subqueries_interrupted, 1,
+            "one subquery with 3 jobs should count as 1 interrupted subquery"
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_dispatch_deadline_two_subqueries_one_interrupted() {
+        // Two subqueries: one completes, one times out — exactly 1 interrupted
+        let fast: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("fast", Duration::from_millis(5)));
+        let slow: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("slow", Duration::from_secs(10)));
+
+        let jobs = vec![
+            make_job("sq_fast", "q_fast", "fast", Arc::clone(&fast), 0, 0, 0),
+            make_job("sq_slow", "q_slow", "slow", Arc::clone(&slow), 1, 1, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(100),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(output.deadline.exceeded);
+        // sq_fast should have completed, sq_slow should be interrupted
+        assert_eq!(
+            output.deadline.subqueries_interrupted, 1,
+            "exactly one subquery should be interrupted"
+        );
+        // The fast subquery should have completed
+        assert!(
+            output.raw_results.iter().any(|r| r.0 == "fast"),
+            "fast subquery should have completed"
+        );
     }
 }
