@@ -7,6 +7,8 @@ pub mod client;
 pub mod detect;
 pub mod extract;
 pub mod limits;
+/// Symbol/span-aware block expansion for `repo_fetch`.
+pub mod span;
 /// PDF text extraction (requires the `pdf` Cargo feature).
 #[cfg(feature = "pdf")]
 pub mod pdf;
@@ -15,6 +17,7 @@ pub mod render;
 pub mod types;
 
 pub use client::FetchClient;
+pub use span::SelectedSpan;
 pub use extract::{extract_content, HtmlExtractor, LinkExtractionResult};
 pub use limits::{validate_fetch_target, FetchLimits};
 pub use types::{FetchError, FetchErrorKind};

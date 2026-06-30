@@ -1168,6 +1168,11 @@ Optional:
 - `context_before`: number of extra lines to include before `line_start`.
 - `context_after`: number of extra lines to include after `line_end`.
 - `max_chars`: maximum extraction size (default 12000, cap 50000).
+- `symbol`: symbol name to search for in the file. When provided, the fetcher scans for a matching definition and expands to the enclosing block.
+- `symbol_kind`: kind of symbol to search for (`function`, `struct`, `enum`, `trait`, `class`, `interface`, `module`, `constant`, `macro`, etc.).
+- `match_text`: text to search for in the file. When provided, finds the first match and expands around it.
+- `expand_to_block`: when `true`, expand the resolved range to the enclosing block boundary.
+- `max_block_lines`: cap on the number of lines when expanding to a block (default 200).
 
 **Output:**
 
@@ -1182,6 +1187,12 @@ blocks, and `external_untrusted` trust label. URL fields:
 - `fetched_url`: the actual URL used for the network fetch (differs
   from `raw_url` when `commit_sha` is provided, or when
   `test_fetch_url` overrides the URL).
+
+When `symbol`, `match_text`, or `expand_to_block` is used, the
+response includes a `selected_span` object describing how the final
+line span was chosen: `line_start`, `line_end`, `selection_kind`
+(e.g. `symbol_definition`, `match_text`, `expanded_explicit_range`),
+`confidence` (`exact`, `strong`, `weak`, `unknown`), and `reasons`.
 
 When a line range exceeds the file, it is silently clamped to the
 available lines. Context lines are applied after clamping. Workspace

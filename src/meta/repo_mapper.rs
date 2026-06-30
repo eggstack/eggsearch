@@ -53,6 +53,11 @@ fn build_structured_fetch(
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         }),
         _ => None,
     }

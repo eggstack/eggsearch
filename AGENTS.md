@@ -120,6 +120,7 @@ eggsearch/
       extract.rs         # HTML/text extraction logic (returns 6-tuple including text_truncated)
       limits.rs          # FetchLimits struct
       types.rs           # internal fetch types
+      span.rs            # symbol/span-aware block expansion for repo_fetch
     mcp/                 # MCP server (rmcp)
       mod.rs             # re-exports
       server.rs          # EggsearchServer, tool_router, EGGSEARCH_INSTRUCTIONS
@@ -353,6 +354,31 @@ Link classification is metadata only — agents may use it to decide which URLs 
 `src/fetch/render/code.rs` provides `render_code()`, `render_diff()`, and `render_plaintext()` for line-preserving rendering. `src/fetch/render/markdown_source.rs` provides `render_markdown_source()` using `pulldown-cmark` for Markdown file parsing with heading extraction, fenced code block detection, and outline generation.
 
 Code, diff, and plain-text renderers enforce hard output bounds: oversized single lines or paragraphs are truncated to the configured `max_chars` budget, producing a bounded partial block rather than exceeding the limit.
+
+### Symbol/Span-Aware Block Expansion
+
+`src/fetch/span.rs` provides deterministic heuristics for expanding a
+symbol name, match text, or explicit line range into an enclosing code
+block. It is used by `repo_fetch` when the caller provides a `symbol`
+or `match_text` instead of (or in addition to) explicit line numbers.
+
+Key types:
+- `SpanConfidence`: `Exact`, `Strong`, `Weak`, `Unknown`
+- `SpanSelectionKind`: `ExplicitRange`, `ExpandedExplicitRange`,
+  `SymbolDefinition`, `SymbolReference`, `MatchText`, `WholeFileBounded`
+- `SelectedSpan`: line range with metadata about how it was chosen
+
+`select_span()` resolves the best span based on precedence:
+1. Explicit line range (no expansion when `expand_to_block` is false)
+2. Explicit line range with block expansion
+3. Symbol definition search (language-aware)
+4. Match text search
+5. Whole-file bounded fallback
+
+Supported languages for symbol definition detection: Rust, Python,
+JavaScript/TypeScript, Go, Java, C/C++, Kotlin, Scala, C#. Block
+expansion uses brace matching for C-like languages and indentation
+for Python. Markdown heading sections are detected by heading level.
 
 ### Search Intent and Freshness
 
@@ -694,7 +720,12 @@ fake `host: "github"` fields.
   raw URL stability), optional `line_start`, optional `line_end`
   (line range, 1-indexed), optional `context_before` (lines of
   context before range), optional `context_after` (lines of context
-  after range), optional `max_chars` (output cap)
+  after range), optional `max_chars` (output cap),
+  optional `symbol` (symbol name to search for in the file),
+  optional `symbol_kind` (kind of symbol: function, struct, enum,
+  etc.), optional `match_text` (text to search for in the file),
+  optional `expand_to_block` (expand resolved range to enclosing
+  block), optional `max_block_lines` (cap expanded block size)
 
 **Response type:**
 - `RepoFetchResponse`: `locator` (echoed request locator), `text`
@@ -707,7 +738,10 @@ fake `host: "github"` fields.
   `raw_permalink_url` (raw content URL at commit SHA),
   `fetched_url` (the actual URL used for the network fetch;
   differs from `raw_url` when `commit_sha` is provided),
-  `trust_markers` (sanitization metadata)
+  `trust_markers` (sanitization metadata),
+  `selected_span` (optional metadata describing how the final
+  line span was selected — present when symbol, match_text, or
+  expand_to_block was used)
 
 **Supported hosts:**
 - GitHub: full support (raw content via `raw.githubusercontent.com`)
@@ -722,6 +756,22 @@ fake `host: "github"` fields.
   the validated range. Context is also clamped to file boundaries.
 - When a line range is specified, only the requested range (plus
   context) is returned; the full file is not returned.
+
+**Symbol/span selection:**
+- When `symbol` is provided, the file is scanned for a matching
+  definition or declaration. The matched span is expanded to the
+  enclosing block boundary (brace-matched for C-like languages,
+  indentation-based for Python).
+- When `match_text` is provided, the first occurrence is located
+  and expanded to a bounded context window.
+- When explicit `line_start`/`line_end` are provided with
+  `expand_to_block = true`, the range is expanded to the
+  enclosing block.
+- `max_block_lines` caps the expanded block size.
+- When a symbol or match is not found, a warning is emitted
+  and the full file is returned (bounded by max_chars).
+- The response includes `selected_span` metadata with the
+  resolved line range, selection kind, confidence, and reasons.
 
 **Security:**
 - Reuses existing fetch safety limits (SSRF, localhost, private

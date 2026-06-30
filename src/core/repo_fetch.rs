@@ -9,10 +9,11 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::core::code_evidence::SourceRole;
+use crate::core::code_evidence::{SourceRole, SymbolKind};
 use crate::core::code_metadata::CodeHost;
 use crate::core::document::FetchDocument;
 use crate::core::sanitize::TrustMarkers;
+use crate::fetch::span::SelectedSpan;
 
 /// Discriminator for repository locator kinds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -105,6 +106,28 @@ pub struct RepoFetchRequest {
     /// Per-request timeout override in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
+    /// Symbol name to search for in the file. When provided, the
+    /// fetcher scans the file for a matching definition or declaration
+    /// and expands to the enclosing block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Kind of symbol to search for. When omitted, all definition
+    /// patterns are tried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_kind: Option<SymbolKind>,
+    /// Text to search for in the file. When provided, the fetcher
+    /// finds the first match and expands around it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_text: Option<String>,
+    /// When true, expand the resolved range (from symbol, match_text,
+    /// or explicit line range) to the enclosing block boundary.
+    /// Defaults to false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expand_to_block: Option<bool>,
+    /// Maximum lines to include when expanding to a block. Caps the
+    /// expanded span to prevent oversized returns. Defaults to 200.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_block_lines: Option<usize>,
 }
 
 /// A single line in the fetched result.
@@ -193,6 +216,10 @@ pub struct RepoFetchResponse {
     pub trust: FetchTrust,
     /// Trust markers describing what sanitization was applied.
     pub trust_markers: TrustMarkers,
+    /// Metadata describing how the final line span was selected.
+    /// Present when symbol, match_text, or expand_to_block was used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_span: Option<SelectedSpan>,
 }
 
 /// Trust label for fetched repository content.
@@ -515,6 +542,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         req.validate(50000).unwrap();
     }
@@ -534,6 +566,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("owner"));
@@ -554,6 +591,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("repo"));
@@ -574,6 +616,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("path"));
@@ -594,6 +641,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("relative"));
@@ -614,6 +666,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("traversal"));
@@ -634,6 +691,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("line_start"));
@@ -654,6 +716,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -674,6 +741,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -694,6 +766,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("context_before"));
@@ -714,6 +791,11 @@ mod tests {
             context_after: None,
             max_chars: Some(60000),
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("exceeds server cap"));
@@ -734,6 +816,11 @@ mod tests {
             context_after: None,
             max_chars: Some(0),
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("> 0"));
@@ -754,6 +841,11 @@ mod tests {
             context_after: None,
             max_chars: None,
             timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("not supported"));

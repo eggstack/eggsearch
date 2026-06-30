@@ -54,6 +54,16 @@ fn build_structured_fetch(
         context_after: ce.context_line_end.map(|_| 3),
         max_chars: None,
         timeout_ms: None,
+        symbol: ce.matched_symbol.clone(),
+        symbol_kind: ce.symbol_kind,
+        match_text: None,
+        expand_to_block: Some(matches!(
+            ce.source_role,
+            Some(crate::core::code_evidence::SourceRole::Implementation)
+                | Some(crate::core::code_evidence::SourceRole::Test)
+                | Some(crate::core::code_evidence::SourceRole::Example)
+        )),
+        max_block_lines: None,
     })
 }
 

@@ -119,7 +119,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "repo_fetch",
-        description = "Fetch a specific file or line range from a repository by structured locator. Required: `owner`, `repo`, `path`. Optional: `host` (github, gitlab), `ref_name` (branch/tag, default main), `commit_sha`, `line_start`, `line_end`, `context_before`, `context_after`, `max_chars`. Returns source text with stable line numbers and range metadata. Use `repo_search` to discover source evidence first, then `repo_fetch` to inspect a known file/span. Use `web_fetch` for arbitrary non-repository URLs."
+        description = "Fetch a specific file or line range from a repository by structured locator. Required: `owner`, `repo`, `path`. Optional: `host` (github, gitlab), `ref_name` (branch/tag, default main), `commit_sha`, `line_start`, `line_end`, `context_before`, `context_after`, `max_chars`, `symbol` (search for a definition and expand to block), `symbol_kind` (function, struct, enum, etc.), `match_text` (find text and expand around it), `expand_to_block` (expand range to enclosing block), `max_block_lines` (cap expanded block size). Returns source text with stable line numbers, range metadata, and optional `selected_span` describing how the span was chosen. Use `repo_search` to discover source evidence first, then `repo_fetch` to inspect a known file/span. Use `web_fetch` for arbitrary non-repository URLs."
     )]
     async fn repo_fetch(
         &self,

@@ -382,6 +382,24 @@ pub struct RepoFetchArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub test_fetch_url: Option<String>,
+    /// Symbol name to search for in the file. When provided, the
+    /// fetcher scans for a matching definition and expands to the
+    /// enclosing block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Kind of symbol to search for (function, struct, enum, etc.).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_kind: Option<String>,
+    /// Text to search for in the file. When provided, finds the
+    /// first match and expands around it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_text: Option<String>,
+    /// When true, expand the resolved range to the enclosing block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expand_to_block: Option<bool>,
+    /// Maximum lines when expanding to a block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_block_lines: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1157,6 +1175,25 @@ pub async fn run_repo_fetch(
     let ref_name = args.ref_name.unwrap_or_else(|| "main".to_string());
 
     // Build and validate the request.
+    // Parse symbol_kind string to SymbolKind enum.
+    let parsed_symbol_kind = args.symbol_kind.as_deref().and_then(|s| {
+        use crate::core::code_evidence::SymbolKind;
+        match s.to_lowercase().as_str() {
+            "function" | "fn" => Some(SymbolKind::Function),
+            "method" => Some(SymbolKind::Method),
+            "struct" => Some(SymbolKind::Struct),
+            "enum" => Some(SymbolKind::Enum),
+            "trait" => Some(SymbolKind::Trait),
+            "class" => Some(SymbolKind::Class),
+            "interface" => Some(SymbolKind::Interface),
+            "module" | "mod" => Some(SymbolKind::Module),
+            "constant" | "const" | "static" => Some(SymbolKind::Constant),
+            "type" | "typealias" => Some(SymbolKind::TypeAlias),
+            "macro" => Some(SymbolKind::Macro),
+            _ => None,
+        }
+    });
+
     let req = RepoFetchRequest {
         host: Some(effective_host),
         owner: args.owner.clone(),
@@ -1170,6 +1207,11 @@ pub async fn run_repo_fetch(
         context_after: args.context_after,
         max_chars: args.max_chars,
         timeout_ms: args.timeout_ms,
+        symbol: args.symbol.clone(),
+        symbol_kind: parsed_symbol_kind,
+        match_text: args.match_text.clone(),
+        expand_to_block: args.expand_to_block,
+        max_block_lines: args.max_block_lines,
     };
 
     req.validate(state.config.fetch.max_chars_cap)
@@ -1285,12 +1327,34 @@ pub async fn run_repo_fetch(
                 Some(all_lines.len() as u32)
             };
 
+            // Apply span selection: resolve symbol/match_text/explicit range
+            // to a concrete line span before slicing.
+            let selected_span = crate::fetch::span::select_span(
+                &all_lines,
+                language.as_deref(),
+                req.symbol.as_deref(),
+                req.symbol_kind,
+                req.match_text.as_deref(),
+                req.line_start,
+                req.line_end,
+                req.expand_to_block.unwrap_or(false),
+                req.max_block_lines,
+            );
+
+            // Use selected span line range when span selection produced
+            // a result, overriding explicit request line range.
+            let (effective_line_start, effective_line_end) = if let Some(ref span) = selected_span {
+                (Some(span.line_start), Some(span.line_end))
+            } else {
+                (req.line_start, req.line_end)
+            };
+
             // Apply line range.
             let (sliced_lines, returned_start, returned_end, _line_truncated, line_warning) =
                 apply_line_range(
                     &all_lines,
-                    req.line_start,
-                    req.line_end,
+                    effective_line_start,
+                    effective_line_end,
                     req.context_before.unwrap_or(0),
                     req.context_after.unwrap_or(0),
                 );
@@ -1310,6 +1374,18 @@ pub async fn run_repo_fetch(
             let mut warnings = warnings;
             if let Some(w) = line_warning {
                 warnings.push(w);
+            }
+            if selected_span.is_none()
+                && (req.symbol.is_some() || req.match_text.is_some())
+            {
+                warnings.push(format!(
+                    "span_selection: no match found for {}",
+                    if req.symbol.is_some() {
+                        format!("symbol '{}'", req.symbol.as_deref().unwrap_or(""))
+                    } else {
+                        format!("match_text '{}'", req.match_text.as_deref().unwrap_or(""))
+                    }
+                ));
             }
 
             let fetch_response = RepoFetchResponse {
@@ -1337,6 +1413,7 @@ pub async fn run_repo_fetch(
                 warnings,
                 trust: FetchTrust::ExternalUntrusted,
                 trust_markers,
+                selected_span,
             };
 
             let value = serde_json::to_value(&fetch_response)
@@ -1864,6 +1941,11 @@ fn make_batch_fetch_future(
                 max_chars: Some(effective_max),
                 timeout_ms,
                 test_fetch_url: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
             };
             Box::pin(async move {
                 let _permit = semaphore
@@ -2004,12 +2086,55 @@ async fn run_workspace_fetch(
         Some(all_lines.len() as u32)
     };
 
+    let language =
+        crate::core::code_metadata::language_from_extension(&relative_path).map(String::from);
+
+    // Apply span selection: resolve symbol/match_text/explicit range
+    // to a concrete line span before slicing.
+    let parsed_symbol_kind = args.symbol_kind.as_deref().and_then(|s| {
+        use crate::core::code_evidence::SymbolKind;
+        match s.to_lowercase().as_str() {
+            "function" | "fn" => Some(SymbolKind::Function),
+            "method" => Some(SymbolKind::Method),
+            "struct" => Some(SymbolKind::Struct),
+            "enum" => Some(SymbolKind::Enum),
+            "trait" => Some(SymbolKind::Trait),
+            "class" => Some(SymbolKind::Class),
+            "interface" => Some(SymbolKind::Interface),
+            "module" | "mod" => Some(SymbolKind::Module),
+            "constant" | "const" | "static" => Some(SymbolKind::Constant),
+            "type" | "typealias" => Some(SymbolKind::TypeAlias),
+            "macro" => Some(SymbolKind::Macro),
+            _ => None,
+        }
+    });
+
+    let selected_span = crate::fetch::span::select_span(
+        &all_lines,
+        language.as_deref(),
+        args.symbol.as_deref(),
+        parsed_symbol_kind,
+        args.match_text.as_deref(),
+        args.line_start,
+        args.line_end,
+        args.expand_to_block.unwrap_or(false),
+        args.max_block_lines,
+    );
+
+    // Use selected span line range when span selection produced
+    // a result, overriding explicit request line range.
+    let (effective_line_start, effective_line_end) = if let Some(ref span) = selected_span {
+        (Some(span.line_start), Some(span.line_end))
+    } else {
+        (args.line_start, args.line_end)
+    };
+
     // Apply line range
     let (sliced_lines, returned_start, returned_end, _line_truncated, line_warning) =
         apply_line_range(
             &all_lines,
-            args.line_start,
-            args.line_end,
+            effective_line_start,
+            effective_line_end,
             args.context_before.unwrap_or(0),
             args.context_after.unwrap_or(0),
         );
@@ -2025,9 +2150,19 @@ async fn run_workspace_fetch(
     if char_truncated {
         warnings.push("workspace_fetch_truncated_by_max_chars".to_string());
     }
+    if selected_span.is_none()
+        && (args.symbol.is_some() || args.match_text.is_some())
+    {
+        warnings.push(format!(
+            "span_selection: no match found for {}",
+            if args.symbol.is_some() {
+                format!("symbol '{}'", args.symbol.as_deref().unwrap_or(""))
+            } else {
+                format!("match_text '{}'", args.match_text.as_deref().unwrap_or(""))
+            }
+        ));
+    }
 
-    let language =
-        crate::core::code_metadata::language_from_extension(&relative_path).map(String::from);
     let source_role = infer_source_role(&relative_path);
 
     let pseudo_url = format!("workspace://{root_name}/{relative_path}");
@@ -2113,6 +2248,7 @@ async fn run_workspace_fetch(
         warnings,
         trust: FetchTrust::LocalTrusted,
         trust_markers,
+        selected_span,
     };
 
     let value = serde_json::to_value(&fetch_response)

@@ -8020,6 +8020,11 @@ async fn repo_fetch_validation_error_empty_owner() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8051,6 +8056,11 @@ async fn repo_fetch_validation_error_empty_path() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8082,6 +8092,11 @@ async fn repo_fetch_validation_error_path_traversal() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8113,6 +8128,11 @@ async fn repo_fetch_validation_error_absolute_path() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8144,6 +8164,11 @@ async fn repo_fetch_validation_error_inverted_line_range() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8175,6 +8200,11 @@ async fn repo_fetch_validation_error_zero_line_start() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8206,6 +8236,11 @@ async fn repo_fetch_validation_error_zero_line_end() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8237,6 +8272,11 @@ async fn repo_fetch_validation_error_excessive_context() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8268,6 +8308,11 @@ async fn repo_fetch_validation_error_max_chars_above_cap() {
             max_chars: Some(60000),
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8299,6 +8344,11 @@ async fn repo_fetch_validation_error_max_chars_zero() {
             max_chars: Some(0),
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8330,6 +8380,11 @@ async fn repo_fetch_validation_error_unsupported_host_codeberg() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8362,6 +8417,11 @@ async fn repo_fetch_validation_error_unknown_host_cli_string() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8627,6 +8687,11 @@ async fn repo_fetch_line_range_via_mock() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -8719,6 +8784,11 @@ async fn repo_fetch_line_range_with_context_via_mock() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -8774,6 +8844,11 @@ async fn repo_fetch_429_via_run_repo_fetch() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -8808,6 +8883,11 @@ async fn repo_fetch_fetch_disabled_by_policy() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await;
@@ -9025,6 +9105,11 @@ async fn workspace_fetch_reads_local_file() {
         max_chars: None,
         timeout_ms: None,
         test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -9094,6 +9179,11 @@ async fn workspace_fetch_rejects_unknown_root() {
         max_chars: None,
         timeout_ms: None,
         test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -9147,6 +9237,11 @@ async fn workspace_fetch_rejects_path_traversal() {
         max_chars: None,
         timeout_ms: None,
         test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -9245,6 +9340,11 @@ async fn repo_fetch_github_locator_serializes_as_remote() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9302,6 +9402,11 @@ async fn repo_fetch_gitlab_locator_serializes_as_remote() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9363,6 +9468,11 @@ async fn repo_fetch_workspace_locator_serializes_as_workspace() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9442,6 +9552,11 @@ async fn workspace_fetch_enforces_max_chars() {
             max_chars: Some(100),
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9511,6 +9626,11 @@ async fn workspace_fetch_max_chars_lines_text_consistency() {
             max_chars: Some(40),
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9579,6 +9699,11 @@ async fn workspace_fetch_with_context_and_line_range() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9649,6 +9774,11 @@ async fn workspace_fetch_scans_injection_markers() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9719,6 +9849,11 @@ async fn workspace_fetch_trust_markers_populated() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9786,6 +9921,11 @@ async fn workspace_fetch_source_not_framed() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -9958,6 +10098,11 @@ async fn repo_fetch_commit_sha_populates_both_permalink_fields() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -10618,6 +10763,11 @@ async fn repo_fetch_remote_max_chars_enforced() {
         max_chars: Some(100),
         timeout_ms: None,
         test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -10672,6 +10822,11 @@ async fn repo_fetch_gitlab_commit_sha_populates_permalink_fields() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -10749,6 +10904,11 @@ async fn repo_fetch_gitlab_nested_namespace_locator() {
             max_chars: None,
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
         },
     )
     .await
@@ -12729,4 +12889,350 @@ mod security_context_safety {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn repo_fetch_symbol_definition_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(
+                "use std::collections::HashMap;\n\
+                 \n\
+                 /// A configuration store.\n\
+                 pub struct Config {\n\
+                     name: String,\n\
+                     values: HashMap<String, String>,\n\
+                 }\n\
+                 \n\
+                 impl Config {\n\
+                     pub fn new(name: &str) -> Self {\n\
+                         Config {\n\
+                             name: name.to_string(),\n\
+                             values: HashMap::new(),\n\
+                         }\n\
+                     }\n\
+                 }\n\
+                 \n\
+                 fn helper() -> i32 {\n\
+                     42\n\
+                 }\n",
+            );
+    });
+
+    let state = repo_fetch_state();
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            symbol: Some("Config".into()),
+            symbol_kind: Some("struct".into()),
+            match_text: None,
+            expand_to_block: Some(true),
+            max_block_lines: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let selected_span = v
+        .get("selected_span")
+        .expect("selected_span should be present");
+    let selection_kind = selected_span["selection_kind"]
+        .as_str()
+        .expect("selection_kind should be a string");
+    assert_eq!(
+        selection_kind, "symbol_definition",
+        "should find struct definition: {selected_span:?}"
+    );
+
+    let line_start = selected_span["line_start"]
+        .as_u64()
+        .expect("line_start should be present");
+    let line_end = selected_span["line_end"]
+        .as_u64()
+        .expect("line_end should be present");
+    assert!(
+        line_start >= 3 && line_start <= 4,
+        "struct Config should start around line 3-4, got {line_start}"
+    );
+    assert!(
+        line_end >= 6 && line_end <= 7,
+        "struct Config should end around line 6-7, got {line_end}"
+    );
+
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("pub struct Config"),
+        "text should contain struct definition: {text}"
+    );
+}
+
+#[tokio::test]
+async fn repo_fetch_symbol_fn_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(
+                "fn main() {\n\
+                 \n\
+                 }\n\
+                 \n\
+                 fn helper() -> i32 {\n\
+                     let x = 42;\n\
+                     x + 1\n\
+                 }\n\
+                 \n\
+                 fn other() {\n\
+                     // nothing\n\
+                 }\n",
+            );
+    });
+
+    let state = repo_fetch_state();
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: Some("helper".into()),
+            symbol_kind: Some("function".into()),
+            match_text: None,
+            expand_to_block: Some(true),
+            max_block_lines: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let selected_span = v
+        .get("selected_span")
+        .expect("selected_span should be present");
+    let selection_kind = selected_span["selection_kind"]
+        .as_str()
+        .expect("selection_kind should be a string");
+    assert_eq!(
+        selection_kind, "symbol_definition",
+        "should find fn helper: {selected_span:?}"
+    );
+
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("fn helper"),
+        "text should contain fn helper: {text}"
+    );
+}
+
+#[tokio::test]
+async fn repo_fetch_match_text_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/app.py");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(
+                "import os\n\
+                 \n\
+                 class MyApp:\n\
+                     def __init__(self, name):\n\
+                         self.name = name\n\
+                     \n\
+                     def run(self):\n\
+                         print(self.name)\n\
+                 \n\
+                 \n\
+                 def main():\n\
+                     app = MyApp('test')\n\
+                     app.run()\n",
+            );
+    });
+
+    let state = repo_fetch_state();
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/app.py".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/app.py")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: Some("MyApp".into()),
+            expand_to_block: None,
+            max_block_lines: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let selected_span = v
+        .get("selected_span")
+        .expect("selected_span should be present");
+    let selection_kind = selected_span["selection_kind"]
+        .as_str()
+        .expect("selection_kind should be a string");
+    assert_eq!(
+        selection_kind, "match_text",
+        "should find match_text: {selected_span:?}"
+    );
+
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("MyApp"),
+        "text should contain MyApp: {text}"
+    );
+}
+
+#[tokio::test]
+async fn repo_fetch_explicit_range_no_expand() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("line 1\nline 2\nline 3\nline 4\nline 5\n");
+    });
+
+    let state = repo_fetch_state();
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: Some(2),
+            line_end: Some(4),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let selected_span = v
+        .get("selected_span")
+        .expect("selected_span should be present for explicit range");
+    let selection_kind = selected_span["selection_kind"]
+        .as_str()
+        .expect("selection_kind should be a string");
+    assert_eq!(
+        selection_kind, "explicit_range",
+        "should be explicit_range: {selected_span:?}"
+    );
+
+    let returned_start = v["returned_line_start"].as_u64().unwrap();
+    let returned_end = v["returned_line_end"].as_u64().unwrap();
+    assert_eq!(returned_start, 2);
+    assert_eq!(returned_end, 4);
+}
+
+#[tokio::test]
+async fn repo_fetch_symbol_not_found_warns() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("fn main() {}\n");
+    });
+
+    let state = repo_fetch_state();
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: Some("nonexistent".into()),
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: Some(true),
+            max_block_lines: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let warnings = v["warnings"].as_array().expect("warnings should be present");
+    let has_no_match_warning = warnings.iter().any(|w| {
+        w.as_str()
+            .map(|s| s.contains("no match found"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_no_match_warning,
+        "should warn about no match: {warnings:?}"
+    );
 }
