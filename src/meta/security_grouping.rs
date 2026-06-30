@@ -11,14 +11,14 @@ use crate::meta::grouping::{build_card_groups, BuiltGroup};
 
 const CANONICAL_GROUP_ORDER: &[SecurityResultGroupKind] = &[
     SecurityResultGroupKind::AuthoritativeAdvisories,
-    SecurityResultGroupKind::DefensiveGuidance,
-    SecurityResultGroupKind::ExploitDiscussion,
-    SecurityResultGroupKind::GeneralContext,
-    SecurityResultGroupKind::KevEntries,
-    SecurityResultGroupKind::Other,
-    SecurityResultGroupKind::PackageAdvisories,
-    SecurityResultGroupKind::PatchCommitsOrReleases,
     SecurityResultGroupKind::VendorAdvisories,
+    SecurityResultGroupKind::PackageAdvisories,
+    SecurityResultGroupKind::KevEntries,
+    SecurityResultGroupKind::PatchCommitsOrReleases,
+    SecurityResultGroupKind::ExploitDiscussion,
+    SecurityResultGroupKind::DefensiveGuidance,
+    SecurityResultGroupKind::GeneralContext,
+    SecurityResultGroupKind::Other,
 ];
 
 /// Classify a single source card into a security result group.
@@ -110,16 +110,17 @@ pub fn group_security_results(
 /// Map a security result group kind to a human-readable label.
 pub fn security_group_label(kind: SecurityResultGroupKind) -> String {
     match kind {
-        SecurityResultGroupKind::AuthoritativeAdvisories => "Authoritative Advisories".to_string(),
-        SecurityResultGroupKind::VendorAdvisories => "Vendor Advisories".to_string(),
-        SecurityResultGroupKind::PackageAdvisories => "Package Advisories".to_string(),
-        SecurityResultGroupKind::KevEntries => "Known Exploited Vulnerabilities".to_string(),
-        SecurityResultGroupKind::PatchCommitsOrReleases => "Patches & Fixes".to_string(),
-        SecurityResultGroupKind::ExploitDiscussion => "Exploit Discussion".to_string(),
-        SecurityResultGroupKind::DefensiveGuidance => "Defensive Guidance".to_string(),
-        SecurityResultGroupKind::GeneralContext => "General Context".to_string(),
-        SecurityResultGroupKind::Other => "Other".to_string(),
+        SecurityResultGroupKind::AuthoritativeAdvisories => "Authoritative Advisories",
+        SecurityResultGroupKind::VendorAdvisories => "Vendor Advisories",
+        SecurityResultGroupKind::PackageAdvisories => "Package Advisories",
+        SecurityResultGroupKind::KevEntries => "Known Exploited Vulnerabilities",
+        SecurityResultGroupKind::PatchCommitsOrReleases => "Patches & Fixes",
+        SecurityResultGroupKind::ExploitDiscussion => "Exploit Discussion",
+        SecurityResultGroupKind::DefensiveGuidance => "Defensive Guidance",
+        SecurityResultGroupKind::GeneralContext => "General Context",
+        SecurityResultGroupKind::Other => "Other",
     }
+    .to_string()
 }
 
 fn into_security_group(group: BuiltGroup<SecurityResultGroupKind>) -> SecurityResultGroup {
@@ -272,6 +273,35 @@ mod tests {
         ];
         let groups = group_security_results(&cards, None);
         assert!(groups.len() >= 3);
+    }
+
+    #[test]
+    fn group_results_orders_primary_evidence_before_context() {
+        let cards = vec![
+            make_card(SourceKind::Unknown, "https://example.com/context"),
+            make_card(
+                SourceKind::Reference,
+                "https://vendor.example.com/security/advisory",
+            ),
+            make_card(
+                SourceKind::Reference,
+                "https://github.com/foo/bar/commit/abc",
+            ),
+            make_card(SourceKind::Reference, "https://example.com/exploit/poc"),
+            make_card(SourceKind::Reference, "https://example.com/mitigation"),
+        ];
+        let groups = group_security_results(&cards, None);
+        let kinds: Vec<_> = groups.iter().map(|g| g.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                SecurityResultGroupKind::VendorAdvisories,
+                SecurityResultGroupKind::PatchCommitsOrReleases,
+                SecurityResultGroupKind::ExploitDiscussion,
+                SecurityResultGroupKind::DefensiveGuidance,
+                SecurityResultGroupKind::GeneralContext,
+            ]
+        );
     }
 
     #[test]

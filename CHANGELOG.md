@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.3] - Unreleased
+## [0.3.3] - 2026-06-30
 
 ### Changed
 
+- Release readiness pass: normalized the changelog, refreshed README response examples, and bumped crate metadata for publication
+- Security search groups now present primary advisory, vendor/package advisory, KEV, patch, exploit, and defensive guidance evidence before general context
+- Lockfile updated from `quinn-proto` 0.11.14 to 0.11.15 to address RUSTSEC-2026-0185
 - Provider capability audit: searxng and brave_api capabilities corrected to reflect what the adapter actually forwards (not what the upstream API supports); github_releases `org_filter` corrected to false
 - Capability warnings emitted when requests ask for behavior providers cannot enforce (safe_search, freshness, intent without native providers)
 - Within-group reranking now includes quality-based boosts (high confidence, exact evidence, official authority)
@@ -48,8 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security group truncation now applies consistently even when called with `max_per_group = 0`
 - README stable-tool and research response documentation updated to match the current eight-tool MCP surface and `quality_summary` response shape
 
-## [0.4.0] - Unreleased
-
 ### Added
 - `web_fetch` now supports `extract_mode: "markdown"` for Markdown-rendered output. HTML pages are rendered as structured Markdown with headings, code blocks, tables, lists, and inline formatting.
 - HTML pages now produce structured blocks (`headings`, `paragraphs`, `list_item`, `code`, `table`, `block_quote`, `definitions`, `horizontal_rule`) instead of a single flat text block.
@@ -57,8 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code blocks preserve whitespace and detect language classes from `<code>` elements.
 - Content root selection prefers `<main>`, `<article>`, `[role=main]`, then `<body>`.
 - New `src/fetch/render/` module with HTML structural renderer: `blocks.rs` (HTML-to-blocks parser), `text.rs` (plain text renderer), `markdown.rs` (Markdown renderer).
-
-## [Unreleased]
 
 ### Changed
 - **OSV package/ecosystem/version native query support in `security_search`**: when both `package` and `ecosystem` are provided, the native OSV provider is queried directly via `/v1/query` for structured package-scoped results. When OSV is not enabled, a `native_advisory_search_unavailable` warning is emitted.
@@ -145,8 +144,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 10 new unit tests for URL resolution (GitHub/GitLab/Codeberg blob URLs, non-file URLs, line anchors, safety validation) and 7 new integration tests for code-host fetch (transform metadata, serde roundtrips, response shape).
 - Security context types: `SecurityContext`, `CompactSecurityContext`, `SecurityQueryKind`, `SecurityIdentifier`, `SecurityIdentifierKind`, `SecuritySourceTier`, `SecuritySourceQuality`, `DefensiveGuidance`, `DefensiveGuidanceCategory`, `AffectedPackageSummary`, `VulnerabilitySummary`
 - Deterministic source quality classification functions: `classify_source_tier()`, `assess_source_quality()`, `classify_query_kind()`, `build_identifier_list()`
-
-## [0.3.4] - Unreleased
 
 ### Changed
 - **Codeberg raw rewrite deferred**: `web_fetch` no longer rewrites Codeberg source-file browser URLs (`/src/branch/<ref>/<path>` or `/src/tag/<ref>/<path>`) to raw paths. Distinguishing branch refs from tag refs at the parser level is out of scope until the Codeberg raw URL shape is verified. Codeberg source-file URLs still classify as `SourceFile` and are fetched as ordinary web pages through the existing HTML extraction path; no `fetch_transform` block is emitted. The `FetchTransformKind::CodebergRawFile` variant has been removed; only `github_raw_file` and `gitlab_raw_file` are emitted.

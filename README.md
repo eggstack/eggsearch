@@ -30,7 +30,7 @@ for the default configuration.
 - **Result Quality and Uncertainty**: Deterministic per-result quality metadata (confidence, relevance, authority, freshness, evidence strength) with uncertainty reasons and group-level quality summaries
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 1700+ fast tests (no network required)
+- 1800+ fast tests (no network required)
 - **Local Workspace Search**: Optional local source-file discovery within configured workspace roots. Disabled by default; when enabled, `repo_search` can return local files alongside remote results with clear trust boundaries.
 
 ## Stable baseline
@@ -742,19 +742,30 @@ inspect full content.
     {
       "kind": "specifications",
       "label": "Specifications & RFCs",
-      "quality": "high",
+      "quality_summary": {
+        "high_confidence_count": 2,
+        "low_confidence_count": 0,
+        "primary_source_count": 2,
+        "exact_evidence_count": 1
+      },
       "results": [ ... ],
-      "suggested_fetches": [
-        { "url": "https://datatracker.ietf.org/doc/rfc9114/", "label": "RFC 9114 — HTTP/3", "information_gain": 0.92 }
-      ]
+      "truncated": false
     },
     {
       "kind": "benchmarks",
       "label": "Benchmarks & Comparisons",
-      "quality": "medium",
+      "quality_summary": {
+        "high_confidence_count": 0,
+        "low_confidence_count": 1,
+        "primary_source_count": 0,
+        "exact_evidence_count": 0
+      },
       "results": [ ... ],
-      "suggested_fetches": []
+      "truncated": false
     }
+  ],
+  "suggested_fetches": [
+    { "url": "https://datatracker.ietf.org/doc/rfc9114/", "reason": "Primary specification", "priority": 1 }
   ],
   "providers_queried": ["duckduckgo", "brave"],
   "providers_failed": [],
