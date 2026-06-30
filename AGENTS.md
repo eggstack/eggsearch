@@ -437,7 +437,7 @@ queries when the caller wants categorized results rather than a flat
 `SourceCard` list.
 
 **Request types** (in `src/core/repo_search.rs`):
-- `RepoSearchRequest`: `query` (required), optional `host`, `owner`,
+- `RepoSearchRequest`: `query` (optional when repo locator is present), optional `host`, `owner`,
   `repo`, `org`, `path`, `file`, `language`, `symbol`, optional
   `include_*` flags, optional `max_results`, `max_per_group`,
   `freshness`, `timeout_ms`, optional `providers`, optional `profile`

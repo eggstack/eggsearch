@@ -157,7 +157,8 @@ fn is_zero(n: &usize) -> bool {
 /// Structured request for repo-oriented bundle search.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoSearchRequest {
-    /// Required. Free-text query. May contain repo hints (repo:owner/name, etc.).
+    /// Free-text query. May be empty when a repository locator
+    /// (owner+repo or repo:owner/name) is provided.
     pub query: String,
     /// Optional. Code host to target (github, gitlab, codeberg).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -260,10 +261,42 @@ pub struct RepoSearchRequest {
 }
 
 impl RepoSearchRequest {
+    /// Resolve a repository locator from explicit fields or parsed query hints.
+    ///
+    /// Returns `Some((owner, repo))` when a locator can be determined:
+    /// - explicit `owner` + `repo` fields
+    /// - `repo` containing `owner/name` (split on first `/`)
+    /// - `RepoQueryHints::parse(&self.query)` when hints have owner+repo
+    pub fn resolved_repo_locator(&self) -> Option<(String, String)> {
+        if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+            return Some((owner.clone(), repo.clone()));
+        }
+        if self.owner.is_none() {
+            if let Some(repo) = &self.repo {
+                if let Some((o, r)) = repo.split_once('/') {
+                    if !o.is_empty() && !r.is_empty() {
+                        return Some((o.to_string(), r.to_string()));
+                    }
+                }
+            }
+        }
+        let hints = RepoQueryHints::parse(&self.query);
+        if let (Some(owner), Some(repo)) = (hints.owner, hints.repo) {
+            return Some((owner, repo));
+        }
+        None
+    }
+
     /// Validate the request, returning an error if invalid.
     pub fn validate(&self, max_query_chars: usize) -> Result<(), String> {
-        if self.query.trim().is_empty() {
-            return Err("query must not be empty".to_string());
+        if self.query.trim().is_empty() && self.resolved_repo_locator().is_none() {
+            return Err(
+                "repo_search requires a non-empty query or a repository locator such as owner+repo or repo:owner/name"
+                    .to_string(),
+            );
+        }
+        if self.mode == Some(RepoSearchMode::ExactError) && self.query.trim().is_empty() {
+            return Err("exact-error mode requires a non-empty error query".to_string());
         }
         // In exact-error mode, use the configured max_error_chars cap
         let effective_max = if self.mode == Some(RepoSearchMode::ExactError) {
@@ -519,6 +552,121 @@ mod tests {
             ..Default::default()
         };
         assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_empty_query_with_owner_repo() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_empty_query_with_repo_owner_name() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            repo: Some("tokio-rs/axum".to_string()),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_empty_query_with_hint() {
+        let req = RepoSearchRequest {
+            query: "repo:tokio-rs/axum".to_string(),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_empty_query_without_locator() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            ..Default::default()
+        };
+        let err = req.validate(512).unwrap_err();
+        assert!(err.contains("repository locator"));
+    }
+
+    #[test]
+    fn validate_rejects_exact_error_empty_query_with_locator() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            mode: Some(RepoSearchMode::ExactError),
+            ..Default::default()
+        };
+        let err = req.validate(512).unwrap_err();
+        assert!(err.contains("exact-error mode requires a non-empty error query"));
+    }
+
+    #[test]
+    fn resolved_repo_locator_explicit_fields() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            req.resolved_repo_locator(),
+            Some(("tokio-rs".to_string(), "axum".to_string()))
+        );
+    }
+
+    #[test]
+    fn resolved_repo_locator_repo_owner_name() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            repo: Some("tokio-rs/axum".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            req.resolved_repo_locator(),
+            Some(("tokio-rs".to_string(), "axum".to_string()))
+        );
+    }
+
+    #[test]
+    fn resolved_repo_locator_from_query_hint() {
+        let req = RepoSearchRequest {
+            query: "repo:tokio-rs/axum".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            req.resolved_repo_locator(),
+            Some(("tokio-rs".to_string(), "axum".to_string()))
+        );
+    }
+
+    #[test]
+    fn resolved_repo_locator_none_when_empty() {
+        let req = RepoSearchRequest {
+            query: "axum middleware".to_string(),
+            ..Default::default()
+        };
+        assert!(req.resolved_repo_locator().is_none());
+    }
+
+    #[test]
+    fn resolved_repo_locator_explicit_overrides_repo_owner_name() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            owner: Some("other-owner".to_string()),
+            repo: Some("other-repo".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            req.resolved_repo_locator(),
+            Some(("other-owner".to_string(), "other-repo".to_string()))
+        );
     }
 
     #[test]

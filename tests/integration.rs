@@ -7332,6 +7332,76 @@ mod repo_search {
         );
     }
 
+    #[tokio::test]
+    async fn repo_search_with_owner_repo_no_query() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Axum Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let args = RepoSearchArgs {
+            query: String::new(),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            providers: vec!["mock_a".into()],
+            ..Default::default()
+        };
+        let v = run_repo_search(state, args).await.expect("ok");
+        let groups = v.get("groups").unwrap().as_array().unwrap();
+        assert!(!groups.is_empty(), "should have groups for repo-only call");
+    }
+
+    #[tokio::test]
+    async fn repo_search_with_repo_owner_name_no_query() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Axum Docs",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let args = RepoSearchArgs {
+            query: String::new(),
+            repo: Some("tokio-rs/axum".to_string()),
+            providers: vec!["mock_a".into()],
+            ..Default::default()
+        };
+        let v = run_repo_search(state, args).await.expect("ok");
+        let groups = v.get("groups").unwrap().as_array().unwrap();
+        assert!(!groups.is_empty(), "should have groups for repo-only call");
+    }
+
+    #[tokio::test]
+    async fn repo_search_empty_query_no_locator_fails() {
+        let state = state_with_default();
+        let args = RepoSearchArgs {
+            query: String::new(),
+            ..Default::default()
+        };
+        let res = run_repo_search(state, args).await;
+        assert!(res.is_err(), "empty query with no locator should fail");
+    }
+
+    #[tokio::test]
+    async fn repo_search_exact_error_requires_query() {
+        let state = state_with_default();
+        let args = RepoSearchArgs {
+            query: String::new(),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            mode: Some("exact_error".to_string()),
+            ..Default::default()
+        };
+        let res = run_repo_search(state, args).await;
+        assert!(res.is_err(), "exact-error with empty query should fail");
+    }
+
     #[cfg(feature = "mock")]
     fn security_state_with_engines(
         cfg: AppConfig,

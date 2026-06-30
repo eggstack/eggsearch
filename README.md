@@ -65,8 +65,10 @@ on:
 - **Generic search**: call `web_search` with `intent = web` (default).
 - **Documentation search**: call `web_search` with `intent = docs`.
 - **Code/repo search (preferred)**: call `repo_search` with
-  `repo:owner/name` and optionally `profile: "coding"` for
-  structured, grouped repository evidence with provider selection.
+  `repo: "owner/name"` (or `query: "repo:owner/name"`) and
+  optionally `profile: "coding"` for structured, grouped repository
+  evidence with provider selection. A query is not required when
+  a repo locator is provided.
 - **Error search**: call `repo_search` with `mode: "exact_error"` and
   the error message as the query. Returns parsed error codes, redacted
   provider-facing text, and targeted subqueries for docs, issues, and
@@ -1062,9 +1064,10 @@ code-evidence.
 
 **Rules:**
 
-- `repo` is required and must be a valid `owner/name` string.
+- A repo locator is required: either `repo` as `owner/name`, or explicit `owner`+`repo` fields, or `repo:owner/name` in the query text.
 - `query` is optional; when omitted, results are discovered from
-  the repo alone.
+  the repo locator alone using default structural subqueries (docs, source, examples, issues, releases).
+- In `mode: "exact_error"`, `query` is required and must contain the error message.
 - `profile` is optional; one of `generic`, `coding`, `security`,
   `research`. Common aliases (`code`, `repo`, `vuln`, `deep`) are
   accepted.

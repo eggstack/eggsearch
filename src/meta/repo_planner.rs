@@ -459,6 +459,25 @@ mod tests {
     }
 
     #[test]
+    fn repo_only_generates_structural_subqueries() {
+        let req = RepoSearchRequest {
+            query: String::new(),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        assert!(plan.hints.owner.is_some());
+        assert!(plan.hints.repo.is_some());
+        let labels: Vec<&str> = plan.subqueries.iter().map(|s| s.label.as_str()).collect();
+        assert!(labels.contains(&"docs"));
+        assert!(labels.contains(&"registry"));
+        assert!(labels.contains(&"source"));
+        assert!(labels.contains(&"issues"));
+        assert!(labels.contains(&"releases"));
+    }
+
+    #[test]
     fn max_eight_subqueries_cap() {
         let req = RepoSearchRequest {
             query: "tokio-rs/axum middleware router".to_string(),

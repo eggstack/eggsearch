@@ -561,11 +561,30 @@ pub async fn run_repo_search(
         .as_deref()
         .and_then(crate::core::repo_search::RepoSearchMode::parse);
 
+    let (owner, repo) = if let Some(r) = &args.repo {
+        if r.contains('/') && args.owner.is_none() {
+            if let Some((o, rest)) = r.split_once('/') {
+                if o.is_empty() || rest.is_empty() {
+                    return Err(ToolError::Validation(format!(
+                        "invalid repo '{r}': must be owner/name with non-empty parts"
+                    )));
+                }
+                (Some(o.to_string()), Some(rest.to_string()))
+            } else {
+                (args.owner.clone(), args.repo.clone())
+            }
+        } else {
+            (args.owner.clone(), args.repo.clone())
+        }
+    } else {
+        (args.owner.clone(), args.repo.clone())
+    };
+
     let req = RepoSearchRequest {
         query: args.query,
         host,
-        owner: args.owner,
-        repo: args.repo,
+        owner,
+        repo,
         org: args.org,
         path: args.path,
         file: args.file,
