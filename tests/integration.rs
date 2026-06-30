@@ -9314,6 +9314,310 @@ fn provider_status_local_workspace_enabled_when_configured() {
     assert_eq!(local["configured"], true);
 }
 
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_local_results_boosted_when_matching_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    // Create files that will match the query
+    fs::write(root.join("main.rs"), "fn main() {\n    println!(\"hello\");\n}").unwrap();
+    fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+
+    // Initialize git repo with a remote URL
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Create an initial commit so dirty state is clean
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    // Run WITHOUT owner/repo (no match, no boost)
+    let state_no_match = state_with_local_backend(root);
+    let args_no_match = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        ..Default::default()
+    };
+    let v_no_match = run_repo_search(state_no_match, args_no_match)
+        .await
+        .expect("repo_search ok");
+    let groups_no_match = v_no_match["groups"].as_array().expect("groups is array");
+    let score_no_match: Option<f64> = groups_no_match
+        .iter()
+        .flat_map(|g| g["results"].as_array().into_iter())
+        .flatten()
+        .find(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .and_then(|r| r["score"].as_f64());
+
+    // Run WITH owner/repo matching the local checkout (boost applies)
+    let state_match = state_with_local_backend(root);
+    let args_match = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+    let v_match = run_repo_search(state_match, args_match)
+        .await
+        .expect("repo_search ok");
+    let groups_match = v_match["groups"].as_array().expect("groups is array");
+    let score_match: Option<f64> = groups_match
+        .iter()
+        .flat_map(|g| g["results"].as_array().into_iter())
+        .flatten()
+        .find(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .and_then(|r| r["score"].as_f64());
+
+    assert!(
+        score_match.is_some(),
+        "should have local results with score"
+    );
+    assert!(
+        score_no_match.is_some(),
+        "should have local results without match"
+    );
+    let diff = score_match.unwrap() - score_no_match.unwrap();
+    assert!(
+        (diff - 50.0).abs() < 0.01,
+        "score boost should be exactly 50.0, got diff={diff} (matched={score_match:?}, unmatched={score_no_match:?})"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_local_results_have_repo_match_metadata() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+
+    // Initialize git repo with a remote URL
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/tokio-rs/axum.git\n",
+    )
+    .unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "lib.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("tokio-rs".to_string()),
+        repo: Some("axum".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let groups = v["groups"].as_array().expect("groups is array");
+    let local_cards: Vec<&serde_json::Value> = groups
+        .iter()
+        .flat_map(|g| g["results"].as_array().into_iter())
+        .flatten()
+        .filter(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .collect();
+
+    assert!(
+        !local_cards.is_empty(),
+        "should have local results"
+    );
+
+    for card in &local_cards {
+        let meta = card["metadata"]
+            .as_object()
+            .expect("metadata should be object");
+        let lrm = meta["local_repo_match"]
+            .as_object()
+            .expect("local_repo_match should be present");
+        assert_eq!(lrm["matched"], true, "local_repo_match.matched should be true");
+        assert_eq!(
+            lrm["remote_owner"].as_str(),
+            Some("tokio-rs"),
+            "remote_owner should match"
+        );
+        assert_eq!(
+            lrm["remote_repo"].as_str(),
+            Some("axum"),
+            "remote_repo should match"
+        );
+        assert_eq!(
+            lrm["remote_host"].as_str(),
+            Some("github"),
+            "remote_host should be github"
+        );
+        assert!(
+            lrm.get("dirty_state").is_some(),
+            "dirty_state should be present"
+        );
+    }
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_dirty_checkout_emits_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    // Initialize git repo with a remote URL
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Create initial commit so dirty state detection works
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    // Create an untracked file to make the repo dirty
+    fs::write(root.join("untracked.txt"), "dirty content").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let dirty_warnings: Vec<&str> = warnings
+        .iter()
+        .filter_map(|w| w["message"].as_str())
+        .filter(|m| m.contains("local_repo_dirty"))
+        .collect();
+
+    assert!(
+        !dirty_warnings.is_empty(),
+        "dirty checkout should emit local_repo_dirty warning, got warnings: {warnings:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_state_unknown_emits_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    // Initialize git repo with a remote URL
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Create initial commit so dirty state detection works
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    // Remove .git/objects to make git status fail → Unknown dirty state
+    let objects_dir = root.join(".git").join("objects");
+    fs::remove_dir_all(&objects_dir).unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let unknown_warnings: Vec<&str> = warnings
+        .iter()
+        .filter_map(|w| w["message"].as_str())
+        .filter(|m| m.contains("local_repo_state_unknown"))
+        .collect();
+
+    assert!(
+        !unknown_warnings.is_empty(),
+        "unknown dirty state should emit local_repo_state_unknown warning, got warnings: {warnings:?}"
+    );
+}
+
 // =========================================================================
 // Corrective Hardening Regression Tests
 // =========================================================================

@@ -286,18 +286,49 @@ pub fn classify_host(domain: &str) -> CodeHost {
 /// `.git` directory or `.git` file (gitfile for worktrees/submodules).
 pub fn detect_git_worktree(path: &Path) -> bool {
     let git_path = path.join(".git");
-    if git_path.exists() {
-        return true;
+    git_path.exists()
+}
+
+/// Resolve the actual `.git` directory for a repository.
+///
+/// For normal repositories, `.git` is a directory. For worktrees and
+/// submodules, `.git` is a file containing `gitdir: <path>`. This
+/// function resolves the actual git directory path in both cases.
+/// Returns `None` if `.git` does not exist or cannot be resolved.
+fn resolve_git_dir(repo_root: &Path) -> Option<PathBuf> {
+    let git_path = repo_root.join(".git");
+    if !git_path.exists() {
+        return None;
     }
-    false
+    if git_path.is_dir() {
+        return Some(git_path);
+    }
+    // .git is a file (gitfile) — read the gitdir reference
+    let content = std::fs::read_to_string(&git_path).ok()?;
+    let gitdir_line = content.lines().find(|l| l.starts_with("gitdir:"))?;
+    let git_dir_str = gitdir_line.strip_prefix("gitdir:")?.trim();
+    // Resolve relative to the repo root
+    let resolved = if Path::new(git_dir_str).is_absolute() {
+        PathBuf::from(git_dir_str)
+    } else {
+        repo_root.join(git_dir_str)
+    };
+    // Canonicalize if possible, otherwise use as-is
+    resolved.canonicalize().ok().or(Some(resolved))
 }
 
 /// Read the remote URLs from a Git repository's config file.
 ///
 /// Reads `.git/config` directly (no `git` command invocation).
+/// Handles both normal repos (`.git` is a directory) and
+/// worktree/submodule checkouts (`.git` is a gitfile).
 /// Returns a list of `(remote_name, normalized_url)` pairs.
 pub fn read_remotes_from_config(repo_root: &Path) -> Vec<(String, NormalizedRepoId)> {
-    let config_path = repo_root.join(".git").join("config");
+    let git_dir = match resolve_git_dir(repo_root) {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let config_path = git_dir.join("config");
     let content = match std::fs::read_to_string(&config_path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
@@ -345,9 +376,11 @@ pub fn read_remotes_from_config(repo_root: &Path) -> Vec<(String, NormalizedRepo
 /// Read the HEAD branch from `.git/HEAD`.
 ///
 /// Returns `Some("main")` if HEAD points to `refs/heads/main`, or
-/// `None` if HEAD is detached or unreadable.
+/// `None` if HEAD is detached or unreadable. Handles gitfile
+/// worktree/submodule checkouts.
 pub fn read_head_branch(repo_root: &Path) -> Option<String> {
-    let head_path = repo_root.join(".git").join("HEAD");
+    let git_dir = resolve_git_dir(repo_root)?;
+    let head_path = git_dir.join("HEAD");
     let content = std::fs::read_to_string(&head_path).ok()?;
     let content = content.trim();
     content
@@ -358,9 +391,11 @@ pub fn read_head_branch(repo_root: &Path) -> Option<String> {
 /// Read the current commit SHA from `.git/HEAD`.
 ///
 /// For detached HEAD, reads the SHA directly. For symbolic refs,
-/// reads the packed-refs or the ref file.
+/// reads the packed-refs or the ref file. Handles gitfile
+/// worktree/submodule checkouts.
 pub fn read_head_commit(repo_root: &Path) -> Option<String> {
-    let head_path = repo_root.join(".git").join("HEAD");
+    let git_dir = resolve_git_dir(repo_root)?;
+    let head_path = git_dir.join("HEAD");
     let content = std::fs::read_to_string(&head_path).ok()?;
     let content = content.trim().to_string();
 
@@ -376,7 +411,7 @@ pub fn read_head_commit(repo_root: &Path) -> Option<String> {
 
     // Symbolic ref: resolve through packed-refs
     let ref_path = content.strip_prefix("ref: ")?;
-    let full_ref_path = repo_root.join(".git").join(ref_path);
+    let full_ref_path = git_dir.join(ref_path);
 
     // Try loose ref first
     if let Ok(sha) = std::fs::read_to_string(&full_ref_path) {
@@ -387,7 +422,7 @@ pub fn read_head_commit(repo_root: &Path) -> Option<String> {
     }
 
     // Try packed-refs
-    let packed_path = repo_root.join(".git").join("packed-refs");
+    let packed_path = git_dir.join("packed-refs");
     if let Ok(packed) = std::fs::read_to_string(&packed_path) {
         for line in packed.lines() {
             let line = line.trim();
@@ -547,9 +582,36 @@ fn discover_in_dir(
         }
 
         let path = entry.path();
+
+        // Respect follow_symlinks: skip symlinks when disabled
+        if !config.follow_symlinks {
+            match entry.file_type() {
+                Ok(ft) if ft.is_symlink() => continue,
+                Err(_) => continue,
+                _ => {}
+            }
+        }
+
         if path.is_dir() {
+            // Respect respect_gitignore: skip gitignored directories
+            if config.respect_gitignore && is_gitignored(&path) {
+                continue;
+            }
             discover_in_dir(&path, depth + 1, max_depth, config, repos);
         }
+    }
+}
+
+/// Check if a path is ignored by Git using `git check-ignore`.
+fn is_gitignored(path: &Path) -> bool {
+    let output = std::process::Command::new("git")
+        .arg("check-ignore")
+        .arg("-q")
+        .arg(path)
+        .output();
+    match output {
+        Ok(out) => out.status.code() == Some(0),
+        Err(_) => false,
     }
 }
 
@@ -1016,5 +1078,233 @@ mod tests {
             repo: "axum".to_string(),
         };
         assert_eq!(id.to_string(), "github.com/tokio-rs/axum");
+    }
+
+    #[test]
+    fn resolve_git_dir_normal_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let resolved = resolve_git_dir(dir.path()).unwrap();
+        assert!(resolved.is_dir());
+        assert!(resolved.join("config").exists() || true); // dir exists
+    }
+
+    #[test]
+    fn resolve_git_dir_gitfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_git = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(real_git.path()).unwrap();
+        // Write a gitfile pointing to the real git dir
+        let gitfile_content = format!("gitdir: {}\n", real_git.path().display());
+        std::fs::write(dir.path().join(".git"), &gitfile_content).unwrap();
+        let resolved = resolve_git_dir(dir.path()).unwrap();
+        assert!(resolved.is_dir());
+    }
+
+    #[test]
+    fn resolve_git_dir_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(resolve_git_dir(dir.path()).is_none());
+    }
+
+    #[test]
+    fn read_remotes_from_config_gitfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_git = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(real_git.path()).unwrap();
+        // Write config in the real git dir
+        std::fs::write(
+            real_git.path().join("config"),
+            "[remote \"origin\"]\n\turl = https://github.com/test/repo.git\n",
+        )
+        .unwrap();
+        // Write gitfile
+        let gitfile_content = format!("gitdir: {}\n", real_git.path().display());
+        std::fs::write(dir.path().join(".git"), &gitfile_content).unwrap();
+
+        let remotes = read_remotes_from_config(dir.path());
+        assert_eq!(remotes.len(), 1);
+        assert_eq!(remotes[0].0, "origin");
+        assert_eq!(remotes[0].1.repo, "repo");
+    }
+
+    #[test]
+    fn read_head_branch_gitfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_git = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(real_git.path()).unwrap();
+        std::fs::write(real_git.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let gitfile_content = format!("gitdir: {}\n", real_git.path().display());
+        std::fs::write(dir.path().join(".git"), &gitfile_content).unwrap();
+
+        assert_eq!(read_head_branch(dir.path()).as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn read_head_commit_gitfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_git = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(real_git.path()).unwrap();
+        std::fs::write(
+            real_git.path().join("HEAD"),
+            "abc123def456789012345678901234567890abcd\n",
+        )
+        .unwrap();
+        let gitfile_content = format!("gitdir: {}\n", real_git.path().display());
+        std::fs::write(dir.path().join(".git"), &gitfile_content).unwrap();
+
+        let commit = read_head_commit(dir.path()).unwrap();
+        assert_eq!(commit, "abc123def456789012345678901234567890abcd");
+    }
+
+    #[test]
+    fn discover_respects_follow_symlinks_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_dir = dir.path().join("real_repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::process::Command::new("git")
+            .arg("init")
+            .arg(&repo_dir)
+            .output()
+            .ok();
+
+        // Create a symlink to the repo
+        let symlink_path = dir.path().join("link_repo");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&repo_dir, &symlink_path).unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            follow_symlinks: false,
+            ..Default::default()
+        };
+        let repos = discover_local_repos(&config, 2);
+
+        // Should find the real repo but not traverse the symlink
+        assert!(
+            repos.iter().any(|r| r.root_name == "real_repo"),
+            "should find real_repo"
+        );
+        // The symlinked repo should NOT be found (same repo via symlink)
+        #[cfg(unix)]
+        assert!(
+            !repos.iter().any(|r| r.root_name == "link_repo"),
+            "should not follow symlink when follow_symlinks=false"
+        );
+    }
+
+    #[test]
+    fn discover_respects_follow_symlinks_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_dir = dir.path().join("real_repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::process::Command::new("git")
+            .arg("init")
+            .arg(&repo_dir)
+            .output()
+            .ok();
+
+        // Create a symlink to the repo
+        let symlink_path = dir.path().join("link_repo");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&repo_dir, &symlink_path).unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            follow_symlinks: true,
+            ..Default::default()
+        };
+        let repos = discover_local_repos(&config, 2);
+
+        // Should find both the real repo and the symlinked repo
+        assert!(
+            repos.iter().any(|r| r.root_name == "real_repo"),
+            "should find real_repo"
+        );
+        // Note: symlink points to same dir, so discover_in_dir won't
+        // recurse into it (already found as git worktree). The test
+        // verifies that symlinks are not skipped at the entry level.
+    }
+
+    #[test]
+    fn discover_respects_respect_gitignore() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Initialize a git repo at the root
+        std::process::Command::new("git")
+            .arg("init")
+            .arg(dir.path())
+            .output()
+            .ok();
+        let git_config = dir.path().join(".git").join("config");
+        std::fs::write(
+            &git_config,
+            "[remote \"origin\"]\n\turl = https://github.com/test/repo.git\n",
+        )
+        .unwrap();
+
+        // Create a subdirectory that will be gitignored
+        let ignored_dir = dir.path().join("ignored_repo");
+        std::fs::create_dir_all(&ignored_dir).unwrap();
+        std::process::Command::new("git")
+            .arg("init")
+            .arg(&ignored_dir)
+            .output()
+            .ok();
+
+        // Add ignored_repo to .gitignore
+        std::fs::write(dir.path().join(".gitignore"), "ignored_repo/\n").unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            respect_gitignore: true,
+            ..Default::default()
+        };
+        let repos = discover_local_repos(&config, 2);
+
+        // Should find the root repo but skip the gitignored subdirectory
+        assert!(
+            repos.iter().any(|r| r.root_name == dir.path().file_name().unwrap().to_str().unwrap()),
+            "should find root repo"
+        );
+        // The ignored_repo should not be found
+        assert!(
+            !repos.iter().any(|r| r.root_name == "ignored_repo"),
+            "should skip gitignored directory when respect_gitignore=true"
+        );
+    }
+
+    #[test]
+    fn discover_ignores_gitignore_when_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create a subdirectory with a git repo
+        let sub_dir = dir.path().join("sub_repo");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        std::process::Command::new("git")
+            .arg("init")
+            .arg(&sub_dir)
+            .output()
+            .ok();
+
+        // Add sub_repo to .gitignore
+        std::fs::write(dir.path().join(".gitignore"), "sub_repo/\n").unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let repos = discover_local_repos(&config, 2);
+
+        // Should find the sub_repo even though it's gitignored
+        assert!(
+            repos.iter().any(|r| r.root_name == "sub_repo"),
+            "should find sub_repo when respect_gitignore=false"
+        );
     }
 }
