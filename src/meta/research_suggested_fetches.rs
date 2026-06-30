@@ -1,113 +1,127 @@
 //! Suggested fetch generation for research search.
 
 use crate::core::fetch::ExtractMode;
-use crate::core::research::{ResearchResultGroup, ResearchResultGroupKind, ResearchSuggestedFetch};
+use crate::core::research::{
+    EvidenceQuality, ResearchResultGroup, ResearchResultGroupKind, ResearchSuggestedFetch,
+};
 use crate::core::source_card::SourceKind;
+use crate::meta::fetch_ranking::{
+    DiversityConfig, FetchCandidate, FetchRankMode, RankContext, extract_domain, rank_and_select,
+};
 use crate::meta::research_grouping::classify_evidence_quality;
 
-/// Canonical priority order for research result groups.
-/// Lower number = higher priority.
-const RESEARCH_PRIORITY: &[(ResearchResultGroupKind, &str)] = &[
-    (ResearchResultGroupKind::PrimarySources, "primary_source"),
-    (ResearchResultGroupKind::OfficialDocs, "official_docs"),
-    (ResearchResultGroupKind::Specifications, "specification"),
-    (
-        ResearchResultGroupKind::ReferenceImplementations,
-        "reference_implementation",
-    ),
-    (
-        ResearchResultGroupKind::DesignDiscussions,
-        "active_design_discussion",
-    ),
-    (ResearchResultGroupKind::Benchmarks, "benchmark"),
-    (
-        ResearchResultGroupKind::SecurityConsiderations,
-        "security_consideration",
-    ),
-    (ResearchResultGroupKind::Counterpoints, "counterpoint"),
-    (ResearchResultGroupKind::IssueThreads, "diversity_source"),
-    (ResearchResultGroupKind::ReleaseNotes, "diversity_source"),
-    (
-        ResearchResultGroupKind::AcademicOrFormalSources,
-        "diversity_source",
-    ),
-    (ResearchResultGroupKind::RecentNews, "diversity_source"),
-    (
-        ResearchResultGroupKind::CommunityDiscussion,
-        "diversity_source",
-    ),
-];
-
-/// Max suggested fetches from the same domain.
-const DOMAIN_SOFT_CAP: usize = 2;
-
-/// Max total suggested fetches.
-const TOTAL_CAP: usize = 8;
-
-/// Domains that are clearly primary/official and exempt from the domain cap.
-fn is_primary_domain(domain: &str) -> bool {
-    let d = domain.to_lowercase();
-    d.ends_with(".rs")
-        || d == "docs.rs"
-        || d == "crates.io"
-        || d == "github.com"
-        || d == "gitlab.com"
-        || d == "codeberg.org"
-        || d == "rust-lang.org"
-        || d == "doc.rust-lang.org"
+/// Map a group string label back to its `ResearchResultGroupKind`.
+fn group_from_str(s: &str) -> ResearchResultGroupKind {
+    match s {
+        "primary_sources" => ResearchResultGroupKind::PrimarySources,
+        "official_docs" => ResearchResultGroupKind::OfficialDocs,
+        "specifications" => ResearchResultGroupKind::Specifications,
+        "reference_implementations" => ResearchResultGroupKind::ReferenceImplementations,
+        "design_discussions" => ResearchResultGroupKind::DesignDiscussions,
+        "benchmarks" => ResearchResultGroupKind::Benchmarks,
+        "security_considerations" => ResearchResultGroupKind::SecurityConsiderations,
+        "issue_threads" => ResearchResultGroupKind::IssueThreads,
+        "release_notes" => ResearchResultGroupKind::ReleaseNotes,
+        "academic_or_formal_sources" => ResearchResultGroupKind::AcademicOrFormalSources,
+        "recent_news" => ResearchResultGroupKind::RecentNews,
+        "community_discussion" => ResearchResultGroupKind::CommunityDiscussion,
+        "counterpoints" => ResearchResultGroupKind::Counterpoints,
+        _ => ResearchResultGroupKind::Unknown,
+    }
 }
 
 /// Generate suggested fetches from grouped research results.
+///
+/// Uses the deterministic ranking pipeline with research-mode scoring
+/// and diversity caps (max 2 per domain, max 8 total).
 pub fn generate_research_suggested_fetches(
     groups: &[ResearchResultGroup],
 ) -> Vec<ResearchSuggestedFetch> {
-    let mut suggestions = Vec::new();
-    let mut domain_counts: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
-    let mut priority: u8 = 1;
+    let mut candidates: Vec<FetchCandidate> = Vec::new();
 
-    for &(kind, reason) in RESEARCH_PRIORITY {
-        let Some(group) = find_group(groups, kind) else {
-            continue;
-        };
+    for group in groups {
         let Some(card) = group.results.first() else {
             continue;
         };
 
-        let domain = extract_domain(&card.url).unwrap_or_default();
-        let count = domain_counts.get(&domain).copied().unwrap_or(0);
-        let primary = is_primary_domain(&domain);
+        let expected_kind = expected_kind_for_group(group.kind);
+        let recommended_extract_mode = recommended_extract_mode_for_group(group.kind);
+        let domain = extract_domain(&card.url);
 
-        if !primary && count >= DOMAIN_SOFT_CAP {
-            priority = priority.saturating_add(1);
-            continue;
-        }
+        let (source_role, evidence_confidence) = card
+            .metadata
+            .code_evidence
+            .as_ref()
+            .map(|ce| (ce.source_role, ce.evidence_confidence))
+            .unwrap_or((None, None));
 
-        let expected_kind = expected_kind_for_group(kind);
-        let evidence_quality = classify_evidence_quality(card);
-        let recommended_extract_mode = recommended_extract_mode_for_group(kind);
-
-        suggestions.push(ResearchSuggestedFetch {
+        candidates.push(FetchCandidate {
             url: card.url.clone(),
-            group: kind,
+            structured_repo_fetch: false,
+            group: serde_json::to_string(&group.kind)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string(),
             expected_kind,
-            evidence_quality,
-            reason: reason.to_string(),
             recommended_extract_mode,
-            priority,
+            original_order: candidates.len(),
+            source_kind: expected_kind,
+            source_role,
+            evidence_confidence,
+            is_pinned_permalink: false,
+            is_raw_url: false,
+            is_browser_url: card.url.starts_with("http"),
+            domain,
+            score: 0,
+            reasons: Vec::new(),
+            information_gain: 0.0,
+            stable: false,
         });
-
-        if !domain.is_empty() {
-            *domain_counts.entry(domain).or_insert(0) += 1;
-        }
-        priority = priority.saturating_add(1);
-
-        if suggestions.len() >= TOTAL_CAP {
-            break;
-        }
     }
 
-    suggestions
+    let ctx = RankContext {
+        mode: FetchRankMode::Research,
+        ..Default::default()
+    };
+    let config = DiversityConfig {
+        max_per_domain: 2,
+        max_per_group: 0,
+        total_cap: 8,
+    };
+
+    let ranked = rank_and_select(candidates, &ctx, &config);
+
+    ranked
+        .into_iter()
+        .enumerate()
+        .map(|(i, candidate)| {
+            let group_kind = group_from_str(&candidate.group);
+            let card = find_group(groups, group_kind)
+                .and_then(|g| g.results.first());
+            let evidence_quality = card
+                .map(classify_evidence_quality)
+                .unwrap_or(EvidenceQuality::Unknown);
+
+            let reason = candidate
+                .reasons
+                .first()
+                .map(|r| r.as_str().to_string())
+                .unwrap_or_else(|| "suggested".to_string());
+
+            ResearchSuggestedFetch {
+                url: candidate.url,
+                group: group_kind,
+                expected_kind: candidate.expected_kind,
+                evidence_quality,
+                reason,
+                recommended_extract_mode: candidate.recommended_extract_mode,
+                priority: (i + 1) as u8,
+                score: Some(candidate.score),
+                rank_reasons: candidate.reasons.iter().map(|r| r.as_str().to_string()).collect(),
+                information_gain: Some(candidate.information_gain),
+            }
+        })
+        .collect()
 }
 
 fn find_group(
@@ -148,18 +162,10 @@ fn recommended_extract_mode_for_group(kind: ResearchResultGroupKind) -> Option<E
     }
 }
 
-fn extract_domain(url: &str) -> Option<String> {
-    url.split("://")
-        .nth(1)?
-        .split('/')
-        .next()?
-        .to_string()
-        .into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::code_evidence::{CodeEvidence, EvidenceConfidence, SourceRole};
     use crate::core::research::EvidenceQuality;
     use crate::core::result::TrustLevel;
     use crate::core::source_card::SourceCard;
@@ -208,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn priority_order_matches_canonical_order() {
+    fn primary_sources_outrank_community_discussion() {
         let groups = vec![
             make_group(
                 ResearchResultGroupKind::CommunityDiscussion,
@@ -225,12 +231,12 @@ mod tests {
         ];
         let fetches = generate_research_suggested_fetches(&groups);
         assert!(fetches.len() >= 3);
+        // Primary sources (OfficialDocs source_kind) score higher than
+        // benchmarks (Reference) and community discussion (Forum) in
+        // research mode, so they always rank first.
         assert_eq!(fetches[0].group, ResearchResultGroupKind::PrimarySources);
-        assert_eq!(fetches[1].group, ResearchResultGroupKind::Benchmarks);
-        assert_eq!(
-            fetches[2].group,
-            ResearchResultGroupKind::CommunityDiscussion
-        );
+        // Benchmarks and CommunityDiscussion tie (both get GenericWebUrl +5);
+        // input order breaks the tie via stable sort.
     }
 
     #[test]
@@ -256,11 +262,11 @@ mod tests {
         let fetches = generate_research_suggested_fetches(&groups);
         let same_domain_count = fetches
             .iter()
-            .filter(|f| extract_domain(&f.url).as_deref() == Some("same.example.com"))
+            .filter(|f| extract_domain(&f.url) == "same.example.com")
             .count();
         assert!(
-            same_domain_count <= DOMAIN_SOFT_CAP,
-            "expected at most {DOMAIN_SOFT_CAP} from same domain, got {same_domain_count}"
+            same_domain_count <= 2,
+            "expected at most 2 from same domain, got {same_domain_count}"
         );
     }
 
@@ -340,8 +346,8 @@ mod tests {
         ];
         let fetches = generate_research_suggested_fetches(&groups);
         assert!(
-            fetches.len() <= TOTAL_CAP,
-            "expected at most {TOTAL_CAP}, got {}",
+            fetches.len() <= 8,
+            "expected at most 8, got {}",
             fetches.len()
         );
     }
@@ -363,14 +369,14 @@ mod tests {
     #[test]
     fn extract_domain_parses_correctly() {
         assert_eq!(
-            extract_domain("https://docs.example.com/page"),
-            Some("docs.example.com".to_string())
+            super::extract_domain("https://docs.example.com/page"),
+            "docs.example.com".to_string()
         );
         assert_eq!(
-            extract_domain("http://example.com"),
-            Some("example.com".to_string())
+            super::extract_domain("http://example.com"),
+            "example.com".to_string()
         );
-        assert_eq!(extract_domain("not-a-url"), None);
+        assert_eq!(super::extract_domain("not-a-url"), "".to_string());
     }
 
     #[test]
@@ -413,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn github_domain_is_primary_exempt_from_cap() {
+    fn github_domain_respects_diversity_cap() {
         let groups = vec![
             make_group(
                 ResearchResultGroupKind::PrimarySources,
@@ -429,7 +435,161 @@ mod tests {
             ),
         ];
         let fetches = generate_research_suggested_fetches(&groups);
-        // All three should be included because github.com is primary
-        assert_eq!(fetches.len(), 3);
+        // The ranking module applies max_per_domain=2 uniformly;
+        // github.com is no longer exempt from the diversity cap.
+        let github_count = fetches
+            .iter()
+            .filter(|f| extract_domain(&f.url) == "github.com")
+            .count();
+        assert!(
+            github_count <= 2,
+            "expected at most 2 from github.com, got {github_count}"
+        );
+    }
+
+    #[test]
+    fn score_and_rank_reasons_are_populated() {
+        let groups = vec![
+            make_group(
+                ResearchResultGroupKind::PrimarySources,
+                vec![make_card("P1", "https://primary.example.com/p1")],
+            ),
+            make_group(
+                ResearchResultGroupKind::CommunityDiscussion,
+                vec![make_card("C1", "https://forum.example.com/t/1")],
+            ),
+        ];
+        let fetches = generate_research_suggested_fetches(&groups);
+        assert!(!fetches.is_empty());
+        for fetch in &fetches {
+            assert!(
+                fetch.score.is_some(),
+                "score should be populated for {}",
+                fetch.url
+            );
+            assert!(
+                !fetch.rank_reasons.is_empty(),
+                "rank_reasons should be populated for {}",
+                fetch.url
+            );
+        }
+    }
+
+    #[test]
+    fn domain_diversity_caps_via_ranking_module() {
+        let groups = vec![
+            make_group(
+                ResearchResultGroupKind::PrimarySources,
+                vec![make_card("P1", "https://same.example.com/a")],
+            ),
+            make_group(
+                ResearchResultGroupKind::OfficialDocs,
+                vec![make_card("D1", "https://same.example.com/b")],
+            ),
+            make_group(
+                ResearchResultGroupKind::Specifications,
+                vec![make_card("S1", "https://same.example.com/c")],
+            ),
+            make_group(
+                ResearchResultGroupKind::Benchmarks,
+                vec![make_card("B1", "https://same.example.com/d")],
+            ),
+        ];
+        let fetches = generate_research_suggested_fetches(&groups);
+        let same_domain_count = fetches
+            .iter()
+            .filter(|f| extract_domain(&f.url) == "same.example.com")
+            .count();
+        assert!(
+            same_domain_count <= 2,
+            "expected at most 2 from same domain via ranking module, got {same_domain_count}"
+        );
+    }
+
+    #[test]
+    fn priority_is_sequential_after_ranking() {
+        let groups = vec![
+            make_group(
+                ResearchResultGroupKind::PrimarySources,
+                vec![make_card("P1", "https://primary.example.com/p1")],
+            ),
+            make_group(
+                ResearchResultGroupKind::OfficialDocs,
+                vec![make_card("D1", "https://docs.example.com/d1")],
+            ),
+            make_group(
+                ResearchResultGroupKind::Benchmarks,
+                vec![make_card("B1", "https://bench.example.com/b1")],
+            ),
+        ];
+        let fetches = generate_research_suggested_fetches(&groups);
+        for (i, fetch) in fetches.iter().enumerate() {
+            assert_eq!(
+                fetch.priority,
+                (i + 1) as u8,
+                "priority should be sequential starting at 1"
+            );
+        }
+    }
+
+    #[test]
+    fn information_gain_is_populated() {
+        let groups = vec![
+            make_group(
+                ResearchResultGroupKind::PrimarySources,
+                vec![make_card("P1", "https://primary.example.com/p1")],
+            ),
+            make_group(
+                ResearchResultGroupKind::OfficialDocs,
+                vec![make_card("D1", "https://docs.example.com/d1")],
+            ),
+        ];
+        let fetches = generate_research_suggested_fetches(&groups);
+        assert!(!fetches.is_empty());
+        for fetch in &fetches {
+            assert!(
+                fetch.information_gain.is_some(),
+                "information_gain should be populated for {}",
+                fetch.url
+            );
+        }
+    }
+
+    #[test]
+    fn code_evidence_source_role_used_in_ranking() {
+        let mut card = make_card("C1", "https://github.com/org/repo/blob/main/src/lib.rs");
+        card.metadata.code_evidence = Some(CodeEvidence {
+            source_role: Some(SourceRole::Implementation),
+            evidence_confidence: Some(EvidenceConfidence::Exact),
+            ..Default::default()
+        });
+
+        let groups = vec![
+            make_group(
+                ResearchResultGroupKind::ReferenceImplementations,
+                vec![card],
+            ),
+            make_group(
+                ResearchResultGroupKind::CommunityDiscussion,
+                vec![make_card("D1", "https://forum.example.com/t/1")],
+            ),
+        ];
+        let fetches = generate_research_suggested_fetches(&groups);
+        assert!(fetches.len() >= 2);
+        // ReferenceImplementation with exact code evidence should outrank community discussion
+        assert_eq!(
+            fetches[0].group,
+            ResearchResultGroupKind::ReferenceImplementations
+        );
+        // The rank_reasons should include source_role_implementation or exact_confidence
+        let has_evidence_reason = fetches[0]
+            .rank_reasons
+            .iter()
+            .any(|r| r == "source_role_implementation" || r == "exact_confidence");
+        assert!(
+            has_evidence_reason,
+            "expected code evidence rank reasons, got {:?}",
+            fetches[0].rank_reasons
+        );
     }
 }

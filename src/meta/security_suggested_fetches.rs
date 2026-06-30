@@ -1,86 +1,277 @@
 //! Suggested fetch generation for `security_search` result groups.
 
+use crate::core::fetch::ExtractMode;
 use crate::core::security::{
     SecurityIdentifiers, SecurityResultGroup, SecurityResultGroupKind, SecuritySuggestedFetch,
+};
+use crate::core::source_card::SourceKind;
+use crate::meta::fetch_ranking::{
+    extract_domain, FetchCandidate, FetchRankMode, RankContext,
 };
 
 /// Generate suggested fetches for security groups.
 ///
 /// Suggests authoritative advisory URLs for identified vulnerability IDs,
 /// ecosystem-specific package pages, and top results from each group.
+/// All candidates are scored and ranked via the fetch ranking pipeline
+/// in `FetchRankMode::Security` before being returned.
 pub fn generate_security_suggested_fetches(
     groups: &[SecurityResultGroup],
     resolved_ids: &SecurityIdentifiers,
     ecosystem: Option<&str>,
     package: Option<&str>,
 ) -> Vec<SecuritySuggestedFetch> {
-    let mut fetches = Vec::new();
+    let mut candidates = Vec::new();
 
-    // Always suggest OSV for any identified CVE/GHSA (priority 0)
+    // ── Tier 1: Authoritative advisory URLs for identified CVE/GHSA/OSV ──
+
     for cve_id in &resolved_ids.cve_ids {
-        fetches.push(SecuritySuggestedFetch {
+        candidates.push(FetchCandidate {
             url: format!("https://osv.dev/vulnerability/{cve_id}"),
-            reason: format!("OSV entry for {cve_id}"),
-            group: SecurityResultGroupKind::AuthoritativeAdvisories,
-            priority: 0,
+            structured_repo_fetch: false,
+            group: "AuthoritativeAdvisories".to_string(),
+            expected_kind: SourceKind::SecurityAdvisory,
+            recommended_extract_mode: None,
+            original_order: candidates.len(),
+            source_kind: SourceKind::SecurityAdvisory,
+            source_role: None,
+            evidence_confidence: None,
+            is_pinned_permalink: false,
+            is_raw_url: false,
+            is_browser_url: true,
+            domain: extract_domain("https://osv.dev"),
+            score: 0,
+            reasons: Vec::new(),
+            information_gain: 0.0,
+            stable: false,
         });
     }
     for ghsa_id in &resolved_ids.ghsa_ids {
-        fetches.push(SecuritySuggestedFetch {
+        candidates.push(FetchCandidate {
             url: format!("https://github.com/advisories/{ghsa_id}"),
-            reason: format!("GitHub Advisory entry for {ghsa_id}"),
-            group: SecurityResultGroupKind::AuthoritativeAdvisories,
-            priority: 0,
+            structured_repo_fetch: false,
+            group: "AuthoritativeAdvisories".to_string(),
+            expected_kind: SourceKind::SecurityAdvisory,
+            recommended_extract_mode: None,
+            original_order: candidates.len(),
+            source_kind: SourceKind::SecurityAdvisory,
+            source_role: None,
+            evidence_confidence: None,
+            is_pinned_permalink: false,
+            is_raw_url: false,
+            is_browser_url: true,
+            domain: extract_domain("https://github.com"),
+            score: 0,
+            reasons: Vec::new(),
+            information_gain: 0.0,
+            stable: false,
         });
     }
     for osv_id in &resolved_ids.osv_ids {
-        fetches.push(SecuritySuggestedFetch {
+        candidates.push(FetchCandidate {
             url: format!("https://osv.dev/vulnerability/{osv_id}"),
-            reason: format!("OSV entry for {osv_id}"),
-            group: SecurityResultGroupKind::AuthoritativeAdvisories,
-            priority: 0,
+            structured_repo_fetch: false,
+            group: "AuthoritativeAdvisories".to_string(),
+            expected_kind: SourceKind::SecurityAdvisory,
+            recommended_extract_mode: None,
+            original_order: candidates.len(),
+            source_kind: SourceKind::SecurityAdvisory,
+            source_role: None,
+            evidence_confidence: None,
+            is_pinned_permalink: false,
+            is_raw_url: false,
+            is_browser_url: true,
+            domain: extract_domain("https://osv.dev"),
+            score: 0,
+            reasons: Vec::new(),
+            information_gain: 0.0,
+            stable: false,
         });
     }
 
-    // If we have a package + ecosystem, suggest the ecosystem's security page (priority 1)
+    // ── Tier 2: Ecosystem-specific package pages ──
+
     if let (Some(pkg), Some(eco)) = (package, ecosystem) {
         match eco {
-            "crates.io" => fetches.push(SecuritySuggestedFetch {
+            "crates.io" => candidates.push(FetchCandidate {
                 url: format!("https://crates.io/crates/{pkg}"),
-                reason: format!("{pkg} on crates.io (check security advisories tab)"),
-                group: SecurityResultGroupKind::PackageAdvisories,
-                priority: 1,
+                structured_repo_fetch: false,
+                group: "PackageAdvisories".to_string(),
+                expected_kind: SourceKind::PackageRegistry,
+                recommended_extract_mode: Some(ExtractMode::Markdown),
+                original_order: candidates.len(),
+                source_kind: SourceKind::PackageRegistry,
+                source_role: None,
+                evidence_confidence: None,
+                is_pinned_permalink: false,
+                is_raw_url: false,
+                is_browser_url: true,
+                domain: extract_domain("https://crates.io"),
+                score: 0,
+                reasons: Vec::new(),
+                information_gain: 0.0,
+                stable: false,
             }),
-            "npm" => fetches.push(SecuritySuggestedFetch {
+            "npm" => candidates.push(FetchCandidate {
                 url: format!("https://www.npmjs.com/package/{pkg}"),
-                reason: format!("{pkg} on npm (check security advisories)"),
-                group: SecurityResultGroupKind::PackageAdvisories,
-                priority: 1,
+                structured_repo_fetch: false,
+                group: "PackageAdvisories".to_string(),
+                expected_kind: SourceKind::PackageRegistry,
+                recommended_extract_mode: Some(ExtractMode::Markdown),
+                original_order: candidates.len(),
+                source_kind: SourceKind::PackageRegistry,
+                source_role: None,
+                evidence_confidence: None,
+                is_pinned_permalink: false,
+                is_raw_url: false,
+                is_browser_url: true,
+                domain: extract_domain("https://www.npmjs.com"),
+                score: 0,
+                reasons: Vec::new(),
+                information_gain: 0.0,
+                stable: false,
             }),
             _ => {}
         }
     }
 
-    // Add top results from each group (priority 2)
+    // ── Tier 3: Top results from each group ──
+
     for group in groups {
         for card in group.results.iter().take(2) {
-            fetches.push(SecuritySuggestedFetch {
+            let source_kind = source_kind_for_group(group.kind);
+            let (source_role, evidence_confidence) = card
+                .metadata
+                .code_evidence
+                .as_ref()
+                .map(|ce| (ce.source_role, ce.evidence_confidence))
+                .unwrap_or((None, None));
+
+            candidates.push(FetchCandidate {
                 url: card.url.clone(),
-                reason: card.title.clone(),
-                group: group.kind,
-                priority: 2,
+                structured_repo_fetch: false,
+                group: group_label(group.kind),
+                expected_kind: source_kind,
+                recommended_extract_mode: recommended_extract_mode_for_group(group.kind),
+                original_order: candidates.len(),
+                source_kind,
+                source_role,
+                evidence_confidence,
+                is_pinned_permalink: false,
+                is_raw_url: false,
+                is_browser_url: card.url.starts_with("http"),
+                domain: extract_domain(&card.url),
+                score: 0,
+                reasons: Vec::new(),
+                information_gain: 0.0,
+                stable: false,
             });
         }
     }
 
-    fetches
+    // ── Rank and select ──
+
+    let ctx = RankContext {
+        mode: FetchRankMode::Security,
+        ..Default::default()
+    };
+
+    let config = crate::meta::fetch_ranking::DiversityConfig {
+        max_per_domain: 2,
+        max_per_group: 2,
+        total_cap: 8,
+    };
+
+    let ranked = crate::meta::fetch_ranking::rank_and_select(candidates, &ctx, &config);
+
+    // ── Convert back to SecuritySuggestedFetch ──
+
+    ranked
+        .into_iter()
+        .enumerate()
+        .map(|(i, candidate)| {
+            let group_kind = group_kind_from_label(&candidate.group);
+            let reason = candidate
+                .reasons
+                .first()
+                .map(|r| r.as_str().to_string())
+                .unwrap_or_else(|| "suggested".to_string());
+            SecuritySuggestedFetch {
+                url: candidate.url,
+                reason,
+                group: group_kind,
+                priority: i as u8,
+                score: Some(candidate.score),
+                rank_reasons: candidate
+                    .reasons
+                    .iter()
+                    .map(|r| r.as_str().to_string())
+                    .collect(),
+                information_gain: Some(candidate.information_gain),
+            }
+        })
+        .collect()
+}
+
+fn source_kind_for_group(kind: SecurityResultGroupKind) -> SourceKind {
+    match kind {
+        SecurityResultGroupKind::AuthoritativeAdvisories => SourceKind::SecurityAdvisory,
+        SecurityResultGroupKind::VendorAdvisories => SourceKind::SecurityAdvisory,
+        SecurityResultGroupKind::PackageAdvisories => SourceKind::PackageRegistry,
+        SecurityResultGroupKind::KevEntries => SourceKind::SecurityAdvisory,
+        SecurityResultGroupKind::PatchCommitsOrReleases => SourceKind::ReleaseNotes,
+        SecurityResultGroupKind::ExploitDiscussion => SourceKind::IssueThread,
+        SecurityResultGroupKind::DefensiveGuidance => SourceKind::OfficialDocs,
+        SecurityResultGroupKind::GeneralContext => SourceKind::Reference,
+        SecurityResultGroupKind::Other => SourceKind::Unknown,
+    }
+}
+
+fn group_label(kind: SecurityResultGroupKind) -> String {
+    match kind {
+        SecurityResultGroupKind::AuthoritativeAdvisories => "AuthoritativeAdvisories".to_string(),
+        SecurityResultGroupKind::VendorAdvisories => "VendorAdvisories".to_string(),
+        SecurityResultGroupKind::PackageAdvisories => "PackageAdvisories".to_string(),
+        SecurityResultGroupKind::KevEntries => "KevEntries".to_string(),
+        SecurityResultGroupKind::PatchCommitsOrReleases => "PatchCommitsOrReleases".to_string(),
+        SecurityResultGroupKind::ExploitDiscussion => "ExploitDiscussion".to_string(),
+        SecurityResultGroupKind::DefensiveGuidance => "DefensiveGuidance".to_string(),
+        SecurityResultGroupKind::GeneralContext => "GeneralContext".to_string(),
+        SecurityResultGroupKind::Other => "Other".to_string(),
+    }
+}
+
+fn group_kind_from_label(label: &str) -> SecurityResultGroupKind {
+    match label {
+        "AuthoritativeAdvisories" => SecurityResultGroupKind::AuthoritativeAdvisories,
+        "VendorAdvisories" => SecurityResultGroupKind::VendorAdvisories,
+        "PackageAdvisories" => SecurityResultGroupKind::PackageAdvisories,
+        "KevEntries" => SecurityResultGroupKind::KevEntries,
+        "PatchCommitsOrReleases" => SecurityResultGroupKind::PatchCommitsOrReleases,
+        "ExploitDiscussion" => SecurityResultGroupKind::ExploitDiscussion,
+        "DefensiveGuidance" => SecurityResultGroupKind::DefensiveGuidance,
+        "GeneralContext" => SecurityResultGroupKind::GeneralContext,
+        _ => SecurityResultGroupKind::Other,
+    }
+}
+
+fn recommended_extract_mode_for_group(kind: SecurityResultGroupKind) -> Option<ExtractMode> {
+    match kind {
+        SecurityResultGroupKind::AuthoritativeAdvisories => Some(ExtractMode::Markdown),
+        SecurityResultGroupKind::VendorAdvisories => Some(ExtractMode::Markdown),
+        SecurityResultGroupKind::PackageAdvisories => Some(ExtractMode::Markdown),
+        SecurityResultGroupKind::PatchCommitsOrReleases => Some(ExtractMode::Markdown),
+        SecurityResultGroupKind::DefensiveGuidance => Some(ExtractMode::Markdown),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::code_evidence::{CodeEvidence, EvidenceConfidence, SourceRole};
     use crate::core::result::TrustLevel;
-    use crate::core::source_card::{SourceCard, SourceKind};
+    use crate::core::source_card::SourceCard;
 
     fn make_card(title: &str, url: &str) -> SourceCard {
         let mut card = SourceCard::new(
@@ -157,7 +348,199 @@ mod tests {
         );
         let ids = SecurityIdentifiers::default();
         let fetches = generate_security_suggested_fetches(&[group], &ids, None, None);
-        let group_fetches: Vec<_> = fetches.iter().filter(|f| f.priority == 2).collect();
+        // Should have 2 results (capped at 2 per group) after ranking
+        let group_fetches: Vec<_> = fetches
+            .iter()
+            .filter(|f| f.group == SecurityResultGroupKind::GeneralContext)
+            .collect();
         assert_eq!(group_fetches.len(), 2);
+    }
+
+    #[test]
+    fn advisory_sources_outrank_community_discussion_in_security_mode() {
+        let groups = vec![
+            make_group(
+                SecurityResultGroupKind::GeneralContext,
+                vec![make_card(
+                    "Blog post about CVE",
+                    "https://blog.example.com/exploit-writeup",
+                )],
+            ),
+            make_group(
+                SecurityResultGroupKind::AuthoritativeAdvisories,
+                vec![make_card(
+                    "OSV Advisory",
+                    "https://osv.dev/vulnerability/CVE-2024-0001",
+                )],
+            ),
+        ];
+        let ids = SecurityIdentifiers::default();
+        let fetches = generate_security_suggested_fetches(&[groups[0].clone(), groups[1].clone()], &ids, None, None);
+
+        // The authoritative advisory should rank higher than the blog post
+        let advisory_pos = fetches
+            .iter()
+            .position(|f| f.url.contains("osv.dev"))
+            .expect("advisory should be present");
+        let blog_pos = fetches
+            .iter()
+            .position(|f| f.url.contains("blog.example.com"))
+            .expect("blog should be present");
+        assert!(
+            advisory_pos < blog_pos,
+            "advisory (pos {advisory_pos}) should outrank blog (pos {blog_pos})"
+        );
+    }
+
+    #[test]
+    fn score_and_rank_reasons_are_populated() {
+        let ids = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            ..Default::default()
+        };
+        let fetches = generate_security_suggested_fetches(&[], &ids, None, None);
+        assert!(!fetches.is_empty());
+        let fetch = &fetches[0];
+        assert!(fetch.score.is_some(), "score should be populated");
+        assert!(
+            !fetch.rank_reasons.is_empty(),
+            "rank_reasons should be populated"
+        );
+    }
+
+    #[test]
+    fn diversity_caps_work() {
+        // Create many groups to test that diversity caps are applied
+        let groups: Vec<SecurityResultGroup> = (0..10)
+            .map(|i| {
+                make_group(
+                    SecurityResultGroupKind::GeneralContext,
+                    vec![make_card(
+                        &format!("Article {i}"),
+                        &format!("https://same-domain.example.com/article-{i}"),
+                    )],
+                )
+            })
+            .collect();
+        let ids = SecurityIdentifiers::default();
+        let fetches = generate_security_suggested_fetches(&groups, &ids, None, None);
+        // Total cap should limit results
+        assert!(
+            fetches.len() <= 8,
+            "total cap should limit results to 8, got {}",
+            fetches.len()
+        );
+        // Domain cap should limit same-domain results
+        let same_domain = fetches
+            .iter()
+            .filter(|f| f.url.contains("same-domain.example.com"))
+            .count();
+        assert!(
+            same_domain <= 2,
+            "domain cap should limit same-domain results to 2, got {same_domain}"
+        );
+    }
+
+    #[test]
+    fn information_gain_is_populated() {
+        let groups = vec![make_group(
+            SecurityResultGroupKind::AuthoritativeAdvisories,
+            vec![make_card("Advisory", "https://osv.dev/vulnerability/CVE-2024-0001")],
+        )];
+        let ids = SecurityIdentifiers::default();
+        let fetches = generate_security_suggested_fetches(&groups, &ids, None, None);
+        assert!(!fetches.is_empty());
+        for fetch in &fetches {
+            assert!(
+                fetch.information_gain.is_some(),
+                "information_gain should be populated"
+            );
+        }
+    }
+
+    #[test]
+    fn code_evidence_source_role_propagates() {
+        let mut card = make_card("Source", "https://github.com/example/advisory");
+        card.metadata.source_kind = SourceKind::SecurityAdvisory;
+        card.metadata.code_evidence = Some(CodeEvidence {
+            source_role: Some(SourceRole::Documentation),
+            evidence_confidence: Some(EvidenceConfidence::Strong),
+            ..Default::default()
+        });
+        let group = make_group(
+            SecurityResultGroupKind::AuthoritativeAdvisories,
+            vec![card],
+        );
+        let ids = SecurityIdentifiers::default();
+        let fetches =
+            generate_security_suggested_fetches(&[group], &ids, None, None);
+        // The advisory should be scored and ranked
+        let advisory = fetches
+            .iter()
+            .find(|f| f.url.contains("github.com/example/advisory"))
+            .expect("advisory should be present");
+        assert!(
+            advisory.score.unwrap() > 0,
+            "advisory with code evidence should have positive score"
+        );
+    }
+
+    #[test]
+    fn empty_groups_still_generates_id_suggestions() {
+        let ids = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            ghsa_ids: vec!["GHSA-test-1234-abcd".to_string()],
+            osv_ids: vec!["GHSA-osv-5678-efgh".to_string()],
+            ..Default::default()
+        };
+        let fetches = generate_security_suggested_fetches(&[], &ids, None, None);
+        // All 3 are AuthoritativeAdvisories; diversity group cap limits to 2
+        assert_eq!(fetches.len(), 2);
+        assert!(fetches
+            .iter()
+            .all(|f| f.group == SecurityResultGroupKind::AuthoritativeAdvisories));
+    }
+
+    #[test]
+    fn group_label_roundtrips() {
+        let labels = [
+            "AuthoritativeAdvisories",
+            "VendorAdvisories",
+            "PackageAdvisories",
+            "KevEntries",
+            "PatchCommitsOrReleases",
+            "ExploitDiscussion",
+            "DefensiveGuidance",
+            "GeneralContext",
+            "Other",
+        ];
+        for label in labels {
+            let kind = group_kind_from_label(label);
+            assert_eq!(group_label(kind), label);
+        }
+    }
+
+    #[test]
+    fn advisory_group_gets_security_advisory_source_kind() {
+        assert_eq!(
+            source_kind_for_group(SecurityResultGroupKind::AuthoritativeAdvisories),
+            SourceKind::SecurityAdvisory
+        );
+        assert_eq!(
+            source_kind_for_group(SecurityResultGroupKind::VendorAdvisories),
+            SourceKind::SecurityAdvisory
+        );
+        assert_eq!(
+            source_kind_for_group(SecurityResultGroupKind::PackageAdvisories),
+            SourceKind::PackageRegistry
+        );
+        assert_eq!(
+            source_kind_for_group(SecurityResultGroupKind::DefensiveGuidance),
+            SourceKind::OfficialDocs
+        );
+        assert_eq!(
+            source_kind_for_group(SecurityResultGroupKind::GeneralContext),
+            SourceKind::Reference
+        );
     }
 }

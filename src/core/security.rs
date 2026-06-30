@@ -1064,6 +1064,15 @@ pub struct SecuritySuggestedFetch {
     pub reason: String,
     pub group: SecurityResultGroupKind,
     pub priority: u8,
+    /// Deterministic score for this suggestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<i32>,
+    /// Rank reasons explaining why this fetch was scored as it was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rank_reasons: Vec<String>,
+    /// Information gain estimate (0.0 to 1.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub information_gain: Option<f32>,
 }
 
 /// Input shape for the MCP `security_search` tool.

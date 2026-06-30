@@ -18,6 +18,7 @@ for the default configuration.
 - Queries DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, and optionally a self-hosted SearXNG instance (no API keys required)
 - Optional API-backed providers (Brave Search API, GitHub Code/Issues/Releases, GitLab Code/Issues/Releases, Gitea/Forgejo Code/Issues/Releases) with env-var secret loading
 - Deduplicates and ranks results with reciprocal rank fusion (RRF)
+- Deterministic fetch ranking with mode-aware scoring and diversity caps
 - Per-request timeout support with partial-result preservation
 - `web_search` MCP tool: live metasearch with intent/freshness retrieval hints and deterministic `SourceCard` metadata
 - `repo_search` MCP tool: structured repository evidence discovery with grouped result bundles, search profiles, subquery telemetry, and suggested fetches
@@ -1012,6 +1013,13 @@ selection degraded to generic providers.
 `Readme`, `Examples`, `Tests`, `SourceFiles`, `Issues`,
 `PullRequests`, `Releases`, `MigrationNotes`, `Changelog`,
 `CommunityDiscussion`, `Other`.
+
+**Suggested fetch ranking:** Suggested fetches are scored by a
+deterministic pipeline (`src/meta/fetch_ranking.rs`) that evaluates
+provenance stability, evidence confidence, source role, mode-aware
+scoring, and query context. Diversity caps prevent one domain or
+group from dominating. Each suggested fetch includes optional
+`score`, `rank_reasons`, and `information_gain` fields.
 
 **Suggested fetch URL priority (code evidence):** When a
 `SourceCard` has structured `code_evidence` metadata, suggested

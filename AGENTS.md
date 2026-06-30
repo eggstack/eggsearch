@@ -92,6 +92,7 @@ eggsearch/
       repo_grouping.rs   # deterministic grouping of SourceCards into repo bundles
       repo_planner.rs    # subquery generation for repo search bundles
       error_planner.rs   # error-aware subquery generation for exact-error mode
+      fetch_ranking.rs   # deterministic scoring model for suggested fetch candidates
       research_grouping.rs  # deterministic classification of research results
       research_planner.rs   # subquery generation for research search
       research_suggested_fetches.rs # suggested fetch URL generation for research groups
@@ -491,6 +492,43 @@ fetch URLs are selected in this order:
 5. `card.url` — final fallback for non-code results
 
 The priority is implemented in `src/meta/suggested_fetches.rs`.
+
+### Fetch Ranking Pipeline
+
+Suggested fetches are now ranked by a deterministic scoring model
+(`src/meta/fetch_ranking.rs`) instead of fixed rule ordering. The
+pipeline scores candidates on:
+
+- **Provenance stability**: commit-pinned raw permalinks (+30),
+  pinned browser permalinks (+20), structured repo_fetch locators
+  (+15), mutable raw URLs (+10), mutable browser URLs (+5).
+- **Evidence confidence**: exact (+15), strong (+10), weak (+5),
+  unknown (-5).
+- **Source role**: implementation (+10), documentation (+10),
+  readme (+8), example (+5), changelog/migration (+5), test (+3).
+- **Mode-aware scoring**: exact-error mode boosts issues (+25) and
+  PRs (+20); security mode boosts advisories (+30); package mode
+  boosts release notes (+20) and changelogs (+15); research mode
+  boosts official docs (+15) and reference implementations (+10).
+- **Query context**: symbol hint (+10 for source files), path hint
+  (+8), language hint (+5), file hint (+5), error context (+10),
+  version context (+5), package name (+8).
+
+Diversity caps prevent one domain or group from dominating:
+max 2 per domain, max 2 per group, total cap of 8.
+
+Each `RepoSuggestedFetch`, `SecuritySuggestedFetch`, and
+`ResearchSuggestedFetch` now includes optional `score`, `rank_reasons`,
+and `information_gain` fields. These are backward-compatible (omitted
+when empty via serde defaults).
+
+`FetchRankReason` is an enum with stable snake_case strings
+(e.g. `pinned_raw_permalink`, `authoritative_advisory`,
+`symbol_hint_match`). Agents can inspect `rank_reasons` to understand
+why a fetch was scored as it was.
+
+`FetchRankMode` controls which scoring signals are active:
+`Normal`, `ExactError`, `PackageMigration`, `Security`, `Research`.
 - `RepoSearchTelemetry`: `provider_selection`, `subqueries`,
   `deadline_exceeded`, `subqueries_interrupted`, `subqueries_skipped`
 - `ProviderSelectionTelemetry`: `profile_requested`, `profile_applied`,
@@ -585,6 +623,7 @@ sources for the package.
 - `src/meta/repo_planner.rs`: subquery generation for repo search
   bundles, producing per-aspect queries
 - `src/meta/error_planner.rs`: error-aware subquery generation for exact-error mode
+- `src/meta/fetch_ranking.rs`: deterministic scoring model for suggested fetch candidates
 - `src/meta/package_resolver.rs`: bounded HTTP registry lookups
 - `src/meta/suggested_fetches.rs`: suggested fetch URL generation
   for each group based on result metadata

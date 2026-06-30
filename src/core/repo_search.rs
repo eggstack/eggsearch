@@ -502,6 +502,21 @@ pub struct RepoSuggestedFetch {
     /// results with code evidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structured_repo_fetch: Option<super::repo_fetch::RepoFetchRequest>,
+    /// Deterministic score for this suggestion. Higher = more relevant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<i32>,
+    /// Rank reasons explaining why this fetch was scored as it was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rank_reasons: Vec<String>,
+    /// Information gain estimate (0.0 to 1.0). Higher = more novel evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub information_gain: Option<f32>,
+    /// Whether this fetch comes from a stable/pinned source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable: Option<bool>,
+    /// Recommended tool for this fetch (e.g. "repo_fetch", "web_fetch").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_tool: Option<String>,
 }
 
 /// Response from repo_search.
