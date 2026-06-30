@@ -818,10 +818,15 @@ impl LocalWorkspaceBackend {
     ///
     /// When `sanitize_output` is `true`, snippets are scanned for
     /// prompt-injection markers and control characters are stripped.
+    ///
+    /// When `repo_identity` is `Some`, each card's metadata includes
+    /// `local_repo_match` with the matched repository identity and
+    /// worktree state.
     pub fn to_source_cards(
         matches: &[LocalMatch],
         roots: &[(usize, PathBuf)],
         sanitize_output: bool,
+        repo_identity: Option<&crate::meta::local_inventory::LocalRepoIdentity>,
     ) -> Vec<SourceCard> {
         matches
             .iter()
@@ -880,6 +885,19 @@ impl LocalWorkspaceBackend {
                     evidence_reasons: vec![CodeEvidenceReason::ProviderPathMatch],
                 };
 
+                let local_repo_match = repo_identity.map(|rid| {
+                    crate::core::source_card::LocalRepoMatch {
+                        matched: true,
+                        remote_host: rid.matched_host.as_ref().map(|h| format!("{:?}", h).to_lowercase()),
+                        remote_owner: rid.matched_owner.clone(),
+                        remote_repo: rid.matched_repo.clone(),
+                        branch: rid.current_branch.clone(),
+                        commit: rid.current_commit.clone(),
+                        dirty_state: Some(rid.dirty_state.to_string()),
+                        root_name: Some(rid.root_name.clone()),
+                    }
+                });
+
                 let metadata = SourceMetadata {
                     source_kind: SourceKind::SourceFile,
                     domain: None,
@@ -889,6 +907,7 @@ impl LocalWorkspaceBackend {
                     release: None,
                     vulnerability: None,
                     code_evidence: Some(code_evidence),
+                    local_repo_match,
                 };
 
                 let raw_snippet = m
@@ -1103,7 +1122,7 @@ mod tests {
             symbol_kind: None,
         }];
         let roots = vec![(0, PathBuf::from("/test"))];
-        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false);
+        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false, None);
         assert_eq!(cards.len(), 1);
         assert_eq!(cards[0].trust, TrustLevel::LocalTrusted);
         assert!(cards[0].url.starts_with("workspace://"));
@@ -1322,7 +1341,7 @@ mod tests {
             symbol_kind: None,
         }];
         let roots = vec![(0, PathBuf::from("/test"))];
-        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, true);
+        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, true, None);
         assert_eq!(cards.len(), 1);
         assert!(
             cards[0].trust_markers.injection_hits > 0,
@@ -1348,7 +1367,7 @@ mod tests {
             symbol_kind: None,
         }];
         let roots = vec![(0, PathBuf::from("/test"))];
-        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false);
+        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false, None);
         assert_eq!(cards.len(), 1);
         assert_eq!(
             cards[0].trust_markers.injection_hits, 0,

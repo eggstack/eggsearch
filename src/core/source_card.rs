@@ -241,6 +241,40 @@ pub struct SourceMetadata {
     /// Structured code evidence with derived URLs, source role, and match metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_evidence: Option<crate::core::code_evidence::CodeEvidence>,
+    /// Local repository match metadata, present when the result came
+    /// from a local workspace checkout that matches the requested repo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_repo_match: Option<LocalRepoMatch>,
+}
+
+/// Metadata for a local repository match, attached to local workspace
+/// SourceCards when the checkout matches the requested repo identity.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct LocalRepoMatch {
+    /// Whether this result came from a local checkout matching the
+    /// requested repository.
+    pub matched: bool,
+    /// The matched remote host (e.g. `github`, `gitlab`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_host: Option<String>,
+    /// The matched remote owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_owner: Option<String>,
+    /// The matched remote repo name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_repo: Option<String>,
+    /// Current branch of the local checkout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Current commit SHA of the local checkout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// Working tree dirty state: `clean`, `dirty`, `unknown`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dirty_state: Option<String>,
+    /// Root directory name of the local checkout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_name: Option<String>,
 }
 
 /// A single normalized result returned to MCP callers.
@@ -305,6 +339,7 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
         && m.release.is_none()
         && m.vulnerability.is_none()
         && m.code_evidence.is_none()
+        && m.local_repo_match.is_none()
 }
 
 impl SourceCard {

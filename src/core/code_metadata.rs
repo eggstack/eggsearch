@@ -11,7 +11,7 @@ use crate::core::source_card::SourceKind;
 
 /// Identifies the code-hosting platform behind a URL.
 #[derive(
-    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum CodeHost {

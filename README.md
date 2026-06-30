@@ -1664,9 +1664,11 @@ max_indexed_files = 50000
 | `respect_gitignore` | `true` | Skip gitignored paths. |
 | `follow_symlinks` | `false` | Follow symbolic links. |
 
-When `local.enabled = true`, `repo_search` can return local files alongside remote results. Local results use `trust = local_trusted` and workspace pseudo-URLs (`workspace://root-name/path`). When a `symbol` hint is present, the backend scans file content for function, struct, enum, trait, and class definitions across Rust, Python, JavaScript/TypeScript, Go, Java, and C/C++. Symbol matches receive a score boost to promote definition hits above generic path/text matches.
+When `local.enabled = true`, `repo_search` can return local files alongside remote results. The backend automatically discovers Git repositories under configured roots, normalizes remote URLs to structured identities, and matches incoming `repo_search` queries against local checkouts to attach repository identity metadata to local results. Local results use `trust = local_trusted` and workspace pseudo-URLs (`workspace://root-name/path`). When a `symbol` hint is present, the backend scans file content for function, struct, enum, trait, and class definitions across Rust, Python, JavaScript/TypeScript, Go, Java, and C/C++. Symbol matches receive a score boost to promote definition hits above generic path/text matches.
 
 `repo_fetch` with `host = "workspace"` reads files directly from the local filesystem, supporting line-range extraction. This bypasses `[fetch].enabled` since no network is involved.
+
+**Local repository identity and routing:** When `[local].enabled = true`, eggsearch automatically discovers Git repositories under configured roots and normalizes their remote URLs to structured identities (host, owner, repo). When `repo_search` queries a specific `owner/repo` that matches a local checkout, local results include `local_repo_match` metadata with the remote host, owner, repo name, current branch and commit SHA, working tree dirty state (clean/dirty/unknown), and detected package manifests. This helps agents prefer local trusted source over remote default-branch files. The adapter emits `local_repo_match:` and `local_repo_dirty:` warnings for visibility.
 
 ## Project Structure
 
@@ -2028,6 +2030,10 @@ prefixes. Agents can match on these prefixes for programmatic handling.
 **Local fetch warnings:**
 - `local_content_marker_warning:` — prompt injection markers detected in local workspace content
 - `workspace_fetch_truncated_by_max_chars` — local file output was clamped to max_chars budget
+
+**Local inventory warnings:**
+- `local_repo_match:` — local checkout found matching the requested repo
+- `local_repo_dirty:` — local checkout is dirty (uncommitted changes)
 
 ## Testing
 

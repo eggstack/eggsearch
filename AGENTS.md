@@ -104,6 +104,7 @@ eggsearch/
       security_suggested_fetches.rs # suggested fetch URL generation for security groups
       package_resolver.rs  # bounded HTTP registry lookups for package resolution
       local_backend.rs     # LocalWorkspaceBackend: bounded file walking, scoring, SourceCard conversion
+      local_inventory.rs    # local repo identity: remote URL normalization, worktree state, manifest detection
       dispatch.rs          # bounded parallel dispatch for multi-subquery searches
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
@@ -239,7 +240,7 @@ eggsearch/
   - `repo_fetch`: `remote_hosts`, `workspace` (enabled), `line_ranges`, `context_lines`, `max_chars_enforced`
   - `repo_search`: `profiles`, `package_resolution`, `local_workspace` (enabled), `subquery_telemetry`
   - `batch_fetch`: `max_items`, `max_items_cap`, `max_chars_per_item`, `max_total_chars`, `concurrency`
-  - `local_workspace`: `enabled`, `symbol_enrichment`
+  - `local_workspace`: `enabled`, `symbol_enrichment` (includes `local_repo_match` metadata)
 - This is the capability discovery endpoint for MCP clients. Clients
   can use it to determine which specialized tools are available before
   attempting to use them.
@@ -255,6 +256,11 @@ eggsearch/
 The `SourceMetadata` also includes optional `issue: Option<IssueMetadata>` and
 `release: Option<ReleaseMetadata>` fields for structured issue/release metadata
 from native GitHub providers.
+
+When a local result comes from a Git checkout matching the requested repo,
+`SourceMetadata` also includes an optional `local_repo_match` field with
+repository identity and worktree state (branch, commit, dirty state,
+remotes, and detected manifests).
 
 Repo metadata is deterministic and advisory. Agents should use it to choose
 which result to fetch, but must still treat snippets and fetched content as
@@ -1061,6 +1067,40 @@ the operator has configured `[local]` in the config file.
 **Provider status:**
 - `local_workspace` appears in `provider_status` when enabled
 - `kind: "local"`, `capabilities: code_search, path_filter, language_filter`
+
+### Local Inventory
+
+The local inventory module (`src/meta/local_inventory.rs`) provides Git
+worktree discovery, remote URL normalization, identity matching, and
+manifest detection for local checkouts. It lets `repo_search` attach
+repository identity metadata to local source results.
+
+**Key types:**
+- `NormalizedRepoId`: normalized remote URL identity with `host`,
+  `owner`, `repo` fields. Derived from any remote URL form.
+- `LocalRepoIdentity`: identity and state of a local Git checkout —
+  `root` (filesystem path), `remotes` (Vec of `NormalizedRepoId`),
+  `branch`, `commit`, `dirty` state, and `manifests`.
+- `LocalDirtyState`: `Clean`, `Dirty`, `Unknown`, `NotGit`
+- `LocalManifestSummary`: detected package manifests at the repo root
+  (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, etc.)
+
+**Functions:**
+- `normalize_remote_url()`: parses HTTPS, SSH scp-style
+  (`git@host:owner/repo.git`), and SSH URL forms
+  (`ssh://git@host/owner/repo.git`) into a `NormalizedRepoId`.
+- `discover_local_repos()`: walks configured `[local].roots` to find
+  Git repos by detecting `.git` directories and reading remotes.
+- `match_local_repo()`: matches an incoming repo locator (host/owner/
+  repo) against discovered `LocalRepoIdentity` values.
+
+**Integration:** The adapter's `repo_search` flow discovers local repos
+and adds `local_repo_match` metadata to local `SourceCard` results when
+a local checkout matches the requested repo identity.
+
+**Warnings:**
+- `local_repo_match:` — local checkout found matching the requested repo
+- `local_repo_dirty:` — local checkout is dirty (uncommitted changes)
 
 ### Research Search
 

@@ -781,11 +781,50 @@ impl MetadataSearchAdapter {
                 };
                 let local_result = backend.search(&local_req).await;
                 let roots = backend.roots();
+
+                // Discover local repo identities and match to request
+                let inventory = crate::meta::local_inventory::discover_local_repos(
+                    &crate::core::local::LocalConfig {
+                        enabled: true,
+                        roots: roots.iter().map(|(_, p)| p.clone()).collect(),
+                        ..Default::default()
+                    },
+                    2,
+                );
+                let matched_repo = req.owner.as_deref().and_then(|owner| {
+                    req.repo.as_deref().and_then(|repo| {
+                        crate::meta::local_inventory::match_local_repo(
+                            &inventory,
+                            req.host.as_ref(),
+                            owner,
+                            repo,
+                        )
+                    })
+                });
+
+                if let Some(rid) = matched_repo {
+                    local_warnings.push(SearchWarning::new(
+                        "local_workspace",
+                        format!(
+                            "local_repo_match: using local checkout for {}/{}",
+                            rid.matched_owner.as_deref().unwrap_or("?"),
+                            rid.matched_repo.as_deref().unwrap_or("?"),
+                        ),
+                    ));
+                    if rid.dirty_state == crate::meta::local_inventory::LocalDirtyState::Dirty {
+                        local_warnings.push(SearchWarning::new(
+                            "local_workspace",
+                            "local_repo_dirty: local checkout has uncommitted changes",
+                        ));
+                    }
+                }
+
                 let local_cards =
                     crate::meta::local_backend::LocalWorkspaceBackend::to_source_cards(
                         &local_result.matches,
                         &roots,
                         self.sanitize_output,
+                        matched_repo,
                     );
                 if local_result.timed_out {
                     local_warnings.push(SearchWarning::new(
@@ -2044,6 +2083,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             code_evidence: code.as_ref().and_then(|c| {
                 crate::core::code_evidence::build_code_evidence(c, Some(&a.url), code_search_symbol)
             }),
+            local_repo_match: None,
         },
         quality: None,
     };
@@ -2625,6 +2665,7 @@ mod tests {
                 release: None,
                 vulnerability: None,
                 code_evidence: None,
+                local_repo_match: None,
             }),
             SourceCard::new(
                 "Docs.rs",
@@ -2642,6 +2683,7 @@ mod tests {
                 release: None,
                 vulnerability: None,
                 code_evidence: None,
+                local_repo_match: None,
             }),
         ];
         apply_intent_reranking(

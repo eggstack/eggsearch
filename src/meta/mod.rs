@@ -19,6 +19,9 @@ mod grouping;
 /// Local workspace search backend: bounded file walking, scoring, and
 /// SourceCard conversion.
 pub mod local_backend;
+/// Local repository inventory: Git worktree discovery, remote URL
+/// normalization, identity matching, and manifest detection.
+pub mod local_inventory;
 #[cfg(feature = "mock")]
 pub mod mock;
 /// Package registry resolver: bounded HTTP lookups for crates.io, PyPI, npm.
