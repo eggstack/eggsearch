@@ -12039,6 +12039,106 @@ async fn batch_fetch_preserves_order_and_indices_under_concurrency() {
 }
 
 #[tokio::test]
+async fn batch_fetch_preserves_result_payloads_when_wave_completes_out_of_order() {
+    use httpmock::prelude::*;
+
+    // Two separate servers with different delays so the second item
+    // (fast server) is likely to complete before the first (slow server).
+    // This tests the core bug: JoinSet::join_next() returns whichever
+    // task finishes first, so without keyed result association the
+    // fast item's payload would be attached to the slow item's slot.
+    let slow = MockServer::start();
+    slow.mock(|when, then| {
+        when.method(GET).path("/slow");
+        then.delay(std::time::Duration::from_millis(200))
+            .status(200)
+            .header("content-type", "text/plain")
+            .body("SLOW_PAYLOAD");
+    });
+
+    let fast = MockServer::start();
+    fast.mock(|when, then| {
+        when.method(GET).path("/fast");
+        then.delay(std::time::Duration::from_millis(5))
+            .status(200)
+            .header("content-type", "text/plain")
+            .body("FAST_PAYLOAD");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 2;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    // Item 0 -> slow server, item 1 -> fast server
+    let items = vec![
+        eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: slow.url("/slow"),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        },
+        eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: fast.url("/fast"),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        },
+    ];
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results");
+    assert_eq!(results.len(), 2);
+
+    // result[0] must be item 0 (slow server), regardless of completion order.
+    // The BatchFetchResult has a nested `response` field containing the
+    // web_fetch payload (url, text, etc.).
+    assert_eq!(results[0]["index"], 0);
+    assert_eq!(results[0]["ok"], true);
+    let resp0 = &results[0]["response"];
+    assert!(
+        resp0["url"].as_str().unwrap().contains("/slow"),
+        "result[0] URL should be from slow server, got: {}",
+        resp0["url"]
+    );
+    assert!(
+        resp0["text"].as_str().unwrap().contains("SLOW_PAYLOAD"),
+        "result[0] text should be SLOW_PAYLOAD, got: {}",
+        resp0["text"]
+    );
+
+    // result[1] must be item 1 (fast server)
+    assert_eq!(results[1]["index"], 1);
+    assert_eq!(results[1]["ok"], true);
+    let resp1 = &results[1]["response"];
+    assert!(
+        resp1["url"].as_str().unwrap().contains("/fast"),
+        "result[1] URL should be from fast server, got: {}",
+        resp1["url"]
+    );
+    assert!(
+        resp1["text"].as_str().unwrap().contains("FAST_PAYLOAD"),
+        "result[1] text should be FAST_PAYLOAD, got: {}",
+        resp1["text"]
+    );
+}
+
+#[tokio::test]
 async fn batch_fetch_concurrent_wave_budget_does_not_exceed_total_cap() {
     use httpmock::prelude::*;
     let server = MockServer::start();
