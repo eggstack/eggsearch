@@ -731,7 +731,9 @@ fake `host: "github"` fields.
   optional `symbol_kind` (kind of symbol: function, struct, enum,
   etc.), optional `match_text` (text to search for in the file),
   optional `expand_to_block` (expand resolved range to enclosing
-  block), optional `max_block_lines` (cap expanded block size)
+  block), optional `max_block_lines` (cap expanded block size),
+  optional `prefer_local` (when true, resolve to local workspace
+  if a matching checkout exists; default false)
 
 **Response type:**
 - `RepoFetchResponse`: `locator` (echoed request locator), `text`
@@ -1037,6 +1039,10 @@ the operator has configured `[local]` in the config file.
 - `repo_fetch` with `host = "workspace"` reads files directly from the
   local filesystem. `owner` is the root directory name, `repo` is the
   root-relative file path.
+- `repo_fetch` with `prefer_local: true` resolves a remote-style request
+  (owner/repo/path) to a local workspace checkout when a matching
+  checkout exists under the configured roots. Falls back to remote
+  fetch when no local match is found.
 - Supports `line_start`, `line_end`, `context_before`, `context_after`
   for line-range extraction.
 - Returns `trust = local_trusted` and uses workspace pseudo-URLs.
@@ -1050,6 +1056,50 @@ the operator has configured `[local]` in the config file.
   `local_content_marker_warning` emitted on hits. Source lines are NOT
   framed (no `<<<EXTERNAL_UNTRUSTED>>>` wrappers). `TrustMarkers` counts
   are populated in the response.
+
+### Local Inventory
+
+The local inventory module (`src/meta/local_inventory.rs`) provides Git
+worktree discovery, remote URL normalization, identity matching, and
+manifest detection for local checkouts. It lets `repo_search` and
+`repo_map` attach repository identity metadata to local results.
+
+**Key types:**
+- `NormalizedRepoId`: normalized remote URL identity with `host`,
+  `host_domain`, `owner`, `repo` fields. Derived from any remote URL form.
+- `LocalRepoIdentity`: identity and state of a local Git checkout —
+  `root` (filesystem path), `remotes` (Vec of `NormalizedRepoId`),
+  `branch`, `commit`, `dirty` state, and `manifests`.
+- `LocalDirtyState`: `Clean`, `Dirty`, `Unknown`, `NotGit`
+- `LocalManifestSummary`: detected package manifests at the repo root
+  (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, etc.)
+
+**Functions:**
+- `normalize_remote_url()`: parses HTTPS, SSH scp-style
+  (`git@host:owner/repo.git`), and SSH URL forms
+  (`ssh://git@host/owner/repo.git`) into a `NormalizedRepoId`.
+- `discover_local_repos()`: walks configured `[local].roots` to find
+  Git repos by detecting `.git` directories and reading remotes.
+- `match_local_repo()`: matches an incoming repo locator (host/owner/
+  repo) against discovered `LocalRepoIdentity` values.
+
+**Integration:** The adapter's `repo_search` flow discovers local repos
+and adds `local_repo_match` metadata to local `SourceCard` results when
+a local checkout matches the requested repo identity. Matched local
+results receive a +50 score boost to promote them above remote results.
+
+**Warnings:**
+- `local_repo_match:` — local checkout found matching the requested repo
+- `local_repo_dirty:` — local checkout is dirty (uncommitted changes)
+- `local_repo_state_unknown` — dirty state could not be determined
+
+### Repo Map Local Checkout
+
+`repo_map` discovers local checkouts and includes a `local_checkout`
+field in the response when a matching local Git repository is found.
+This field contains root name, path, remote identity, branch, commit,
+dirty state, and detected manifests — providing coding agents with
+immediate local context without additional discovery calls.
 
 **Telemetry:**
 - `providers_queried` includes `"local_workspace"` when active

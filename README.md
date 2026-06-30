@@ -1666,9 +1666,9 @@ max_indexed_files = 50000
 
 When `local.enabled = true`, `repo_search` can return local files alongside remote results. The backend automatically discovers Git repositories under configured roots, normalizes remote URLs to structured identities, and matches incoming `repo_search` queries against local checkouts to attach repository identity metadata to local results. Local results use `trust = local_trusted` and workspace pseudo-URLs (`workspace://root-name/path`). When a `symbol` hint is present, the backend scans file content for function, struct, enum, trait, and class definitions across Rust, Python, JavaScript/TypeScript, Go, Java, and C/C++. Symbol matches receive a score boost to promote definition hits above generic path/text matches.
 
-`repo_fetch` with `host = "workspace"` reads files directly from the local filesystem, supporting line-range extraction. This bypasses `[fetch].enabled` since no network is involved.
+`repo_fetch` with `host = "workspace"` reads files directly from the local filesystem, supporting line-range extraction. This bypasses `[fetch].enabled` since no network is involved. `repo_fetch` with `prefer_local: true` resolves a remote-style request (owner/repo/path) to a local workspace checkout when a matching checkout exists under the configured roots, falling back to remote fetch when no local match is found.
 
-**Local repository identity and routing:** When `[local].enabled = true`, eggsearch automatically discovers Git repositories under configured roots and normalizes their remote URLs to structured identities (host, owner, repo). When `repo_search` queries a specific `owner/repo` that matches a local checkout, local results include `local_repo_match` metadata with the remote host, owner, repo name, current branch and commit SHA, working tree dirty state (clean/dirty/unknown), and detected package manifests. This helps agents prefer local trusted source over remote default-branch files. The adapter emits `local_repo_match:` and `local_repo_dirty:` warnings for visibility.
+**Local repository identity and routing:** When `[local].enabled = true`, eggsearch automatically discovers Git repositories under configured roots and normalizes their remote URLs to structured identities (host, owner, repo). When `repo_search` queries a specific `owner/repo` that matches a local checkout, local results include `local_repo_match` metadata with the remote host, owner, repo name, current branch and commit SHA, working tree dirty state (clean/dirty/unknown), and detected package manifests. Matched local results receive a +50 score boost to promote them above remote results. `repo_map` also discovers local checkouts and includes a `local_checkout` field with root name, path, remote identity, branch, commit, dirty state, and detected manifests. The adapter emits `local_repo_match:`, `local_repo_dirty:`, and `local_repo_state_unknown` warnings for visibility.
 
 ## Project Structure
 
@@ -2034,6 +2034,8 @@ prefixes. Agents can match on these prefixes for programmatic handling.
 **Local inventory warnings:**
 - `local_repo_match:` — local checkout found matching the requested repo
 - `local_repo_dirty:` — local checkout is dirty (uncommitted changes)
+- `local_repo_state_unknown:` — could not determine working tree state
+- `local_checkout_match:` — local checkout found for repo_map request
 
 ## Testing
 

@@ -400,6 +400,10 @@ pub struct RepoFetchArgs {
     /// Maximum lines when expanding to a block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_block_lines: Option<usize>,
+    /// When true and a matching local checkout exists, read the file
+    /// from the local workspace instead of fetching remotely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefer_local: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1149,6 +1153,58 @@ pub async fn run_repo_fetch(
         }
     }
 
+    // --- prefer_local: resolve to local workspace when enabled ---
+    if args.prefer_local.unwrap_or(false) {
+        if let Some(backend) = state.local_backend.as_deref() {
+            if backend.is_enabled() {
+                let roots = backend.roots();
+                let inventory = crate::meta::local_inventory::discover_local_repos(
+                    &crate::core::local::LocalConfig {
+                        enabled: true,
+                        roots: roots.iter().map(|(_, p)| p.clone()).collect(),
+                        ..Default::default()
+                    },
+                    2,
+                );
+                let matched = crate::meta::local_inventory::match_local_repo(
+                    &inventory,
+                    args.host.as_ref().and_then(|h| match h.to_lowercase().as_str() {
+                        "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
+                        "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
+                        _ => None,
+                    }).as_ref(),
+                    &args.owner,
+                    &args.repo,
+                );
+                if let Some(rid) = matched {
+                    // Redirect to workspace fetch using the matched root
+                    let ws_args = RepoFetchArgs {
+                        host: Some("workspace".to_string()),
+                        owner: rid.root_name.clone(),
+                        repo: args.path.clone(),
+                        ref_name: None,
+                        commit_sha: None,
+                        path: args.path.clone(),
+                        line_start: args.line_start,
+                        line_end: args.line_end,
+                        context_before: args.context_before,
+                        context_after: args.context_after,
+                        max_chars: args.max_chars,
+                        timeout_ms: args.timeout_ms,
+                        test_fetch_url: None,
+                        symbol: args.symbol.clone(),
+                        symbol_kind: args.symbol_kind.clone(),
+                        match_text: args.match_text.clone(),
+                        expand_to_block: args.expand_to_block,
+                        max_block_lines: args.max_block_lines,
+                        prefer_local: None,
+                    };
+                    return run_workspace_fetch(state, ws_args).await;
+                }
+            }
+        }
+    }
+
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
         return Err(ToolError::Internal(web_fetch_denied_message()));
     }
@@ -1212,6 +1268,7 @@ pub async fn run_repo_fetch(
         match_text: args.match_text.clone(),
         expand_to_block: args.expand_to_block,
         max_block_lines: args.max_block_lines,
+        prefer_local: args.prefer_local,
     };
 
     req.validate(state.config.fetch.max_chars_cap)
@@ -1473,6 +1530,60 @@ pub async fn run_repo_map(
 
     // Currently always use fallback mode since no native tree API provider exists.
     let mut response = crate::meta::repo_mapper::build_fallback_response(&req);
+
+    // Discover local checkout for the requested repo
+    if let Some(backend) = state.local_backend.as_deref() {
+        if backend.is_enabled() {
+            let roots = backend.roots();
+            let inventory = crate::meta::local_inventory::discover_local_repos(
+                &crate::core::local::LocalConfig {
+                    enabled: true,
+                    roots: roots.iter().map(|(_, p)| p.clone()).collect(),
+                    ..Default::default()
+                },
+                2,
+            );
+            let matched = crate::meta::local_inventory::match_local_repo(
+                &inventory,
+                req.host.as_ref(),
+                &req.owner,
+                &req.repo,
+            );
+            if let Some(rid) = matched {
+                response.local_checkout = Some(crate::core::repo_map::RepoMapLocalCheckout {
+                    root_name: rid.root_name.clone(),
+                    root_path: rid.root_path.display().to_string(),
+                    remote_host: rid.matched_host.as_ref().map(|h| format!("{:?}", h).to_lowercase()),
+                    remote_owner: rid.matched_owner.clone(),
+                    remote_repo: rid.matched_repo.clone(),
+                    branch: rid.current_branch.clone(),
+                    commit: rid.current_commit.clone(),
+                    dirty_state: rid.dirty_state.to_string(),
+                    manifests: rid.manifests.iter().map(|m| {
+                        crate::core::repo_map::RepoMapLocalManifest {
+                            path: m.path.clone(),
+                            ecosystem: m.ecosystem.to_string(),
+                            package_name: m.package_name.clone(),
+                        }
+                    }).collect(),
+                });
+                response.warnings.push(crate::core::result::SearchWarning::new(
+                    "local_workspace",
+                    format!(
+                        "local_checkout_match: local checkout found for {}/{} at {}",
+                        req.owner, req.repo,
+                        rid.root_path.display(),
+                    ),
+                ));
+                if rid.dirty_state == crate::meta::local_inventory::LocalDirtyState::Dirty {
+                    response.warnings.push(crate::core::result::SearchWarning::new(
+                        "local_workspace",
+                        "local_repo_dirty: local checkout has uncommitted changes",
+                    ));
+                }
+            }
+        }
+    }
 
     // Add fallback subqueries as informational context
     let subqueries =
@@ -1946,6 +2057,7 @@ fn make_batch_fetch_future(
                 match_text: None,
                 expand_to_block: None,
                 max_block_lines: None,
+                prefer_local: None,
             };
             Box::pin(async move {
                 let _permit = semaphore

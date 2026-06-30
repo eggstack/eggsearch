@@ -58,6 +58,7 @@ fn build_structured_fetch(
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         }),
         _ => None,
     }
@@ -270,6 +271,7 @@ pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
              results are from search-based discovery",
         )],
         trust_markers: TrustMarkers::default(),
+        local_checkout: None,
         telemetry: None,
     }
 }

@@ -8025,6 +8025,7 @@ async fn repo_fetch_validation_error_empty_owner() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8061,6 +8062,7 @@ async fn repo_fetch_validation_error_empty_path() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8097,6 +8099,7 @@ async fn repo_fetch_validation_error_path_traversal() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8133,6 +8136,7 @@ async fn repo_fetch_validation_error_absolute_path() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8169,6 +8173,7 @@ async fn repo_fetch_validation_error_inverted_line_range() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8205,6 +8210,7 @@ async fn repo_fetch_validation_error_zero_line_start() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8241,6 +8247,7 @@ async fn repo_fetch_validation_error_zero_line_end() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8277,6 +8284,7 @@ async fn repo_fetch_validation_error_excessive_context() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8313,6 +8321,7 @@ async fn repo_fetch_validation_error_max_chars_above_cap() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8349,6 +8358,7 @@ async fn repo_fetch_validation_error_max_chars_zero() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8385,6 +8395,7 @@ async fn repo_fetch_validation_error_unsupported_host_codeberg() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8422,6 +8433,7 @@ async fn repo_fetch_validation_error_unknown_host_cli_string() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8692,6 +8704,7 @@ async fn repo_fetch_line_range_via_mock() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -8789,6 +8802,7 @@ async fn repo_fetch_line_range_with_context_via_mock() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -8849,6 +8863,7 @@ async fn repo_fetch_429_via_run_repo_fetch() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -8888,6 +8903,7 @@ async fn repo_fetch_fetch_disabled_by_policy() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await;
@@ -9110,6 +9126,7 @@ async fn workspace_fetch_reads_local_file() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
+            prefer_local: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -9184,6 +9201,7 @@ async fn workspace_fetch_rejects_unknown_root() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
+            prefer_local: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -9242,6 +9260,7 @@ async fn workspace_fetch_rejects_path_traversal() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
+            prefer_local: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -9345,6 +9364,7 @@ async fn repo_fetch_github_locator_serializes_as_remote() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9407,6 +9427,7 @@ async fn repo_fetch_gitlab_locator_serializes_as_remote() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9473,6 +9494,7 @@ async fn repo_fetch_workspace_locator_serializes_as_workspace() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9557,6 +9579,7 @@ async fn workspace_fetch_enforces_max_chars() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9631,6 +9654,7 @@ async fn workspace_fetch_max_chars_lines_text_consistency() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9704,6 +9728,7 @@ async fn workspace_fetch_with_context_and_line_range() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9779,6 +9804,7 @@ async fn workspace_fetch_scans_injection_markers() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9854,6 +9880,7 @@ async fn workspace_fetch_trust_markers_populated() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -9926,6 +9953,7 @@ async fn workspace_fetch_source_not_framed() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -10103,6 +10131,7 @@ async fn repo_fetch_commit_sha_populates_both_permalink_fields() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -10768,6 +10797,7 @@ async fn repo_fetch_remote_max_chars_enforced() {
         match_text: None,
         expand_to_block: None,
         max_block_lines: None,
+            prefer_local: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -10827,6 +10857,7 @@ async fn repo_fetch_gitlab_commit_sha_populates_permalink_fields() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -10909,6 +10940,7 @@ async fn repo_fetch_gitlab_nested_namespace_locator() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -12947,6 +12979,7 @@ async fn repo_fetch_symbol_definition_via_mock() {
             match_text: None,
             expand_to_block: Some(true),
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -13033,6 +13066,7 @@ async fn repo_fetch_symbol_fn_via_mock() {
             match_text: None,
             expand_to_block: Some(true),
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -13105,6 +13139,7 @@ async fn repo_fetch_match_text_via_mock() {
             match_text: Some("MyApp".into()),
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -13163,6 +13198,7 @@ async fn repo_fetch_explicit_range_no_expand() {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await
@@ -13220,6 +13256,7 @@ async fn repo_fetch_symbol_not_found_warns() {
             match_text: None,
             expand_to_block: Some(true),
             max_block_lines: None,
+            prefer_local: None,
         },
     )
     .await

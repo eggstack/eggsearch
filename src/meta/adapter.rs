@@ -817,6 +817,12 @@ impl MetadataSearchAdapter {
                             "local_repo_dirty: local checkout has uncommitted changes",
                         ));
                     }
+                    if rid.dirty_state == crate::meta::local_inventory::LocalDirtyState::Unknown {
+                        local_warnings.push(SearchWarning::new(
+                            "local_workspace",
+                            "local_repo_state_unknown: could not determine working tree state of local checkout",
+                        ));
+                    }
                 }
 
                 let local_cards =
@@ -840,6 +846,16 @@ impl MetadataSearchAdapter {
                 }
                 cards.extend(local_cards);
                 local_queried = true;
+
+                // Boost local results that match the requested repo
+                // so they rank above remote results in grouping.
+                for card in &mut cards {
+                    if card.metadata.local_repo_match.as_ref().is_some_and(|m| m.matched) {
+                        if let Some(ref mut score) = card.score {
+                            *score += 50.0;
+                        }
+                    }
+                }
             }
         }
 

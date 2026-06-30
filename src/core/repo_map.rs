@@ -315,6 +315,10 @@ pub struct RepoMapResponse {
     /// Trust and sanitization metadata for the response.
     #[serde(default)]
     pub trust_markers: TrustMarkers,
+    /// Local checkout metadata, present when a matching local
+    /// repository was found under the configured workspace roots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_checkout: Option<RepoMapLocalCheckout>,
     /// Telemetry for the repo map response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<RepoMapTelemetry>,
@@ -332,6 +336,50 @@ pub struct RepoMapTelemetry {
     /// Human-readable mode description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode_reason: Option<String>,
+}
+
+/// Local checkout metadata for a repo map response.
+///
+/// Present when a matching local Git checkout was found under the
+/// configured workspace roots.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoMapLocalCheckout {
+    /// Root directory name of the local checkout.
+    pub root_name: String,
+    /// Canonical path to the local checkout root.
+    pub root_path: String,
+    /// Remote host (e.g. `github`, `gitlab`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_host: Option<String>,
+    /// Remote owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_owner: Option<String>,
+    /// Remote repo name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_repo: Option<String>,
+    /// Current branch of the local checkout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Current commit SHA.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// Working tree dirty state: `clean`, `dirty`, `unknown`.
+    pub dirty_state: String,
+    /// Detected package manifests.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub manifests: Vec<RepoMapLocalManifest>,
+}
+
+/// A detected package manifest in a local checkout.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoMapLocalManifest {
+    /// Manifest file path relative to the repo root.
+    pub path: String,
+    /// Detected ecosystem (e.g. `crates_io`, `npm`, `pypi`).
+    pub ecosystem: String,
+    /// Package name, if available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_name: Option<String>,
 }
 
 /// Deterministically classify a file path as an important file.
@@ -1062,6 +1110,7 @@ mod tests {
             providers_failed: vec![],
             warnings: vec![],
             trust_markers: TrustMarkers::default(),
+            local_checkout: None,
             telemetry: None,
         };
 

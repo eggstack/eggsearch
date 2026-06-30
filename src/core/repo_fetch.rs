@@ -128,6 +128,11 @@ pub struct RepoFetchRequest {
     /// expanded span to prevent oversized returns. Defaults to 200.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_block_lines: Option<usize>,
+    /// When true and a matching local checkout exists, read the file
+    /// from the local workspace instead of fetching remotely. Defaults
+    /// to false for backward compatibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefer_local: Option<bool>,
 }
 
 /// A single line in the fetched result.
@@ -547,6 +552,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         req.validate(50000).unwrap();
     }
@@ -571,6 +577,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("owner"));
@@ -596,6 +603,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("repo"));
@@ -621,6 +629,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("path"));
@@ -646,6 +655,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("relative"));
@@ -671,6 +681,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("traversal"));
@@ -696,6 +707,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("line_start"));
@@ -721,6 +733,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -746,6 +759,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -771,6 +785,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("context_before"));
@@ -796,6 +811,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("exceeds server cap"));
@@ -821,6 +837,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("> 0"));
@@ -846,6 +863,7 @@ mod tests {
             match_text: None,
             expand_to_block: None,
             max_block_lines: None,
+            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("not supported"));

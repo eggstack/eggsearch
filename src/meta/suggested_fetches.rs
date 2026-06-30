@@ -64,6 +64,7 @@ fn build_structured_fetch(
                 | Some(crate::core::code_evidence::SourceRole::Example)
         )),
         max_block_lines: None,
+        prefer_local: None,
     })
 }
 
