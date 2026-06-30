@@ -8,14 +8,13 @@
 use std::collections::HashSet;
 
 use crate::core::code_evidence::EvidenceConfidence;
-use crate::core::query::SearchIntent;
 use crate::core::security::{
     self, AffectedPackageSummary, SecurityContext, SecurityIdentifiers, SecuritySearchRequest,
     SecuritySearchResponse, VulnerabilityMetadata, VulnerabilitySummary,
 };
 use crate::core::SearchWarning;
-use crate::core::WebSearchRequest;
 use crate::meta::engines::kev::KevClient;
+use crate::meta::response::WebSearchResponse;
 use crate::meta::security_grouping::group_security_results;
 use crate::meta::security_suggested_fetches::generate_security_suggested_fetches;
 use crate::meta::MetadataSearchAdapter;
@@ -46,23 +45,33 @@ pub async fn run_security_search_plan(
         req.version.as_deref(),
     );
 
-    // 2. Build web_search request with security intent for generic fallback
+    // 2. Run security search via parallel dispatcher
     let effective_providers = if req.providers.is_empty() {
         adapter.provider_ids().to_vec()
     } else {
         req.providers.clone()
     };
 
-    let mut web_req = WebSearchRequest::new(req.query.clone());
-    web_req.intent = SearchIntent::Security;
-    web_req.freshness = req.freshness;
-    web_req.max_results = Some(effective_max);
-    web_req.timeout_ms = req.timeout_ms;
-    web_req.providers = effective_providers.clone();
-
-    let web_resp = adapter
-        .web_search(&web_req, effective_max, max_results_cap)
+    let (results, dispatch_warnings, trust_markers) = adapter
+        .security_search_subqueries(
+            &req.query,
+            &effective_providers,
+            effective_max,
+            max_results_cap,
+            req.timeout_ms,
+        )
         .await;
+
+    // Build a WebSearchResponse-shaped structure for downstream compatibility
+    let web_resp = WebSearchResponse {
+        query: req.query.clone(),
+        mode: "security_metasearch",
+        results,
+        providers_queried: effective_providers.clone(),
+        providers_failed: Vec::new(),
+        warnings: dispatch_warnings,
+        trust_markers,
+    };
 
     // 3. Check if any native security provider (OSV) is available
     let has_native_advisory = effective_providers.iter().any(|id| id == "osv");

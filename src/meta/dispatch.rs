@@ -566,4 +566,30 @@ mod tests {
         assert_eq!(output.raw_results.len(), 2);
         assert!(!output.deadline.exceeded);
     }
+
+    #[tokio::test]
+    async fn parallel_dispatch_partial_failure_one_success_one_fail() {
+        // Provider "p" has two jobs: one succeeds, one fails.
+        // The dispatch output should contain both a result and a failure for "p".
+        let good: Arc<dyn SearchEngine> = Arc::new(SlowEngine::new("good", Duration::from_millis(10)));
+        let failing: Arc<dyn SearchEngine> = Arc::new(FailingEngine { name: "fail" });
+
+        let jobs = vec![
+            make_job("sq1", "q1", "good", Arc::clone(&good), 0, 0, 0),
+            make_job("sq2", "q2", "fail", Arc::clone(&failing), 0, 1, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert_eq!(output.raw_results.len(), 1);
+        assert_eq!(output.raw_failures.len(), 1);
+        assert_eq!(output.raw_results[0].0, "good");
+        assert_eq!(output.raw_failures[0].0, "fail");
+    }
 }

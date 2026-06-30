@@ -143,6 +143,17 @@ pub struct SearchSection {
     /// Exact-error mode configuration for compiler/runtime error search.
     #[serde(default)]
     pub exact_error: crate::core::error_query::ExactErrorConfig,
+    /// Maximum total in-flight (subquery, provider) jobs during
+    /// parallel dispatch for multi-subquery searches (repo_search,
+    /// research_search, security_search). Computed as
+    /// `subqueries.clamp(1,8) * engines.clamp(1,4)` when not set.
+    #[serde(default = "default_multiquery_concurrency")]
+    pub multiquery_concurrency: usize,
+    /// Maximum concurrent jobs for any single provider during parallel
+    /// dispatch. Prevents one fast provider from being overwhelmed when
+    /// many subqueries target it simultaneously.
+    #[serde(default = "default_multiquery_provider_concurrency")]
+    pub multiquery_provider_concurrency: usize,
 }
 
 impl Default for SearchSection {
@@ -173,6 +184,8 @@ impl Default for SearchSection {
             sanitize_output: default_sanitize_output(),
             profiles: std::collections::BTreeMap::new(),
             exact_error: crate::core::error_query::ExactErrorConfig::default(),
+            multiquery_concurrency: default_multiquery_concurrency(),
+            multiquery_provider_concurrency: default_multiquery_provider_concurrency(),
         }
     }
 }
@@ -200,6 +213,14 @@ fn default_user_agent() -> String {
 }
 fn default_sanitize_output() -> bool {
     true
+}
+
+fn default_multiquery_concurrency() -> usize {
+    8
+}
+
+fn default_multiquery_provider_concurrency() -> usize {
+    2
 }
 fn default_pdf_max_pages() -> usize {
     25

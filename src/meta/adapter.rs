@@ -104,6 +104,12 @@ pub struct MetadataSearchAdapter {
     /// that resolves at runtime). Used by `provider_status()` to set
     /// the `configured` flag on API provider descriptors.
     api_configured: std::collections::BTreeMap<String, bool>,
+    /// Maximum total in-flight (subquery, provider) jobs during
+    /// parallel dispatch.
+    multiquery_concurrency: usize,
+    /// Maximum concurrent jobs for any single provider during parallel
+    /// dispatch.
+    multiquery_provider_concurrency: usize,
 }
 
 impl std::fmt::Debug for MetadataSearchAdapter {
@@ -131,6 +137,7 @@ impl MetadataSearchAdapter {
     /// `sanitize_output` enables Tier 2 (framing) and Tier 3
     /// (prompt-injection marker scanning) on top of the always-on
     /// Tier 1 (control-char stripping + length bounding).
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         enabled_providers: Vec<String>,
         global_timeout: Duration,
@@ -139,6 +146,8 @@ impl MetadataSearchAdapter {
         sanitize_output: bool,
         default_providers: Vec<String>,
         api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
+        multiquery_concurrency: usize,
+        multiquery_provider_concurrency: usize,
     ) -> anyhow::Result<Self> {
         let searxng_configured = searxng_base_url.as_deref().is_some_and(|s| !s.is_empty());
         let (engines, skipped) = build_default_engines(
@@ -176,6 +185,8 @@ impl MetadataSearchAdapter {
             default_providers,
             searxng_configured,
             api_configured,
+            multiquery_concurrency,
+            multiquery_provider_concurrency,
         })
     }
 
@@ -197,6 +208,8 @@ impl MetadataSearchAdapter {
             default_providers: Vec::new(),
             searxng_configured: false,
             api_configured: std::collections::BTreeMap::new(),
+            multiquery_concurrency: 8,
+            multiquery_provider_concurrency: 2,
         }
     }
 
@@ -221,6 +234,8 @@ impl MetadataSearchAdapter {
             default_providers: Vec::new(),
             searxng_configured: false,
             api_configured: std::collections::BTreeMap::new(),
+            multiquery_concurrency: 8,
+            multiquery_provider_concurrency: 2,
         }
     }
 
@@ -738,11 +753,15 @@ impl MetadataSearchAdapter {
             candidate_limit,
             effective_timeout,
             "repo_search",
+            self.multiquery_concurrency,
+            self.multiquery_provider_concurrency,
         )
         .await;
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        let mut warnings: Vec<SearchWarning> = Vec::new();
+        push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
         let mut cards =
             aggregate_source_cards(dispatch.raw_results, candidate_limit, self.sanitize_output);
 
@@ -827,8 +846,6 @@ impl MetadataSearchAdapter {
 
         let suggested_fetches =
             crate::meta::suggested_fetches::generate_suggested_fetches(&groups, &plan.hints);
-
-        let mut warnings: Vec<SearchWarning> = Vec::new();
 
         // Local workspace warnings
         warnings.extend(local_warnings);
@@ -936,8 +953,6 @@ impl MetadataSearchAdapter {
                 ));
             }
         }
-
-        push_failure_warnings(&mut warnings, &dispatch.raw_failures);
 
         for group in &groups {
             if group.results.is_empty() {
@@ -1135,6 +1150,79 @@ impl MetadataSearchAdapter {
         }
     }
 
+    /// Run a security-oriented search with parallel dispatch. Generates
+    /// security-specific subqueries, fans out to enabled providers via
+    /// the bounded parallel dispatcher, aggregates results, and returns
+    /// SourceCards for downstream grouping and advisory enrichment.
+    pub async fn security_search_subqueries(
+        &self,
+        query: &str,
+        providers: &[String],
+        effective_max: usize,
+        max_results_cap: usize,
+        timeout_ms: Option<u64>,
+    ) -> (Vec<SourceCard>, Vec<SearchWarning>, TrustMarkers) {
+        use crate::core::query::SearchIntent;
+        use crate::core::WebSearchRequest;
+
+        let (engines, queried_ids) = self.selected_engines(providers);
+        let effective_timeout = self.effective_timeout(timeout_ms);
+        let candidate_limit = candidate_pool_size(effective_max, max_results_cap);
+
+        // Build search plan for the generic security query
+        let mut web_req = WebSearchRequest::new(query.to_string());
+        web_req.intent = SearchIntent::Security;
+        web_req.providers = providers.to_vec();
+        let plan = build_search_plan(&web_req, &queried_ids);
+
+        // Generate security-specific subqueries with priorities
+        let subqueries = vec![
+            PlannedSubquery {
+                label: "advisory".to_string(),
+                query: plan.generic_query.clone(),
+                priority: security_subquery_priority("advisory"),
+            },
+            PlannedSubquery {
+                label: "vendor".to_string(),
+                query: format!("{query} vendor advisory security bulletin"),
+                priority: security_subquery_priority("vendor"),
+            },
+            PlannedSubquery {
+                label: "defensive".to_string(),
+                query: format!("{query} mitigation workaround fix patch"),
+                priority: security_subquery_priority("defensive"),
+            },
+        ];
+
+        let dispatch = dispatch_subqueries(
+            &engines,
+            subqueries,
+            candidate_limit,
+            effective_timeout,
+            "security_search",
+            self.multiquery_concurrency,
+            self.multiquery_provider_concurrency,
+        )
+        .await;
+
+        let mut warnings: Vec<SearchWarning> = Vec::new();
+        push_deadline_warning(&mut warnings, "security_search", &dispatch.deadline);
+        push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
+
+        // Aggregate into SourceCards
+        let cards = aggregate_source_cards(
+            dispatch.raw_results,
+            candidate_limit,
+            self.sanitize_output,
+        );
+        let mut trust_markers = TrustMarkers::default();
+        for card in &cards {
+            trust_markers.merge(&card.trust_markers);
+        }
+
+        (cards, warnings, trust_markers)
+    }
+
     /// Run a research-oriented multi-source evidence search. This generates bounded subqueries
     /// from requested source types and research domain, fans out to enabled providers, aggregates
     /// via RRF, groups results by evidence type, and generates suggested fetches with diversity constraints.
@@ -1189,11 +1277,15 @@ impl MetadataSearchAdapter {
             candidate_limit,
             effective_timeout,
             "research_search",
+            self.multiquery_concurrency,
+            self.multiquery_provider_concurrency,
         )
         .await;
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        let mut warnings: Vec<SearchWarning> = Vec::new();
+        push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
         let cards =
             aggregate_source_cards(dispatch.raw_results, candidate_limit, self.sanitize_output);
 
@@ -1205,9 +1297,6 @@ impl MetadataSearchAdapter {
         let (groups, diversity_warnings) = apply_diversity_caps(groups, max_per_group);
 
         let suggested_fetches = generate_research_suggested_fetches(&groups);
-
-        // Build warnings
-        let mut warnings: Vec<SearchWarning> = Vec::new();
 
         push_deadline_warning(&mut warnings, "research_search", &dispatch.deadline);
 
@@ -1237,9 +1326,6 @@ impl MetadataSearchAdapter {
         for w in &diversity_warnings {
             warnings.push(SearchWarning::new("_system", w.clone()));
         }
-
-        // Provider failure warnings
-        push_failure_warnings(&mut warnings, &dispatch.raw_failures);
 
         // Empty group warnings
         for group in &groups {
@@ -1310,11 +1396,10 @@ async fn dispatch_subqueries(
     candidate_limit: usize,
     effective_timeout: Duration,
     search_scope: &str,
+    max_concurrent_jobs: usize,
+    max_concurrent_per_provider: usize,
 ) -> crate::meta::dispatch::DispatchOutput {
     use crate::meta::dispatch::{dispatch_parallel, DispatchConfig, DispatchJob};
-
-    let max_concurrent_jobs = subqueries.len().clamp(1, 8) * engines.len().clamp(1, 4);
-    let max_concurrent_per_provider = 2;
 
     let config = DispatchConfig {
         candidate_limit,
@@ -1391,6 +1476,19 @@ fn research_subquery_priority(source_type: &crate::core::research::ResearchSourc
     }
 }
 
+/// Assign priority for security_search subqueries. Lower = higher priority.
+fn security_subquery_priority(label: &str) -> i32 {
+    match label {
+        "advisory" => 0,
+        "vendor" => 1,
+        "package" => 2,
+        "patch" => 3,
+        "defensive" => 4,
+        "exploit" => 5,
+        _ => 10,
+    }
+}
+
 fn aggregate_source_cards(
     raw_results: Vec<(String, Vec<SearchResult>)>,
     candidate_limit: usize,
@@ -1420,14 +1518,36 @@ fn push_deadline_warning(
 
 fn push_failure_warnings(
     warnings: &mut Vec<SearchWarning>,
+    raw_results: &[(String, Vec<SearchResult>)],
     raw_failures: &[(String, EngineError)],
 ) {
+    // Count successes per provider to detect partial failures
+    let mut success_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (id, _) in raw_results {
+        *success_count.entry(id.clone()).or_insert(0) += 1;
+    }
+
     for (id, err) in raw_failures {
         let class = classify(err);
-        warnings.push(SearchWarning::new(
-            id.clone(),
-            format!("[{}] {}", class.as_str(), err),
-        ));
+        let successes = success_count.get(id.as_str()).copied().unwrap_or(0);
+        if successes > 0 {
+            // Partial failure: some jobs succeeded, some failed
+            warnings.push(SearchWarning::new(
+                id.clone(),
+                format!(
+                    "[{}] {} (partial: {} job(s) succeeded for this provider)",
+                    class.as_str(),
+                    err,
+                    successes
+                ),
+            ));
+        } else {
+            // Total failure
+            warnings.push(SearchWarning::new(
+                id.clone(),
+                format!("[{}] {}", class.as_str(), err),
+            ));
+        }
     }
 }
 
@@ -1436,31 +1556,46 @@ fn provider_failures(
     raw_results: &[(String, Vec<SearchResult>)],
     raw_failures: &[(String, EngineError)],
 ) -> Vec<ProviderFailure> {
-    let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Count successes and failures per provider, and track the last error class/message
+    let mut success_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut failure_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut last_error_info: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+
     for (id, _) in raw_results {
-        accounted.insert(id.clone());
+        *success_count.entry(id.clone()).or_insert(0) += 1;
     }
-    for (id, _) in raw_failures {
-        accounted.insert(id.clone());
+    for (id, err) in raw_failures {
+        *failure_count.entry(id.clone()).or_insert(0) += 1;
+        last_error_info.insert(id.clone(), (classify(err).as_str().to_string(), err.to_string()));
     }
 
-    let mut failures: Vec<ProviderFailure> = raw_failures
-        .iter()
-        .map(|(id, err)| ProviderFailure {
-            error_class: classify(err).as_str().to_string(),
-            message: err.to_string(),
-            id: id.clone(),
-        })
-        .collect();
+    // A provider is only failed if ALL its jobs failed (no successes)
+    // or if it was never responded to (timed out).
+    let mut failures: Vec<ProviderFailure> = Vec::new();
 
     for id in queried_ids {
-        if !accounted.contains(id.as_str()) {
+        let successes = success_count.get(id.as_str()).copied().unwrap_or(0);
+        let fails = failure_count.get(id.as_str()).copied().unwrap_or(0);
+
+        if successes == 0 && fails > 0 {
+            // All jobs failed — report as failed
+            if let Some((error_class, message)) = last_error_info.get(id) {
+                failures.push(ProviderFailure {
+                    error_class: error_class.clone(),
+                    message: message.clone(),
+                    id: id.clone(),
+                });
+            }
+        } else if successes == 0 && fails == 0 {
+            // Never responded — timed out
             failures.push(ProviderFailure {
                 id: id.clone(),
                 error_class: ErrorClass::Timeout.as_str().to_string(),
                 message: "provider timed out".to_string(),
             });
         }
+        // If successes > 0, the provider is not failed even if some jobs failed.
+        // Partial failures are reported as warnings by push_failure_warnings.
     }
 
     failures
@@ -4112,5 +4247,62 @@ mod tests {
             "security intent warning must start with 'native_advisory_search_unavailable:': {}",
             cap_warnings[0].message
         );
+    }
+
+    #[test]
+    fn provider_failures_partial_failure_not_in_providers_failed() {
+        use crate::meta::engines::error::EngineError;
+        use crate::meta::engines::models::SearchResult;
+
+        let queried = vec!["p1".to_string(), "p2".to_string()];
+        // p1: one success, one failure (partial) — should NOT be in providers_failed
+        let raw_results: Vec<(String, Vec<SearchResult>)> =
+            vec![("p1".to_string(), vec![mk_result("T", "https://e.com", "p1")])];
+        let raw_failures: Vec<(String, EngineError)> = vec![(
+            "p1".to_string(),
+            EngineError::Timeout { engine: "p1" },
+        )];
+
+        let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
+        // p1 should NOT be in failures because it had a success
+        assert!(
+            failures.iter().all(|f| f.id != "p1"),
+            "p1 had a success so should not be in providers_failed: {:?}",
+            failures
+        );
+    }
+
+    #[test]
+    fn provider_failures_all_failed_is_in_providers_failed() {
+        use crate::meta::engines::error::EngineError;
+        use crate::meta::engines::models::SearchResult;
+
+        let queried = vec!["p1".to_string()];
+        let raw_results: Vec<(String, Vec<SearchResult>)> = vec![];
+        let raw_failures: Vec<(String, EngineError)> = vec![(
+            "p1".to_string(),
+            EngineError::Timeout { engine: "p1" },
+        )];
+
+        let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].id, "p1");
+    }
+
+    #[test]
+    fn provider_failures_no_response_is_timeout() {
+        use crate::meta::engines::error::EngineError;
+        use crate::meta::engines::models::SearchResult;
+
+        let queried = vec!["p1".to_string(), "p2".to_string()];
+        // p1 succeeded, p2 never responded
+        let raw_results: Vec<(String, Vec<SearchResult>)> =
+            vec![("p1".to_string(), vec![mk_result("T", "https://e.com", "p1")])];
+        let raw_failures: Vec<(String, EngineError)> = vec![];
+
+        let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].id, "p2");
+        assert_eq!(failures[0].error_class, "timeout");
     }
 }

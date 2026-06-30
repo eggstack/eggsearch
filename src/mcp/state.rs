@@ -95,6 +95,8 @@ impl ServerState {
             config.search.sanitize_output,
             config.search.default_providers.clone(),
             &config.search.api,
+            config.search.multiquery_concurrency,
+            config.search.multiquery_provider_concurrency,
         )?;
 
         let misconfigured = config.misconfigured_default_providers();

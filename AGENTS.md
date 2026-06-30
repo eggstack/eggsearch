@@ -162,7 +162,7 @@ eggsearch/
 ### Configuration
 - Config file: `$XDG_CONFIG_HOME/eggsearch/config.toml`
 - `AppConfig` is the root type, contains `SearchSection`, `FetchSection`, and `LocalConfig`
-- `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`, `profiles`
+- `SearchSection` is the `[search]` section: `mode`, `default_max_results` (alias: `max_results`), `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers`, `searxng`, `api`, `live`, `sanitize_output`, `profiles`, `exact_error`, `multiquery_concurrency` (default 8), `multiquery_provider_concurrency` (default 2)
 - `FetchSection` is the `[fetch]` section: enables/disables `web_fetch` and configures fetch limits (enabled, timeout_ms, max_bytes, max_chars_default, max_chars_cap, redirect_limit, allow_private_network, allow_localhost, include_links_default, user_agent, sanitize_output, pdf_enabled, pdf_max_pages, pdf_max_chars_per_page, pdf_max_total_chars, batch_max_items, batch_max_items_cap, batch_max_chars_per_item, batch_max_total_chars, batch_max_total_chars_cap, batch_concurrency)
 - `SearxngConfig` is the `[search].searxng` section: enables the optional `searxng` provider (`enabled`, `base_url`)
 - `ApiProviderConfig` is the `[search.api.<id>]` section: API-key provider config (`enabled`, `api_key_env`, `base_url`). Known API-key providers: `brave`, `github_code`, `github_issues`, `github_releases`, `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`, `gitea_issues`, `gitea_releases`.
@@ -1368,28 +1368,38 @@ same value from `AppConfig`. Provider fan-out logs distinguish
 
 ### Parallel Subquery Dispatch
 
-Specialized search tools (`repo_search`, `research_search`) now use
-bounded parallel dispatch instead of sequential subquery execution.
-Each `(subquery, provider)` pair is a dispatch job. Jobs are sorted
-by `(priority, subquery_order, provider_order)` and executed
-concurrently within global and per-provider concurrency caps.
+Specialized search tools (`repo_search`, `research_search`,
+`security_search`) now use bounded parallel dispatch instead of
+sequential subquery execution. Each `(subquery, provider)` pair is a
+dispatch job. Jobs are sorted by `(priority, subquery_order,
+provider_order)` and executed concurrently within global and
+per-provider concurrency caps.
 
 **Priority model:**
 
 - `repo_search` normal mode: `source` (0) > `docs` (1) > `registry` (2) > `examples` (3) > `issues` (4) > `releases` (5) > `changelog` (6)
 - `repo_search` exact-error mode: `error_exact` (0) > `error_code` (1) > `error_package` (2) > `error_issues` (3) > `error_releases` (4) > `error_docs` (5)
+- `security_search`: `advisory` (0) > `vendor` (1) > `package` (2) > `patch` (3) > `defensive` (4) > `exploit` (5)
 - `research_search`: `PrimarySources` (0) > `OfficialDocs` (1) > `Specifications`/`AcademicOrFormalSources` (2) > `ReferenceImplementations` (3) > `SecurityConsiderations` (4) > `Benchmarks` (5) > `DesignDiscussions` (6)
 
 **Concurrency controls:**
 
 - `max_concurrent_jobs`: total in-flight jobs (computed as `subqueries.clamp(1,8) * engines.clamp(1,4)`)
 - `max_concurrent_per_provider`: per-provider cap (default 2)
+- Configurable via `[search].multiquery_concurrency` (default 8) and `[search].multiquery_provider_concurrency` (default 2)
 - Global request deadline still bounds the entire dispatch
 
 **Determinism:**
 
 Results are sorted by `(subquery_order, provider_order)` before
 aggregation so completion order does not affect output.
+
+**Provider failure accounting:**
+
+A provider is only reported as `providers_failed` if ALL its jobs
+fail or if it never responds (timed out). Mixed success/failure is
+reported as a warning with `(partial: N job(s) succeeded for this
+provider)` suffix instead of marking the provider as failed.
 
 ### Prompt-injection Hardening
 - Untrusted text from search and fetch flows through three tiers of
