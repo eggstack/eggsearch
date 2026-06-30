@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exact-error redaction now applies consistently to provider-facing exact phrases as well as normalized query text, preventing API tokens, UUIDs, memory addresses, and local absolute paths from leaking through generated subqueries.
 - **UTF-8-safe snippet truncation in `github_issues` and `github_releases` engines**: the legacy `truncate_body` helper sliced on byte offsets and panicked when the slice landed inside a multi-byte code point (e.g. CJK characters or emoji). The new implementation counts Unicode scalar values and only returns substrings at valid char boundaries, preserving the historical word-boundary trim semantics. Added 10 new unit tests covering multibyte UTF-8, CJK, emoji-only text, zero `max_chars`, and word-boundary-with-emoji cases.
 - Repo grouping no longer misclassifies filenames such as `contest.rs` as tests solely because they contain the substring `test`
 - Security grouping now treats short exploit markers such as `poc` as URL tokens, avoiding false positives such as `pocket-guide`

@@ -4,7 +4,61 @@
 //! failures, and opaque toolchain messages into structured query parts that can be
 //! used to generate targeted subqueries.
 
+use std::sync::LazyLock;
+
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+static API_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)(?:api[_-]?key|token|secret|password)\s*[=:]\s*["']?([a-f0-9]{32,})["']?"#)
+        .expect("API token regex is valid")
+});
+static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#)
+        .expect("UUID regex is valid")
+});
+static MEMORY_ADDRESS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)0x[0-9a-f]{8,}").expect("memory address regex is valid"));
+static LOCAL_PATH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:/[\w.-]+){2,}").expect("local path regex is valid"));
+
+static RUST_ERROR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)\b(E0\d{3})\b"#).expect("Rust error regex is valid"));
+static TYPESCRIPT_ERROR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)\b(TS\d{4,5})\b"#).expect("TypeScript error regex is valid")
+});
+static HTTP_STATUS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b([45]\d{2})\s+(Not Found|Internal Server Error|Bad Request|Unauthorized|Forbidden|Service Unavailable|Gateway Timeout)")
+        .expect("HTTP status regex is valid")
+});
+static NPM_PACKAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:package |install |resolve )([a-z@][a-z0-9._/-]+(?:@[0-9.]+)?)")
+        .expect("npm package regex is valid")
+});
+static CARGO_PACKAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:package|crate)\s+`([^`]+)`").expect("Cargo package regex is valid")
+});
+static CARGO_NO_MATCH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"no matching package found:\s*(\S+)").expect("Cargo no-match regex is valid")
+});
+static PIP_PACKAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:Package|Requirement) ([a-z][a-z0-9_-]+)").expect("pip package regex is valid")
+});
+static PYTHON_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"File "([^"]+)", line (\d+), in (\w+)"#).expect("Python frame regex is valid")
+});
+static RUST_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s+(?:at\s+)?([\w:/._-]+):(\d+)$").expect("Rust frame regex is valid")
+});
+static RUST_MODULE_PATH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b([\w]+::[\w:]+)\b").expect("Rust module path regex is valid"));
+static SOURCE_FILE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b([\w/_-]+\.(?:rs|py|js|ts|tsx|jsx|go|java|cpp|c|h|hpp))\b")
+        .expect("source file regex is valid")
+});
+static PRIMARY_ERROR_CODE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b[ET]\d{3,5}\b").expect("primary error code regex is valid")
+});
 
 /// A structured error code extracted from the error message.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -188,14 +242,10 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
     }
 
     // Redact obvious API keys/tokens (hex strings >= 32 chars that aren't error codes)
-    let token_re = regex::Regex::new(
-        r#"(?:api[_-]?key|token|secret|password)\s*[=:]\s*["']?([a-f0-9]{32,})["']?"#,
-    )
-    .unwrap();
-    for cap in token_re.captures_iter(&normalized.clone()) {
+    for cap in API_TOKEN_RE.captures_iter(&normalized.clone()) {
         if let Some(matched) = cap.get(1) {
             let token = matched.as_str().to_string();
-            normalized = normalized.replace(&token, "[REDACTED]");
+            replace_in_provider_fields(&mut normalized, &mut quoted_exact, &token, "[REDACTED]");
             redactions.push(format!(
                 "api_token: {}...{}",
                 &token[..8],
@@ -205,26 +255,21 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
     }
 
     // Redact UUIDs (not commit SHAs)
-    let uuid_re =
-        regex::Regex::new(r#"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#)
-            .unwrap();
-    for m in uuid_re.find_iter(&normalized.clone()) {
+    for m in UUID_RE.find_iter(&normalized.clone()) {
         let uuid = m.as_str().to_string();
-        normalized = normalized.replace(&uuid, "[UUID]");
+        replace_in_provider_fields(&mut normalized, &mut quoted_exact, &uuid, "[UUID]");
         redactions.push(format!("uuid: {uuid}"));
     }
 
     // Redact memory addresses (0x...)
-    let addr_re = regex::Regex::new(r"0x[0-9a-f]{8,}").unwrap();
-    for m in addr_re.find_iter(&normalized.clone()) {
+    for m in MEMORY_ADDRESS_RE.find_iter(&normalized.clone()) {
         let addr = m.as_str().to_string();
-        normalized = normalized.replace(&addr, "[ADDR]");
+        replace_in_provider_fields(&mut normalized, &mut quoted_exact, &addr, "[ADDR]");
         redactions.push(format!("memory_address: {addr}"));
     }
 
     // Redact local absolute paths (but keep basename and useful crate/module segments)
-    let path_re = regex::Regex::new(r"(?:/[\w.-]+){2,}").unwrap();
-    for m in path_re.find_iter(&normalized.clone()) {
+    for m in LOCAL_PATH_RE.find_iter(&normalized.clone()) {
         let path = m.as_str().to_string();
         // Skip paths that look like URLs or error codes
         if path.starts_with("/dev") || path.starts_with("/proc") || path.starts_with("/sys") {
@@ -234,7 +279,7 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
         let basename = path.rsplit('/').next().unwrap_or(&path);
         // If basename is meaningful (not just a number or generic dir), keep it
         if !basename.chars().all(|c| c.is_ascii_digit()) && basename.len() > 1 {
-            normalized = normalized.replace(&path, basename);
+            replace_in_provider_fields(&mut normalized, &mut quoted_exact, &path, basename);
             redactions.push(format!("local_path: {path}"));
         }
     }
@@ -244,6 +289,20 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
     result.quoted_exact = quoted_exact;
     result.redactions_applied = redactions;
     result
+}
+
+fn replace_in_provider_fields(
+    normalized: &mut String,
+    quoted_exact: &mut String,
+    from: &str,
+    to: &str,
+) {
+    if normalized.contains(from) {
+        *normalized = normalized.replace(from, to);
+    }
+    if quoted_exact.contains(from) {
+        *quoted_exact = quoted_exact.replace(from, to);
+    }
 }
 
 /// Generate bounded subqueries from parsed error parts.
@@ -361,8 +420,7 @@ fn extract_error_codes(text: &str) -> Vec<ErrorCode> {
     let mut seen = std::collections::HashSet::new();
 
     // Rust error codes: E0xxx
-    let rust_re = regex::Regex::new(r#"(?i)\b(E0\d{3})\b"#).unwrap();
-    for cap in rust_re.captures_iter(text) {
+    for cap in RUST_ERROR_RE.captures_iter(text) {
         let code = cap[1].to_uppercase();
         if seen.insert(code.clone()) {
             codes.push(ErrorCode {
@@ -373,8 +431,7 @@ fn extract_error_codes(text: &str) -> Vec<ErrorCode> {
     }
 
     // TypeScript error codes: TSxxxx
-    let ts_re = regex::Regex::new(r#"(?i)\b(TS\d{4,5})\b"#).unwrap();
-    for cap in ts_re.captures_iter(text) {
+    for cap in TYPESCRIPT_ERROR_RE.captures_iter(text) {
         let code = cap[1].to_uppercase();
         if seen.insert(code.clone()) {
             codes.push(ErrorCode {
@@ -468,8 +525,7 @@ fn extract_error_codes(text: &str) -> Vec<ErrorCode> {
     }
 
     // HTTP status errors: "404 Not Found", "500 Internal Server Error", etc.
-    let http_re = regex::Regex::new(r"\b([45]\d{2})\s+(Not Found|Internal Server Error|Bad Request|Unauthorized|Forbidden|Service Unavailable|Gateway Timeout)").unwrap();
-    for cap in http_re.captures_iter(text) {
+    for cap in HTTP_STATUS_RE.captures_iter(text) {
         let code = format!("HTTP {}", &cap[1]);
         if seen.insert(code.clone()) {
             codes.push(ErrorCode {
@@ -560,10 +616,7 @@ fn extract_package_names(text: &str) -> Vec<String> {
     let mut packages = std::collections::BTreeSet::new();
 
     // npm package patterns: "package-name@version" or "npm ERR! could not install package-name"
-    let npm_re =
-        regex::Regex::new(r"(?:package |install |resolve )([a-z@][a-z0-9._/-]+(?:@[0-9.]+)?)")
-            .unwrap();
-    for cap in npm_re.captures_iter(text) {
+    for cap in NPM_PACKAGE_RE.captures_iter(text) {
         let pkg = cap[1].to_string();
         if !pkg.starts_with('@') && pkg.len() > 1 {
             packages.insert(pkg.split('@').next().unwrap_or(&pkg).to_string());
@@ -571,20 +624,17 @@ fn extract_package_names(text: &str) -> Vec<String> {
     }
 
     // Cargo package patterns: "package `foo`" or "crate `foo`"
-    let cargo_re = regex::Regex::new(r"(?:package|crate)\s+`([^`]+)`").unwrap();
-    for cap in cargo_re.captures_iter(text) {
+    for cap in CARGO_PACKAGE_RE.captures_iter(text) {
         packages.insert(cap[1].to_string());
     }
 
     // Cargo "no matching package found" pattern
-    let cargo_pkg_re = regex::Regex::new(r"no matching package found:\s*(\S+)").unwrap();
-    for cap in cargo_pkg_re.captures_iter(text) {
+    for cap in CARGO_NO_MATCH_RE.captures_iter(text) {
         packages.insert(cap[1].to_string());
     }
 
     // PyPI/pip patterns
-    let pip_re = regex::Regex::new(r"(?:Package|Requirement) ([a-z][a-z0-9_-]+)").unwrap();
-    for cap in pip_re.captures_iter(text) {
+    for cap in PIP_PACKAGE_RE.captures_iter(text) {
         packages.insert(cap[1].to_string());
     }
 
@@ -596,8 +646,7 @@ fn extract_stack_frames(text: &str) -> Vec<StackFrameHint> {
     let mut frames = Vec::new();
 
     // Python traceback: "  File \"path\", line N, in func"
-    let py_re = regex::Regex::new(r#"File "([^"]+)", line (\d+), in (\w+)"#).unwrap();
-    for cap in py_re.captures_iter(text) {
+    for cap in PYTHON_FRAME_RE.captures_iter(text) {
         frames.push(StackFrameHint {
             function: Some(cap[3].to_string()),
             file: Some(cap[1].to_string()),
@@ -606,9 +655,8 @@ fn extract_stack_frames(text: &str) -> Vec<StackFrameHint> {
     }
 
     // Rust backtrace: "  at path:line" or " path::function"
-    let rust_frame_re = regex::Regex::new(r"^\s+(?:at\s+)?([\w:/._-]+):(\d+)$").unwrap();
     for line in text.lines() {
-        if let Some(cap) = rust_frame_re.captures(line) {
+        if let Some(cap) = RUST_FRAME_RE.captures(line) {
             frames.push(StackFrameHint {
                 function: None,
                 file: Some(cap[1].to_string()),
@@ -625,8 +673,7 @@ fn extract_path_fragments(text: &str) -> Vec<String> {
     let mut fragments = std::collections::BTreeSet::new();
 
     // Rust module paths: "crate::module::function" or "foo::bar::baz"
-    let mod_re = regex::Regex::new(r"\b([\w]+::[\w:]+)\b").unwrap();
-    for cap in mod_re.captures_iter(text) {
+    for cap in RUST_MODULE_PATH_RE.captures_iter(text) {
         let path = cap[1].to_string();
         // Only keep if it looks like a Rust path (at least one ::)
         if path.contains("::") && path.len() > 5 {
@@ -635,9 +682,7 @@ fn extract_path_fragments(text: &str) -> Vec<String> {
     }
 
     // File paths with extensions
-    let file_re =
-        regex::Regex::new(r"\b([\w/_-]+\.(?:rs|py|js|ts|tsx|jsx|go|java|cpp|c|h|hpp))\b").unwrap();
-    for cap in file_re.captures_iter(text) {
+    for cap in SOURCE_FILE_RE.captures_iter(text) {
         fragments.insert(cap[1].to_string());
     }
 
@@ -655,14 +700,13 @@ fn extract_primary_error_line(text: &str) -> String {
     }
 
     // Look for lines containing error codes
-    let error_code_re = regex::Regex::new(r"(?i)\b[ET]\d{3,5}\b").unwrap();
     for line in &lines {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
         // Lines with error codes are good candidates
-        if error_code_re.is_match(trimmed) {
+        if PRIMARY_ERROR_CODE_RE.is_match(trimmed) {
             return collapse_whitespace(trimmed);
         }
         // Lines with "error" or "Error" are good candidates
@@ -783,6 +827,44 @@ mod tests {
         let parts = parse_error_query("segfault at 0x7fff5fbff8d0");
         let redacted = redact_error_query(&parts);
         assert!(!redacted.normalized.contains("0x7fff5fbff8d0"));
+    }
+
+    #[test]
+    fn redact_provider_facing_exact_phrase() {
+        let secret = "ABCDEF0123456789ABCDEF0123456789";
+        let parts = parse_error_query(&format!(
+            "error: token={secret} failed in /Users/john/project/src/main.rs at 0xDEADBEEF1234"
+        ));
+        let redacted = redact_error_query(&parts);
+
+        assert!(!redacted.normalized.contains(secret));
+        assert!(!redacted.quoted_exact.contains(secret));
+        assert!(!redacted
+            .normalized
+            .contains("/Users/john/project/src/main.rs"));
+        assert!(!redacted
+            .quoted_exact
+            .contains("/Users/john/project/src/main.rs"));
+        assert!(!redacted.normalized.contains("0xDEADBEEF1234"));
+        assert!(!redacted.quoted_exact.contains("0xDEADBEEF1234"));
+        assert!(redacted.quoted_exact.contains("[REDACTED]"));
+        assert!(redacted.quoted_exact.contains("main.rs"));
+        assert!(redacted.quoted_exact.contains("[ADDR]"));
+    }
+
+    #[test]
+    fn generated_exact_phrase_uses_redacted_text() {
+        let secret = "abcdef0123456789abcdef0123456789";
+        let parts = parse_error_query(&format!("error: api_key={secret} failed"));
+        let redacted = redact_error_query(&parts);
+        let subqueries = generate_error_subqueries(&redacted, 6);
+        let exact = subqueries
+            .iter()
+            .find(|s| s.label == "exact_phrase")
+            .expect("exact phrase subquery should exist");
+
+        assert!(!exact.query.contains(secret));
+        assert!(exact.query.contains("[REDACTED]"));
     }
 
     #[test]

@@ -69,7 +69,9 @@ on:
   structured, grouped repository evidence with provider selection.
 - **Error search**: call `repo_search` with `mode: "exact_error"` and
   the error message as the query. Returns parsed error codes, redacted
-  paths, and targeted subqueries for docs, issues, and changelogs.
+  provider-facing text, and targeted subqueries for docs, issues, and
+  changelogs. Redaction covers home-directory paths, local absolute
+  paths, API-key/token-like hex values, UUIDs, and memory addresses.
 - **Code/repo fallback**: call `web_search` with `intent = code` and
   repo hints (e.g. `repo:owner/name`). Results are source cards, not
   structured code intelligence.
@@ -1291,6 +1293,12 @@ sanitize_output = true
 
 default_providers = ["duckduckgo", "startpage", "yahoo"]
 
+[search.exact_error]
+enabled = true
+max_subqueries = 6
+max_error_chars = 8000
+redact_sensitive_tokens = true
+
 [search.providers]
 duckduckgo = true
 brave      = true
@@ -1350,6 +1358,16 @@ base_url      = "https://git.example.com"
 | `sanitize_output` | `true` | Wrap untrusted text in framing delimiters and emit prompt-injection warnings. |
 
 > `default_max_results` controls the default number of results when a client does not pass `web_search.max_results`. `max_results_cap` is the server-enforced upper bound. The legacy config key `max_results` is still accepted as an alias for `default_max_results`, but new configs should use `default_max_results`. The per-request `web_search.max_results` field is a separate, per-call override that is clamped to `max_results_cap`.
+
+The `[search.exact_error]` section configures `repo_search` requests
+that set `mode = "exact_error"`:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Whether exact-error mode is accepted. |
+| `max_subqueries` | `6` | Maximum docs/issues/releases subqueries generated from one error. |
+| `max_error_chars` | `8000` | Maximum accepted error-message length for exact-error mode. |
+| `redact_sensitive_tokens` | `true` | Redact provider-facing exact phrases and normalized query text before dispatch. |
 
 The `[fetch]` section configures the `web_fetch` tool and CLI command:
 
