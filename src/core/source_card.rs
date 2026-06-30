@@ -275,6 +275,9 @@ pub struct LocalRepoMatch {
     /// Root directory name of the local checkout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_name: Option<String>,
+    /// Canonical path to the local checkout root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_path: Option<String>,
 }
 
 /// A single normalized result returned to MCP callers.

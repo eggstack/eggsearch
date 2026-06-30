@@ -895,6 +895,7 @@ impl LocalWorkspaceBackend {
                         commit: rid.current_commit.clone(),
                         dirty_state: Some(rid.dirty_state.to_string()),
                         root_name: Some(rid.root_name.clone()),
+                        root_path: Some(rid.root_path.display().to_string()),
                     }
                 });
 

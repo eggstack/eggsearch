@@ -43,9 +43,9 @@ use eggsearch::core::config::{AppConfig, Mode};
 use eggsearch::core::fetch::ExtractMode;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
-    run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_search, run_security_search,
-    run_web_fetch, run_web_search, BatchFetchArgs, ProviderStatusArgs, RepoFetchArgs,
-    RepoSearchArgs, SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
+    run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_map, run_repo_search,
+    run_security_search, run_web_fetch, run_web_search, BatchFetchArgs, ProviderStatusArgs,
+    RepoFetchArgs, RepoMapArgs, RepoSearchArgs, SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
 };
 use rmcp::ServerHandler;
 
@@ -9482,6 +9482,10 @@ async fn repo_search_local_results_have_repo_match_metadata() {
             lrm.get("dirty_state").is_some(),
             "dirty_state should be present"
         );
+        assert!(
+            lrm.get("root_path").is_some(),
+            "root_path should be present"
+        );
     }
 }
 
@@ -13575,5 +13579,197 @@ async fn repo_fetch_symbol_not_found_warns() {
     assert!(
         has_no_match_warning,
         "should warn about no match: {warnings:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_redirects_to_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n",
+    )
+    .unwrap();
+
+    // Initialize git repo with a remote URL
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Create initial commit
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    let state = state_with_local_backend(root);
+
+    // Request remote-style repo_fetch with prefer_local = true
+    let args = RepoFetchArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: Some(true),
+    };
+
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("prefer_local repo_fetch should succeed");
+
+    // Should resolve to local workspace fetch
+    assert_eq!(v["trust"], "local_trusted");
+    assert_eq!(v["fetched"], true);
+
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("pub fn add"),
+        "fetched text should contain the function: {text}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_map_with_local_checkout() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+    fs::write(root.join("Cargo.toml"), "[package]\nname = \"test\"\nversion = \"0.1.0\"\n").unwrap();
+
+    // Initialize git repo with a remote URL
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    let git_config = root.join(".git").join("config");
+    fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    // Create initial commit
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    let state = state_with_local_backend(root);
+
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: vec![],
+    };
+
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
+
+    // Should have local_checkout populated
+    let local_checkout = v["local_checkout"]
+        .as_object()
+        .expect("local_checkout should be present");
+
+    assert_eq!(
+        local_checkout["remote_owner"].as_str(),
+        Some("test-owner"),
+        "remote_owner should match"
+    );
+    assert_eq!(
+        local_checkout["remote_repo"].as_str(),
+        Some("test-repo"),
+        "remote_repo should match"
+    );
+    assert_eq!(
+        local_checkout["remote_host"].as_str(),
+        Some("github"),
+        "remote_host should be github"
+    );
+    assert!(
+        local_checkout.get("root_path").is_some(),
+        "root_path should be present"
+    );
+    assert!(
+        local_checkout.get("branch").is_some(),
+        "branch should be present"
+    );
+    assert!(
+        local_checkout.get("dirty_state").is_some(),
+        "dirty_state should be present"
+    );
+
+    // Should have local_checkout_match warning
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_match_warning = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .map(|s| s.contains("local_checkout_match"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_match_warning,
+        "should have local_checkout_match warning: {warnings:?}"
     );
 }
