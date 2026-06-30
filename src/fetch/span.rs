@@ -248,15 +248,23 @@ pub fn select_span(
         symbol_not_found = true;
     }
 
-    // 4. Match text search — return the matched line directly (no block expansion).
+    // 4. Match text search — return the matched line with a bounded context window.
     if let Some(text) = match_text {
         if let Some((line_idx, mut reasons)) = find_match_text_line(all_lines, text) {
             reasons.insert(
                 0,
                 format!("match_text '{}' found at line {}", text, line_idx + 1),
             );
-            let ls = (line_idx as u32) + 1;
-            let le = ls;
+            // Add a context window around the match. Default: 5 lines before/after.
+            let context = max_block_lines.unwrap_or(10).min(20) / 2;
+            let start = line_idx.saturating_sub(context);
+            let end = (line_idx + context).min(all_lines.len().saturating_sub(1));
+            let (ls, le, truncated) =
+                clamp_and_truncate(start, end, max_block_lines, &mut reasons);
+            reasons.push(format!(
+                "context window: lines {}-{} around match",
+                ls, le
+            ));
             return Some(SelectedSpan {
                 line_start: ls,
                 line_end: le,
@@ -265,8 +273,8 @@ pub fn select_span(
                 symbol_kind: None,
                 confidence: SpanConfidence::Strong,
                 reasons,
-                expanded: false,
-                truncated_by_max_block_lines: false,
+                expanded: true,
+                truncated_by_max_block_lines: truncated,
             });
         }
     }
@@ -361,6 +369,7 @@ fn classify_language(lang: &str) -> LanguageFamily {
         "go" => LanguageFamily::Go,
         "java" => LanguageFamily::Java,
         "kotlin" | "kt" => LanguageFamily::Kotlin,
+        "scala" | "sc" | "sbt" => LanguageFamily::Scala,
         "c" | "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" => LanguageFamily::Cpp,
         "csharp" | "cs" => LanguageFamily::CSharp,
         "ruby" | "rb" => LanguageFamily::Ruby,
@@ -384,6 +393,7 @@ enum LanguageFamily {
     Go,
     Java,
     Kotlin,
+    Scala,
     Cpp,
     CSharp,
     Ruby,
@@ -413,6 +423,7 @@ fn try_match_symbol_in_line(
         LanguageFamily::Go => try_match_go(line, symbol),
         LanguageFamily::Java
         | LanguageFamily::Kotlin
+        | LanguageFamily::Scala
         | LanguageFamily::Cpp
         | LanguageFamily::CSharp
         | LanguageFamily::Ruby
@@ -636,6 +647,7 @@ fn expand_to_enclosing_block(
         LanguageFamily::Go => expand_brace_block(all_lines, line_idx),
         LanguageFamily::Java
         | LanguageFamily::Kotlin
+        | LanguageFamily::Scala
         | LanguageFamily::Cpp
         | LanguageFamily::CSharp
         | LanguageFamily::Ruby
@@ -743,7 +755,7 @@ fn expand_indentation_block(all_lines: &[String], line_idx: usize) -> (usize, us
     let base_indent = count_indent(&all_lines[line_idx]);
 
     // Find the block start: walk backwards until we hit a line with
-    // equal or lesser indentation (or a decorator).
+    // equal or lesser indentation (or a decorator/comment).
     let mut start = line_idx;
     for i in (0..line_idx).rev() {
         let line = &all_lines[i];
@@ -751,7 +763,7 @@ fn expand_indentation_block(all_lines: &[String], line_idx: usize) -> (usize, us
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.starts_with('@') {
+        if trimmed.starts_with('@') || trimmed.starts_with('#') {
             start = i;
             continue;
         }
@@ -769,11 +781,11 @@ fn expand_indentation_block(all_lines: &[String], line_idx: usize) -> (usize, us
         break;
     }
 
-    // Include decorators above start.
+    // Include decorators and comments above start.
     while start > 0 {
         let prev = start - 1;
         let trimmed = all_lines[prev].trim();
-        if trimmed.starts_with('@') {
+        if trimmed.starts_with('@') || trimmed.starts_with('#') {
             start = prev;
         } else {
             break;
@@ -1545,10 +1557,12 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(span.line_start, 3);
-        assert_eq!(span.line_end, 3);
+        // Context window: 5 lines before/after, bounded by file (4 lines)
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 4);
         assert_eq!(span.selection_kind, SpanSelectionKind::MatchText);
         assert_eq!(span.confidence, SpanConfidence::Strong);
+        assert!(span.expanded);
     }
 
     #[test]
@@ -1566,8 +1580,10 @@ mod tests {
             None,
         )
         .unwrap();
+        // Context window: 5 lines before/after, bounded by file (2 lines)
         assert_eq!(span.line_start, 1);
-        assert_eq!(span.line_end, 1);
+        assert_eq!(span.line_end, 2);
+        assert!(span.expanded);
     }
 
     // --- max_block_lines truncation ---
@@ -1809,8 +1825,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(span.selection_kind, SpanSelectionKind::MatchText);
-        assert_eq!(span.line_start, 2);
-        assert_eq!(span.line_end, 2);
+        // Context window: 5 lines before/after match at line 2, bounded by file (3 lines)
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 3);
     }
 
     // --- Empty file ---
@@ -2092,5 +2109,146 @@ mod tests {
         };
         assert_eq!(span.selection_kind, SpanSelectionKind::WholeFileBounded);
         assert_eq!(span.confidence, SpanConfidence::Unknown);
+    }
+
+    // --- Scala support ---
+
+    #[test]
+    fn scala_class_expansion() {
+        let input = lines(
+            "class Foo {\n\
+             \x20 def bar(): Unit = {\n\
+             \x20   println(\"hello\")\n\
+             \x20 }\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("scala"),
+            Some("Foo"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 5);
+        assert_eq!(span.selection_kind, SpanSelectionKind::SymbolDefinition);
+    }
+
+    #[test]
+    fn scala_class_with_methods() {
+        let input = lines(
+            "class Server {\n\
+             \x20 def start(): Unit = {\n\
+             \x20   println(\"hello\")\n\
+             \x20 }\n\
+             }",
+        );
+        let span = select_span(
+            &input,
+            Some("scala"),
+            Some("Server"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        assert_eq!(span.selection_kind, SpanSelectionKind::SymbolDefinition);
+    }
+
+    // --- Python comments above definition ---
+
+    #[test]
+    fn python_comment_above_def() {
+        let input = lines(
+            "# This function computes the answer\n\
+             # It is very important\n\
+             def compute():\n\
+             \x20 return 42",
+        );
+        let span = select_span(
+            &input,
+            Some("python"),
+            Some("compute"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        // Comments above the def should be included in the block
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 4);
+        assert_eq!(span.selection_kind, SpanSelectionKind::SymbolDefinition);
+    }
+
+    #[test]
+    fn python_decorator_and_comment_above_def() {
+        let input = lines(
+            "# Module-level helper\n\
+             @staticmethod\n\
+             # A decorated function\n\
+             def helper():\n\
+             \x20 pass",
+        );
+        let span = select_span(
+            &input,
+            Some("python"),
+            Some("helper"),
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        // Comments and decorators above the def should be included
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 5);
+        assert_eq!(span.selection_kind, SpanSelectionKind::SymbolDefinition);
+    }
+
+    // --- Match text with max_block_lines context ---
+
+    #[test]
+    fn match_text_respects_max_block_lines() {
+        let input = lines(
+            "line 1\n\
+             line 2\n\
+             line 3\n\
+             line 4\n\
+             the needle is here\n\
+             line 6\n\
+             line 7\n\
+             line 8\n\
+             line 9\n\
+             line 10",
+        );
+        let span = select_span(
+            &input,
+            None,
+            None,
+            None,
+            Some("needle is here"),
+            None,
+            None,
+            true,
+            Some(4),
+        )
+        .unwrap();
+        // max_block_lines=4, context=2, match at line 5 => lines 3-7 clamped to 4
+        assert_eq!(span.line_start, 3);
+        assert_eq!(span.line_end, 6);
+        assert!(span.truncated_by_max_block_lines);
     }
 }
