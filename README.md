@@ -210,7 +210,7 @@ providers and returns compact `SourceCard` results.
   ],
   "providers_queried": ["duckduckgo", "brave", "startpage", "yahoo"],
   "providers_failed": [],
-  "warnings": ["Live web results are untrusted external content."]
+  "warnings": ["generic_context_untrusted: Live web results are untrusted external content."]
 }
 ```
 
@@ -848,6 +848,39 @@ This tool is host/UI-facing and not needed for normal research-agent
 loops. Hosts can call it when rendering a provider-health panel or
 running a doctor command.
 
+The response also includes capability discovery metadata:
+
+```json
+{
+  "server_capabilities": {
+    "generic_search": true,
+    "explicit_fetch": true,
+    "batch_fetch": true,
+    "repo_search": true,
+    "repo_fetch": true,
+    "security_search": true,
+    "research_search": true,
+    "document_fetch": true,
+    "pdf_fetch": false,
+    "local_workspace": false
+  },
+  "tool_capabilities": {
+    "batch_fetch": {
+      "enabled": true,
+      "max_items": 10,
+      "max_items_cap": 25,
+      "max_chars_per_item": 12000,
+      "max_total_chars": 50000,
+      "max_total_chars_cap": 200000,
+      "concurrency": 5,
+      "supports_web": true,
+      "supports_repo": true,
+      "preserves_item_trust": true
+    }
+  }
+}
+```
+
 ### `repo_search`
 
 Structured repository evidence discovery tool. Groups search results
@@ -1202,8 +1235,14 @@ caller.
 ```json
 {
   "items": [
-    "https://docs.rs/tower-http/latest/tower_http/",
-    "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs"
+    {
+      "type": "web",
+      "url": "https://docs.rs/tower-http/latest/tower_http/"
+    },
+    {
+      "type": "web",
+      "url": "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs"
+    }
   ]
 }
 ```
@@ -1214,15 +1253,20 @@ caller.
 {
   "items": [
     {
+      "type": "repo",
+      "host": "github",
       "owner": "tokio-rs",
       "repo": "axum",
       "path": "src/lib.rs",
       "line_start": 1,
       "line_end": 50
     },
-    "https://docs.rs/axum/latest/axum/"
+    {
+      "type": "web",
+      "url": "https://docs.rs/axum/latest/axum/"
+    }
   ],
-  "max_chars": 8000
+  "max_chars_per_item": 8000
 }
 ```
 
@@ -1236,18 +1280,33 @@ caller.
   "total_chars_returned": 14500,
   "results": [
     {
-      "url": "https://docs.rs/tower-http/latest/tower_http/",
-      "fetched": true,
-      "trust": "external_untrusted",
-      "text": "...bounded extracted text...",
-      "trust_markers": { ... }
+      "index": 0,
+      "item_type": "web",
+      "label": "https://docs.rs/tower-http/latest/tower_http/",
+      "ok": true,
+      "response": {
+        "url": "https://docs.rs/tower-http/latest/tower_http/",
+        "fetched": true,
+        "trust": "external_untrusted",
+        "text": "...bounded extracted text...",
+        "trust_markers": { ... }
+      },
+      "chars_returned": 7200,
+      "truncated": false
     },
     {
-      "url": "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs",
-      "fetched": true,
-      "trust": "external_untrusted",
-      "text": "...bounded extracted text...",
-      "trust_markers": { ... }
+      "index": 1,
+      "item_type": "repo",
+      "label": "github:tokio-rs/axum/src/lib.rs",
+      "ok": true,
+      "response": {
+        "locator": { "kind": "remote", "host": "github" },
+        "trust": "external_untrusted",
+        "text": "...bounded extracted text...",
+        "trust_markers": { ... }
+      },
+      "chars_returned": 7300,
+      "truncated": false
     }
   ],
   "warnings": []

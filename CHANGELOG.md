@@ -7,154 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2026-06-30
 
+### Added
+
+- `research_search` MCP tool for research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, workflow scaffolding, and domain-diverse suggested fetches.
+- `security_search` MCP tool for security-oriented retrieval with normalized vulnerability metadata, OSV native lookups, KEV outcome warnings, CWE parsing, source-quality tiering, defensive guidance, and grouped source cards.
+- `repo_search` MCP tool for structured repository evidence discovery, search profiles, package-aware query planning, exact-error mode, grouped result bundles, suggested fetches, local workspace integration, and provider-selection telemetry.
+- `repo_fetch` and `batch_fetch` MCP tools for bounded repository file retrieval and bounded multi-item fetches over explicit URLs or structured repo locators.
+- Structured `web_fetch` document model with HTML blocks, Markdown rendering, code/diff/plain-text renderers, content-type detection, link classification, code-host fetch transforms, and opt-in PDF text extraction behind the `pdf` feature.
+- Result-quality metadata on `SourceCard`, group quality summaries, and repo-search uncertainty summaries.
+- `provider_status` capability discovery metadata: `server_capabilities`, `tool_capabilities`, `code_hosts`, and `quality_metadata`.
+- Stable advisory warning prefixes for capability limits, security context, KEV outcomes, profile degradation, deadline interruptions, and local fetch constraints.
+
 ### Changed
 
-- Release readiness pass: normalized the changelog, refreshed README response examples, and bumped crate metadata for publication
-- Security search groups now present primary advisory, vendor/package advisory, KEV, patch, exploit, and defensive guidance evidence before general context
-- Lockfile updated from `quinn-proto` 0.11.14 to 0.11.15 to address RUSTSEC-2026-0185
-- Provider capability audit: searxng and brave_api capabilities corrected to reflect what the adapter actually forwards (not what the upstream API supports); github_releases `org_filter` corrected to false
-- Capability warnings emitted when requests ask for behavior providers cannot enforce (safe_search, freshness, intent without native providers)
-- Within-group reranking now includes quality-based boosts (high confidence, exact evidence, official authority)
-- Shared grouping helper now powers repo, research, and security result groups, keeping truncation and aggregate quality-summary behavior consistent across specialized tools
-
-### Added
-
-- `server_capabilities` object in `provider_status` response for MCP capability discovery
-- Capability warning system in adapter (6 advisory warning types)
-- Regression tests for intent-neutral generic search, intent reranking, and provider status
-- README stable baseline section documenting tool contracts
-- `RankReason::SecurityPrimarySource`, `RankReason::SecurityMaintainerSource`, `RankReason::VersionAffectedMatch` variants for security search ranking metadata
-- `version_mismatch` warning when package found but no advisory has affected version ranges matching the supplied version
-- Integration test for `repo_search` with `include_security_context` flag
-- **Result quality and uncertainty metadata**: `ResultQuality` per-result quality block on `SourceCard` with `confidence`, `relevance`, `authority`, `freshness`, `evidence_strength`, `uncertainty_reasons`, and `quality_reasons`
-- `GroupQualitySummary` on `RepoResultGroup`, `ResearchResultGroup`, `SecurityResultGroup` with aggregate confidence/evidence counts
-- `SearchUncertaintySummary` in `RepoSearchTelemetry` with provider failure counts and low-confidence result counts
-- `quality_metadata` object in `provider_status` response advertising quality metadata capabilities
-- Deterministic quality computation from URL heuristics, provider signals, and structured metadata (no model-based judging)
-
-### Added
-
-- Content-type detection classifier (`src/fetch/detect.rs`) for deterministic document kind and language identification from Content-Type headers, URL extensions, and byte heuristics
-- Line-preserving code renderer (`src/fetch/render/code.rs`) for source code, JSON, TOML, YAML, and config files with line-range metadata
-- Diff/patch renderer with hunk preservation
-- Markdown source file renderer (`src/fetch/render/markdown_source.rs`) using pulldown-cmark with heading outline extraction
-- Plain text prose renderer with paragraph-based block splitting
-- `web_fetch` now accepts `application/json`, `text/markdown`, `text/toml`, `text/yaml`, `text/x-diff`, and other text-based Content-Type headers
-- `FetchRenderMetadata.detected_language` field populated from content detection
-- 12 new integration tests covering JSON, Markdown, TOML, YAML, diff, code, plaintext, and truncation behavior
+- Provider capability flags now reflect what adapters actually forward rather than all features an upstream API may support.
+- Intent/freshness reranking uses a bounded candidate pool larger than the final requested result count, while preserving generic-search behavior.
+- Repo, research, and security grouped responses share grouping/truncation/quality-summary behavior.
+- `repo_search` and `research_search` use a single request-level timeout instead of multiplying per-subquery timeouts.
+- Security search orchestration, grouping, and suggested-fetch logic are split into dedicated `meta` modules for maintainability.
+- README examples and capability documentation were refreshed for the current eight-tool MCP surface.
+- Lockfile updated from `quinn-proto` 0.11.14 to 0.11.15 to address RUSTSEC-2026-0185.
 
 ### Fixed
 
-- Exact-error redaction now applies consistently to provider-facing exact phrases as well as normalized query text, preventing API tokens, UUIDs, memory addresses, and local absolute paths from leaking through generated subqueries.
-- **UTF-8-safe snippet truncation in `github_issues` and `github_releases` engines**: the legacy `truncate_body` helper sliced on byte offsets and panicked when the slice landed inside a multi-byte code point (e.g. CJK characters or emoji). The new implementation counts Unicode scalar values and only returns substrings at valid char boundaries, preserving the historical word-boundary trim semantics. Added 10 new unit tests covering multibyte UTF-8, CJK, emoji-only text, zero `max_chars`, and word-boundary-with-emoji cases.
-- Repo grouping no longer misclassifies filenames such as `contest.rs` as tests solely because they contain the substring `test`
-- Security grouping now treats short exploit markers such as `poc` as URL tokens, avoiding false positives such as `pocket-guide`
-- Security group truncation now applies consistently even when called with `max_per_group = 0`
-- README stable-tool and research response documentation updated to match the current eight-tool MCP surface and `quality_summary` response shape
-
-### Added
-- `web_fetch` now supports `extract_mode: "markdown"` for Markdown-rendered output. HTML pages are rendered as structured Markdown with headings, code blocks, tables, lists, and inline formatting.
-- HTML pages now produce structured blocks (`headings`, `paragraphs`, `list_item`, `code`, `table`, `block_quote`, `definitions`, `horizontal_rule`) instead of a single flat text block.
-- Document outline is populated from HTML heading elements.
-- Code blocks preserve whitespace and detect language classes from `<code>` elements.
-- Content root selection prefers `<main>`, `<article>`, `[role=main]`, then `<body>`.
-- New `src/fetch/render/` module with HTML structural renderer: `blocks.rs` (HTML-to-blocks parser), `text.rs` (plain text renderer), `markdown.rs` (Markdown renderer).
-
-### Changed
-- **OSV package/ecosystem/version native query support in `security_search`**: when both `package` and `ecosystem` are provided, the native OSV provider is queried directly via `/v1/query` for structured package-scoped results. When OSV is not enabled, a `native_advisory_search_unavailable` warning is emitted.
-- **OSV free-text search guarded**: the `osv` provider's `search()` function now returns empty results for unstructured prose queries, only processing structured queries (vulnerability IDs, package/ecosystem hints). This prevents OSV from acting as a generic search engine.
-- **OSV CVSS handling**: CVSS vector strings are preserved when present; numeric CVSS scores are parsed when available. Severity is derived from both text labels and numeric scores.
-- **Security orchestration moved to `src/meta/security_search.rs`**: core security search logic (`run_security_search_plan`) extracted from `src/mcp/tools.rs` into its own module for better separation of concerns.
-- **Request deadline warnings now report interrupted subqueries**: `request_deadline_exceeded` warnings for `repo_search` and `research_search` now report both interrupted (started but incomplete) and skipped (never started) subquery counts.
-- **Unknown `repo_search` host values rejected with validation error**: explicit `host` values in repo search query hints that are not `github`, `gitlab`, or `codeberg` produce a validation error. Accepted values: `github` (alias `gh`), `gitlab` (alias `gl`), `codeberg` (alias `cb`).
-- **Stable warning prefixes adopted**: all advisory warnings use stable, machine-parseable prefixes (e.g. `native_advisory_search_unavailable:`, `kev_match:`, `version_match_unavailable:`) for programmatic handling by agents.
-- `MetadataSearchAdapter::web_search` now takes a `max_results_cap` argument alongside the caller's effective `max_results`. The candidate-pool limit is computed from these two values before provider fan-out, so each provider is asked for the candidate limit rather than the final return count. This lets intent-aware reranking promote intent-matching results that would otherwise be truncated before ranking.
-- `candidate_pool_size` is now config-aware (bounded by the configured cap) and cannot panic when `effective_max_results > max_results_cap`. The previous helper used `usize::clamp(min, max)` which panicked on that path.
-- Provider fan-out logs now distinguish `final_max_results` from `candidate_limit` for debugging.
-- `repo_search` and `research_search` use a single request-level timeout instead of per-subquery timeouts, preventing timeout multiplication when multiple subqueries are issued.
-- Security intent warning now uses the `supports_security_search` provider capability flag instead of a generic message.
-- OSV `query_package` function used for explicit ecosystem/package/version queries in `security_search`, providing structured package-scoped results.
-- KEV warning taxonomy: outcome-based warnings (`kev_match`, `kev_absent_not_proof`, `kev_lookup_failed`, `kev_lookup_skipped`) replace the previous "not yet implemented" placeholder.
-- `repo_search` explicit JSON fields (e.g. `repo`, `aspects`) now override any hints parsed from the `query` text.
-- `research_search` `max_groups` limit is now enforced; the response contains at most `max_groups` groups.
-- Security grouping and suggested-fetch logic moved from `src/mcp/tools.rs` to `src/meta/security_grouping.rs` and `src/meta/security_suggested_fetches.rs` for better module organization.
-- Security search now returns a normalized `security_context` object with query classification, parsed identifiers, source quality tiering, vulnerability summaries, and defensive guidance
-- CWE IDs (e.g. CWE-79, CWE-89) are now parsed from query text alongside CVE, GHSA, OSV, and RustSec identifiers
-- Source quality tiering classifies security results into primary_advisory, vendor_advisory, package_registry_advisory, maintainer_discussion, release_notes, security_research, community_discussion, and news_or_blog tiers
-- `repo_search(include_security_context = true)` now returns a `CompactSecurityContext` with query kind, vulnerability count, and highest severity instead of raw vulnerability metadata
-- Defensive guidance categories (upgrade_or_pin, input_validation, xss_hardening, etc.) are extracted from security result groups
-
-### Added
-- `research_search` MCP tool: research-oriented multi-source evidence discovery with grouped source-card bundles, subquery transparency, evidence-quality classification, and suggested fetches with domain diversity constraints.
-  - New core types: `ResearchSearchRequest`, `ResearchSearchResponse`, `ResearchDomain`, `ResearchSourceType`, `EvidenceQuality`, `ResearchResultGroupKind`, `ResearchSubquery`, `ResearchResultGroup`, `ResearchSuggestedFetch`.
-  - New planner module: generates bounded subqueries from requested source types and research domain.
-  - New grouping module: deterministic classification of source cards into research evidence groups with evidence-quality scoring.
-  - New suggested-fetch generator: priority-ordered fetch suggestions with per-domain diversity caps.
-  - Adapter orchestration: bounded subquery fan-out with global timeout, RRF aggregation, and deduplication.
-  - Warning system: subquery cap, freshness approximate, provider failures, empty groups.
-  - Server capabilities: `research_search` advertised in `provider_status` response.
-- `src/mcp/mod.rs` module doc comment updated to list the MCP tool surface.
-- `repo_search` MCP tool for structured repository evidence discovery with grouped result bundles and suggested fetch URLs
-- `RepoSearchRequest`, `RepoResultGroup`, `RepoSearchResponse`, `RepoSuggestedFetch` types in `src/core/repo_search.rs`
-- `repo_grouping` deterministic classification of SourceCards into group kinds (OfficialDocs, PackageRegistry, Repository, Readme, Examples, Tests, SourceFiles, Issues, PullRequests, Releases, MigrationNotes, Changelog, CommunityDiscovery, Other)
-- `repo_planner` subquery generation for repo search bundles
-- `suggested_fetches` suggested fetch URL generation for each group
-- `server_capabilities.repo_search` field now reports `true`
-- `security_search` MCP tool for security-oriented retrieval with normalized vulnerability metadata and grouped source cards
-- `osv` provider: native OSV (Open Source Vulnerabilities) JSON API adapter for querying vulnerability databases by package+ecosystem or vulnerability ID. No API key required. Enabled by default. The `query_package` function handles explicit ecosystem/package/version queries via the `/v1/query` endpoint.
-- `SecuritySearchRequest`, `SecurityIdentifiers`, `VulnerabilityMetadata`, `SecurityResultGroup`, `SecuritySearchResponse` types in `src/core/security.rs`
-- Deterministic identifier parser for CVE, GHSA, OSV, RustSec, and package/ecosystem/version hints
-- `ResultMetadata::Advisory` variant for native advisory provider results
-- `SourceMetadata.vulnerability` field for structured vulnerability metadata on source cards
-- `ProviderCapabilities.supports_security_search` flag
-- `RankReason::ProviderNativeAdvisorySearch` variant
-- Security result grouping logic (AuthoritativeAdvisories, VendorAdvisories, PackageAdvisories, KevEntries, PatchCommitsOrReleases, ExploitDiscussion, DefensiveGuidance, GeneralContext, Other)
-- `server_capabilities.security_search` field now reports `true`
-- `KevMetadata` type for CISA Known Exploited Vulnerabilities data. KEV status is reported via outcome-based warnings (`kev_match`, `kev_absent_not_proof`, `kev_lookup_failed`, `kev_lookup_skipped`).
-- `VulnerabilitySource` enum (Osv, GithubAdvisory, Nvd, Rustsec, CisaKev, Generic)
-- `SeverityLevel` enum (Critical, High, Medium, Low, Unknown) with loose parsing
-
-### Fixed
-- `MockEngine::search` now respects the `max_results` argument and truncates its canned results accordingly. Previously the mock ignored the limit and returned all canned results, masking the candidate-pool bug where production providers were called with `final_max_results` instead of `candidate_limit`.
-- `run_web_fetch` MCP tool now includes `links_seen` and `links_truncated` fields in the JSON payload.
-- CLI `eggsearch fetch --json` now includes `trust_markers` and `document` fields in JSON output.
-- **PDF `metadata_only` no longer leaks body content**: when `extract_mode: "metadata_only"` targets a PDF, the response returns `text: null` with empty `document.blocks` and `document.chunks` instead of extracting and returning page text.
-- **Document link truncation metadata consistency**: `FetchDocument.link_truncated` now mirrors the top-level `links_truncated` field instead of being hardcoded to `false`.
-- **HTML outline entries filtered after truncation**: outline entries whose `block_index` points to a block removed by block-boundary truncation are now removed, preventing stale index references.
-- **HTML outline pruning helper**: `src/fetch/render/blocks.rs` exposes `prune_outline_to_blocks(&mut outline, blocks.len())` that retains only entries with `block_index < blocks.len()`, called immediately after `blocks.truncate(last_valid)`. Unit tests cover the in-range, out-of-range, and `None` block_index branches; an integration test verifies the invariant end-to-end through `web_fetch`.
-- **Code/diff/plaintext renderers enforce hard output bounds**: oversized single lines or paragraphs are now truncated to the configured `max_chars` budget instead of being pushed in full, preventing block text from exceeding the character limit.
-- **PDF document metadata includes real fetch context**: `FetchRenderMetadata` for PDFs now reports actual `bytes_read`, `content_length`, and `redirects_followed` instead of hardcoded zeros.
-- **HTML sparse-root fallback**: when `main` or `article` exists but produces no or minimal content, the renderer falls back to `body` instead of returning an empty document.
-- **Content-type classifier parity**: `application/javascript`, `application/x-javascript`, `application/typescript`, and `application/x-sh` are now classified as code by the content detection classifier.
-
-### Added
-- **Link classification for `web_fetch`**: extracted links now include a deterministic `link_kind` classification (`same_page_anchor`, `same_domain`, `external`, `download`, `source_code`, `documentation`, `api_reference`, `issue`, `pull_request`, `release`, `security_advisory`, `pdf`, `image`, `feed`, `other`), optional `rel` attribute, and `same_domain` boolean flag. Classification uses cheap URL heuristics (host equality, path patterns, file extensions) with no external dependencies.
-- **Link bounding metadata**: `WebFetchResponse` now includes `links_seen` (total `<a href>` elements encountered) and `links_truncated` (whether the link list was capped at 100) fields when `include_links` is enabled.
-- **CLI link display**: `eggsearch fetch --links` now shows link classification kinds and link bounding metadata in both pretty and JSON output.
-- 4 new integration tests covering link classification, link bounding metadata, empty links when not requested, and same-domain detection.
-- `RecordingMockEngine` test helper (feature-gated behind `mock`) that records the `max_results` argument it was called with. Used by new regression tests to verify provider fan-out passes the candidate-pool limit to providers.
-- Unit tests covering `candidate_pool_size` panic-safety, zero-handling, and the cap-clamping edge case.
-- Integration tests covering the candidate-pool flow at the MCP tool boundary: provider receives candidate limit, candidate pool grows above the final count, candidate pool clamps to a small cap, and the intent-reranking regression test now actually exercises the bug fix.
-- **Structured document model for `web_fetch`**: new `document` field on `WebFetchResponse` with `DocumentKind`, `RenderFormat`, `BlockKind`, `FetchDocument`, `FetchRenderMetadata`, `DocumentOutlineEntry`, `RenderedBlock`, and `DocumentChunk` types in `src/core/document.rs`. Phase 1 builds a minimal compatibility document from current extraction output: HTML gets `kind=html` with a single paragraph block, plain text gets `kind=plain_text` with a raw-text block. Block text passes through Tier 1 sanitization (control-char strip + length bound) but is not framed. The legacy `text` field remains fully populated for backward compatibility.
-- `text_truncated` field on `FetchDocument` distinguishes character-level truncation from the existing byte-level `truncated` flag.
-- `FetchRenderMetadata` reports `bytes_read`, `content_length`, `charset`, `redirects_followed`, `source_extension`, and `detected_language`.
-- `HtmlExtractor::extract` and `extract_content` now return a 6-tuple with an additional `text_truncated: bool` field.
-- 10 new integration tests covering document model acceptance criteria (kind/format, blocks/chunks, metadata, truncation, sanitization, legacy field compatibility).
-- **PDF text extraction** (feature-gated behind `pdf`, opt-in, not default): `web_fetch` detects PDF responses via `Content-Type: application/pdf` or `.pdf` URL extension and extracts text using the `lopdf` crate. Per-page indexed blocks with `page_break` markers, per-page chunks. Bounded by `pdf_max_pages` (default 25), `pdf_max_chars_per_page` (default 12000), and `pdf_max_total_chars` (default 50000). New config fields: `pdf_enabled`, `pdf_max_pages`, `pdf_max_chars_per_page`, `pdf_max_total_chars` in `[fetch]`. New error variants: `pdf_not_compiled_in`, `pdf_disabled`, `pdf_parse_error`, `pdf_encrypted`, `pdf_no_extractable_text`. Limit hits produce a warning and partial content rather than a hard error. MSRV bumped from 1.80 to 1.85 (lopdf 0.42 requirement). No OCR, no embedded file extraction, no JavaScript.
-- **Code-host source-file fetch**: `web_fetch` now recognizes source-file browser URLs from GitHub, GitLab, and Codeberg and internally rewrites them to raw content URLs for fetching. GitHub blob URLs are rewritten to `raw.githubusercontent.com`, GitLab blob URLs to `/-/raw/`, and Codeberg src URLs to `/raw/branch/`. The response includes a `fetch_transform` object (`kind`, `original_url`, `transformed_url`) when a rewrite occurs. Both the original and rewritten URLs pass the same SSRF/localhost/private-network validation. New types: `FetchTransform`, `FetchTransformKind` in `src/core/fetch.rs`; `resolve_code_host_fetch_target` in `src/core/code_host_fetch.rs`.
-- 10 new unit tests for URL resolution (GitHub/GitLab/Codeberg blob URLs, non-file URLs, line anchors, safety validation) and 7 new integration tests for code-host fetch (transform metadata, serde roundtrips, response shape).
-- Security context types: `SecurityContext`, `CompactSecurityContext`, `SecurityQueryKind`, `SecurityIdentifier`, `SecurityIdentifierKind`, `SecuritySourceTier`, `SecuritySourceQuality`, `DefensiveGuidance`, `DefensiveGuidanceCategory`, `AffectedPackageSummary`, `VulnerabilitySummary`
-- Deterministic source quality classification functions: `classify_source_tier()`, `assess_source_quality()`, `classify_query_kind()`, `build_identifier_list()`
-
-### Changed
-- **Codeberg raw rewrite deferred**: `web_fetch` no longer rewrites Codeberg source-file browser URLs (`/src/branch/<ref>/<path>` or `/src/tag/<ref>/<path>`) to raw paths. Distinguishing branch refs from tag refs at the parser level is out of scope until the Codeberg raw URL shape is verified. Codeberg source-file URLs still classify as `SourceFile` and are fetched as ordinary web pages through the existing HTML extraction path; no `fetch_transform` block is emitted. The `FetchTransformKind::CodebergRawFile` variant has been removed; only `github_raw_file` and `gitlab_raw_file` are emitted.
-- **Documented `supports_freshness` vs `supports_result_timestamps` semantics**: `ProviderCapabilities::supports_freshness` is the provider-side flag (upstream engine accepts a time-range parameter), while `supports_result_timestamps` is the client-side flag (provider payloads carry per-result timestamps usable for local freshness reranking). GitHub issues/releases set `supports_result_timestamps = true` and `supports_freshness = false`; the GitHub search API does not accept a freshness parameter but its payloads include `updated_at` / `published_at`, so eggsearch applies local freshness reranking on the response. `FreshnessMatch` is never emitted without timestamp evidence.
-- **Metadata merge on RRF deduplication**: when the same URL is returned by multiple providers, the structured metadata (`ResultMetadata::Issue(...)`, `ResultMetadata::Release(...)`) wins over `ResultMetadata::None` from a generic HTML scraper. New `ResultMetadata::merge`, `IssueMetadata::merge`, and `ReleaseMetadata::merge` helpers in `src/meta/engines/models.rs` and `src/core/source_card.rs`. The merge is idempotent and order-independent; the left side wins for shared fields.
-
-### Added
-- 5 unit tests for `ResultMetadata::merge` semantics and 2 adapter-level tests proving that structured `IssueMetadata` / `ReleaseMetadata` survive RRF aggregation even when a generic HTML scraper also returns the same URL with `ResultMetadata::None`.
-- 4 unit tests pinning the (false, true) capability shape for `github_issues` and `github_releases`, and the (false, false) shape for HTML scrape providers and `github_code`.
-- New unit tests for the disabled Codeberg rewrite: `codeberg_src_branch_resolves_without_raw_rewrite`, `codeberg_src_tag_resolves_without_raw_rewrite`, and `codeberg_to_fetch_transform_returns_none`.
+- Exact-error redaction now applies consistently to provider-facing exact phrases as well as normalized query text.
+- UTF-8-safe snippet truncation in `github_issues` and `github_releases` prevents panics on multibyte text.
+- `MockEngine::search` now respects the requested `max_results`, preserving coverage for candidate-pool regressions.
+- `candidate_pool_size` is config-aware and cannot panic when the effective result count exceeds the cap.
+- Repo grouping no longer misclassifies filenames such as `contest.rs` as tests.
+- Security grouping avoids false positives for short exploit markers such as `poc` and truncates consistently at `max_per_group = 0`.
+- `web_fetch` JSON now includes `links_seen`, `links_truncated`, `trust_markers`, and `document` where applicable.
+- PDF `metadata_only` no longer leaks body content, and PDF document metadata reports real fetch context.
+- HTML outline entries are pruned after truncation, and sparse `main`/`article` roots fall back to `body`.
+- Code, diff, and plain-text renderers enforce hard character bounds for oversized lines or paragraphs.
+- README `batch_fetch` examples now use the tagged item schema accepted by the MCP tool, and `provider_status` docs include the current batch capability fields.
 
 ## [0.3.2] - 2026-06-07
 

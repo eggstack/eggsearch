@@ -35,6 +35,24 @@ pub enum ResearchDomain {
     Infrastructure,
 }
 
+impl ResearchDomain {
+    /// Parse a research-domain string, accepting common aliases used by MCP callers.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "general" => Some(Self::General),
+            "software_architecture" | "architecture" => Some(Self::SoftwareArchitecture),
+            "api_design" | "api" => Some(Self::ApiDesign),
+            "distributed_systems" | "distributed" => Some(Self::DistributedSystems),
+            "security" => Some(Self::Security),
+            "performance" => Some(Self::Performance),
+            "language_ecosystem" | "ecosystem" => Some(Self::LanguageEcosystem),
+            "machine_learning" | "ml" => Some(Self::MachineLearning),
+            "infrastructure" | "infra" => Some(Self::Infrastructure),
+            _ => None,
+        }
+    }
+}
+
 /// Classification of source types sought in a research query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -65,6 +83,32 @@ pub enum ResearchSourceType {
     CommunityDiscussion,
     /// Counterpoints, criticism, or alternative viewpoints.
     Counterpoints,
+}
+
+impl ResearchSourceType {
+    /// Parse a research source-type string, accepting stable names and short aliases.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "primary_sources" | "primary" => Some(Self::PrimarySources),
+            "official_docs" | "docs" => Some(Self::OfficialDocs),
+            "specifications" | "specs" => Some(Self::Specifications),
+            "reference_implementations" | "reference" | "implementations" => {
+                Some(Self::ReferenceImplementations)
+            }
+            "design_discussions" | "design" => Some(Self::DesignDiscussions),
+            "benchmarks" | "benchmark" => Some(Self::Benchmarks),
+            "security_considerations" | "security" => Some(Self::SecurityConsiderations),
+            "issue_threads" | "issues" => Some(Self::IssueThreads),
+            "release_notes" | "releases" => Some(Self::ReleaseNotes),
+            "academic_or_formal_sources" | "academic" | "formal" => {
+                Some(Self::AcademicOrFormalSources)
+            }
+            "recent_news" | "news" => Some(Self::RecentNews),
+            "community_discussion" | "community" => Some(Self::CommunityDiscussion),
+            "counterpoints" | "counterpoint" => Some(Self::Counterpoints),
+            _ => None,
+        }
+    }
 }
 
 /// Quality tier of an evidence source.
@@ -140,7 +184,7 @@ pub enum ResearchResultGroupKind {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ResearchWorkflow {
-    /// Architecture decision research (patterns, tradeoffs, RFCs).
+    /// General-purpose research workflow.
     #[default]
     General,
     /// Evaluate an API or library for adoption.
@@ -159,6 +203,23 @@ pub enum ResearchWorkflow {
     ArchitectureDecision,
 }
 
+impl ResearchWorkflow {
+    /// Parse a research workflow string, accepting stable names and short aliases.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "general" => Some(Self::General),
+            "architecture_decision" | "architecture" => Some(Self::ArchitectureDecision),
+            "api_evaluation" | "api" => Some(Self::ApiEvaluation),
+            "library_comparison" | "comparison" => Some(Self::LibraryComparison),
+            "migration_planning" | "migration" => Some(Self::MigrationPlanning),
+            "security_review" | "security" => Some(Self::SecurityReview),
+            "performance_investigation" | "performance" => Some(Self::PerformanceInvestigation),
+            "ecosystem_survey" | "ecosystem" => Some(Self::EcosystemSurvey),
+            _ => None,
+        }
+    }
+}
+
 /// Research depth controls source diversity and subquery breadth.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
@@ -172,6 +233,18 @@ pub enum ResearchDepth {
     Standard,
     /// Deep dive: maximum subqueries and source diversity.
     Deep,
+}
+
+impl ResearchDepth {
+    /// Parse a research depth string.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "quick" => Some(Self::Quick),
+            "standard" => Some(Self::Standard),
+            "deep" => Some(Self::Deep),
+            _ => None,
+        }
+    }
 }
 
 /// A research dimension — a named aspect of the research question.
@@ -618,6 +691,41 @@ mod tests {
     #[test]
     fn research_domain_default() {
         assert_eq!(ResearchDomain::default(), ResearchDomain::General);
+    }
+
+    #[test]
+    fn research_enum_parsers_accept_documented_aliases() {
+        assert_eq!(
+            ResearchDomain::parse("architecture"),
+            Some(ResearchDomain::SoftwareArchitecture)
+        );
+        assert_eq!(
+            ResearchDomain::parse("ml"),
+            Some(ResearchDomain::MachineLearning)
+        );
+
+        assert_eq!(
+            ResearchSourceType::parse("docs"),
+            Some(ResearchSourceType::OfficialDocs)
+        );
+        assert_eq!(
+            ResearchSourceType::parse("releases"),
+            Some(ResearchSourceType::ReleaseNotes)
+        );
+
+        assert_eq!(
+            ResearchWorkflow::parse("comparison"),
+            Some(ResearchWorkflow::LibraryComparison)
+        );
+        assert_eq!(ResearchDepth::parse("deep"), Some(ResearchDepth::Deep));
+    }
+
+    #[test]
+    fn research_enum_parsers_reject_unknown_values() {
+        assert_eq!(ResearchDomain::parse("literature"), None);
+        assert_eq!(ResearchSourceType::parse("podcasts"), None);
+        assert_eq!(ResearchWorkflow::parse("brainstorm"), None);
+        assert_eq!(ResearchDepth::parse("exhaustive"), None);
     }
 
     #[test]

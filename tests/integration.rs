@@ -10373,6 +10373,16 @@ fn provider_status_includes_tool_capabilities() {
         "enabled should be false without local backend"
     );
     assert_eq!(lw["symbol_enrichment"], "regex_heuristic");
+
+    let batch = tc["batch_fetch"]
+        .as_object()
+        .expect("batch_fetch capabilities");
+    assert!(batch["max_items"].is_number());
+    assert!(batch["max_items_cap"].is_number());
+    assert!(batch["max_chars_per_item"].is_number());
+    assert!(batch["max_total_chars"].is_number());
+    assert!(batch["max_total_chars_cap"].is_number());
+    assert!(batch["concurrency"].is_number());
 }
 
 /// Step 7: tool_capabilities reflects local backend being enabled.
@@ -11291,8 +11301,12 @@ fn batch_fetch_provider_status_capability() {
     assert_eq!(batch["supports_web"], true);
     assert_eq!(batch["supports_repo"], true);
     assert_eq!(batch["preserves_item_trust"], true);
+    assert!(batch["max_items"].is_number());
     assert!(batch["max_items_cap"].is_number());
+    assert!(batch["max_chars_per_item"].is_number());
+    assert!(batch["max_total_chars"].is_number());
     assert!(batch["max_total_chars_cap"].is_number());
+    assert!(batch["concurrency"].is_number());
 }
 
 #[tokio::test]

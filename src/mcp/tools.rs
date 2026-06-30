@@ -755,85 +755,29 @@ pub async fn run_research_search(
     args: ResearchSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::research::{
-        ResearchDepth, ResearchDomain, ResearchSearchRequest, ResearchSourceType, ResearchWorkflow,
+        ResearchDepth, ResearchDomain, ResearchSearchRequest, ResearchSourceType,
     };
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
         return Err(ToolError::Validation(web_search_denied_message()));
     }
 
-    let research_domain =
-        args.research_domain
-            .as_deref()
-            .and_then(|d| match d.to_lowercase().as_str() {
-                "general" => Some(ResearchDomain::General),
-                "software_architecture" | "architecture" => {
-                    Some(ResearchDomain::SoftwareArchitecture)
-                }
-                "api_design" | "api" => Some(ResearchDomain::ApiDesign),
-                "distributed_systems" | "distributed" => Some(ResearchDomain::DistributedSystems),
-                "security" => Some(ResearchDomain::Security),
-                "performance" => Some(ResearchDomain::Performance),
-                "language_ecosystem" | "ecosystem" => Some(ResearchDomain::LanguageEcosystem),
-                "machine_learning" | "ml" => Some(ResearchDomain::MachineLearning),
-                "infrastructure" | "infra" => Some(ResearchDomain::Infrastructure),
-                _ => None,
-            });
+    let research_domain = args
+        .research_domain
+        .as_deref()
+        .and_then(ResearchDomain::parse);
 
     let workflow = args
         .workflow
         .as_deref()
-        .and_then(|w| match w.to_lowercase().as_str() {
-            "general" => Some(ResearchWorkflow::General),
-            "architecture_decision" | "architecture" => {
-                Some(ResearchWorkflow::ArchitectureDecision)
-            }
-            "api_evaluation" | "api" => Some(ResearchWorkflow::ApiEvaluation),
-            "library_comparison" | "comparison" => Some(ResearchWorkflow::LibraryComparison),
-            "migration_planning" | "migration" => Some(ResearchWorkflow::MigrationPlanning),
-            "security_review" | "security" => Some(ResearchWorkflow::SecurityReview),
-            "performance_investigation" | "performance" => {
-                Some(ResearchWorkflow::PerformanceInvestigation)
-            }
-            "ecosystem_survey" | "ecosystem" => Some(ResearchWorkflow::EcosystemSurvey),
-            _ => None,
-        });
+        .and_then(crate::core::research::ResearchWorkflow::parse);
 
-    let depth = args
-        .depth
-        .as_deref()
-        .and_then(|d| match d.to_lowercase().as_str() {
-            "quick" => Some(ResearchDepth::Quick),
-            "standard" => Some(ResearchDepth::Standard),
-            "deep" => Some(ResearchDepth::Deep),
-            _ => None,
-        });
+    let depth = args.depth.as_deref().and_then(ResearchDepth::parse);
 
     let desired_source_types: Vec<ResearchSourceType> = args
         .desired_source_types
         .iter()
-        .filter_map(|s| match s.to_lowercase().as_str() {
-            "primary_sources" | "primary" => Some(ResearchSourceType::PrimarySources),
-            "official_docs" | "docs" => Some(ResearchSourceType::OfficialDocs),
-            "specifications" | "specs" => Some(ResearchSourceType::Specifications),
-            "reference_implementations" | "reference" | "implementations" => {
-                Some(ResearchSourceType::ReferenceImplementations)
-            }
-            "design_discussions" | "design" => Some(ResearchSourceType::DesignDiscussions),
-            "benchmarks" | "benchmark" => Some(ResearchSourceType::Benchmarks),
-            "security_considerations" | "security" => {
-                Some(ResearchSourceType::SecurityConsiderations)
-            }
-            "issue_threads" | "issues" => Some(ResearchSourceType::IssueThreads),
-            "release_notes" | "releases" => Some(ResearchSourceType::ReleaseNotes),
-            "academic_or_formal_sources" | "academic" | "formal" => {
-                Some(ResearchSourceType::AcademicOrFormalSources)
-            }
-            "recent_news" | "news" => Some(ResearchSourceType::RecentNews),
-            "community_discussion" | "community" => Some(ResearchSourceType::CommunityDiscussion),
-            "counterpoints" | "counterpoint" => Some(ResearchSourceType::Counterpoints),
-            _ => None,
-        })
+        .filter_map(|s| ResearchSourceType::parse(s))
         .collect();
 
     let freshness = args
@@ -959,8 +903,12 @@ pub fn run_provider_status(
             },
             "batch_fetch": {
                 "enabled": state.config.fetch.enabled,
+                "max_items": state.config.fetch.batch_max_items,
                 "max_items_cap": state.config.fetch.batch_max_items_cap,
+                "max_chars_per_item": state.config.fetch.batch_max_chars_per_item,
+                "max_total_chars": state.config.fetch.batch_max_total_chars,
                 "max_total_chars_cap": state.config.fetch.batch_max_total_chars_cap,
+                "concurrency": state.config.fetch.batch_concurrency,
                 "supports_web": true,
                 "supports_repo": true,
                 "preserves_item_trust": true,
