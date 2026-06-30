@@ -478,6 +478,49 @@ mod tests {
     }
 
     #[test]
+    fn identity_forms_produce_equivalent_planner_output() {
+        // 1. Explicit owner+repo
+        let explicit = RepoSearchRequest {
+            query: String::new(),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("axum".to_string()),
+            ..Default::default()
+        };
+        // 2. Slash-form repo (no owner)
+        let slash_form = RepoSearchRequest {
+            query: String::new(),
+            repo: Some("tokio-rs/axum".to_string()),
+            ..Default::default()
+        };
+        // 3. Query-hint repo
+        let query_hint = RepoSearchRequest {
+            query: "repo:tokio-rs/axum".to_string(),
+            ..Default::default()
+        };
+
+        let plan_explicit = build_repo_search_plan(&explicit);
+        let plan_slash = build_repo_search_plan(&slash_form);
+        let plan_hint = build_repo_search_plan(&query_hint);
+
+        // All three should resolve to the same owner/repo
+        assert_eq!(plan_explicit.hints.owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(plan_slash.hints.owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(plan_hint.hints.owner.as_deref(), Some("tokio-rs"));
+
+        assert_eq!(plan_explicit.hints.repo.as_deref(), Some("axum"));
+        assert_eq!(plan_slash.hints.repo.as_deref(), Some("axum"));
+        assert_eq!(plan_hint.hints.repo.as_deref(), Some("axum"));
+
+        // All three should produce the same subquery labels
+        let labels_explicit: Vec<&str> = plan_explicit.subqueries.iter().map(|s| s.label.as_str()).collect();
+        let labels_slash: Vec<&str> = plan_slash.subqueries.iter().map(|s| s.label.as_str()).collect();
+        let labels_hint: Vec<&str> = plan_hint.subqueries.iter().map(|s| s.label.as_str()).collect();
+
+        assert_eq!(labels_explicit, labels_slash, "explicit and slash-form should produce same subquery labels");
+        assert_eq!(labels_explicit, labels_hint, "explicit and query-hint should produce same subquery labels");
+    }
+
+    #[test]
     fn max_eight_subqueries_cap() {
         let req = RepoSearchRequest {
             query: "tokio-rs/axum middleware router".to_string(),
