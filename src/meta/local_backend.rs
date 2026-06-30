@@ -19,6 +19,7 @@ use crate::core::local::{
     is_binary_extension, language_from_extension, LocalConfig, LocalFileEntry, LocalMatch,
     LocalSearchRequest, LocalSearchResult, SKIP_DIRS,
 };
+use crate::core::quality::compute_card_quality;
 use crate::core::result::TrustLevel;
 use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
@@ -921,7 +922,7 @@ impl LocalWorkspaceBackend {
                     (raw_snippet, TrustMarkers::default())
                 };
 
-                SourceCard::new(
+                let mut card = SourceCard::new(
                     title,
                     &pseudo_url,
                     vec!["local_workspace".to_string()],
@@ -930,7 +931,9 @@ impl LocalWorkspaceBackend {
                 )
                 .with_snippet(snippet)
                 .with_trust_markers(trust_markers)
-                .with_metadata(metadata)
+                .with_metadata(metadata);
+                card.quality = Some(compute_card_quality(&card));
+                card
             })
             .collect()
     }

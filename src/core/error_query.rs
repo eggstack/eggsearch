@@ -274,8 +274,8 @@ pub fn generate_error_subqueries(
         let mut terms = vec![code.code.clone()];
         if let Some(lang) = &parts.language_hint {
             terms.push(lang.clone());
-        } else if let Some(tool) = code.tool.as_str().into() {
-            terms.push(tool.to_string());
+        } else {
+            terms.push(code.tool.clone());
         }
         let query = terms.join(" ");
         subqueries.push(ErrorSubquery {

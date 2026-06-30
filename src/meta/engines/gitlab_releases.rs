@@ -180,6 +180,31 @@ fn release_url(item: &GitlabReleaseItem) -> Option<String> {
         .filter(|u| !u.is_empty() && u.starts_with("http"))
 }
 
+/// Extract owner and repo from a GitLab web_url.
+///
+/// GitLab release URLs follow the pattern:
+/// `https://gitlab.com/{owner}/{repo}/-/releases/{tag}`
+/// Nested namespaces are preserved in `owner` (e.g. `group/subgroup`).
+fn parse_owner_repo_from_url(web_url: &str) -> (Option<String>, Option<String>) {
+    let after_scheme = web_url
+        .find("://")
+        .map(|i| &web_url[i + 3..])
+        .unwrap_or(web_url);
+    let after_host = after_scheme
+        .find('/')
+        .map(|i| &after_scheme[i..])
+        .unwrap_or("");
+    let path = after_host.strip_prefix('/').unwrap_or(after_host);
+    if let Some(pos) = path.find("/-/") {
+        let namespace = &path[..pos];
+        let mut parts = namespace.rsplitn(2, '/');
+        let repo = parts.next().map(|s| s.to_string());
+        let owner = parts.next().map(|s| s.to_string());
+        return (owner, repo);
+    }
+    (None, None)
+}
+
 fn convert(items: Vec<GitlabReleaseItem>, max_results: usize) -> Vec<SearchResult> {
     let mut out = Vec::with_capacity(max_results.min(items.len()));
     for item in items {
@@ -201,10 +226,12 @@ fn convert(items: Vec<GitlabReleaseItem>, max_results: usize) -> Vec<SearchResul
 
         let snippet = item.assets.as_ref().and_then(build_asset_snippet);
 
+        let (owner, repo) = parse_owner_repo_from_url(&url);
+
         let metadata = ResultMetadata::Release(ReleaseMetadata {
             host: Some(CodeHost::Gitlab),
-            owner: None,
-            repo: None,
+            owner,
+            repo,
             tag: item.tag_name.clone(),
             name: item.name.clone(),
             draft: None,
@@ -276,8 +303,8 @@ mod tests {
         match &out[0].metadata {
             ResultMetadata::Release(m) => {
                 assert_eq!(m.host, Some(CodeHost::Gitlab));
-                assert!(m.owner.is_none());
-                assert!(m.repo.is_none());
+                assert_eq!(m.owner.as_deref(), Some("tokio-rs"));
+                assert_eq!(m.repo.as_deref(), Some("axum"));
                 assert_eq!(m.tag.as_deref(), Some("v0.7.0"));
                 assert_eq!(m.name.as_deref(), Some("Release v0.7.0"));
                 assert_eq!(m.published_at.as_deref(), Some("2024-01-16T12:00:00Z"));
@@ -491,6 +518,19 @@ mod tests {
     fn test_truncate_body_zero_max_returns_empty() {
         let out = truncate_body("anything", 0);
         assert_eq!(out, "");
+    }
+
+    #[test]
+    fn test_parse_owner_repo_from_url() {
+        let (owner, repo) =
+            parse_owner_repo_from_url("https://gitlab.com/tokio-rs/axum/-/releases/v1.0");
+        assert_eq!(owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(repo.as_deref(), Some("axum"));
+
+        let (owner, repo) =
+            parse_owner_repo_from_url("https://gitlab.com/group/subgroup/project/-/releases/v1.0");
+        assert_eq!(owner.as_deref(), Some("group/subgroup"));
+        assert_eq!(repo.as_deref(), Some("project"));
     }
 
     // -----------------------------------------------------------------------

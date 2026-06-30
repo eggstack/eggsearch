@@ -10,7 +10,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
-use super::models::{ResultMetadata, SearchResult};
+use super::models::{CodeSearchMetadata, ResultMetadata, SearchResult};
 
 const ENGINE: &str = "gitlab_code";
 const DEFAULT_BASE_URL: &str = "https://gitlab.com";
@@ -181,12 +181,19 @@ fn convert(items: Vec<GitlabCodeBlob>, max_results: usize) -> Vec<SearchResult> 
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let text_fragment = snippet.clone().filter(|s| !s.is_empty());
+
+        let metadata = ResultMetadata::CodeSearch(CodeSearchMetadata {
+            matched_symbol: None,
+            text_fragment,
+        });
+
         out.push(SearchResult {
             title,
             url: url.clone(),
             snippet,
             source_engine: ENGINE.to_string(),
-            metadata: ResultMetadata::None,
+            metadata,
         });
     }
     out
@@ -225,6 +232,12 @@ mod tests {
         );
         assert_eq!(out[0].snippet.as_deref(), Some("fn main() {}"));
         assert_eq!(out[0].source_engine, "gitlab_code");
+        match &out[0].metadata {
+            ResultMetadata::CodeSearch(m) => {
+                assert_eq!(m.text_fragment.as_deref(), Some("fn main() {}"));
+            }
+            other => panic!("expected CodeSearch metadata, got: {other:?}"),
+        }
         assert_eq!(out[1].title, "src/main.rs - 12345");
         assert!(out[1].snippet.is_none());
     }
@@ -402,6 +415,26 @@ mod tests {
         let body = r#"[]"#;
         let parsed: Vec<GitlabCodeBlob> = serde_json::from_str(body).unwrap();
         assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn test_convert_populates_code_search_metadata() {
+        let items = vec![GitlabCodeBlob {
+            path: Some("src/lib.rs".to_string()),
+            filename: Some("lib.rs".to_string()),
+            data: Some("fn router() {}".to_string()),
+            r#ref: Some("main".to_string()),
+            url: Some("https://gitlab.com/12345/-/blob/main/src/lib.rs".to_string()),
+            project_id: Some(12345),
+        }];
+        let out = convert(items, 10);
+        assert_eq!(out.len(), 1);
+        match &out[0].metadata {
+            ResultMetadata::CodeSearch(m) => {
+                assert_eq!(m.text_fragment.as_deref(), Some("fn router() {}"));
+            }
+            other => panic!("expected CodeSearch metadata, got: {other:?}"),
+        }
     }
 
     // -----------------------------------------------------------------------

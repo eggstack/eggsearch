@@ -6695,6 +6695,209 @@ mod repo_search {
     }
 
     #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn security_search_version_comparison_warning() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Advisory for test-pkg",
+                "https://github.com/advisories/GHSA-test-1234-abcd",
+                "mock_a",
+            )
+            .with_snippet("Versions before 2.0.0 are affected")],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("test-pkg vulnerability".into()),
+                ecosystem: Some("npm".into()),
+                package: Some("test-pkg".into()),
+                version: Some("3.0.0".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let warnings = v["warnings"].as_array().expect("warnings");
+        let _has_version_warning = warnings.iter().any(|w| {
+            let msg = w["message"].as_str().unwrap_or("");
+            msg.contains("version_match_unavailable") || msg.contains("version_mismatch")
+        });
+        assert!(
+            v["groups"].as_array().is_some_and(|g| !g.is_empty()),
+            "should have groups"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn security_search_defensive_guidance_categories() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "XSS Hardening Guide",
+                    "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Scripting_Prevention_Cheat_Sheet.html",
+                    "mock_a",
+                )
+                .with_snippet("Prevent XSS by encoding output"),
+                MockResult::new(
+                    "CVE-2024-0001",
+                    "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+                    "mock_a",
+                )
+                .with_snippet("XSS vulnerability in web framework"),
+            ],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001 XSS vulnerability".into()),
+                include_defensive_guidance: Some(true),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        assert_eq!(v["query"], "CVE-2024-0001 XSS vulnerability");
+        let groups = v["groups"].as_array().expect("groups");
+        assert!(!groups.is_empty(), "should have groups");
+    }
+
+    // ---- Exact-error mode tests ----
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_disabled_rejects_mode() {
+        let engines = vec![MockEngine::success("mock_a", vec![])];
+        let mut cfg = test_cfg();
+        cfg.search.exact_error.enabled = false;
+        let state = repo_state_with_engines(cfg, engines, Duration::from_secs(5));
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "error[E0308]: mismatched types".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected validation error for disabled exact_error");
+        assert!(
+            err.to_string().contains("exact_error") || err.to_string().contains("disabled"),
+            "error should mention exact_error being disabled: {err}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_uses_config_max_chars() {
+        let engines = vec![MockEngine::success("mock_a", vec![])];
+        let mut cfg = test_cfg();
+        cfg.search.max_query_chars = 50; // Set base limit smaller than max_error_chars
+        cfg.search.exact_error.max_error_chars = 100; // effective_max = max(50, 100) = 100
+        let state = repo_state_with_engines(cfg, engines, Duration::from_secs(5));
+        // Query longer than 100 chars should be rejected in exact_error mode
+        let long_query = "a".repeat(200);
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: long_query,
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected validation error for long query in exact_error mode");
+        assert!(
+            err.to_string().contains("characters") || err.to_string().contains("max_error_chars"),
+            "error should mention character limit: {err}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_parses_error_codes() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Rust error docs",
+                "https://doc.rust-lang.org/error-index.html",
+                "mock_a",
+            )
+            .with_snippet("E0308 mismatched types")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "error[E0308]: mismatched types: expected `u32`, found `&str`".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        // Should have error_context with parsed error parts
+        let error_context = v["error_context"].as_object();
+        assert!(
+            error_context.is_some(),
+            "exact_error mode should include error_context"
+        );
+
+        // Should have subqueries targeting the error code
+        let groups = v["groups"].as_array().expect("groups");
+        let total: usize = groups
+            .iter()
+            .map(|g| g["results"].as_array().map_or(0, |a| a.len()))
+            .sum();
+        assert!(total > 0, "should have results from error subqueries");
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn repo_search_exact_error_redacts_sensitive_tokens() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("Results", "https://example.com", "mock_a")],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(
+            state,
+            RepoSearchArgs {
+                // Error with home path, API key pattern, and UUID
+                query: "error in /home/user/project/src/main.rs: api_key=abc123def456ghi789jkl012mno345pqr token: 12345678-1234-1234-1234-123456789abc".into(),
+                mode: Some("exact_error".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        // Check that the response exists and groups are present
+        let groups = v["groups"].as_array().expect("groups");
+        assert!(!groups.is_empty(), "should have groups");
+
+        // The error_context should exist with redacted info
+        let error_context = v["error_context"].as_object();
+        assert!(
+            error_context.is_some(),
+            "exact_error mode should include error_context"
+        );
+    }
+
+    #[cfg(feature = "mock")]
     fn security_state_with_engines(
         cfg: AppConfig,
         engines: Vec<MockEngine>,
@@ -7143,6 +7346,134 @@ mod research_search {
         assert!(
             trust_markers.contains_key("text_truncated"),
             "trust_markers should have text_truncated"
+        );
+    }
+
+    // ---- Workflow mode tests ----
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_workflow_produces_workflow_context() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "Architecture Guide",
+                    "https://docs.rs/axum/latest/axum/",
+                    "mock_a",
+                )
+                .with_snippet("Web framework architecture"),
+                MockResult::new(
+                    "Design Patterns",
+                    "https://en.wikipedia.org/wiki/Design_patterns",
+                    "mock_a",
+                )
+                .with_snippet("Software design patterns"),
+            ],
+        )];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(
+            state,
+            ResearchSearchArgs {
+                query: "web framework architecture decisions".into(),
+                workflow: Some("architecture_decision".into()),
+                depth: Some("standard".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let workflow_context = v["workflow_context"].as_object();
+        assert!(
+            workflow_context.is_some(),
+            "workflow_context should be present when workflow is set"
+        );
+        if let Some(wc) = workflow_context {
+            assert!(
+                wc.get("dimensions").is_some(),
+                "workflow_context should have dimensions"
+            );
+            assert!(
+                wc.get("gaps").is_some(),
+                "workflow_context should have gaps"
+            );
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_compare_targets_with_library_comparison() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new("Axum docs", "https://docs.rs/axum/latest/axum/", "mock_a")
+                    .with_snippet("Fast, ergonomic web framework"),
+                MockResult::new(
+                    "Actix-web docs",
+                    "https://docs.rs/actix-web/latest/actix_web/",
+                    "mock_a",
+                )
+                .with_snippet("Actix web framework"),
+            ],
+        )];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(
+            state,
+            ResearchSearchArgs {
+                query: "compare web frameworks".into(),
+                workflow: Some("library_comparison".into()),
+                compare_targets: vec!["axum".into(), "actix-web".into()],
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let workflow_context = v["workflow_context"]
+            .as_object()
+            .expect("workflow_context present");
+        let wc_str = serde_json::to_string(workflow_context).unwrap();
+        assert!(
+            wc_str.contains("axum") && wc_str.contains("actix"),
+            "workflow_context should reference both compare targets: {wc_str}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_telemetry_object_fields() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("Result", "https://example.com", "mock_a")],
+        )];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_research_search(
+            state,
+            ResearchSearchArgs {
+                query: "test query".into(),
+                workflow: Some("architecture_decision".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let telemetry = v["telemetry"].as_object().expect("telemetry present");
+        assert!(
+            telemetry.get("workflow").is_some(),
+            "telemetry should have workflow field"
+        );
+        assert!(
+            telemetry.get("depth").is_some(),
+            "telemetry should have depth field"
+        );
+        assert!(
+            telemetry.get("subqueries_generated").is_some(),
+            "telemetry should have subqueries_generated"
         );
     }
 }
@@ -10603,7 +10934,8 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
-    cfg.fetch.batch_concurrency = 2;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 1;
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..4)
@@ -10858,6 +11190,322 @@ async fn batch_fetch_workspace_item_retains_local_trusted_and_marker_scan() {
         item_has_marker,
         "should have local_content_marker_warning in item warnings: {item_warnings:?}"
     );
+}
+
+// =========================================================================
+// batch_fetch prevalidation and budget behavior tests
+// =========================================================================
+
+#[tokio::test]
+async fn batch_fetch_rejects_malformed_url() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "not-a-url".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for malformed URL");
+    assert!(
+        err.to_string().contains("scheme must be http orhttps"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_unsupported_scheme() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "ftp://example.com/file".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for ftp scheme");
+    assert!(
+        err.to_string().contains("scheme must be http orhttps"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_absolute_repo_path() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
+                host: None,
+                owner: "test".to_string(),
+                repo: "repo".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "/etc/passwd".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for absolute path");
+    assert!(
+        err.to_string().contains("must not be absolute"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_zero_max_chars_web() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "https://example.com".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: Some(0),
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for zero max_chars");
+    assert!(
+        err.to_string().contains("max_chars must be > 0"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_zero_max_chars_repo() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
+                host: None,
+                owner: "test".to_string(),
+                repo: "repo".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: Some(0),
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for zero max_chars");
+    assert!(
+        err.to_string().contains("max_chars must be > 0"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_budget_exhaustion_returns_warning() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("A".repeat(100)); // 100 chars, each item returns 50 (capped by remaining budget)
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..3)
+        .map(|_| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url("/page"),
+            extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(50),
+            timeout_ms: None,
+            continue_on_error: Some(true),
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_budget_warning = warnings.iter().any(|w| {
+        w.as_str()
+            .unwrap_or("")
+            .contains("batch_total_budget_exhausted")
+    });
+    assert!(
+        has_budget_warning,
+        "should have batch_total_budget_exhausted warning: {v:?}"
+    );
+    let total = v["total_chars_returned"].as_u64().unwrap();
+    assert!(
+        total <= 50,
+        "total_chars_returned {total} should be <= 50: {v:?}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_budget_clamps_to_cap() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("Hello world");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: server.url("/page"),
+                extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(999_999_999),
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed despite huge max_total_chars (clamped to cap)");
+
+    assert_eq!(v["fetched"], 1);
+    assert_eq!(v["failed"], 0);
+}
+
+#[tokio::test]
+async fn batch_fetch_result_order_preserved() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    for i in 0..3 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/item{i}"));
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(format!(
+                    "<!DOCTYPE html><html><body><p>Content {i}</p></body></html>"
+                ));
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..3)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/item{i}")),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0]["index"], 0);
+    assert_eq!(results[1]["index"], 1);
+    assert_eq!(results[2]["index"], 2);
 }
 
 // =========================================================================

@@ -137,6 +137,36 @@ pub async fn search_with_project(
     Ok(convert(parsed, max_results))
 }
 
+/// Extract owner and repo from a GitLab web_url.
+///
+/// GitLab issue URLs follow the pattern:
+/// `https://gitlab.com/{owner}/{repo}/-/issues/{number}`
+/// Nested namespaces are preserved in `owner` (e.g. `group/subgroup`).
+fn parse_owner_repo_from_url(web_url: &str) -> (Option<String>, Option<String>) {
+    // Find "://..." then skip host, look for "/{namespace}/-/" pattern
+    let after_scheme = web_url
+        .find("://")
+        .map(|i| &web_url[i + 3..])
+        .unwrap_or(web_url);
+    let after_host = after_scheme
+        .find('/')
+        .map(|i| &after_scheme[i..])
+        .unwrap_or("");
+    // after_host starts with "/{namespace}/-/..."
+    let path = after_host.strip_prefix('/').unwrap_or(after_host);
+    // Find "/-/" separator
+    if let Some(pos) = path.find("/-/") {
+        let namespace = &path[..pos];
+        // namespace is "owner/repo" or "group/subgroup/repo"
+        // For issues: repo is the last segment, owner is everything before
+        let mut parts = namespace.rsplitn(2, '/');
+        let repo = parts.next().map(|s| s.to_string());
+        let owner = parts.next().map(|s| s.to_string());
+        return (owner, repo);
+    }
+    (None, None)
+}
+
 fn convert(items: Vec<GitlabIssueItem>, max_results: usize) -> Vec<SearchResult> {
     let mut out = Vec::with_capacity(max_results.min(items.len()));
     for item in items {
@@ -166,10 +196,12 @@ fn convert(items: Vec<GitlabIssueItem>, max_results: usize) -> Vec<SearchResult>
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let (owner, repo) = parse_owner_repo_from_url(web_url);
+
         let metadata = ResultMetadata::Issue(IssueMetadata {
             host: Some(CodeHost::Gitlab),
-            owner: None,
-            repo: None,
+            owner,
+            repo,
             number: item.iid,
             state: item.state.clone(),
             is_pull_request: Some(false),
@@ -229,8 +261,8 @@ mod tests {
         match &out[0].metadata {
             ResultMetadata::Issue(m) => {
                 assert_eq!(m.host, Some(CodeHost::Gitlab));
-                assert!(m.owner.is_none());
-                assert!(m.repo.is_none());
+                assert_eq!(m.owner.as_deref(), Some("tokio-rs"));
+                assert_eq!(m.repo.as_deref(), Some("axum"));
                 assert_eq!(m.number, Some(123));
                 assert_eq!(m.state.as_deref(), Some("opened"));
                 assert_eq!(m.is_pull_request, Some(false));
@@ -448,6 +480,23 @@ mod tests {
     fn test_truncate_body_zero_max_returns_empty() {
         let out = truncate_body("anything", 0);
         assert_eq!(out, "");
+    }
+
+    #[test]
+    fn test_parse_owner_repo_from_url() {
+        let (owner, repo) =
+            parse_owner_repo_from_url("https://gitlab.com/tokio-rs/axum/-/issues/123");
+        assert_eq!(owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(repo.as_deref(), Some("axum"));
+
+        let (owner, repo) =
+            parse_owner_repo_from_url("https://gitlab.com/group/subgroup/project/-/issues/1");
+        assert_eq!(owner.as_deref(), Some("group/subgroup"));
+        assert_eq!(repo.as_deref(), Some("project"));
+
+        let (owner, repo) = parse_owner_repo_from_url("https://gitlab.com/some/path");
+        assert!(owner.is_none());
+        assert!(repo.is_none());
     }
 
     // -----------------------------------------------------------------------

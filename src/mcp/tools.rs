@@ -737,6 +737,12 @@ pub async fn run_repo_search(
         },
     };
 
+    // Propagate degraded/partial provider selection into uncertainty_summary
+    if let Some(ref mut summary) = response.telemetry.uncertainty_summary {
+        summary.degraded_provider_selection = is_degraded;
+        summary.partial_provider_selection = has_partial_warning && !is_degraded;
+    }
+
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
 
@@ -1388,11 +1394,26 @@ pub async fn run_batch_fetch(
     // Pre-validate all items before launching any fetches
     for (i, item) in effective_items.iter().enumerate() {
         match item {
-            BatchFetchItem::Web { url, .. } => {
+            BatchFetchItem::Web { url, max_chars, .. } => {
                 if url.trim().is_empty() {
                     return Err(ToolError::Validation(format!(
                         "item {i}: url must not be empty"
                     )));
+                }
+                // Validate URL scheme early (http/https only)
+                let trimmed = url.trim();
+                if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+                    return Err(ToolError::Validation(format!(
+                        "item {i}: url scheme must be http orhttps, got: {}",
+                        &trimmed[..trimmed.len().min(20)]
+                    )));
+                }
+                if let Some(mc) = max_chars {
+                    if *mc == 0 {
+                        return Err(ToolError::Validation(format!(
+                            "item {i}: max_chars must be > 0"
+                        )));
+                    }
                 }
             }
             BatchFetchItem::Repo {
@@ -1400,6 +1421,7 @@ pub async fn run_batch_fetch(
                 repo,
                 path,
                 host,
+                max_chars,
                 ..
             } => {
                 if owner.trim().is_empty() {
@@ -1422,6 +1444,11 @@ pub async fn run_batch_fetch(
                         "item {i}: path must not contain '..'"
                     )));
                 }
+                if path.starts_with('/') {
+                    return Err(ToolError::Validation(format!(
+                        "item {i}: path must not be absolute (starts with '/')"
+                    )));
+                }
                 if let Some(h) = host {
                     match h.to_lowercase().as_str() {
                         "github" | "gh" | "gitlab" | "gl" | "workspace" => {}
@@ -1430,6 +1457,13 @@ pub async fn run_batch_fetch(
                                 "item {i}: unknown host '{other}'; accepted: github (gh), gitlab (gl), workspace"
                             )));
                         }
+                    }
+                }
+                if let Some(mc) = max_chars {
+                    if *mc == 0 {
+                        return Err(ToolError::Validation(format!(
+                            "item {i}: max_chars must be > 0"
+                        )));
                     }
                 }
             }

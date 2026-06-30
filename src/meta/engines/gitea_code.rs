@@ -10,7 +10,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
-use super::models::{ResultMetadata, SearchResult};
+use super::models::{CodeSearchMetadata, ResultMetadata, SearchResult};
 
 const ENGINE: &str = "gitea_code";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
@@ -151,12 +151,17 @@ fn convert(response: GiteaSearchResponse, base_url: &str, max_results: usize) ->
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
 
+            let metadata = ResultMetadata::CodeSearch(CodeSearchMetadata {
+                matched_symbol: None,
+                text_fragment: snippet.clone(),
+            });
+
             out.push(SearchResult {
                 title,
                 url,
                 snippet,
                 source_engine: ENGINE.to_string(),
-                metadata: ResultMetadata::None,
+                metadata,
             });
         }
     }
