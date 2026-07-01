@@ -796,10 +796,9 @@ pub async fn run_repo_search(
     }
 
     // Add capability enforcement telemetry
-    let hints = req.resolved_hints();
     response.telemetry.capability_enforcement = Some(
         crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry::for_repo_search(
-            &hints,
+            &req,
             &req.providers,
         ),
     );

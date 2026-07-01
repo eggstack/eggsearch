@@ -593,19 +593,24 @@ impl CapabilityEnforcementTelemetry {
     /// Build enforcement telemetry for a repo_search request by checking
     /// which providers can enforce which capabilities.
     pub fn for_repo_search(
-        hints: &crate::core::repo_query::RepoQueryHints,
+        req: &crate::core::repo_search::RepoSearchRequest,
         selected_providers: &[String],
     ) -> Self {
+        let hints = req.resolved_hints();
         let mut requested = Vec::new();
         let mut enforced = Vec::new();
         let mut approximated = Vec::new();
         let mut not_enforced = Vec::new();
 
-        // Determine what capabilities are requested based on hints
+        // Determine what capabilities are requested based on hints and request fields
         let wants_repo = hints.repo.is_some() || hints.owner.is_some();
         let wants_path = hints.path.is_some() || hints.file.is_some();
         let wants_language = hints.language.is_some();
         let wants_symbol = hints.symbol.is_some();
+        let wants_issues = req.include_issues.unwrap_or(true);
+        let wants_releases = req.include_releases.unwrap_or(true);
+        let wants_freshness = req.freshness != crate::core::query::Freshness::Any;
+        let wants_package = req.package.is_some() || req.ecosystem.is_some();
 
         if wants_repo {
             requested.push("repo_filter".to_string());
@@ -619,6 +624,18 @@ impl CapabilityEnforcementTelemetry {
         if wants_symbol {
             requested.push("symbol_hint".to_string());
         }
+        if wants_issues {
+            requested.push("issue_search".to_string());
+        }
+        if wants_releases {
+            requested.push("release_search".to_string());
+        }
+        if wants_freshness {
+            requested.push("freshness_filter".to_string());
+        }
+        if wants_package {
+            requested.push("package_search".to_string());
+        }
 
         if requested.is_empty() {
             return Self::default();
@@ -629,6 +646,8 @@ impl CapabilityEnforcementTelemetry {
         let mut path_enforced = false;
         let mut lang_enforced = false;
         let mut symbol_enforced = false;
+        let mut issue_enforced = false;
+        let mut release_enforced = false;
 
         for id in selected_providers {
             if let Some(desc) = built_in_provider_descriptor(id, true, false, true) {
@@ -643,6 +662,12 @@ impl CapabilityEnforcementTelemetry {
                 }
                 if desc.capabilities.supports_symbol_hint {
                     symbol_enforced = true;
+                }
+                if desc.capabilities.supports_issue_search {
+                    issue_enforced = true;
+                }
+                if desc.capabilities.supports_release_search {
+                    release_enforced = true;
                 }
             }
         }
@@ -675,6 +700,28 @@ impl CapabilityEnforcementTelemetry {
                 not_enforced.push("symbol_hint".to_string());
             }
         }
+        if wants_issues {
+            if issue_enforced {
+                enforced.push("issue_search".to_string());
+            } else {
+                approximated.push("issue_search".to_string());
+            }
+        }
+        if wants_releases {
+            if release_enforced {
+                enforced.push("release_search".to_string());
+            } else {
+                approximated.push("release_search".to_string());
+            }
+        }
+        if wants_freshness {
+            // No native repo provider enforces freshness server-side
+            not_enforced.push("freshness_filter".to_string());
+        }
+        if wants_package {
+            // Package search is always approximate via generic providers
+            approximated.push("package_search".to_string());
+        }
 
         Self {
             requested,
@@ -701,6 +748,8 @@ impl CapabilityEnforcementTelemetry {
         let has_package = req.package.is_some();
         let has_version = req.version.is_some();
         let has_severity = req.severity_min.is_some();
+        let wants_kev = req.include_kev.unwrap_or(false);
+        let wants_exploit = req.include_exploit_context.unwrap_or(false);
 
         if has_advisory_id {
             requested.push("advisory_lookup".to_string());
@@ -713,6 +762,12 @@ impl CapabilityEnforcementTelemetry {
         }
         if has_severity {
             requested.push("severity_filter".to_string());
+        }
+        if wants_kev {
+            requested.push("kev_support".to_string());
+        }
+        if wants_exploit {
+            requested.push("exploit_context".to_string());
         }
 
         if requested.is_empty() {
@@ -752,6 +807,14 @@ impl CapabilityEnforcementTelemetry {
         if has_severity {
             // Severity filtering is always approximate via web search
             approximated.push("severity_filter".to_string());
+        }
+        if wants_kev {
+            // KEV lookup is always approximate — fetched from CISA catalog
+            approximated.push("kev_support".to_string());
+        }
+        if wants_exploit {
+            // Exploit context is always approximate — gathered from web search
+            approximated.push("exploit_context".to_string());
         }
 
         Self {
@@ -900,10 +963,13 @@ mod tests {
 
     #[test]
     fn capability_enforcement_empty_hints() {
-        let hints = crate::core::repo_query::RepoQueryHints {
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "axum".to_string(),
+            include_issues: Some(false),
+            include_releases: Some(false),
             ..Default::default()
         };
-        let telemetry = CapabilityEnforcementTelemetry::for_repo_search(&hints, &[]);
+        let telemetry = CapabilityEnforcementTelemetry::for_repo_search(&req, &[]);
         assert!(telemetry.requested.is_empty());
         assert!(telemetry.enforced.is_empty());
         assert!(telemetry.approximated.is_empty());
@@ -912,14 +978,15 @@ mod tests {
 
     #[test]
     fn capability_enforcement_with_hints() {
-        let hints = crate::core::repo_query::RepoQueryHints {
-            repo: Some("axum".to_string()),
-            path: Some("src/".to_string()),
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:tokio/tokio path:src/".to_string(),
+            include_issues: Some(false),
+            include_releases: Some(false),
             ..Default::default()
         };
-        // No native providers — everything is approximated
+        // No native providers — repo/path are approximated, issues/releases not requested
         let telemetry =
-            CapabilityEnforcementTelemetry::for_repo_search(&hints, &["duckduckgo".to_string()]);
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["duckduckgo".to_string()]);
         assert!(telemetry.requested.contains(&"repo_filter".to_string()));
         assert!(telemetry.requested.contains(&"path_filter".to_string()));
         assert!(telemetry.approximated.contains(&"repo_filter".to_string()));
@@ -928,34 +995,40 @@ mod tests {
 
     #[test]
     fn capability_enforcement_native_provider() {
-        let hints = crate::core::repo_query::RepoQueryHints {
-            repo: Some("axum".to_string()),
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:tokio/tokio".to_string(),
+            include_issues: Some(false),
+            include_releases: Some(false),
             ..Default::default()
         };
         let telemetry =
-            CapabilityEnforcementTelemetry::for_repo_search(&hints, &["github_code".to_string()]);
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["github_code".to_string()]);
         assert!(telemetry.enforced.contains(&"repo_filter".to_string()));
     }
 
     #[test]
     fn capability_enforcement_symbol_not_enforced() {
-        let hints = crate::core::repo_query::RepoQueryHints {
-            symbol: Some("Router::layer".to_string()),
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "symbol:Router::layer".to_string(),
+            include_issues: Some(false),
+            include_releases: Some(false),
             ..Default::default()
         };
         let telemetry =
-            CapabilityEnforcementTelemetry::for_repo_search(&hints, &["duckduckgo".to_string()]);
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["duckduckgo".to_string()]);
         assert!(telemetry.not_enforced.contains(&"symbol_hint".to_string()));
     }
 
     #[test]
     fn capability_enforcement_symbol_enforced() {
-        let hints = crate::core::repo_query::RepoQueryHints {
-            symbol: Some("Router::layer".to_string()),
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "symbol:Router::layer".to_string(),
+            include_issues: Some(false),
+            include_releases: Some(false),
             ..Default::default()
         };
         let telemetry =
-            CapabilityEnforcementTelemetry::for_repo_search(&hints, &["github_code".to_string()]);
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["github_code".to_string()]);
         assert!(telemetry.enforced.contains(&"symbol_hint".to_string()));
     }
 
@@ -1211,6 +1284,102 @@ mod tests {
         }
     }
 
+    #[test]
+    fn capability_enforcement_issues_enforced() {
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:axum".to_string(),
+            // include_issues defaults to true
+            include_releases: Some(false),
+            ..Default::default()
+        };
+        // github_issues supports issue_search
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["github_issues".to_string()]);
+        assert!(telemetry.requested.contains(&"issue_search".to_string()));
+        assert!(telemetry.enforced.contains(&"issue_search".to_string()));
+    }
+
+    #[test]
+    fn capability_enforcement_issues_approximated() {
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:axum".to_string(),
+            include_releases: Some(false),
+            ..Default::default()
+        };
+        // duckduckgo doesn't support issue_search
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["duckduckgo".to_string()]);
+        assert!(telemetry.requested.contains(&"issue_search".to_string()));
+        assert!(telemetry.approximated.contains(&"issue_search".to_string()));
+    }
+
+    #[test]
+    fn capability_enforcement_releases_enforced() {
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:axum".to_string(),
+            include_issues: Some(false),
+            // include_releases defaults to true
+            ..Default::default()
+        };
+        // github_releases supports release_search
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["github_releases".to_string()]);
+        assert!(telemetry.requested.contains(&"release_search".to_string()));
+        assert!(telemetry.enforced.contains(&"release_search".to_string()));
+    }
+
+    #[test]
+    fn capability_enforcement_releases_approximated() {
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:axum".to_string(),
+            include_issues: Some(false),
+            // include_releases defaults to true
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["duckduckgo".to_string()]);
+        assert!(telemetry.requested.contains(&"release_search".to_string()));
+        assert!(telemetry
+            .approximated
+            .contains(&"release_search".to_string()));
+    }
+
+    #[test]
+    fn capability_enforcement_freshness_not_enforced() {
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:axum".to_string(),
+            freshness: crate::core::query::Freshness::Week,
+            include_issues: Some(false),
+            include_releases: Some(false),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["github_code".to_string()]);
+        assert!(telemetry
+            .requested
+            .contains(&"freshness_filter".to_string()));
+        assert!(telemetry
+            .not_enforced
+            .contains(&"freshness_filter".to_string()));
+    }
+
+    #[test]
+    fn capability_enforcement_package_approximated() {
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "repo:axum".to_string(),
+            package: Some("axum".to_string()),
+            include_issues: Some(false),
+            include_releases: Some(false),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_repo_search(&req, &["github_code".to_string()]);
+        assert!(telemetry.requested.contains(&"package_search".to_string()));
+        assert!(telemetry
+            .approximated
+            .contains(&"package_search".to_string()));
+    }
+
     // --- Security search capability enforcement tests ---
 
     #[test]
@@ -1274,6 +1443,50 @@ mod tests {
         assert!(telemetry
             .approximated
             .contains(&"severity_filter".to_string()));
+    }
+
+    #[test]
+    fn security_enforcement_kev_always_approximated() {
+        let req = crate::core::security::SecuritySearchRequest {
+            query: "CVE-2024-1234".to_string(),
+            cve_id: Some("CVE-2024-1234".to_string()),
+            include_kev: Some(true),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_security_search(&req, &["osv".to_string()]);
+        assert!(telemetry.requested.contains(&"kev_support".to_string()));
+        assert!(telemetry.approximated.contains(&"kev_support".to_string()));
+    }
+
+    #[test]
+    fn security_enforcement_exploit_context_always_approximated() {
+        let req = crate::core::security::SecuritySearchRequest {
+            query: "CVE-2024-1234".to_string(),
+            cve_id: Some("CVE-2024-1234".to_string()),
+            include_exploit_context: Some(true),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_security_search(&req, &["duckduckgo".to_string()]);
+        assert!(telemetry.requested.contains(&"exploit_context".to_string()));
+        assert!(telemetry
+            .approximated
+            .contains(&"exploit_context".to_string()));
+    }
+
+    #[test]
+    fn security_enforcement_kev_not_requested() {
+        let req = crate::core::security::SecuritySearchRequest {
+            query: "test".to_string(),
+            include_kev: Some(false),
+            include_exploit_context: Some(false),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_security_search(&req, &["duckduckgo".to_string()]);
+        assert!(!telemetry.requested.contains(&"kev_support".to_string()));
+        assert!(!telemetry.requested.contains(&"exploit_context".to_string()));
     }
 
     // --- Research search capability enforcement tests ---
