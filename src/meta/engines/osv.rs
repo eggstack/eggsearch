@@ -156,6 +156,10 @@ struct OsvEvent {
     introduced: Option<String>,
     #[serde(default)]
     fixed: Option<String>,
+    #[serde(default)]
+    last_affected: Option<String>,
+    #[serde(default)]
+    limit: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -521,6 +525,16 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
                         patched_versions.push(fixed.clone());
                     }
                 }
+                if let Some(ref last_affected) = event.last_affected {
+                    if !vulnerable_versions.contains(last_affected) {
+                        vulnerable_versions.push(last_affected.clone());
+                    }
+                }
+                if let Some(ref limit) = event.limit {
+                    // limit events mark the end of the affected range
+                    // but the version itself is not affected
+                    patched_ranges.push(format!("<={limit}"));
+                }
             }
         }
     }
@@ -601,10 +615,14 @@ mod tests {
                             OsvEvent {
                                 introduced: Some("1.0.0".to_string()),
                                 fixed: None,
+                                last_affected: None,
+                                limit: None,
                             },
                             OsvEvent {
                                 introduced: None,
                                 fixed: Some("1.2.3".to_string()),
+                                last_affected: None,
+                                limit: None,
                             },
                         ],
                     }],

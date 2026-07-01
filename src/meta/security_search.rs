@@ -251,6 +251,10 @@ pub async fn run_security_search_plan(
         use crate::meta::advisory_range::{extract_advisory_ranges, version_in_ranges};
         use crate::meta::dependency_parse::parse_dependency_file;
 
+        // Track (advisory_id, package, version) to deduplicate assessments
+        let mut seen_assessments: std::collections::HashSet<(String, String, String)> =
+            std::collections::HashSet::new();
+
         for file_path in &req.dependency_files {
             if let Ok(content) = std::fs::read_to_string(file_path) {
                 let findings = parse_dependency_file(file_path, &content);
@@ -289,7 +293,7 @@ pub async fn run_security_search_plan(
                         .cloned()
                         .unwrap_or_default();
 
-                    let (is_affected, reasons) = version_in_ranges(ver, &ranges);
+                    let (is_affected, reasons) = version_in_ranges(ver, &ranges, &ranges.first().map(|r| r.ecosystem.clone()).unwrap_or(crate::core::package::PackageEcosystem::CratesIo));
                     let status = if is_affected {
                         ApplicabilityStatus::Affected
                     } else if reasons.iter().any(|r| r.contains("matches fixed version")) {
@@ -321,26 +325,33 @@ pub async fn run_security_search_plan(
                         ));
                     }
 
-                    applicability_assessments.push(ApplicabilityAssessment {
-                        status,
-                        confidence,
-                        ecosystem: vuln
-                            .ecosystem
-                            .as_deref()
-                            .and_then(crate::core::package::PackageEcosystem::parse)
-                            .unwrap_or(crate::core::package::PackageEcosystem::CratesIo),
-                        package: pkg.to_string(),
-                        version: Some(ver.to_string()),
-                        advisory_ids: vec![advisory_id],
-                        matched_ranges: ranges.clone(),
-                        reasons: assessment_reasons,
-                        evidence_urls: vuln
-                            .references
-                            .iter()
-                            .map(|r| r.url.clone())
-                            .collect(),
-                        warnings: Vec::new(),
-                    });
+                    let key = (
+                        advisory_id.clone(),
+                        pkg.to_string(),
+                        ver.to_string(),
+                    );
+                    if seen_assessments.insert(key) {
+                        applicability_assessments.push(ApplicabilityAssessment {
+                            status,
+                            confidence,
+                            ecosystem: vuln
+                                .ecosystem
+                                .as_deref()
+                                .and_then(crate::core::package::PackageEcosystem::parse)
+                                .unwrap_or(crate::core::package::PackageEcosystem::CratesIo),
+                            package: pkg.to_string(),
+                            version: Some(ver.to_string()),
+                            advisory_ids: vec![advisory_id],
+                            matched_ranges: ranges.clone(),
+                            reasons: assessment_reasons,
+                            evidence_urls: vuln
+                                .references
+                                .iter()
+                                .map(|r| r.url.clone())
+                                .collect(),
+                            warnings: Vec::new(),
+                        });
+                    }
                 }
             }
 
@@ -361,7 +372,7 @@ pub async fn run_security_search_plan(
                             .cloned()
                             .unwrap_or_default();
 
-                        let (is_affected, mut reasons) = version_in_ranges(ver, &ranges);
+                        let (is_affected, mut reasons) = version_in_ranges(ver, &ranges, &finding.ecosystem);
                         let status = if is_affected {
                             ApplicabilityStatus::Affected
                         } else if reasons.iter().any(|r| r.contains("matches fixed version")) {
@@ -385,22 +396,29 @@ pub async fn run_security_search_plan(
                             finding.source_file.as_deref().unwrap_or("unknown")
                         ));
 
-                        applicability_assessments.push(ApplicabilityAssessment {
-                            status,
-                            confidence,
-                            ecosystem: finding.ecosystem.clone(),
-                            package: finding.package.clone(),
-                            version: Some(ver.clone()),
-                            advisory_ids: vec![advisory_id],
-                        matched_ranges: ranges.clone(),
-                            reasons,
-                            evidence_urls: vuln
-                                .references
-                                .iter()
-                                .map(|r| r.url.clone())
-                                .collect(),
-                            warnings: Vec::new(),
-                        });
+                        let key = (
+                            advisory_id.clone(),
+                            finding.package.clone(),
+                            ver.clone(),
+                        );
+                        if seen_assessments.insert(key) {
+                            applicability_assessments.push(ApplicabilityAssessment {
+                                status,
+                                confidence,
+                                ecosystem: finding.ecosystem.clone(),
+                                package: finding.package.clone(),
+                                version: Some(ver.clone()),
+                                advisory_ids: vec![advisory_id],
+                                matched_ranges: ranges.clone(),
+                                reasons,
+                                evidence_urls: vuln
+                                    .references
+                                    .iter()
+                                    .map(|r| r.url.clone())
+                                    .collect(),
+                                warnings: Vec::new(),
+                            });
+                        }
                     }
                 }
             }
@@ -423,6 +441,7 @@ pub async fn run_security_search_plan(
         &resolved_ids,
         req.ecosystem.as_deref(),
         req.package.as_deref(),
+        &dependency_findings,
     );
 
     // 9. Build security context

@@ -14,15 +14,25 @@ pub fn parse_dependency_file(
         "Cargo.toml" => parse_cargo_toml(content, path),
         "package-lock.json" => parse_package_lock(content, path),
         "npm-shrinkwrap.json" => parse_package_lock(content, path),
+        "yarn.lock" => parse_yarn_lock(content, path),
+        "pnpm-lock.yaml" => parse_pnpm_lock(content, path),
+        "poetry.lock" => parse_poetry_lock(content, path),
+        "Pipfile.lock" => parse_pipfile_lock(content, path),
+        "uv.lock" => parse_uv_lock(content, path),
         "go.mod" => parse_go_mod(content, path),
+        "go.sum" => parse_go_sum(content, path),
         "requirements.txt" | "requirements.in" => parse_requirements_txt(content, path),
         "Gemfile.lock" => parse_gemfile_lock(content, path),
         "composer.lock" => parse_composer_lock(content, path),
         "pom.xml" => parse_pom_xml(content, path),
+        "gradle.lockfile" => parse_gradle_lockfile(content, path),
         name if name.ends_with(".csproj") => parse_csproj(content, path),
+        "packages.lock.json" => parse_packages_lock_json(content, path),
         name if name.ends_with(".yml") || name.ends_with(".yaml") => {
             if path.contains(".github/workflows/") || path.contains(".github\\workflows\\") {
                 parse_workflow_yml(content, path)
+            } else if path.contains("docker-compose") {
+                parse_dockerfile(content, path)
             } else {
                 Vec::new()
             }
@@ -30,6 +40,7 @@ pub fn parse_dependency_file(
         "Dockerfile" | "docker-compose.yml" | "docker-compose.yaml" => {
             parse_dockerfile(content, path)
         }
+        name if name.starts_with("build.gradle") => parse_build_gradle(content, path),
         _ => Vec::new(),
     }
 }
@@ -586,6 +597,389 @@ fn parse_dockerfile(content: &str, path: &str) -> Vec<DependencyFinding> {
     findings
 }
 
+/// Parse yarn.lock (YAML-like format with indented version)
+fn parse_yarn_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+    let mut current_name: Option<String> = None;
+    let mut line_num = 0u32;
+
+    for line in content.lines() {
+        line_num += 1;
+        let trimmed = line.trim();
+
+        // yarn.lock entries start with quoted or unquoted package names at the top level
+        let is_entry_header = line.starts_with('"')
+            || (!line.starts_with(' ') && !line.starts_with('\t') && trimmed.ends_with(':'));
+
+        if is_entry_header {
+            // New entry — flush previous
+            current_name.take();
+            // Extract the first package name from the entry header
+            if let Some(name_part) = trimmed.strip_suffix(':') {
+                let clean = name_part.trim_matches('"').trim();
+                // Handle scoped packages: @scope/name@version -> @scope/name
+                // Handle plain packages: name@version -> name
+                let pkg_name = if let Some(at_pos) = clean.rfind('@') {
+                    let candidate = &clean[..at_pos];
+                    if candidate.is_empty() {
+                        // Scoped package starting with @: @scope/name
+                        clean.to_string()
+                    } else {
+                        candidate.to_string()
+                    }
+                } else {
+                    clean.to_string()
+                };
+                if !pkg_name.is_empty() && !pkg_name.contains(' ') {
+                    current_name = Some(pkg_name);
+                }
+            }
+        } else if trimmed.starts_with("version ") {
+            if let Some(name) = current_name.take() {
+                let version = trimmed
+                    .trim_start_matches("version")
+                    .trim()
+                    .trim_matches('"')
+                    .to_string();
+                findings.push(DependencyFinding {
+                    ecosystem: PackageEcosystem::Npm,
+                    package: name,
+                    version: if version.is_empty() { None } else { Some(version) },
+                    source_file: Some(path.to_string()),
+                    source_line: Some(line_num),
+                    source_kind: DependencySource::LockFile,
+                    confidence: Some(ApplicabilityConfidence::High),
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+/// Parse pnpm-lock.yaml (YAML format with packages map)
+fn parse_pnpm_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+    let mut in_packages = false;
+    let mut line_num = 0u32;
+
+    for line in content.lines() {
+        line_num += 1;
+        let trimmed = line.trim();
+
+        if trimmed == "packages:" {
+            in_packages = true;
+            continue;
+        }
+
+        if in_packages {
+            // Top-level keys (not indented) exit the packages section
+            if !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.is_empty() {
+                in_packages = false;
+                continue;
+            }
+
+            // Package entries look like: /lodash@4.17.21:
+            if let Some(entry) = trimmed.strip_suffix(':') {
+                if entry.starts_with('/') || entry.contains('@') {
+                    // Parse /name@version or /@scope/name@version
+                    let pkg_part = entry.trim_start_matches('/');
+                    if let Some((name, version)) = pkg_part.rsplit_once('@') {
+                        if !name.is_empty() && !version.is_empty() {
+                            findings.push(DependencyFinding {
+                                ecosystem: PackageEcosystem::Npm,
+                                package: name.to_string(),
+                                version: Some(version.to_string()),
+                                source_file: Some(path.to_string()),
+                                source_line: Some(line_num),
+                                source_kind: DependencySource::LockFile,
+                                confidence: Some(ApplicabilityConfidence::High),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    findings
+}
+
+/// Parse poetry.lock (TOML-based, similar to Cargo.lock)
+fn parse_poetry_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+    let mut in_package = false;
+    let mut name = String::new();
+    let mut version = String::new();
+    let mut line_num = 0u32;
+
+    for line in content.lines() {
+        line_num += 1;
+        let trimmed = line.trim();
+
+        if trimmed == "[[package]]" {
+            if !name.is_empty() {
+                findings.push(DependencyFinding {
+                    ecosystem: PackageEcosystem::Pypi,
+                    package: name.clone(),
+                    version: if version.is_empty() { None } else { Some(version.clone()) },
+                    source_file: Some(path.to_string()),
+                    source_line: Some(line_num.saturating_sub(2)),
+                    source_kind: DependencySource::LockFile,
+                    confidence: Some(ApplicabilityConfidence::High),
+                });
+            }
+            in_package = true;
+            name.clear();
+            version.clear();
+        } else if trimmed.starts_with('[') && trimmed != "[[package]]" {
+            in_package = false;
+        } else if in_package {
+            if let Some(val) = trimmed.strip_prefix("name = ") {
+                name = val.trim_matches('"').to_string();
+            } else if let Some(val) = trimmed.strip_prefix("version = ") {
+                version = val.trim_matches('"').to_string();
+            }
+        }
+    }
+
+    if !name.is_empty() {
+        findings.push(DependencyFinding {
+            ecosystem: PackageEcosystem::Pypi,
+            package: name,
+            version: if version.is_empty() { None } else { Some(version) },
+            source_file: Some(path.to_string()),
+            source_line: Some(line_num),
+            source_kind: DependencySource::LockFile,
+            confidence: Some(ApplicabilityConfidence::High),
+        });
+    }
+
+    findings
+}
+
+/// Parse Pipfile.lock (JSON format)
+fn parse_pipfile_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+        for section in &["default", "develop"] {
+            if let Some(deps) = json.get(*section).and_then(|v| v.as_object()) {
+                for (name, val) in deps {
+                    let version = val
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim_start_matches("==").to_string());
+                    findings.push(DependencyFinding {
+                        ecosystem: PackageEcosystem::Pypi,
+                        package: name.clone(),
+                        version,
+                        source_file: Some(path.to_string()),
+                        source_line: None,
+                        source_kind: DependencySource::LockFile,
+                        confidence: Some(ApplicabilityConfidence::High),
+                    });
+                }
+            }
+        }
+    }
+
+    findings
+}
+
+/// Parse uv.lock (TOML-based, similar to Cargo.lock)
+fn parse_uv_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+    let mut in_package = false;
+    let mut name = String::new();
+    let mut version = String::new();
+    let mut line_num = 0u32;
+
+    for line in content.lines() {
+        line_num += 1;
+        let trimmed = line.trim();
+
+        if trimmed == "[[package]]" {
+            if !name.is_empty() {
+                findings.push(DependencyFinding {
+                    ecosystem: PackageEcosystem::Pypi,
+                    package: name.clone(),
+                    version: if version.is_empty() { None } else { Some(version.clone()) },
+                    source_file: Some(path.to_string()),
+                    source_line: Some(line_num.saturating_sub(2)),
+                    source_kind: DependencySource::LockFile,
+                    confidence: Some(ApplicabilityConfidence::High),
+                });
+            }
+            in_package = true;
+            name.clear();
+            version.clear();
+        } else if trimmed.starts_with('[') && trimmed != "[[package]]" {
+            in_package = false;
+        } else if in_package {
+            if let Some(val) = trimmed.strip_prefix("name = ") {
+                name = val.trim_matches('"').to_string();
+            } else if let Some(val) = trimmed.strip_prefix("version = ") {
+                version = val.trim_matches('"').to_string();
+            }
+        }
+    }
+
+    if !name.is_empty() {
+        findings.push(DependencyFinding {
+            ecosystem: PackageEcosystem::Pypi,
+            package: name,
+            version: if version.is_empty() { None } else { Some(version) },
+            source_file: Some(path.to_string()),
+            source_line: Some(line_num),
+            source_kind: DependencySource::LockFile,
+            confidence: Some(ApplicabilityConfidence::High),
+        });
+    }
+
+    findings
+}
+
+/// Parse go.sum (text format with module/version lines)
+fn parse_go_sum(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut line_num = 0u32;
+
+    for line in content.lines() {
+        line_num += 1;
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let module = parts[0];
+            let version = parts[1];
+            // go.sum has entries like: module version/go.mod hash
+            let clean_version = version.split("/").next().unwrap_or(version);
+            let key = (module.to_string(), clean_version.to_string());
+            if seen.insert(key) {
+                findings.push(DependencyFinding {
+                    ecosystem: PackageEcosystem::Go,
+                    package: module.to_string(),
+                    version: Some(clean_version.to_string()),
+                    source_file: Some(path.to_string()),
+                    source_line: Some(line_num),
+                    source_kind: DependencySource::LockFile,
+                    confidence: Some(ApplicabilityConfidence::High),
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+/// Parse gradle.lockfile (properties-like format)
+fn parse_gradle_lockfile(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+    let mut line_num = 0u32;
+
+    for line in content.lines() {
+        line_num += 1;
+        let trimmed = line.trim();
+        // Format: "group:artifact:version=configuration" or "group:artifact:version -> configuration"
+        if let Some(equals_pos) = trimmed.find('=') {
+            let dep_part = &trimmed[..equals_pos];
+            let parts: Vec<&str> = dep_part.split(':').collect();
+            if parts.len() >= 3 {
+                let group = parts[0];
+                let artifact = parts[1];
+                let version = parts[2];
+                if !version.is_empty() && !version.starts_with('{') {
+                    findings.push(DependencyFinding {
+                        ecosystem: PackageEcosystem::Maven,
+                        package: format!("{group}:{artifact}"),
+                        version: Some(version.to_string()),
+                        source_file: Some(path.to_string()),
+                        source_line: Some(line_num),
+                        source_kind: DependencySource::LockFile,
+                        confidence: Some(ApplicabilityConfidence::High),
+                    });
+                }
+            }
+        }
+    }
+
+    findings
+}
+
+/// Parse build.gradle (best-effort: extract implementation/api dependency blocks)
+fn parse_build_gradle(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+    let mut line_num = 0u32;
+
+    for line in content.lines() {
+        line_num += 1;
+        let trimmed = line.trim();
+
+        // Match: implementation 'group:artifact:version'
+        // Match: implementation "group:artifact:version"
+        for prefix in &["implementation", "api", "compile", "runtimeOnly", "testImplementation"] {
+            if let Some(rest) = trimmed.strip_prefix(prefix) {
+                let rest = rest.trim();
+                // Expect: 'group:artifact:version' or "group:artifact:version"
+                let dep_str = if (rest.starts_with('\'') && rest.ends_with('\''))
+                    || (rest.starts_with('"') && rest.ends_with('"'))
+                {
+                    &rest[1..rest.len() - 1]
+                } else {
+                    continue;
+                };
+
+                let parts: Vec<&str> = dep_str.split(':').collect();
+                if parts.len() >= 3 {
+                    let group = parts[0];
+                    let artifact = parts[1];
+                    let version = parts[2];
+                    // Skip variable references like ${versions.spring}
+                    if !version.starts_with('$') && !version.starts_with('{') {
+                        findings.push(DependencyFinding {
+                            ecosystem: PackageEcosystem::Maven,
+                            package: format!("{group}:{artifact}"),
+                            version: Some(version.to_string()),
+                            source_file: Some(path.to_string()),
+                            source_line: Some(line_num),
+                            source_kind: DependencySource::Manifest,
+                            confidence: Some(ApplicabilityConfidence::Medium),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    findings
+}
+
+/// Parse NuGet packages.lock.json (JSON format)
+fn parse_packages_lock_json(content: &str, path: &str) -> Vec<DependencyFinding> {
+    let mut findings = Vec::new();
+
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+        if let Some(deps) = json.get("libraries").and_then(|v| v.as_object()) {
+            for (key, _val) in deps {
+                // Key format: "PackageName/1.2.3"
+                if let Some((name, version)) = key.rsplit_once('/') {
+                    findings.push(DependencyFinding {
+                        ecosystem: PackageEcosystem::Nuget,
+                        package: name.to_string(),
+                        version: Some(version.to_string()),
+                        source_file: Some(path.to_string()),
+                        source_line: None,
+                        source_kind: DependencySource::LockFile,
+                        confidence: Some(ApplicabilityConfidence::High),
+                    });
+                }
+            }
+        }
+    }
+
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -749,6 +1143,207 @@ FROM nginx:1.25-alpine
         assert_eq!(findings[0].ecosystem, PackageEcosystem::Oci);
     }
 
+    const YARN_LOCK: &str = r#"# THIS FILE IS AUTOMATICALLY GENERATED. DO NOT EDIT.
+"@babel/core@^7.20.0":
+  version "7.20.12"
+  resolved "https://registry.yarnpkg.com/@babel/core/-/core-7.20.12.tgz"
+  integrity sha512-...
+  dependencies:
+    "@babel/higher" "^7.20.0"
+
+lodash@^4.17.21:
+  version "4.17.21"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.21.tgz"
+  integrity sha512-...
+"#;
+
+    #[test]
+    fn parse_yarn_lock() {
+        let findings = parse_dependency_file("yarn.lock", YARN_LOCK);
+        assert!(findings.len() >= 2);
+        let core = findings.iter().find(|f| f.package == "@babel/core").unwrap();
+        assert_eq!(core.version.as_deref(), Some("7.20.12"));
+        assert_eq!(core.ecosystem, PackageEcosystem::Npm);
+        let lodash = findings.iter().find(|f| f.package == "lodash").unwrap();
+        assert_eq!(lodash.version.as_deref(), Some("4.17.21"));
+    }
+
+    const PNPM_LOCK: &str = r#"lockfileVersion: '6.0'
+
+packages:
+
+  /lodash@4.17.21:
+    resolution: {integrity: sha512-...}
+    dev: false
+
+  /@babel/core@7.20.12:
+    resolution: {integrity: sha512-...}
+    dependencies:
+      '@babel/higher': ^7.20.0
+    dev: false
+
+settings:
+  auto-install-peers: true
+"#;
+
+    #[test]
+    fn parse_pnpm_lock() {
+        let findings = parse_dependency_file("pnpm-lock.yaml", PNPM_LOCK);
+        assert_eq!(findings.len(), 2);
+        let lodash = findings.iter().find(|f| f.package == "lodash").unwrap();
+        assert_eq!(lodash.version.as_deref(), Some("4.17.21"));
+        assert_eq!(lodash.ecosystem, PackageEcosystem::Npm);
+        let core = findings.iter().find(|f| f.package == "@babel/core").unwrap();
+        assert_eq!(core.version.as_deref(), Some("7.20.12"));
+    }
+
+    const POETRY_LOCK: &str = r#"
+[[package]]
+name = "requests"
+version = "2.28.0"
+description = "Python HTTP for Humans."
+optional = false
+python-versions = ">=3.7, <4"
+
+[[package]]
+name = "urllib3"
+version = "1.26.12"
+description = "HTTP library with thread-safe connection pooling"
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*"
+"#;
+
+    #[test]
+    fn parse_poetry_lock() {
+        let findings = parse_dependency_file("poetry.lock", POETRY_LOCK);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].package, "requests");
+        assert_eq!(findings[0].version.as_deref(), Some("2.28.0"));
+        assert_eq!(findings[0].ecosystem, PackageEcosystem::Pypi);
+    }
+
+    const PIPFILE_LOCK: &str = r#"{
+    "_meta": {
+        "hash": {"sha256": "..."},
+        "requires": {"python_version": "3.10"}
+    },
+    "default": {
+        "requests": {
+            "hashes": ["sha256:..."],
+            "version": "==2.28.0"
+        },
+        "urllib3": {
+            "hashes": ["sha256:..."],
+            "version": "==1.26.12"
+        }
+    },
+    "develop": {}
+}"#;
+
+    #[test]
+    fn parse_pipfile_lock() {
+        let findings = parse_dependency_file("Pipfile.lock", PIPFILE_LOCK);
+        assert_eq!(findings.len(), 2);
+        let requests = findings.iter().find(|f| f.package == "requests").unwrap();
+        assert_eq!(requests.version.as_deref(), Some("2.28.0"));
+        assert_eq!(requests.ecosystem, PackageEcosystem::Pypi);
+    }
+
+    const UV_LOCK: &str = r#"
+[[package]]
+name = "requests"
+version = "2.28.0"
+
+[[package]]
+name = "urllib3"
+version = "1.26.12"
+"#;
+
+    #[test]
+    fn parse_uv_lock() {
+        let findings = parse_dependency_file("uv.lock", UV_LOCK);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].package, "requests");
+        assert_eq!(findings[0].version.as_deref(), Some("2.28.0"));
+        assert_eq!(findings[0].ecosystem, PackageEcosystem::Pypi);
+    }
+
+    const GO_SUM: &str = r#"github.com/gin-gonic/gin v1.9.0 h1:...
+github.com/gin-gonic/gin v1.9.0/go.mod h1:...
+github.com/go-playground/validator/v10 v10.11.0 h1:...
+github.com/go-playground/validator/v10 v10.11.0/go.mod h1:...
+golang.org/x/crypto v0.1.0 h1:...
+"#;
+
+    #[test]
+    fn parse_go_sum() {
+        let findings = parse_dependency_file("go.sum", GO_SUM);
+        // Should deduplicate (v1.9.0 and v1.9.0/go.mod are different lines but same version)
+        assert!(findings.len() >= 3);
+        let gin = findings.iter().find(|f| f.package == "github.com/gin-gonic/gin").unwrap();
+        assert_eq!(gin.version.as_deref(), Some("v1.9.0"));
+        assert_eq!(gin.ecosystem, PackageEcosystem::Go);
+    }
+
+    const GRADLE_LOCKFILE: &str = r#"# This is a Gradle lockfile
+# ... do not edit ...
+org.springframework:spring-core:5.3.23=compileClasspath
+org.springframework:spring-beans:5.3.23=compileClasspath
+com.google.guava:guava:31.1-jre=runtimeClasspath
+"#;
+
+    #[test]
+    fn parse_gradle_lockfile() {
+        let findings = parse_dependency_file("gradle.lockfile", GRADLE_LOCKFILE);
+        assert_eq!(findings.len(), 3);
+        let spring = findings.iter().find(|f| f.package == "org.springframework:spring-core").unwrap();
+        assert_eq!(spring.version.as_deref(), Some("5.3.23"));
+        assert_eq!(spring.ecosystem, PackageEcosystem::Maven);
+    }
+
+    const BUILD_GRADLE: &str = r#"dependencies {
+    implementation 'org.springframework:spring-core:5.3.23'
+    implementation "com.google.guava:guava:31.1-jre"
+    testImplementation 'junit:junit:4.13.2'
+    api 'io.projectreactor:reactor-core:${reactorVersion}'
+    runtimeOnly 'org.postgresql:postgresql:42.5.0'
+}
+"#;
+
+    #[test]
+    fn parse_build_gradle() {
+        let findings = parse_dependency_file("build.gradle", BUILD_GRADLE);
+        assert_eq!(findings.len(), 4); // excludes reactor-core due to variable ref
+        let spring = findings.iter().find(|f| f.package == "org.springframework:spring-core").unwrap();
+        assert_eq!(spring.version.as_deref(), Some("5.3.23"));
+        assert_eq!(spring.ecosystem, PackageEcosystem::Maven);
+        assert_eq!(spring.source_kind, DependencySource::Manifest);
+    }
+
+    const PACKAGES_LOCK_JSON: &str = r#"{
+  "version": 2,
+  "libraries": {
+    "Newtonsoft.Json/13.0.3": {
+      "type": "package",
+      "build": {}
+    },
+    "NUnit/3.13.3": {
+      "type": "package",
+      "build": {}
+    }
+  },
+  "projectFileDependencyGroups": {}
+}"#;
+
+    #[test]
+    fn parse_packages_lock_json() {
+        let findings = parse_dependency_file("packages.lock.json", PACKAGES_LOCK_JSON);
+        assert_eq!(findings.len(), 2);
+        let newtonsoft = findings.iter().find(|f| f.package == "Newtonsoft.Json").unwrap();
+        assert_eq!(newtonsoft.version.as_deref(), Some("13.0.3"));
+        assert_eq!(newtonsoft.ecosystem, PackageEcosystem::Nuget);
+    }
+
     #[test]
     fn malformed_file_no_panic() {
         let findings = parse_dependency_file("Cargo.lock", "not valid toml {{{");
@@ -765,5 +1360,30 @@ FROM nginx:1.25-alpine
     fn unknown_file_type() {
         let findings = parse_dependency_file("README.md", "some content");
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn malformed_yarn_lock() {
+        let findings = parse_dependency_file("yarn.lock", "not a valid lockfile {{{");
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn malformed_pipfile_lock() {
+        let findings = parse_dependency_file("Pipfile.lock", "not valid json");
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn malformed_packages_lock_json() {
+        let findings = parse_dependency_file("packages.lock.json", "{invalid json");
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn go_sum_deduplicates() {
+        let content = "github.com/foo/bar v1.0.0 h1:abc\ngithub.com/foo/bar v1.0.0/go.mod h1:def\n";
+        let findings = parse_dependency_file("go.sum", content);
+        assert_eq!(findings.len(), 1);
     }
 }

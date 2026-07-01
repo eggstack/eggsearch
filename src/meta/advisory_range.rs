@@ -1,6 +1,7 @@
 use crate::core::package::PackageEcosystem;
 use crate::core::security::VulnerabilityMetadata;
 use crate::core::security_applicability::AdvisoryRange;
+use crate::meta::version_compare::{compare_versions_for_ecosystem, version_satisfies_range};
 
 /// Extract advisory ranges from vulnerability metadata.
 /// Returns empty vec if no structured ranges can be extracted.
@@ -46,40 +47,60 @@ pub fn extract_advisory_ranges(vuln: &VulnerabilityMetadata) -> Vec<AdvisoryRang
 
 /// Check if a version string falls within advisory ranges.
 /// Returns (is_affected, reasons) tuple.
-pub fn version_in_ranges(version: &str, ranges: &[AdvisoryRange]) -> (bool, Vec<String>) {
+pub fn version_in_ranges(
+    version: &str,
+    ranges: &[AdvisoryRange],
+    ecosystem: &PackageEcosystem,
+) -> (bool, Vec<String>) {
     let mut reasons = Vec::new();
 
     for range in ranges {
+        // Check fixed versions first — if the version matches a fix, it's not affected
         if range.fixed_versions.iter().any(|fixed| fixed == version) {
             reasons.push(format!(
-                "version {} matches fixed version in advisory from {}",
-                version, range.source
+                "version {version} matches fixed version in advisory from {}",
+                range.source
             ));
             return (false, reasons);
         }
 
+        // Check last_affected versions — if listed, version is affected
         if !range.last_affected_versions.is_empty() {
-            if range.last_affected_versions.iter().any(|la| la == version) {
+            if range
+                .last_affected_versions
+                .iter()
+                .any(|la| la == version)
+            {
                 reasons.push(format!(
-                    "version {} matches last affected version in advisory from {}",
-                    version, range.source
+                    "version {version} matches last affected version in advisory from {}",
+                    range.source
                 ));
                 return (true, reasons);
             }
             reasons.push(format!(
-                "version {} not in affected version list from {}",
-                version, range.source
+                "version {version} not in affected version list from {}",
+                range.source
             ));
             continue;
         }
 
+        // Check affected range expression using ecosystem-aware comparison
         if let Some(ref affected_range) = range.affected_range {
-            if evaluate_range_string(version, affected_range) {
-                reasons.push(format!(
-                    "version {} matches affected range '{}' from {}",
-                    version, affected_range, range.source
-                ));
-                return (true, reasons);
+            match evaluate_range(version, affected_range, ecosystem) {
+                Some(true) => {
+                    reasons.push(format!(
+                        "version {version} matches affected range '{affected_range}' from {}",
+                        range.source
+                    ));
+                    return (true, reasons);
+                }
+                Some(false) => {}
+                None => {
+                    reasons.push(format!(
+                        "could not evaluate range '{affected_range}' for version {version} from {}",
+                        range.source
+                    ));
+                }
             }
         }
     }
@@ -91,64 +112,62 @@ pub fn version_in_ranges(version: &str, ranges: &[AdvisoryRange]) -> (bool, Vec<
     (false, reasons)
 }
 
-/// Simple range string evaluator for common patterns.
-/// This is intentionally conservative — returns false for unparseable ranges.
-fn evaluate_range_string(version: &str, range: &str) -> bool {
+/// Evaluate a version against a range expression using ecosystem-aware comparison.
+/// Returns Some(true) if the version satisfies the range, Some(false) if not,
+/// or None if the range cannot be evaluated.
+fn evaluate_range(
+    version: &str,
+    range: &str,
+    ecosystem: &PackageEcosystem,
+) -> Option<bool> {
+    // Try ecosystem-aware range evaluation first
+    if let Some(result) = version_satisfies_range(ecosystem, version, range) {
+        return Some(result);
+    }
+
+    // Fall back to simple range evaluation for unsupported range syntax
     let parts: Vec<&str> = range.split(',').map(|s| s.trim()).collect();
 
     for part in parts {
         let part = part.trim();
         if let Some(ver) = part.strip_prefix(">=") {
             let ver = ver.trim();
-            if compare_versions(version, ver) == std::cmp::Ordering::Less {
-                return false;
+            match compare_versions_for_ecosystem(ecosystem, version, ver) {
+                Some(std::cmp::Ordering::Less) | Some(std::cmp::Ordering::Equal) => {}
+                _ => return Some(false),
             }
         } else if let Some(ver) = part.strip_prefix('>') {
             let ver = ver.trim();
-            if compare_versions(version, ver) != std::cmp::Ordering::Greater {
-                return false;
+            if compare_versions_for_ecosystem(ecosystem, version, ver)
+                != Some(std::cmp::Ordering::Greater)
+            {
+                return Some(false);
             }
         } else if let Some(ver) = part.strip_prefix("<=") {
             let ver = ver.trim();
-            if compare_versions(version, ver) == std::cmp::Ordering::Greater {
-                return false;
+            if let Some(std::cmp::Ordering::Greater) =
+                compare_versions_for_ecosystem(ecosystem, version, ver)
+            {
+                return Some(false);
             }
         } else if let Some(ver) = part.strip_prefix('<') {
             let ver = ver.trim();
-            if compare_versions(version, ver) != std::cmp::Ordering::Less {
-                return false;
+            if compare_versions_for_ecosystem(ecosystem, version, ver)
+                != Some(std::cmp::Ordering::Less)
+            {
+                return Some(false);
             }
         } else if let Some(ver) = part.strip_prefix('=') {
             let ver = ver.trim();
-            if version != ver {
-                return false;
+            if compare_versions_for_ecosystem(ecosystem, version, ver)
+                != Some(std::cmp::Ordering::Equal)
+            {
+                return Some(false);
             }
         }
     }
 
-    true
-}
-
-/// Compare two version strings using simple numeric segment comparison.
-/// Returns ordering for segments that can be compared, Equal if identical.
-pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    let a_parts: Vec<u64> = a
-        .split('.')
-        .filter_map(|s| s.split('-').next()?.parse().ok())
-        .collect();
-    let b_parts: Vec<u64> = b
-        .split('.')
-        .filter_map(|s| s.split('-').next()?.parse().ok())
-        .collect();
-
-    for (a_val, b_val) in a_parts.iter().zip(b_parts.iter()) {
-        match a_val.cmp(b_val) {
-            std::cmp::Ordering::Equal => continue,
-            other => return other,
-        }
-    }
-
-    a_parts.len().cmp(&b_parts.len())
+    Some(true)
 }
 
 #[cfg(test)]
@@ -200,7 +219,8 @@ mod tests {
             last_affected_versions: Vec::new(),
             source: "test".to_string(),
         }];
-        let (affected, reasons) = version_in_ranges("1.5.0", &ranges);
+        let (affected, reasons) =
+            version_in_ranges("1.5.0", &ranges, &PackageEcosystem::CratesIo);
         assert!(!affected);
         assert!(!reasons.is_empty());
     }
@@ -216,7 +236,7 @@ mod tests {
             last_affected_versions: Vec::new(),
             source: "test".to_string(),
         }];
-        let (affected, _) = version_in_ranges("1.5.0", &ranges);
+        let (affected, _) = version_in_ranges("1.5.0", &ranges, &PackageEcosystem::CratesIo);
         assert!(affected);
     }
 
@@ -231,36 +251,62 @@ mod tests {
             last_affected_versions: Vec::new(),
             source: "test".to_string(),
         }];
-        let (affected, _) = version_in_ranges("2.0.0", &ranges);
+        let (affected, _) = version_in_ranges("2.0.0", &ranges, &PackageEcosystem::CratesIo);
         assert!(!affected);
-    }
-
-    #[test]
-    fn compare_versions_basic() {
-        assert_eq!(
-            compare_versions("1.0.0", "1.0.0"),
-            std::cmp::Ordering::Equal
-        );
-        assert_eq!(
-            compare_versions("2.0.0", "1.0.0"),
-            std::cmp::Ordering::Greater
-        );
-        assert_eq!(
-            compare_versions("1.0.0", "2.0.0"),
-            std::cmp::Ordering::Less
-        );
-        assert_eq!(
-            compare_versions("1.2.3", "1.2.4"),
-            std::cmp::Ordering::Less
-        );
     }
 
     #[test]
     fn empty_ranges_return_unknown() {
-        let (affected, reasons) = version_in_ranges("1.0.0", &[]);
+        let (affected, reasons) =
+            version_in_ranges("1.0.0", &[], &PackageEcosystem::CratesIo);
         assert!(!affected);
         assert!(reasons
             .iter()
             .any(|r| r.contains("no structured advisory ranges")));
+    }
+
+    #[test]
+    fn last_affected_version_is_affected() {
+        let ranges = vec![AdvisoryRange {
+            ecosystem: PackageEcosystem::Npm,
+            package: "test".to_string(),
+            affected_range: None,
+            fixed_versions: Vec::new(),
+            introduced_versions: Vec::new(),
+            last_affected_versions: vec!["1.2.3".to_string()],
+            source: "test".to_string(),
+        }];
+        let (affected, _) = version_in_ranges("1.2.3", &ranges, &PackageEcosystem::Npm);
+        assert!(affected);
+    }
+
+    #[test]
+    fn last_affected_version_not_matching() {
+        let ranges = vec![AdvisoryRange {
+            ecosystem: PackageEcosystem::Npm,
+            package: "test".to_string(),
+            affected_range: None,
+            fixed_versions: Vec::new(),
+            introduced_versions: Vec::new(),
+            last_affected_versions: vec!["1.2.3".to_string()],
+            source: "test".to_string(),
+        }];
+        let (affected, _) = version_in_ranges("1.2.4", &ranges, &PackageEcosystem::Npm);
+        assert!(!affected);
+    }
+
+    #[test]
+    fn maven_range_evaluation() {
+        let ranges = vec![AdvisoryRange {
+            ecosystem: PackageEcosystem::Maven,
+            package: "test".to_string(),
+            affected_range: Some(">= 2.0.0".to_string()),
+            fixed_versions: vec!["2.5.0".to_string()],
+            introduced_versions: Vec::new(),
+            last_affected_versions: Vec::new(),
+            source: "test".to_string(),
+        }];
+        let (affected, _) = version_in_ranges("2.3.0", &ranges, &PackageEcosystem::Maven);
+        assert!(affected);
     }
 }
