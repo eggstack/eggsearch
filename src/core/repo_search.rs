@@ -216,6 +216,9 @@ pub struct RepoSearchTelemetry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability_enforcement:
         Option<crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry>,
+    /// Provider routing decision for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_decision: Option<crate::meta::provider_diagnostics::ProviderRoutingDecision>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -1163,6 +1166,7 @@ mod tests {
             subqueries_skipped: 0,
             uncertainty_summary: None,
             capability_enforcement: None,
+            routing_decision: None,
         };
         let json = serde_json::to_string(&telemetry).unwrap();
         let parsed: RepoSearchTelemetry = serde_json::from_str(&json).unwrap();

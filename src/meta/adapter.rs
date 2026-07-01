@@ -1152,6 +1152,7 @@ impl MetadataSearchAdapter {
                 warnings: Vec::new(),
             }),
             capability_enforcement: None,
+            routing_decision: None,
         };
 
         // Security context: query advisories when requested and package is present

@@ -353,6 +353,13 @@ pub struct ResearchTelemetry {
     /// Coverage gap kinds detected.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coverage_gaps: Vec<ResearchGapKind>,
+    /// Capability enforcement telemetry for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_enforcement:
+        Option<crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry>,
+    /// Provider routing decision for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_decision: Option<crate::meta::provider_diagnostics::ProviderRoutingDecision>,
 }
 
 /// Structured request for research-oriented bundle search.
@@ -892,6 +899,8 @@ mod tests {
                 subqueries_generated: 6,
                 source_diversity_caps_applied: vec![],
                 coverage_gaps: vec![ResearchGapKind::NoPrimarySources],
+                capability_enforcement: None,
+                routing_decision: None,
             }),
         };
         let json = serde_json::to_string(&resp).unwrap();

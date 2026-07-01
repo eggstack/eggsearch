@@ -674,6 +674,8 @@ pub fn build_research_telemetry(
         subqueries_generated: subquery_count,
         source_diversity_caps_applied: diversity_caps.to_vec(),
         coverage_gaps: gaps.iter().map(|g| g.kind).collect(),
+        capability_enforcement: None,
+        routing_decision: None,
     }
 }
 

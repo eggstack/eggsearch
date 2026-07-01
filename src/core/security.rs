@@ -1167,6 +1167,13 @@ pub struct SecuritySearchResponse {
     pub providers_failed: Vec<ProviderFailure>,
     pub warnings: Vec<SearchWarning>,
     pub trust_markers: TrustMarkers,
+    /// Capability enforcement telemetry for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_enforcement:
+        Option<crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry>,
+    /// Provider routing decision for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_decision: Option<crate::meta::provider_diagnostics::ProviderRoutingDecision>,
 }
 
 #[cfg(test)]
@@ -2043,6 +2050,8 @@ mod tests {
             providers_failed: vec![],
             warnings: vec![],
             trust_markers: TrustMarkers::default(),
+            capability_enforcement: None,
+            routing_decision: None,
         };
         let json = serde_json::to_value(&resp).unwrap();
         let groups = json["groups"].as_array().expect("groups");

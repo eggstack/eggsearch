@@ -365,6 +365,13 @@ pub async fn run_security_search_plan(
         providers_failed: web_resp.providers_failed,
         warnings,
         trust_markers: web_resp.trust_markers,
+        capability_enforcement: Some(
+            crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry::for_security_search(
+                req,
+                &effective_providers,
+            ),
+        ),
+        routing_decision: None,
     }
 }
 

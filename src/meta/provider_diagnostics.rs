@@ -321,7 +321,7 @@ impl std::fmt::Debug for ProviderHealthRegistry {
 }
 
 /// A skip reason for a single provider in the routing decision.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderSkipReason {
     /// The provider id that was skipped.
     pub provider_id: String,
@@ -336,7 +336,7 @@ pub struct ProviderSkipReason {
 }
 
 /// Result of provider routing resolution.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderRoutingDecision {
     /// The profile requested by the caller, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -761,6 +761,65 @@ impl CapabilityEnforcementTelemetry {
             not_enforced,
         }
     }
+
+    /// Build enforcement telemetry for a research_search request.
+    pub fn for_research_search(
+        req: &crate::core::research::ResearchSearchRequest,
+        _selected_providers: &[String],
+    ) -> Self {
+        let mut requested = Vec::new();
+        let enforced = Vec::new();
+        let mut approximated = Vec::new();
+        let mut not_enforced = Vec::new();
+
+        let wants_source_diversity = !req.desired_source_types.is_empty();
+        let wants_primary = req.include_primary_sources.unwrap_or(false);
+        let wants_freshness = req.freshness != crate::core::query::Freshness::Any;
+        let wants_counterpoints = req.include_counterpoints.unwrap_or(false);
+
+        if wants_source_diversity {
+            requested.push("source_diversity".to_string());
+        }
+        if wants_primary {
+            requested.push("primary_source_preference".to_string());
+        }
+        if wants_freshness {
+            requested.push("freshness_filter".to_string());
+        }
+        if wants_counterpoints {
+            requested.push("counterpoint_inclusion".to_string());
+        }
+
+        if requested.is_empty() {
+            return Self::default();
+        }
+
+        // Source diversity is always approximate — research search uses
+        // subquery generation, not native source-type filtering.
+        if wants_source_diversity {
+            approximated.push("source_diversity".to_string());
+        }
+        // Primary source preference is approximate — boosted via reranking,
+        // not native provider filtering.
+        if wants_primary {
+            approximated.push("primary_source_preference".to_string());
+        }
+        // Freshness is approximate — no research provider enforces server-side.
+        if wants_freshness {
+            not_enforced.push("freshness_filter".to_string());
+        }
+        // Counterpoint inclusion is approximate — subquery generation only.
+        if wants_counterpoints {
+            approximated.push("counterpoint_inclusion".to_string());
+        }
+
+        Self {
+            requested,
+            enforced,
+            approximated,
+            not_enforced,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -944,5 +1003,339 @@ mod tests {
         let parsed: ProviderRoutingDecision = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.partial, true);
         assert_eq!(parsed.skipped_providers.len(), 1);
+    }
+
+    // --- Routing helper tests ---
+
+    fn test_config_with_providers(
+        enabled: &[&str],
+        disabled: &[&str],
+    ) -> crate::core::config::AppConfig {
+        let mut cfg = crate::core::config::AppConfig::default();
+        for id in enabled {
+            cfg.search.providers.insert(id.to_string(), true);
+        }
+        for id in disabled {
+            cfg.search.providers.insert(id.to_string(), false);
+        }
+        cfg.search.default_providers = enabled.iter().map(|s| s.to_string()).collect();
+        cfg
+    }
+
+    #[test]
+    fn routing_explicit_unknown_provider_fails() {
+        let cfg = test_config_with_providers(&["duckduckgo"], &[]);
+        let health = ProviderHealthRegistry::new();
+        let adapter_ids = vec!["duckduckgo".to_string()];
+
+        let result = resolve_provider_routing(
+            &["nonexistent_provider".to_string()],
+            None,
+            &adapter_ids,
+            &cfg,
+            &health,
+            true,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ProviderRoutingError::UnknownProvider(id) => {
+                assert_eq!(id, "nonexistent_provider");
+            }
+            other => panic!("expected UnknownProvider, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn routing_explicit_disabled_provider_fails() {
+        let cfg = test_config_with_providers(&["duckduckgo"], &["brave"]);
+        let health = ProviderHealthRegistry::new();
+        let adapter_ids = vec!["duckduckgo".to_string()];
+
+        let result = resolve_provider_routing(
+            &["brave".to_string()],
+            None,
+            &adapter_ids,
+            &cfg,
+            &health,
+            true,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ProviderRoutingError::DisabledProvider(id) => {
+                assert_eq!(id, "brave");
+            }
+            other => panic!("expected DisabledProvider, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn routing_profile_partial_when_one_unavailable() {
+        // Both providers enabled in config, but only one is built by the adapter
+        let mut cfg =
+            test_config_with_providers(&["duckduckgo", "github_code", "gitlab_code"], &[]);
+        cfg.search.profiles.insert(
+            "coding".to_string(),
+            crate::core::config::ProfileConfig {
+                providers: vec!["github_code".to_string(), "gitlab_code".to_string()],
+            },
+        );
+        let health = ProviderHealthRegistry::new();
+        // Only github_code is built; gitlab_code is enabled but not constructed
+        let adapter_ids = vec!["github_code".to_string(), "duckduckgo".to_string()];
+
+        let result = resolve_provider_routing(
+            &[],
+            Some(SearchProfile::Coding),
+            &adapter_ids,
+            &cfg,
+            &health,
+            true,
+        )
+        .unwrap();
+        assert!(result.partial);
+        assert!(!result.degraded);
+        assert!(result
+            .selected_providers
+            .contains(&"github_code".to_string()));
+        assert_eq!(result.skipped_providers.len(), 1);
+        assert_eq!(result.skipped_providers[0].provider_id, "gitlab_code");
+    }
+
+    #[test]
+    fn routing_profile_degrades_to_defaults_when_all_unavailable() {
+        let mut cfg = test_config_with_providers(&["duckduckgo"], &[]);
+        cfg.search.profiles.insert(
+            "coding".to_string(),
+            crate::core::config::ProfileConfig {
+                providers: vec!["github_code".to_string(), "gitlab_code".to_string()],
+            },
+        );
+        let health = ProviderHealthRegistry::new();
+        // Neither github_code nor gitlab_code is built
+        let adapter_ids = vec!["duckduckgo".to_string()];
+
+        let result = resolve_provider_routing(
+            &[],
+            Some(SearchProfile::Coding),
+            &adapter_ids,
+            &cfg,
+            &health,
+            true,
+        )
+        .unwrap();
+        assert!(result.degraded);
+        assert!(!result.partial);
+        // Should fall back to default providers
+        assert!(result
+            .selected_providers
+            .contains(&"duckduckgo".to_string()));
+    }
+
+    #[test]
+    fn routing_cooled_down_provider_skipped_for_profile() {
+        let mut cfg = test_config_with_providers(&["duckduckgo", "brave"], &[]);
+        cfg.search.profiles.insert(
+            "generic".to_string(),
+            crate::core::config::ProfileConfig {
+                providers: vec!["brave".to_string(), "duckduckgo".to_string()],
+            },
+        );
+        let health = ProviderHealthRegistry::new();
+        // Put brave into cooldown
+        for _ in 0..3 {
+            health.record_failure("brave", FailureClass::RateLimited, "429", 100);
+        }
+        let adapter_ids = vec!["brave".to_string(), "duckduckgo".to_string()];
+
+        let result = resolve_provider_routing(
+            &[],
+            Some(SearchProfile::Generic),
+            &adapter_ids,
+            &cfg,
+            &health,
+            true,
+        )
+        .unwrap();
+        // brave should be skipped due to cooldown
+        assert!(!result.selected_providers.contains(&"brave".to_string()));
+        assert!(result
+            .selected_providers
+            .contains(&"duckduckgo".to_string()));
+        assert_eq!(result.skipped_providers.len(), 1);
+        assert_eq!(result.skipped_providers[0].provider_id, "brave");
+    }
+
+    #[test]
+    fn routing_cooled_down_provider_not_skipped_for_explicit() {
+        let cfg = test_config_with_providers(&["duckduckgo", "brave"], &[]);
+        let health = ProviderHealthRegistry::new();
+        // Put brave into cooldown
+        for _ in 0..3 {
+            health.record_failure("brave", FailureClass::RateLimited, "429", 100);
+        }
+        let adapter_ids = vec!["brave".to_string(), "duckduckgo".to_string()];
+
+        let result = resolve_provider_routing(
+            &["brave".to_string()],
+            None,
+            &adapter_ids,
+            &cfg,
+            &health,
+            true,
+        )
+        .unwrap();
+        // Explicit provider should NOT be skipped even if cooled down
+        assert!(result.selected_providers.contains(&"brave".to_string()));
+        assert!(result.skipped_providers.is_empty());
+    }
+
+    #[test]
+    fn routing_deterministic_provider_order() {
+        let cfg = test_config_with_providers(&["duckduckgo", "brave", "startpage"], &[]);
+        let health = ProviderHealthRegistry::new();
+        let adapter_ids = vec![
+            "startpage".to_string(),
+            "duckduckgo".to_string(),
+            "brave".to_string(),
+        ];
+
+        // Run routing multiple times — order should be deterministic
+        let mut results = Vec::new();
+        for _ in 0..5 {
+            let decision =
+                resolve_provider_routing(&[], None, &adapter_ids, &cfg, &health, true).unwrap();
+            results.push(decision.selected_providers.clone());
+        }
+        for window in results.windows(2) {
+            assert_eq!(window[0], window[1], "routing order must be deterministic");
+        }
+    }
+
+    // --- Security search capability enforcement tests ---
+
+    #[test]
+    fn security_enforcement_empty_request() {
+        let req = crate::core::security::SecuritySearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        let telemetry = CapabilityEnforcementTelemetry::for_security_search(&req, &[]);
+        assert!(telemetry.requested.is_empty());
+        assert!(telemetry.enforced.is_empty());
+        assert!(telemetry.approximated.is_empty());
+        assert!(telemetry.not_enforced.is_empty());
+    }
+
+    #[test]
+    fn security_enforcement_cve_with_native_osv() {
+        let req = crate::core::security::SecuritySearchRequest {
+            query: "CVE-2024-1234".to_string(),
+            cve_id: Some("CVE-2024-1234".to_string()),
+            package: Some("openssl".to_string()),
+            version: Some("3.0.0".to_string()),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_security_search(&req, &["osv".to_string()]);
+        assert!(telemetry.requested.contains(&"advisory_lookup".to_string()));
+        assert!(telemetry.enforced.contains(&"advisory_lookup".to_string()));
+        assert!(telemetry.enforced.contains(&"package_filter".to_string()));
+        // Version filtering is always approximate
+        assert!(telemetry
+            .approximated
+            .contains(&"version_filter".to_string()));
+    }
+
+    #[test]
+    fn security_enforcement_cve_without_native_osv() {
+        let req = crate::core::security::SecuritySearchRequest {
+            query: "CVE-2024-1234".to_string(),
+            cve_id: Some("CVE-2024-1234".to_string()),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_security_search(&req, &["duckduckgo".to_string()]);
+        assert!(telemetry.requested.contains(&"advisory_lookup".to_string()));
+        assert!(telemetry
+            .not_enforced
+            .contains(&"advisory_lookup".to_string()));
+    }
+
+    #[test]
+    fn security_enforcement_severity_always_approximated() {
+        let req = crate::core::security::SecuritySearchRequest {
+            query: "test".to_string(),
+            severity_min: Some(crate::core::security::SeverityLevel::High),
+            ..Default::default()
+        };
+        let telemetry =
+            CapabilityEnforcementTelemetry::for_security_search(&req, &["osv".to_string()]);
+        assert!(telemetry.requested.contains(&"severity_filter".to_string()));
+        assert!(telemetry
+            .approximated
+            .contains(&"severity_filter".to_string()));
+    }
+
+    // --- Research search capability enforcement tests ---
+
+    #[test]
+    fn research_enforcement_empty_request() {
+        let req = crate::core::research::ResearchSearchRequest {
+            query: "test".to_string(),
+            ..Default::default()
+        };
+        let telemetry = CapabilityEnforcementTelemetry::for_research_search(&req, &[]);
+        assert!(telemetry.requested.is_empty());
+    }
+
+    #[test]
+    fn research_enforcement_source_diversity() {
+        let req = crate::core::research::ResearchSearchRequest {
+            query: "test".to_string(),
+            desired_source_types: vec![
+                crate::core::research::ResearchSourceType::PrimarySources,
+                crate::core::research::ResearchSourceType::OfficialDocs,
+            ],
+            ..Default::default()
+        };
+        let telemetry = CapabilityEnforcementTelemetry::for_research_search(&req, &[]);
+        assert!(telemetry
+            .requested
+            .contains(&"source_diversity".to_string()));
+        assert!(telemetry
+            .approximated
+            .contains(&"source_diversity".to_string()));
+    }
+
+    #[test]
+    fn research_enforcement_freshness_not_enforced() {
+        let req = crate::core::research::ResearchSearchRequest {
+            query: "test".to_string(),
+            freshness: crate::core::query::Freshness::Week,
+            ..Default::default()
+        };
+        let telemetry = CapabilityEnforcementTelemetry::for_research_search(&req, &[]);
+        assert!(telemetry
+            .requested
+            .contains(&"freshness_filter".to_string()));
+        assert!(telemetry
+            .not_enforced
+            .contains(&"freshness_filter".to_string()));
+    }
+
+    #[test]
+    fn research_enforcement_primary_source() {
+        let req = crate::core::research::ResearchSearchRequest {
+            query: "test".to_string(),
+            include_primary_sources: Some(true),
+            ..Default::default()
+        };
+        let telemetry = CapabilityEnforcementTelemetry::for_research_search(&req, &[]);
+        assert!(telemetry
+            .requested
+            .contains(&"primary_source_preference".to_string()));
+        assert!(telemetry
+            .approximated
+            .contains(&"primary_source_preference".to_string()));
     }
 }

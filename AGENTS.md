@@ -248,6 +248,52 @@ eggsearch/
   for `advisory_lookup`, `package_filter`, `version_filter`, and
   `severity_filter`.
 
+### Routing Decision Telemetry
+- Every search tool response includes a `routing_decision` field
+  (or nested in `telemetry`) with the provider routing decision.
+- The routing decision tracks: requested profile, explicit providers,
+  selected providers, skipped providers (with reasons), degraded
+  status, partial status, and a human-readable reason.
+- Agents can inspect `routing_decision` to understand why certain
+  providers were selected or skipped.
+
+**Example: degraded profile routing**
+```json
+{
+  "routing_decision": {
+    "requested_profile": "coding",
+    "selected_providers": ["duckduckgo"],
+    "skipped_providers": [
+      {
+        "provider_id": "github_code",
+        "reason": "provider not built (missing API key or not configured)"
+      },
+      {
+        "provider_id": "gitlab_code",
+        "reason": "in cooldown after rate limited",
+        "failure_class": "rate_limited",
+        "cooldown_until": "42s"
+      }
+    ],
+    "degraded": true,
+    "partial": false,
+    "reason": "coding profile fell back to default providers"
+  }
+}
+```
+
+**Example: capability enforcement with native provider**
+```json
+{
+  "capability_enforcement": {
+    "requested": ["repo_filter", "path_filter"],
+    "enforced": ["repo_filter"],
+    "approximated": ["path_filter"],
+    "not_enforced": []
+  }
+}
+```
+
 ### Server Capabilities Discovery
 - The `provider_status` MCP tool response includes a top-level
   `server_capabilities` object alongside the provider list, and a

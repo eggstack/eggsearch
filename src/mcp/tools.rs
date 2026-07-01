@@ -471,17 +471,17 @@ pub async fn run_web_search(
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
-    let effective_providers = state
-        .config
-        .resolve_providers(&args.providers)
-        .map_err(|e| ToolError::Internal(format!("provider resolution failed: {}", e)))?;
-    let (_, unknown) = state.adapter.select_engines(&effective_providers);
-    if !unknown.is_empty() {
-        return Err(ToolError::Validation(format!(
-            "unknown provider id(s): {}",
-            unknown.join(", ")
-        )));
-    }
+    let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
+        &args.providers,
+        None,
+        state.adapter.provider_ids(),
+        &state.config,
+        state.adapter.health(),
+        true,
+    )
+    .map_err(|e| ToolError::Validation(e.to_string()))?;
+
+    let effective_providers = routing_decision.selected_providers.clone();
 
     // Ensure the adapter queries exactly the resolved set, not all
     // enabled engines (which would differ when providers is empty).
@@ -563,6 +563,8 @@ pub async fn run_web_search(
         "providers_failed": providers_failed,
         "warnings": warnings,
         "trust_markers": serde_json::to_value(&resp.trust_markers)
+            .unwrap_or(serde_json::json!({})),
+        "routing_decision": serde_json::to_value(&routing_decision)
             .unwrap_or(serde_json::json!({})),
     });
 
@@ -686,89 +688,71 @@ pub async fn run_repo_search(
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
-    let (effective_providers, degraded, mut profile_warnings) = state
-        .config
-        .resolve_profile_providers(req.profile, &req.providers);
-
-    // Explicit providers must be strict: unknown or disabled providers
-    // are a hard error, not a degraded fallback.
-    if !req.providers.is_empty() && degraded {
-        let msg = profile_warnings
-            .iter()
-            .find(|w| w.message.starts_with("provider_resolution_failed:"))
-            .map(|w| w.message.clone())
-            .unwrap_or_else(|| "provider resolution failed".to_string());
-        return Err(ToolError::Validation(msg));
-    }
-
-    // For profile requests (no explicit providers), filter through
-    // actual adapter availability. Config-level resolution may list
-    // providers that appear enabled but were not actually built
-    // (e.g. missing API key env var).
-    let mut skipped_provider_ids = Vec::new();
-    let mut profile_degraded = false;
-    let effective_providers = if let Some(profile) = req.profile {
-        if req.providers.is_empty() {
-            let built_ids: std::collections::BTreeSet<&str> = state
-                .adapter
-                .provider_ids()
-                .iter()
-                .map(|s| s.as_str())
-                .collect();
-            let mut filtered = Vec::new();
-            let mut any_skipped = false;
-            for id in &effective_providers {
-                if built_ids.contains(id.as_str()) {
-                    filtered.push(id.clone());
-                } else {
-                    skipped_provider_ids.push(id.clone());
-                    profile_warnings.push(crate::core::result::SearchWarning::new(
-                        "_system",
-                        format!("profile_provider_not_built: {id} is in {profile:?} profile but no engine was constructed"),
-                    ));
-                    any_skipped = true;
-                }
-            }
-
-            if filtered.is_empty() && !effective_providers.is_empty() {
-                // All profile providers were not built — degrade to defaults
-                profile_degraded = true;
-                profile_warnings.push(crate::core::result::SearchWarning::new(
-                    "_system",
-                    format!("profile_degraded: {profile:?} profile fell back to default providers"),
-                ));
-                match state.config.resolve_providers(&[]) {
-                    Ok(defaults) => defaults,
-                    Err(e) => {
-                        return Err(ToolError::Internal(format!(
-                            "default provider resolution failed: {e}"
-                        )));
-                    }
-                }
-            } else if any_skipped {
-                // Some providers were unavailable but others remain
-                profile_warnings.push(crate::core::result::SearchWarning::new(
-                    "_system",
-                    format!("profile_partial: {profile:?} profile skipped unavailable providers"),
-                ));
-                filtered
-            } else {
-                filtered
-            }
-        } else {
-            effective_providers
+    let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
+        &req.providers,
+        req.profile,
+        state.adapter.provider_ids(),
+        &state.config,
+        state.adapter.health(),
+        true,
+    )
+    .map_err(|e| match e {
+        crate::meta::provider_diagnostics::ProviderRoutingError::UnknownProvider(id) => {
+            ToolError::Validation(format!("unknown provider id: {id}"))
         }
-    } else {
-        effective_providers
-    };
+        crate::meta::provider_diagnostics::ProviderRoutingError::DisabledProvider(id) => {
+            ToolError::Validation(format!("provider is disabled: {id}"))
+        }
+        crate::meta::provider_diagnostics::ProviderRoutingError::NoDefaultProviders(msg) => {
+            ToolError::Internal(format!("no default providers: {msg}"))
+        }
+    })?;
 
-    let (_, unknown) = state.adapter.select_engines(&effective_providers);
-    if !unknown.is_empty() {
-        return Err(ToolError::Validation(format!(
-            "unknown provider id(s): {}",
-            unknown.join(", ")
-        )));
+    // Convert routing decision skipped_providers into SearchWarnings
+    let mut profile_warnings: Vec<crate::core::result::SearchWarning> = Vec::new();
+    for skip in &routing_decision.skipped_providers {
+        if skip.reason.contains("not built") {
+            profile_warnings.push(crate::core::result::SearchWarning::new(
+                "_system",
+                format!(
+                    "profile_provider_not_built: {} is in {:?} profile but no engine was constructed",
+                    skip.provider_id, req.profile
+                ),
+            ));
+        } else if skip.reason.contains("cooldown") {
+            profile_warnings.push(crate::core::result::SearchWarning::new(
+                "_system",
+                format!(
+                    "provider_cooldown: {} skipped due to {}",
+                    skip.provider_id, skip.reason
+                ),
+            ));
+        }
     }
+    if routing_decision.degraded {
+        profile_warnings.push(crate::core::result::SearchWarning::new(
+            "_system",
+            format!(
+                "profile_degraded: {:?} profile fell back to default providers",
+                req.profile
+            ),
+        ));
+    } else if routing_decision.partial {
+        profile_warnings.push(crate::core::result::SearchWarning::new(
+            "_system",
+            format!(
+                "profile_partial: {:?} profile skipped unavailable providers",
+                req.profile
+            ),
+        ));
+    }
+
+    let effective_providers = routing_decision.selected_providers.clone();
+    let skipped_provider_ids: Vec<String> = routing_decision
+        .skipped_providers
+        .iter()
+        .map(|s| s.provider_id.clone())
+        .collect();
 
     let effective_max = req.effective_max_results(
         state.config.search.default_max_results,
@@ -791,39 +775,24 @@ pub async fn run_repo_search(
     // Merge profile warnings into response warnings
     response.warnings.extend(profile_warnings);
 
-    // Populate telemetry provider selection.
-    // `degraded` from config means explicit providers failed.
-    // `profile_degraded` means all profile providers were unavailable
-    // and execution fell back to default providers.
-    // `has_partial_warning` means some providers were skipped but others remain.
-    let is_degraded = degraded || profile_degraded;
-    let has_partial_warning = response
-        .warnings
-        .iter()
-        .any(|w| w.message.starts_with("profile_partial:"));
+    // Populate telemetry provider selection from routing decision.
+    // Use original req.profile for profile_requested/applied since
+    // resolve_provider_routing clears it for explicit provider lists.
+    let is_degraded = routing_decision.degraded;
+    let has_partial = routing_decision.partial;
     response.telemetry.provider_selection = crate::core::repo_search::ProviderSelectionTelemetry {
         profile_requested: req.profile,
         profile_applied: req.profile,
         degraded: is_degraded,
-        partial: has_partial_warning && !is_degraded,
+        partial: has_partial && !is_degraded,
         skipped_providers: skipped_provider_ids,
-        reason: if is_degraded {
-            Some("profile fell back to default providers".to_string())
-        } else if has_partial_warning {
-            Some(format!(
-                "{:?} profile skipped unavailable providers",
-                req.profile.unwrap_or_default()
-            ))
-        } else {
-            req.profile
-                .map(|p| format!("using {} profile providers", p.as_str()))
-        },
+        reason: routing_decision.reason.clone(),
     };
 
     // Propagate degraded/partial provider selection into uncertainty_summary
     if let Some(ref mut summary) = response.telemetry.uncertainty_summary {
         summary.degraded_provider_selection = is_degraded;
-        summary.partial_provider_selection = has_partial_warning && !is_degraded;
+        summary.partial_provider_selection = has_partial && !is_degraded;
     }
 
     // Add capability enforcement telemetry
@@ -834,6 +803,9 @@ pub async fn run_repo_search(
             &req.providers,
         ),
     );
+
+    // Add routing decision telemetry
+    response.telemetry.routing_decision = Some(routing_decision);
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
@@ -903,17 +875,15 @@ pub async fn run_research_search(
         return Err(ToolError::Validation(format!("invalid request: {e}")));
     }
 
-    let effective_providers = state
-        .config
-        .resolve_providers(&req.providers)
-        .map_err(|e| ToolError::Validation(format!("provider resolution failed: {e}")))?;
-    let (_, unknown) = state.adapter.select_engines(&effective_providers);
-    if !unknown.is_empty() {
-        return Err(ToolError::Validation(format!(
-            "unknown provider id(s): {}",
-            unknown.join(", ")
-        )));
-    }
+    let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
+        &req.providers,
+        None,
+        state.adapter.provider_ids(),
+        &state.config,
+        state.adapter.health(),
+        true,
+    )
+    .map_err(|e| ToolError::Validation(e.to_string()))?;
 
     let effective_max = req.effective_max_results(
         state.config.search.default_max_results,
@@ -921,12 +891,23 @@ pub async fn run_research_search(
     );
 
     let mut req = req;
-    req.providers = effective_providers;
+    req.providers = routing_decision.selected_providers.clone();
 
-    let response = state
+    let mut response = state
         .adapter
         .research_search(&req, effective_max, state.config.search.max_results_cap)
         .await;
+
+    // Add routing decision and capability enforcement telemetry
+    if let Some(ref mut telem) = response.telemetry {
+        telem.routing_decision = Some(routing_decision);
+        telem.capability_enforcement = Some(
+            crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry::for_research_search(
+                &req,
+                &req.providers,
+            ),
+        );
+    }
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
@@ -2451,24 +2432,22 @@ pub async fn run_security_search(
         return Err(ToolError::Validation(format!("invalid request: {e}")));
     }
 
-    let effective_providers = state
-        .config
-        .resolve_providers(&req.providers)
-        .map_err(|e| ToolError::Internal(format!("provider resolution failed: {}", e)))?;
-    let (_, unknown) = state.adapter.select_engines(&effective_providers);
-    if !unknown.is_empty() {
-        return Err(ToolError::Validation(format!(
-            "unknown provider id(s): {}",
-            unknown.join(", ")
-        )));
-    }
+    let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
+        &req.providers,
+        None,
+        state.adapter.provider_ids(),
+        &state.config,
+        state.adapter.health(),
+        true,
+    )
+    .map_err(|e| ToolError::Validation(e.to_string()))?;
 
     let effective_max = req.effective_max_results(
         state.config.search.default_max_results,
         state.config.search.max_results_cap,
     );
 
-    let response = crate::meta::security_search::run_security_search_plan(
+    let mut response = crate::meta::security_search::run_security_search_plan(
         &state.adapter,
         &state.kev_client,
         &req,
@@ -2476,6 +2455,8 @@ pub async fn run_security_search(
         state.config.search.max_results_cap,
     )
     .await;
+
+    response.routing_decision = Some(routing_decision);
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
