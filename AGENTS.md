@@ -1596,11 +1596,21 @@ lets agents deduplicate evidence across bundles without content comparison.
 **Gap types:**
 - `NoPrimarySourceFound`: no authoritative or primary source in the bundle
 - `ProviderDegraded`: evidence came from degraded provider selection
+- `NativeRepoFilterNotEnforced`: repo/path/language hints present but no native filter support
+- `SecurityApplicabilityUnknown`: security applicability could not be determined
 - `FetchFailed`: a suggested fetch was attempted but failed
 - `SourceUnfetched`: a source card has no corresponding fetch
 - `AllResultsExternalUntrusted`: all sources are external untrusted (no local or verified content)
-- `LowConfidenceResults`: most sources have low or unknown confidence
-- `NoCounterpointEvidence`: no contradicting or alternative evidence present
+- `LocalCheckoutDirty`: a local checkout has uncommitted changes
+- `NativeAdvisoryUnavailable`: native advisory provider was unavailable
+- `SymbolHintNoNativeProvider`: symbol hint present but no native code provider
+- `IssueSearchNoNativeProvider`: issues requested but no native issue provider
+- `ReleaseSearchNoNativeProvider`: releases requested but no native release provider
+- `FreshnessNotEnforced`: freshness requested but no provider enforces it
+- `PackageResolutionFailed`: package registry resolution failed
+- `NoFixedVersionFound`: no fixed version found for a vulnerability
+- `NoCounterpointFound`: no contradicting or alternative evidence when requested
+- `NoBenchmarksFound`: no benchmarks found when requested
 
 **Trust handling:**
 - Preserves all `trust` labels from input sources and fetches
@@ -1622,9 +1632,60 @@ When limits are exceeded, the bundle is truncated with a warning. The
 3. **Bundle** gathered evidence with `build_evidence_bundle` to package it into a portable container
 4. **Hand off** the bundle to another agent, which can inspect sources, fetches, trust labels, and gaps
 
+**Workflow JSON example:**
+
+```jsonc
+// Step 1: repo_search returns source cards
+// Step 2: repo_fetch returns fetched content
+// Step 3: build_evidence_bundle packages them
+
+// Request:
+{
+  "goal": "understand axum router middleware",
+  "sources": [
+    {
+      "id": "src_a1b2c3d4e5f6a7b8",
+      "url": "https://docs.rs/axum/latest/axum/struct.Router.html",
+      "title": "Router - axum",
+      "providers": ["duckduckgo"],
+      "trust": "external_untrusted",
+      "metadata": { "source_kind": "official_docs", "domain": "docs.rs" }
+    }
+  ],
+  "fetches": [
+    {
+      "source_id": "src_a1b2c3d4e5f6a7b8",
+      "url": "https://docs.rs/axum/latest/axum/struct.Router.html",
+      "text": "pub struct Router { ... }",
+      "truncated": false,
+      "trust": "external_untrusted"
+    }
+  ],
+  "warnings": []
+}
+
+// Response (truncated):
+{
+  "bundle_id": "bundle_9f8e7d6c5b4a3210",
+  "goal": "understand axum router middleware",
+  "created_at": "2025-07-01T12:00:00Z",
+  "sources": [{ "source_id": "src_a1b2c3d4e5f6a7b8", "url": "https://docs.rs/...", "trust": "external_untrusted" }],
+  "fetched_items": [{ "fetch_id": "fetch_1a2b3c4d5e6f7890", "source_id": "src_a1b2c3d4e5f6a7b8", "truncated": false }],
+  "source_links": [{ "source_id": "src_a1b2c3d4e5f6a7b8", "fetch_id": "fetch_1a2b3c4d5e6f7890", "link_reason": "url_match" }],
+  "trust_summary": { "external_untrusted_count": 1, "local_trusted_count": 0, "total_injection_hits": 0 },
+  "provider_summary": { "providers_used": ["duckduckgo"], "per_provider_counts": [{ "provider_id": "duckduckgo", "count": 1 }] },
+  "gaps": [],
+  "limits": { "max_sources": 50, "max_fetched_items": 20, "max_total_chars": 100000, "sources_truncated": false, "fetched_items_truncated": false, "total_chars_exceeded": false }
+}
+```
+
+The receiving agent can inspect `sources[*].source_id`, `source_links`,
+`trust_summary`, and `gaps` to understand what evidence was gathered,
+how it was linked, what trust level applies, and what evidence is missing.
+
 **Implementation:**
-- `src/core/evidence_bundle.rs`: core types (`EvidenceBundle`, `EvidenceSourceInput`, `EvidenceFetchInput`, `EvidenceSource`, `EvidenceFetchedItem`, `SourceLink`, `TrustSummary`, `ProviderSummary`, `BundleGap`, `BundleLimits`)
-- `src/meta/evidence_bundler.rs`: deterministic bundling logic, ID computation, gap detection, trust aggregation
+- `src/core/evidence_bundle.rs`: core types (`EvidenceBundle`, `EvidenceBundleSource`, `EvidenceBundleFetchedItem`, `EvidenceSourceInput`, `EvidenceFetchInput`, `EvidenceBundleLink`, `EvidenceTrustSummary`, `EvidenceProviderSummary`, `EvidenceGap`, `EvidenceBundleLimits`)
+- `src/meta/evidence_bundle.rs`: deterministic bundling logic, ID computation, gap detection, trust aggregation
 
 ### Code-Host Fetch
 

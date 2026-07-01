@@ -468,6 +468,25 @@ fn compute_gaps(
         }
     }
 
+    // Check source metadata for local checkout dirty state
+    for source in sources {
+        if let Some(ref meta) = source.metadata {
+            if let Some(ref lrm) = meta.local_repo_match {
+                if lrm.dirty_state.as_deref() == Some("dirty") {
+                    gaps.push(EvidenceGap {
+                        kind: EvidenceGapKind::LocalCheckoutDirty,
+                        message: format!(
+                            "local checkout '{}' has uncommitted changes",
+                            lrm.root_name.as_deref().unwrap_or("unknown"),
+                        ),
+                        source_id: Some(source.source_id.clone()),
+                        provider_id: source.provider_id.clone(),
+                    });
+                }
+            }
+        }
+    }
+
     // Check warnings for known gap patterns
     for warning in warnings {
         let kind = match warning.message.as_str() {
@@ -503,6 +522,9 @@ fn compute_gaps(
             }
             m if m.starts_with("profile_degraded") => {
                 Some(EvidenceGapKind::ProviderDegraded)
+            }
+            m if m.starts_with("local_repo_dirty") => {
+                Some(EvidenceGapKind::LocalCheckoutDirty)
             }
             _ => None,
         };
@@ -976,5 +998,79 @@ mod tests {
             .find(|c| c.provider_id == "duckduckgo")
             .unwrap();
         assert_eq!(dd_count.count, 2);
+    }
+
+    #[test]
+    fn local_checkout_dirty_from_metadata() {
+        use crate::core::source_card::{LocalRepoMatch, SourceMetadata};
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![EvidenceSourceInput {
+                id: None,
+                url: Some("workspace://myproject/src/main.rs".to_string()),
+                title: Some("main.rs".to_string()),
+                snippet: None,
+                providers: vec!["local_workspace".to_string()],
+                score: None,
+                trust: Some(TrustLevel::LocalTrusted),
+                trust_markers: None,
+                metadata: Some(SourceMetadata {
+                    local_repo_match: Some(LocalRepoMatch {
+                        matched: true,
+                        dirty_state: Some("dirty".to_string()),
+                        root_name: Some("myproject".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                quality: None,
+            }],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::LocalCheckoutDirty),
+            "expected LocalCheckoutDirty gap from metadata, got: {:?}",
+            bundle.gaps,
+        );
+    }
+
+    #[test]
+    fn local_checkout_dirty_from_warning() {
+        use crate::core::result::SearchWarning;
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![SearchWarning::new(
+                "local_workspace",
+                "local_repo_dirty: local checkout has uncommitted changes".to_string(),
+            )],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::LocalCheckoutDirty),
+            "expected LocalCheckoutDirty gap from warning, got: {:?}",
+            bundle.gaps,
+        );
     }
 }
