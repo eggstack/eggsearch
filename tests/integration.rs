@@ -1399,7 +1399,7 @@ fn mcp_tool_surface_all_nine_tools_with_mock_state() {
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 9, "expected exactly 9 tools, got: {names:?}");
+    assert_eq!(names.len(), 10, "expected exactly 10 tools, got: {names:?}");
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
@@ -1435,6 +1435,10 @@ fn mcp_tool_surface_all_nine_tools_with_mock_state() {
     assert!(
         names.contains(&"batch_fetch".to_string()),
         "missing batch_fetch: {names:?}"
+    );
+    assert!(
+        names.contains(&"build_evidence_bundle".to_string()),
+        "missing build_evidence_bundle: {names:?}"
     );
 
     // Verify the tools have non-empty descriptions (MCP contract).

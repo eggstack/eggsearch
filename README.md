@@ -35,12 +35,13 @@ for the default configuration.
 - Vendored search engine implementations (no heavyweight upstream deps)
 - 1800+ fast tests (no network required)
 - **Local Workspace Search**: Optional local source-file discovery within configured workspace roots. Disabled by default; when enabled, `repo_search` can return local files alongside remote results with clear trust boundaries.
+- `build_evidence_bundle` MCP tool: deterministic, non-summarizing evidence packaging for multi-agent handoff with source/fetch linking, gap detection, and trust preservation
 
 ## Stable baseline
 
 `web_search`, `web_fetch`, `provider_status`, `repo_search`,
 `repo_fetch`, `batch_fetch`, `security_search`, `research_search`,
-and `repo_map` are the nine stable MCP tools.
+`repo_map`, and `build_evidence_bundle` are the ten stable MCP tools.
 Generic search (`intent = web`) is first-class and will remain the
 default path. `repo_search` provides structured repository evidence
 discovery with grouped result bundles, search profiles for provider
@@ -124,6 +125,45 @@ responsibility:
 
 Use `provider_status` as a non-probing diagnostic that reports which
 providers are configured, enabled, and available.
+
+### Evidence bundles
+
+After searching and fetching, use `build_evidence_bundle` to package
+already-selected evidence into a deterministic, non-summarizing bundle
+suitable for multi-agent handoff. The tool links source cards with
+their corresponding fetch results, detects coverage gaps, and
+preserves trust markers, quality signals, and provider diagnostics
+without summarizing or altering content.
+
+**Minimal call:**
+
+```json
+{
+  "sources": [
+    {
+      "id": "src_001",
+      "url": "https://docs.rs/axum/latest/axum/",
+      "title": "axum - Rust",
+      "snippet": "A web application framework for Rust...",
+      "trust": "external_untrusted"
+    }
+  ],
+  "fetches": [
+    {
+      "url": "https://docs.rs/axum/latest/axum/",
+      "trust": "external_untrusted",
+      "text": "...bounded extracted text...",
+      "trust_markers": { "text_sanitized": true }
+    }
+  ]
+}
+```
+
+The response includes the packaged bundle with linked sources and
+fetches, a gap analysis showing which sources have not yet been
+fetched, and rolled-up trust markers across the entire evidence set.
+This tool is idempotent and deterministic -- the same inputs always
+produce the same output.
 
 ## Install
 

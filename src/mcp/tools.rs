@@ -1,6 +1,6 @@
 //! MCP tool implementations for the metasearch server.
 //!
-//! Nine tools are exposed:
+//! Ten tools are exposed:
 //! - `web_search`        — live metasearch.
 //! - `web_fetch`         — explicit URL fetch.
 //! - `batch_fetch`       — bounded batch fetch over explicit URLs/locators.
@@ -10,6 +10,7 @@
 //! - `repo_map`          — repository structure discovery.
 //! - `security_search`   — security vulnerability and advisory search.
 //! - `research_search`   — research-oriented multi-source evidence discovery.
+//! - `build_evidence_bundle` — package selected evidence into a reusable bundle.
 
 use std::sync::Arc;
 
@@ -454,6 +455,31 @@ pub struct RepoMapArgs {
     /// Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EvidenceBundleArgs {
+    /// Optional goal description for this bundle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    /// Source cards from search responses to include in the bundle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<crate::core::evidence_bundle::EvidenceSourceInput>,
+    /// Fetched items from fetch responses to include in the bundle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fetches: Vec<crate::core::evidence_bundle::EvidenceFetchInput>,
+    /// Whether to include unfetched sources (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_unfetched_sources: Option<bool>,
+    /// Maximum number of sources (default 50, cap 200).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_sources: Option<usize>,
+    /// Maximum number of fetched items (default 20, cap 100).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_fetched_items: Option<usize>,
+    /// Maximum total characters across all fetched text (default 100000, cap 500000).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_total_chars: Option<usize>,
 }
 
 /// Run the `web_search` tool against the shared adapter. The response
@@ -963,6 +989,7 @@ pub fn run_provider_status(
             "security_search": true,
             "research_search": true,
             "batch_fetch": true,
+            "evidence_bundle": true,
             "document_fetch": true,
             "pdf_fetch": cfg!(feature = "pdf"),
             "local_workspace": local_enabled,
@@ -1010,6 +1037,14 @@ pub fn run_provider_status(
                 "supports_web": true,
                 "supports_repo": true,
                 "preserves_item_trust": true,
+            },
+            "evidence_bundle": {
+                "enabled": true,
+                "summarizes": false,
+                "persists": false,
+                "max_sources": crate::core::evidence_bundle::MAX_SOURCES_CAP,
+                "max_fetched_items": crate::core::evidence_bundle::MAX_FETCHED_ITEMS_CAP,
+                "max_total_chars": crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP,
             },
         },
     });
@@ -2480,6 +2515,39 @@ fn mode_str(mode: Mode) -> &'static str {
         Mode::Off => "off",
         Mode::Live => "live",
     }
+}
+
+/// Run the `build_evidence_bundle` tool. Packages already-selected
+/// evidence from search and fetch responses into a deterministic,
+/// non-summarizing bundle for multi-agent handoff.
+pub fn run_build_evidence_bundle(
+    args: EvidenceBundleArgs,
+) -> Result<serde_json::Value, String> {
+    use crate::core::evidence_bundle::EvidenceBundleRequest;
+
+    if args.sources.is_empty() && args.fetches.is_empty() {
+        return Err(
+            "at least one source or fetch input is required to build an evidence bundle"
+                .to_string(),
+        );
+    }
+
+    let request = EvidenceBundleRequest {
+        goal: args.goal,
+        sources: args.sources,
+        fetches: args.fetches,
+        include_unfetched_sources: args.include_unfetched_sources,
+        max_sources: args.max_sources,
+        max_fetched_items: args.max_fetched_items,
+        max_total_chars: args.max_total_chars,
+        warnings: vec![],
+    };
+
+    let bundle = crate::meta::evidence_bundle::build_evidence_bundle(request);
+
+    let value = serde_json::to_value(&bundle)
+        .map_err(|e| format!("serialization error: {e}"))?;
+    Ok(value)
 }
 
 #[cfg(test)]

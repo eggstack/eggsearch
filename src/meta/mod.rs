@@ -15,6 +15,8 @@ pub(crate) mod dispatch;
 /// Vendored HTML search engines. Internal; not part of the stable
 /// public API.
 pub mod engines;
+/// Evidence bundle builder: pure logic for constructing evidence bundles from source/fetch inputs.
+pub mod evidence_bundle;
 /// Exact-error planner: generates targeted subqueries for compiler/runtime error messages.
 pub mod error_planner;
 /// Deterministic ranking pipeline for suggested fetch candidates.
@@ -49,6 +51,7 @@ pub mod suggested_fetches;
 pub mod version_compare;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};
+pub use evidence_bundle::build_evidence_bundle;
 pub use planner::{build_search_plan, SearchPlan};
 pub use provider_diagnostics::{
     CapabilityEnforcementTelemetry, ProviderHealthRegistry, ProviderHealthSnapshot,

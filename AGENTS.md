@@ -155,7 +155,7 @@ eggsearch/
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
-- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `repo_fetch` (fetches repository files by structured locator with optional line ranges), `repo_map` (bounded repository structure discovery with important-file classification and suggested fetches), `batch_fetch` (bounded batch fetch over explicit URLs or structured repo locators, returns per-item results with trust markers; not a crawler), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), and `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles)
+- Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `repo_fetch` (fetches repository files by structured locator with optional line ranges), `repo_map` (bounded repository structure discovery with important-file classification and suggested fetches), `batch_fetch` (bounded batch fetch over explicit URLs or structured repo locators, returns per-item results with trust markers; not a crawler), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles), and `build_evidence_bundle` (packages already-selected evidence into a deterministic, non-summarizing bundle for multi-agent handoff)
 - Transport: stdio only (no HTTP/SSE)
 - Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`
 - The `provider_status` response includes a `server_capabilities`
@@ -309,6 +309,7 @@ eggsearch/
   - `research_search`: `true` (research-oriented multi-source evidence discovery)
   - `repo_fetch`: always `true` (structured repository file fetch by locator)
   - `document_fetch`: always `true` (structured document extraction)
+  - `evidence_bundle`: `true` (packages evidence for multi-agent handoff)
   - `pdf_fetch`: `cfg!(feature = "pdf")` (only available when compiled with the `pdf` feature)
   - `local_workspace`: `[local].enabled` (whether local workspace search is available)
 - `code_hosts`: grouped view of providers by host kind (`github`, `gitlab`,
@@ -326,6 +327,7 @@ eggsearch/
     - `package_resolution`: `["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"]`
   - `repo_map`: `supported_hosts`, `local_checkout`
   - `batch_fetch`: `max_items`, `max_items_cap`, `max_chars_per_item`, `max_total_chars`, `concurrency`
+  - `evidence_bundle`: `summarizes: false`, `persists: false`, `max_sources`, `max_fetched_items`, `max_total_chars`
   - `local_workspace`: `enabled`, `symbol_enrichment` (includes `local_repo_match` metadata)
 - This is the capability discovery endpoint for MCP clients. Clients
   can use it to determine which specialized tools are available before
@@ -1552,6 +1554,77 @@ use `repo_search` with default structural subqueries.
 - Use `repo_map` to understand repository structure before `repo_search`. Minimum call: `{"owner": "name", "repo": "name"}`.
 - Use `repo_search` for detailed file-level content discovery with grouped results.
 - Use `repo_fetch` to fetch a known file or line range.
+
+### Evidence Bundles
+
+`build_evidence_bundle` packages already-selected evidence into a
+deterministic, non-summarizing structured evidence container for
+multi-agent handoff. It does **NOT** search, does **NOT** fetch,
+does **NOT** summarize. It takes evidence that an agent has already
+gathered via search and fetch tools and packages it into a portable
+bundle with deterministic IDs, trust labels, and gap tracking.
+
+**What evidence bundles are:**
+- Deterministic, non-summarizing structured evidence containers
+- Portable payloads for handing evidence between agents
+- Containers that preserve all trust labels and markers from inputs
+- Metadata-rich bundles with source links, provider summaries, and gap tracking
+
+**What evidence bundles are NOT:**
+- Not conclusions or summaries
+- Not autonomous crawlers or search tools
+- Not trust judgments or correctness claims
+- Not a replacement for search or fetch — they package already-gathered evidence
+
+**Input types:**
+
+- `EvidenceSourceInput`: source cards from search responses (`web_search`, `repo_search`, `security_search`, `research_search`). Includes `id`, `url`, `title`, `snippet`, `metadata`, `quality`, and optional `trust_markers`.
+- `EvidenceFetchInput`: fetch results from fetch responses (`web_fetch`, `repo_fetch`, `batch_fetch`). Includes `id`, `url`, `text`, `text_truncated`, `trust`, `trust_markers`, and optional `document`.
+
+**Response type:**
+
+- `EvidenceBundle`: `sources` (Vec of evidence sources with deterministic IDs), `fetched_items` (Vec of fetched items with deterministic IDs), `source_links` (mapping from source IDs to their linked fetch IDs), `trust_summary` (aggregate trust labels and marker counts), `provider_summary` (which providers contributed evidence), `gaps` (deterministic gap detections), `warnings`, `limits` (applied caps)
+
+**Deterministic IDs:**
+- Sources: `src_<hash>` (SHA-256 of URL + title, truncated to 16 hex chars)
+- Fetches: `fetch_<hash>` (SHA-256 of URL + text prefix, truncated to 16 hex chars)
+- Bundles: `bundle_<hash>` (SHA-256 of sorted source + fetch IDs)
+
+IDs are deterministic: same inputs always produce the same IDs. This
+lets agents deduplicate evidence across bundles without content comparison.
+
+**Gap types:**
+- `NoPrimarySourceFound`: no authoritative or primary source in the bundle
+- `ProviderDegraded`: evidence came from degraded provider selection
+- `FetchFailed`: a suggested fetch was attempted but failed
+- `SourceUnfetched`: a source card has no corresponding fetch
+- `AllResultsExternalUntrusted`: all sources are external untrusted (no local or verified content)
+- `LowConfidenceResults`: most sources have low or unknown confidence
+- `NoCounterpointEvidence`: no contradicting or alternative evidence present
+
+**Trust handling:**
+- Preserves all `trust` labels from input sources and fetches
+- Aggregates `TrustMarkers` counts into `trust_summary`
+- Does NOT elevate trust — bundling never changes trust level
+- External untrusted inputs remain external untrusted in the bundle
+
+**Limits (configurable, with server-enforced caps):**
+- `max_sources`: default 50, cap 200 (maximum source cards in bundle)
+- `max_fetched_items`: default 20, cap 100 (maximum fetched items in bundle)
+- `max_total_chars`: default 100000, cap 500000 (total character budget across all fetched items)
+
+When limits are exceeded, the bundle is truncated with a warning. The
+`limits` field in the response reports the applied caps.
+
+**Recommended workflow:**
+1. **Search** with `web_search`, `repo_search`, `security_search`, or `research_search` to discover evidence
+2. **Fetch** selected URLs with `web_fetch`, `repo_fetch`, or `batch_fetch` to inspect content
+3. **Bundle** gathered evidence with `build_evidence_bundle` to package it into a portable container
+4. **Hand off** the bundle to another agent, which can inspect sources, fetches, trust labels, and gaps
+
+**Implementation:**
+- `src/core/evidence_bundle.rs`: core types (`EvidenceBundle`, `EvidenceSourceInput`, `EvidenceFetchInput`, `EvidenceSource`, `EvidenceFetchedItem`, `SourceLink`, `TrustSummary`, `ProviderSummary`, `BundleGap`, `BundleLimits`)
+- `src/meta/evidence_bundler.rs`: deterministic bundling logic, ID computation, gap detection, trust aggregation
 
 ### Code-Host Fetch
 
