@@ -268,12 +268,17 @@ impl RepoFetchRequest {
         // Validate host if provided.
         if let Some(host) = self.host {
             match host {
-                CodeHost::Github | CodeHost::Gitlab => {}
-                other => {
-                    return Err(format!(
-                        "host '{other:?}' is not supported for repo_fetch; \
-                         use github or gitlab"
-                    ));
+                CodeHost::Github
+                | CodeHost::Gitlab
+                | CodeHost::Codeberg
+                | CodeHost::Gitea
+                | CodeHost::Forgejo => {}
+                CodeHost::Unknown => {
+                    return Err(
+                        "host 'unknown' is not supported for repo_fetch; \
+                         use github, gitlab, codeberg, gitea, or forgejo"
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -372,6 +377,44 @@ pub fn gitlab_raw_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> St
         format!("{owner}/{repo}")
     };
     format!("https://gitlab.com/{namespace}/-/raw/{ref_name}/{path}")
+}
+
+/// Build a browser-viewable URL for a Codeberg source file.
+pub fn codeberg_browser_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> String {
+    format!("https://codeberg.org/{owner}/{repo}/src/branch/{ref_name}/{path}")
+}
+
+/// Build a raw content URL for a Codeberg source file.
+pub fn codeberg_raw_url(owner: &str, repo: &str, ref_name: &str, path: &str) -> String {
+    format!("https://codeberg.org/{owner}/{repo}/raw/branch/{ref_name}/{path}")
+}
+
+/// Build a browser-viewable URL for a Gitea/Forgejo source file.
+///
+/// `base_url` is the instance URL (e.g. `https://git.example.com`).
+pub fn gitea_browser_url(
+    base_url: &str,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    path: &str,
+) -> String {
+    let base = base_url.trim_end_matches('/');
+    format!("{base}/{owner}/{repo}/src/branch/{ref_name}/{path}")
+}
+
+/// Build a raw content URL for a Gitea/Forgejo source file.
+///
+/// `base_url` is the instance URL (e.g. `https://git.example.com`).
+pub fn gitea_raw_url(
+    base_url: &str,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    path: &str,
+) -> String {
+    let base = base_url.trim_end_matches('/');
+    format!("{base}/{owner}/{repo}/raw/branch/{ref_name}/{path}")
 }
 
 /// Apply line range and context to a list of lines, returning the
@@ -853,7 +896,7 @@ mod tests {
     #[test]
     fn unsupported_host_rejected() {
         let req = RepoFetchRequest {
-            host: Some(CodeHost::Codeberg),
+            host: Some(CodeHost::Unknown),
             owner: "owner".to_string(),
             repo: "repo".to_string(),
             ref_name: Some("main".to_string()),
@@ -874,6 +917,81 @@ mod tests {
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("not supported"));
+    }
+
+    #[test]
+    fn codeberg_host_accepted() {
+        let req = RepoFetchRequest {
+            host: Some(CodeHost::Codeberg),
+            owner: "owner".to_string(),
+            repo: "repo".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        req.validate(50000).unwrap();
+    }
+
+    #[test]
+    fn gitea_host_accepted() {
+        let req = RepoFetchRequest {
+            host: Some(CodeHost::Gitea),
+            owner: "owner".to_string(),
+            repo: "repo".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        req.validate(50000).unwrap();
+    }
+
+    #[test]
+    fn forgejo_host_accepted() {
+        let req = RepoFetchRequest {
+            host: Some(CodeHost::Forgejo),
+            owner: "owner".to_string(),
+            repo: "repo".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        req.validate(50000).unwrap();
     }
 
     // --- URL construction tests ---
@@ -968,6 +1086,76 @@ mod tests {
         assert_ne!(browser, raw);
         assert!(browser.contains("/blob/"));
         assert!(raw.contains("/raw/"));
+    }
+
+    // --- Codeberg URL construction tests ---
+
+    #[test]
+    fn codeberg_browser_url_basic() {
+        let url = codeberg_browser_url("owner", "repo", "main", "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn codeberg_raw_url_basic() {
+        let url = codeberg_raw_url("owner", "repo", "main", "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn codeberg_browser_url_with_sha() {
+        let url = codeberg_browser_url("owner", "repo", "abc123def", "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://codeberg.org/owner/repo/src/branch/abc123def/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn codeberg_raw_url_with_sha() {
+        let url = codeberg_raw_url("owner", "repo", "abc123def", "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://codeberg.org/owner/repo/raw/branch/abc123def/src/lib.rs"
+        );
+    }
+
+    // --- Gitea/Forgejo URL construction tests ---
+
+    #[test]
+    fn gitea_browser_url_basic() {
+        let url = gitea_browser_url("https://git.example.com", "owner", "repo", "main", "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://git.example.com/owner/repo/src/branch/main/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn gitea_raw_url_basic() {
+        let url = gitea_raw_url("https://git.example.com", "owner", "repo", "main", "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://git.example.com/owner/repo/raw/branch/main/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn gitea_browser_url_trailing_slash_stripped() {
+        let url = gitea_browser_url("https://git.example.com/", "o", "r", "main", "f.txt");
+        assert_eq!(url, "https://git.example.com/o/r/src/branch/main/f.txt");
+    }
+
+    #[test]
+    fn gitea_raw_url_trailing_slash_stripped() {
+        let url = gitea_raw_url("https://git.example.com/", "o", "r", "main", "f.txt");
+        assert_eq!(url, "https://git.example.com/o/r/raw/branch/main/f.txt");
     }
 
     // --- Line range tests ---

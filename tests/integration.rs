@@ -4416,20 +4416,25 @@ fn code_host_fetch_target_gitlab_blob_includes_transform_metadata() {
 }
 
 #[test]
-fn code_host_fetch_target_codeberg_blob_does_not_rewrite() {
+fn code_host_fetch_target_codeberg_blob_rewrites_to_raw() {
     use eggsearch::core::code_host_fetch::resolve_code_host_fetch_target;
 
-    // Codeberg raw rewrite is intentionally disabled in this phase.
-    // The URL still classifies as SourceFile so callers can identify
-    // it, but `raw_url` is None and `to_fetch_transform` returns None.
+    // Codeberg source-file URLs are now rewritten to raw content URLs.
     let target = resolve_code_host_fetch_target(
         "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs",
     )
     .unwrap();
-    assert!(target.raw_url.is_none());
-    assert!(target
-        .to_fetch_transform("https://example.com/raw")
-        .is_none());
+    assert_eq!(
+        target.raw_url.as_deref(),
+        Some("https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs")
+    );
+    let transform = target
+        .to_fetch_transform(target.raw_url.as_deref().unwrap())
+        .unwrap();
+    assert_eq!(
+        transform.kind,
+        eggsearch::core::fetch::FetchTransformKind::CodebergRawFile
+    );
     assert_eq!(
         target.source_kind,
         eggsearch::core::source_card::SourceKind::SourceFile
@@ -8376,12 +8381,12 @@ async fn repo_fetch_validation_error_max_chars_zero() {
 }
 
 #[tokio::test]
-async fn repo_fetch_validation_error_unsupported_host_codeberg() {
+async fn repo_fetch_validation_error_unsupported_host_unknown() {
     let state = repo_fetch_state();
     let result = run_repo_fetch(
         state,
         RepoFetchArgs {
-            host: Some("codeberg".into()),
+            host: Some("unknown_host".into()),
             owner: "test-owner".into(),
             repo: "test-repo".into(),
             ref_name: Some("main".into()),
@@ -8404,11 +8409,11 @@ async fn repo_fetch_validation_error_unsupported_host_codeberg() {
     )
     .await;
 
-    assert!(result.is_err(), "unsupported host should fail");
+    assert!(result.is_err(), "unknown host should fail");
     let err = result.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("codeberg") || msg.contains("not supported"),
+        msg.contains("unknown") || msg.contains("not supported"),
         "error should mention the bad host: {msg}"
     );
 }

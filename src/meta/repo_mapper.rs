@@ -29,6 +29,10 @@ pub fn build_raw_url(
         CodeHost::Gitlab => {
             format!("https://gitlab.com/{owner}/{repo}/-/raw/{ref_name}/{path}")
         }
+        CodeHost::Codeberg => {
+            format!("https://codeberg.org/{owner}/{repo}/raw/branch/{ref_name}/{path}")
+        }
+        // Gitea/Forgejo require a configured base URL; return empty for unmapped hosts.
         _ => String::new(),
     }
 }
@@ -42,7 +46,11 @@ fn build_structured_fetch(
     path: &str,
 ) -> Option<RepoFetchRequest> {
     match host {
-        CodeHost::Github | CodeHost::Gitlab => Some(RepoFetchRequest {
+        CodeHost::Github
+        | CodeHost::Gitlab
+        | CodeHost::Codeberg
+        | CodeHost::Gitea
+        | CodeHost::Forgejo => Some(RepoFetchRequest {
             host: Some(host),
             owner: owner.to_owned(),
             repo: repo.to_owned(),
@@ -370,6 +378,15 @@ mod tests {
     }
 
     #[test]
+    fn build_raw_url_codeberg() {
+        let url = build_raw_url(CodeHost::Codeberg, "owner", "repo", "main", "src/lib.rs");
+        assert_eq!(
+            url,
+            "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs"
+        );
+    }
+
+    #[test]
     fn build_structured_fetch_github() {
         let fetch = build_structured_fetch(CodeHost::Github, "o", "r", "main", "Cargo.toml");
         assert!(fetch.is_some());
@@ -379,6 +396,34 @@ mod tests {
         assert_eq!(f.repo, "r");
         assert_eq!(f.ref_name.as_deref(), Some("main"));
         assert_eq!(f.path, "Cargo.toml");
+    }
+
+    #[test]
+    fn build_structured_fetch_codeberg() {
+        let fetch = build_structured_fetch(CodeHost::Codeberg, "o", "r", "main", "Cargo.toml");
+        assert!(fetch.is_some());
+        let f = fetch.unwrap();
+        assert_eq!(f.host, Some(CodeHost::Codeberg));
+        assert_eq!(f.owner, "o");
+        assert_eq!(f.repo, "r");
+        assert_eq!(f.ref_name.as_deref(), Some("main"));
+        assert_eq!(f.path, "Cargo.toml");
+    }
+
+    #[test]
+    fn build_structured_fetch_gitea() {
+        let fetch = build_structured_fetch(CodeHost::Gitea, "o", "r", "main", "src/lib.rs");
+        assert!(fetch.is_some());
+        let f = fetch.unwrap();
+        assert_eq!(f.host, Some(CodeHost::Gitea));
+    }
+
+    #[test]
+    fn build_structured_fetch_forgejo() {
+        let fetch = build_structured_fetch(CodeHost::Forgejo, "o", "r", "main", "src/lib.rs");
+        assert!(fetch.is_some());
+        let f = fetch.unwrap();
+        assert_eq!(f.host, Some(CodeHost::Forgejo));
     }
 
     #[test]

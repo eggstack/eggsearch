@@ -353,7 +353,7 @@ pub struct BatchFetchArgs {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoFetchArgs {
-    /// Code host. Optional; accepted values: github, gitlab.
+    /// Code host. Optional; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
     /// Repository owner (or namespace for GitLab nested groups).
@@ -418,7 +418,7 @@ pub struct RepoFetchArgs {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoMapArgs {
-    /// Code host. Optional; accepted values: github, gitlab.
+    /// Code host. Optional; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
     /// Repository owner.
@@ -636,9 +636,11 @@ pub async fn run_repo_search(
             "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
             "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
             "codeberg" | "cb" => Some(crate::core::code_metadata::CodeHost::Codeberg),
+            "gitea" => Some(crate::core::code_metadata::CodeHost::Gitea),
+            "forgejo" => Some(crate::core::code_metadata::CodeHost::Forgejo),
             other => {
                 return Err(ToolError::Validation(format!(
-                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb)"
+                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
                 )));
             }
         }
@@ -1002,7 +1004,7 @@ pub fn run_provider_status(
         },
         "tool_capabilities": {
             "repo_fetch": {
-                "remote_hosts": ["github", "gitlab"],
+                "remote_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
                 "workspace": local_enabled,
                 "line_ranges": true,
                 "context_lines": true,
@@ -1016,10 +1018,10 @@ pub fn run_provider_status(
                 "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
                 "local_workspace": local_enabled,
                 "subquery_telemetry": true,
-                "supported_hosts": ["github", "gitlab", "codeberg"],
+                "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
             },
             "repo_map": {
-                "supported_hosts": ["github", "gitlab"],
+                "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
                 "local_checkout": local_enabled,
             },
             "local_workspace": {
@@ -1190,9 +1192,10 @@ pub async fn run_repo_fetch(
     use crate::core::code_metadata::CodeHost;
     use crate::core::fetch::ExtractMode;
     use crate::core::repo_fetch::{
-        apply_line_range, github_browser_url, github_permalink_url, github_raw_permalink_url,
-        github_raw_url, gitlab_browser_url, gitlab_raw_url, FetchTrust, RepoFetchRequest,
-        RepoFetchResponse, RepoLocator,
+        apply_line_range, codeberg_browser_url, codeberg_raw_url, gitea_browser_url, gitea_raw_url,
+        github_browser_url, github_permalink_url, github_raw_permalink_url, github_raw_url,
+        gitlab_browser_url, gitlab_raw_url, FetchTrust, RepoFetchRequest, RepoFetchResponse,
+        RepoLocator,
     };
 
     // --- workspace:// local file fetch (bypasses fetch policy) ---
@@ -1266,9 +1269,12 @@ pub async fn run_repo_fetch(
         match h.to_lowercase().as_str() {
             "github" | "gh" => Some(CodeHost::Github),
             "gitlab" | "gl" => Some(CodeHost::Gitlab),
+            "codeberg" | "cb" => Some(CodeHost::Codeberg),
+            "gitea" => Some(CodeHost::Gitea),
+            "forgejo" => Some(CodeHost::Forgejo),
             other => {
                 return Err(ToolError::Validation(format!(
-                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl)"
+                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
                 )));
             }
         }
@@ -1343,7 +1349,45 @@ pub async fn run_repo_fetch(
             let raw = gitlab_raw_url(owner, repo, rn, path);
             (browser, raw)
         }
-        _ => {
+        CodeHost::Codeberg => {
+            let browser = codeberg_browser_url(owner, repo, rn, path);
+            let raw = codeberg_raw_url(owner, repo, rn, path);
+            (browser, raw)
+        }
+        CodeHost::Gitea | CodeHost::Forgejo => {
+            // Look up base URL from API provider config.
+            let provider_id = match effective_host {
+                CodeHost::Gitea => "gitea",
+                CodeHost::Forgejo => "forgejo",
+                _ => unreachable!(),
+            };
+            let base_url = state
+                .config
+                .search
+                .api
+                .get(provider_id)
+                .and_then(|c| c.base_url.clone())
+                .unwrap_or_else(|| {
+                    // Fallback: try any gitea/forgejo provider with a base_url
+                    state
+                        .config
+                        .search
+                        .api
+                        .iter()
+                        .find(|(k, _)| k.starts_with("gitea_") || k.starts_with("forgejo_"))
+                        .and_then(|(_, c)| c.base_url.clone())
+                        .unwrap_or_default()
+                });
+            if base_url.is_empty() {
+                return Err(ToolError::Validation(format!(
+                    "host '{effective_host:?}' requires a configured base_url in [search.api.{provider_id}] or [search.api.<id>] with a base_url"
+                )));
+            }
+            let browser = gitea_browser_url(&base_url, owner, repo, rn, path);
+            let raw = gitea_raw_url(&base_url, owner, repo, rn, path);
+            (browser, raw)
+        }
+        CodeHost::Unknown => {
             return Err(ToolError::Validation(format!(
                 "host '{effective_host:?}' is not supported for repo_fetch"
             )));
@@ -1357,6 +1401,29 @@ pub async fn run_repo_fetch(
                 // GitLab permalink uses the browser URL pattern with SHA.
                 gitlab_browser_url(owner, repo, sha, path)
             }
+            CodeHost::Codeberg => {
+                // Codeberg permalink uses the browser URL pattern with commit SHA.
+                format!(
+                    "https://codeberg.org/{owner}/{repo}/src/commit/{sha}/{path}"
+                )
+            }
+            CodeHost::Gitea | CodeHost::Forgejo => {
+                // Gitea/Forgejo permalink uses the browser URL pattern with commit SHA.
+                let provider_id = match effective_host {
+                    CodeHost::Gitea => "gitea",
+                    CodeHost::Forgejo => "forgejo",
+                    _ => unreachable!(),
+                };
+                let base_url = state
+                    .config
+                    .search
+                    .api
+                    .get(provider_id)
+                    .and_then(|c| c.base_url.clone())
+                    .unwrap_or_default();
+                let base = base_url.trim_end_matches('/');
+                format!("{base}/{owner}/{repo}/src/commit/{sha}/{path}")
+            }
             _ => raw_url.clone(),
         }
     });
@@ -1367,6 +1434,29 @@ pub async fn run_repo_fetch(
             CodeHost::Gitlab => {
                 // GitLab raw permalink uses the raw URL pattern with SHA.
                 gitlab_raw_url(owner, repo, sha, path)
+            }
+            CodeHost::Codeberg => {
+                // Codeberg raw permalink uses the raw URL pattern with commit SHA.
+                format!(
+                    "https://codeberg.org/{owner}/{repo}/raw/commit/{sha}/{path}"
+                )
+            }
+            CodeHost::Gitea | CodeHost::Forgejo => {
+                // Gitea/Forgejo raw permalink uses the raw URL pattern with commit SHA.
+                let provider_id = match effective_host {
+                    CodeHost::Gitea => "gitea",
+                    CodeHost::Forgejo => "forgejo",
+                    _ => unreachable!(),
+                };
+                let base_url = state
+                    .config
+                    .search
+                    .api
+                    .get(provider_id)
+                    .and_then(|c| c.base_url.clone())
+                    .unwrap_or_default();
+                let base = base_url.trim_end_matches('/');
+                format!("{base}/{owner}/{repo}/raw/commit/{sha}/{path}")
             }
             _ => raw_url.clone(),
         }
@@ -1547,9 +1637,11 @@ pub async fn run_repo_map(
             "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
             "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
             "codeberg" | "cb" => Some(crate::core::code_metadata::CodeHost::Codeberg),
+            "gitea" => Some(crate::core::code_metadata::CodeHost::Gitea),
+            "forgejo" => Some(crate::core::code_metadata::CodeHost::Forgejo),
             other => {
                 return Err(ToolError::Validation(format!(
-                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb)"
+                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
                 )));
             }
         }
@@ -1778,10 +1870,11 @@ pub async fn run_batch_fetch(
                 }
                 if let Some(h) = host {
                     match h.to_lowercase().as_str() {
-                        "github" | "gh" | "gitlab" | "gl" | "workspace" => {}
+                        "github" | "gh" | "gitlab" | "gl" | "codeberg" | "cb" | "gitea"
+                        | "forgejo" | "workspace" => {}
                         other => {
                             return Err(ToolError::Validation(format!(
-                                "item {i}: unknown host '{other}'; accepted: github (gh), gitlab (gl), workspace"
+                                "item {i}: unknown host '{other}'; accepted: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo, workspace"
                             )));
                         }
                     }
