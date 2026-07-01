@@ -24,6 +24,7 @@ use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::{AggregatedResult, ResultMetadata, SearchResult};
 use crate::meta::engines::{build_http_client, SearchEngine};
 use crate::meta::planner::build_search_plan;
+use crate::meta::provider_diagnostics::{FailureClass, ProviderHealthRegistry};
 use crate::meta::response::{ProviderFailure, WebSearchResponse};
 
 /// Coarse error class for provider failures. Exposed via `provider_status`
@@ -110,6 +111,8 @@ pub struct MetadataSearchAdapter {
     /// Maximum concurrent jobs for any single provider during parallel
     /// dispatch.
     multiquery_provider_concurrency: usize,
+    /// Process-local provider health registry for cooldown and diagnostics.
+    health: Arc<ProviderHealthRegistry>,
 }
 
 impl std::fmt::Debug for MetadataSearchAdapter {
@@ -118,6 +121,7 @@ impl std::fmt::Debug for MetadataSearchAdapter {
             .field("providers", &self.provider_ids)
             .field("global_timeout_ms", &self.global_timeout.as_millis())
             .field("sanitize_output", &self.sanitize_output)
+            .field("health", &self.health)
             .finish()
     }
 }
@@ -187,6 +191,7 @@ impl MetadataSearchAdapter {
             api_configured,
             multiquery_concurrency,
             multiquery_provider_concurrency,
+            health: Arc::new(ProviderHealthRegistry::new()),
         })
     }
 
@@ -210,6 +215,7 @@ impl MetadataSearchAdapter {
             api_configured: std::collections::BTreeMap::new(),
             multiquery_concurrency: 8,
             multiquery_provider_concurrency: 2,
+            health: Arc::new(ProviderHealthRegistry::new()),
         }
     }
 
@@ -236,6 +242,7 @@ impl MetadataSearchAdapter {
             api_configured: std::collections::BTreeMap::new(),
             multiquery_concurrency: 8,
             multiquery_provider_concurrency: 2,
+            health: Arc::new(ProviderHealthRegistry::new()),
         }
     }
 
@@ -267,6 +274,46 @@ impl MetadataSearchAdapter {
     /// List the provider ids that this adapter will query.
     pub fn provider_ids(&self) -> &[String] {
         &self.provider_ids
+    }
+
+    /// Access the process-local provider health registry.
+    pub fn health(&self) -> &Arc<ProviderHealthRegistry> {
+        &self.health
+    }
+
+    /// Record provider health from raw dispatch results and failures.
+    /// Call after dispatch completes but before `provider_failures()`.
+    /// Also records timeout failures for providers that never responded.
+    fn record_provider_health(
+        &self,
+        queried_ids: &[String],
+        raw_results: &[(String, Vec<SearchResult>)],
+        raw_failures: &[(String, EngineError)],
+    ) {
+        // Track which providers responded (success or failure)
+        let mut responded: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        // Record successes (at least one result = success)
+        for (id, _) in raw_results {
+            self.health.record_success(id, 0);
+            responded.insert(id.as_str());
+        }
+
+        // Record failures
+        for (id, err) in raw_failures {
+            let class = classify(err);
+            self.health
+                .record_failure(id, class.into(), &err.to_string(), 0);
+            responded.insert(id.as_str());
+        }
+
+        // Record timeout for providers that never responded
+        for id in queried_ids {
+            if !responded.contains(id.as_str()) {
+                self.health
+                    .record_failure(id, FailureClass::Timeout, "provider timed out", 0);
+            }
+        }
     }
 
     fn effective_timeout(&self, timeout_ms: Option<u64>) -> Duration {
@@ -510,6 +557,9 @@ impl MetadataSearchAdapter {
             }
         }
         // JoinSet dropped here cancels any in-flight engine tasks.
+
+        // Record provider health from raw results and failures
+        self.record_provider_health(&queried_ids, &raw_results, &raw_failures);
 
         // Aggregate up to the candidate pool size so intent/freshness
         // reranking has the larger pool to work with.
@@ -757,6 +807,9 @@ impl MetadataSearchAdapter {
             self.multiquery_provider_concurrency,
         )
         .await;
+
+        // Record provider health from raw results and failures
+        self.record_provider_health(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
@@ -1098,6 +1151,7 @@ impl MetadataSearchAdapter {
                     .count(),
                 warnings: Vec::new(),
             }),
+            capability_enforcement: None,
         };
 
         // Security context: query advisories when requested and package is present
@@ -1265,6 +1319,9 @@ impl MetadataSearchAdapter {
         )
         .await;
 
+        // Record provider health from raw results and failures
+        self.record_provider_health(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+
         let mut warnings: Vec<SearchWarning> = Vec::new();
         push_deadline_warning(&mut warnings, "security_search", &dispatch.deadline);
         push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
@@ -1338,6 +1395,9 @@ impl MetadataSearchAdapter {
             self.multiquery_provider_concurrency,
         )
         .await;
+
+        // Record provider health from raw results and failures
+        self.record_provider_health(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);

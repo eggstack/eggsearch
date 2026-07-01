@@ -212,6 +212,10 @@ pub struct RepoSearchTelemetry {
     /// Aggregate uncertainty summary for the response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uncertainty_summary: Option<crate::core::quality::SearchUncertaintySummary>,
+    /// Capability enforcement telemetry for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_enforcement:
+        Option<crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -1158,6 +1162,7 @@ mod tests {
             subqueries_interrupted: 0,
             subqueries_skipped: 0,
             uncertainty_summary: None,
+            capability_enforcement: None,
         };
         let json = serde_json::to_string(&telemetry).unwrap();
         let parsed: RepoSearchTelemetry = serde_json::from_str(&json).unwrap();

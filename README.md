@@ -855,6 +855,13 @@ This tool is host/UI-facing and not needed for normal research-agent
 loops. Hosts can call it when rendering a provider-health panel or
 running a doctor command.
 
+The response includes a `health` field with per-provider health
+snapshots showing status (`healthy`, `degraded`, `cooldown`, `unknown`),
+consecutive failure count, recent failure class/message, latency, and
+cooldown timing. Health state is process-local and advisory — it
+influences profile/default routing but does not override explicit
+provider requests.
+
 The response also includes capability discovery metadata:
 
 ```json
@@ -1706,7 +1713,7 @@ eggsearch/
     commands/            # subcommands: doctor, search, providers, mcp, fetch
     core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types, batch fetch types, code evidence metadata, repo map types
     fetch/               # HTTP fetch client and HTML extraction
-    meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, repo mapping, bounded parallel subquery dispatch, + vendored engines
+    meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, repo mapping, bounded parallel subquery dispatch, provider health diagnostics, + vendored engines
     mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, repo_fetch, repo_map, batch_fetch, security_search, research_search
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```

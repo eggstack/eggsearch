@@ -512,12 +512,30 @@ mod tests {
         assert_eq!(plan_hint.hints.repo.as_deref(), Some("axum"));
 
         // All three should produce the same subquery labels
-        let labels_explicit: Vec<&str> = plan_explicit.subqueries.iter().map(|s| s.label.as_str()).collect();
-        let labels_slash: Vec<&str> = plan_slash.subqueries.iter().map(|s| s.label.as_str()).collect();
-        let labels_hint: Vec<&str> = plan_hint.subqueries.iter().map(|s| s.label.as_str()).collect();
+        let labels_explicit: Vec<&str> = plan_explicit
+            .subqueries
+            .iter()
+            .map(|s| s.label.as_str())
+            .collect();
+        let labels_slash: Vec<&str> = plan_slash
+            .subqueries
+            .iter()
+            .map(|s| s.label.as_str())
+            .collect();
+        let labels_hint: Vec<&str> = plan_hint
+            .subqueries
+            .iter()
+            .map(|s| s.label.as_str())
+            .collect();
 
-        assert_eq!(labels_explicit, labels_slash, "explicit and slash-form should produce same subquery labels");
-        assert_eq!(labels_explicit, labels_hint, "explicit and query-hint should produce same subquery labels");
+        assert_eq!(
+            labels_explicit, labels_slash,
+            "explicit and slash-form should produce same subquery labels"
+        );
+        assert_eq!(
+            labels_explicit, labels_hint,
+            "explicit and query-hint should produce same subquery labels"
+        );
     }
 
     #[test]

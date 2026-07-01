@@ -106,6 +106,7 @@ eggsearch/
       local_backend.rs     # LocalWorkspaceBackend: bounded file walking, scoring, SourceCard conversion
       local_inventory.rs    # local repo identity: remote URL normalization, worktree state, manifest detection
       dispatch.rs          # bounded parallel dispatch for multi-subquery searches
+      provider_diagnostics.rs # provider health tracking, routing decisions, capability enforcement
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -215,6 +216,38 @@ eggsearch/
 - Warning format: `SearchWarning::new("_system", message)` where
   `message` is a human-readable description of the limitation.
 
+### Provider Health Tracking
+- Process-local health snapshots track per-provider success/failure
+  state, consecutive failures, latency, and cooldown status.
+- Health is updated after every provider dispatch (success, failure,
+  timeout) and is non-authoritative — it influences profile/default
+  routing but does not override explicit provider requests.
+- Cooldown is advisory: after `COOLDOWN_THRESHOLD` (3) consecutive
+  failures, a provider enters cooldown for a bounded duration:
+  - Rate limit: 60 seconds
+  - Timeout: 15 seconds
+  - Transport failures: 30 seconds
+- Health state is exposed in `provider_status` via the `health` field
+  with `status` (`healthy`, `degraded`, `cooldown`, `unknown`), failure
+  metadata, and cooldown timing.
+
+### Capability Enforcement Telemetry
+- `repo_search` responses include an optional `capability_enforcement`
+  field in `telemetry` that tracks which search constraints were
+  requested, enforced natively, approximated via free-text, or not
+  enforced.
+- `requested`: capabilities the request wanted (e.g. `repo_filter`,
+  `path_filter`, `language_filter`, `symbol_hint`)
+- `enforced`: capabilities enforced by a native provider (e.g.
+  GitHub code search enforces `repo_filter`)
+- `approximated`: capabilities approximated via free-text matching
+  (e.g. DuckDuckGo matching `repo:owner/name` in query text)
+- `not_enforced`: capabilities no provider could approximate (e.g.
+  `symbol_hint` with no native code provider)
+- `security_search` responses include similar enforcement telemetry
+  for `advisory_lookup`, `package_filter`, `version_filter`, and
+  `severity_filter`.
+
 ### Server Capabilities Discovery
 - The `provider_status` MCP tool response includes a top-level
   `server_capabilities` object alongside the provider list, and a
@@ -236,6 +269,11 @@ eggsearch/
   `gitea`), each with aggregated capability flags (`code_search`,
   `issue_search`, `release_search`). Clients can use this to discover
   which code hosts have which capabilities available.
+- `health`: per-provider health snapshots with status (`healthy`,
+  `degraded`, `cooldown`, `unknown`), consecutive failure count,
+  recent failure class/message, latency, and cooldown info. Health
+  state is process-local and advisory — it influences profile/default
+  routing but does not override explicit provider requests.
 - `tool_capabilities` fields:
   - `repo_fetch`: `remote_hosts`, `workspace` (enabled), `line_ranges`, `context_lines`, `max_chars_enforced`, `symbol_search`, `expand_to_block`, `max_block_lines`
   - `repo_search`: `profiles`, `package_resolution`, `local_workspace` (enabled), `subquery_telemetry`, `supported_hosts`
@@ -601,6 +639,10 @@ requested, applied, and whether degradation occurred. Explicit
 - `deadline_exceeded`: whether the request-level deadline was hit
 - `subqueries_interrupted`: unique subquery IDs cut short by deadline (counts distinct subqueries, not raw provider jobs)
 - `subqueries_skipped`: unique subquery IDs never started before deadline (counts distinct subqueries, not raw provider jobs)
+- `capability_enforcement`: optional capability enforcement telemetry
+  tracking which search constraints were requested, enforced natively,
+  approximated via free-text, or not enforced (see "Capability
+  Enforcement Telemetry" above)
 
 **Capability-aware warnings:**
 - `native_code_search_unavailable`: repo hints present but no GitHub/GitLab/Gitea provider configured

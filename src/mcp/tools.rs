@@ -826,6 +826,15 @@ pub async fn run_repo_search(
         summary.partial_provider_selection = has_partial_warning && !is_degraded;
     }
 
+    // Add capability enforcement telemetry
+    let hints = req.resolved_hints();
+    response.telemetry.capability_enforcement = Some(
+        crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry::for_repo_search(
+            &hints,
+            &req.providers,
+        ),
+    );
+
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
 
@@ -944,9 +953,16 @@ pub fn run_provider_status(
     // Build code_hosts summary from provider descriptors
     let code_hosts = build_code_hosts_summary(&descriptors);
 
+    // Build health snapshots from the adapter's health registry
+    let health_snapshots = state.adapter.health().all_snapshots(
+        state.adapter.provider_ids(),
+        &std::collections::BTreeMap::new(),
+    );
+
     let payload = serde_json::json!({
         "providers": descriptors,
         "code_hosts": code_hosts,
+        "health": health_snapshots,
         "mode": mode_str(state.config.search.mode),
         "server_capabilities": {
             "generic_search": true,

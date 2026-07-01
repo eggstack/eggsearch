@@ -27,6 +27,8 @@ pub mod mock;
 /// Package registry resolver: bounded HTTP lookups for crates.io, PyPI, npm.
 pub mod package_resolver;
 pub mod planner;
+/// Provider health tracking, routing decisions, and capability enforcement telemetry.
+pub mod provider_diagnostics;
 pub mod repo_grouping;
 pub mod repo_mapper;
 pub mod repo_planner;
@@ -42,6 +44,10 @@ pub mod suggested_fetches;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};
 pub use planner::{build_search_plan, SearchPlan};
+pub use provider_diagnostics::{
+    CapabilityEnforcementTelemetry, ProviderHealthRegistry, ProviderHealthSnapshot,
+    ProviderHealthStatus, ProviderRoutingDecision, ProviderRoutingError, ProviderSkipReason,
+};
 pub use repo_grouping::{classify_group, group_results};
 pub use repo_planner::{
     build_repo_search_plan, build_repo_search_plan_with_package, RepoSearchPlan, RepoSubquery,
