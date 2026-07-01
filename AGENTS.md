@@ -323,6 +323,7 @@ eggsearch/
 - `tool_capabilities` fields:
   - `repo_fetch`: `remote_hosts`, `workspace` (enabled), `line_ranges`, `context_lines`, `max_chars_enforced`, `symbol_search`, `expand_to_block`, `max_block_lines`
   - `repo_search`: `profiles`, `package_resolution`, `local_workspace` (enabled), `subquery_telemetry`, `supported_hosts`
+    - `package_resolution`: `["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"]`
   - `repo_map`: `supported_hosts`, `local_checkout`
   - `batch_fetch`: `max_items`, `max_items_cap`, `max_chars_per_item`, `max_total_chars`, `concurrency`
   - `local_workspace`: `enabled`, `symbol_enrichment` (includes `local_repo_match` metadata)
@@ -569,8 +570,9 @@ queries when the caller wants categorized results rather than a flat
   `include_*` flags, optional `max_results`, `max_per_group`,
   `freshness`, `timeout_ms`, optional `providers`, optional `profile`
   (one of `generic`, `coding`, `security`, `research`),
-  optional `ecosystem`, `package`, `version`, `version_requirement`,
-  `compare_version`, `include_security_context`, `include_changelog`,
+  optional `ecosystem`, `package`, `package_namespace`,
+  `version`, `version_requirement`, `compare_version`,
+  `include_security_context`, `include_changelog`,
   `include_migration_guides`, optional `mode`
   (one of `default`, `exact_error`)
 - `RepoResultGroup`: `kind` (group kind enum), `label` (human-readable),
@@ -717,13 +719,13 @@ with a validation error. Accepted host values: `github` (alias `gh`),
 `CommunityDiscovery`, `Other`.
 
 **Package fields:** When package-oriented fields are provided
-(`ecosystem`, `package`, `version`, `version_requirement`,
-`compare_version`), the planner generates package-aware subqueries
-and the resolver attempts bounded HTTP lookups against the
-appropriate package registry. Package resolution is metadata
-retrieval only — it does not solve dependencies or download
-artifacts. If the registry API fails, a fallback metadata object
-is returned with a `package_resolution_fallback:` warning.
+(`ecosystem`, `package`, `package_namespace`, `version`,
+`version_requirement`, `compare_version`), the planner generates
+package-aware subqueries and the resolver attempts bounded HTTP
+lookups against the appropriate package registry. Package resolution
+is metadata retrieval only -- it does not solve dependencies or
+download artifacts. If the registry API fails, a fallback metadata
+object is returned with a `package_resolution_fallback:` warning.
 
 When `include_security_context` is `true` and a package is
 provided, the resolver queries OSV for known vulnerabilities
@@ -767,16 +769,21 @@ use `web_search` with `intent = "code"` and `repo:owner/name`.
 when package-oriented fields are provided in the request.
 
 **Types** (in `src/core/package.rs`):
-- `PackageEcosystem` enum: `CratesIo`, `PyPI`, `Npm`
-- `PackageCoordinate`: `ecosystem`, `name`, optional `version`,
-  optional `version_requirement`, optional `compare_version`
-- `PackageResolution`: `ecosystem`, `name`, `latest_version`,
-  optional `version`, optional `description`, `repository_url`,
-  `homepage_url`, optional `documentation_url`, `download_count`,
-  `freshness`
+- `PackageEcosystem` enum: `CratesIo`, `PyPI`, `Npm`, `Go`, `Maven`,
+  `Nuget`, `Rubygems`, `Packagist`, `Oci`, `GithubActions`
+- `PackageCoordinate`: `ecosystem`, `name`, optional `namespace`
+  (for Maven group_id, OCI registry namespace, etc.), optional
+  `version`, optional `version_requirement`
+- `PackageResolution`: `coordinate`, optional `registry_url`, optional
+  `docs_url`, optional `source_repository_url`, optional `homepage_url`,
+  optional `changelog_url`, optional `release_url`, optional
+  `advisory_urls` (Vec), optional `license`, optional
+  `latest_version`, optional `resolved_version`, optional
+  `published_at`, `verified`, optional `warnings`
 
 **Resolver behavior** (in `src/meta/package_resolver.rs`):
-- Bounded HTTP lookups against crates.io, PyPI, and npm registries
+- Bounded HTTP lookups against crates.io, PyPI, npm, Go proxy,
+  Maven Central, NuGet, RubyGems, Packagist, Docker Hub, and GitHub
 - Falls back to a best-effort metadata object if the registry API
   returns an error or times out
 - Returns `package_resolution_fallback:` warning on fallback
@@ -786,6 +793,25 @@ when package-oriented fields are provided in the request.
 - `CratesIo`: crates.io JSON API (`/api/v1/crates/{name}`)
 - `PyPI`: PyPI JSON API (`/pypi/{name}/json`)
 - `Npm`: npm registry API (`/v1/packages/{name}`)
+- `Go`: Go proxy (`proxy.golang.org/{module}/@latest`)
+- `Maven`: Maven Central Solr search API; namespace is `group_id`
+- `NuGet`: NuGet registration API (`/v3-flatcontainer/{name}/index.json`)
+- `RubyGems`: RubyGems API (`/api/v1/gems/{name}.json`)
+- `Packagist`: Packagist API (`/packages/{name}.json`)
+- `Oci`: Docker Hub API (`/v2/repositories/{namespace}/{name}/`)
+- `GithubActions`: GitHub repos API (`/repos/{owner/repo}`)
+
+**Ecosystem coordinate examples:**
+- Rust: `ecosystem: "crates.io"`, `name: "axum"`
+- Python: `ecosystem: "pypi"`, `name: "requests"`
+- npm: `ecosystem: "npm"`, `name: "express"`
+- Go: `ecosystem: "go"`, `name: "github.com/gin-gonic/gin"`
+- Maven: `ecosystem: "maven"`, `namespace: "org.springframework"`, `name: "spring-core"`
+- NuGet: `ecosystem: "nuget"`, `name: "Newtonsoft.Json"`
+- RubyGems: `ecosystem: "rubygems"`, `name: "rails"`
+- Packagist: `ecosystem: "packagist"`, `name: "laravel/framework"`
+- OCI: `ecosystem: "oci"`, `namespace: "library"`, `name: "nginx"`
+- GitHub Actions: `ecosystem: "github_actions"`, `name: "actions/checkout"`
 
 ### Repo Fetch
 

@@ -291,7 +291,7 @@ pub struct RepoSearchRequest {
     /// Optional. Search profile for provider selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<SearchProfile>,
-    /// Optional. Package ecosystem (crates.io, pypi, npm).
+    /// Optional. Package ecosystem (crates.io, pypi, npm, go, maven, nuget, rubygems, packagist, oci, github_actions).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ecosystem: Option<PackageEcosystem>,
     /// Optional. Package name for package-aware search.
@@ -303,6 +303,9 @@ pub struct RepoSearchRequest {
     /// Optional. Version requirement for range queries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version_requirement: Option<String>,
+    /// Optional. Package namespace (e.g. Maven group_id, OCI registry namespace).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_namespace: Option<String>,
     /// Optional. Compare version for migration/changelog context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compare_version: Option<String>,
@@ -385,6 +388,11 @@ impl RepoSearchRequest {
         // Validate package coordinate: ecosystem requires package name and vice versa.
         if self.ecosystem.is_some() != self.package.is_some() {
             return Err("both 'ecosystem' and 'package' must be provided together".to_string());
+        }
+        if self.package_namespace.is_some() && self.ecosystem.is_none() {
+            return Err(
+                "package_namespace requires both 'ecosystem' and 'package' to be set".to_string(),
+            );
         }
         if let Some(coord) = self.package_coordinate() {
             coord.validate()?;
@@ -496,6 +504,7 @@ impl RepoSearchRequest {
         Some(PackageCoordinate {
             ecosystem,
             name,
+            namespace: self.package_namespace.clone(),
             version: self.version.clone(),
             version_requirement: self.version_requirement.clone(),
         })
@@ -1125,6 +1134,7 @@ mod tests {
                 coordinate: PackageCoordinate {
                     ecosystem: PackageEcosystem::CratesIo,
                     name: "axum".to_string(),
+                    namespace: None,
                     version: Some("0.7.0".to_string()),
                     version_requirement: None,
                 },
@@ -1238,5 +1248,85 @@ mod tests {
         let hints = req.resolved_hints();
         assert_eq!(hints.owner.as_deref(), Some("other-owner"));
         assert_eq!(hints.repo.as_deref(), Some("other-repo"));
+    }
+
+    #[test]
+    fn package_coordinate_includes_namespace() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::Maven),
+            package: Some("commons-lang3".to_string()),
+            package_namespace: Some("org.apache".to_string()),
+            version: Some("3.12.0".to_string()),
+            ..Default::default()
+        };
+        let coord = req.package_coordinate().unwrap();
+        assert_eq!(coord.ecosystem, PackageEcosystem::Maven);
+        assert_eq!(coord.name, "commons-lang3");
+        assert_eq!(coord.namespace.as_deref(), Some("org.apache"));
+        assert_eq!(coord.version.as_deref(), Some("3.12.0"));
+    }
+
+    #[test]
+    fn package_coordinate_namespace_none_when_not_set() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::CratesIo),
+            package: Some("axum".to_string()),
+            ..Default::default()
+        };
+        let coord = req.package_coordinate().unwrap();
+        assert!(coord.namespace.is_none());
+    }
+
+    #[test]
+    fn validate_rejects_namespace_without_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            package_namespace: Some("org.apache".to_string()),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_namespace_with_ecosystem_and_package() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::Maven),
+            package: Some("commons-lang3".to_string()),
+            package_namespace: Some("org.apache".to_string()),
+            ..Default::default()
+        };
+        assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn serde_roundtrip_request_with_package_namespace() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::Maven),
+            package: Some("commons-lang3".to_string()),
+            package_namespace: Some("org.apache".to_string()),
+            version: Some("3.12.0".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: RepoSearchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.package_namespace.as_deref(), Some("org.apache"));
+        assert_eq!(parsed.ecosystem, Some(PackageEcosystem::Maven));
+        assert_eq!(parsed.package.as_deref(), Some("commons-lang3"));
+    }
+
+    #[test]
+    fn serde_skips_none_package_namespace() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            ecosystem: Some(PackageEcosystem::CratesIo),
+            package: Some("axum".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("package_namespace"));
     }
 }

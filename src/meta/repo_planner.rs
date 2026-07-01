@@ -1,7 +1,7 @@
 //! Repo bundle planner: generates bounded subqueries from resolved repo hints.
 
 use crate::core::code_metadata::CodeHost;
-use crate::core::package::PackageResolution;
+use crate::core::package::{PackageEcosystem, PackageResolution};
 use crate::core::repo_query::RepoQueryHints;
 use crate::core::repo_search::RepoSearchRequest;
 
@@ -68,7 +68,7 @@ pub fn build_repo_search_plan_with_package(
 
     // docs subquery
     if req.include_docs_enabled() {
-        let q = build_docs_query(&residual, &owner_repo, pkg_name);
+        let q = build_docs_query(&residual, &owner_repo, pkg_name, req.ecosystem.as_ref());
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
                 label: "docs".to_string(),
@@ -80,7 +80,13 @@ pub fn build_repo_search_plan_with_package(
 
     // registry subquery
     if req.include_registry_enabled() {
-        let q = build_registry_query(&residual, &owner_repo, hints.language.as_deref(), pkg_name);
+        let q = build_registry_query(
+            &residual,
+            &owner_repo,
+            hints.language.as_deref(),
+            pkg_name,
+            req.ecosystem.as_ref(),
+        );
         if let Some(query) = q {
             subqueries.push(RepoSubquery {
                 label: "registry".to_string(),
@@ -163,20 +169,26 @@ pub fn build_repo_search_plan_with_package(
 /// Extract owner/repo from a GitHub URL.
 fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
     let url = url.trim_end_matches('/');
-    // https://github.com/owner/repo
-    let path = url.strip_prefix("https://github.com/")?;
-    let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
-        Some((parts[0].to_string(), parts[1].to_string()))
-    } else {
-        None
+    if let Some(path) = url.strip_prefix("https://github.com/") {
+        let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            return Some((parts[0].to_string(), parts[1].to_string()));
+        }
     }
+    if let Some(path) = url.strip_prefix("https://gitlab.com/") {
+        let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            return Some((parts[0].to_string(), parts[1].to_string()));
+        }
+    }
+    None
 }
 
 fn build_docs_query(
     residual: &str,
     owner_repo: &Option<String>,
     pkg_name: Option<&str>,
+    ecosystem: Option<&PackageEcosystem>,
 ) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     if !residual.is_empty() {
@@ -194,6 +206,34 @@ fn build_docs_query(
     parts.push("docs".to_string());
     parts.push("documentation".to_string());
     parts.push("api reference".to_string());
+    match ecosystem {
+        Some(PackageEcosystem::Go) => {
+            parts.push("pkg.go.dev".to_string());
+        }
+        Some(PackageEcosystem::Maven) => {
+            parts.push("javadoc.io".to_string());
+            parts.push("maven central".to_string());
+        }
+        Some(PackageEcosystem::Nuget) => {
+            parts.push("learn.microsoft.com".to_string());
+            parts.push("docs.microsoft.com".to_string());
+        }
+        Some(PackageEcosystem::Rubygems) => {
+            parts.push("rubydoc.info".to_string());
+            parts.push("rubygems.org".to_string());
+        }
+        Some(PackageEcosystem::Packagist) => {
+            parts.push("packagist.org".to_string());
+        }
+        Some(PackageEcosystem::Oci) => {
+            parts.push("docs.docker.com".to_string());
+            parts.push("ghcr.io".to_string());
+        }
+        Some(PackageEcosystem::GithubActions) => {
+            parts.push("docs.github.com".to_string());
+        }
+        _ => {}
+    }
     Some(parts.join(" "))
 }
 
@@ -202,6 +242,7 @@ fn build_registry_query(
     owner_repo: &Option<String>,
     language: Option<&str>,
     pkg_name: Option<&str>,
+    ecosystem: Option<&PackageEcosystem>,
 ) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     if !residual.is_empty() {
@@ -219,10 +260,42 @@ fn build_registry_query(
     if parts.is_empty() {
         return None;
     }
-    parts.push("crates.io".to_string());
-    parts.push("docs.rs".to_string());
-    parts.push("pypi".to_string());
-    parts.push("npm".to_string());
+    match ecosystem {
+        Some(PackageEcosystem::Go) => {
+            parts.push("go module".to_string());
+            parts.push("pkg.go.dev".to_string());
+            parts.push("proxy.golang.org".to_string());
+        }
+        Some(PackageEcosystem::Maven) => {
+            parts.push("maven central".to_string());
+            parts.push("javadoc.io".to_string());
+        }
+        Some(PackageEcosystem::Nuget) => {
+            parts.push("nuget.org".to_string());
+            parts.push("nuget gallery".to_string());
+        }
+        Some(PackageEcosystem::Rubygems) => {
+            parts.push("rubygems.org".to_string());
+        }
+        Some(PackageEcosystem::Packagist) => {
+            parts.push("packagist.org".to_string());
+            parts.push("composer".to_string());
+        }
+        Some(PackageEcosystem::Oci) => {
+            parts.push("docker hub".to_string());
+            parts.push("ghcr.io".to_string());
+        }
+        Some(PackageEcosystem::GithubActions) => {
+            parts.push("github marketplace".to_string());
+            parts.push("actions".to_string());
+        }
+        _ => {
+            parts.push("crates.io".to_string());
+            parts.push("docs.rs".to_string());
+            parts.push("pypi".to_string());
+            parts.push("npm".to_string());
+        }
+    }
     Some(parts.join(" "))
 }
 
@@ -394,6 +467,7 @@ mod tests {
             coordinate: PackageCoordinate {
                 ecosystem: PackageEcosystem::CratesIo,
                 name: "axum".to_string(),
+                namespace: None,
                 version: Some("0.7.0".to_string()),
                 version_requirement: None,
             },
@@ -775,6 +849,7 @@ mod tests {
             coordinate: PackageCoordinate {
                 ecosystem: PackageEcosystem::CratesIo,
                 name: "axum".to_string(),
+                namespace: None,
                 version: Some("0.7.0".to_string()),
                 version_requirement: None,
             },
@@ -807,12 +882,236 @@ mod tests {
     fn parse_github_owner_repo_non_github() {
         assert_eq!(
             parse_github_owner_repo("https://gitlab.com/user/repo"),
-            None
+            Some(("user".to_string(), "repo".to_string()))
         );
     }
 
     #[test]
     fn parse_github_owner_repo_too_few_segments() {
         assert_eq!(parse_github_owner_repo("https://github.com/tokio-rs"), None);
+    }
+
+    #[test]
+    fn parse_github_owner_repo_gitlab_trailing_slash() {
+        assert_eq!(
+            parse_github_owner_repo("https://gitlab.com/group/project/"),
+            Some(("group".to_string(), "project".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_github_owner_repo_gitlab_too_few_segments() {
+        assert_eq!(parse_github_owner_repo("https://gitlab.com/group"), None);
+    }
+
+    #[test]
+    fn parse_github_owner_repo_unsupported_host() {
+        assert_eq!(
+            parse_github_owner_repo("https://codeberg.org/owner/repo"),
+            None
+        );
+    }
+
+    #[test]
+    fn registry_query_go_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "gin".to_string(),
+            ecosystem: Some(PackageEcosystem::Go),
+            package: Some("github.com/gin-gonic/gin".to_string()),
+            include_registry: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let reg = plan
+            .subqueries
+            .iter()
+            .find(|s| s.label == "registry")
+            .unwrap();
+        assert!(reg.query.contains("go module"));
+        assert!(reg.query.contains("pkg.go.dev"));
+        assert!(reg.query.contains("proxy.golang.org"));
+    }
+
+    #[test]
+    fn registry_query_maven_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "commons".to_string(),
+            ecosystem: Some(PackageEcosystem::Maven),
+            package: Some("commons-lang3".to_string()),
+            include_registry: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let reg = plan
+            .subqueries
+            .iter()
+            .find(|s| s.label == "registry")
+            .unwrap();
+        assert!(reg.query.contains("maven central"));
+        assert!(reg.query.contains("javadoc.io"));
+    }
+
+    #[test]
+    fn registry_query_nuget_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "json".to_string(),
+            ecosystem: Some(PackageEcosystem::Nuget),
+            package: Some("Newtonsoft.Json".to_string()),
+            include_registry: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let reg = plan
+            .subqueries
+            .iter()
+            .find(|s| s.label == "registry")
+            .unwrap();
+        assert!(reg.query.contains("nuget.org"));
+        assert!(reg.query.contains("nuget gallery"));
+    }
+
+    #[test]
+    fn registry_query_rubygems_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "rails".to_string(),
+            ecosystem: Some(PackageEcosystem::Rubygems),
+            package: Some("rails".to_string()),
+            include_registry: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let reg = plan
+            .subqueries
+            .iter()
+            .find(|s| s.label == "registry")
+            .unwrap();
+        assert!(reg.query.contains("rubygems.org"));
+    }
+
+    #[test]
+    fn registry_query_packagist_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "monolog".to_string(),
+            ecosystem: Some(PackageEcosystem::Packagist),
+            package: Some("monolog/monolog".to_string()),
+            include_registry: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let reg = plan
+            .subqueries
+            .iter()
+            .find(|s| s.label == "registry")
+            .unwrap();
+        assert!(reg.query.contains("packagist.org"));
+        assert!(reg.query.contains("composer"));
+    }
+
+    #[test]
+    fn registry_query_oci_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "nginx".to_string(),
+            ecosystem: Some(PackageEcosystem::Oci),
+            package: Some("library/nginx".to_string()),
+            include_registry: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let reg = plan
+            .subqueries
+            .iter()
+            .find(|s| s.label == "registry")
+            .unwrap();
+        assert!(reg.query.contains("docker hub"));
+        assert!(reg.query.contains("ghcr.io"));
+    }
+
+    #[test]
+    fn registry_query_github_actions_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "checkout".to_string(),
+            ecosystem: Some(PackageEcosystem::GithubActions),
+            package: Some("actions/checkout".to_string()),
+            include_registry: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let reg = plan
+            .subqueries
+            .iter()
+            .find(|s| s.label == "registry")
+            .unwrap();
+        assert!(reg.query.contains("github marketplace"));
+        assert!(reg.query.contains("actions"));
+    }
+
+    #[test]
+    fn docs_query_go_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "gin".to_string(),
+            ecosystem: Some(PackageEcosystem::Go),
+            package: Some("github.com/gin-gonic/gin".to_string()),
+            include_docs: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let docs = plan.subqueries.iter().find(|s| s.label == "docs").unwrap();
+        assert!(docs.query.contains("pkg.go.dev"));
+    }
+
+    #[test]
+    fn docs_query_maven_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "commons".to_string(),
+            ecosystem: Some(PackageEcosystem::Maven),
+            package: Some("commons-lang3".to_string()),
+            include_docs: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let docs = plan.subqueries.iter().find(|s| s.label == "docs").unwrap();
+        assert!(docs.query.contains("javadoc.io"));
+    }
+
+    #[test]
+    fn docs_query_nuget_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "json".to_string(),
+            ecosystem: Some(PackageEcosystem::Nuget),
+            package: Some("Newtonsoft.Json".to_string()),
+            include_docs: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let docs = plan.subqueries.iter().find(|s| s.label == "docs").unwrap();
+        assert!(docs.query.contains("learn.microsoft.com"));
+    }
+
+    #[test]
+    fn docs_query_oci_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "nginx".to_string(),
+            ecosystem: Some(PackageEcosystem::Oci),
+            package: Some("library/nginx".to_string()),
+            include_docs: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let docs = plan.subqueries.iter().find(|s| s.label == "docs").unwrap();
+        assert!(docs.query.contains("docs.docker.com"));
+    }
+
+    #[test]
+    fn docs_query_github_actions_ecosystem() {
+        let req = RepoSearchRequest {
+            query: "checkout".to_string(),
+            ecosystem: Some(PackageEcosystem::GithubActions),
+            package: Some("actions/checkout".to_string()),
+            include_docs: Some(true),
+            ..Default::default()
+        };
+        let plan = build_repo_search_plan(&req);
+        let docs = plan.subqueries.iter().find(|s| s.label == "docs").unwrap();
+        assert!(docs.query.contains("docs.github.com"));
     }
 }

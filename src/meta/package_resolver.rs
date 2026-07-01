@@ -27,6 +27,15 @@ pub async fn resolve_package(
         PackageEcosystem::CratesIo => resolve_crates_io(client, coordinate, timeout).await,
         PackageEcosystem::Pypi => resolve_pypi(client, coordinate, timeout).await,
         PackageEcosystem::Npm => resolve_npm(client, coordinate, timeout).await,
+        PackageEcosystem::Go => resolve_go(client, coordinate, timeout).await,
+        PackageEcosystem::Maven => resolve_maven(client, coordinate, timeout).await,
+        PackageEcosystem::Nuget => resolve_nuget(client, coordinate, timeout).await,
+        PackageEcosystem::Rubygems => resolve_rubygems(client, coordinate, timeout).await,
+        PackageEcosystem::Packagist => resolve_packagist(client, coordinate, timeout).await,
+        PackageEcosystem::Oci => resolve_oci(client, coordinate, timeout).await,
+        PackageEcosystem::GithubActions => {
+            resolve_github_actions(client, coordinate, timeout).await
+        }
     }
 }
 
@@ -104,6 +113,8 @@ fn parse_crates_io_response(
         source_repository_url,
         homepage_url,
         changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
         license,
         latest_version,
         resolved_version,
@@ -220,6 +231,8 @@ fn parse_pypi_response(coord: &PackageCoordinate, val: &serde_json::Value) -> Pa
         source_repository_url,
         homepage_url,
         changelog_url,
+        release_url: None,
+        advisory_urls: vec![],
         license,
         latest_version,
         resolved_version,
@@ -297,6 +310,8 @@ fn parse_npm_response(coord: &PackageCoordinate, val: &serde_json::Value) -> Pac
         source_repository_url: repository_url,
         homepage_url,
         changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
         license,
         latest_version,
         resolved_version,
@@ -320,6 +335,452 @@ fn normalize_npm_repo_url(url: &str) -> String {
     url.to_string()
 }
 
+/// Derive a GitHub source repo URL from a Go module path if it starts with github.com/.
+fn infer_go_source_repo(module: &str) -> Option<String> {
+    let path = module.strip_prefix("github.com/")?;
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() >= 2 {
+        Some(format!("https://github.com/{}/{}", parts[0], parts[1]))
+    } else {
+        None
+    }
+}
+
+/// Resolve a Go module.
+async fn resolve_go(
+    client: &Client,
+    coord: &PackageCoordinate,
+    timeout: Duration,
+) -> PackageResolution {
+    let api_url = PackageEcosystem::Go.registry_api_url(&coord.name);
+
+    match client.get(&api_url).timeout(timeout).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_go_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Go proxy JSON parse error: {e}")),
+        },
+        Ok(resp) => fallback_with_warning(
+            coord,
+            &format!("Go proxy returned status {}", resp.status()),
+        ),
+        Err(e) => fallback_with_warning(coord, &format!("Go proxy error: {e}")),
+    }
+}
+
+fn parse_go_response(coord: &PackageCoordinate, val: &serde_json::Value) -> PackageResolution {
+    let latest_version = val
+        .get("Version")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
+
+    let registry_url = Some(format!("https://pkg.go.dev/{}", coord.name));
+
+    let docs_url = resolved_version
+        .as_ref()
+        .map(|v| format!("https://pkg.go.dev/{}@{}", coord.name, v));
+
+    let source_repository_url = infer_go_source_repo(&coord.name);
+
+    let published_at = val
+        .get("Time")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    PackageResolution {
+        coordinate: coord.clone(),
+        registry_url,
+        docs_url,
+        source_repository_url,
+        homepage_url: None,
+        changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
+        license: None,
+        latest_version,
+        resolved_version,
+        published_at,
+        verified: true,
+        warnings: vec![],
+    }
+}
+
+/// Resolve a Maven package.
+async fn resolve_maven(
+    client: &Client,
+    coord: &PackageCoordinate,
+    timeout: Duration,
+) -> PackageResolution {
+    let group = coord.namespace.as_deref().unwrap_or("");
+    let artifact = &coord.name;
+    let query = format!("g:\"{group}\"+AND+a:\"{artifact}\"");
+    let api_url = format!("https://search.maven.org/solrsearch/select?q={query}&rows=1&wt=json");
+
+    match client.get(&api_url).timeout(timeout).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_maven_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Maven search JSON parse error: {e}")),
+        },
+        Ok(resp) => fallback_with_warning(
+            coord,
+            &format!("Maven search returned status {}", resp.status()),
+        ),
+        Err(e) => fallback_with_warning(coord, &format!("Maven search error: {e}")),
+    }
+}
+
+fn parse_maven_response(coord: &PackageCoordinate, val: &serde_json::Value) -> PackageResolution {
+    let docs = val.get("response").and_then(|r| r.get("docs"));
+    let first = docs.and_then(|d| d.as_array()).and_then(|arr| arr.first());
+
+    let latest_version = first
+        .and_then(|doc| doc.get("latestVersion"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
+
+    let group = coord.namespace.as_deref().unwrap_or("group");
+    let registry_url = Some(format!(
+        "https://central.sonatype.com/artifact/{}/{}",
+        group, coord.name
+    ));
+
+    let docs_url = resolved_version
+        .as_ref()
+        .map(|v| format!("https://javadoc.io/doc/{}/{}/{}", group, coord.name, v));
+
+    let source_repository_url = first
+        .and_then(|doc| doc.get("repository"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    PackageResolution {
+        coordinate: coord.clone(),
+        registry_url,
+        docs_url,
+        source_repository_url,
+        homepage_url: None,
+        changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
+        license: None,
+        latest_version,
+        resolved_version,
+        published_at: None,
+        verified: true,
+        warnings: vec![],
+    }
+}
+
+/// Resolve a NuGet package.
+async fn resolve_nuget(
+    client: &Client,
+    coord: &PackageCoordinate,
+    timeout: Duration,
+) -> PackageResolution {
+    let api_url = PackageEcosystem::Nuget.registry_api_url(&coord.name);
+
+    match client.get(&api_url).timeout(timeout).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_nuget_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("NuGet JSON parse error: {e}")),
+        },
+        Ok(resp) => fallback_with_warning(
+            coord,
+            &format!("NuGet API returned status {}", resp.status()),
+        ),
+        Err(e) => fallback_with_warning(coord, &format!("NuGet API error: {e}")),
+    }
+}
+
+fn parse_nuget_response(coord: &PackageCoordinate, val: &serde_json::Value) -> PackageResolution {
+    let versions = val.get("versions").and_then(|v| v.as_array());
+
+    let latest_version = versions
+        .and_then(|arr| arr.last())
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
+
+    let registry_url = Some(format!("https://www.nuget.org/packages/{}", coord.name));
+
+    let docs_url = Some(format!(
+        "https://learn.microsoft.com/en-us/dotnet/api/{}",
+        coord.name.to_lowercase().replace('-', "")
+    ));
+
+    PackageResolution {
+        coordinate: coord.clone(),
+        registry_url,
+        docs_url,
+        source_repository_url: None,
+        homepage_url: None,
+        changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
+        license: None,
+        latest_version,
+        resolved_version,
+        published_at: None,
+        verified: true,
+        warnings: vec![],
+    }
+}
+
+/// Resolve a RubyGems package.
+async fn resolve_rubygems(
+    client: &Client,
+    coord: &PackageCoordinate,
+    timeout: Duration,
+) -> PackageResolution {
+    let api_url = PackageEcosystem::Rubygems.registry_api_url(&coord.name);
+
+    match client.get(&api_url).timeout(timeout).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_rubygems_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("RubyGems JSON parse error: {e}")),
+        },
+        Ok(resp) => fallback_with_warning(
+            coord,
+            &format!("RubyGems API returned status {}", resp.status()),
+        ),
+        Err(e) => fallback_with_warning(coord, &format!("RubyGems API error: {e}")),
+    }
+}
+
+fn parse_rubygems_response(
+    coord: &PackageCoordinate,
+    val: &serde_json::Value,
+) -> PackageResolution {
+    let latest_version = val
+        .get("version")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
+
+    let registry_url = Some(format!("https://rubygems.org/gems/{}", coord.name));
+
+    let docs_url = None;
+
+    let source_repository_url = val
+        .get("source_code_uri")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let homepage_url = val
+        .get("homepage_uri")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let changelog_url = val
+        .get("changelog_uri")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let license = val
+        .get("licenses")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    PackageResolution {
+        coordinate: coord.clone(),
+        registry_url,
+        docs_url,
+        source_repository_url,
+        homepage_url,
+        changelog_url,
+        release_url: None,
+        advisory_urls: vec![],
+        license,
+        latest_version,
+        resolved_version,
+        published_at: None,
+        verified: true,
+        warnings: vec![],
+    }
+}
+
+/// Resolve a Packagist/Composer package.
+async fn resolve_packagist(
+    client: &Client,
+    coord: &PackageCoordinate,
+    timeout: Duration,
+) -> PackageResolution {
+    let api_url = PackageEcosystem::Packagist.registry_api_url(&coord.name);
+
+    match client.get(&api_url).timeout(timeout).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_packagist_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Packagist JSON parse error: {e}")),
+        },
+        Ok(resp) => fallback_with_warning(
+            coord,
+            &format!("Packagist API returned status {}", resp.status()),
+        ),
+        Err(e) => fallback_with_warning(coord, &format!("Packagist API error: {e}")),
+    }
+}
+
+fn parse_packagist_response(
+    coord: &PackageCoordinate,
+    val: &serde_json::Value,
+) -> PackageResolution {
+    let pkg = val.get("package").unwrap_or(val);
+
+    let versions = pkg.get("versions").and_then(|v| v.as_object());
+
+    let latest_version = versions.and_then(|map| {
+        map.keys()
+            .filter(|k| !k.starts_with("dev-") && !k.contains("alpha") && !k.contains("beta"))
+            .max_by_key(|k| k.as_str())
+            .cloned()
+    });
+
+    let resolved_version = coord.version.clone().or_else(|| latest_version.clone());
+
+    let registry_url = Some(format!("https://packagist.org/packages/{}", coord.name));
+
+    let docs_url = None;
+
+    let source_repository_url = pkg
+        .get("source")
+        .and_then(|s| s.get("url"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let homepage_url = pkg
+        .get("homepage")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    PackageResolution {
+        coordinate: coord.clone(),
+        registry_url,
+        docs_url,
+        source_repository_url,
+        homepage_url,
+        changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
+        license: None,
+        latest_version,
+        resolved_version,
+        published_at: None,
+        verified: true,
+        warnings: vec![],
+    }
+}
+
+/// Resolve a Docker/OCI image.
+async fn resolve_oci(
+    client: &Client,
+    coord: &PackageCoordinate,
+    timeout: Duration,
+) -> PackageResolution {
+    let api_url = PackageEcosystem::Oci.registry_api_url(&coord.name);
+
+    match client.get(&api_url).timeout(timeout).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(val) => parse_oci_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Docker Hub JSON parse error: {e}")),
+        },
+        Ok(resp) => fallback_with_warning(
+            coord,
+            &format!("Docker Hub API returned status {}", resp.status()),
+        ),
+        Err(e) => fallback_with_warning(coord, &format!("Docker Hub API error: {e}")),
+    }
+}
+
+fn parse_oci_response(coord: &PackageCoordinate, val: &serde_json::Value) -> PackageResolution {
+    let registry_url = Some(format!("https://hub.docker.com/r/{}", coord.name));
+
+    let docs_url = None;
+
+    let homepage_url = val
+        .get("homepage")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let source_repository_url = val
+        .get("source_url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let published_at = val
+        .get("last_updated")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    PackageResolution {
+        coordinate: coord.clone(),
+        registry_url,
+        docs_url,
+        source_repository_url,
+        homepage_url,
+        changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
+        license: None,
+        latest_version: None,
+        resolved_version: coord.version.clone(),
+        published_at,
+        verified: true,
+        warnings: vec![],
+    }
+}
+
+/// Resolve a GitHub Actions action (fully deterministic, no API call needed).
+async fn resolve_github_actions(
+    _client: &Client,
+    coord: &PackageCoordinate,
+    _timeout: Duration,
+) -> PackageResolution {
+    let registry_url = Some(format!("https://github.com/{}", coord.name));
+
+    let docs_url = Some(format!(
+        "https://github.com/{}/blob/main/README.md",
+        coord.name
+    ));
+
+    let source_repository_url = Some(format!("https://github.com/{}", coord.name));
+
+    let release_url = Some(format!("https://github.com/{}/releases", coord.name));
+
+    PackageResolution {
+        coordinate: coord.clone(),
+        registry_url,
+        docs_url,
+        source_repository_url,
+        homepage_url: None,
+        changelog_url: None,
+        release_url,
+        advisory_urls: vec![],
+        license: None,
+        latest_version: None,
+        resolved_version: coord.version.clone(),
+        published_at: None,
+        verified: false,
+        warnings: vec![
+            "GitHub Actions resolution is deterministic (no API verification)".to_string(),
+        ],
+    }
+}
+
 /// Create a PackageResolution with deterministic fallback URLs and a warning.
 fn fallback_with_warning(coord: &PackageCoordinate, warning: &str) -> PackageResolution {
     let registry_url = Some(coord.ecosystem.registry_base_url().to_string());
@@ -330,6 +791,21 @@ fn fallback_with_warning(coord: &PackageCoordinate, warning: &str) -> PackageRes
             .map(|v| format!("https://docs.rs/{}/{}", coord.name, v)),
         PackageEcosystem::Pypi => Some(format!("https://pypi.org/project/{}/", coord.name)),
         PackageEcosystem::Npm => Some(format!("https://www.npmjs.com/package/{}", coord.name)),
+        PackageEcosystem::Go => Some(format!("https://pkg.go.dev/{}", coord.name)),
+        PackageEcosystem::Maven => {
+            let group = coord.namespace.as_deref().unwrap_or("group");
+            Some(format!(
+                "https://central.sonatype.com/artifact/{group}/{}",
+                coord.name
+            ))
+        }
+        PackageEcosystem::Nuget => Some(format!("https://www.nuget.org/packages/{}", coord.name)),
+        PackageEcosystem::Rubygems => Some(format!("https://rubygems.org/gems/{}", coord.name)),
+        PackageEcosystem::Packagist => {
+            Some(format!("https://packagist.org/packages/{}", coord.name))
+        }
+        PackageEcosystem::Oci => Some(format!("https://hub.docker.com/r/{}", coord.name)),
+        PackageEcosystem::GithubActions => Some(format!("https://github.com/{}", coord.name)),
     };
 
     PackageResolution {
@@ -339,6 +815,8 @@ fn fallback_with_warning(coord: &PackageCoordinate, warning: &str) -> PackageRes
         source_repository_url: None,
         homepage_url: None,
         changelog_url: None,
+        release_url: None,
+        advisory_urls: vec![],
         license: None,
         latest_version: None,
         resolved_version: coord.version.clone(),
@@ -389,6 +867,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::CratesIo,
             name: "axum".to_string(),
+            namespace: None,
             version: Some("0.7.0".to_string()),
             version_requirement: None,
         };
@@ -406,6 +885,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::Pypi,
             name: "requests".to_string(),
+            namespace: None,
             version: None,
             version_requirement: None,
         };
@@ -420,6 +900,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::Npm,
             name: "express".to_string(),
+            namespace: None,
             version: None,
             version_requirement: None,
         };
@@ -434,6 +915,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::CratesIo,
             name: "axum".to_string(),
+            namespace: None,
             version: None,
             version_requirement: None,
         };
@@ -462,6 +944,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::CratesIo,
             name: "axum".to_string(),
+            namespace: None,
             version: Some("0.7.0".to_string()),
             version_requirement: None,
         };
@@ -482,6 +965,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::Pypi,
             name: "requests".to_string(),
+            namespace: None,
             version: None,
             version_requirement: None,
         };
@@ -520,6 +1004,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::Npm,
             name: "express".to_string(),
+            namespace: None,
             version: None,
             version_requirement: None,
         };
@@ -553,6 +1038,7 @@ mod tests {
         let coord = PackageCoordinate {
             ecosystem: PackageEcosystem::Npm,
             name: "express".to_string(),
+            namespace: None,
             version: Some("4.18.0".to_string()),
             version_requirement: None,
         };
@@ -582,10 +1068,461 @@ mod tests {
             name: "axum".to_string(),
             version: Some("0.7.0".to_string()),
             version_requirement: None,
+            namespace: None,
         };
         // Use an invalid URL to trigger a network error
         let res = resolve_package(&client, &coord, Some(Duration::from_millis(1))).await;
         // Should get fallback, not a panic
         assert!(!res.warnings.is_empty() || !res.verified);
+    }
+
+    #[test]
+    fn infer_go_source_repo_github() {
+        assert_eq!(
+            infer_go_source_repo("github.com/tokio-rs/axum"),
+            Some("https://github.com/tokio-rs/axum".to_string())
+        );
+    }
+
+    #[test]
+    fn infer_go_source_repo_not_github() {
+        assert_eq!(infer_go_source_repo("golang.org/x/text"), None);
+    }
+
+    #[test]
+    fn infer_go_source_repo_single_component() {
+        assert_eq!(infer_go_source_repo("github.com/foo"), None);
+    }
+
+    #[test]
+    fn parse_go_response_basic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Go,
+            name: "github.com/tokio-rs/axum".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "Version": "v0.7.0",
+            "Time": "2024-01-15T10:00:00Z"
+        });
+        let res = parse_go_response(&coord, &val);
+        assert!(res.verified);
+        assert_eq!(res.latest_version.as_deref(), Some("v0.7.0"));
+        assert_eq!(res.resolved_version.as_deref(), Some("v0.7.0"));
+        assert_eq!(
+            res.source_repository_url.as_deref(),
+            Some("https://github.com/tokio-rs/axum")
+        );
+        assert_eq!(res.published_at.as_deref(), Some("2024-01-15T10:00:00Z"));
+        assert!(res.docs_url.unwrap().contains("@v0.7.0"));
+    }
+
+    #[test]
+    fn parse_go_response_with_explicit_version() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Go,
+            name: "github.com/tokio-rs/axum".to_string(),
+            namespace: None,
+            version: Some("v0.6.0".to_string()),
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "Version": "v0.7.0",
+            "Time": "2024-01-15T10:00:00Z"
+        });
+        let res = parse_go_response(&coord, &val);
+        assert_eq!(res.resolved_version.as_deref(), Some("v0.6.0"));
+        assert_eq!(res.latest_version.as_deref(), Some("v0.7.0"));
+        assert!(res.docs_url.unwrap().contains("@v0.6.0"));
+    }
+
+    #[test]
+    fn parse_maven_response_basic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Maven,
+            name: "commons-lang3".to_string(),
+            namespace: Some("org.apache".to_string()),
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "response": {
+                "docs": [{
+                    "latestVersion": "3.14.0",
+                    "repository": "https://github.com/apache/commons-lang"
+                }]
+            }
+        });
+        let res = parse_maven_response(&coord, &val);
+        assert!(res.verified);
+        assert_eq!(res.latest_version.as_deref(), Some("3.14.0"));
+        assert_eq!(res.resolved_version.as_deref(), Some("3.14.0"));
+        assert_eq!(
+            res.source_repository_url.as_deref(),
+            Some("https://github.com/apache/commons-lang")
+        );
+        assert!(res.docs_url.unwrap().contains("javadoc.io"));
+        assert!(res
+            .registry_url
+            .unwrap()
+            .contains("org.apache/commons-lang3"));
+    }
+
+    #[test]
+    fn parse_maven_response_with_explicit_version() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Maven,
+            name: "commons-lang3".to_string(),
+            namespace: Some("org.apache".to_string()),
+            version: Some("3.12.0".to_string()),
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "response": {
+                "docs": [{
+                    "latestVersion": "3.14.0"
+                }]
+            }
+        });
+        let res = parse_maven_response(&coord, &val);
+        assert_eq!(res.resolved_version.as_deref(), Some("3.12.0"));
+        assert_eq!(res.latest_version.as_deref(), Some("3.14.0"));
+    }
+
+    #[test]
+    fn parse_nuget_response_basic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Nuget,
+            name: "Newtonsoft.Json".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "versions": ["12.0.0", "13.0.1", "13.0.3"]
+        });
+        let res = parse_nuget_response(&coord, &val);
+        assert!(res.verified);
+        assert_eq!(res.latest_version.as_deref(), Some("13.0.3"));
+        assert_eq!(res.resolved_version.as_deref(), Some("13.0.3"));
+        assert!(res.registry_url.unwrap().contains("nuget.org"));
+    }
+
+    #[test]
+    fn parse_nuget_response_with_explicit_version() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Nuget,
+            name: "Newtonsoft.Json".to_string(),
+            namespace: None,
+            version: Some("12.0.0".to_string()),
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "versions": ["12.0.0", "13.0.1", "13.0.3"]
+        });
+        let res = parse_nuget_response(&coord, &val);
+        assert_eq!(res.resolved_version.as_deref(), Some("12.0.0"));
+        assert_eq!(res.latest_version.as_deref(), Some("13.0.3"));
+    }
+
+    #[test]
+    fn parse_nuget_response_empty_versions() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Nuget,
+            name: "NoSuchPackage".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "versions": []
+        });
+        let res = parse_nuget_response(&coord, &val);
+        assert!(res.verified);
+        assert!(res.latest_version.is_none());
+    }
+
+    #[test]
+    fn parse_rubygems_response_basic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Rubygems,
+            name: "rails".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "version": "7.1.2",
+            "homepage_uri": "https://rubyonrails.org",
+            "source_code_uri": "https://github.com/rails/rails",
+            "changelog_uri": "https://github.com/rails/rails/blob/main/CHANGELOG.md",
+            "licenses": ["MIT"]
+        });
+        let res = parse_rubygems_response(&coord, &val);
+        assert!(res.verified);
+        assert_eq!(res.latest_version.as_deref(), Some("7.1.2"));
+        assert_eq!(res.resolved_version.as_deref(), Some("7.1.2"));
+        assert_eq!(
+            res.source_repository_url.as_deref(),
+            Some("https://github.com/rails/rails")
+        );
+        assert_eq!(res.homepage_url.as_deref(), Some("https://rubyonrails.org"));
+        assert!(res.changelog_url.unwrap().contains("CHANGELOG.md"));
+        assert_eq!(res.license.as_deref(), Some("MIT"));
+        assert!(res.registry_url.unwrap().contains("rubygems.org"));
+    }
+
+    #[test]
+    fn parse_rubygems_response_with_explicit_version() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Rubygems,
+            name: "rails".to_string(),
+            namespace: None,
+            version: Some("7.0.8".to_string()),
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "version": "7.1.2"
+        });
+        let res = parse_rubygems_response(&coord, &val);
+        assert_eq!(res.resolved_version.as_deref(), Some("7.0.8"));
+        assert_eq!(res.latest_version.as_deref(), Some("7.1.2"));
+    }
+
+    #[test]
+    fn parse_packagist_response_basic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Packagist,
+            name: "monolog/monolog".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "package": {
+                "versions": {
+                    "3.5.0": {},
+                    "3.4.1": {},
+                    "dev-main": {}
+                },
+                "source": {
+                    "url": "https://github.com/Seldaek/monolog",
+                    "type": "git"
+                },
+                "homepage": "https://github.com/Seldaek/monolog"
+            }
+        });
+        let res = parse_packagist_response(&coord, &val);
+        assert!(res.verified);
+        assert_eq!(res.latest_version.as_deref(), Some("3.5.0"));
+        assert_eq!(res.resolved_version.as_deref(), Some("3.5.0"));
+        assert_eq!(
+            res.source_repository_url.as_deref(),
+            Some("https://github.com/Seldaek/monolog")
+        );
+        assert!(res.registry_url.unwrap().contains("packagist.org"));
+    }
+
+    #[test]
+    fn parse_packagist_response_filters_dev_versions() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Packagist,
+            name: "monolog/monolog".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "package": {
+                "versions": {
+                    "dev-main": {},
+                    "dev-feature-x": {}
+                }
+            }
+        });
+        let res = parse_packagist_response(&coord, &val);
+        assert!(res.latest_version.is_none());
+    }
+
+    #[test]
+    fn parse_oci_response_basic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Oci,
+            name: "library/nginx".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let val: serde_json::Value = serde_json::json!({
+            "homepage": "https://github.com/nginxinc/docker-nginx",
+            "source_url": "https://github.com/nginxinc/docker-nginx",
+            "last_updated": "2024-02-01T12:00:00Z"
+        });
+        let res = parse_oci_response(&coord, &val);
+        assert!(res.verified);
+        assert_eq!(
+            res.source_repository_url.as_deref(),
+            Some("https://github.com/nginxinc/docker-nginx")
+        );
+        assert_eq!(res.published_at.as_deref(), Some("2024-02-01T12:00:00Z"));
+        assert!(res.registry_url.unwrap().contains("hub.docker.com"));
+    }
+
+    #[tokio::test]
+    async fn resolve_github_actions_deterministic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::GithubActions,
+            name: "actions/checkout".to_string(),
+            namespace: None,
+            version: Some("v4".to_string()),
+            version_requirement: None,
+        };
+        let client = test_client();
+        let res = resolve_github_actions(&client, &coord, Duration::from_secs(5)).await;
+        assert!(!res.verified);
+        assert_eq!(res.resolved_version.as_deref(), Some("v4"));
+        assert_eq!(
+            res.registry_url.as_deref(),
+            Some("https://github.com/actions/checkout")
+        );
+        assert!(res.docs_url.unwrap().contains("README.md"));
+        assert!(res.release_url.unwrap().contains("/releases"));
+        assert_eq!(res.warnings.len(), 1);
+        assert!(res.warnings[0].contains("deterministic"));
+    }
+
+    #[test]
+    fn fallback_with_warning_go() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Go,
+            name: "github.com/tokio-rs/axum".to_string(),
+            namespace: None,
+            version: Some("v0.7.0".to_string()),
+            version_requirement: None,
+        };
+        let res = fallback_with_warning(&coord, "Go proxy timeout");
+        assert!(!res.verified);
+        assert!(res.registry_url.unwrap().contains("pkg.go.dev"));
+        assert!(res.docs_url.unwrap().contains("pkg.go.dev"));
+    }
+
+    #[test]
+    fn fallback_with_warning_maven() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Maven,
+            name: "commons-lang3".to_string(),
+            namespace: Some("org.apache".to_string()),
+            version: None,
+            version_requirement: None,
+        };
+        let res = fallback_with_warning(&coord, "Maven search failed");
+        assert!(!res.verified);
+        assert!(res.registry_url.unwrap().contains("sonatype.com"));
+        assert!(res.docs_url.unwrap().contains("org.apache"));
+    }
+
+    #[test]
+    fn fallback_with_warning_nuget() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Nuget,
+            name: "Newtonsoft.Json".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let res = fallback_with_warning(&coord, "NuGet API error");
+        assert!(!res.verified);
+        assert!(res.registry_url.unwrap().contains("nuget.org"));
+        assert!(res.docs_url.unwrap().contains("nuget"));
+    }
+
+    #[test]
+    fn fallback_with_warning_rubygems() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Rubygems,
+            name: "rails".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let res = fallback_with_warning(&coord, "RubyGems timeout");
+        assert!(!res.verified);
+        assert!(res.registry_url.unwrap().contains("rubygems.org"));
+        assert!(res.docs_url.unwrap().contains("rubygems.org"));
+    }
+
+    #[test]
+    fn fallback_with_warning_packagist() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Packagist,
+            name: "monolog/monolog".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let res = fallback_with_warning(&coord, "Packagist API error");
+        assert!(!res.verified);
+        assert!(res.registry_url.unwrap().contains("packagist.org"));
+        assert!(res.docs_url.unwrap().contains("packagist.org"));
+    }
+
+    #[test]
+    fn fallback_with_warning_oci() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Oci,
+            name: "library/nginx".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let res = fallback_with_warning(&coord, "Docker Hub error");
+        assert!(!res.verified);
+        assert!(res.registry_url.unwrap().contains("hub.docker.com"));
+        assert!(res.docs_url.unwrap().contains("hub.docker.com"));
+    }
+
+    #[test]
+    fn fallback_with_warning_github_actions() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::GithubActions,
+            name: "actions/checkout".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        let res = fallback_with_warning(&coord, "GitHub Actions fallback");
+        assert!(!res.verified);
+        assert!(res.registry_url.unwrap().contains("github.com"));
+        assert!(res.docs_url.unwrap().contains("github.com"));
+    }
+
+    #[tokio::test]
+    async fn resolve_package_all_new_ecosystems_fallback() {
+        let client = test_client();
+        let ecosystems = vec![
+            (PackageEcosystem::Go, "github.com/foo/bar"),
+            (PackageEcosystem::Maven, "commons-lang3"),
+            (PackageEcosystem::Nuget, "Newtonsoft.Json"),
+            (PackageEcosystem::Rubygems, "rails"),
+            (PackageEcosystem::Packagist, "monolog/monolog"),
+            (PackageEcosystem::Oci, "library/nginx"),
+            (PackageEcosystem::GithubActions, "actions/checkout"),
+        ];
+        for (eco, name) in ecosystems {
+            let coord = PackageCoordinate {
+                ecosystem: eco.clone(),
+                name: name.to_string(),
+                namespace: None,
+                version: None,
+                version_requirement: None,
+            };
+            let res = resolve_package(&client, &coord, Some(Duration::from_millis(1))).await;
+            assert!(
+                !res.verified || !res.warnings.is_empty(),
+                "Expected fallback for {eco}: {name}"
+            );
+        }
     }
 }

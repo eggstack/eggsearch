@@ -904,7 +904,7 @@ The response also includes capability discovery metadata:
     },
     "repo_search": {
       "profiles": ["generic", "coding", "security", "research"],
-      "package_resolution": ["crates_io", "pypi", "npm"],
+      "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
       "local_workspace": false,
       "subquery_telemetry": true,
       "supported_hosts": ["github", "gitlab", "codeberg"]
@@ -967,7 +967,21 @@ Package fields enable structured queries scoped to a specific
 ecosystem and package. When package fields are present, the planner
 generates package-aware subqueries and the resolver attempts bounded
 HTTP lookups against the appropriate package registry. Supported
-ecosystems: `crates.io`, `pypi`, `npm`.
+ecosystems: `crates.io`, `pypi`, `npm`, `go`, `maven`, `nuget`,
+`rubygems`, `packagist`, `oci`, `github_actions`.
+
+Ecosystem-specific coordinate examples:
+
+- Rust: `{"ecosystem": "crates.io", "package": "axum", "version": "0.7.0"}`
+- Python: `{"ecosystem": "pypi", "package": "requests", "version": "2.31.0"}`
+- npm: `{"ecosystem": "npm", "package": "express", "version": "4.18.0"}`
+- Go: `{"ecosystem": "go", "package": "github.com/gin-gonic/gin"}`
+- Maven: `{"ecosystem": "maven", "package": "spring-core", "package_namespace": "org.springframework", "version": "6.1.0"}`
+- NuGet: `{"ecosystem": "nuget", "package": "Newtonsoft.Json", "version": "13.0.3"}`
+- RubyGems: `{"ecosystem": "rubygems", "package": "rails", "version": "7.1.0"}`
+- Packagist: `{"ecosystem": "packagist", "package": "laravel/framework", "version": "10.0.0"}`
+- OCI: `{"ecosystem": "oci", "package": "nginx", "package_namespace": "library", "version": "1.25"}`
+- GitHub Actions: `{"ecosystem": "github_actions", "package": "actions/checkout", "version": "v4"}`
 
 **Output:**
 
@@ -1100,8 +1114,9 @@ code-evidence.
 
 **Package fields:**
 
-- `ecosystem` (optional): Package ecosystem (`crates.io`, `pypi`, `npm`).
+- `ecosystem` (optional): Package ecosystem (`crates.io`, `pypi`, `npm`, `go`, `maven`, `nuget`, `rubygems`, `packagist`, `oci`, `github_actions`).
 - `package` (optional): Package name for package-aware search.
+- `package_namespace` (optional): Package namespace (e.g. Maven group_id, OCI registry namespace). Required for Maven and OCI ecosystems.
 - `version` (optional): Specific package version.
 - `version_requirement` (optional): Version requirement for range queries.
 - `compare_version` (optional): Compare version for migration/changelog context.
@@ -1133,9 +1148,11 @@ code-evidence.
 
 **Package resolution notes:**
 
-Package resolution is metadata retrieval only — it queries upstream
-registries (crates.io, PyPI, npm) for package metadata and does not
-solve dependencies or download artifacts. If a registry API returns an
+Package resolution is metadata retrieval only -- it queries upstream
+registries for package metadata and does not solve dependencies or
+download artifacts. Supported registries: crates.io, PyPI, npm,
+Go proxy (proxy.golang.org), Maven Central, NuGet, RubyGems,
+Packagist, Docker Hub, and GitHub. If a registry API returns an
 error or times out, a deterministic fallback metadata object is
 returned with a `package_resolution_fallback:` warning in the
 response. Successful resolution emits a `package_resolution:` warning

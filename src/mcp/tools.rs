@@ -160,6 +160,9 @@ pub struct RepoSearchArgs {
     /// Optional. Version requirement for range queries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version_requirement: Option<String>,
+    /// Optional. Package namespace (e.g. Maven group_id, OCI registry namespace).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_namespace: Option<String>,
     /// Optional. Compare version for migration/changelog context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compare_version: Option<String>,
@@ -675,6 +678,7 @@ pub async fn run_repo_search(
         package: args.package.clone(),
         version: args.version.clone(),
         version_requirement: args.version_requirement.clone(),
+        package_namespace: args.package_namespace.clone(),
         compare_version: args.compare_version.clone(),
         include_security_context: args.include_security_context,
         include_changelog: args.include_changelog,
@@ -976,7 +980,7 @@ pub fn run_provider_status(
             },
             "repo_search": {
                 "profiles": ["generic", "coding", "security", "research"],
-                "package_resolution": ["crates_io", "pypi", "npm"],
+                "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
                 "local_workspace": local_enabled,
                 "subquery_telemetry": true,
                 "supported_hosts": ["github", "gitlab", "codeberg"],
