@@ -977,13 +977,17 @@ web search results.
   `version`, `cve_id`, `ghsa_id`, `osv_id`, `rustsec_id`,
   `severity_min`, `include_kev`, `include_exploit_context`,
   `include_defensive_guidance`, `include_vendor_advisories`,
-  `max_results`, `max_per_group`, `freshness`, `timeout_ms`, `providers`
+  `max_results`, `max_per_group`, `freshness`, `timeout_ms`, `providers`,
+  `assess_applicability: Option<bool>` — when true, assess package/version applicability against found advisories,
+  `dependency_files: Vec<String>` — local dependency file paths to parse for applicability assessment
 - `SecurityIdentifiers`: parsed identifiers from request fields and
   query text (CVE, GHSA, OSV, RustSec, package/ecosystem/version hints)
 - `VulnerabilityMetadata`: normalized advisory metadata (IDs, affected
   ranges, patched versions, severity, CVSS, KEV, timestamps, references)
 - `SecurityResultGroup`: grouped source cards by category
 - `SecuritySearchResponse`: vulnerabilities + groups + suggested fetches + security context
+  - `applicability: Vec<ApplicabilityAssessment>` — per-package/version applicability assessments (when assess_applicability=true)
+  - `dependency_findings: Vec<DependencyFinding>` — dependency entries parsed from local files
 - `SecurityContext`: structured security context with `query_kind`, `identifiers`,
   `affected_packages`, `vulnerability_summaries`, `defensive_guidance`,
   `source_quality`, `warnings`
@@ -1104,6 +1108,71 @@ determination of actual exploitability or risk in a specific deployment.
 
 **Fallback:** if `security_search` is unavailable, use `web_search`
 with `intent = "security"`.
+
+### Security Applicability
+
+`security_search` now supports deterministic package/version applicability
+analysis. When `assess_applicability` is `true`, the tool compares
+advisory affected/fixed ranges against requested or discovered package
+versions and returns structured assessments.
+
+**Request fields:**
+- `assess_applicability: Option<bool>` — enable applicability analysis
+- `dependency_files: Vec<String>` — local dependency file paths to parse
+
+**Response fields:**
+- `applicability: Vec<ApplicabilityAssessment>` — per-package/version assessments
+- `dependency_findings: Vec<DependencyFinding>` — parsed dependency entries
+
+**Applicability assessment model:**
+- `status`: `affected`, `not_affected`, or `unknown`
+- `confidence`: `high` (structured ranges + exact version), `medium`
+  (manifest range or best-effort), `low` (no structured ranges)
+- `advisory_ids`: matched advisory identifiers
+- `matched_ranges`: advisory ranges used for comparison
+- `reasons`: human-readable explanation of the assessment
+- `evidence_urls`: advisory source URLs
+- `warnings`: assessment-specific warnings
+
+**Supported dependency files:**
+- Rust: `Cargo.lock`, `Cargo.toml`
+- npm: `package-lock.json`, `npm-shrinkwrap.json`
+- Go: `go.mod`
+- Python: `requirements.txt`, `requirements.in`
+- Ruby: `Gemfile.lock`
+- PHP: `composer.lock`
+- Maven: `pom.xml`
+- NuGet: `.csproj` (PackageReference)
+- GitHub Actions: `.github/workflows/*.yml` (`uses:` entries)
+- Docker: `Dockerfile`, `docker-compose.yml` (`FROM`/`image:`)
+
+**Advisory range sources:**
+- OSV JSON: `affected[].ranges[]` with `introduced`/`fixed`/`last_affected` events
+- RustSec: patched/unaffected ranges from advisory metadata
+- Generic: `VulnerabilityMetadata.affected_ranges` and `patched_ranges`
+
+**Version comparison:**
+- SemVer-like: crates.io, npm, Go, NuGet, RubyGems, Packagist, PyPI
+- Maven: best-effort lexical comparison
+- OCI/GitHub Actions: exact match only
+- Unparseable versions return `unknown`, never `not_affected`
+
+**Safety boundary:**
+Every applicability response includes the warning:
+`applicability_not_exploitability: Advisory range matching does not determine
+runtime exploitability or reachability.`
+
+Applicability is advisory metadata comparison, not deployment risk
+assessment. Agents must not treat `affected` status as proof of
+exploitability or `not_affected` as proof of safety.
+
+**Agent guidance:**
+- Use `assess_applicability: true` with `package`+`ecosystem`+`version`
+  for direct applicability checks
+- Provide `dependency_files` for local lock-file parsing
+- Treat `unknown` status as a signal to fetch more evidence
+- Prefer `high` confidence assessments from structured advisory ranges
+- Always treat applicability as metadata-only, not runtime analysis
 
 ### Local Workspace Search
 

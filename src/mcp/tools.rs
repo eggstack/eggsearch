@@ -241,6 +241,12 @@ pub struct SecuritySearchArgs {
     /// Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
+    /// Assess package/version applicability against found advisories.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assess_applicability: Option<bool>,
+    /// Local dependency file paths to parse for applicability assessment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependency_files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -2429,6 +2435,8 @@ pub async fn run_security_search(
         freshness,
         timeout_ms: args.timeout_ms,
         providers: args.providers.clone(),
+        assess_applicability: args.assess_applicability,
+        dependency_files: args.dependency_files.clone(),
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {

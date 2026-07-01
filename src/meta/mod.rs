@@ -6,6 +6,10 @@
 //! here. Callers receive `crate::core::SourceCard` values.
 
 pub mod adapter;
+/// Advisory affected/fixed range extraction from structured vulnerability metadata.
+pub mod advisory_range;
+/// Dependency/lock file parser for extracting dependency coordinates.
+pub mod dependency_parse;
 /// Bounded parallel dispatch for multi-subquery searches.
 pub(crate) mod dispatch;
 /// Vendored HTML search engines. Internal; not part of the stable
@@ -41,6 +45,8 @@ pub mod security_grouping;
 pub mod security_search;
 pub mod security_suggested_fetches;
 pub mod suggested_fetches;
+/// Version comparison utilities for package ecosystems.
+pub mod version_compare;
 
 pub use adapter::{ErrorClass, MetadataSearchAdapter};
 pub use planner::{build_search_plan, SearchPlan};

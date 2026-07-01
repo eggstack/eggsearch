@@ -216,11 +216,11 @@ pub async fn run_security_search_plan(
         }
     }
 
-    // 7. Warn about version matching limitations
-    if req.version.is_some() {
+    // 7. Version matching status
+    if req.version.is_some() && req.assess_applicability != Some(true) {
         warnings.push(SearchWarning::new(
             "_system",
-            "version_match_unavailable: version-specific matching is not yet implemented; \
+            "version_match_unavailable: version-specific matching requires assess_applicability=true; \
              affected version ranges are returned as-is from advisory databases",
         ));
 
@@ -236,6 +236,182 @@ pub async fn run_security_search_plan(
                 "version_mismatch: package was found but no advisory has affected version \
                  ranges matching the supplied version; the package may not be affected or \
                  version-specific advisory data is unavailable",
+            ));
+        }
+    }
+
+    // Applicability analysis
+    let mut applicability_assessments = Vec::new();
+    let mut dependency_findings = Vec::new();
+
+    if req.assess_applicability == Some(true) {
+        use crate::core::security_applicability::{
+            ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
+        };
+        use crate::meta::advisory_range::{extract_advisory_ranges, version_in_ranges};
+        use crate::meta::dependency_parse::parse_dependency_file;
+
+        for file_path in &req.dependency_files {
+            if let Ok(content) = std::fs::read_to_string(file_path) {
+                let findings = parse_dependency_file(file_path, &content);
+                dependency_findings.extend(findings);
+            } else {
+                warnings.push(SearchWarning::new(
+                    "_system",
+                    format!("dependency_file_read_error: could not read {file_path}"),
+                ));
+            }
+        }
+
+        let target_version = resolved_ids.version.as_deref();
+        let target_package = resolved_ids.package.as_deref();
+        let target_ecosystem = resolved_ids.ecosystem.as_deref();
+
+        for vuln in &vulnerabilities {
+            let ranges = extract_advisory_ranges(vuln);
+
+            if let (Some(pkg), Some(ver)) = (target_package, target_version) {
+                let vuln_pkg = vuln.package.as_deref().unwrap_or("");
+                let vuln_eco = vuln.ecosystem.as_deref().unwrap_or("");
+
+                let pkg_matches = vuln_pkg.eq_ignore_ascii_case(pkg);
+                let eco_matches = target_ecosystem
+                    .map(|e| e.eq_ignore_ascii_case(vuln_eco))
+                    .unwrap_or(true);
+
+                if pkg_matches && eco_matches {
+                    let advisory_id = vuln
+                        .cve_ids
+                        .first()
+                        .or(vuln.ghsa_ids.first())
+                        .or(vuln.osv_ids.first())
+                        .or(vuln.rustsec_ids.first())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let (is_affected, reasons) = version_in_ranges(ver, &ranges);
+                    let status = if is_affected {
+                        ApplicabilityStatus::Affected
+                    } else if reasons.iter().any(|r| r.contains("matches fixed version")) {
+                        ApplicabilityStatus::NotAffected
+                    } else if ranges.is_empty() {
+                        ApplicabilityStatus::Unknown
+                    } else {
+                        ApplicabilityStatus::NotAffected
+                    };
+
+                    let confidence = if !ranges.is_empty() {
+                        ApplicabilityConfidence::High
+                    } else {
+                        ApplicabilityConfidence::Low
+                    };
+
+                    let mut assessment_reasons = reasons;
+                    if is_affected {
+                        assessment_reasons.push(format!(
+                            "version {ver} appears affected by advisory {advisory_id}"
+                        ));
+                    } else if status == ApplicabilityStatus::NotAffected {
+                        assessment_reasons.push(format!(
+                            "version {ver} does not appear affected by advisory {advisory_id}"
+                        ));
+                    } else {
+                        assessment_reasons.push(format!(
+                            "could not determine applicability of version {ver} for advisory {advisory_id}"
+                        ));
+                    }
+
+                    applicability_assessments.push(ApplicabilityAssessment {
+                        status,
+                        confidence,
+                        ecosystem: vuln
+                            .ecosystem
+                            .as_deref()
+                            .and_then(crate::core::package::PackageEcosystem::parse)
+                            .unwrap_or(crate::core::package::PackageEcosystem::CratesIo),
+                        package: pkg.to_string(),
+                        version: Some(ver.to_string()),
+                        advisory_ids: vec![advisory_id],
+                        matched_ranges: ranges.clone(),
+                        reasons: assessment_reasons,
+                        evidence_urls: vuln
+                            .references
+                            .iter()
+                            .map(|r| r.url.clone())
+                            .collect(),
+                        warnings: Vec::new(),
+                    });
+                }
+            }
+
+            for finding in &dependency_findings {
+                let vuln_pkg = vuln.package.as_deref().unwrap_or("");
+                let vuln_eco = vuln.ecosystem.as_deref().unwrap_or("");
+
+                if finding.package.eq_ignore_ascii_case(vuln_pkg)
+                    && finding.ecosystem.as_str().eq_ignore_ascii_case(vuln_eco)
+                {
+                    if let Some(ref ver) = finding.version {
+                        let advisory_id = vuln
+                            .cve_ids
+                            .first()
+                            .or(vuln.ghsa_ids.first())
+                            .or(vuln.osv_ids.first())
+                            .or(vuln.rustsec_ids.first())
+                            .cloned()
+                            .unwrap_or_default();
+
+                        let (is_affected, mut reasons) = version_in_ranges(ver, &ranges);
+                        let status = if is_affected {
+                            ApplicabilityStatus::Affected
+                        } else if reasons.iter().any(|r| r.contains("matches fixed version")) {
+                            ApplicabilityStatus::NotAffected
+                        } else if ranges.is_empty() {
+                            ApplicabilityStatus::Unknown
+                        } else {
+                            ApplicabilityStatus::NotAffected
+                        };
+
+                        let confidence = if !ranges.is_empty() {
+                            ApplicabilityConfidence::High
+                        } else {
+                            ApplicabilityConfidence::Low
+                        };
+
+                        reasons.push(format!(
+                            "dependency '{}' version '{}' found in {}",
+                            finding.package,
+                            ver,
+                            finding.source_file.as_deref().unwrap_or("unknown")
+                        ));
+
+                        applicability_assessments.push(ApplicabilityAssessment {
+                            status,
+                            confidence,
+                            ecosystem: finding.ecosystem.clone(),
+                            package: finding.package.clone(),
+                            version: Some(ver.clone()),
+                            advisory_ids: vec![advisory_id],
+                        matched_ranges: ranges.clone(),
+                            reasons,
+                            evidence_urls: vuln
+                                .references
+                                .iter()
+                                .map(|r| r.url.clone())
+                                .collect(),
+                            warnings: Vec::new(),
+                        });
+                    }
+                }
+            }
+        }
+
+        if !applicability_assessments.is_empty() {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "applicability_not_exploitability: Advisory range matching does not determine \
+                 runtime exploitability or reachability. Applicability assessments are based on \
+                 advisory metadata and dependency file parsing, not runtime analysis.",
             ));
         }
     }
@@ -372,6 +548,8 @@ pub async fn run_security_search_plan(
             ),
         ),
         routing_decision: None,
+        applicability: applicability_assessments,
+        dependency_findings,
     }
 }
 
@@ -508,7 +686,7 @@ mod tests {
 
     #[test]
     fn warning_prefix_version_match_unavailable() {
-        let msg = "version_match_unavailable: version-specific matching is not yet implemented; \
+        let msg = "version_match_unavailable: version-specific matching requires assess_applicability=true; \
                    affected version ranges are returned as-is from advisory databases";
         assert!(
             msg.starts_with("version_match_unavailable:"),
@@ -534,6 +712,26 @@ mod tests {
         assert!(
             msg.starts_with("generic_context_untrusted:"),
             "generic_context_untrusted warning must use stable prefix: {msg}"
+        );
+    }
+
+    #[test]
+    fn warning_prefix_applicability_not_exploitability() {
+        let msg = "applicability_not_exploitability: Advisory range matching does not determine \
+                   runtime exploitability or reachability. Applicability assessments are based on \
+                   advisory metadata and dependency file parsing, not runtime analysis.";
+        assert!(
+            msg.starts_with("applicability_not_exploitability:"),
+            "applicability warning must use stable prefix: {msg}"
+        );
+    }
+
+    #[test]
+    fn warning_prefix_dependency_file_read_error() {
+        let msg = "dependency_file_read_error: could not read /nonexistent/Cargo.lock";
+        assert!(
+            msg.starts_with("dependency_file_read_error:"),
+            "dependency_file_read_error warning must use stable prefix: {msg}"
         );
     }
 }

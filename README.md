@@ -572,6 +572,14 @@ When the query is oriented toward remediation or defense, the
 Categories are deterministic — derived from advisory metadata,
 not runtime analysis.
 
+**Applicability analysis:** After querying advisories, set
+`assess_applicability: true` to compare advisory affected ranges
+against specific package versions. Returns `affected`, `not_affected`,
+or `unknown` status with confidence and evidence. Provide
+`dependency_files` (e.g. `Cargo.lock`, `package-lock.json`) for
+local lock-file parsing. Applicability is advisory metadata
+comparison, not deployment risk assessment.
+
 **Important:** Security context is retrieval enrichment, not
 exploitability determination. It classifies what the sources say,
 not whether a particular deployment is vulnerable. Agents must

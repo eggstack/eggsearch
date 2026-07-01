@@ -1113,6 +1113,10 @@ pub struct SecuritySearchRequest {
     pub timeout_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assess_applicability: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependency_files: Vec<String>,
 }
 
 impl SecuritySearchRequest {
@@ -1174,6 +1178,10 @@ pub struct SecuritySearchResponse {
     /// Provider routing decision for this request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routing_decision: Option<crate::meta::provider_diagnostics::ProviderRoutingDecision>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub applicability: Vec<crate::core::security_applicability::ApplicabilityAssessment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependency_findings: Vec<crate::core::security_applicability::DependencyFinding>,
 }
 
 #[cfg(test)]
@@ -2052,6 +2060,8 @@ mod tests {
             trust_markers: TrustMarkers::default(),
             capability_enforcement: None,
             routing_decision: None,
+            applicability: vec![],
+            dependency_findings: vec![],
         };
         let json = serde_json::to_value(&resp).unwrap();
         let groups = json["groups"].as_array().expect("groups");

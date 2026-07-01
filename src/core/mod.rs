@@ -31,6 +31,7 @@ pub mod research;
 pub mod result;
 pub mod sanitize;
 pub mod security;
+pub mod security_applicability;
 pub mod source_card;
 
 pub use crate::fetch::span::SelectedSpan;
@@ -105,5 +106,9 @@ pub use security::{
     SecuritySearchResponse, SecuritySourceQuality, SecuritySourceTier, SecuritySuggestedFetch,
     SeverityLevel, VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
     VulnerabilitySummary,
+};
+pub use security_applicability::{
+    AdvisoryRange, ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
+    DependencyFinding, DependencySource,
 };
 pub use source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
