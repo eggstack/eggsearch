@@ -803,4 +803,95 @@ mod tests {
             .iter()
             .any(|r| r.contains("could not evaluate range")));
     }
+
+    // ===== WS3: OSV multiple affected packages =====
+
+    #[test]
+    fn osv_multiple_affected_packages_one_matches() {
+        // Advisory affects both "serde" and "serde_derive" with different ranges.
+        // Version 1.5.0 is inside serde's range but outside serde_derive's range.
+        let serde_range = AdvisoryRange {
+            ecosystem: PackageEcosystem::CratesIo,
+            package: "serde".to_string(),
+            affected_range: Some(">= 1.0.0, < 2.0.0".to_string()),
+            fixed_versions: vec!["2.0.0".to_string()],
+            introduced_versions: Vec::new(),
+            last_affected_versions: Vec::new(),
+            source: "GHSA-test-multi".to_string(),
+        };
+        let derive_range = AdvisoryRange {
+            ecosystem: PackageEcosystem::CratesIo,
+            package: "serde_derive".to_string(),
+            affected_range: Some(">= 3.0.0, < 4.0.0".to_string()),
+            fixed_versions: vec!["4.0.0".to_string()],
+            introduced_versions: Vec::new(),
+            last_affected_versions: Vec::new(),
+            source: "GHSA-test-multi".to_string(),
+        };
+        // 1.5.0 is inside serde's >= 1.0.0, < 2.0.0 → Affected
+        let outcome = assess_version_applicability(
+            "1.5.0",
+            &[serde_range, derive_range],
+            &PackageEcosystem::CratesIo,
+        );
+        assert_eq!(outcome.status, ApplicabilityStatus::Affected);
+    }
+
+    #[test]
+    fn osv_multiple_affected_packages_neither_matches() {
+        // Version 2.5.0 is outside both ranges → NotAffected
+        let serde_range = AdvisoryRange {
+            ecosystem: PackageEcosystem::CratesIo,
+            package: "serde".to_string(),
+            affected_range: Some(">= 1.0.0, < 2.0.0".to_string()),
+            fixed_versions: vec!["2.0.0".to_string()],
+            introduced_versions: Vec::new(),
+            last_affected_versions: Vec::new(),
+            source: "GHSA-test-multi".to_string(),
+        };
+        let derive_range = AdvisoryRange {
+            ecosystem: PackageEcosystem::CratesIo,
+            package: "serde_derive".to_string(),
+            affected_range: Some(">= 3.0.0, < 4.0.0".to_string()),
+            fixed_versions: vec!["4.0.0".to_string()],
+            introduced_versions: Vec::new(),
+            last_affected_versions: Vec::new(),
+            source: "GHSA-test-multi".to_string(),
+        };
+        let outcome = assess_version_applicability(
+            "2.5.0",
+            &[serde_range, derive_range],
+            &PackageEcosystem::CratesIo,
+        );
+        assert_eq!(outcome.status, ApplicabilityStatus::NotAffected);
+    }
+
+    #[test]
+    fn osv_multiple_affected_packages_both_match() {
+        // Version 1.5.0 is inside both ranges → Affected
+        let serde_range = AdvisoryRange {
+            ecosystem: PackageEcosystem::CratesIo,
+            package: "serde".to_string(),
+            affected_range: Some(">= 1.0.0, < 2.0.0".to_string()),
+            fixed_versions: vec!["2.0.0".to_string()],
+            introduced_versions: Vec::new(),
+            last_affected_versions: Vec::new(),
+            source: "GHSA-test-multi-a".to_string(),
+        };
+        let derive_range = AdvisoryRange {
+            ecosystem: PackageEcosystem::CratesIo,
+            package: "serde_derive".to_string(),
+            affected_range: Some(">= 1.0.0, < 2.0.0".to_string()),
+            fixed_versions: vec!["2.0.0".to_string()],
+            introduced_versions: Vec::new(),
+            last_affected_versions: Vec::new(),
+            source: "GHSA-test-multi-b".to_string(),
+        };
+        let outcome = assess_version_applicability(
+            "1.5.0",
+            &[serde_range, derive_range],
+            &PackageEcosystem::CratesIo,
+        );
+        assert_eq!(outcome.status, ApplicabilityStatus::Affected);
+    }
 }

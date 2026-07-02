@@ -37,6 +37,8 @@ future expansion and documentation of intent.
 | `security_applicability_unsupported_range` | `security_search` | Unsupported OSV GIT range returns Unknown |
 | `security_applicability_multiple_ranges_affected_dominates` | `security_search` | Affected dominates NotAffected across ranges |
 | `security_applicability_multiple_ranges_unknown_collapses` | `security_search` | Unknown + NotAffected collapses to Unknown |
+| `gitea_forgejo_configured_host` | `repo_search` | Gitea/Forgejo configured-host wiring: structured fetch, no overclaiming |
+| `package_resolver_fallback` | `repo_search` | Package resolver fallback for Maven and other non-default ecosystems |
 | `live_smoke` | various | Optional live tests (feature-gated, ignored by default) |
 
 ## What assertions cover

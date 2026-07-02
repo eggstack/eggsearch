@@ -1,0 +1,29 @@
+{
+  "id": "gitea_forgejo_configured_host",
+  "description": "Gitea/Forgejo configured-host wiring audit: structured fetch locators work, unconfigured hosts are not rewritten, provider status does not overclaim tree/repo_map support.",
+  "tool": "repo_search",
+  "request": {
+    "query": "repo:example-org/example-repo router middleware",
+    "host": "gitea",
+    "owner": "example-org",
+    "repo": "example-repo"
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "router.rs - example-org/example-repo",
+          "url": "https://gitea.example.com/example-org/example-repo/src/branch/main/src/router.rs",
+          "snippet": "pub fn build_router() -> Router { ... }"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "repo_metasearch",
+    "groups_present": true,
+    "providers_queried_non_empty": true,
+    "notes": "Gitea/Forgejo uses the same gitea_code/gitea_issues/gitea_releases provider IDs since Forgejo is API-compatible. Unconfigured Gitea-like URLs are NOT rewritten by web_fetch (no code metadata, no browser-to-raw transform). Provider status does not claim tree search or repo_map support for Gitea providers. Tested via 16 targeted unit tests across code_host_fetch, code_metadata, repo_fetch, provider, and repo_mapper."
+  }
+}

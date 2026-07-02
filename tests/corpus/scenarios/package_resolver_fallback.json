@@ -1,0 +1,28 @@
+{
+  "id": "package_resolver_fallback",
+  "description": "Package resolver fallback for ecosystems beyond crates.io/PyPI/npm. When registry API returns an error, fallback_with_warning produces deterministic fallback URLs with a warning.",
+  "tool": "repo_search",
+  "request": {
+    "query": "repo:example-org/example-repo migration notes",
+    "ecosystem": "maven",
+    "package": "spring-core",
+    "package_namespace": "org.springframework"
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "Spring Core Migration Guide",
+          "url": "https://docs.spring.io/spring-framework/reference/migration/spring-framework-6.html",
+          "snippet": "Migration notes for Spring Framework 6.0"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "repo_metasearch",
+    "package_resolution_present": true,
+    "notes": "Package resolver supports all 10 ecosystems: crates.io, PyPI, npm, Go, Maven, NuGet, RubyGems, Packagist, OCI, and GitHub Actions. On registry API failure, fallback_with_warning creates deterministic fallback URLs (e.g. Maven Central search, Docker Hub, GitHub repos API). Fallback is metadata-only — no dependency solving, no artifact download. Tested via unit tests: fallback_with_warning_maven, fallback_with_warning_nuget, fallback_with_warning_rubygems, fallback_with_warning_packagist."
+  }
+}
