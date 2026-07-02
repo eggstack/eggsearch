@@ -1074,7 +1074,7 @@ mod tests {
         assert!(json.contains("github_code"));
         assert!(json.contains("gitlab_code"));
         let parsed: ProviderRoutingDecision = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.partial, true);
+        assert!(parsed.partial);
         assert_eq!(parsed.skipped_providers.len(), 1);
     }
 

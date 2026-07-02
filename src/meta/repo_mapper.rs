@@ -433,6 +433,20 @@ mod tests {
     }
 
     #[test]
+    fn build_raw_url_gitea_returns_empty() {
+        // Gitea/Forgejo require a configured base_url that is not available
+        // from the CodeHost enum alone; build_raw_url returns empty string.
+        let url = build_raw_url(CodeHost::Gitea, "owner", "repo", "main", "src/lib.rs");
+        assert_eq!(url, "");
+    }
+
+    #[test]
+    fn build_raw_url_forgejo_returns_empty() {
+        let url = build_raw_url(CodeHost::Forgejo, "owner", "repo", "main", "src/lib.rs");
+        assert_eq!(url, "");
+    }
+
+    #[test]
     fn build_fallback_response_fields() {
         let request = RepoMapRequest {
             query: "test query".into(),

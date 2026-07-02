@@ -248,7 +248,7 @@ pub async fn run_security_search_plan(
         use crate::core::security_applicability::{
             ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
         };
-        use crate::meta::advisory_range::{extract_advisory_ranges, version_in_ranges};
+        use crate::meta::advisory_range::{assess_version_applicability, extract_advisory_ranges};
         use crate::meta::dependency_parse::parse_dependency_file;
 
         // Track (advisory_id, package, version) to deduplicate assessments
@@ -293,43 +293,35 @@ pub async fn run_security_search_plan(
                         .cloned()
                         .unwrap_or_default();
 
-                    let (is_affected, reasons) = version_in_ranges(ver, &ranges, &ranges.first().map(|r| r.ecosystem.clone()).unwrap_or(crate::core::package::PackageEcosystem::CratesIo));
-                    let status = if is_affected {
-                        ApplicabilityStatus::Affected
-                    } else if reasons.iter().any(|r| r.contains("matches fixed version")) {
-                        ApplicabilityStatus::NotAffected
-                    } else if ranges.is_empty() {
-                        ApplicabilityStatus::Unknown
-                    } else {
-                        ApplicabilityStatus::NotAffected
-                    };
-
+                    let outcome = assess_version_applicability(
+                        ver,
+                        &ranges,
+                        &ranges
+                            .first()
+                            .map(|r| r.ecosystem.clone())
+                            .unwrap_or(crate::core::package::PackageEcosystem::CratesIo),
+                    );
+                    let status = outcome.status;
                     let confidence = if !ranges.is_empty() {
                         ApplicabilityConfidence::High
                     } else {
                         ApplicabilityConfidence::Low
                     };
 
-                    let mut assessment_reasons = reasons;
-                    if is_affected {
-                        assessment_reasons.push(format!(
+                    let mut assessment_reasons = outcome.reasons;
+                    match status {
+                        ApplicabilityStatus::Affected => assessment_reasons.push(format!(
                             "version {ver} appears affected by advisory {advisory_id}"
-                        ));
-                    } else if status == ApplicabilityStatus::NotAffected {
-                        assessment_reasons.push(format!(
+                        )),
+                        ApplicabilityStatus::NotAffected => assessment_reasons.push(format!(
                             "version {ver} does not appear affected by advisory {advisory_id}"
-                        ));
-                    } else {
-                        assessment_reasons.push(format!(
+                        )),
+                        ApplicabilityStatus::Unknown => assessment_reasons.push(format!(
                             "could not determine applicability of version {ver} for advisory {advisory_id}"
-                        ));
+                        )),
                     }
 
-                    let key = (
-                        advisory_id.clone(),
-                        pkg.to_string(),
-                        ver.to_string(),
-                    );
+                    let key = (advisory_id.clone(), pkg.to_string(), ver.to_string());
                     if seen_assessments.insert(key) {
                         applicability_assessments.push(ApplicabilityAssessment {
                             status,
@@ -342,13 +334,9 @@ pub async fn run_security_search_plan(
                             package: pkg.to_string(),
                             version: Some(ver.to_string()),
                             advisory_ids: vec![advisory_id],
-                            matched_ranges: ranges.clone(),
+                            matched_ranges: outcome.matched_ranges,
                             reasons: assessment_reasons,
-                            evidence_urls: vuln
-                                .references
-                                .iter()
-                                .map(|r| r.url.clone())
-                                .collect(),
+                            evidence_urls: vuln.references.iter().map(|r| r.url.clone()).collect(),
                             warnings: Vec::new(),
                         });
                     }
@@ -372,23 +360,16 @@ pub async fn run_security_search_plan(
                             .cloned()
                             .unwrap_or_default();
 
-                        let (is_affected, mut reasons) = version_in_ranges(ver, &ranges, &finding.ecosystem);
-                        let status = if is_affected {
-                            ApplicabilityStatus::Affected
-                        } else if reasons.iter().any(|r| r.contains("matches fixed version")) {
-                            ApplicabilityStatus::NotAffected
-                        } else if ranges.is_empty() {
-                            ApplicabilityStatus::Unknown
-                        } else {
-                            ApplicabilityStatus::NotAffected
-                        };
-
+                        let outcome =
+                            assess_version_applicability(ver, &ranges, &finding.ecosystem);
+                        let status = outcome.status;
                         let confidence = if !ranges.is_empty() {
                             ApplicabilityConfidence::High
                         } else {
                             ApplicabilityConfidence::Low
                         };
 
+                        let mut reasons = outcome.reasons;
                         reasons.push(format!(
                             "dependency '{}' version '{}' found in {}",
                             finding.package,
@@ -396,11 +377,7 @@ pub async fn run_security_search_plan(
                             finding.source_file.as_deref().unwrap_or("unknown")
                         ));
 
-                        let key = (
-                            advisory_id.clone(),
-                            finding.package.clone(),
-                            ver.clone(),
-                        );
+                        let key = (advisory_id.clone(), finding.package.clone(), ver.clone());
                         if seen_assessments.insert(key) {
                             applicability_assessments.push(ApplicabilityAssessment {
                                 status,
@@ -409,7 +386,7 @@ pub async fn run_security_search_plan(
                                 package: finding.package.clone(),
                                 version: Some(ver.clone()),
                                 advisory_ids: vec![advisory_id],
-                                matched_ranges: ranges.clone(),
+                                matched_ranges: outcome.matched_ranges,
                                 reasons,
                                 evidence_urls: vuln
                                     .references

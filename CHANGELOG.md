@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Critical: inverted `>=` in security applicability range evaluation.** The legacy `advisory_range::evaluate_range()` accepted versions *below* the floor for `>= X` clauses, producing false `affected` verdicts and false-negative `not_affected` verdicts. The corrected evaluator now uses the tri-state `RangeMatch` (`Affected | NotAffected | Unknown`) and exposes `evaluate_clause()` and `evaluate_range_expression()` as the public API. The legacy `(bool, reasons)` `version_in_ranges()` form is preserved for backward compatibility. (`src/meta/advisory_range.rs`)
+- **Security applicability now preserves `Unknown` vs `NotAffected`.** A new internal `RangeMatch::combine()` collapses `NotAffected` to `Unknown` only when another range could not be evaluated, eliminating the silent false-negative path where unparseable range syntax was treated as `not_affected`. The `security_search` MCP tool now maps through the tri-state result so `applicability[].status` reflects `unknown` honestly. (`src/core/security_applicability.rs`, `src/meta/security_search.rs`)
+- `version_compare::evaluate_semver_range` no longer treats an empty range string as `Some(true)`; empty input is now `None` (unknown) so callers don't silently accept degenerate ranges.
+- `parse_requirements_txt` no longer extracts `>=`-style ranges as installed versions; only `==` pinned versions are kept, so version ranges are not treated as exact installed versions.
+- `.github/workflows/ci.yml` adds `--locked` to the test and publish-check jobs (Cargo.lock is committed), grants minimal `contents: read` permissions, and documents its introduction.
+
+### Added
+
+- **Gitea/Forgejo configured-host wiring audit**: end-to-end audit with 16 new tests covering unconfigured-host fallback (`web_fetch` does not rewrite arbitrary Gitea-like URLs), configured-host URL construction (`repo_fetch` builds correct browser and raw URLs from `base_url`), Codeberg regression (still rewrites), and capability-flag conservatism (no `tree API` or `repo_map` overclaim).
+- **OSV/RustSec affected/fixed range fixtures**: 7 new tests in `advisory_range.rs` covering introduced/fixed events, explicit affected version lists, RustSec patched/unaffected ranges, and unsupported `GIT` range forms.
+- **Dependency parser malformed-input audit**: 9 new tests covering invalid lockfile JSON, broken XML, missing versions, YAML workflow `uses:` validation, and Dockerfile variable tags. Plus 3 confidence-semantics tests (`lockfile_yields_high_confidence`, `manifest_yields_high_confidence`, `version_range_not_treated_as_installed`).
+- **`assess_version_applicability` regression suite**: `tests/security_applicability_regression.rs` with 19 tests directly exercising the tri-state evaluator to lock in the inverted-`>=` fix and the conservative `Unknown` collapse rules. Plus 5 corpus scenario stubs under `tests/corpus/scenarios/`.
+- `tests/security_applicability_regression.rs` covers 19 boundary cases including operator-by-operator `>=`, `>`, `<=`, `<`, `=`, comma-separated intersections, known-then-unknown clause ordering, mixed multi-range outcomes, and the inverted-`>=` regression.
+
+### Changed
+
+- `src/meta/package_resolver.rs` module header now lists all 10 supported ecosystems (CratesIo, PyPI, npm, Go, Maven, NuGet, RubyGems, Packagist, OCI, GitHub Actions) and clarifies that resolution is metadata-only — no dependency solving, no artifact downloading. OCI/GitHub Actions are documented as exact-match only.
+- `repo_search` tool description in `src/mcp/tools.rs` lists all 10 package ecosystems (previously only crates.io/PyPI/npm).
+
 ## [0.3.3] - 2026-06-30
 
 ### Added

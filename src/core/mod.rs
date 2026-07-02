@@ -4,8 +4,6 @@
 
 pub mod batch_fetch;
 pub mod code_evidence;
-/// Evidence bundle types for multi-agent handoff.
-pub mod evidence_bundle;
 pub mod code_host_fetch;
 pub mod code_metadata;
 pub mod config;
@@ -13,6 +11,8 @@ pub mod document;
 pub mod error;
 /// Deterministic error-message parser and subquery generator for exact-error search mode.
 pub mod error_query;
+/// Evidence bundle types for multi-agent handoff.
+pub mod evidence_bundle;
 pub mod fetch;
 /// Local workspace search types: config, file entries, and search requests.
 pub mod local;
@@ -50,15 +50,15 @@ pub use document::{
     FetchRenderMetadata, RenderFormat, RenderedBlock,
 };
 pub use error::{CoreError, CoreResult};
+pub use error_query::{
+    ErrorCode, ErrorQueryParts, ErrorSearchContext, ErrorSubquery, ExactErrorConfig, StackFrameHint,
+};
 pub use evidence_bundle::{
     compute_bundle_id, compute_fetch_id, compute_source_id, EvidenceBundle,
     EvidenceBundleFetchedItem, EvidenceBundleLimits, EvidenceBundleLink, EvidenceBundleLinkReason,
     EvidenceBundleRequest, EvidenceBundleSource, EvidenceFetchInput, EvidenceGap, EvidenceGapKind,
     EvidenceProviderCount, EvidenceProviderSummary, EvidenceSourceInput, EvidenceTrustSummary,
     DEFAULT_MAX_FETCHED_ITEMS, DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
-};
-pub use error_query::{
-    ErrorCode, ErrorQueryParts, ErrorSearchContext, ErrorSubquery, ExactErrorConfig, StackFrameHint,
 };
 pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,

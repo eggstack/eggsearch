@@ -32,6 +32,11 @@ future expansion and documentation of intent.
 | `ranking_exact_error` | `repo_search` | Exact-error issue evidence outranks generic docs |
 | `ranking_migration` | `repo_search` | Migration request prioritizes changelog/release notes |
 | `ranking_security` | `security_search` | Security request prioritizes advisory sources |
+| `security_applicability_range_boundary` | `security_search` | `>= 2.0.0, < 3.0.0` boundary with below/inside/fixed versions |
+| `security_applicability_unknown_syntax` | `security_search` | Unparseable range syntax returns Unknown |
+| `security_applicability_unsupported_range` | `security_search` | Unsupported OSV GIT range returns Unknown |
+| `security_applicability_multiple_ranges_affected_dominates` | `security_search` | Affected dominates NotAffected across ranges |
+| `security_applicability_multiple_ranges_unknown_collapses` | `security_search` | Unknown + NotAffected collapses to Unknown |
 | `live_smoke` | various | Optional live tests (feature-gated, ignored by default) |
 
 ## What assertions cover
@@ -48,6 +53,13 @@ future expansion and documentation of intent.
   competing candidates
 - **Applicability**: security applicability status, confidence, and
   applicability-not-exploitability warning
+- **Range boundary correctness**: `>= 2.0.0, < 3.0.0` with versions
+  below (NotAffected), inside (Affected), and at fixed boundary
+  (NotAffected) — catches inverted comparison bugs
+- **Conservative Unknown**: unparseable ranges and unsupported range
+  types (e.g. OSV GIT) return Unknown, not implicit affected/not_affected
+- **Multi-range combination**: Affected dominates NotAffected;
+  Unknown + NotAffected collapses to Unknown
 - **Telemetry**: provider_selection, subqueries, capability_enforcement
   fields present
 

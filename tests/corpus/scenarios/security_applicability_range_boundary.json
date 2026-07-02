@@ -1,0 +1,33 @@
+{
+  "id": "security_applicability_range_boundary",
+  "description": "Advisory range >= 2.0.0, < 3.0.0 with versions below, inside, and at fixed boundary. Would have caught the inverted >= bug.",
+  "tool": "security_search",
+  "request": {
+    "query": "vulnerability in test-pkg",
+    "ecosystem": "npm",
+    "package": "test-pkg",
+    "version": "2.5.0",
+    "assess_applicability": true
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "GHSA-test-0001: Vulnerability in test-pkg",
+          "url": "https://osv.dev/vulnerability/GHSA-test-0001",
+          "snippet": "Affected versions: >= 2.0.0, < 3.0.0, Patched: 3.0.0"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "security_metasearch",
+    "applicability_cases": {
+      "1.9.9": "not_affected (below >= 2.0.0 floor)",
+      "2.5.0": "affected (inside >= 2.0.0, < 3.0.0)",
+      "3.0.0": "not_affected (matches fixed version)"
+    },
+    "notes": "These three cases are tested directly in tests/security_applicability_regression.rs. The corpus scenario documents the intent; the regression test file exercises the actual assess_version_applicability API."
+  }
+}

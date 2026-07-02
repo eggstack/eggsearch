@@ -364,8 +364,14 @@ mod tests {
             transform.kind,
             crate::core::fetch::FetchTransformKind::CodebergRawFile
         );
-        assert_eq!(transform.original_url, "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs");
-        assert_eq!(transform.transformed_url, "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs");
+        assert_eq!(
+            transform.original_url,
+            "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs"
+        );
+        assert_eq!(
+            transform.transformed_url,
+            "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs"
+        );
     }
 
     // --- Codeberg non-file URLs return None ---
@@ -398,5 +404,56 @@ mod tests {
     #[test]
     fn invalid_url_returns_none() {
         assert!(resolve_code_host_fetch_target("not a url").is_none());
+    }
+
+    // --- Gitea/Forgejo: unconfigured arbitrary hosts are NOT rewritten ---
+
+    #[test]
+    fn unconfigured_gitea_like_url_not_rewritten() {
+        // An arbitrary Gitea-like URL (not codeberg.org) should NOT produce
+        // a raw_url. resolve_code_host_fetch_target only rewrites GitHub,
+        // GitLab, and Codeberg; Gitea/Forgejo require a configured base_url.
+        let target = resolve_code_host_fetch_target(
+            "https://codeberg.example/owner/repo/src/branch/main/foo.rs",
+        );
+        // Either None (not recognized as a source file) or raw_url is None.
+        match target {
+            None => {} // acceptable: not recognized
+            Some(t) => {
+                assert!(
+                    t.raw_url.is_none(),
+                    "Gitea-like URL should not be rewritten to raw: {:?}",
+                    t.raw_url
+                );
+            }
+        }
+    }
+
+    // --- Codeberg regression: codeberg.org rewrites correctly ---
+
+    #[test]
+    fn codeberg_org_src_branch_resolves_to_raw() {
+        // Regression: ensure codeberg.org (not a custom Gitea instance)
+        // still rewrites to the raw URL pattern.
+        let target = resolve_code_host_fetch_target(
+            "https://codeberg.org/owner/repo/src/branch/main/foo.rs",
+        )
+        .unwrap();
+        assert_eq!(
+            target.raw_url.as_deref(),
+            Some("https://codeberg.org/owner/repo/raw/branch/main/foo.rs")
+        );
+        assert_eq!(target.source_kind, SourceKind::SourceFile);
+    }
+
+    #[test]
+    fn gitea_url_not_rewritten_and_no_code_metadata() {
+        // classify_and_extract only produces CodeMetadata for github.com,
+        // gitlab.com, and codeberg.org. Gitea/Forgejo URLs fall through
+        // to domain-only heuristics (no CodeMetadata, kind = Unknown).
+        let (kind, code, _domain) =
+            classify_and_extract("https://gitea.example.com/owner/repo/src/branch/main/src/lib.rs");
+        assert_eq!(kind, SourceKind::Unknown);
+        assert!(code.is_none());
     }
 }

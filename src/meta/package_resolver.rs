@@ -1,8 +1,13 @@
-//! Package registry resolver: bounded HTTP lookups for crates.io, PyPI, and npm.
+//! Package registry resolver: bounded HTTP lookups for CratesIo, PyPI,
+//! npm, Go, Maven, NuGet, RubyGems, Packagist, OCI, and GitHub Actions.
 //!
 //! Resolves package coordinates to registry URLs, documentation URLs,
 //! source repository URLs, and version information. Falls back to
 //! deterministic URLs when registry APIs fail.
+//!
+//! This is metadata lookup only — it does not solve dependencies or
+//! download artifacts. OCI and GitHub Actions use exact version matching
+//! only (no semver range).
 
 use crate::core::package::{PackageCoordinate, PackageEcosystem, PackageResolution};
 use reqwest::Client;

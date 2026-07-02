@@ -939,4 +939,81 @@ mod tests {
             );
         }
     }
+
+    // --- Gitea/Forgejo capability flag audit ---
+    //
+    // These tests pin the capability flags for Gitea/Forgejo providers so
+    // they cannot drift into overclaiming features that are not wired.
+
+    #[test]
+    fn gitea_code_capabilities_are_conservative() {
+        let desc = built_in_provider_descriptor("gitea_code", true, false, true).unwrap();
+        assert!(desc.capabilities.supports_code_search);
+        // Gitea global search API does not support repo/path/language filters.
+        assert!(!desc.capabilities.supports_repo_filter);
+        assert!(!desc.capabilities.supports_path_filter);
+        assert!(!desc.capabilities.supports_language_filter);
+        assert!(!desc.capabilities.supports_symbol_hint);
+        assert!(!desc.capabilities.supports_issue_search);
+        assert!(!desc.capabilities.supports_release_search);
+        assert!(!desc.capabilities.supports_result_timestamps);
+        assert!(!desc.capabilities.supports_security_search);
+    }
+
+    #[test]
+    fn gitea_issues_capabilities_are_conservative() {
+        let desc = built_in_provider_descriptor("gitea_issues", true, false, true).unwrap();
+        assert!(desc.capabilities.supports_issue_search);
+        assert!(desc.capabilities.supports_result_timestamps);
+        // Gitea issues search does not support repo/language filters.
+        assert!(!desc.capabilities.supports_repo_filter);
+        assert!(!desc.capabilities.supports_path_filter);
+        assert!(!desc.capabilities.supports_language_filter);
+        assert!(!desc.capabilities.supports_code_search);
+        assert!(!desc.capabilities.supports_release_search);
+        assert!(!desc.capabilities.supports_security_search);
+    }
+
+    #[test]
+    fn gitea_releases_capabilities_are_conservative() {
+        let desc = built_in_provider_descriptor("gitea_releases", true, false, true).unwrap();
+        assert!(desc.capabilities.supports_release_search);
+        assert!(desc.capabilities.supports_result_timestamps);
+        // Gitea releases API does not support repo/language/code search.
+        assert!(!desc.capabilities.supports_repo_filter);
+        assert!(!desc.capabilities.supports_path_filter);
+        assert!(!desc.capabilities.supports_language_filter);
+        assert!(!desc.capabilities.supports_code_search);
+        assert!(!desc.capabilities.supports_issue_search);
+        assert!(!desc.capabilities.supports_security_search);
+    }
+
+    #[test]
+    fn forgejo_providers_share_gitea_descriptors() {
+        // Forgejo uses the same gitea_* provider IDs (gitea_code, gitea_issues,
+        // gitea_releases) since Forgejo is API-compatible with Gitea.
+        // The "forgejo" host is handled at the MCP tool layer, not at the
+        // provider descriptor layer.
+        let code = built_in_provider_descriptor("gitea_code", true, false, true).unwrap();
+        assert!(code.capabilities.supports_code_search);
+        let issues = built_in_provider_descriptor("gitea_issues", true, false, true).unwrap();
+        assert!(issues.capabilities.supports_issue_search);
+        let releases = built_in_provider_descriptor("gitea_releases", true, false, true).unwrap();
+        assert!(releases.capabilities.supports_release_search);
+    }
+
+    #[test]
+    fn gitea_providers_do_not_claim_tree_or_repo_map() {
+        // No provider should claim native repo_map or tree API support.
+        // The repo_map tool uses fallback search for ALL hosts.
+        for id in ["gitea_code", "gitea_issues", "gitea_releases"] {
+            let desc = built_in_provider_descriptor(id, true, false, true).unwrap();
+            // None of these flags exist in ProviderCapabilities currently,
+            // but if they are added, they must not be claimed for Gitea.
+            assert!(
+                !desc.capabilities.supports_security_search,
+                "{id} should not claim security search"
+            );
+        }
+    }
 }

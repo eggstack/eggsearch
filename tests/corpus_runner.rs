@@ -46,11 +46,7 @@ fn corpus_cfg() -> AppConfig {
     cfg
 }
 
-fn state_with(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-) -> Arc<ServerState> {
+fn state_with(cfg: AppConfig, engines: Vec<MockEngine>, timeout: Duration) -> Arc<ServerState> {
     let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
     Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
 }
@@ -93,10 +89,8 @@ fn research_args(query: &str) -> ResearchSearchArgs {
 
 fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
     let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        mock_engines(engines),
-        Duration::from_secs(5),
-    );
+    let adapter =
+        MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
     let mut cfg = AppConfig::default();
     cfg.search.providers.insert("mock_a".to_string(), true);
     cfg.local.enabled = true;
@@ -163,10 +157,7 @@ async fn corpus_repo_search_returns_grouped_response() {
         .iter()
         .filter(|g| !g["results"].as_array().unwrap_or(&vec![]).is_empty())
         .collect();
-    assert!(
-        !nonempty.is_empty(),
-        "at least one group must have results"
-    );
+    assert!(!nonempty.is_empty(), "at least one group must have results");
 
     // Suggested fetches should be non-empty
     let fetches = v["suggested_fetches"].as_array().unwrap();
@@ -202,9 +193,7 @@ async fn corpus_repo_search_groups_match_expected_kinds() {
         ],
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
-    let v = run_repo_search(state, repo_args("axum"))
-        .await
-        .expect("ok");
+    let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
 
     let groups = v["groups"].as_array().unwrap();
     let kinds: Vec<&str> = groups
@@ -294,7 +283,9 @@ async fn corpus_repo_map_returns_structure() {
         timeout_ms: None,
         providers: vec!["mock_a".into()],
     };
-    let v = run_repo_map(state, args).await.expect("repo_map should succeed");
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed");
 
     assert_eq!(v["owner"], "tokio-rs");
     assert_eq!(v["repo"], "axum");
@@ -309,16 +300,10 @@ async fn corpus_repo_map_returns_structure() {
 
     // Should suggest README fetch (when fetches are present)
     if let Some(fetches) = v["suggested_fetches"].as_array() {
-        let has_readme = fetches.iter().any(|f| {
-            f["url"]
-                .as_str()
-                .unwrap_or("")
-                .contains("README")
-        });
-        assert!(
-            has_readme,
-            "should suggest README fetch: {fetches:?}"
-        );
+        let has_readme = fetches
+            .iter()
+            .any(|f| f["url"].as_str().unwrap_or("").contains("README"));
+        assert!(has_readme, "should suggest README fetch: {fetches:?}");
     }
 }
 
@@ -473,10 +458,7 @@ async fn corpus_exact_error_redacts_sensitive_tokens() {
         if let Some(redactions) = ctx.get("redactions_applied") {
             // Redactions may or may not fire depending on the exact
             // redaction rules — just check the field exists.
-            assert!(
-                redactions.is_array(),
-                "redactions_applied must be array"
-            );
+            assert!(redactions.is_array(), "redactions_applied must be array");
         }
     }
 }
@@ -662,14 +644,12 @@ async fn corpus_security_with_explicit_cve_id() {
 async fn corpus_security_osv_applicability() {
     let engines = vec![MockEngine::success(
         "mock_a",
-        vec![
-            MockResult::new(
-                "GHSA-xxxx-xxxx-xxxx: Vulnerability in axios",
-                "https://osv.dev/vulnerability/GHSA-xxxx-xxxx-xxxx",
-                "mock_a",
-            )
-            .with_snippet("Affected versions: < 1.6.0, Patched: 1.6.0"),
-        ],
+        vec![MockResult::new(
+            "GHSA-xxxx-xxxx-xxxx: Vulnerability in axios",
+            "https://osv.dev/vulnerability/GHSA-xxxx-xxxx-xxxx",
+            "mock_a",
+        )
+        .with_snippet("Affected versions: < 1.6.0, Patched: 1.6.0")],
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = SecuritySearchArgs {
@@ -872,10 +852,7 @@ async fn corpus_research_library_comparison() {
     let groups = v["groups"].as_array().unwrap();
     assert!(!groups.is_empty(), "comparison should have groups");
     let subqueries = v["subqueries"].as_array().unwrap();
-    assert!(
-        !subqueries.is_empty(),
-        "should generate subqueries"
-    );
+    assert!(!subqueries.is_empty(), "should generate subqueries");
 }
 
 #[tokio::test]
@@ -1002,10 +979,7 @@ async fn corpus_ranking_exact_error_issue_outranks_generic_docs() {
 
     // Should have suggested fetches
     let fetches = v["suggested_fetches"].as_array().unwrap();
-    assert!(
-        !fetches.is_empty(),
-        "exact error should suggest fetches"
-    );
+    assert!(!fetches.is_empty(), "exact error should suggest fetches");
 
     // Check that issues are in the groups
     let kinds: Vec<&str> = groups
@@ -1113,8 +1087,7 @@ async fn corpus_ranking_security_prioritizes_advisory_sources() {
         .map(|g| g["kind"].as_str().unwrap_or(""))
         .collect();
     assert!(
-        kinds.contains(&"authoritative_advisories")
-            || kinds.contains(&"general_context"),
+        kinds.contains(&"authoritative_advisories") || kinds.contains(&"general_context"),
         "security should prioritize advisory sources: {kinds:?}"
     );
 }
@@ -1134,12 +1107,8 @@ async fn corpus_web_search_returns_structured_response() {
                 "mock_a",
             )
             .with_snippet("A systems programming language"),
-            MockResult::new(
-                "Rust Book",
-                "https://doc.rust-lang.org/book/",
-                "mock_a",
-            )
-            .with_snippet("The Rust Programming Language book"),
+            MockResult::new("Rust Book", "https://doc.rust-lang.org/book/", "mock_a")
+                .with_snippet("The Rust Programming Language book"),
         ],
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
@@ -1212,10 +1181,7 @@ async fn corpus_web_search_deduplicates_by_url() {
     let v = run_web_search(state, args).await.expect("ok");
 
     let results = v["results"].as_array().unwrap();
-    let urls: Vec<&str> = results
-        .iter()
-        .filter_map(|r| r["url"].as_str())
-        .collect();
+    let urls: Vec<&str> = results.iter().filter_map(|r| r["url"].as_str()).collect();
     // Should have at most one entry per URL
     let unique: std::collections::HashSet<&str> = urls.iter().copied().collect();
     assert_eq!(
@@ -1259,14 +1225,14 @@ async fn corpus_web_search_provider_failure_partial_results() {
 
     // Should have results from mock_a
     let results = v["results"].as_array().unwrap();
-    assert!(!results.is_empty(), "should have partial results from mock_a");
+    assert!(
+        !results.is_empty(),
+        "should have partial results from mock_a"
+    );
 
     // Should have provider failure info
     let failed = v["providers_failed"].as_array().unwrap();
-    assert!(
-        !failed.is_empty(),
-        "should report mock_b as failed"
-    );
+    assert!(!failed.is_empty(), "should report mock_b as failed");
     assert_eq!(failed[0]["id"].as_str(), Some("mock_b"));
 }
 
@@ -1314,7 +1280,11 @@ async fn corpus_web_search_with_intent_returns_metadata() {
 async fn corpus_local_search_returns_workspace_trusted_results() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    std::fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+    )
+    .unwrap();
     std::fs::write(root.join("main.rs"), "fn main() { println!(\"hello\"); }").unwrap();
     std::fs::write(root.join("README.md"), "# My Project\n\nA test project.").unwrap();
 
@@ -1330,7 +1300,12 @@ async fn corpus_local_search_returns_workspace_trusted_results() {
 
     let all_results: Vec<&serde_json::Value> = groups
         .iter()
-        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .flat_map(|g| {
+            g["results"]
+                .as_array()
+                .map(|a| a.iter())
+                .unwrap_or_default()
+        })
         .collect();
     let local_results: Vec<&serde_json::Value> = all_results
         .iter()
@@ -1347,7 +1322,9 @@ async fn corpus_local_search_returns_workspace_trusted_results() {
             "local result should have local_trusted trust: {r:?}"
         );
     }
-    let queried = v["providers_queried"].as_array().expect("providers_queried");
+    let queried = v["providers_queried"]
+        .as_array()
+        .expect("providers_queried");
     let queried_ids: Vec<&str> = queried.iter().filter_map(|q| q.as_str()).collect();
     assert!(
         queried_ids.contains(&"local_workspace"),
@@ -1395,13 +1372,28 @@ async fn corpus_workspace_fetch_reads_local_file() {
     assert_eq!(v["trust"], "local_trusted");
     assert_eq!(v["fetched"], true);
     let text = v["text"].as_str().expect("text should be present");
-    assert!(text.contains("pub fn add"), "fetched text should contain the function: {text}");
+    assert!(
+        text.contains("pub fn add"),
+        "fetched text should contain the function: {text}"
+    );
 
     let locator = v["locator"].as_object().expect("locator");
     assert_eq!(locator["kind"], "workspace");
-    assert_eq!(locator.get("host"), None, "workspace locator should not have host");
-    assert_eq!(locator.get("owner"), None, "workspace locator should not have owner");
-    assert_eq!(locator.get("repo"), None, "workspace locator should not have repo");
+    assert_eq!(
+        locator.get("host"),
+        None,
+        "workspace locator should not have host"
+    );
+    assert_eq!(
+        locator.get("owner"),
+        None,
+        "workspace locator should not have owner"
+    );
+    assert_eq!(
+        locator.get("repo"),
+        None,
+        "workspace locator should not have repo"
+    );
     assert_eq!(locator["workspace_root"], root_name);
     assert_eq!(locator["path"], "lib.rs");
 }
@@ -1470,7 +1462,10 @@ async fn corpus_workspace_fetch_rejects_unknown_root() {
     let result = run_repo_fetch(state, args).await;
     assert!(result.is_err(), "unknown root should fail");
     assert!(
-        result.unwrap_err().to_string().contains("unknown workspace root"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("unknown workspace root"),
         "error should mention unknown workspace root"
     );
 }
@@ -1482,7 +1477,10 @@ async fn corpus_local_clean_checkout_no_dirty_warning() {
     std::fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
     std::process::Command::new("git")
-        .arg("init").arg(root).output().ok();
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
     let git_config = root.join(".git").join("config");
     std::fs::write(
         &git_config,
@@ -1490,9 +1488,21 @@ async fn corpus_local_clean_checkout_no_dirty_warning() {
     )
     .unwrap();
     std::process::Command::new("git")
-        .arg("-C").arg(root).arg("add").arg(".").output().ok();
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
     std::process::Command::new("git")
-        .arg("-C").arg(root).arg("commit").arg("-m").arg("init").arg("--allow-empty").output().ok();
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
 
     let state = state_with_local_backend(root);
     let args = RepoSearchArgs {
@@ -1523,7 +1533,10 @@ async fn corpus_local_dirty_checkout_emits_warning() {
     std::fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
     std::process::Command::new("git")
-        .arg("init").arg(root).output().ok();
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
     let git_config = root.join(".git").join("config");
     std::fs::write(
         &git_config,
@@ -1531,9 +1544,21 @@ async fn corpus_local_dirty_checkout_emits_warning() {
     )
     .unwrap();
     std::process::Command::new("git")
-        .arg("-C").arg(root).arg("add").arg(".").output().ok();
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
     std::process::Command::new("git")
-        .arg("-C").arg(root).arg("commit").arg("-m").arg("init").arg("--allow-empty").output().ok();
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
     std::fs::write(root.join("untracked.txt"), "dirty content").unwrap();
 
     let state = state_with_local_backend(root);
@@ -1562,10 +1587,17 @@ async fn corpus_local_dirty_checkout_emits_warning() {
 async fn corpus_local_repo_match_metadata_present() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    std::fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+    )
+    .unwrap();
 
     std::process::Command::new("git")
-        .arg("init").arg(root).output().ok();
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
     let git_config = root.join(".git").join("config");
     std::fs::write(
         &git_config,
@@ -1593,7 +1625,9 @@ async fn corpus_local_repo_match_metadata_present() {
     assert!(!local_cards.is_empty(), "should have local results");
 
     for card in &local_cards {
-        let meta = card["metadata"].as_object().expect("metadata should be object");
+        let meta = card["metadata"]
+            .as_object()
+            .expect("metadata should be object");
         let lrm = meta["local_repo_match"]
             .as_object()
             .expect("local_repo_match should be present");
@@ -1617,7 +1651,10 @@ async fn corpus_prefer_local_redirects_to_workspace() {
     .unwrap();
 
     std::process::Command::new("git")
-        .arg("init").arg(root).output().ok();
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
     let git_config = root.join(".git").join("config");
     std::fs::write(
         &git_config,
@@ -1625,9 +1662,21 @@ async fn corpus_prefer_local_redirects_to_workspace() {
     )
     .unwrap();
     std::process::Command::new("git")
-        .arg("-C").arg(root).arg("add").arg(".").output().ok();
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
     std::process::Command::new("git")
-        .arg("-C").arg(root).arg("commit").arg("-m").arg("init").arg("--allow-empty").output().ok();
+        .arg("-C")
+        .arg(root)
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
 
     let state = state_with_local_backend(root);
     let args = RepoFetchArgs {
@@ -1658,17 +1707,27 @@ async fn corpus_prefer_local_redirects_to_workspace() {
     assert_eq!(v["trust"], "local_trusted");
     assert_eq!(v["fetched"], true);
     let text = v["text"].as_str().expect("text should be present");
-    assert!(text.contains("pub fn add"), "fetched text should contain the function: {text}");
+    assert!(
+        text.contains("pub fn add"),
+        "fetched text should contain the function: {text}"
+    );
 }
 
 #[tokio::test]
 async fn corpus_prefer_local_rejects_path_traversal() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    std::fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+    )
+    .unwrap();
 
     std::process::Command::new("git")
-        .arg("init").arg(root).output().ok();
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
     let git_config = root.join(".git").join("config");
     std::fs::write(
         &git_config,
@@ -1699,7 +1758,10 @@ async fn corpus_prefer_local_rejects_path_traversal() {
         prefer_local: Some(true),
     };
     let result = run_repo_fetch(state, args).await;
-    assert!(result.is_err(), "path traversal via prefer_local should fail");
+    assert!(
+        result.is_err(),
+        "path traversal via prefer_local should fail"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1771,7 +1833,8 @@ async fn corpus_repo_fetch_line_range_bounds_correctly() {
     use httpmock::prelude::*;
 
     let server = MockServer::start();
-    let file_content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n";
+    let file_content =
+        "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n";
     server.mock(|when, then| {
         when.method(GET).path("/raw/main/src/main.rs");
         then.status(200)
@@ -1818,9 +1881,14 @@ async fn corpus_repo_fetch_line_range_bounds_correctly() {
         .expect("repo_fetch should succeed");
 
     let lines = v["lines"].as_array().expect("lines should be array");
-    assert!(lines.len() >= 4, "should have at least 4 lines (2-5): {lines:?}");
+    assert!(
+        lines.len() >= 4,
+        "should have at least 4 lines (2-5): {lines:?}"
+    );
     let first_num = lines[0]["number"].as_u64().expect("line number");
-    let last_num = lines.last().unwrap()["number"].as_u64().expect("line number");
+    let last_num = lines.last().unwrap()["number"]
+        .as_u64()
+        .expect("line number");
     assert_eq!(first_num, 2);
     assert_eq!(last_num, 5);
 }
@@ -1904,8 +1972,7 @@ async fn corpus_batch_fetch_handles_mixed_success_failure() {
     });
     server.mock(|when, then| {
         when.method(GET).path("/fail.html");
-        then.status(500)
-            .body("Internal Server Error");
+        then.status(500).body("Internal Server Error");
     });
 
     let state = Arc::new(
@@ -2232,7 +2299,10 @@ async fn corpus_research_performance_investigation() {
     assert_eq!(v["mode"], "research_metasearch");
 
     let groups = v["groups"].as_array().unwrap();
-    assert!(!groups.is_empty(), "performance investigation should have groups");
+    assert!(
+        !groups.is_empty(),
+        "performance investigation should have groups"
+    );
     let subqueries = v["subqueries"].as_array().unwrap();
     assert!(!subqueries.is_empty(), "should generate subqueries");
 }
@@ -2318,12 +2388,8 @@ async fn corpus_research_ecosystem_survey() {
                 "mock_a",
             )
             .with_snippet("Overview of the Rust web framework ecosystem"),
-            MockResult::new(
-                "Rust async ecosystem",
-                "https://rustasync.com/",
-                "mock_a",
-            )
-            .with_snippet("Async Rust ecosystem overview"),
+            MockResult::new("Rust async ecosystem", "https://rustasync.com/", "mock_a")
+                .with_snippet("Async Rust ecosystem overview"),
         ],
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
@@ -2489,9 +2555,7 @@ mod live_smoke {
             max_block_lines: None,
             prefer_local: None,
         };
-        let v = run_repo_fetch(state, args)
-            .await
-            .expect("live repo_fetch");
+        let v = run_repo_fetch(state, args).await.expect("live repo_fetch");
         assert_eq!(v["fetched"], true);
         let text = v["text"].as_str().expect("text should be present");
         assert!(

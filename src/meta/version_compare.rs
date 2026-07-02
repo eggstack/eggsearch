@@ -46,9 +46,7 @@ pub fn version_satisfies_range(
 
         PackageEcosystem::Maven => evaluate_maven_range(version, range),
 
-        PackageEcosystem::Oci | PackageEcosystem::GithubActions => {
-            Some(range.trim() == version)
-        }
+        PackageEcosystem::Oci | PackageEcosystem::GithubActions => Some(range.trim() == version),
     }
 }
 
@@ -96,7 +94,7 @@ fn compare_maven(a: &str, b: &str) -> Option<std::cmp::Ordering> {
 fn evaluate_semver_range(version: &str, range: &str) -> Option<bool> {
     let range = range.trim();
     if range.is_empty() {
-        return Some(true);
+        return None;
     }
 
     if !range.contains(['>', '<', '=', '!', ',']) {

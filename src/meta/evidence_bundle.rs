@@ -39,11 +39,8 @@ pub fn build_evidence_bundle(request: EvidenceBundleRequest) -> EvidenceBundle {
     let include_unfetched = request.include_unfetched_sources.unwrap_or(true);
 
     // Phase 1: Convert source inputs to bundle sources with deterministic IDs
-    let mut sources: Vec<EvidenceBundleSource> = request
-        .sources
-        .iter()
-        .map(source_input_to_bundle)
-        .collect();
+    let mut sources: Vec<EvidenceBundleSource> =
+        request.sources.iter().map(source_input_to_bundle).collect();
 
     // Phase 2: Deduplicate sources by URL (richer metadata wins)
     deduplicate_sources(&mut sources);
@@ -55,11 +52,8 @@ pub fn build_evidence_bundle(request: EvidenceBundleRequest) -> EvidenceBundle {
     }
 
     // Phase 4: Convert fetch inputs to bundle fetched items with deterministic IDs
-    let mut fetch_items: Vec<EvidenceBundleFetchedItem> = request
-        .fetches
-        .iter()
-        .map(fetch_input_to_bundle)
-        .collect();
+    let mut fetch_items: Vec<EvidenceBundleFetchedItem> =
+        request.fetches.iter().map(fetch_input_to_bundle).collect();
 
     // Phase 5: Link fetches to sources
     let source_links = link_fetches_to_sources(&sources, &mut fetch_items);
@@ -75,7 +69,7 @@ pub fn build_evidence_bundle(request: EvidenceBundleRequest) -> EvidenceBundle {
 
     // Phase 7: Apply fetched items cap and total chars budget
     let (fetched_items_truncated, total_chars_exceeded) =
-    apply_fetch_caps(&mut fetch_items, max_fetched_items, max_total_chars);
+        apply_fetch_caps(&mut fetch_items, max_fetched_items, max_total_chars);
 
     // Phase 8: Compute trust summary
     let trust_summary = compute_trust_summary(&sources, &fetch_items);
@@ -188,13 +182,10 @@ fn source_input_to_bundle(input: &EvidenceSourceInput) -> EvidenceBundleSource {
 
 /// Convert a fetch input to a bundle fetched item with a deterministic ID.
 fn fetch_input_to_bundle(input: &EvidenceFetchInput) -> EvidenceBundleFetchedItem {
-    let text_prefix = input.text.as_deref().map(|t| {
-        if t.len() > 64 {
-            &t[..64]
-        } else {
-            t
-        }
-    });
+    let text_prefix = input
+        .text
+        .as_deref()
+        .map(|t| if t.len() > 64 { &t[..64] } else { t });
 
     let fetch_id = compute_fetch_id(
         input.url.as_deref(),
@@ -321,7 +312,10 @@ fn urls_equal(a: &str, b: &str) -> bool {
 }
 
 /// Loose locator equality: compare host, owner, repo, path.
-fn locators_equal(a: &crate::core::repo_fetch::RepoLocator, b: &crate::core::repo_fetch::RepoLocator) -> bool {
+fn locators_equal(
+    a: &crate::core::repo_fetch::RepoLocator,
+    b: &crate::core::repo_fetch::RepoLocator,
+) -> bool {
     let a_host = a.host.map(|h| format!("{h:?}"));
     let b_host = b.host.map(|h| format!("{h:?}"));
     let a_owner = a.owner.as_deref().unwrap_or("");
@@ -391,16 +385,20 @@ fn compute_trust_summary(
         }
         summary.total_injection_hits += source.trust_markers.injection_hits;
         summary.total_control_chars_removed += source.trust_markers.control_chars_removed;
-        summary.any_text_sanitized = summary.any_text_sanitized || source.trust_markers.text_sanitized;
-        summary.any_text_truncated = summary.any_text_truncated || source.trust_markers.text_truncated;
+        summary.any_text_sanitized =
+            summary.any_text_sanitized || source.trust_markers.text_sanitized;
+        summary.any_text_truncated =
+            summary.any_text_truncated || source.trust_markers.text_truncated;
         summary.any_text_framed = summary.any_text_framed || source.trust_markers.text_framed;
     }
 
     for item in fetch_items {
         summary.total_injection_hits += item.trust_markers.injection_hits;
         summary.total_control_chars_removed += item.trust_markers.control_chars_removed;
-        summary.any_text_sanitized = summary.any_text_sanitized || item.trust_markers.text_sanitized;
-        summary.any_text_truncated = summary.any_text_truncated || item.trust_markers.text_truncated;
+        summary.any_text_sanitized =
+            summary.any_text_sanitized || item.trust_markers.text_sanitized;
+        summary.any_text_truncated =
+            summary.any_text_truncated || item.trust_markers.text_truncated;
         summary.any_text_framed = summary.any_text_framed || item.trust_markers.text_framed;
     }
 
@@ -445,7 +443,10 @@ fn compute_gaps(
         if !fetched_source_ids.contains(source.source_id.as_str()) {
             gaps.push(EvidenceGap {
                 kind: EvidenceGapKind::SourceUnfetched,
-                message: format!("source '{}' was not fetched", source.title.as_deref().unwrap_or("")),
+                message: format!(
+                    "source '{}' was not fetched",
+                    source.title.as_deref().unwrap_or("")
+                ),
                 source_id: Some(source.source_id.clone()),
                 provider_id: source.provider_id.clone(),
             });
@@ -520,12 +521,8 @@ fn compute_gaps(
             m if m.starts_with("coding_profile_degraded") => {
                 Some(EvidenceGapKind::ProviderDegraded)
             }
-            m if m.starts_with("profile_degraded") => {
-                Some(EvidenceGapKind::ProviderDegraded)
-            }
-            m if m.starts_with("local_repo_dirty") => {
-                Some(EvidenceGapKind::LocalCheckoutDirty)
-            }
+            m if m.starts_with("profile_degraded") => Some(EvidenceGapKind::ProviderDegraded),
+            m if m.starts_with("local_repo_dirty") => Some(EvidenceGapKind::LocalCheckoutDirty),
             _ => None,
         };
 
@@ -559,7 +556,9 @@ fn compute_gaps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::evidence_bundle::{EvidenceBundleRequest, EvidenceFetchInput, EvidenceSourceInput};
+    use crate::core::evidence_bundle::{
+        EvidenceBundleRequest, EvidenceFetchInput, EvidenceSourceInput,
+    };
 
     fn make_source(url: &str, title: &str, provider: &str) -> EvidenceSourceInput {
         EvidenceSourceInput {
@@ -664,7 +663,13 @@ mod tests {
     #[test]
     fn source_cap_truncation() {
         let sources: Vec<EvidenceSourceInput> = (0..10)
-            .map(|i| make_source(&format!("https://example.com/{i}"), &format!("page {i}"), "test"))
+            .map(|i| {
+                make_source(
+                    &format!("https://example.com/{i}"),
+                    &format!("page {i}"),
+                    "test",
+                )
+            })
             .collect();
 
         let req = EvidenceBundleRequest {

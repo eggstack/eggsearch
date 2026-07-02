@@ -15,10 +15,10 @@ pub(crate) mod dispatch;
 /// Vendored HTML search engines. Internal; not part of the stable
 /// public API.
 pub mod engines;
-/// Evidence bundle builder: pure logic for constructing evidence bundles from source/fetch inputs.
-pub mod evidence_bundle;
 /// Exact-error planner: generates targeted subqueries for compiler/runtime error messages.
 pub mod error_planner;
+/// Evidence bundle builder: pure logic for constructing evidence bundles from source/fetch inputs.
+pub mod evidence_bundle;
 /// Deterministic ranking pipeline for suggested fetch candidates.
 pub mod fetch_ranking;
 mod grouping;
@@ -30,7 +30,8 @@ pub mod local_backend;
 pub mod local_inventory;
 #[cfg(feature = "mock")]
 pub mod mock;
-/// Package registry resolver: bounded HTTP lookups for crates.io, PyPI, npm.
+/// Package registry resolver: bounded HTTP lookups for CratesIo, PyPI,
+/// npm, Go, Maven, NuGet, RubyGems, Packagist, OCI, and GitHub Actions.
 pub mod package_resolver;
 pub mod planner;
 /// Provider health tracking, routing decisions, and capability enforcement telemetry.

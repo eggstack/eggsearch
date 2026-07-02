@@ -1,0 +1,34 @@
+{
+  "id": "security_applicability_multiple_ranges_affected_dominates",
+  "description": "Multiple advisory ranges where one evaluates to Affected and one to NotAffected. Affected must dominate.",
+  "tool": "security_search",
+  "request": {
+    "query": "vulnerability in test-pkg",
+    "ecosystem": "crates.io",
+    "package": "test-pkg",
+    "version": "1.5.0",
+    "assess_applicability": true
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "GHSA-test-0004a: Vulnerability in test-pkg (narrow range)",
+          "url": "https://osv.dev/vulnerability/GHSA-test-0004a",
+          "snippet": "Affected versions: >= 1.0.0, < 2.0.0"
+        },
+        {
+          "title": "GHSA-test-0004b: Vulnerability in test-pkg (wide range)",
+          "url": "https://osv.dev/vulnerability/GHSA-test-0004b",
+          "snippet": "Affected versions: >= 5.0.0"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "security_metasearch",
+    "applicability_status": "affected",
+    "notes": "Version 1.5.0 is outside >= 5.0.0 (NotAffected) but inside >= 1.0.0, < 2.0.0 (Affected). Affected must dominate. Tested directly in tests/security_applicability_regression.rs."
+  }
+}

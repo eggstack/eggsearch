@@ -274,11 +274,9 @@ impl RepoFetchRequest {
                 | CodeHost::Gitea
                 | CodeHost::Forgejo => {}
                 CodeHost::Unknown => {
-                    return Err(
-                        "host 'unknown' is not supported for repo_fetch; \
+                    return Err("host 'unknown' is not supported for repo_fetch; \
                          use github, gitlab, codeberg, gitea, or forgejo"
-                            .to_string(),
-                    );
+                        .to_string());
                 }
             }
         }
@@ -994,6 +992,52 @@ mod tests {
         req.validate(50000).unwrap();
     }
 
+    // --- Gitea/Forgejo URL helpers require base_url ---
+
+    #[test]
+    fn gitea_browser_url_requires_base_url_not_empty() {
+        // gitea_browser_url with empty base_url produces a broken URL
+        // (the caller in mcp/tools.rs is responsible for rejecting empty base_url).
+        let url = gitea_browser_url("", "owner", "repo", "main", "src/lib.rs");
+        assert!(url.starts_with('/'), "empty base produces a relative URL");
+    }
+
+    #[test]
+    fn gitea_raw_url_requires_base_url_not_empty() {
+        let url = gitea_raw_url("", "owner", "repo", "main", "src/lib.rs");
+        assert!(url.starts_with('/'), "empty base produces a relative URL");
+    }
+
+    #[test]
+    fn gitea_browser_url_with_base_url() {
+        let url = gitea_browser_url(
+            "https://git.example.com",
+            "alice",
+            "myrepo",
+            "develop",
+            "Cargo.toml",
+        );
+        assert_eq!(
+            url,
+            "https://git.example.com/alice/myrepo/src/branch/develop/Cargo.toml"
+        );
+    }
+
+    #[test]
+    fn gitea_raw_url_with_base_url() {
+        let url = gitea_raw_url(
+            "https://git.example.com",
+            "alice",
+            "myrepo",
+            "develop",
+            "Cargo.toml",
+        );
+        assert_eq!(
+            url,
+            "https://git.example.com/alice/myrepo/raw/branch/develop/Cargo.toml"
+        );
+    }
+
     // --- URL construction tests ---
 
     #[test]
@@ -1130,7 +1174,13 @@ mod tests {
 
     #[test]
     fn gitea_browser_url_basic() {
-        let url = gitea_browser_url("https://git.example.com", "owner", "repo", "main", "src/lib.rs");
+        let url = gitea_browser_url(
+            "https://git.example.com",
+            "owner",
+            "repo",
+            "main",
+            "src/lib.rs",
+        );
         assert_eq!(
             url,
             "https://git.example.com/owner/repo/src/branch/main/src/lib.rs"
@@ -1139,7 +1189,13 @@ mod tests {
 
     #[test]
     fn gitea_raw_url_basic() {
-        let url = gitea_raw_url("https://git.example.com", "owner", "repo", "main", "src/lib.rs");
+        let url = gitea_raw_url(
+            "https://git.example.com",
+            "owner",
+            "repo",
+            "main",
+            "src/lib.rs",
+        );
         assert_eq!(
             url,
             "https://git.example.com/owner/repo/raw/branch/main/src/lib.rs"

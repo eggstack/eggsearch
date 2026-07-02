@@ -1,0 +1,30 @@
+{
+  "id": "security_applicability_unsupported_range",
+  "description": "Unsupported OSV GIT range returns Unknown. GIT commit ranges are not supported by version comparison.",
+  "tool": "security_search",
+  "request": {
+    "query": "vulnerability in test-pkg",
+    "ecosystem": "crates.io",
+    "package": "test-pkg",
+    "version": "1.0.0",
+    "assess_applicability": true
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "GHSA-test-0003: Vulnerability in test-pkg",
+          "url": "https://osv.dev/vulnerability/GHSA-test-0003",
+          "snippet": "Affected ranges: GIT:abc123def"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "security_metasearch",
+    "applicability_status": "unknown",
+    "reasons_contain": "could not evaluate range",
+    "notes": "GIT ranges use commit SHA comparison which is unsupported. Must return Unknown. Tested directly in tests/security_applicability_regression.rs."
+  }
+}

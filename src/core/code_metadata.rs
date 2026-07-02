@@ -955,6 +955,34 @@ mod tests {
         assert!(code.is_none());
     }
 
+    // --- Gitea/Forgejo URL classification ---
+    //
+    // classify_and_extract only produces CodeMetadata for github.com,
+    // gitlab.com, and codeberg.org. Arbitrary Gitea/Forgejo URLs fall
+    // through to domain-only heuristics (no CodeMetadata).
+
+    #[test]
+    fn gitea_self_hosted_url_no_code_metadata() {
+        // classify_and_extract only produces SourceKind/CodeMetadata for
+        // github.com, gitlab.com, and codeberg.org. Gitea self-hosted
+        // URLs fall through to domain-only heuristics (kind = Unknown).
+        let (kind, code, domain) =
+            classify_and_extract("https://gitea.example.com/owner/repo/src/branch/main/src/lib.rs");
+        assert_eq!(kind, SourceKind::Unknown);
+        assert!(code.is_none());
+        assert_eq!(domain.as_deref(), Some("gitea.example.com"));
+    }
+
+    #[test]
+    fn forgejo_self_hosted_url_no_code_metadata() {
+        let (kind, code, domain) = classify_and_extract(
+            "https://forgejo.example.com/owner/repo/src/branch/main/src/lib.rs",
+        );
+        assert_eq!(kind, SourceKind::Unknown);
+        assert!(code.is_none());
+        assert_eq!(domain.as_deref(), Some("forgejo.example.com"));
+    }
+
     // --- Language inference ---
 
     #[test]

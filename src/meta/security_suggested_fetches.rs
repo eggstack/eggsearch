@@ -380,7 +380,8 @@ mod tests {
     #[test]
     fn suggests_npm_for_package() {
         let ids = SecurityIdentifiers::default();
-        let fetches = generate_security_suggested_fetches(&[], &ids, Some("npm"), Some("lodash"), &[]);
+        let fetches =
+            generate_security_suggested_fetches(&[], &ids, Some("npm"), Some("lodash"), &[]);
         assert!(fetches
             .iter()
             .any(|f| f.url.contains("npmjs.com/package/lodash")));

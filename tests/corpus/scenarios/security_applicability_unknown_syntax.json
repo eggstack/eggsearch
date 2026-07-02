@@ -1,0 +1,30 @@
+{
+  "id": "security_applicability_unknown_syntax",
+  "description": "Unknown range syntax returns Unknown status, not Affected or NotAffected. Conservative behavior for unparseable ranges.",
+  "tool": "security_search",
+  "request": {
+    "query": "vulnerability in test-pkg",
+    "ecosystem": "crates.io",
+    "package": "test-pkg",
+    "version": "1.0.0",
+    "assess_applicability": true
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "GHSA-test-0002: Vulnerability in test-pkg",
+          "url": "https://osv.dev/vulnerability/GHSA-test-0002",
+          "snippet": "Affected versions: banana"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "security_metasearch",
+    "applicability_status": "unknown",
+    "reasons_contain": "could not evaluate range",
+    "notes": "Unparseable range syntax must yield Unknown, not implicit Affected or NotAffected. Tested directly in tests/security_applicability_regression.rs."
+  }
+}

@@ -149,7 +149,9 @@ pub struct RepoSearchArgs {
     /// "coding", "security", "research").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
-    /// Optional. Package ecosystem ("crates.io", "pypi", "npm").
+    /// Optional. Package ecosystem ("crates.io", "pypi", "npm", "go",
+    /// "maven", "nuget", "rubygems", "packagist", "oci",
+    /// "github_actions").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ecosystem: Option<String>,
     /// Optional. Package name for package-aware search.
@@ -1403,9 +1405,7 @@ pub async fn run_repo_fetch(
             }
             CodeHost::Codeberg => {
                 // Codeberg permalink uses the browser URL pattern with commit SHA.
-                format!(
-                    "https://codeberg.org/{owner}/{repo}/src/commit/{sha}/{path}"
-                )
+                format!("https://codeberg.org/{owner}/{repo}/src/commit/{sha}/{path}")
             }
             CodeHost::Gitea | CodeHost::Forgejo => {
                 // Gitea/Forgejo permalink uses the browser URL pattern with commit SHA.
@@ -1437,9 +1437,7 @@ pub async fn run_repo_fetch(
             }
             CodeHost::Codeberg => {
                 // Codeberg raw permalink uses the raw URL pattern with commit SHA.
-                format!(
-                    "https://codeberg.org/{owner}/{repo}/raw/commit/{sha}/{path}"
-                )
+                format!("https://codeberg.org/{owner}/{repo}/raw/commit/{sha}/{path}")
             }
             CodeHost::Gitea | CodeHost::Forgejo => {
                 // Gitea/Forgejo raw permalink uses the raw URL pattern with commit SHA.
@@ -2613,9 +2611,7 @@ fn mode_str(mode: Mode) -> &'static str {
 /// Run the `build_evidence_bundle` tool. Packages already-selected
 /// evidence from search and fetch responses into a deterministic,
 /// non-summarizing bundle for multi-agent handoff.
-pub fn run_build_evidence_bundle(
-    args: EvidenceBundleArgs,
-) -> Result<serde_json::Value, String> {
+pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json::Value, String> {
     use crate::core::evidence_bundle::EvidenceBundleRequest;
 
     if args.sources.is_empty() && args.fetches.is_empty() {
@@ -2638,8 +2634,7 @@ pub fn run_build_evidence_bundle(
 
     let bundle = crate::meta::evidence_bundle::build_evidence_bundle(request);
 
-    let value = serde_json::to_value(&bundle)
-        .map_err(|e| format!("serialization error: {e}"))?;
+    let value = serde_json::to_value(&bundle).map_err(|e| format!("serialization error: {e}"))?;
     Ok(value)
 }
 
