@@ -10,9 +10,8 @@
 //!
 //! - Server `initialize` returns the documented server info and
 //!   capabilities.
-//! - `tools/list` returns exactly `web_search`, `web_fetch`, and
-//!   `provider_status` and never returns the legacy `local_search` or
-//!   `search_and_fetch` tools.
+//! - `tools/list` returns the ten stable MCP tools and never returns
+//!   the legacy `local_search` or `search_and_fetch` tools.
 //! - `web_search` happy path returns a structured payload with
 //!   deduplicated cards and the documented trust label.
 //! - `web_search` with an empty / whitespace-only query returns a
@@ -703,6 +702,42 @@ async fn web_fetch_tool_listed() {
         tool_names.contains(&"web_fetch".to_string()),
         "web_fetch should be in tools list: {:?}",
         tool_names
+    );
+}
+
+#[tokio::test]
+#[cfg(feature = "mock")]
+async fn all_ten_stable_tools_registered() {
+    let state = state_with_default();
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let tools = server.tool_definitions();
+    let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+
+    let expected = [
+        "web_search",
+        "web_fetch",
+        "batch_fetch",
+        "provider_status",
+        "repo_search",
+        "repo_fetch",
+        "repo_map",
+        "security_search",
+        "research_search",
+        "build_evidence_bundle",
+    ];
+
+    for name in &expected {
+        assert!(
+            names.contains(&name.to_string()),
+            "stable tool `{name}` not found in tool_definitions(); registered tools: {names:?}"
+        );
+    }
+    assert_eq!(
+        names.len(),
+        expected.len(),
+        "expected exactly {} stable tools, got {}: {names:?}",
+        expected.len(),
+        names.len()
     );
 }
 

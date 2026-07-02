@@ -85,7 +85,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "repo_search",
-        description = "Structured repository evidence discovery. Returns grouped source-card bundles for a codebase: official docs, package registry, repository, README, examples, source files, issues, pull requests, releases, migration notes, and suggested fetches. Use this when you need organized repository context rather than a flat search result list."
+        description = "Structured repository evidence discovery. Returns grouped source-card bundles for a codebase: official docs, package registry, repository, README, examples, source files, issues, pull requests, releases, migration notes, and suggested fetches. Use `profile` to bias providers: 'coding' for code issues releases, 'security' for advisories, 'research' for diverse sources. Use `mode: 'exact_error'` when the query is a literal compiler/runtime error message. Use `package`+`ecosystem`+`version` for package-aware search with registry resolution. Use `include_local: false` to exclude local workspace files. A query is not required when repo locator fields are provided."
     )]
     async fn repo_search(
         &self,
@@ -136,7 +136,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "security_search",
-        description = "Security vulnerability and advisory search. Returns grouped source-card bundles for vulnerabilities, advisories, exploits, and defensive guidance. Supports CVE, GHSA, RustSec, and OSV identifiers. Use `intent: security` in web_search as a simpler alternative. Use this tool when you need structured security vulnerability context with authoritative advisory sources, exploit discussion, and defensive guidance grouped by category."
+        description = "Security vulnerability and advisory search. Returns grouped source-card bundles for vulnerabilities, advisories, exploits, and defensive guidance. Supports CVE, GHSA, RustSec, and OSV identifiers. Use `assess_applicability` with package+version to compare advisory ranges against your versions (metadata comparison only, not runtime analysis). Use `dependency_files` to parse lock files (Cargo.lock, package-lock.json, go.mod, etc.) for applicability. Use `intent: security` in web_search as a simpler alternative for generic security queries."
     )]
     async fn security_search(
         &self,
@@ -153,7 +153,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "research_search",
-        description = "Research-oriented multi-source evidence discovery. Returns grouped source-card bundles with subquery transparency, evidence-quality classification, and suggested fetches. Use this for complex architectural or technical questions where flat search is insufficient. Returns transparent bounded subqueries, grouped source candidates, suggested fetches ranked by information gain, and provider status. Does not synthesize answers or fetch pages automatically."
+        description = "Research-oriented multi-source evidence discovery. Returns grouped source-card bundles with subquery transparency, evidence-quality classification, and suggested fetches. Use for complex architectural or technical questions where flat search is insufficient. Use `workflow` for structured scaffolding (architecture_decision, library_comparison, migration_planning, security_review, performance_investigation, ecosystem_survey). Use `depth` to control subquery count: quick (~4), standard (~8), deep (~12). Use `compare_targets` with library_comparison workflow. Returns transparent bounded subqueries, grouped source candidates, suggested fetches ranked by information gain, and provider status. Does not synthesize answers or fetch pages automatically."
     )]
     async fn research_search(
         &self,

@@ -1779,7 +1779,7 @@ eggsearch/
     core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types, batch fetch types, code evidence metadata, repo map types
     fetch/               # HTTP fetch client and HTML extraction
     meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, repo mapping, bounded parallel subquery dispatch, provider health diagnostics, + vendored engines
-    mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, repo_fetch, repo_map, batch_fetch, security_search, research_search
+    mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, repo_fetch, repo_map, batch_fetch, security_search, research_search, build_evidence_bundle
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 

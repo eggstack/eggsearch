@@ -145,8 +145,15 @@ pub struct RepoSearchArgs {
     /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
-    /// Optional. Search profile for provider selection ("generic",
-    /// "coding", "security", "research").
+    /// Search profile for provider selection. "generic" (default): uses
+    /// configured default providers. "coding": prefers native code/issues/
+    /// releases providers (GitHub, GitLab, Gitea), falls back to generic
+    /// web if unavailable. "security": prefers OSV and security-capable
+    /// providers. "research": prefers diverse source discovery and broad
+    /// web/API providers. Profiles are advisory — unavailable providers
+    /// are skipped with warnings rather than failing. Use "coding" for
+    /// codebase-specific queries, "security" for vulnerability lookups,
+    /// "research" for multi-source evidence gathering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     /// Optional. Package ecosystem ("crates.io", "pypi", "npm", "go",
@@ -178,13 +185,22 @@ pub struct RepoSearchArgs {
     /// Optional. Include migration guide results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_migration_guides: Option<bool>,
-    /// Optional. Include local workspace results when available.
+    /// Include local workspace results when available. When true and
+    /// the server operator has configured [local] roots, the search
+    /// includes source files from local Git checkouts matching the
+    /// requested repo. Local results carry trust=local_trusted and
+    /// may have symbol-enriched metadata. Default true when local
+    /// backend is enabled. Set to false to exclude local files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_local: Option<bool>,
-    /// Optional. Search mode. "normal" (default) uses standard repo-search
-    /// subqueries. "exact_error" optimizes for compiler/runtime error messages
-    /// with phrase-preserving subqueries, error-code extraction, and sensitive
-    /// token redaction.
+    /// Search mode. "default" (or omitted) uses standard repo-search
+    /// subqueries for general codebase discovery. "exact_error" optimizes
+    /// for compiler/runtime/toolchain error messages: it preserves exact
+    /// error phrases, extracts error codes (Rust E0xxx, TSxxxx, Python
+    /// exceptions), targets docs/issues/changelogs, and redacts sensitive
+    /// tokens (local paths, API keys, UUIDs, memory addresses). Use
+    /// "exact_error" when the query is a literal error message you want
+    /// diagnosed; use "default" for everything else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
 }
@@ -244,10 +260,23 @@ pub struct SecuritySearchArgs {
     /// Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
-    /// Assess package/version applicability against found advisories.
+    /// When true, compare advisory affected/fixed version ranges against
+    /// the provided version (or versions parsed from dependency_files)
+    /// and return per-package applicability assessments. This is
+    /// metadata comparison only — it does NOT determine runtime
+    /// exploitability or reachability. Assessments have status
+    /// (affected/not_affected/unknown) and confidence (high/medium/
+    /// low). Always treat results as advisory metadata, not safety
+    /// guarantees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assess_applicability: Option<bool>,
     /// Local dependency file paths to parse for applicability assessment.
+    /// Supported: Cargo.lock, Cargo.toml, package-lock.json,
+    /// npm-shrinkwrap.json, go.mod, requirements.txt, requirements.in,
+    /// Gemfile.lock, composer.lock, pom.xml, .csproj (PackageReference),
+    /// .github/workflows/*.yml (uses: entries), Dockerfile,
+    /// docker-compose.yml (FROM/image:). Parsed entries feed into
+    /// version-range comparison when assess_applicability is true.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_files: Vec<String>,
 }
@@ -292,13 +321,24 @@ pub struct ResearchSearchArgs {
     /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
-    /// Optional. Research workflow type for structured scaffolding.
-    /// Values: "general", "architecture_decision", "api_evaluation",
-    /// "library_comparison", "migration_planning", "security_review",
-    /// "performance_investigation", "ecosystem_survey".
+    /// Research workflow type for structured scaffolding. "general":
+    /// default broad research. "architecture_decision": evaluates options
+    /// for a design choice. "api_evaluation": assesses an API for
+    /// adoption. "library_comparison": compares libraries side-by-side
+    /// (use with compare_targets). "migration_planning": plans version
+    /// or framework migrations. "security_review": security-focused
+    /// evidence gathering. "performance_investigation": performance
+    /// benchmarking and profiling context. "ecosystem_survey": maps a
+    /// technology ecosystem. Workflow sets deterministic source-type
+    /// and domain dimensions — the agent decides which suggested
+    /// fetches to act on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow: Option<String>,
-    /// Optional. Research depth: "quick", "standard", or "deep".
+    /// Research depth controlling subquery count. "quick": ~4 subqueries
+    /// for fast reconnaissance. "standard": ~8 subqueries for balanced
+    /// coverage. "deep": ~12 subqueries for thorough multi-source
+    /// discovery. Default "standard" when omitted. Deeper settings
+    /// produce more source diversity but take longer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<String>,
     /// Optional. Compare targets for library comparison workflows.

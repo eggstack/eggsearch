@@ -126,7 +126,7 @@ eggsearch/
     mcp/                 # MCP server (rmcp)
       mod.rs             # re-exports
       server.rs          # EggsearchServer, tool_router, EGGSEARCH_INSTRUCTIONS
-      tools.rs           # run_web_search, run_web_fetch, run_provider_status, run_batch_fetch, run_repo_map
+      tools.rs           # run_web_search, run_web_fetch, run_batch_fetch, run_provider_status, run_repo_search, run_repo_fetch, run_repo_map, run_security_search, run_research_search, run_build_evidence_bundle
       state.rs           # ServerState (Arc<AppConfig> + Arc<MetadataSearchAdapter>)
       policy.rs          # live_allowed, fetch_allowed, deny messages
   tests/integration.rs   # end-to-end tool tests with mock engines
