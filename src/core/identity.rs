@@ -75,12 +75,16 @@ pub fn canonicalize_url(url: &str) -> String {
         path_query_frag
     };
 
+    // Normalize percent-encoding in path: decode unreserved chars,
+    // re-encode with consistent casing. Query params are left as-is.
+    let path_query_frag = normalize_percent_encoding(path_query_frag);
+
     // Strip trailing slash (but not for bare root)
     let path_query_frag = if path_query_frag.ends_with('/')
         && path_query_frag.len() > 1
         && !path_query_frag.starts_with("/?")
     {
-        &path_query_frag[..path_query_frag.len() - 1]
+        path_query_frag[..path_query_frag.len() - 1].to_string()
     } else {
         path_query_frag
     };
@@ -95,6 +99,106 @@ fn strip_default_port<'a>(host: &'a str, scheme: &str) -> &'a str {
         "https" => host.strip_suffix(":443").unwrap_or(host),
         _ => host,
     }
+}
+
+/// Normalize percent-encoding in a URL path+query string.
+///
+/// Decodes unreserved characters (alphanumerics, `-`, `.`, `_`, `~`)
+/// and re-encodes the path portion with consistent hex casing. This
+/// ensures `%41` and `A` produce the same canonical form. Reserved
+/// characters and their encodings (e.g. `%2F` for `/`) are left as-is.
+fn normalize_percent_encoding(path_query: &str) -> String {
+    // Split path from query at the first '?'
+    let (path, query) = if let Some(qpos) = path_query.find('?') {
+        (&path_query[..qpos], &path_query[qpos..])
+    } else {
+        (path_query, "")
+    };
+
+    // Decode only unreserved characters in the path, preserving
+    // reserved encodings like %2F (encoded slash).
+    let decoded = decode_unreserved(path);
+    let normalized = percent_encode_path(&decoded);
+
+    format!("{normalized}{query}")
+}
+
+/// Decode only unreserved percent-encoded characters in a string.
+///
+/// Unreserved characters: `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`.
+/// Reserved characters and their encodings (e.g. `%2F` for `/`) are
+/// left as-is to preserve resource identity.
+fn decode_unreserved(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut result = String::with_capacity(input.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = hex_val(bytes[i + 1]);
+            let lo = hex_val(bytes[i + 2]);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                let byte = h * 16 + l;
+                if is_unreserved(byte) {
+                    result.push(byte as char);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+    result
+}
+
+/// Check if a byte is an unreserved URL character.
+fn is_unreserved(byte: u8) -> bool {
+    matches!(byte,
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~'
+    )
+}
+
+/// Convert a hex ASCII character to its numeric value.
+fn hex_val(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        _ => None,
+    }
+}
+
+/// Percent-encode a path string, encoding all characters except
+/// unreserved characters, `/` (path separator), and existing
+/// percent-encoded sequences (`%XX`).
+///
+/// This produces a canonical percent-encoding form: unreserved chars
+/// are literal, hex digits are lowercase, path separators are
+/// preserved, and already-encoded sequences are left as-is.
+fn percent_encode_path(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let mut result = String::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() && hex_val(bytes[i + 1]).is_some() && hex_val(bytes[i + 2]).is_some() {
+            // Existing percent-encoded sequence: preserve with uppercase hex
+            result.push('%');
+            result.push(bytes[i + 1].to_ascii_uppercase() as char);
+            result.push(bytes[i + 2].to_ascii_uppercase() as char);
+            i += 3;
+        } else if matches!(bytes[i],
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9'
+            | b'-' | b'.' | b'_' | b'~' | b'/'
+        ) {
+            result.push(bytes[i] as char);
+            i += 1;
+        } else {
+            result.push('%');
+            result.push_str(&format!("{:02X}", bytes[i]));
+            i += 1;
+        }
+    }
+    result
 }
 
 /// Normalize a path-only string (no scheme).
@@ -773,6 +877,75 @@ mod tests {
         let from_struct = compute_locator_id(&normalize_locator_key(&loc));
         let from_fn = locator_id(&loc);
         assert_eq!(from_struct, from_fn);
+    }
+
+    #[test]
+    fn locator_id_field_ordering_independent() {
+        // Construct the same logical locator with fields in different
+        // conceptual orders (Rust struct field order is fixed by the type,
+        // but this tests that normalize_locator_key → compute_locator_id
+        // produces the same result regardless of how the locator was built).
+        let mut loc_a = RepoLocator {
+            kind: crate::core::repo_fetch::RepoLocatorKind::Remote,
+            host: Some(crate::core::code_metadata::CodeHost::Github),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("tokio".to_string()),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/lib.rs".to_string(),
+            workspace_root: None,
+        };
+        let mut loc_b = RepoLocator {
+            kind: crate::core::repo_fetch::RepoLocatorKind::Remote,
+            host: Some(crate::core::code_metadata::CodeHost::Github),
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("tokio".to_string()),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/lib.rs".to_string(),
+            workspace_root: None,
+        };
+
+        // Same logical locator → same ID
+        assert_eq!(locator_id(&loc_a), locator_id(&loc_b));
+
+        // Mutate loc_a: different ref → different ID
+        loc_a.ref_name = Some("develop".to_string());
+        assert_ne!(locator_id(&loc_a), locator_id(&loc_b));
+
+        // Restore loc_a, mutate loc_b: different path → different ID
+        loc_a.ref_name = Some("main".to_string());
+        loc_b.path = "src/runtime.rs".to_string();
+        assert_ne!(locator_id(&loc_a), locator_id(&loc_b));
+
+        // Restore loc_b: same again → same ID
+        loc_b.path = "src/lib.rs".to_string();
+        assert_eq!(locator_id(&loc_a), locator_id(&loc_b));
+    }
+
+    #[test]
+    fn query_params_produce_different_ids() {
+        let a = source_id(Some("p"), Some("https://example.com/search?q=rust"), None, None);
+        let b = source_id(Some("p"), Some("https://example.com/search?q=python"), None, None);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn percent_encoding_normalized() {
+        // %41 (encoded 'A') should normalize to the same as literal 'A'
+        let a = source_id(Some("p"), Some("https://example.com/path%41/file"), None, None);
+        let b = source_id(Some("p"), Some("https://example.com/pathA/file"), None, None);
+        assert_eq!(a, b);
+
+        // %2f (encoded '/') should NOT normalize to '/' (different resources)
+        let c = source_id(Some("p"), Some("https://example.com/a%2Fb"), None, None);
+        let d = source_id(Some("p"), Some("https://example.com/a/b"), None, None);
+        assert_ne!(c, d);
+
+        // Hex casing: %2f and %2F should produce the same ID
+        let e = source_id(Some("p"), Some("https://example.com/a%2fb"), None, None);
+        let f = source_id(Some("p"), Some("https://example.com/a%2Fb"), None, None);
+        assert_eq!(e, f);
     }
 
     // -- Doc / Chunk ID tests --

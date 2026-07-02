@@ -2263,6 +2263,7 @@ fn make_batch_fetch_future(
     >,
 > {
     use crate::core::batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResult};
+    use crate::core::identity::batch_fetch_id;
 
     match item {
         BatchFetchItem::Web {
@@ -2271,6 +2272,7 @@ fn make_batch_fetch_future(
             include_links,
             max_chars,
         } => {
+            let stable_id = batch_fetch_id(&label, i);
             let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
             let em = effective_max.max(1);
             let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
@@ -2282,6 +2284,7 @@ fn make_batch_fetch_future(
                     .await
                     .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
                 let response = client.fetch(&url, Some(em), mode, il).await;
+                let ok_label = label.clone();
                 match response {
                     Ok(resp) => {
                         let text_len = resp
@@ -2313,8 +2316,8 @@ fn make_batch_fetch_future(
                         Ok(BatchFetchResult {
                             index: i,
                             item_type: BatchFetchItemType::Web,
-                            label,
-                            stable_id: None,
+                            label: ok_label,
+                            stable_id: Some(stable_id),
                             ok: true,
                             response: Some(payload),
                             error: None,
@@ -2326,7 +2329,7 @@ fn make_batch_fetch_future(
                         index: i,
                         item_type: BatchFetchItemType::Web,
                         label,
-                        stable_id: None,
+                        stable_id: Some(stable_id),
                         ok: false,
                         response: None,
                         error: Some(format!("{}: {}", e.error_code(), e)),
@@ -2349,6 +2352,7 @@ fn make_batch_fetch_future(
             context_after,
             max_chars,
         } => {
+            let stable_id = batch_fetch_id(&label, i);
             let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
             let repo_args = RepoFetchArgs {
                 host: host.clone(),
@@ -2372,6 +2376,7 @@ fn make_batch_fetch_future(
                 prefer_local: None,
             };
             Box::pin(async move {
+                let ok_label = label.clone();
                 let _permit = semaphore
                     .acquire_owned()
                     .await
@@ -2390,8 +2395,8 @@ fn make_batch_fetch_future(
                         Ok(BatchFetchResult {
                             index: i,
                             item_type: BatchFetchItemType::Repo,
-                            label,
-                            stable_id: None,
+                            label: ok_label,
+                            stable_id: Some(stable_id),
                             ok: true,
                             response: Some(payload),
                             error: None,
@@ -2399,17 +2404,20 @@ fn make_batch_fetch_future(
                             truncated,
                         })
                     }
-                    Err(e) => Ok(BatchFetchResult {
-                        index: i,
-                        item_type: BatchFetchItemType::Repo,
-                        label,
-                        stable_id: None,
-                        ok: false,
-                        response: None,
-                        error: Some(e.to_string()),
-                        chars_returned: 0,
-                        truncated: false,
-                    }),
+                    Err(e) => {
+                        let err_stable_id = batch_fetch_id(&label, i);
+                        Ok(BatchFetchResult {
+                            index: i,
+                            item_type: BatchFetchItemType::Repo,
+                            label,
+                            stable_id: Some(err_stable_id),
+                            ok: false,
+                            response: None,
+                            error: Some(e.to_string()),
+                            chars_returned: 0,
+                            truncated: false,
+                        })
+                    }
                 }
             })
         }

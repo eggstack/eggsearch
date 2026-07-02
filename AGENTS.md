@@ -451,9 +451,10 @@ and cross-reference evidence across tools without content comparison.
 
 **URL canonicalization:** `canonicalize_url()` normalizes URLs before
 hashing: lowercases scheme, strips `www.` prefix, removes default ports
-(`:80` for HTTP, `:443` for HTTPS), strips fragments, strips trailing
-slashes (except bare root `/`). This ensures trivial URL variations
-do not produce spurious ID differences.
+(`:80` for HTTP, `:443` for HTTPS), strips fragments, normalizes
+percent-encoding (decodes unreserved chars, normalizes hex casing),
+and strips trailing slashes (except bare root `/`). This ensures
+trivial URL variations do not produce spurious ID differences.
 
 **Hashing:** `DefaultHasher` (SipHash 1-3, stdlib). 64-bit output
 formatted as 16 hex chars. No external hashing dependencies.
