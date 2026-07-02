@@ -325,6 +325,12 @@ impl std::fmt::Debug for ProviderHealthRegistry {
 pub struct ProviderSkipReason {
     /// The provider id that was skipped.
     pub provider_id: String,
+    /// Machine-actionable reason code for programmatic handling.
+    /// Stable across versions — agents can match on these.
+    ///
+    /// Known codes: `"cooldown"`, `"not_built"`, `"unknown"`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reason_code: String,
     /// Human-readable reason for skipping.
     pub reason: String,
     /// The failure class if skipped due to a recent failure.
@@ -435,6 +441,7 @@ pub fn resolve_provider_routing(
                     let snapshot = health.snapshot(id, true, true);
                     skipped.push(ProviderSkipReason {
                         provider_id: id.clone(),
+                        reason_code: "cooldown".to_string(),
                         reason: format!(
                             "in cooldown after {}",
                             snapshot.cooldown_reason.unwrap_or_default()
@@ -449,6 +456,7 @@ pub fn resolve_provider_routing(
             } else {
                 skipped.push(ProviderSkipReason {
                     provider_id: id.clone(),
+                    reason_code: "not_built".to_string(),
                     reason: "provider not built (missing API key or not configured)".to_string(),
                     failure_class: None,
                     cooldown_until: None,
@@ -491,6 +499,7 @@ pub fn resolve_provider_routing(
                 let snapshot = health.snapshot(id, true, true);
                 skipped.push(ProviderSkipReason {
                     provider_id: id.clone(),
+                    reason_code: "cooldown".to_string(),
                     reason: format!(
                         "in cooldown after {}",
                         snapshot.cooldown_reason.unwrap_or_default()
@@ -1061,6 +1070,7 @@ mod tests {
             selected_providers: vec!["github_code".to_string()],
             skipped_providers: vec![ProviderSkipReason {
                 provider_id: "gitlab_code".to_string(),
+                reason_code: "not_built".to_string(),
                 reason: "not built".to_string(),
                 failure_class: None,
                 cooldown_until: None,

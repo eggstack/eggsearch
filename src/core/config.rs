@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::core::error::{CoreError, CoreResult};
-use crate::core::provider::KNOWN_PROVIDER_IDS;
+use crate::core::provider::{API_PROVIDER_IDS, KNOWN_PROVIDER_IDS};
 
 /// Server operating mode.
 #[derive(
@@ -625,23 +625,8 @@ impl AppConfig {
         }
 
         // API provider validation
-        let known_api: std::collections::BTreeSet<&str> = [
-            "brave_api",
-            "github_code",
-            "github_issues",
-            "github_releases",
-            "gitlab_code",
-            "gitlab_issues",
-            "gitlab_releases",
-            "gitea_code",
-            "gitea_issues",
-            "gitea_releases",
-            "osv",
-        ]
-        .into_iter()
-        .collect();
         for (id, api_cfg) in &self.search.api {
-            if !known_api.contains(id.as_str()) {
+            if !API_PROVIDER_IDS.contains(&id.as_str()) {
                 tracing::warn!(
                     api_provider_id = %id,
                     "unknown API provider id in [search].api; \
@@ -745,9 +730,15 @@ impl AppConfig {
 
         if self.search.mode == Mode::Live {
             let enabled_count = self.search.providers.values().filter(|v| **v).count();
-            if enabled_count == 0 {
+            let api_enabled_count = self
+                .search
+                .api
+                .values()
+                .filter(|c| c.enabled)
+                .count();
+            if enabled_count == 0 && api_enabled_count == 0 {
                 return Err(CoreError::Config(
-                    "[search].mode is 'live' but no providers are enabled in [search].providers"
+                    "[search].mode is 'live' but no providers are enabled in [search].providers or [search].api"
                         .to_string(),
                 ));
             }
@@ -1305,6 +1296,50 @@ mod tests {
         }
         // mode=off with no providers is fine - no search is attempted
         assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_allows_api_only_deployment_in_live_mode() {
+        use super::ApiProviderConfig;
+
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Live;
+        // Disable ALL traditional providers
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        // Enable an API provider so live mode is valid
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("BRAVE_API_KEY".to_string()),
+                base_url: None,
+            },
+        );
+        // Setting env var so validation passes
+        std::env::set_var("BRAVE_API_KEY", "test_key");
+        assert!(
+            c.validate().is_ok(),
+            "API-only deployment should be valid in live mode"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_live_mode_no_providers_no_api() {
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Live;
+        // Disable ALL providers
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        let err = c.validate().expect_err("expected no-providers failure");
+        assert!(
+            err.to_string().contains("[search].providers or [search].api"),
+            "got: {err}"
+        );
     }
 
     #[test]

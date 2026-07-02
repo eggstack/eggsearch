@@ -421,6 +421,11 @@ impl MetadataSearchAdapter {
     /// Per-provider status report. Includes both enabled providers in
     /// this adapter and the full set of known provider ids, so callers
     /// can see what is available vs. what is enabled.
+    ///
+    /// API-key providers (e.g. `github_code`, `brave_api`) are emitted
+    /// from the [`api_configured`](Self::api_configured) map so their
+    /// `configured` flag reflects the actual runtime env-var check,
+    /// not a hardcoded `true`.
     pub fn provider_status(&self) -> Vec<ProviderDescriptor> {
         let enabled: std::collections::BTreeSet<&str> =
             self.provider_ids.iter().map(|s| s.as_str()).collect();
@@ -433,17 +438,26 @@ impl MetadataSearchAdapter {
                 let is_default = defaults.contains(id);
                 let configured = if *id == "searxng" {
                     self.searxng_configured
+                } else if let Some(&cfg) = self.api_configured.get(*id) {
+                    // API-key providers: use the env-var-based
+                    // configured flag from the api_configured map.
+                    cfg
                 } else {
-                    // HTML scrape providers are always "configured"
-                    // when known (no extra setup needed).
+                    // HTML scrape and other known providers are
+                    // always "configured" when known.
                     true
                 };
                 built_in_provider_descriptor(id, is_enabled, is_default, configured)
             })
             .collect();
 
-        // Append API provider descriptors
+        // Emit any API provider descriptors from the api_configured
+        // map that are NOT in KNOWN_PROVIDER_IDS (unknown providers
+        // configured by the operator).
         for (id, &configured) in &self.api_configured {
+            if KNOWN_PROVIDER_IDS.contains(&id.as_str()) {
+                continue;
+            }
             let is_enabled = enabled.contains(id.as_str());
             let is_default = defaults.contains(id.as_str());
             if let Some(desc) = built_in_provider_descriptor(id, is_enabled, is_default, configured)

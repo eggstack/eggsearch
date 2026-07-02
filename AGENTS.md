@@ -184,6 +184,8 @@ eggsearch/
 - `ProviderCapabilities` struct: 16 boolean flags for search option support
 - `ProviderDescriptor` struct: full provider metadata (id, display_name, kind, enabled, default, requires_api_key, configured, capabilities)
 - Known provider IDs: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`, `brave_api`, `github_code`, `github_issues`, `github_releases`, `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`, `gitea_issues`, `gitea_releases`, `osv`, `local_workspace`
+- `API_PROVIDER_IDS` constant: canonical set of API-key provider IDs (`brave_api`, `github_code`, `github_issues`, `github_releases`, `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`, `gitea_issues`, `gitea_releases`)
+- `is_api_provider(id)` helper: returns `true` if `id` is in `API_PROVIDER_IDS`
 - `built_in_provider_descriptor()` returns descriptors for all known providers
 - `MetadataSearchAdapter::provider_status()` returns `Vec<ProviderDescriptor>`
 - `resolve_providers()` validates explicit provider lists with distinct errors for disabled vs unknown providers
@@ -255,8 +257,9 @@ eggsearch/
 - Every search tool response includes a `routing_decision` field
   (or nested in `telemetry`) with the provider routing decision.
 - The routing decision tracks: requested profile, explicit providers,
-  selected providers, skipped providers (with reasons), degraded
-  status, partial status, and a human-readable reason.
+  selected providers, skipped providers (with reasons and stable
+  `reason_code` strings), degraded status, partial status, and a
+  human-readable reason.
 - Agents can inspect `routing_decision` to understand why certain
   providers were selected or skipped.
 
@@ -269,11 +272,13 @@ eggsearch/
     "skipped_providers": [
       {
         "provider_id": "github_code",
-        "reason": "provider not built (missing API key or not configured)"
+        "reason": "provider not built (missing API key or not configured)",
+        "reason_code": "not_built"
       },
       {
         "provider_id": "gitlab_code",
         "reason": "in cooldown after rate limited",
+        "reason_code": "cooldown",
         "failure_class": "rate_limited",
         "cooldown_until": "42s"
       }

@@ -31,6 +31,26 @@ pub const KNOWN_PROVIDER_IDS: &[&str] = &[
     "local_workspace",
 ];
 
+/// Provider ids that require an operator-supplied API key via
+/// `[search].api.<id>.api_key_env`.
+pub const API_PROVIDER_IDS: &[&str] = &[
+    "brave_api",
+    "github_code",
+    "github_issues",
+    "github_releases",
+    "gitlab_code",
+    "gitlab_issues",
+    "gitlab_releases",
+    "gitea_code",
+    "gitea_issues",
+    "gitea_releases",
+];
+
+/// Returns `true` if `id` is a known API-key provider.
+pub fn is_api_provider(id: &str) -> bool {
+    API_PROVIDER_IDS.contains(&id)
+}
+
 /// Whether the provider scrapes HTML or speaks a JSON API, or
 /// requires an API key.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -1015,5 +1035,46 @@ mod tests {
                 "{id} should not claim security search"
             );
         }
+    }
+
+    #[test]
+    fn api_provider_ids_are_all_known() {
+        for id in API_PROVIDER_IDS {
+            assert!(
+                KNOWN_PROVIDER_IDS.contains(id),
+                "API_PROVIDER_IDS entry {id} must also be in KNOWN_PROVIDER_IDS"
+            );
+        }
+    }
+
+    #[test]
+    fn api_provider_ids_match_requires_api_key() {
+        for id in API_PROVIDER_IDS {
+            let desc =
+                built_in_provider_descriptor(id, true, false, true).expect("known API provider");
+            assert!(
+                desc.requires_api_key,
+                "API_PROVIDER_IDS entry {id} should have requires_api_key=true"
+            );
+        }
+    }
+
+    #[test]
+    fn is_api_provider_matches_api_provider_ids() {
+        for id in KNOWN_PROVIDER_IDS {
+            assert_eq!(
+                is_api_provider(id),
+                API_PROVIDER_IDS.contains(id),
+                "is_api_provider({id}) should match API_PROVIDER_IDS membership"
+            );
+        }
+    }
+
+    #[test]
+    fn non_api_provider_returns_false() {
+        assert!(!is_api_provider("duckduckgo"));
+        assert!(!is_api_provider("searxng"));
+        assert!(!is_api_provider("local_workspace"));
+        assert!(!is_api_provider("nonexistent"));
     }
 }
