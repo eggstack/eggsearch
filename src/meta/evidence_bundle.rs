@@ -104,6 +104,7 @@ pub fn build_evidence_bundle(request: EvidenceBundleRequest) -> EvidenceBundle {
         trust_summary,
         provider_summary,
         gaps,
+        structured_warnings: crate::core::warning::convert_warnings(&request.warnings),
         warnings: request.warnings,
         limits,
     }

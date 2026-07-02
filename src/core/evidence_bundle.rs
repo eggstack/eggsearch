@@ -285,6 +285,9 @@ pub struct EvidenceBundle {
     /// Warnings carried over from search/fetch responses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<SearchWarning>,
+    /// Structured warnings with stable codes and severity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
     /// Limits that were applied to this bundle.
     pub limits: EvidenceBundleLimits,
 }

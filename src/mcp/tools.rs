@@ -1299,6 +1299,13 @@ pub async fn run_web_fetch(
             // the standard "untrusted" warning. Pass them through
             // unchanged; the marker warnings sit visibly between the
             // extractor warnings and the untrusted advisory.
+            let mut structured = crate::core::warning::convert_fetch_warnings(&resp.warnings);
+            if resp.links_truncated {
+                structured.push(crate::core::warning::AgentWarning::new(
+                    crate::core::warning::WarningCode::FetchLinksTruncated,
+                    "link list was truncated; not all links are included".to_string(),
+                ));
+            }
             let payload = serde_json::json!({
                 "url": resp.url,
                 "final_url": resp.final_url,
@@ -1318,6 +1325,7 @@ pub async fn run_web_fetch(
                     .unwrap_or(serde_json::json!({})),
                 "document": resp.document,
                 "fetch_transform": resp.fetch_transform,
+                "structured_warnings": structured,
             });
             Ok(payload)
         }
@@ -1745,6 +1753,7 @@ pub async fn run_repo_fetch(
                 lines: sliced_lines,
                 document: resp.document,
                 truncated,
+                structured_warnings: crate::core::warning::convert_fetch_warnings(&warnings),
                 warnings,
                 trust: FetchTrust::ExternalUntrusted,
                 trust_markers,
@@ -2213,6 +2222,7 @@ pub async fn run_batch_fetch(
         truncated,
         total_chars_returned: total_chars,
         results,
+        structured_warnings: crate::core::warning::convert_fetch_warnings(&warnings),
         warnings,
     };
 
@@ -2647,6 +2657,7 @@ async fn run_workspace_fetch(
         lines: clamped_lines,
         document: None,
         truncated,
+        structured_warnings: crate::core::warning::convert_fetch_warnings(&warnings),
         warnings,
         trust: FetchTrust::LocalTrusted,
         trust_markers,
@@ -2782,6 +2793,7 @@ pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json:
 mod tests {
     use super::*;
     use crate::core::config::AppConfig;
+    use crate::core::fetch::ExtractMode;
     use crate::core::sanitize::TrustMarkers;
     use crate::mcp::state::ServerState;
     use std::sync::Arc;
@@ -2946,5 +2958,109 @@ mod tests {
             }
             _ => {}
         }
+    }
+
+    #[tokio::test]
+    async fn web_search_structured_warnings_safe_search_unenforced() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = WebSearchArgs {
+            query: "test".to_string(),
+            max_results: Some(3),
+            providers: vec![],
+            safe_search: Some(crate::core::SafeSearch::Strict),
+            timeout_ms: None,
+            intent: None,
+            freshness: None,
+        };
+
+        let value = run_web_search(state, args).await.unwrap();
+        let sw = value
+            .get("structured_warnings")
+            .expect("structured_warnings should be present");
+        let arr = sw.as_array().expect("structured_warnings should be array");
+        assert!(
+            arr.iter().any(|w| w["code"] == "safe_search_unenforced"),
+            "should contain safe_search_unenforced code: {arr:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_search_structured_warnings_present_alongside_legacy() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = WebSearchArgs {
+            query: "test".to_string(),
+            max_results: Some(3),
+            providers: vec![],
+            safe_search: Some(crate::core::SafeSearch::Strict),
+            timeout_ms: None,
+            intent: None,
+            freshness: None,
+        };
+
+        let value = run_web_search(state, args).await.unwrap();
+        // Both legacy and structured warnings must be present.
+        assert!(
+            value.get("warnings").is_some(),
+            "legacy warnings must be present"
+        );
+        assert!(
+            value.get("structured_warnings").is_some(),
+            "structured_warnings must be present"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_search_structured_warnings_empty_for_clean_search() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+
+        let args = WebSearchArgs {
+            query: "test".to_string(),
+            max_results: Some(3),
+            providers: vec![],
+            safe_search: None,
+            timeout_ms: None,
+            intent: None,
+            freshness: None,
+        };
+
+        let value = run_web_search(state, args).await.unwrap();
+        let sw = value
+            .get("structured_warnings")
+            .expect("structured_warnings field");
+        let arr = sw.as_array().unwrap();
+        // Clean search should not have capability-enforcement warnings.
+        // The generic_context_untrusted advisory is always present.
+        assert!(
+            !arr.iter().any(|w| w["code"] == "safe_search_unenforced"),
+            "clean search should not have safe_search_unenforced: {arr:?}"
+        );
+        assert!(
+            !arr.iter().any(|w| w["code"] == "freshness_unenforced"),
+            "clean search should not have freshness_unenforced: {arr:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_fetch_structured_warnings_present() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+        let args = WebFetchArgs {
+            url: "https://httpbin.org/get".to_string(),
+            max_chars: Some(1000),
+            timeout_ms: None,
+            extract_mode: Some(ExtractMode::Text),
+            include_links: Some(false),
+        };
+        let value = run_web_fetch(state, args).await.unwrap();
+        // structured_warnings must always be in the payload (even if empty).
+        assert!(
+            value.get("structured_warnings").is_some(),
+            "web_fetch response must always include structured_warnings"
+        );
     }
 }

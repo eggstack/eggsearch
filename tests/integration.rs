@@ -4579,6 +4579,7 @@ fn web_fetch_response_includes_fetch_transform_field() {
             transformed_url: "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs"
                 .to_string(),
         }),
+        structured_warnings: vec![],
     };
     let json = serde_json::to_value(&resp).unwrap();
     let ft = json
@@ -4611,6 +4612,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         trust_markers: eggsearch::core::TrustMarkers::default(),
         document: None,
         fetch_transform: None,
+        structured_warnings: vec![],
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(

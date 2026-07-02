@@ -196,6 +196,9 @@ pub struct WebFetchResponse {
     /// Present only for code-host fetches; absent for normal URLs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fetch_transform: Option<FetchTransform>,
+    /// Structured warnings with stable codes and severity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
 }
 
 impl WebFetchResponse {

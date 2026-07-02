@@ -217,6 +217,9 @@ pub struct RepoFetchResponse {
     /// Warning messages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// Structured warnings with stable codes and severity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
     /// Trust label for the fetched content.
     pub trust: FetchTrust,
     /// Trust markers describing what sanitization was applied.

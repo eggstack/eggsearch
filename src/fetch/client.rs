@@ -417,6 +417,7 @@ impl FetchClient {
                         chunks: Vec::new(),
                     }),
                     fetch_transform: None,
+                    structured_warnings: Vec::new(),
                 });
             }
 
@@ -492,6 +493,7 @@ impl FetchClient {
                 trust_markers,
                 document: Some(pdf_result.document),
                 fetch_transform: None,
+                structured_warnings: Vec::new(),
             });
         }
 
@@ -816,6 +818,7 @@ impl FetchClient {
             trust_markers,
             document,
             fetch_transform,
+            structured_warnings: Vec::new(),
         })
     }
 }

@@ -231,7 +231,7 @@ compatibility.
 
 **Core types** (in `src/core/warning.rs`):
 
-- `WarningCode` enum: 53 stable `snake_case` variants covering
+- `WarningCode` enum: 56 stable `snake_case` variants covering
   trust/sanitization, capability enforcement, native provider
   availability, provider status, profile/routing, local workspace,
   fetch, request/dispatch, security, package resolution, repo map,
@@ -251,6 +251,8 @@ compatibility.
   to `AgentWarning` by prefix-matching against 37 known patterns and
   `[error_class] message` format for provider failures.
 - `convert_warnings()`: batch conversion preserving order.
+- `convert_fetch_warnings()`: converts fetch-layer `Vec<String>` warnings
+  to `Vec<AgentWarning>` by prefix-matching known fetch warning patterns.
 
 **Response types with `structured_warnings`:**
 - `RepoSearchResponse`: populated from `convert_warnings()` in adapter,
@@ -259,6 +261,14 @@ compatibility.
 - `ResearchSearchResponse`: populated from `convert_warnings()` in adapter.
 - `web_search` (manual JSON): built from adapter warnings + per-card
   injection warnings + generic_context_untrusted + safe_search_unenforced.
+- `web_fetch` (manual JSON): built from fetch-layer string warnings via
+  `convert_fetch_warnings()` + links_truncated advisory.
+- `repo_fetch` (struct serialization): populated from
+  `convert_fetch_warnings(&warnings)`.
+- `batch_fetch` (struct serialization): populated from
+  `convert_fetch_warnings(&warnings)`.
+- `build_evidence_bundle` (struct serialization): populated from
+  `convert_warnings()` on input search warnings.
 
 **Agent guidance:**
 - Inspect `structured_warnings[*].code` for programmatic handling

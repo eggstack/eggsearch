@@ -138,6 +138,9 @@ pub struct BatchFetchResponse {
     /// Batch-level warnings (e.g. budget exhaustion, partial failure).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// Structured warnings with stable codes and severity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
 }
 
 #[cfg(test)]
