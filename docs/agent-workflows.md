@@ -16,8 +16,7 @@ Recommended tool call sequences for common agent tasks.
   "host": "github",
   "owner": "tokio-rs",
   "repo": "axum",
-  "profile": "coding",
-  "intent": "code"
+  "profile": "coding"
 }
 
 // Step 3: Fetch the specific file
@@ -71,13 +70,13 @@ Recommended tool call sequences for common agent tasks.
 // Use research_search with workflow scaffolding
 {
   "query": "axum vs actix-web for high-performance REST API",
-  "research_domain": "SoftwareArchitecture",
+  "research_domain": "software_architecture",
   "workflow": "library_comparison",
   "depth": "standard",
   "compare_targets": ["axum", "actix-web"],
   "include_counterpoints": true,
   "include_primary_sources": true,
-  "include_benchmarks": true
+  "desired_source_types": ["benchmarks"]
 }
 ```
 
@@ -97,6 +96,9 @@ Recommended tool call sequences for common agent tasks.
 // repo_fetch on relevant source files
 
 // Step 3: Bundle evidence for handoff
+// NOTE: sources and fetches are Vec<EvidenceSourceInput> / Vec<EvidenceFetchInput>
+// with specific fields (id, url, title, snippet, metadata, etc.) — see README
+// for full shapes. These placeholders show the call structure only.
 {
   "goal": "rate limiting middleware implementation options",
   "sources": ["<SourceCards from step 1>"],

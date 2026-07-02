@@ -428,21 +428,24 @@ pub use super::identity::source_id as compute_source_id;
 pub use super::identity::fetch_id as compute_fetch_id;
 
 /// Deterministic bundle ID from canonicalized content.
+///
+/// Uses FNV-1a 64-bit with a versioned `bundle` entity prefix for
+/// consistency with the identity module.
 pub fn compute_bundle_id(
     goal: Option<&str>,
     source_ids: &[String],
     fetch_ids: &[String],
 ) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use super::identity::{entity_prefix, write_str, FnvHasher};
 
-    let mut hasher = DefaultHasher::new();
-    goal.unwrap_or("").hash(&mut hasher);
+    let mut hasher = FnvHasher::new();
+    hasher.write(&entity_prefix("bundle"));
+    write_str(&mut hasher, goal.unwrap_or(""));
     for id in source_ids {
-        id.hash(&mut hasher);
+        write_str(&mut hasher, id);
     }
     for id in fetch_ids {
-        id.hash(&mut hasher);
+        write_str(&mut hasher, id);
     }
     format!("bundle_{:016x}", hasher.finish())
 }
@@ -593,6 +596,14 @@ mod tests {
             Some("world"),
         );
         assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn bundle_id_golden() {
+        let sources = vec!["src_aaa".to_string(), "src_bbb".to_string()];
+        let fetches = vec!["fetch_ccc".to_string()];
+        let id = compute_bundle_id(Some("debug error"), &sources, &fetches);
+        assert_eq!(id, "bundle_06e191277c02e672");
     }
 
     #[test]

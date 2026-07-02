@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 /// Stable machine-readable warning code. Each variant maps to a
 /// specific, documented condition. The serialized form is
 /// `snake_case` and must never change.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum WarningCode {
     // --- Trust / Sanitization ---
@@ -97,6 +99,12 @@ pub enum WarningCode {
     FetchContentTruncated,
     /// Link list was truncated (more than max_links links).
     FetchLinksTruncated,
+    /// Generic fetch-layer warning not matching a known prefix.
+    FetchWarning,
+
+    // --- Unclassified ---
+    /// Generic unclassified search warning not matching a known prefix.
+    UnknownWarning,
 
     // --- Request / Dispatch ---
     /// Request deadline exceeded; partial results returned.
@@ -192,6 +200,8 @@ impl WarningCode {
             Self::LocalSearchTruncated => "local_search_truncated",
             Self::FetchContentTruncated => "fetch_content_truncated",
             Self::FetchLinksTruncated => "fetch_links_truncated",
+            Self::FetchWarning => "fetch_warning",
+            Self::UnknownWarning => "unknown_warning",
             Self::RequestDeadlineExceeded => "request_deadline_exceeded",
             Self::SubqueryCapApplied => "subquery_cap_applied",
             Self::KevMatch => "kev_match",
@@ -252,6 +262,8 @@ impl WarningCode {
             | Self::LocalSearchTruncated
             | Self::FetchContentTruncated
             | Self::FetchLinksTruncated
+            | Self::FetchWarning
+            | Self::UnknownWarning
             | Self::RequestDeadlineExceeded
             | Self::SubqueryCapApplied
             | Self::KevAbsentNotProof
@@ -353,13 +365,31 @@ impl WarningCode {
             Self::NoNativeTreeProvider => {
                 Some("No native tree API; results from search-based discovery.")
             }
+            Self::FetchWarning => {
+                Some("Fetch-layer warning; review the original message for details.")
+            }
+            Self::UnknownWarning => {
+                Some("Unclassified warning; review the original message for details.")
+            }
             _ => None,
         }
     }
 }
 
 /// Severity level for structured warnings.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum WarningSeverity {
     /// Informational — no action required.
@@ -615,19 +645,13 @@ const KNOWN_PREFIXES: &[(&str, WarningCode)] = &[
         WarningCode::LocalRepoStateUnknown,
     ),
     ("local_search_timeout", WarningCode::LocalSearchTimeout),
-    (
-        "local_search_truncated",
-        WarningCode::LocalSearchTruncated,
-    ),
+    ("local_search_truncated", WarningCode::LocalSearchTruncated),
     (
         "request_deadline_exceeded",
         WarningCode::RequestDeadlineExceeded,
     ),
     ("kev_match", WarningCode::KevMatch),
-    (
-        "kev_absent_not_proof",
-        WarningCode::KevAbsentNotProof,
-    ),
+    ("kev_absent_not_proof", WarningCode::KevAbsentNotProof),
     ("kev_lookup_failed", WarningCode::KevLookupFailed),
     ("kev_lookup_skipped", WarningCode::KevLookupSkipped),
     ("severity_unavailable", WarningCode::SeverityUnavailable),
@@ -660,10 +684,7 @@ const KNOWN_PREFIXES: &[(&str, WarningCode)] = &[
         "package_resolution_fallback",
         WarningCode::PackageResolutionFallback,
     ),
-    (
-        "no_native_tree_provider",
-        WarningCode::NoNativeTreeProvider,
-    ),
+    ("no_native_tree_provider", WarningCode::NoNativeTreeProvider),
     (
         "provider_resolution_failed",
         WarningCode::ProviderResolutionFailed,
@@ -720,7 +741,7 @@ pub fn search_warning_to_agent_warning(sw: &super::SearchWarning) -> AgentWarnin
     }
 
     // Fallback: generic warning.
-    let mut w = AgentWarning::new(WarningCode::ProviderFailed, msg.clone());
+    let mut w = AgentWarning::new(WarningCode::UnknownWarning, msg.clone());
     if sw.provider_id != "_system" {
         w.provider_ids = vec![sw.provider_id.clone()];
     }
@@ -744,10 +765,7 @@ const FETCH_WARNING_PREFIXES: &[(&str, WarningCode)] = &[
         "fetch_content_truncated",
         WarningCode::FetchContentTruncated,
     ),
-    (
-        "fetch_links_truncated",
-        WarningCode::FetchLinksTruncated,
-    ),
+    ("fetch_links_truncated", WarningCode::FetchLinksTruncated),
     (
         "batch_item_count_truncated",
         WarningCode::FetchContentTruncated,
@@ -784,7 +802,7 @@ pub fn convert_fetch_warnings(warnings: &[String]) -> Vec<AgentWarning> {
                 }
             }
             // Fallback: generic warning.
-            AgentWarning::new(WarningCode::ProviderFailed, msg.clone())
+            AgentWarning::new(WarningCode::FetchWarning, msg.clone())
         })
         .collect()
 }
@@ -882,6 +900,8 @@ mod tests {
             WarningCode::EmptyResultGroup,
             WarningCode::CardInjectionMarkerDetected,
             WarningCode::MaxResultsClamped,
+            WarningCode::FetchWarning,
+            WarningCode::UnknownWarning,
         ];
         for code in &codes {
             let s = code.as_str();
@@ -959,8 +979,7 @@ mod tests {
 
     #[test]
     fn agent_warning_serde_includes_populated_vectors() {
-        let w = AgentWarning::new(WarningCode::ProviderFailed, "err")
-            .with_provider_ids(["brave"]);
+        let w = AgentWarning::new(WarningCode::ProviderFailed, "err").with_provider_ids(["brave"]);
         let json = serde_json::to_string(&w).unwrap();
         assert!(json.contains("provider_ids"));
     }
@@ -996,14 +1015,8 @@ mod tests {
     #[test]
     fn warning_accumulator_preserves_different_codes() {
         let mut acc = WarningAccumulator::new();
-        acc.push(AgentWarning::new(
-            WarningCode::SafeSearchUnenforced,
-            "msg",
-        ));
-        acc.push(AgentWarning::new(
-            WarningCode::FreshnessUnenforced,
-            "msg",
-        ));
+        acc.push(AgentWarning::new(WarningCode::SafeSearchUnenforced, "msg"));
+        acc.push(AgentWarning::new(WarningCode::FreshnessUnenforced, "msg"));
         assert_eq!(acc.len(), 2);
     }
 
@@ -1015,7 +1028,10 @@ mod tests {
             WarningCode::UntrustedExternalContent,
             "second",
         ));
-        acc.push(AgentWarning::new(WarningCode::SafeSearchUnenforced, "third"));
+        acc.push(AgentWarning::new(
+            WarningCode::SafeSearchUnenforced,
+            "third",
+        ));
         let codes: Vec<_> = acc.warnings().iter().map(|w| w.code.clone()).collect();
         assert_eq!(
             codes,
@@ -1050,7 +1066,10 @@ mod tests {
         acc1.push(AgentWarning::new(WarningCode::ProviderFailed, "first"));
         let mut acc2 = WarningAccumulator::new();
         acc2.push(AgentWarning::new(WarningCode::ProviderFailed, "first"));
-        acc2.push(AgentWarning::new(WarningCode::SafeSearchUnenforced, "second"));
+        acc2.push(AgentWarning::new(
+            WarningCode::SafeSearchUnenforced,
+            "second",
+        ));
         acc1.extend(acc2);
         assert_eq!(acc1.len(), 2);
     }
@@ -1147,10 +1166,7 @@ mod tests {
 
     #[test]
     fn search_warning_to_agent_warning_provider_failure() {
-        let sw = SearchWarning::new(
-            "brave",
-            "[timeout] request timed out",
-        );
+        let sw = SearchWarning::new("brave", "[timeout] request timed out");
         let aw = search_warning_to_agent_warning(&sw);
         assert_eq!(aw.code, WarningCode::ProviderTimeout);
         assert_eq!(aw.provider_ids, vec!["brave"]);
@@ -1159,10 +1175,7 @@ mod tests {
 
     #[test]
     fn search_warning_to_agent_warning_rate_limited() {
-        let sw = SearchWarning::new(
-            "duckduckgo",
-            "[rate_limited] 429 Too Many Requests",
-        );
+        let sw = SearchWarning::new("duckduckgo", "[rate_limited] 429 Too Many Requests");
         let aw = search_warning_to_agent_warning(&sw);
         assert_eq!(aw.code, WarningCode::ProviderRateLimited);
         assert_eq!(aw.provider_ids, vec!["duckduckgo"]);
@@ -1170,12 +1183,9 @@ mod tests {
 
     #[test]
     fn search_warning_to_agent_warning_unknown_fallback() {
-        let sw = SearchWarning::new(
-            "brave",
-            "something unknown happened",
-        );
+        let sw = SearchWarning::new("brave", "something unknown happened");
         let aw = search_warning_to_agent_warning(&sw);
-        assert_eq!(aw.code, WarningCode::ProviderFailed);
+        assert_eq!(aw.code, WarningCode::UnknownWarning);
         assert_eq!(aw.provider_ids, vec!["brave"]);
     }
 
@@ -1232,5 +1242,74 @@ mod tests {
             acc.push(search_warning_to_agent_warning(sw));
         }
         assert_eq!(acc.len(), 1);
+    }
+
+    #[test]
+    fn convert_fetch_warnings_unrecognized_maps_to_fetch_warning() {
+        let warnings = vec!["some unknown fetch warning".to_string()];
+        let agent_warnings = convert_fetch_warnings(&warnings);
+        assert_eq!(agent_warnings.len(), 1);
+        assert_eq!(agent_warnings[0].code, WarningCode::FetchWarning);
+        assert_eq!(agent_warnings[0].message, "some unknown fetch warning");
+    }
+
+    #[test]
+    fn convert_fetch_warnings_recognized_maps_to_correct_code() {
+        let warnings = vec![
+            "fetch_content_truncated: capped at 12000 chars".to_string(),
+            "fetch_links_truncated: more than 100 links".to_string(),
+            "local_content_marker_warning: injection marker hit".to_string(),
+        ];
+        let agent_warnings = convert_fetch_warnings(&warnings);
+        assert_eq!(agent_warnings.len(), 3);
+        assert_eq!(agent_warnings[0].code, WarningCode::FetchContentTruncated);
+        assert_eq!(agent_warnings[1].code, WarningCode::FetchLinksTruncated);
+        assert_eq!(
+            agent_warnings[2].code,
+            WarningCode::PromptInjectionMarkerDetected
+        );
+    }
+
+    #[test]
+    fn search_warning_unknown_maps_to_unknown_warning_not_provider_failed() {
+        let sw = SearchWarning::new("brave", "completely unrecognized message");
+        let aw = search_warning_to_agent_warning(&sw);
+        assert_eq!(aw.code, WarningCode::UnknownWarning);
+        assert_ne!(aw.code, WarningCode::ProviderFailed);
+    }
+
+    #[test]
+    fn search_warning_error_class_still_maps_to_provider_codes() {
+        let sw_timeout = SearchWarning::new("brave", "[timeout] request timed out");
+        let aw_timeout = search_warning_to_agent_warning(&sw_timeout);
+        assert_eq!(aw_timeout.code, WarningCode::ProviderTimeout);
+
+        let sw_rate = SearchWarning::new("brave", "[rate_limited] 429");
+        let aw_rate = search_warning_to_agent_warning(&sw_rate);
+        assert_eq!(aw_rate.code, WarningCode::ProviderRateLimited);
+
+        let sw_other = SearchWarning::new("brave", "[transport_error] connection refused");
+        let aw_other = search_warning_to_agent_warning(&sw_other);
+        assert_eq!(aw_other.code, WarningCode::ProviderFailed);
+    }
+
+    #[test]
+    fn search_warning_known_prefix_preserves_original_text() {
+        let sw = SearchWarning::new(
+            "_system",
+            "freshness_unenforced: freshness hint 'day' requested but no provider applies server-side freshness filtering",
+        );
+        let aw = search_warning_to_agent_warning(&sw);
+        assert_eq!(
+            aw.message,
+            "freshness hint 'day' requested but no provider applies server-side freshness filtering"
+        );
+    }
+
+    #[test]
+    fn fetch_warning_preserves_original_text() {
+        let warnings = vec!["some unknown fetch warning".to_string()];
+        let agent_warnings = convert_fetch_warnings(&warnings);
+        assert_eq!(agent_warnings[0].message, "some unknown fetch warning");
     }
 }

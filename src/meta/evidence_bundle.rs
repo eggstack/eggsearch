@@ -1098,7 +1098,10 @@ mod tests {
         let req = EvidenceBundleRequest {
             goal: None,
             sources: vec![source],
-            fetches: vec![make_fetch("https://other.com/page", Some(&computed_source_id))],
+            fetches: vec![make_fetch(
+                "https://other.com/page",
+                Some(&computed_source_id),
+            )],
             include_unfetched_sources: None,
             max_sources: None,
             max_fetched_items: None,
@@ -1280,7 +1283,14 @@ mod tests {
             .iter()
             .filter(|g| g.kind == EvidenceGapKind::SourceUnfetched)
             .collect();
-        assert_eq!(unfetched.len(), 1, "expected exactly one SourceUnfetched gap");
-        assert!(unfetched[0].source_id.is_some(), "gap should reference a source_id");
+        assert_eq!(
+            unfetched.len(),
+            1,
+            "expected exactly one SourceUnfetched gap"
+        );
+        assert!(
+            unfetched[0].source_id.is_some(),
+            "gap should reference a source_id"
+        );
     }
 }

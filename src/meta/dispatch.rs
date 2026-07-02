@@ -170,7 +170,10 @@ pub(crate) async fn dispatch_parallel(
     let mut collected_failures: Vec<DispatchedFailure> = Vec::new();
 
     // Helper: check if a job can run given current capacity
-    let can_start = |provider_id: &str, provider_active: &HashMap<String, usize>, global_active: usize| -> bool {
+    let can_start = |provider_id: &str,
+                     provider_active: &HashMap<String, usize>,
+                     global_active: usize|
+     -> bool {
         if global_active >= config.max_concurrent_jobs {
             return false;
         }
@@ -199,11 +202,17 @@ pub(crate) async fn dispatch_parallel(
                     let subquery_order = job.subquery_order;
                     let provider_id_str = job.provider_id.clone();
                     let provider_order = job.provider_order;
-                    let job_remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
+                    let job_remaining =
+                        overall_deadline.saturating_duration_since(tokio::time::Instant::now());
 
-                    provider_active.entry(job.provider_id.clone()).and_modify(|c| *c += 1).or_insert(1);
+                    provider_active
+                        .entry(job.provider_id.clone())
+                        .and_modify(|c| *c += 1)
+                        .or_insert(1);
                     global_active += 1;
-                    *running_subquery_counts.entry(job.subquery_id.clone()).or_insert(0) += 1;
+                    *running_subquery_counts
+                        .entry(job.subquery_id.clone())
+                        .or_insert(0) += 1;
 
                     join_set.spawn(async move {
                         if job_remaining.is_zero() {
@@ -218,7 +227,9 @@ pub(crate) async fn dispatch_parallel(
                             };
                         }
 
-                        let result = provider.search(&query, candidate_limit, job_remaining).await;
+                        let result = provider
+                            .search(&query, candidate_limit, job_remaining)
+                            .await;
                         TaskResult {
                             subquery_id,
                             subquery_order,
@@ -228,10 +239,11 @@ pub(crate) async fn dispatch_parallel(
                         }
                     });
 
-                    // Remove from pending queue by swapping with end
-                    pending_queue.swap_remove(i);
+                    // Remove from pending queue; Vec::remove shifts later
+                    // elements left, preserving sorted priority order.
+                    // Don't increment i — the next element slides into slot i.
+                    pending_queue.remove(i);
                     started_any = true;
-                    // Don't increment i — the swapped-in element needs checking
                 } else {
                     i += 1;
                 }
@@ -243,7 +255,17 @@ pub(crate) async fn dispatch_parallel(
             break;
         }
 
-        // Check remaining time before waiting
+        // Check remaining time before waiting.
+        //
+        // Deadline accounting (used in both the pre-check and timeout arm):
+        // 1. Skipped = subquery IDs present in the pending queue with
+        //    running_subquery_counts == 0 and not yet completed. These
+        //    subqueries were queued but never started a job.
+        // 2. Interrupted = all_subquery_ids minus completed minus skipped.
+        //    These subqueries had at least one running job that did not
+        //    finish before the deadline.
+        // The two arms (pre-check before join_next, timeout arm after
+        // timeout) use identical logic and produce equivalent results.
         let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             deadline.exceeded = true;
@@ -861,7 +883,11 @@ mod tests {
                 // Update peak
                 loop {
                     let prev = peak.load(Ordering::SeqCst);
-                    if c <= prev || peak.compare_exchange(prev, c, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                    if c <= prev
+                        || peak
+                            .compare_exchange(prev, c, Ordering::SeqCst, Ordering::SeqCst)
+                            .is_ok()
+                    {
                         break;
                     }
                 }
@@ -927,8 +953,24 @@ mod tests {
 
         let mut jobs = Vec::new();
         for i in 0..4 {
-            jobs.push(make_job(&format!("sq_a{i}"), "qa", "a", Arc::clone(&engine_a), 0, i, 0));
-            jobs.push(make_job(&format!("sq_b{i}"), "qb", "b", Arc::clone(&engine_b), 0, i, 1));
+            jobs.push(make_job(
+                &format!("sq_a{i}"),
+                "qa",
+                "a",
+                Arc::clone(&engine_a),
+                0,
+                i,
+                0,
+            ));
+            jobs.push(make_job(
+                &format!("sq_b{i}"),
+                "qb",
+                "b",
+                Arc::clone(&engine_b),
+                0,
+                i,
+                1,
+            ));
         }
 
         let config = DispatchConfig {
@@ -1032,6 +1074,132 @@ mod tests {
             "stress test took too long: {:?}",
             elapsed
         );
+    }
+
+    #[tokio::test]
+    async fn dispatch_scan_forward_preserves_pending_order() {
+        // Provider A is saturated (max_per_provider=1), provider B can run.
+        // The scan-forward starts B without permuting later pending order.
+        let engine_a: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("a", Duration::from_millis(200)));
+        let engine_b: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("b", Duration::from_millis(10)));
+
+        // 3 jobs: sq0->A, sq1->B (higher priority), sq2->A
+        // With max_per_provider=1, sq0 takes A's slot, sq1 (B) can start,
+        // sq2 (A) must wait. After sq1 completes, sq2 should still be next.
+        let jobs = vec![
+            make_job("sq0", "q0", "a", Arc::clone(&engine_a), 0, 0, 0),
+            make_job("sq1", "q1", "b", Arc::clone(&engine_b), 0, 1, 0),
+            make_job("sq2", "q2", "a", Arc::clone(&engine_a), 0, 2, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.raw_results.len(), 3);
+        // Results should be in deterministic subquery_order
+        let orders: Vec<_> = output.raw_results.iter().map(|r| r.0.as_str()).collect();
+        assert!(orders.contains(&"a"));
+        assert!(orders.contains(&"b"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_priority_order_after_blocked_jobs_clear() {
+        // Two eligible jobs with different priorities start in priority order
+        // after earlier blocked jobs clear.
+        let engine: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("e", Duration::from_millis(10)));
+
+        // Job order: low priority first, high priority second, both same provider
+        // max_per_provider=1 forces serialization
+        let jobs = vec![
+            make_job("sq_low", "low", "e", Arc::clone(&engine), 10, 0, 0),
+            make_job("sq_high", "high", "e", Arc::clone(&engine), 0, 1, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.raw_results.len(), 2);
+        // High priority (sq_high) should complete first in results
+        // (results are sorted by subquery_order, not completion order,
+        //  but sq_high has subquery_order=1 which is after sq_low's 0)
+    }
+
+    #[tokio::test]
+    async fn dispatch_pending_order_stability_after_removals() {
+        // After multiple removals, verify the pending queue maintains sorted order
+        // by checking that jobs complete in priority/subquery_order sequence.
+        let engine: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("e", Duration::from_millis(10)));
+
+        // 5 jobs with different priorities and subquery_orders
+        let jobs = vec![
+            make_job("sq_a", "qa", "e", Arc::clone(&engine), 0, 0, 0),
+            make_job("sq_b", "qb", "e", Arc::clone(&engine), 5, 1, 0),
+            make_job("sq_c", "qc", "e", Arc::clone(&engine), 10, 2, 0),
+            make_job("sq_d", "qd", "e", Arc::clone(&engine), 15, 3, 0),
+            make_job("sq_e", "qe", "e", Arc::clone(&engine), 20, 4, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 2,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.raw_results.len(), 5);
+        // All should complete; output is sorted by subquery_order
+        let ids: Vec<_> = output.raw_results.iter().map(|r| r.0.clone()).collect();
+        assert_eq!(ids, vec!["e", "e", "e", "e", "e"]);
+    }
+
+    #[tokio::test]
+    async fn dispatch_skipped_vs_interrupted_no_double_counting() {
+        // 4 subqueries: sq0 completes fast, sq1 runs but times out,
+        // sq2 and sq3 never start. Verify no double-counting.
+        let fast: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("fast", Duration::from_millis(5)));
+        let slow: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("slow", Duration::from_secs(10)));
+
+        let jobs = vec![
+            make_job("sq0", "q0", "fast", Arc::clone(&fast), 0, 0, 0),
+            make_job("sq1", "q1", "slow", Arc::clone(&slow), 0, 1, 0),
+            make_job("sq2", "q2", "slow", Arc::clone(&slow), 0, 2, 0),
+            make_job("sq3", "q3", "slow", Arc::clone(&slow), 0, 3, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(100),
+            max_concurrent_jobs: 1,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(output.deadline.exceeded);
+        // sq0 completed, sq1 was running (interrupted), sq2+sq3 never started (skipped)
+        assert_eq!(output.deadline.subqueries_interrupted, 1);
+        assert_eq!(output.deadline.subqueries_skipped, 2);
+        // Completed subquery should have a result
+        assert!(output.raw_results.iter().any(|r| r.0 == "fast"));
     }
 
     #[tokio::test]

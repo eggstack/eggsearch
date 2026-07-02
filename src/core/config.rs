@@ -7,6 +7,22 @@ use serde::{Deserialize, Serialize};
 use crate::core::error::{CoreError, CoreResult};
 use crate::core::provider::{API_PROVIDER_IDS, KNOWN_PROVIDER_IDS};
 
+/// Returns `true` if an API provider is actually configured enough to
+/// build or route requests: enabled, known, has a non-empty
+/// `api_key_env`, and the referenced environment variable is present.
+fn api_provider_is_configured(id: &str, cfg: &ApiProviderConfig) -> bool {
+    if !cfg.enabled {
+        return false;
+    }
+    if !API_PROVIDER_IDS.contains(&id) {
+        return false;
+    }
+    match cfg.api_key_env.as_deref() {
+        Some(env) if !env.is_empty() => std::env::var(env).is_ok(),
+        _ => false,
+    }
+}
+
 /// Server operating mode.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
@@ -729,16 +745,18 @@ impl AppConfig {
         }
 
         if self.search.mode == Mode::Live {
-            let enabled_count = self.search.providers.values().filter(|v| **v).count();
-            let api_enabled_count = self
+            let enabled_scrape_count = self.search.providers.values().filter(|v| **v).count();
+            let any_api_configured = self
                 .search
                 .api
-                .values()
-                .filter(|c| c.enabled)
-                .count();
-            if enabled_count == 0 && api_enabled_count == 0 {
+                .iter()
+                .any(|(id, cfg)| api_provider_is_configured(id, cfg));
+            if enabled_scrape_count == 0 && !any_api_configured {
                 return Err(CoreError::Config(
-                    "[search].mode is 'live' but no providers are enabled in [search].providers or [search].api"
+                    "[search].mode is 'live' but no traditional providers are enabled \
+                     and no API providers are configured with resolvable credentials. \
+                     Enable at least one provider in [search].providers or configure \
+                     an API provider with a valid api_key_env in [search].api"
                         .to_string(),
                 ));
             }
@@ -1281,7 +1299,8 @@ mod tests {
         }
         let err = c.validate().expect_err("expected no-providers failure");
         assert!(
-            err.to_string().contains("no providers are enabled"),
+            err.to_string()
+                .contains("no traditional providers are enabled"),
             "got: {err}"
         );
     }
@@ -1337,7 +1356,7 @@ mod tests {
         }
         let err = c.validate().expect_err("expected no-providers failure");
         assert!(
-            err.to_string().contains("[search].providers or [search].api"),
+            err.to_string().contains("no API providers are configured"),
             "got: {err}"
         );
     }
@@ -1579,6 +1598,127 @@ mod tests {
         assert!(!cfg.enabled);
         assert!(cfg.api_key_env.is_none());
         assert!(cfg.base_url.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // api_provider_is_configured helper tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn live_mode_valid_with_configured_api_provider() {
+        use super::ApiProviderConfig;
+
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Live;
+        // Disable ALL traditional providers
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        // Enable brave_api with env var set
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("EGGSEARCH_TEST_LIVE_MODE_KEY_12345".to_string()),
+                base_url: None,
+            },
+        );
+        std::env::set_var("EGGSEARCH_TEST_LIVE_MODE_KEY_12345", "test_key");
+        assert!(
+            c.validate().is_ok(),
+            "API-only deployment with configured env var should be valid"
+        );
+    }
+
+    #[test]
+    fn live_mode_invalid_with_missing_api_env() {
+        use super::ApiProviderConfig;
+
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Live;
+        // Disable ALL traditional providers
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        // Enable brave_api but env var is NOT set
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("EGGSEARCH_TEST_MISSING_KEY_98765".to_string()),
+                base_url: None,
+            },
+        );
+        let err = c.validate().expect_err("expected missing env var failure");
+        assert!(
+            err.to_string().contains("no API providers are configured"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn live_mode_invalid_with_empty_api_key_env() {
+        use super::ApiProviderConfig;
+
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Live;
+        // Disable ALL traditional providers
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        // Enabled API provider with empty api_key_env → rejected by
+        // per-field validation before the live-mode check
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(String::new()),
+                base_url: None,
+            },
+        );
+        let err = c
+            .validate()
+            .expect_err("expected empty api_key_env failure");
+        assert!(
+            err.to_string().contains("api_key_env is missing or empty"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn live_mode_invalid_with_unknown_api_provider() {
+        use super::ApiProviderConfig;
+
+        let mut c = AppConfig::default();
+        c.search.mode = Mode::Live;
+        // Disable ALL traditional providers
+        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
+        for key in keys {
+            c.search.providers.insert(key, false);
+        }
+        // Enable an unknown API provider (not in API_PROVIDER_IDS)
+        c.search.api.insert(
+            "unknown_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("SOME_KEY".to_string()),
+                base_url: None,
+            },
+        );
+        std::env::set_var("SOME_KEY", "test_key");
+        // Unknown API provider passes per-field validation (it logs a warning
+        // but does not error) and is not in API_PROVIDER_IDS, so
+        // api_provider_is_configured returns false. Live mode should reject.
+        let err = c
+            .validate()
+            .expect_err("expected unknown api provider failure");
+        assert!(
+            err.to_string().contains("no API providers are configured"),
+            "got: {err}"
+        );
     }
 
     // -----------------------------------------------------------------------

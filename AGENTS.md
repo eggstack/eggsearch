@@ -232,11 +232,12 @@ compatibility.
 
 **Core types** (in `src/core/warning.rs`):
 
-- `WarningCode` enum: 56 stable `snake_case` variants covering
+- `WarningCode` enum: 58 stable `snake_case` variants covering
   trust/sanitization, capability enforcement, native provider
   availability, provider status, profile/routing, local workspace,
   fetch, request/dispatch, security, package resolution, repo map,
-  and generic warnings.
+  generic, fetch warning (neutral fallback), and unknown warning
+  (neutral fallback) warnings.
 - `WarningSeverity` enum: `Info`, `Notice`, `Warning`, `Error`.
   Each `WarningCode` has a `default_severity()` and optional
   `default_recommended_action()`.
@@ -456,8 +457,10 @@ percent-encoding (decodes unreserved chars, normalizes hex casing),
 and strips trailing slashes (except bare root `/`). This ensures
 trivial URL variations do not produce spurious ID differences.
 
-**Hashing:** `DefaultHasher` (SipHash 1-3, stdlib). 64-bit output
-formatted as 16 hex chars. No external hashing dependencies.
+**Hashing:** FNV-1a 64-bit (explicit, zero external dependencies). 64-bit
+output formatted as 16 hex chars. Includes a versioned input prefix
+(`eggsearch-id-v1\0`) and entity sub-namespace to prevent cross-entity
+collisions.
 
 **Where stable_id is populated:**
 - `SourceCard.stable_id`: populated by the adapter in `convert_aggregated()`
@@ -2007,7 +2010,10 @@ per-provider concurrency caps.
 **Determinism:**
 
 Results are sorted by `(subquery_order, provider_order)` before
-aggregation so completion order does not affect output.
+aggregation so completion order does not affect output. The pending
+queue uses `Vec::remove()` (not `swap_remove`) when starting jobs,
+which preserves the sorted priority order during scan-forward around
+provider-capacity blocks.
 
 **Provider failure accounting:**
 

@@ -64,15 +64,15 @@ pub use evidence_bundle::{
     EvidenceProviderSummary, EvidenceSourceInput, EvidenceTrustSummary, DEFAULT_MAX_FETCHED_ITEMS,
     DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
 };
+pub use fetch::{
+    ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
+    WebFetchResponse,
+};
 pub use identity::{
     batch_fetch_id, canonicalize_url, chunk_id, compute_batch_fetch_id, compute_chunk_id,
     compute_doc_id, compute_fetch_id, compute_locator_id, compute_source_id,
     compute_suggested_fetch_id, doc_id, fetch_id, locator_id, source_id, suggested_fetch_id,
     BatchFetchKey, DocChunkKey, DocKey, FetchKey, RepoLocatorKey, SourceKey, SuggestedFetchKey,
-};
-pub use fetch::{
-    ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
-    WebFetchResponse,
 };
 pub use local::{LocalConfig, LocalFileEntry, LocalMatch, LocalSearchRequest, LocalSearchResult};
 pub use package::{
@@ -113,7 +113,6 @@ pub use research::{
     ResearchSuggestedFetch, ResearchTelemetry, ResearchWorkflow, ResearchWorkflowContext,
 };
 pub use result::{SearchWarning, TrustLevel};
-pub use warning::{AgentWarning, WarningAccumulator, WarningCode, WarningSeverity, convert_warnings};
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
@@ -132,3 +131,6 @@ pub use security_applicability::{
     DependencyFinding, DependencySource,
 };
 pub use source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
+pub use warning::{
+    convert_warnings, AgentWarning, WarningAccumulator, WarningCode, WarningSeverity,
+};

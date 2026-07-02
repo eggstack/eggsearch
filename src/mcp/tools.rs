@@ -626,8 +626,7 @@ pub async fn run_web_search(
                     crate::core::warning::WarningCode::PromptInjectionMarkerDetected,
                     format!(
                         "possible prompt injection markers detected in card {}: {} hit(s)",
-                        card.id,
-                        card.trust_markers.injection_hits,
+                        card.id, card.trust_markers.injection_hits,
                     ),
                 )
                 .with_result_ids(vec![card.id.clone()])
@@ -904,55 +903,45 @@ pub async fn run_repo_search(
     // Merge profile warnings into structured warnings
     for skip in &routing_decision.skipped_providers {
         if skip.reason.contains("not built") {
-            response
-                .structured_warnings
-                .push(
-                    crate::core::warning::AgentWarning::new(
-                        crate::core::warning::WarningCode::ProfileProviderNotBuilt,
-                        format!(
-                            "{} is in {:?} profile but no engine was constructed",
-                            skip.provider_id, req.profile
-                        ),
-                    )
-                    .with_provider_ids(vec![skip.provider_id.clone()])
-                    .with_severity(crate::core::warning::WarningSeverity::Warning),
-                );
+            response.structured_warnings.push(
+                crate::core::warning::AgentWarning::new(
+                    crate::core::warning::WarningCode::ProfileProviderNotBuilt,
+                    format!(
+                        "{} is in {:?} profile but no engine was constructed",
+                        skip.provider_id, req.profile
+                    ),
+                )
+                .with_provider_ids(vec![skip.provider_id.clone()])
+                .with_severity(crate::core::warning::WarningSeverity::Warning),
+            );
         } else if skip.reason.contains("cooldown") {
-            response
-                .structured_warnings
-                .push(
-                    crate::core::warning::AgentWarning::new(
-                        crate::core::warning::WarningCode::ProviderCooldown,
-                        format!("{} skipped due to {}", skip.provider_id, skip.reason),
-                    )
-                    .with_provider_ids(vec![skip.provider_id.clone()])
-                    .with_severity(crate::core::warning::WarningSeverity::Warning),
-                );
+            response.structured_warnings.push(
+                crate::core::warning::AgentWarning::new(
+                    crate::core::warning::WarningCode::ProviderCooldown,
+                    format!("{} skipped due to {}", skip.provider_id, skip.reason),
+                )
+                .with_provider_ids(vec![skip.provider_id.clone()])
+                .with_severity(crate::core::warning::WarningSeverity::Warning),
+            );
         }
     }
     if routing_decision.degraded {
-        response
-            .structured_warnings
-            .push(
-                crate::core::warning::AgentWarning::new(
-                    crate::core::warning::WarningCode::ProfileDegraded,
-                    format!("{:?} profile fell back to default providers", req.profile),
-                )
-                .with_severity(crate::core::warning::WarningSeverity::Warning)
-                .with_recommended_action(
-                    "Configure the required native providers for this profile.",
-                ),
-            );
+        response.structured_warnings.push(
+            crate::core::warning::AgentWarning::new(
+                crate::core::warning::WarningCode::ProfileDegraded,
+                format!("{:?} profile fell back to default providers", req.profile),
+            )
+            .with_severity(crate::core::warning::WarningSeverity::Warning)
+            .with_recommended_action("Configure the required native providers for this profile."),
+        );
     } else if routing_decision.partial {
-        response
-            .structured_warnings
-            .push(
-                crate::core::warning::AgentWarning::new(
-                    crate::core::warning::WarningCode::ProfilePartial,
-                    format!("{:?} profile skipped unavailable providers", req.profile),
-                )
-                .with_severity(crate::core::warning::WarningSeverity::Notice),
-            );
+        response.structured_warnings.push(
+            crate::core::warning::AgentWarning::new(
+                crate::core::warning::WarningCode::ProfilePartial,
+                format!("{:?} profile skipped unavailable providers", req.profile),
+            )
+            .with_severity(crate::core::warning::WarningSeverity::Notice),
+        );
     }
 
     // Populate telemetry provider selection from routing decision.
@@ -3126,5 +3115,131 @@ mod tests {
             value.get("warnings").is_some(),
             "repo_map response must also include legacy warnings"
         );
+    }
+
+    #[test]
+    fn agent_workflows_repo_search_example_deserializes() {
+        let json = r#"{
+            "query": "Router::layer middleware",
+            "host": "github",
+            "owner": "tokio-rs",
+            "repo": "axum",
+            "profile": "coding"
+        }"#;
+        let args: RepoSearchArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.query, "Router::layer middleware");
+        assert_eq!(args.host.as_deref(), Some("github"));
+        assert_eq!(args.owner.as_deref(), Some("tokio-rs"));
+        assert_eq!(args.repo.as_deref(), Some("axum"));
+        assert_eq!(args.profile.as_deref(), Some("coding"));
+    }
+
+    #[test]
+    fn agent_workflows_repo_search_exact_error_deserializes() {
+        let json = r#"{
+            "query": "error[E0308]: mismatched types - expected `String`, found `i32`",
+            "host": "github",
+            "owner": "tokio-rs",
+            "repo": "axum",
+            "mode": "exact_error",
+            "profile": "coding"
+        }"#;
+        let args: RepoSearchArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.mode.as_deref(), Some("exact_error"));
+    }
+
+    #[test]
+    fn agent_workflows_research_search_example_deserializes() {
+        let json = r#"{
+            "query": "axum vs actix-web for high-performance REST API",
+            "research_domain": "software_architecture",
+            "workflow": "library_comparison",
+            "depth": "standard",
+            "compare_targets": ["axum", "actix-web"],
+            "include_counterpoints": true,
+            "include_primary_sources": true,
+            "desired_source_types": ["benchmarks"]
+        }"#;
+        let args: ResearchSearchArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            args.query,
+            "axum vs actix-web for high-performance REST API"
+        );
+        assert_eq!(
+            args.research_domain.as_deref(),
+            Some("software_architecture")
+        );
+        assert_eq!(args.workflow.as_deref(), Some("library_comparison"));
+        assert_eq!(args.depth.as_deref(), Some("standard"));
+        assert_eq!(args.compare_targets, vec!["axum", "actix-web"]);
+        assert_eq!(args.include_counterpoints, Some(true));
+        assert_eq!(args.include_primary_sources, Some(true));
+        assert_eq!(args.desired_source_types, vec!["benchmarks"]);
+    }
+
+    #[test]
+    fn agent_workflows_security_search_example_deserializes() {
+        let json = r#"{
+            "query": "axum",
+            "ecosystem": "crates.io",
+            "package": "axum",
+            "version": "0.7.0",
+            "include_kev": true,
+            "include_defensive_guidance": true,
+            "assess_applicability": true,
+            "dependency_files": ["Cargo.lock"]
+        }"#;
+        let args: SecuritySearchArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.query.as_deref(), Some("axum"));
+        assert_eq!(args.ecosystem.as_deref(), Some("crates.io"));
+        assert_eq!(args.package.as_deref(), Some("axum"));
+        assert_eq!(args.version.as_deref(), Some("0.7.0"));
+        assert_eq!(args.include_kev, Some(true));
+        assert_eq!(args.include_defensive_guidance, Some(true));
+        assert_eq!(args.assess_applicability, Some(true));
+        assert_eq!(args.dependency_files, vec!["Cargo.lock"]);
+    }
+
+    #[test]
+    fn repo_search_slash_form_deserializes() {
+        let json = r#"{"query": "repo:tokio-rs/axum", "repo": "tokio-rs/axum"}"#;
+        let args: RepoSearchArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(args.repo.as_deref(), Some("tokio-rs/axum"));
+    }
+
+    #[test]
+    fn research_search_full_options_deserializes() {
+        let json = r#"{
+            "query": "compare QUIC vs WebSocket IPC for a coding agent daemon",
+            "research_domain": "software_architecture",
+            "desired_source_types": ["specifications", "official_docs", "reference_implementations", "benchmarks", "security_considerations"],
+            "include_counterpoints": true,
+            "freshness": "year",
+            "max_results": 32,
+            "max_groups": 10,
+            "max_per_group": 5
+        }"#;
+        let args: ResearchSearchArgs = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            args.query,
+            "compare QUIC vs WebSocket IPC for a coding agent daemon"
+        );
+        assert_eq!(
+            args.research_domain.as_deref(),
+            Some("software_architecture")
+        );
+        assert_eq!(
+            args.desired_source_types,
+            vec![
+                "specifications",
+                "official_docs",
+                "reference_implementations",
+                "benchmarks",
+                "security_considerations"
+            ]
+        );
+        assert_eq!(args.max_results, Some(32));
+        assert_eq!(args.max_groups, Some(10));
+        assert_eq!(args.max_per_group, Some(5));
     }
 }

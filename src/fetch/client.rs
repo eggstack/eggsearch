@@ -815,7 +815,13 @@ impl FetchClient {
         Ok(WebFetchResponse {
             url: url_str.to_string(),
             final_url,
-            stable_id: Some(crate::core::identity::fetch_id(Some(url_str), None, None, None, None)),
+            stable_id: Some(crate::core::identity::fetch_id(
+                Some(url_str),
+                None,
+                None,
+                None,
+                None,
+            )),
             source_id: None,
             title,
             description,

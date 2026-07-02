@@ -283,7 +283,7 @@ Use small commits in this order:
 - [ ] Unknown fetch warnings no longer map to provider failure.
 - [ ] Dispatch pending queue removal preserves priority order.
 - [ ] Deadline skipped/interrupted telemetry is tested.
-- [ ] Public stable IDs no longer use `DefaultHasher`.
-- [ ] Identity algorithm has versioned input and golden tests.
-- [ ] URL canonicalization policy around `www.` is documented and tested.
-- [ ] fmt, clippy, and tests pass.
+- [x] Public stable IDs no longer use `DefaultHasher`.
+- [x] Identity algorithm has versioned input and golden tests.
+- [x] URL canonicalization policy around `www.` is documented and tested.
+- [x] fmt, clippy, and tests pass.
