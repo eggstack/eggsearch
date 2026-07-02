@@ -81,6 +81,7 @@ eggsearch/
       warning.rs         # WarningCode, AgentWarning, WarningAccumulator, conversion helpers
       provider.rs        # ProviderKind, ProviderCapabilities, ProviderDescriptor
       fetch.rs           # fetch-related types (ExtractMode, WebFetchRequest, etc.)
+      identity.rs        # Deterministic cross-tool identity: SourceKey, FetchKey, ID generation
       code_metadata.rs   # CodeHost, CodeMetadata, deterministic URL parsing
       code_evidence.rs   # CodeEvidence, SourceRole, EvidenceConfidence, URL derivation
       code_host_fetch.rs # resolve_code_host_fetch_target, CodeHostFetchTarget
@@ -401,6 +402,7 @@ compatibility.
 ### Source Cards
 - `SourceCard` is the primary output type returned by `web_search`
 - Each card has a UUID-based `id` (`src_<uuid>`) unique per response
+- Each card has an optional `stable_id: Option<String>` with a deterministic, content-derived identity (`src_<16hex>`) — see "Deterministic Cross-Tool Identity" below
 - Each card includes deterministic `metadata` with `source_kind` (enum: `official_docs`, `package_registry`, `source_repository`, `repository_root`, `source_directory`, `source_file`, `issue_thread`, `pull_request`, `tag`, `commit`, `release_notes`, `security_advisory`, `reference`, `news`, `tutorial`, `forum`, `unknown`), `domain`, and `rank_reasons` (e.g. `rrf_multi_provider`, `intent_match`, `domain_prior_docs`, `security_primary_source`, `security_maintainer_source`, `version_affected_match`, `ExactErrorPhraseMatch`, `ErrorCodeMatch`, `ToolchainMatch`, `OfficialErrorDocs`, `MaintainerIssueMatch`, `RegressionReleaseMatch`)
 - Trust level is always `external_untrusted` for live web results
 - Deduplication happens via URL normalization in the vendored `aggregate_rrf()` function
@@ -420,6 +422,53 @@ which result to fetch, but must still treat snippets and fetched content as
 untrusted data.
 
 When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence. `permalink_url` is browser-viewable (e.g. `github.com/.../blob/{sha}/...`); `raw_permalink_url` is raw content at the commit SHA. When the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type), `code_evidence` also includes a `matched_symbol` field with the matched text and `provider_text_match` in `evidence_reasons`.
+
+### Deterministic Cross-Tool Identity
+
+Every tool output type carries a `stable_id` alongside the existing random
+per-response `id`. The `stable_id` is deterministic and content-derived:
+identical inputs always produce the same ID, enabling agents to deduplicate
+and cross-reference evidence across tools without content comparison.
+
+**Canonical key structs** (in `src/core/identity.rs`):
+- `SourceKey`: `(provider_id, url, title, source_kind)`
+- `FetchKey`: `(url | locator, line_start, line_end, text_prefix)`
+- `SuggestedFetchKey`: `(url, group, priority)`
+- `BatchFetchKey`: `(label, index)`
+
+**ID format and prefix conventions:**
+- Source: `src_<16hex>` — from `SourceKey` fields
+- Fetch: `fetch_<16hex>` — from `FetchKey` fields
+- Suggested: `suggested_<16hex>` — from `SuggestedFetchKey` fields
+- Batch: `batch_<16hex>` — from `BatchFetchKey` fields
+- Bundle: `bundle_<16hex>` — from goal + source + fetch IDs (existing)
+
+**Hashing:** `DefaultHasher` (SipHash 1-3, stdlib). 64-bit output
+formatted as 16 hex chars. No external hashing dependencies.
+
+**Where stable_id is populated:**
+- `SourceCard.stable_id`: populated by the adapter in `convert_aggregated()`
+- `WebFetchResponse.stable_id`: populated by `web_fetch` using the URL
+- `RepoFetchResponse.stable_id`: `None` (locator-based, not URL-based)
+- `RepoSuggestedFetch.stable_id`: `None` (generated at construction time)
+- `SecuritySuggestedFetch.stable_id`: `None` (generated at construction time)
+- `ResearchSuggestedFetch.stable_id`: `None` (generated at construction time)
+- `BatchFetchResult.stable_id`: `None` (generated at construction time)
+- `EvidenceBundleSource.source_id`: `src_<16hex>` — deterministic via `compute_source_id`
+- `EvidenceBundleFetchedItem.fetch_id`: `fetch_<16hex>` — deterministic via `compute_fetch_id`
+
+**Backward compatibility:** The random UUID-based `id` on `SourceCard` is
+preserved for all existing consumers. The `stable_id` field is optional
+(`Option<String>`) and omitted from JSON when `None` via
+`skip_serializing_if = "Option::is_none"`.
+
+**Agent guidance:**
+- Use `stable_id` to deduplicate identical sources across `web_search`,
+  `repo_search`, `security_search`, and `research_search` responses
+- Use `stable_id` to link a suggested fetch back to the source card
+  that produced it
+- The evidence bundle uses the same canonical ID functions, so bundle
+  source IDs match source card `stable_id` values for the same content
 
 ### Result Quality and Uncertainty
 

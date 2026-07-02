@@ -520,6 +520,10 @@ pub struct ResearchSuggestedFetch {
     pub recommended_extract_mode: Option<ExtractMode>,
     /// Priority (lower is higher priority).
     pub priority: u8,
+    /// Deterministic, content-derived identifier stable across runs.
+    /// Format: `suggested_<16hex>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_id: Option<String>,
     /// Deterministic score for this suggestion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score: Option<i32>,

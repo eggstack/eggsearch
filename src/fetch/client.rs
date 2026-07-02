@@ -382,7 +382,14 @@ impl FetchClient {
 
                 return Ok(WebFetchResponse {
                     url: url_str.to_string(),
-                    final_url,
+                    final_url: final_url.clone(),
+                    stable_id: Some(crate::core::identity::fetch_id(
+                        Some(url_str),
+                        None,
+                        None,
+                        None,
+                        None,
+                    )),
                     title: None,
                     description: None,
                     content_type,
@@ -477,7 +484,14 @@ impl FetchClient {
 
             return Ok(WebFetchResponse {
                 url: url_str.to_string(),
-                final_url,
+                final_url: final_url.clone(),
+                stable_id: Some(crate::core::identity::fetch_id(
+                    Some(url_str),
+                    None,
+                    None,
+                    None,
+                    None,
+                )),
                 title,
                 description: None,
                 content_type,
@@ -799,6 +813,7 @@ impl FetchClient {
         Ok(WebFetchResponse {
             url: url_str.to_string(),
             final_url,
+            stable_id: Some(crate::core::identity::fetch_id(Some(url_str), None, None, None, None)),
             title,
             description,
             content_type,

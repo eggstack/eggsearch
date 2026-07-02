@@ -122,6 +122,7 @@ pub fn generate_research_suggested_fetches(
                     .map(|r| r.as_str().to_string())
                     .collect(),
                 information_gain: Some(candidate.information_gain),
+                stable_id: None,
             }
         })
         .collect()

@@ -2170,6 +2170,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
 
     let mut source_card = SourceCard {
         id,
+        stable_id: None,
         title,
         url: a.url.clone(),
         providers,
@@ -2193,6 +2194,14 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         },
         quality: None,
     };
+
+    // Populate the deterministic stable_id from the card's identity fields.
+    source_card.stable_id = Some(crate::core::identity::source_id(
+        source_card.providers.first().map(|s| s.as_str()),
+        Some(&source_card.url),
+        Some(&source_card.title),
+        Some(source_card.metadata.source_kind),
+    ));
 
     // Compute deterministic quality metadata for the card.
     source_card.quality = Some(crate::core::quality::compute_card_quality(&source_card));

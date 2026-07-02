@@ -4559,6 +4559,7 @@ fn web_fetch_response_includes_fetch_transform_field() {
     let resp = eggsearch::core::WebFetchResponse {
         url: "https://github.com/tokio-rs/axum/blob/main/src/lib.rs".to_string(),
         final_url: "https://raw.githubusercontent.com/tokio-rs/axum/main/src/lib.rs".to_string(),
+        stable_id: None,
         title: None,
         description: None,
         content_type: Some("text/plain".to_string()),
@@ -4597,6 +4598,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
     let resp = eggsearch::core::WebFetchResponse {
         url: "https://example.com".to_string(),
         final_url: "https://example.com".to_string(),
+        stable_id: None,
         title: None,
         description: None,
         content_type: None,

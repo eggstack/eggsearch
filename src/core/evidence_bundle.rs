@@ -421,57 +421,11 @@ pub const MAX_FETCHED_ITEMS_CAP: usize = 100;
 /// Server-enforced upper bound on total characters.
 pub const MAX_TOTAL_CHARS_CAP: usize = 500_000;
 
-/// Deterministic hash-based source ID.
-///
-/// `source_id = src_<short_hash(provider_id + url + title + source_kind)>`.
-pub fn compute_source_id(
-    provider_id: Option<&str>,
-    url: Option<&str>,
-    title: Option<&str>,
-    source_kind: Option<SourceKind>,
-) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+/// Re-export the canonical `compute_source_id` from the identity module.
+pub use super::identity::source_id as compute_source_id;
 
-    let mut hasher = DefaultHasher::new();
-    provider_id.unwrap_or("").hash(&mut hasher);
-    url.unwrap_or("").hash(&mut hasher);
-    title.unwrap_or("").hash(&mut hasher);
-    format!("{:?}", source_kind).hash(&mut hasher);
-    format!("src_{:016x}", hasher.finish())
-}
-
-/// Deterministic hash-based fetch ID.
-///
-/// `fetch_id = fetch_<short_hash(url_or_locator + line_range + text_hash_prefix)>`.
-pub fn compute_fetch_id(
-    url: Option<&str>,
-    locator: Option<&RepoLocator>,
-    line_start: Option<u32>,
-    line_end: Option<u32>,
-    text_prefix: Option<&str>,
-) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    if let Some(loc) = locator {
-        format!("{:?}", loc).hash(&mut hasher);
-    } else {
-        url.unwrap_or("").hash(&mut hasher);
-    }
-    line_start.hash(&mut hasher);
-    line_end.hash(&mut hasher);
-    // Hash first 64 chars of text for content stability
-    let prefix = text_prefix.unwrap_or("");
-    let prefix = if prefix.len() > 64 {
-        &prefix[..64]
-    } else {
-        prefix
-    };
-    prefix.hash(&mut hasher);
-    format!("fetch_{:016x}", hasher.finish())
-}
+/// Re-export the canonical `compute_fetch_id` from the identity module.
+pub use super::identity::fetch_id as compute_fetch_id;
 
 /// Deterministic bundle ID from canonicalized content.
 pub fn compute_bundle_id(

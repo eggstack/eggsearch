@@ -239,6 +239,7 @@ providers and returns compact `SourceCard` results.
   "results": [
     {
       "id": "src_001",
+      "stable_id": "src_a1b2c3d4e5f6a7b8",
       "title": "tower-http - Rust",
       "url": "https://docs.rs/tower-http/latest/tower_http/",
       "snippet": "Middleware and utilities for HTTP clients and servers...",
@@ -1776,7 +1777,7 @@ eggsearch/
     lib.rs               # library root (modules: core, fetch, mcp, meta)
     config.rs            # CLI config loader
     commands/            # subcommands: doctor, search, providers, mcp, fetch
-    core/                # SourceCard, AppConfig, error, query types, repo query parser, repo search types, batch fetch types, code evidence metadata, repo map types
+    core/                # SourceCard, AppConfig, error, query types, deterministic cross-tool identity, repo query parser, repo search types, batch fetch types, code evidence metadata, repo map types
     fetch/               # HTTP fetch client and HTML extraction
     meta/                # MetadataSearchAdapter, query planner, repo grouping/planning, repo mapping, bounded parallel subquery dispatch, provider health diagnostics, + vendored engines
     mcp/                 # MCP server (rmcp): web_search, web_fetch, provider_status, repo_search, repo_fetch, repo_map, batch_fetch, security_search, research_search, build_evidence_bundle

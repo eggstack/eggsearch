@@ -294,6 +294,10 @@ pub struct SourceCard {
     /// Per-response identifier, e.g. `src_<uuid>`. Unique within a
     /// single `web_search` response.
     pub id: String,
+    /// Deterministic, content-derived identifier stable across runs.
+    /// Format: `src_<16hex>`. Derived from (provider_id, url, title, source_kind).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_id: Option<String>,
     /// Result title.
     pub title: String,
     /// Canonical URL.
@@ -377,6 +381,7 @@ impl SourceCard {
     ) -> Self {
         Self {
             id: format!("src_{}", Uuid::new_v4().simple()),
+            stable_id: None,
             title: title.into(),
             url: url.into(),
             snippet: None,
@@ -415,6 +420,12 @@ impl SourceCard {
     /// Attach deterministic quality metadata to this card.
     pub fn with_quality(mut self, q: crate::core::quality::ResultQuality) -> Self {
         self.quality = Some(q);
+        self
+    }
+
+    /// Attach a deterministic, content-derived `stable_id` to this card.
+    pub fn with_stable_id(mut self, id: impl Into<String>) -> Self {
+        self.stable_id = Some(id.into());
         self
     }
 }

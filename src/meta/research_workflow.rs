@@ -1461,6 +1461,7 @@ mod tests {
                 score: None,
                 rank_reasons: Vec::new(),
                 information_gain: None,
+                stable_id: None,
             },
             crate::core::research::ResearchSuggestedFetch {
                 url: "https://benchmarks.example.com".to_string(),
@@ -1473,6 +1474,7 @@ mod tests {
                 score: None,
                 rank_reasons: Vec::new(),
                 information_gain: None,
+                stable_id: None,
             },
         ];
         let ctx = build_workflow_context(&req, &groups, &fetches, &["duckduckgo".to_string()]);

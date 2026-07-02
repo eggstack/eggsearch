@@ -14,6 +14,8 @@ pub mod error_query;
 /// Evidence bundle types for multi-agent handoff.
 pub mod evidence_bundle;
 pub mod fetch;
+/// Deterministic cross-tool identity model for stable source/fetch/suggested IDs.
+pub mod identity;
 /// Local workspace search types: config, file entries, and search requests.
 pub mod local;
 /// Package coordinate types and ecosystem resolution for repo_search.
@@ -56,11 +58,16 @@ pub use error_query::{
     ErrorCode, ErrorQueryParts, ErrorSearchContext, ErrorSubquery, ExactErrorConfig, StackFrameHint,
 };
 pub use evidence_bundle::{
-    compute_bundle_id, compute_fetch_id, compute_source_id, EvidenceBundle,
-    EvidenceBundleFetchedItem, EvidenceBundleLimits, EvidenceBundleLink, EvidenceBundleLinkReason,
-    EvidenceBundleRequest, EvidenceBundleSource, EvidenceFetchInput, EvidenceGap, EvidenceGapKind,
-    EvidenceProviderCount, EvidenceProviderSummary, EvidenceSourceInput, EvidenceTrustSummary,
-    DEFAULT_MAX_FETCHED_ITEMS, DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
+    compute_bundle_id, EvidenceBundle, EvidenceBundleFetchedItem, EvidenceBundleLimits,
+    EvidenceBundleLink, EvidenceBundleLinkReason, EvidenceBundleRequest, EvidenceBundleSource,
+    EvidenceFetchInput, EvidenceGap, EvidenceGapKind, EvidenceProviderCount,
+    EvidenceProviderSummary, EvidenceSourceInput, EvidenceTrustSummary, DEFAULT_MAX_FETCHED_ITEMS,
+    DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
+};
+pub use identity::{
+    batch_fetch_id, compute_batch_fetch_id, compute_fetch_id, compute_source_id,
+    compute_suggested_fetch_id, fetch_id, source_id, suggested_fetch_id, BatchFetchKey, FetchKey,
+    SourceKey, SuggestedFetchKey,
 };
 pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,

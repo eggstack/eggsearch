@@ -107,6 +107,10 @@ pub struct BatchFetchResult {
     pub item_type: BatchFetchItemType,
     /// Label identifying this item (URL or repo locator).
     pub label: String,
+    /// Deterministic, content-derived identifier stable across runs.
+    /// Format: `batch_<16hex>`. Derived from (label, index).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_id: Option<String>,
     /// Whether this item was fetched successfully.
     pub ok: bool,
     /// Serialized response payload (web_fetch or repo_fetch response shape).

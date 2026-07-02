@@ -211,6 +211,7 @@ pub fn generate_suggested_fetches_with_mode(
                 rank_reasons,
                 information_gain: Some(candidate.information_gain),
                 stable: Some(candidate.stable),
+                stable_id: None,
                 preferred_tool,
             }
         })

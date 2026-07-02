@@ -151,6 +151,10 @@ pub struct RepoFetchResponse {
     pub locator: RepoLocator,
     /// Whether content was successfully fetched.
     pub fetched: bool,
+    /// Deterministic, content-derived identifier stable across runs.
+    /// Format: `fetch_<16hex>`. Derived from locator + line range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_id: Option<String>,
     /// HTTP status code, if a network request was made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,

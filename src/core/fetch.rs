@@ -137,6 +137,10 @@ pub struct WebFetchResponse {
     pub url: String,
     /// Final URL after redirects.
     pub final_url: String,
+    /// Deterministic, content-derived identifier stable across runs.
+    /// Format: `fetch_<16hex>`. Derived from (url, final_url).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_id: Option<String>,
     /// Page title, if extracted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
