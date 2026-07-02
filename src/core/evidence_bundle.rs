@@ -62,6 +62,16 @@ pub enum EvidenceGapKind {
     NoCounterpointFound,
     /// No benchmarks found when requested.
     NoBenchmarksFound,
+    /// No test files found for implementation files in the bundle.
+    MissingTests,
+    /// No example files found for public API results in the bundle.
+    MissingExamples,
+    /// No manifest found for package-related results in the bundle.
+    MissingManifest,
+    /// No changelog found for version-related results.
+    MissingChangelog,
+    /// No security policy found for security-related results.
+    MissingSecurityPolicy,
 }
 
 /// A deterministic gap extracted from response metadata.
@@ -77,6 +87,9 @@ pub struct EvidenceGap {
     /// Optional provider ID that produced the gap signal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<String>,
+    /// Source IDs affected by this gap.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affected_source_ids: Vec<String>,
 }
 
 /// A source entry in an evidence bundle, derived from a `SourceCard`.
@@ -703,6 +716,7 @@ mod tests {
             message: "fetch timed out".to_string(),
             source_id: None,
             provider_id: Some("duckduckgo".to_string()),
+            affected_source_ids: vec![],
         };
         let json = serde_json::to_value(&gap).unwrap();
         assert_eq!(json["kind"], "fetch_failed");

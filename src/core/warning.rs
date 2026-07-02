@@ -787,7 +787,7 @@ const FETCH_WARNING_PREFIXES: &[(&str, WarningCode)] = &[
 /// Convert a slice of fetch warning strings to structured `AgentWarning`
 /// values, preserving order. Recognized prefixes are mapped to their
 /// canonical `WarningCode`; unrecognized strings are passed through as
-/// `ProviderFailed` (fallback).
+/// `FetchWarning` (fallback).
 pub fn convert_fetch_warnings(warnings: &[String]) -> Vec<AgentWarning> {
     warnings
         .iter()

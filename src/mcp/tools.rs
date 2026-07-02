@@ -1720,6 +1720,13 @@ pub async fn run_repo_fetch(
                 ));
             }
 
+            let target_line = effective_line_start.or(req.line_start);
+            let code_context = Some(crate::core::code_context::extract_code_context(
+                sliced_text.as_deref().unwrap_or(""),
+                path,
+                target_line,
+            ));
+
             let fetch_response = RepoFetchResponse {
                 locator,
                 stable_id: None,
@@ -1749,6 +1756,7 @@ pub async fn run_repo_fetch(
                 trust: FetchTrust::ExternalUntrusted,
                 trust_markers,
                 selected_span,
+                code_context,
             };
 
             let value = serde_json::to_value(&fetch_response)
@@ -2629,6 +2637,14 @@ async fn run_workspace_fetch(
                 .join("\n"),
         )
     };
+
+    let target_line = effective_line_start.or(args.line_start);
+    let code_context = Some(crate::core::code_context::extract_code_context(
+        sliced_text.as_deref().unwrap_or(""),
+        &relative_path,
+        target_line,
+    ));
+
     // Scan for injection markers in the full text
     if state.config.fetch.sanitize_output {
         if let Some(ref text) = sliced_text {
@@ -2673,6 +2689,7 @@ async fn run_workspace_fetch(
         trust: FetchTrust::LocalTrusted,
         trust_markers,
         selected_span,
+        code_context,
     };
 
     let value = serde_json::to_value(&fetch_response)

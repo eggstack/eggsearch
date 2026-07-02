@@ -36,6 +36,18 @@ pub enum SourceRole {
     Changelog,
     /// Migration guides.
     Migration,
+    /// Package manifest (Cargo.toml, package.json, etc.).
+    Manifest,
+    /// Lock file (Cargo.lock, package-lock.json, etc.).
+    Lockfile,
+    /// Security policy (SECURITY.md, etc.).
+    SecurityPolicy,
+    /// CI/CD configuration.
+    Ci,
+    /// Generated or auto-generated code.
+    Generated,
+    /// Vendored third-party code.
+    Vendor,
     /// Unrecognized or ambiguous.
     Unknown,
 }
@@ -191,6 +203,9 @@ pub struct CodeEvidence {
     /// Reasons this evidence was linked to the query.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_reasons: Vec<CodeEvidenceReason>,
+    /// Top-level imports/use declarations extracted from the file prefix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<String>,
 }
 
 /// Infer `SourceRole` from a file path.
@@ -214,20 +229,14 @@ pub fn infer_source_role(path: &str) -> SourceRole {
         return SourceRole::Configuration;
     }
 
+    // Security policy files
+    if lower_filename == "security.md" || lower_filename == "security.txt" {
+        return SourceRole::SecurityPolicy;
+    }
+
     // Configuration files by exact name
     match lower_filename.as_str() {
-        "cargo.toml"
-        | "pyproject.toml"
-        | "package.json"
-        | "setup.py"
-        | "setup.cfg"
-        | "requirements.txt"
-        | "go.mod"
-        | "go.sum"
-        | "pom.xml"
-        | "build.gradle"
-        | "build.gradle.kts"
-        | "dockerfile"
+        "dockerfile"
         | "docker-compose.yml"
         | "docker-compose.yaml"
         | "makefile"
@@ -240,8 +249,28 @@ pub fn infer_source_role(path: &str) -> SourceRole {
         | "clippy.toml"
         | ".clippy.toml"
         | "deny.toml"
-        | "release.toml" => {
+        | "release.toml"
+        | ".npmrc"
+        | ".yarnrc"
+        | "tsconfig.json"
+        | "biome.json"
+        | "pytest.ini"
+        | "mypy.ini"
+        | "ruff.toml"
+        | "tox.ini"
+        | "gemfile"
+        | "rakefile"
+        | "cmakelists.txt"
+        | "build.zig" => {
             return SourceRole::Configuration;
+        }
+        "cargo.lock" | "package-lock.json" | "yarn.lock" | "pnpm-lock.yaml" | "poetry.lock"
+        | "go.sum" | "gemfile.lock" | "composer.lock" => {
+            return SourceRole::Lockfile;
+        }
+        "cargo.toml" | "pyproject.toml" | "package.json" | "setup.py" | "setup.cfg"
+        | "requirements.txt" | "go.mod" | "pom.xml" | "build.gradle" | "build.gradle.kts" => {
+            return SourceRole::Manifest;
         }
         _ => {}
     }
@@ -256,20 +285,32 @@ pub fn infer_source_role(path: &str) -> SourceRole {
             "examples" | "example" | "demo" | "demos" => return SourceRole::Example,
             "benches" | "bench" | "benchmarks" | "benchmark" => return SourceRole::Benchmark,
             "docs" | "doc" | "documentation" | "wiki" => return SourceRole::Documentation,
-            ".github" => {
-                return SourceRole::Build;
-            }
+            "vendor" => return SourceRole::Vendor,
             _ => {}
         }
     }
 
-    // CI config files anywhere in the path
+    // CI config files
     if lower_path.contains(".github/workflows/")
         || lower_path.contains(".circleci/")
         || lower_path.contains(".travis")
         || lower_path.contains("jenkinsfile")
+        || lower_path.contains(".gitlab-ci.yml")
+        || lower_path.contains("azure-pipelines.yml")
     {
-        return SourceRole::Build;
+        return SourceRole::Ci;
+    }
+
+    // Generated/vendor detection by path
+    if lower_path.contains("/target/debug/")
+        || lower_path.contains("/target/release/")
+        || lower_path.contains("/dist/")
+        || lower_path.contains("/build/")
+        || lower_path.contains("/node_modules/")
+        || lower_path.contains("/__pycache__/")
+        || lower_path.contains("/vendor/")
+    {
+        return SourceRole::Generated;
     }
 
     // Test files by suffix pattern
@@ -410,6 +451,7 @@ pub fn build_code_evidence(
         enclosing_symbol: None,
         evidence_confidence: Some(EvidenceConfidence::Strong),
         evidence_reasons,
+        imports: Vec::new(),
     })
 }
 
@@ -441,14 +483,14 @@ mod tests {
 
     #[test]
     fn infer_source_role_configuration() {
-        assert_eq!(infer_source_role("Cargo.toml"), SourceRole::Configuration);
+        assert_eq!(infer_source_role(".gitignore"), SourceRole::Configuration);
     }
 
     #[test]
     fn infer_source_role_build_ci() {
         assert_eq!(
             infer_source_role(".github/workflows/ci.yml"),
-            SourceRole::Build
+            SourceRole::Ci
         );
     }
 
@@ -478,6 +520,72 @@ mod tests {
     #[test]
     fn infer_source_role_unknown_extension() {
         assert_eq!(infer_source_role("data.xyz"), SourceRole::Unknown);
+    }
+
+    #[test]
+    fn infer_source_role_manifest_cargo() {
+        assert_eq!(infer_source_role("Cargo.toml"), SourceRole::Manifest);
+    }
+
+    #[test]
+    fn infer_source_role_manifest_package_json() {
+        assert_eq!(infer_source_role("package.json"), SourceRole::Manifest);
+    }
+
+    #[test]
+    fn infer_source_role_lockfile_cargo() {
+        assert_eq!(infer_source_role("Cargo.lock"), SourceRole::Lockfile);
+    }
+
+    #[test]
+    fn infer_source_role_lockfile_package_lock() {
+        assert_eq!(infer_source_role("package-lock.json"), SourceRole::Lockfile);
+    }
+
+    #[test]
+    fn infer_source_role_security_policy() {
+        assert_eq!(infer_source_role("SECURITY.md"), SourceRole::SecurityPolicy);
+    }
+
+    #[test]
+    fn infer_source_role_ci_workflow() {
+        assert_eq!(
+            infer_source_role(".github/workflows/ci.yml"),
+            SourceRole::Ci
+        );
+    }
+
+    #[test]
+    fn infer_source_role_ci_gitlab() {
+        assert_eq!(infer_source_role(".gitlab-ci.yml"), SourceRole::Ci);
+    }
+
+    #[test]
+    fn infer_source_role_vendor() {
+        assert_eq!(
+            infer_source_role("vendor/some-lib/src/lib.rs"),
+            SourceRole::Vendor
+        );
+    }
+
+    #[test]
+    fn infer_source_role_generated() {
+        assert_eq!(
+            infer_source_role("target/debug/build/something/output.rs"),
+            SourceRole::Generated
+        );
+    }
+
+    #[test]
+    fn infer_source_role_readme_case_insensitive() {
+        assert_eq!(infer_source_role("readme.md"), SourceRole::Readme);
+        assert_eq!(infer_source_role("ReadMe.txt"), SourceRole::Readme);
+    }
+
+    #[test]
+    fn infer_source_role_changelog_case_insensitive() {
+        assert_eq!(infer_source_role("changelog.md"), SourceRole::Changelog);
+        assert_eq!(infer_source_role("CHANGES.rst"), SourceRole::Changelog);
     }
 
     // --- URL derivation tests ---
@@ -640,5 +748,22 @@ mod tests {
         let json_str = serde_json::to_string(&evidence).unwrap();
         let deserialized: CodeEvidence = serde_json::from_str(&json_str).unwrap();
         assert_eq!(evidence, deserialized);
+    }
+
+    #[test]
+    fn code_evidence_with_imports_roundtrip() {
+        let evidence = CodeEvidence {
+            host: Some(CodeHost::Github),
+            imports: vec![
+                "use axum::Router;".to_string(),
+                "use tokio::sync::mpsc;".to_string(),
+            ],
+            ..Default::default()
+        };
+        let json_str = serde_json::to_string(&evidence).unwrap();
+        let deserialized: CodeEvidence = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(evidence, deserialized);
+        let json = serde_json::to_value(&evidence).unwrap();
+        assert_eq!(json["imports"][0], "use axum::Router;");
     }
 }

@@ -375,7 +375,15 @@ fn score_source_role_normal(candidate: &mut FetchCandidate) {
                 .reasons
                 .push(FetchRankReason::SourceRoleConfiguration);
         }
-        Some(SourceRole::Build) | Some(SourceRole::Unknown) | None => {}
+        Some(SourceRole::Build)
+        | Some(SourceRole::Manifest)
+        | Some(SourceRole::Lockfile)
+        | Some(SourceRole::SecurityPolicy)
+        | Some(SourceRole::Ci)
+        | Some(SourceRole::Generated)
+        | Some(SourceRole::Vendor)
+        | Some(SourceRole::Unknown)
+        | None => {}
     }
 }
 

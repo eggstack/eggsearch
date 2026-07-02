@@ -883,6 +883,7 @@ impl LocalWorkspaceBackend {
                     enclosing_symbol: None,
                     evidence_confidence: Some(EvidenceConfidence::Strong),
                     evidence_reasons: vec![CodeEvidenceReason::ProviderPathMatch],
+                    imports: Vec::new(),
                 };
 
                 let local_repo_match =

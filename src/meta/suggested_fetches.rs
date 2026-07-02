@@ -170,7 +170,7 @@ pub fn generate_suggested_fetches_with_mode(
     let ranked = rank_and_select(candidates, &ctx, &config);
 
     // Convert ranked candidates to RepoSuggestedFetch.
-    ranked
+    let mut all_suggestions: Vec<RepoSuggestedFetch> = ranked
         .into_iter()
         .enumerate()
         .map(|(pos, candidate)| {
@@ -217,7 +217,265 @@ pub fn generate_suggested_fetches_with_mode(
                 preferred_tool,
             }
         })
-        .collect()
+        .collect();
+
+    // Add complementary suggestions (test/example/manifest hints) for
+    // code-task-aware results.
+    let complementary = generate_complementary_suggestions(groups);
+    all_suggestions.extend(complementary);
+
+    all_suggestions
+}
+
+/// Generate complementary suggestions for source files.
+///
+/// When a source card is an implementation file, suggest nearby test files,
+/// examples, manifests, etc. These are URL-based heuristic suggestions that
+/// do not require network access.
+pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<RepoSuggestedFetch> {
+    use crate::core::code_evidence::SourceRole;
+
+    let mut suggestions = Vec::new();
+
+    for group in groups {
+        for card in &group.results {
+            let ce = match card.metadata.code_evidence.as_ref() {
+                Some(ce) => ce,
+                None => continue,
+            };
+
+            let source_role = match ce.source_role {
+                Some(role) => role,
+                None => continue,
+            };
+
+            let owner = match ce.owner.as_deref() {
+                Some(o) => o,
+                None => continue,
+            };
+            let repo = match ce.repo.as_deref() {
+                Some(r) => r,
+                None => continue,
+            };
+            let ref_name = ce.ref_name.as_deref().unwrap_or("main");
+            let path = match ce.path.as_deref() {
+                Some(p) => p,
+                None => continue,
+            };
+            let host = ce
+                .host
+                .unwrap_or(crate::core::code_metadata::CodeHost::Github);
+
+            match source_role {
+                SourceRole::Implementation => {
+                    // Suggest test file (heuristic: sibling tests/ directory)
+                    if let Some(test_path) = infer_test_path(path) {
+                        let url = build_raw_url(host, owner, repo, ref_name, &test_path);
+                        suggestions.push(RepoSuggestedFetch {
+                            url,
+                            reason: "nearby_test_candidate".to_string(),
+                            group: RepoResultGroupKind::Tests,
+                            expected_kind: SourceKind::SourceFile,
+                            recommended_extract_mode: None,
+                            priority: 0,
+                            structured_repo_fetch: None,
+                            score: None,
+                            rank_reasons: vec!["nearby_test_candidate".to_string()],
+                            information_gain: None,
+                            stable: None,
+                            stable_id: None,
+                            source_id: card.stable_id.clone(),
+                            preferred_tool: Some("repo_fetch".to_string()),
+                        });
+                    }
+
+                    // Suggest example file
+                    if let Some(example_path) = infer_example_path(path) {
+                        let url = build_raw_url(host, owner, repo, ref_name, &example_path);
+                        suggestions.push(RepoSuggestedFetch {
+                            url,
+                            reason: "example_candidate".to_string(),
+                            group: RepoResultGroupKind::Examples,
+                            expected_kind: SourceKind::SourceFile,
+                            recommended_extract_mode: None,
+                            priority: 0,
+                            structured_repo_fetch: None,
+                            score: None,
+                            rank_reasons: vec!["example_candidate".to_string()],
+                            information_gain: None,
+                            stable: None,
+                            stable_id: None,
+                            source_id: card.stable_id.clone(),
+                            preferred_tool: Some("repo_fetch".to_string()),
+                        });
+                    }
+                }
+                SourceRole::Test => {
+                    // Suggest the corresponding implementation file
+                    if let Some(impl_path) = infer_implementation_path(path) {
+                        let url = build_raw_url(host, owner, repo, ref_name, &impl_path);
+                        suggestions.push(RepoSuggestedFetch {
+                            url,
+                            reason: "implementation_candidate".to_string(),
+                            group: RepoResultGroupKind::SourceFiles,
+                            expected_kind: SourceKind::SourceFile,
+                            recommended_extract_mode: None,
+                            priority: 0,
+                            structured_repo_fetch: None,
+                            score: None,
+                            rank_reasons: vec!["implementation_candidate".to_string()],
+                            information_gain: None,
+                            stable: None,
+                            stable_id: None,
+                            source_id: card.stable_id.clone(),
+                            preferred_tool: Some("repo_fetch".to_string()),
+                        });
+                    }
+                }
+                _ => {}
+            }
+
+            // Always suggest manifest for any code result
+            if matches!(
+                source_role,
+                SourceRole::Implementation | SourceRole::Configuration
+            ) {
+                for manifest in &["Cargo.toml", "package.json", "pyproject.toml", "go.mod"] {
+                    if let Some(manifest_path) = find_manifest_in_repo(path, manifest) {
+                        let url = build_raw_url(host, owner, repo, ref_name, &manifest_path);
+                        suggestions.push(RepoSuggestedFetch {
+                            url,
+                            reason: "manifest_context".to_string(),
+                            group: RepoResultGroupKind::Repository,
+                            expected_kind: SourceKind::SourceFile,
+                            recommended_extract_mode: None,
+                            priority: 0,
+                            structured_repo_fetch: None,
+                            score: None,
+                            rank_reasons: vec!["manifest_context".to_string()],
+                            information_gain: None,
+                            stable: None,
+                            stable_id: None,
+                            source_id: card.stable_id.clone(),
+                            preferred_tool: Some("repo_fetch".to_string()),
+                        });
+                        break; // only suggest one manifest
+                    }
+                }
+            }
+
+            // Suggest changelog for release/changelog role
+            if matches!(source_role, SourceRole::Changelog | SourceRole::Migration) {
+                let url = card.url.clone();
+                suggestions.push(RepoSuggestedFetch {
+                    url,
+                    reason: "changelog_source".to_string(),
+                    group: RepoResultGroupKind::Changelog,
+                    expected_kind: SourceKind::ReleaseNotes,
+                    recommended_extract_mode: Some(ExtractMode::Markdown),
+                    priority: 0,
+                    structured_repo_fetch: None,
+                    score: None,
+                    rank_reasons: vec!["changelog_source".to_string()],
+                    information_gain: None,
+                    stable: None,
+                    stable_id: None,
+                    source_id: card.stable_id.clone(),
+                    preferred_tool: Some("web_fetch".to_string()),
+                });
+            }
+        }
+    }
+
+    suggestions
+}
+
+/// Infer a test file path from an implementation path.
+///
+/// Heuristic: look for a `tests/` directory at the same level as the
+/// source root, using the same filename.
+fn infer_test_path(path: &str) -> Option<String> {
+    let filename = path.rsplit('/').next()?;
+    let components: Vec<&str> = path.split('/').collect();
+    if components.len() <= 1 {
+        return None;
+    }
+    // Walk up to find the source root (src/) and place tests/ as a sibling.
+    // e.g. src/lib.rs -> tests/lib.rs, src/foo/bar.rs -> tests/bar.rs
+    let test_in_tests_dir = if components.len() >= 2 {
+        let parent = components[components.len() - 2];
+        if parent == "src" {
+            // src/lib.rs -> tests/lib.rs
+            format!("tests/{filename}")
+        } else {
+            // src/foo/bar.rs -> tests/bar.rs
+            format!("tests/{filename}")
+        }
+    } else {
+        format!("tests/{filename}")
+    };
+    Some(test_in_tests_dir)
+}
+
+/// Infer an example file path from an implementation path.
+///
+/// Heuristic: look for an `examples/` directory at the same level as the
+/// source root, using the same filename.
+fn infer_example_path(path: &str) -> Option<String> {
+    let filename = path.rsplit('/').next()?;
+    let components: Vec<&str> = path.split('/').collect();
+    if components.len() <= 1 {
+        return None;
+    }
+    Some(format!("examples/{filename}"))
+}
+
+/// Infer an implementation file path from a test file path.
+///
+/// Reverse of `infer_test_path`: tests/lib.rs -> src/lib.rs
+fn infer_implementation_path(path: &str) -> Option<String> {
+    let filename = path.rsplit('/').next()?;
+    let components: Vec<&str> = path.split('/').collect();
+    if components.len() <= 1 {
+        return None;
+    }
+    Some(format!("src/{filename}"))
+}
+
+/// Find a manifest file in the repository root.
+///
+/// Walks up from the file path to find the top-level directory and
+/// returns the manifest path relative to the repo root.
+fn find_manifest_in_repo(_path: &str, manifest: &str) -> Option<String> {
+    // Manifests are always at the repo root regardless of file location.
+    Some(manifest.to_string())
+}
+
+/// Build a raw URL for a file based on the code host.
+fn build_raw_url(
+    host: crate::core::code_metadata::CodeHost,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    path: &str,
+) -> String {
+    match host {
+        crate::core::code_metadata::CodeHost::Github => {
+            format!("https://raw.githubusercontent.com/{owner}/{repo}/{ref_name}/{path}")
+        }
+        crate::core::code_metadata::CodeHost::Gitlab => {
+            let namespace = if owner.is_empty() {
+                repo.to_string()
+            } else {
+                format!("{owner}/{repo}")
+            };
+            format!("https://gitlab.com/{namespace}/-/raw/{ref_name}/{path}")
+        }
+        crate::core::code_metadata::CodeHost::Codeberg => {
+            format!("https://codeberg.org/{owner}/{repo}/raw/branch/{ref_name}/{path}")
+        }
+        _ => format!("https://github.com/{owner}/{repo}/blob/{ref_name}/{path}"),
+    }
 }
 
 #[cfg(test)]
@@ -672,6 +930,364 @@ mod tests {
             "releases should outrank docs in package/migration mode, got {:?} (score {:?})",
             fetches[0].group,
             fetches[0].score,
+        );
+    }
+
+    #[test]
+    fn infer_test_path_from_src() {
+        let result = infer_test_path("src/lib.rs");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "tests/lib.rs");
+    }
+
+    #[test]
+    fn infer_test_path_from_nested_src() {
+        let result = infer_test_path("src/foo/bar.rs");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "tests/bar.rs");
+    }
+
+    #[test]
+    fn infer_test_path_returns_none_for_single_component() {
+        assert!(infer_test_path("lib.rs").is_none());
+    }
+
+    #[test]
+    fn infer_example_path_from_src() {
+        let result = infer_example_path("src/main.rs");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "examples/main.rs");
+    }
+
+    #[test]
+    fn infer_example_path_returns_none_for_single_component() {
+        assert!(infer_example_path("main.rs").is_none());
+    }
+
+    #[test]
+    fn infer_implementation_path_from_test() {
+        let result = infer_implementation_path("tests/lib.rs");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "src/lib.rs");
+    }
+
+    #[test]
+    fn find_manifest_in_repo_root() {
+        let result = find_manifest_in_repo("src/lib.rs", "Cargo.toml");
+        assert_eq!(result, Some("Cargo.toml".to_string()));
+    }
+
+    #[test]
+    fn find_manifest_always_returns_root_path() {
+        assert_eq!(
+            find_manifest_in_repo("lib.rs", "Cargo.toml"),
+            Some("Cargo.toml".to_string())
+        );
+    }
+
+    #[test]
+    fn complementary_suggestions_for_implementation() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![{
+                let mut card =
+                    make_card("lib.rs", "https://github.com/foo/bar/blob/main/src/lib.rs");
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("src/lib.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        // Should have at least a test suggestion, an example suggestion, and a manifest suggestion
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.reason == "nearby_test_candidate"),
+            "should suggest a test file"
+        );
+        assert!(
+            suggestions.iter().any(|s| s.reason == "example_candidate"),
+            "should suggest an example file"
+        );
+        assert!(
+            suggestions.iter().any(|s| s.reason == "manifest_context"),
+            "should suggest a manifest"
+        );
+    }
+
+    #[test]
+    fn complementary_suggestions_for_test_role() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::Tests,
+            vec![{
+                let mut card = make_card(
+                    "lib_test.rs",
+                    "https://github.com/foo/bar/blob/main/tests/lib_test.rs",
+                );
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("tests/lib_test.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Test),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.reason == "implementation_candidate"),
+            "test role should suggest the implementation file"
+        );
+    }
+
+    #[test]
+    fn complementary_suggestions_for_configuration_role() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![{
+                let mut card =
+                    make_card("build.rs", "https://github.com/foo/bar/blob/main/build.rs");
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("build.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Configuration),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        // Configuration should get a manifest suggestion
+        assert!(
+            suggestions.iter().any(|s| s.reason == "manifest_context"),
+            "configuration role should suggest a manifest"
+        );
+    }
+
+    #[test]
+    fn complementary_suggestions_for_changelog_role() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::Changelog,
+            vec![{
+                let mut card = make_card(
+                    "CHANGELOG.md",
+                    "https://github.com/foo/bar/blob/main/CHANGELOG.md",
+                );
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("CHANGELOG.md".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Changelog),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        assert!(
+            suggestions.iter().any(|s| s.reason == "changelog_source"),
+            "changelog role should suggest itself as changelog source"
+        );
+    }
+
+    #[test]
+    fn complementary_suggestions_skip_cards_without_code_evidence() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::OfficialDocs,
+            vec![make_card("Docs", "https://docs.example.com")],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        assert!(
+            suggestions.is_empty(),
+            "cards without code_evidence should produce no complementary suggestions"
+        );
+    }
+
+    #[test]
+    fn complementary_suggestions_use_raw_url_for_github() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![{
+                let mut card =
+                    make_card("lib.rs", "https://github.com/foo/bar/blob/main/src/lib.rs");
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("src/lib.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        for s in &suggestions {
+            assert!(
+                s.url.contains("raw.githubusercontent.com"),
+                "GitHub complementary suggestions should use raw.githubusercontent.com URLs, got: {}",
+                s.url
+            );
+        }
+    }
+
+    #[test]
+    fn complementary_suggestions_for_gitlab_use_correct_raw_url() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![{
+                let mut card = make_card(
+                    "lib.rs",
+                    "https://gitlab.com/group/project/-/blob/main/src/lib.rs",
+                );
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Gitlab),
+                    owner: Some("group".to_string()),
+                    repo: Some("project".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("src/lib.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        for s in &suggestions {
+            assert!(
+                s.url.contains("gitlab.com") && s.url.contains("/raw/"),
+                "GitLab complementary suggestions should use gitlab.com/.../raw/ URLs, got: {}",
+                s.url
+            );
+        }
+    }
+
+    #[test]
+    fn complementary_suggestions_prefer_repo_fetch_tool() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![{
+                let mut card =
+                    make_card("lib.rs", "https://github.com/foo/bar/blob/main/src/lib.rs");
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("src/lib.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        for s in &suggestions {
+            // Changelog suggestions use web_fetch, others use repo_fetch
+            if s.reason != "changelog_source" {
+                assert_eq!(
+                    s.preferred_tool.as_deref(),
+                    Some("repo_fetch"),
+                    "non-changelog complementary suggestions should prefer repo_fetch"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn complementary_suggestions_link_to_source_card() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![{
+                let mut card =
+                    make_card("lib.rs", "https://github.com/foo/bar/blob/main/src/lib.rs");
+                card.stable_id = Some("src_abc123".to_string());
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("src/lib.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        for s in &suggestions {
+            assert_eq!(
+                s.source_id.as_deref(),
+                Some("src_abc123"),
+                "complementary suggestions should link back to the source card"
+            );
+        }
+    }
+
+    #[test]
+    fn complementary_suggestions_dedup_per_manifest() {
+        // Two implementation files in the same repo should each get one manifest suggestion
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![
+                {
+                    let mut card =
+                        make_card("lib.rs", "https://github.com/foo/bar/blob/main/src/lib.rs");
+                    card.metadata.code_evidence = Some(CodeEvidence {
+                        host: Some(CodeHost::Github),
+                        owner: Some("foo".to_string()),
+                        repo: Some("bar".to_string()),
+                        ref_name: Some("main".to_string()),
+                        path: Some("src/lib.rs".to_string()),
+                        source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                        ..Default::default()
+                    });
+                    card
+                },
+                {
+                    let mut card = make_card(
+                        "util.rs",
+                        "https://github.com/foo/bar/blob/main/src/util.rs",
+                    );
+                    card.metadata.code_evidence = Some(CodeEvidence {
+                        host: Some(CodeHost::Github),
+                        owner: Some("foo".to_string()),
+                        repo: Some("bar".to_string()),
+                        ref_name: Some("main".to_string()),
+                        path: Some("src/util.rs".to_string()),
+                        source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                        ..Default::default()
+                    });
+                    card
+                },
+            ],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        let manifest_count = suggestions
+            .iter()
+            .filter(|s| s.reason == "manifest_context")
+            .count();
+        assert_eq!(
+            manifest_count, 2,
+            "each implementation card should get its own manifest suggestion, got {manifest_count}"
         );
     }
 }

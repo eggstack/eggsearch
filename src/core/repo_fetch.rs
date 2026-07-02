@@ -236,6 +236,10 @@ pub struct RepoFetchResponse {
     /// Present when symbol, match_text, or expand_to_block was used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_span: Option<SelectedSpan>,
+    /// Lightweight code context extracted from the fetched content.
+    /// Present when the fetched file is a recognized source code file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_context: Option<crate::core::code_context::CodeContext>,
 }
 
 /// Trust label for fetched repository content.

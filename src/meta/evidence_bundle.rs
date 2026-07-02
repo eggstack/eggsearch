@@ -450,6 +450,7 @@ fn compute_gaps(
                 ),
                 source_id: Some(source.source_id.clone()),
                 provider_id: source.provider_id.clone(),
+                affected_source_ids: vec![],
             });
         }
     }
@@ -466,6 +467,7 @@ fn compute_gaps(
                     .unwrap_or_else(|| "fetch failed".to_string()),
                 source_id: item.source_id.clone(),
                 provider_id: None,
+                affected_source_ids: vec![],
             });
         }
     }
@@ -483,6 +485,7 @@ fn compute_gaps(
                         ),
                         source_id: Some(source.source_id.clone()),
                         provider_id: source.provider_id.clone(),
+                        affected_source_ids: vec![],
                     });
                 }
             }
@@ -533,6 +536,7 @@ fn compute_gaps(
                 message: warning.message.clone(),
                 source_id: None,
                 provider_id: Some(warning.provider_id.clone()),
+                affected_source_ids: vec![],
             });
         }
     }
@@ -548,10 +552,100 @@ fn compute_gaps(
             message: "all sources are external untrusted content".to_string(),
             source_id: None,
             provider_id: None,
+            affected_source_ids: vec![],
         });
     }
 
+    // Detect missing complementary evidence (tests, examples, manifests, changelogs, security policy)
+    detect_missing_complementary_evidence(&mut gaps, sources);
+
     gaps
+}
+
+/// Detect missing complementary evidence (tests, examples, manifests, changelogs, security policy).
+fn detect_missing_complementary_evidence(
+    gaps: &mut Vec<EvidenceGap>,
+    sources: &[EvidenceBundleSource],
+) {
+    use crate::core::code_evidence::SourceRole;
+
+    let source_role = |s: &EvidenceBundleSource| -> Option<SourceRole> {
+        s.metadata
+            .as_ref()
+            .and_then(|m| m.code_evidence.as_ref())
+            .and_then(|ce| ce.source_role)
+    };
+
+    let has_role =
+        |role: SourceRole| -> bool { sources.iter().any(|s| source_role(s) == Some(role)) };
+
+    let has_implementation = has_role(SourceRole::Implementation);
+
+    if has_implementation {
+        if !has_role(SourceRole::Test) {
+            let affected: Vec<String> = sources
+                .iter()
+                .filter(|s| source_role(s) == Some(SourceRole::Implementation))
+                .map(|s| s.source_id.clone())
+                .collect();
+            gaps.push(EvidenceGap {
+                kind: EvidenceGapKind::MissingTests,
+                message: "No test files found for implementation files".to_string(),
+                source_id: None,
+                provider_id: None,
+                affected_source_ids: affected,
+            });
+        }
+
+        if !has_role(SourceRole::Example) {
+            gaps.push(EvidenceGap {
+                kind: EvidenceGapKind::MissingExamples,
+                message: "No example files found for implementation files".to_string(),
+                source_id: None,
+                provider_id: None,
+                affected_source_ids: vec![],
+            });
+        }
+
+        if !has_role(SourceRole::Manifest) {
+            gaps.push(EvidenceGap {
+                kind: EvidenceGapKind::MissingManifest,
+                message: "No manifest found for code results".to_string(),
+                source_id: None,
+                provider_id: None,
+                affected_source_ids: vec![],
+            });
+        }
+    }
+
+    let has_release_or_version = sources.iter().any(|s| {
+        matches!(
+            s.source_kind,
+            Some(SourceKind::ReleaseNotes) | Some(SourceKind::Tag) | Some(SourceKind::Commit)
+        )
+    });
+    if has_release_or_version && !has_role(SourceRole::Changelog) {
+        gaps.push(EvidenceGap {
+            kind: EvidenceGapKind::MissingChangelog,
+            message: "No changelog found for version-related results".to_string(),
+            source_id: None,
+            provider_id: None,
+            affected_source_ids: vec![],
+        });
+    }
+
+    let has_security = sources
+        .iter()
+        .any(|s| matches!(s.source_kind, Some(SourceKind::SecurityAdvisory)));
+    if has_security && !has_role(SourceRole::SecurityPolicy) {
+        gaps.push(EvidenceGap {
+            kind: EvidenceGapKind::MissingSecurityPolicy,
+            message: "No security policy found for security-related results".to_string(),
+            source_id: None,
+            provider_id: None,
+            affected_source_ids: vec![],
+        });
+    }
 }
 
 #[cfg(test)]
@@ -1291,6 +1385,430 @@ mod tests {
         assert!(
             unfetched[0].source_id.is_some(),
             "gap should reference a source_id"
+        );
+    }
+
+    #[test]
+    fn gap_analysis_detects_missing_tests() {
+        use crate::core::code_evidence::{CodeEvidence, SourceRole};
+        use crate::core::code_metadata::{CodeHost, CodeMetadata};
+        use crate::core::source_card::SourceMetadata;
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![EvidenceSourceInput {
+                id: None,
+                url: Some("https://github.com/owner/repo/blob/main/src/lib.rs".to_string()),
+                title: Some("lib.rs".to_string()),
+                snippet: None,
+                providers: vec!["duckduckgo".to_string()],
+                score: None,
+                trust: None,
+                trust_markers: None,
+                metadata: Some(SourceMetadata {
+                    source_kind: crate::core::source_card::SourceKind::SourceFile,
+                    domain: Some("github.com".to_string()),
+                    rank_reasons: vec![],
+                    code: Some(CodeMetadata {
+                        host: Some(CodeHost::Github),
+                        owner: Some("owner".to_string()),
+                        repo: Some("repo".to_string()),
+                        path: Some("src/lib.rs".to_string()),
+                        ref_name: None,
+                        language: None,
+                        symbol_hint: None,
+                        line_start: None,
+                        line_end: None,
+                    }),
+                    code_evidence: Some(CodeEvidence {
+                        host: Some(CodeHost::Github),
+                        owner: Some("owner".to_string()),
+                        repo: Some("repo".to_string()),
+                        ref_name: None,
+                        commit_sha: None,
+                        path: Some("src/lib.rs".to_string()),
+                        language: None,
+                        source_role: Some(SourceRole::Implementation),
+                        browser_url: None,
+                        raw_url: None,
+                        permalink_url: None,
+                        raw_permalink_url: None,
+                        match_line_start: None,
+                        match_line_end: None,
+                        context_line_start: None,
+                        context_line_end: None,
+                        matched_symbol: None,
+                        symbol_kind: None,
+                        enclosing_symbol: None,
+                        evidence_confidence: None,
+                        evidence_reasons: vec![],
+                        imports: vec![],
+                    }),
+                    issue: None,
+                    release: None,
+                    vulnerability: None,
+                    local_repo_match: None,
+                }),
+                quality: None,
+            }],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingTests),
+            "expected MissingTests gap, got: {:?}",
+            bundle.gaps,
+        );
+        let missing_tests = bundle
+            .gaps
+            .iter()
+            .find(|g| g.kind == EvidenceGapKind::MissingTests)
+            .unwrap();
+        assert_eq!(missing_tests.affected_source_ids.len(), 1);
+    }
+
+    #[test]
+    fn gap_analysis_no_gap_when_tests_present() {
+        use crate::core::code_evidence::{CodeEvidence, SourceRole};
+        use crate::core::code_metadata::{CodeHost, CodeMetadata};
+        use crate::core::source_card::SourceMetadata;
+
+        let make_source_with_role = |role: SourceRole, url: &str, path: &str| EvidenceSourceInput {
+            id: None,
+            url: Some(url.to_string()),
+            title: Some("file".to_string()),
+            snippet: None,
+            providers: vec!["duckduckgo".to_string()],
+            score: None,
+            trust: None,
+            trust_markers: None,
+            metadata: Some(SourceMetadata {
+                source_kind: crate::core::source_card::SourceKind::SourceFile,
+                domain: Some("github.com".to_string()),
+                rank_reasons: vec![],
+                code: Some(CodeMetadata {
+                    host: Some(CodeHost::Github),
+                    owner: Some("owner".to_string()),
+                    repo: Some("repo".to_string()),
+                    path: Some(path.to_string()),
+                    ref_name: None,
+                    language: None,
+                    symbol_hint: None,
+                    line_start: None,
+                    line_end: None,
+                }),
+                code_evidence: Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("owner".to_string()),
+                    repo: Some("repo".to_string()),
+                    ref_name: None,
+                    commit_sha: None,
+                    path: Some(path.to_string()),
+                    language: None,
+                    source_role: Some(role),
+                    browser_url: None,
+                    raw_url: None,
+                    permalink_url: None,
+                    raw_permalink_url: None,
+                    match_line_start: None,
+                    match_line_end: None,
+                    context_line_start: None,
+                    context_line_end: None,
+                    matched_symbol: None,
+                    symbol_kind: None,
+                    enclosing_symbol: None,
+                    evidence_confidence: None,
+                    evidence_reasons: vec![],
+                    imports: vec![],
+                }),
+                issue: None,
+                release: None,
+                vulnerability: None,
+                local_repo_match: None,
+            }),
+            quality: None,
+        };
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![
+                make_source_with_role(
+                    SourceRole::Implementation,
+                    "https://github.com/owner/repo/blob/main/src/lib.rs",
+                    "src/lib.rs",
+                ),
+                make_source_with_role(
+                    SourceRole::Test,
+                    "https://github.com/owner/repo/blob/main/tests/lib.rs",
+                    "tests/lib.rs",
+                ),
+            ],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            !bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingTests),
+            "should not have MissingTests gap when tests are present, got: {:?}",
+            bundle.gaps,
+        );
+    }
+
+    #[test]
+    fn gap_analysis_missing_examples() {
+        use crate::core::code_evidence::{CodeEvidence, SourceRole};
+        use crate::core::code_metadata::{CodeHost, CodeMetadata};
+        use crate::core::source_card::SourceMetadata;
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![EvidenceSourceInput {
+                id: None,
+                url: Some("https://github.com/owner/repo/blob/main/src/lib.rs".to_string()),
+                title: Some("lib.rs".to_string()),
+                snippet: None,
+                providers: vec!["duckduckgo".to_string()],
+                score: None,
+                trust: None,
+                trust_markers: None,
+                metadata: Some(SourceMetadata {
+                    source_kind: crate::core::source_card::SourceKind::SourceFile,
+                    domain: Some("github.com".to_string()),
+                    rank_reasons: vec![],
+                    code: Some(CodeMetadata {
+                        host: Some(CodeHost::Github),
+                        owner: Some("owner".to_string()),
+                        repo: Some("repo".to_string()),
+                        path: Some("src/lib.rs".to_string()),
+                        ref_name: None,
+                        language: None,
+                        symbol_hint: None,
+                        line_start: None,
+                        line_end: None,
+                    }),
+                    code_evidence: Some(CodeEvidence {
+                        host: Some(CodeHost::Github),
+                        owner: Some("owner".to_string()),
+                        repo: Some("repo".to_string()),
+                        ref_name: None,
+                        commit_sha: None,
+                        path: Some("src/lib.rs".to_string()),
+                        language: None,
+                        source_role: Some(SourceRole::Implementation),
+                        browser_url: None,
+                        raw_url: None,
+                        permalink_url: None,
+                        raw_permalink_url: None,
+                        match_line_start: None,
+                        match_line_end: None,
+                        context_line_start: None,
+                        context_line_end: None,
+                        matched_symbol: None,
+                        symbol_kind: None,
+                        enclosing_symbol: None,
+                        evidence_confidence: None,
+                        evidence_reasons: vec![],
+                        imports: vec![],
+                    }),
+                    issue: None,
+                    release: None,
+                    vulnerability: None,
+                    local_repo_match: None,
+                }),
+                quality: None,
+            }],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingExamples),
+            "expected MissingExamples gap, got: {:?}",
+            bundle.gaps,
+        );
+    }
+
+    #[test]
+    fn gap_analysis_missing_manifest() {
+        use crate::core::code_evidence::{CodeEvidence, SourceRole};
+        use crate::core::code_metadata::{CodeHost, CodeMetadata};
+        use crate::core::source_card::SourceMetadata;
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![EvidenceSourceInput {
+                id: None,
+                url: Some("https://github.com/owner/repo/blob/main/src/lib.rs".to_string()),
+                title: Some("lib.rs".to_string()),
+                snippet: None,
+                providers: vec!["duckduckgo".to_string()],
+                score: None,
+                trust: None,
+                trust_markers: None,
+                metadata: Some(SourceMetadata {
+                    source_kind: crate::core::source_card::SourceKind::SourceFile,
+                    domain: Some("github.com".to_string()),
+                    rank_reasons: vec![],
+                    code: Some(CodeMetadata {
+                        host: Some(CodeHost::Github),
+                        owner: Some("owner".to_string()),
+                        repo: Some("repo".to_string()),
+                        path: Some("src/lib.rs".to_string()),
+                        ref_name: None,
+                        language: None,
+                        symbol_hint: None,
+                        line_start: None,
+                        line_end: None,
+                    }),
+                    code_evidence: Some(CodeEvidence {
+                        host: Some(CodeHost::Github),
+                        owner: Some("owner".to_string()),
+                        repo: Some("repo".to_string()),
+                        ref_name: None,
+                        commit_sha: None,
+                        path: Some("src/lib.rs".to_string()),
+                        language: None,
+                        source_role: Some(SourceRole::Implementation),
+                        browser_url: None,
+                        raw_url: None,
+                        permalink_url: None,
+                        raw_permalink_url: None,
+                        match_line_start: None,
+                        match_line_end: None,
+                        context_line_start: None,
+                        context_line_end: None,
+                        matched_symbol: None,
+                        symbol_kind: None,
+                        enclosing_symbol: None,
+                        evidence_confidence: None,
+                        evidence_reasons: vec![],
+                        imports: vec![],
+                    }),
+                    issue: None,
+                    release: None,
+                    vulnerability: None,
+                    local_repo_match: None,
+                }),
+                quality: None,
+            }],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingManifest),
+            "expected MissingManifest gap, got: {:?}",
+            bundle.gaps,
+        );
+    }
+
+    #[test]
+    fn gap_analysis_no_complementary_gaps_without_implementation() {
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![make_source("https://docs.rs/axum", "axum docs", "ddg")],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            !bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingTests),
+            "should not detect MissingTests without implementation sources"
+        );
+        assert!(
+            !bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingExamples),
+            "should not detect MissingExamples without implementation sources"
+        );
+        assert!(
+            !bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingManifest),
+            "should not detect MissingManifest without implementation sources"
+        );
+    }
+
+    #[test]
+    fn gap_analysis_missing_changelog_for_release() {
+        use crate::core::source_card::SourceMetadata;
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![EvidenceSourceInput {
+                id: None,
+                url: Some("https://github.com/owner/repo/releases/tag/v1.0".to_string()),
+                title: Some("v1.0 release".to_string()),
+                snippet: None,
+                providers: vec!["duckduckgo".to_string()],
+                score: None,
+                trust: None,
+                trust_markers: None,
+                metadata: Some(SourceMetadata {
+                    source_kind: crate::core::source_card::SourceKind::ReleaseNotes,
+                    ..Default::default()
+                }),
+                quality: None,
+            }],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(
+            bundle
+                .gaps
+                .iter()
+                .any(|g| g.kind == EvidenceGapKind::MissingChangelog),
+            "expected MissingChangelog gap for release results, got: {:?}",
+            bundle.gaps,
         );
     }
 }

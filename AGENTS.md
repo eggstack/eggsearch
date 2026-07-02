@@ -422,7 +422,18 @@ Repo metadata is deterministic and advisory. Agents should use it to choose
 which result to fetch, but must still treat snippets and fetched content as
 untrusted data.
 
-When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, unknown), `evidence_confidence` (exact, strong, weak, unknown), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence. `permalink_url` is browser-viewable (e.g. `github.com/.../blob/{sha}/...`); `raw_permalink_url` is raw content at the commit SHA. When the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type), `code_evidence` also includes a `matched_symbol` field with the matched text and `provider_text_match` in `evidence_reasons`.
+When a result has structured `code` metadata (from a code-host URL), `SourceMetadata` also includes an optional `code_evidence` object with derived raw/permalink URLs, `source_role` (implementation, test, example, benchmark, configuration, build, documentation, readme, changelog, migration, manifest, lockfile, security_policy, ci, generated, vendor, unknown), `evidence_confidence` (exact, strong, weak, unknown), `imports: Vec<String>` (top-level imports/use declarations extracted from the file prefix), and `evidence_reasons` listing how the evidence was derived. `code_evidence` is deterministic metadata — it is not fetched content and is still untrusted external evidence. `permalink_url` is browser-viewable (e.g. `github.com/.../blob/{sha}/...`); `raw_permalink_url` is raw content at the commit SHA. When the provider returns text-match data (e.g. GitHub Code Search with the `text-match` media type), `code_evidence` also includes a `matched_symbol` field with the matched text and `provider_text_match` in `evidence_reasons`.
+
+### Code Context Extraction
+
+`CodeContext` is a lightweight, line-oriented extraction result returned by `repo_fetch` for source code files. It provides:
+- `language: Option<String>` — programming language from file extension
+- `imports: Vec<String>` — top-level imports/use declarations from the first 50 lines
+- `enclosing_symbol: Option<String>` — enclosing function/struct/class around the target line
+- `enclosing_symbol_kind: Option<String>` — kind of the enclosing symbol (function, struct, class, etc.)
+- `enclosing_line_start/end: Option<u32>` — line range of the enclosing symbol
+
+Supported languages: Rust, Python, TypeScript/JavaScript, Go. Extraction is bounded (50 lines for imports, 200 lines for enclosing symbol scan).
 
 ### Deterministic Cross-Tool Identity
 
@@ -752,6 +763,14 @@ fetch URLs are selected in this order:
 
 The priority is implemented in `src/meta/suggested_fetches.rs`.
 
+### Complementary Suggestions
+
+When source cards have code_evidence metadata, suggested fetches also include complementary hints:
+- Implementation files → nearby test files, example files, manifests
+- Test files → corresponding implementation files
+- Configuration files → manifests
+- Changelog/migration files → self as changelog source
+
 ### Fetch Ranking Pipeline
 
 Suggested fetches are now ranked by a deterministic scoring model
@@ -1004,7 +1023,9 @@ fake `host: "github"` fields.
   `trust_markers` (sanitization metadata),
   `selected_span` (optional metadata describing how the final
   line span was selected — present when symbol, match_text, or
-  expand_to_block was used)
+  expand_to_block was used),
+  `code_context: Option<CodeContext>` (optional structured context
+  for source code files — language, imports, enclosing symbol)
 
 **Supported hosts:**
 - GitHub: full support (raw content via `raw.githubusercontent.com`)
@@ -1756,6 +1777,11 @@ lets agents deduplicate evidence across bundles without content comparison.
 - `NoFixedVersionFound`: no fixed version found for a vulnerability
 - `NoCounterpointFound`: no contradicting or alternative evidence when requested
 - `NoBenchmarksFound`: no benchmarks found when requested
+- `missing_tests`: no test files found for implementation files
+- `missing_examples`: no example files found
+- `missing_manifest`: no manifest found for code results
+- `missing_changelog`: no changelog found for version-related results
+- `missing_security_policy`: no security policy found for security-related results
 
 **Trust handling:**
 - Preserves all `trust` labels from input sources and fetches

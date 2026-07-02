@@ -277,13 +277,15 @@ Use small commits in this order:
 
 ## Completion checklist
 
-- [ ] API-only live mode requires at least one configured API provider.
-- [ ] Provider status still reports missing-key providers accurately.
-- [ ] All workflow examples deserialize against real argument structs or are clearly marked non-runnable.
-- [ ] Unknown fetch warnings no longer map to provider failure.
-- [ ] Dispatch pending queue removal preserves priority order.
-- [ ] Deadline skipped/interrupted telemetry is tested.
+- [x] API-only live mode requires at least one configured API provider.
+- [x] Provider status still reports missing-key providers accurately.
+- [x] All workflow examples deserialize against real argument structs or are clearly marked non-runnable.
+- [x] Unknown fetch warnings no longer map to provider failure.
+- [x] Dispatch pending queue removal preserves priority order.
+- [x] Deadline skipped/interrupted telemetry is tested.
 - [x] Public stable IDs no longer use `DefaultHasher`.
 - [x] Identity algorithm has versioned input and golden tests.
 - [x] URL canonicalization policy around `www.` is documented and tested.
 - [x] fmt, clippy, and tests pass.
+
+All corrective items have been implemented. This plan is closed.

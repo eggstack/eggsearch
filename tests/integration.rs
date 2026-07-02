@@ -8872,6 +8872,71 @@ async fn repo_fetch_line_range_with_context_via_mock() {
 }
 
 #[tokio::test]
+async fn repo_fetch_code_context_present_for_rust_file() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(
+                "use std::collections::HashMap;\n\nfn main() {\n    let m = HashMap::new();\n}\n",
+            );
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: Some(3),
+            line_end: Some(4),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let code_context = v.get("code_context");
+    assert!(
+        code_context.is_some(),
+        "code_context should be present for Rust files"
+    );
+    let cc = code_context.unwrap();
+    assert!(
+        cc.get("language").is_some(),
+        "code_context should have language"
+    );
+    assert_eq!(cc["language"], "rust", "language should be rust");
+}
+
+#[tokio::test]
 async fn repo_fetch_429_via_run_repo_fetch() {
     use httpmock::prelude::*;
 

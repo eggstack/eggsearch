@@ -3,6 +3,7 @@
 //! HTTP, or search-engine implementation.
 
 pub mod batch_fetch;
+pub mod code_context;
 pub mod code_evidence;
 pub mod code_host_fetch;
 pub mod code_metadata;
@@ -42,6 +43,10 @@ pub mod warning;
 
 pub use crate::fetch::span::SelectedSpan;
 pub use batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult};
+pub use code_context::{
+    detect_language, detect_language_str, extract_code_context, extract_imports,
+    find_enclosing_symbol, CodeContext, ExtractionLanguage,
+};
 pub use code_evidence::{
     build_code_evidence, infer_source_role, CodeEvidence, CodeEvidenceReason, EvidenceConfidence,
     SourceRole, SymbolKind,
