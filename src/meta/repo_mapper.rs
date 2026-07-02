@@ -277,6 +277,7 @@ pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
             "no_native_tree_provider: no native tree/list API provider is available; \
              results are from search-based discovery",
         )],
+        structured_warnings: Vec::new(),
         trust_markers: TrustMarkers::default(),
         local_checkout: None,
         telemetry: None,

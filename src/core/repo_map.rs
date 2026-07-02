@@ -11,6 +11,7 @@ use crate::core::code_metadata::CodeHost;
 use crate::core::repo_fetch::RepoFetchRequest;
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
+use crate::core::warning::AgentWarning;
 use crate::meta::response::ProviderFailure;
 
 /// Classification of an important file at a repository root.
@@ -312,6 +313,9 @@ pub struct RepoMapResponse {
     /// Advisory warnings emitted during the request.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<SearchWarning>,
+    /// Structured warnings with stable codes, severity, and context.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_warnings: Vec<AgentWarning>,
     /// Trust and sanitization metadata for the response.
     #[serde(default)]
     pub trust_markers: TrustMarkers,
@@ -1113,6 +1117,7 @@ mod tests {
             providers_queried: vec!["github".to_string()],
             providers_failed: vec![],
             warnings: vec![],
+            structured_warnings: vec![],
             trust_markers: TrustMarkers::default(),
             local_checkout: None,
             telemetry: None,

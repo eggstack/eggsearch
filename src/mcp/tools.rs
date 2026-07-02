@@ -1898,6 +1898,9 @@ pub async fn run_repo_map(
             ));
     }
 
+    // Populate structured warnings from accumulated string warnings
+    response.structured_warnings = crate::core::warning::convert_warnings(&response.warnings);
+
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
     Ok(value)
@@ -3061,6 +3064,48 @@ mod tests {
         assert!(
             value.get("structured_warnings").is_some(),
             "web_fetch response must always include structured_warnings"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_map_structured_warnings_present() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+        let args = RepoMapArgs {
+            host: Some("github".to_string()),
+            owner: "test-org".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            max_entries: None,
+            max_depth: None,
+            include_files: None,
+            include_directories: None,
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: vec![],
+        };
+        let value = run_repo_map(state, args).await.unwrap();
+        // structured_warnings must always be in the payload (even if empty).
+        assert!(
+            value.get("structured_warnings").is_some(),
+            "repo_map response must always include structured_warnings"
+        );
+        // The fallback response should include a no_native_tree_provider warning.
+        let structured = value
+            .get("structured_warnings")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert!(
+            !structured.is_empty(),
+            "repo_map structured_warnings should not be empty (fallback emits warnings)"
+        );
+        // Verify legacy warnings are also present alongside.
+        assert!(
+            value.get("warnings").is_some(),
+            "repo_map response must also include legacy warnings"
         );
     }
 }
