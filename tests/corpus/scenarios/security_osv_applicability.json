@@ -1,0 +1,31 @@
+{
+  "id": "security_osv_applicability",
+  "description": "Security search with OSV applicability assessment for npm package axios version 1.5.0",
+  "tool": "security_search",
+  "request": {
+    "query": "axios vulnerability",
+    "ecosystem": "npm",
+    "package": "axios",
+    "version": "1.5.0",
+    "assess_applicability": true
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "GHSA-xxxx-xxxx-xxxx: Vulnerability in axios",
+          "url": "https://osv.dev/vulnerability/GHSA-xxxx-xxxx-xxxx",
+          "snippet": "Affected versions: < 1.6.0, Patched: 1.6.0"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "security_metasearch",
+    "groups_present": [],
+    "warnings_contain": [],
+    "trust": "external_untrusted",
+    "notes": "Applicability field is present when OSV native provider is used; with mock engines it may be absent. Groups are checked instead."
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "id": "exact_error_rust",
+  "description": "Exact-error mode with Rust error code E0308 produces error_context and groups results",
+  "tool": "repo_search",
+  "request": {
+    "query": "error[E0308]: mismatched types -- expected `&str` found `i32`",
+    "mode": "exact_error"
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "E0308: mismatched types",
+          "url": "https://doc.rust-lang.org/error-index.html#E0308",
+          "snippet": "expected `&str`, found `i32`"
+        },
+        {
+          "title": "Issue: E0308 regression in nightly",
+          "url": "https://github.com/rust-lang/rust/issues/123456",
+          "snippet": "E0308 regression with trait bounds"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "exact_error",
+    "error_context_present": true,
+    "groups_present": [],
+    "warnings_contain": [],
+    "suggested_fetches": {
+      "min": 1
+    },
+    "trust": "external_untrusted"
+  }
+}

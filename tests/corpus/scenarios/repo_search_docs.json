@@ -1,0 +1,46 @@
+{
+  "id": "repo_search_docs",
+  "description": "Repo search with docs intent promotes official documentation and source file groups",
+  "tool": "repo_search",
+  "request": {
+    "query": "axum",
+    "intent": "docs"
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "Axum Docs",
+          "url": "https://docs.rs/axum/latest/axum/",
+          "snippet": "A web framework for Rust"
+        },
+        {
+          "title": "Axum Source",
+          "url": "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+          "snippet": "Axum source code"
+        },
+        {
+          "title": "Axum Issue #123",
+          "url": "https://github.com/tokio-rs/axum/issues/123",
+          "snippet": "A bug report"
+        },
+        {
+          "title": "Axum Release 0.7",
+          "url": "https://github.com/tokio-rs/axum/releases/tag/v0.7.0",
+          "snippet": "Release notes"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "groups_present": ["official_docs", "source_files"],
+    "warnings_contain": [],
+    "suggested_fetches": {
+      "min": 1,
+      "preferred_tool": "repo_fetch",
+      "contains_url_pattern": "docs.rs"
+    },
+    "trust": "external_untrusted"
+  }
+}

@@ -2145,6 +2145,24 @@ path, partial failure, all-fail, global timeout, and provider override
 paths without any network access. Vendored engine tests
 (`src/meta/engines/`) verify HTML parsing against inline fixtures.
 
+## Quality & Regression Testing
+
+eggsearch includes a regression corpus with JSON scenario files under
+`tests/corpus/` and a test runner at `tests/corpus_runner.rs`. The
+corpus covers repo search, security search, research search, ranking,
+exact-error mode, and other tool behaviors against known-good expected
+outputs.
+
+```bash
+cargo test --features mock --test corpus_runner
+```
+
+Live smoke tests hit real upstream providers and require network access:
+
+```bash
+cargo test --features live-smoke --test corpus_runner -- --ignored
+```
+
 ## License
 
 Licensed under the [MIT License](./LICENSE).

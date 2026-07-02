@@ -1,0 +1,39 @@
+{
+  "id": "repo_search_symbol",
+  "description": "Symbol search with structured repo_fetch suggestion for the matching source file",
+  "tool": "repo_search",
+  "request": {
+    "query": "Router::layer",
+    "owner": "tokio-rs",
+    "repo": "axum",
+    "symbol": "Router::layer"
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "Router::layer in axum/src/routing/mod.rs",
+          "url": "https://github.com/tokio-rs/axum/blob/main/src/routing/mod.rs",
+          "snippet": "pub fn layer<L>(self, layer: L) -> Router<L>"
+        },
+        {
+          "title": "axum::routing::Router - docs.rs",
+          "url": "https://docs.rs/axum/latest/axum/struct.Router.html",
+          "snippet": "Router provides routing for axum applications"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "groups_present": ["source_files"],
+    "warnings_contain": [],
+    "suggested_fetches": {
+      "min": 1,
+      "preferred_tool": "repo_fetch",
+      "contains_url_pattern": "github.com"
+    },
+    "structured_repo_fetch_present": true,
+    "trust": "external_untrusted"
+  }
+}

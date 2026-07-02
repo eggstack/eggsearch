@@ -1,0 +1,42 @@
+{
+  "id": "research_architecture",
+  "description": "Research search with architecture decision workflow produces subqueries, groups, and suggested fetches",
+  "tool": "research_search",
+  "request": {
+    "query": "Rust web framework architecture decision axum vs actix-web",
+    "workflow": "architecture_decision",
+    "depth": "standard"
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "Axum vs Actix-web comparison",
+          "url": "https://www.shuttle.rs/blog/2024/01/15/axum-vs-actix-web",
+          "snippet": "Comparing Rust web frameworks"
+        },
+        {
+          "title": "Actix-web documentation",
+          "url": "https://actix.rs/docs/",
+          "snippet": "Actix-web is a web framework for Rust"
+        },
+        {
+          "title": "Axum architecture decision record",
+          "url": "https://github.com/tokio-rs/axum/discussions/123",
+          "snippet": "Architecture discussion"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "mode": "research_metasearch",
+    "groups_present": [],
+    "subqueries_present": true,
+    "suggested_fetches": {
+      "min": 1
+    },
+    "warnings_contain": [],
+    "trust": "external_untrusted"
+  }
+}

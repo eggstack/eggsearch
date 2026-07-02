@@ -1,0 +1,36 @@
+{
+  "id": "ranking_commit_pinned",
+  "description": "Suggested fetches prioritize commit-pinned raw permalink URLs over mutable branch URLs",
+  "tool": "repo_search",
+  "request": {
+    "query": "Router struct axum",
+    "owner": "tokio-rs",
+    "repo": "axum"
+  },
+  "mock_engines": [
+    {
+      "name": "mock_a",
+      "results": [
+        {
+          "title": "Router - axum (main branch)",
+          "url": "https://github.com/tokio-rs/axum/blob/main/src/routing/mod.rs",
+          "snippet": "pub struct Router"
+        },
+        {
+          "title": "Router - axum (pinned)",
+          "url": "https://github.com/tokio-rs/axum/blob/abc123def/src/routing/mod.rs",
+          "snippet": "pub struct Router"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "groups_present": [],
+    "rank_reasons_present": true,
+    "suggested_fetches": {
+      "min": 1,
+      "notes": "At least one card should have rank_reasons metadata; pinned URL should outrank mutable branch URL"
+    },
+    "trust": "external_untrusted"
+  }
+}

@@ -152,6 +152,9 @@ eggsearch/
 - The `MockEngine` struct supports success, failure, and hang (timeout) scenarios
 - Vendored engine tests (HTML parsing) are in `src/meta/engines/`
 - Tests must not require network access — all use mock engines
+- Regression corpus suite: `tests/corpus_runner.rs` with JSON scenario files under `tests/corpus/`
+  - Run corpus tests: `cargo test --features mock --test corpus_runner`
+  - Live smoke tests (requires network): `cargo test --features live-smoke --test corpus_runner -- --ignored`
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
