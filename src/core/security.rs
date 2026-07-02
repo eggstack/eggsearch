@@ -1182,6 +1182,9 @@ pub struct SecuritySearchResponse {
     pub applicability: Vec<crate::core::security_applicability::ApplicabilityAssessment>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_findings: Vec<crate::core::security_applicability::DependencyFinding>,
+    /// Structured warnings with stable machine-readable codes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
 }
 
 #[cfg(test)]
@@ -2062,6 +2065,7 @@ mod tests {
             routing_decision: None,
             applicability: vec![],
             dependency_findings: vec![],
+            structured_warnings: vec![],
         };
         let json = serde_json::to_value(&resp).unwrap();
         let groups = json["groups"].as_array().expect("groups");

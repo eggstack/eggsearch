@@ -78,6 +78,7 @@ eggsearch/
       source_card.rs     # SourceCard output type
       document.rs        # FetchDocument, DocumentKind, RenderFormat, BlockKind, etc.
       sanitize.rs        # prompt-injection hardening (strip, frame, scan)
+      warning.rs         # WarningCode, AgentWarning, WarningAccumulator, conversion helpers
       provider.rs        # ProviderKind, ProviderCapabilities, ProviderDescriptor
       fetch.rs           # fetch-related types (ExtractMode, WebFetchRequest, etc.)
       code_metadata.rs   # CodeHost, CodeMetadata, deterministic URL parsing
@@ -220,6 +221,52 @@ eggsearch/
   capability, not errors.
 - Warning format: `SearchWarning::new("_system", message)` where
   `message` is a human-readable description of the limitation.
+
+### Structured Warning System
+
+The structured warning system provides machine-readable, deduplicated,
+stable warning metadata alongside the legacy `warnings: Vec<String>`
+arrays. Every MCP tool response includes both formats for backward
+compatibility.
+
+**Core types** (in `src/core/warning.rs`):
+
+- `WarningCode` enum: 53 stable `snake_case` variants covering
+  trust/sanitization, capability enforcement, native provider
+  availability, provider status, profile/routing, local workspace,
+  fetch, request/dispatch, security, package resolution, repo map,
+  and generic warnings.
+- `WarningSeverity` enum: `Info`, `Notice`, `Warning`, `Error`.
+  Each `WarningCode` has a `default_severity()` and optional
+  `default_recommended_action()`.
+- `AgentWarning` struct: `{code, severity, message, provider_ids,
+  result_ids, source_ids, recommended_action}` with builder methods
+  and `to_legacy_string()` returning `"{code}: {message}"`.
+- `WarningAccumulator`: deduplicates by `(code, sorted provider_ids,
+  sorted result_ids, sorted source_ids)` key. Supports `push()`,
+  `extend()`, `to_legacy_strings()`, `into_vec()`.
+
+**Conversion helpers:**
+- `search_warning_to_agent_warning()`: converts adapter `SearchWarning`
+  to `AgentWarning` by prefix-matching against 37 known patterns and
+  `[error_class] message` format for provider failures.
+- `convert_warnings()`: batch conversion preserving order.
+
+**Response types with `structured_warnings`:**
+- `RepoSearchResponse`: populated from `convert_warnings()` in adapter,
+  extended with profile routing warnings in MCP handler.
+- `SecuritySearchResponse`: populated from `convert_warnings()` in adapter.
+- `ResearchSearchResponse`: populated from `convert_warnings()` in adapter.
+- `web_search` (manual JSON): built from adapter warnings + per-card
+  injection warnings + generic_context_untrusted + safe_search_unenforced.
+
+**Agent guidance:**
+- Inspect `structured_warnings[*].code` for programmatic handling
+- Use `severity` to triage: `Error` blocks, `Warning` degrades,
+  `Notice` informs, `Info` is advisory
+- Follow `recommended_action` when present
+- Use `provider_ids`/`result_ids`/`source_ids` to scope impact
+- Legacy `warnings` strings remain for backward compatibility
 
 ### Provider Health Tracking
 - Process-local health snapshots track per-provider success/failure

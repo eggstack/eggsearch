@@ -525,6 +525,8 @@ pub async fn run_security_search_plan(
         warnings: context_warnings,
     };
 
+    let structured_warnings = crate::core::warning::convert_warnings(&warnings);
+
     SecuritySearchResponse {
         query: req.query.clone(),
         mode: "security_metasearch".to_string(),
@@ -546,6 +548,7 @@ pub async fn run_security_search_plan(
         routing_decision: None,
         applicability: applicability_assessments,
         dependency_findings,
+        structured_warnings,
     }
 }
 

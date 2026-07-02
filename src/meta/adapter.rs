@@ -1257,6 +1257,8 @@ impl MetadataSearchAdapter {
             providers_queried.push("local_workspace".to_string());
         }
 
+        let structured_warnings = crate::core::warning::convert_warnings(&warnings);
+
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
             mode: if is_exact_error {
@@ -1276,6 +1278,7 @@ impl MetadataSearchAdapter {
             package_resolution,
             security_context,
             error_context,
+            structured_warnings,
         }
     }
 
@@ -1505,6 +1508,8 @@ impl MetadataSearchAdapter {
             &gaps,
         ));
 
+        let structured_warnings = crate::core::warning::convert_warnings(&warnings);
+
         ResearchSearchResponse {
             query: req.query.clone(),
             mode: "research_metasearch".to_string(),
@@ -1518,6 +1523,7 @@ impl MetadataSearchAdapter {
             trust_markers,
             workflow_context,
             telemetry,
+            structured_warnings,
         }
     }
 }

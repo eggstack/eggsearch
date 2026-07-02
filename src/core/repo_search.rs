@@ -638,6 +638,9 @@ pub struct RepoSearchResponse {
     /// Contains the parsed error parts, redactions, and generated subqueries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_context: Option<crate::core::error_query::ErrorSearchContext>,
+    /// Structured warnings with stable machine-readable codes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
 }
 
 #[cfg(test)]

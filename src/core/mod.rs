@@ -35,6 +35,8 @@ pub mod sanitize;
 pub mod security;
 pub mod security_applicability;
 pub mod source_card;
+/// Structured warning model with stable codes, severity, and deduplication.
+pub mod warning;
 
 pub use crate::fetch::span::SelectedSpan;
 pub use batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult};
@@ -103,6 +105,7 @@ pub use research::{
     ResearchSuggestedFetch, ResearchTelemetry, ResearchWorkflow, ResearchWorkflowContext,
 };
 pub use result::{SearchWarning, TrustLevel};
+pub use warning::{AgentWarning, WarningAccumulator, WarningCode, WarningSeverity, convert_warnings};
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
