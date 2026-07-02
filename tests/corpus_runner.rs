@@ -20,11 +20,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use eggsearch::core::batch_fetch::BatchFetchItem;
 use eggsearch::core::config::AppConfig;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
-    run_repo_map, run_repo_search, run_research_search, run_security_search, run_web_search,
-    RepoMapArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, WebSearchArgs,
+    run_batch_fetch, run_repo_fetch, run_repo_map, run_repo_search, run_research_search,
+    run_security_search, run_web_search, BatchFetchArgs, RepoFetchArgs, RepoMapArgs,
+    RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, WebSearchArgs,
 };
 use eggsearch::meta::mock::{mock_engines, MockEngine, MockResult};
 use eggsearch::meta::MetadataSearchAdapter;
@@ -87,6 +89,23 @@ fn research_args(query: &str) -> ResearchSearchArgs {
         providers: vec!["mock_a".into()],
         ..Default::default()
     }
+}
+
+fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
+    let engines = vec![MockEngine::success("mock_a", vec![])];
+    let adapter = MetadataSearchAdapter::from_engines(
+        mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![temp_dir.to_path_buf()];
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
+        .expect("backend builds");
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(Arc::new(backend));
+    Arc::new(state)
 }
 
 // ---------------------------------------------------------------------------
@@ -1288,7 +1307,1094 @@ async fn corpus_web_search_with_intent_returns_metadata() {
 }
 
 // ---------------------------------------------------------------------------
-// Workstream 9: Live smoke tests (feature-gated)
+// Workstream 6: Local workspace workflows
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn corpus_local_search_returns_workspace_trusted_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+    std::fs::write(root.join("main.rs"), "fn main() { println!(\"hello\"); }").unwrap();
+    std::fs::write(root.join("README.md"), "# My Project\n\nA test project.").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "lib.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let groups = v["groups"].as_array().expect("groups is array");
+
+    let all_results: Vec<&serde_json::Value> = groups
+        .iter()
+        .flat_map(|g| g["results"].as_array().map(|a| a.iter()).unwrap_or_default())
+        .collect();
+    let local_results: Vec<&serde_json::Value> = all_results
+        .iter()
+        .filter(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .copied()
+        .collect();
+    assert!(
+        !local_results.is_empty(),
+        "expected local results with workspace:// URLs, got: {all_results:?}"
+    );
+    for r in &local_results {
+        assert_eq!(
+            r["trust"], "local_trusted",
+            "local result should have local_trusted trust: {r:?}"
+        );
+    }
+    let queried = v["providers_queried"].as_array().expect("providers_queried");
+    let queried_ids: Vec<&str> = queried.iter().filter_map(|q| q.as_str()).collect();
+    assert!(
+        queried_ids.contains(&"local_workspace"),
+        "providers_queried should include local_workspace: {queried_ids:?}"
+    );
+}
+
+#[tokio::test]
+async fn corpus_workspace_fetch_reads_local_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n",
+    )
+    .unwrap();
+
+    let state = state_with_local_backend(root);
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "lib.rs".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("workspace fetch should succeed");
+
+    assert_eq!(v["trust"], "local_trusted");
+    assert_eq!(v["fetched"], true);
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(text.contains("pub fn add"), "fetched text should contain the function: {text}");
+
+    let locator = v["locator"].as_object().expect("locator");
+    assert_eq!(locator["kind"], "workspace");
+    assert_eq!(locator.get("host"), None, "workspace locator should not have host");
+    assert_eq!(locator.get("owner"), None, "workspace locator should not have owner");
+    assert_eq!(locator.get("repo"), None, "workspace locator should not have repo");
+    assert_eq!(locator["workspace_root"], root_name);
+    assert_eq!(locator["path"], "lib.rs");
+}
+
+#[tokio::test]
+async fn corpus_workspace_fetch_rejects_path_traversal() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("lib.rs"), "fn main() {}").unwrap();
+
+    let state = state_with_local_backend(root);
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "../../../etc/passwd".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "../../../etc/passwd".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "path traversal should fail");
+}
+
+#[tokio::test]
+async fn corpus_workspace_fetch_rejects_unknown_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("lib.rs"), "fn main() {}").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: "nonexistent_root".to_string(),
+        repo: "lib.rs".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "unknown root should fail");
+    assert!(
+        result.unwrap_err().to_string().contains("unknown workspace root"),
+        "error should mention unknown workspace root"
+    );
+}
+
+#[tokio::test]
+async fn corpus_local_clean_checkout_no_dirty_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    std::process::Command::new("git")
+        .arg("init").arg(root).output().ok();
+    let git_config = root.join(".git").join("config");
+    std::fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C").arg(root).arg("add").arg(".").output().ok();
+    std::process::Command::new("git")
+        .arg("-C").arg(root).arg("commit").arg("-m").arg("init").arg("--allow-empty").output().ok();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let dirty_warnings: Vec<&str> = warnings
+        .iter()
+        .filter_map(|w| w["message"].as_str())
+        .filter(|m| m.contains("local_repo_dirty"))
+        .collect();
+    assert!(
+        dirty_warnings.is_empty(),
+        "clean checkout should not have dirty warning: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn corpus_local_dirty_checkout_emits_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    std::process::Command::new("git")
+        .arg("init").arg(root).output().ok();
+    let git_config = root.join(".git").join("config");
+    std::fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C").arg(root).arg("add").arg(".").output().ok();
+    std::process::Command::new("git")
+        .arg("-C").arg(root).arg("commit").arg("-m").arg("init").arg("--allow-empty").output().ok();
+    std::fs::write(root.join("untracked.txt"), "dirty content").unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("test-owner".to_string()),
+        repo: Some("test-repo".to_string()),
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let dirty_warnings: Vec<&str> = warnings
+        .iter()
+        .filter_map(|w| w["message"].as_str())
+        .filter(|m| m.contains("local_repo_dirty"))
+        .collect();
+    assert!(
+        !dirty_warnings.is_empty(),
+        "dirty checkout should emit local_repo_dirty warning: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn corpus_local_repo_match_metadata_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+
+    std::process::Command::new("git")
+        .arg("init").arg(root).output().ok();
+    let git_config = root.join(".git").join("config");
+    std::fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/tokio-rs/axum.git\n",
+    )
+    .unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoSearchArgs {
+        query: "lib.rs".to_string(),
+        providers: vec!["mock_a".to_string()],
+        include_local: Some(true),
+        owner: Some("tokio-rs".to_string()),
+        repo: Some("axum".to_string()),
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args).await.expect("repo_search ok");
+    let groups = v["groups"].as_array().expect("groups is array");
+    let local_cards: Vec<&serde_json::Value> = groups
+        .iter()
+        .flat_map(|g| g["results"].as_array().into_iter())
+        .flatten()
+        .filter(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .collect();
+    assert!(!local_cards.is_empty(), "should have local results");
+
+    for card in &local_cards {
+        let meta = card["metadata"].as_object().expect("metadata should be object");
+        let lrm = meta["local_repo_match"]
+            .as_object()
+            .expect("local_repo_match should be present");
+        assert_eq!(lrm["matched"], true);
+        assert_eq!(lrm["remote_owner"].as_str(), Some("tokio-rs"));
+        assert_eq!(lrm["remote_repo"].as_str(), Some("axum"));
+        assert_eq!(lrm["remote_host"].as_str(), Some("github"));
+        assert!(lrm.get("dirty_state").is_some());
+        assert!(lrm.get("root_path").is_some());
+    }
+}
+
+#[tokio::test]
+async fn corpus_prefer_local_redirects_to_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n",
+    )
+    .unwrap();
+
+    std::process::Command::new("git")
+        .arg("init").arg(root).output().ok();
+    let git_config = root.join(".git").join("config");
+    std::fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C").arg(root).arg("add").arg(".").output().ok();
+    std::process::Command::new("git")
+        .arg("-C").arg(root).arg("commit").arg("-m").arg("init").arg("--allow-empty").output().ok();
+
+    let state = state_with_local_backend(root);
+    let args = RepoFetchArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: Some(true),
+    };
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("prefer_local repo_fetch should succeed");
+
+    assert_eq!(v["trust"], "local_trusted");
+    assert_eq!(v["fetched"], true);
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(text.contains("pub fn add"), "fetched text should contain the function: {text}");
+}
+
+#[tokio::test]
+async fn corpus_prefer_local_rejects_path_traversal() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+
+    std::process::Command::new("git")
+        .arg("init").arg(root).output().ok();
+    let git_config = root.join(".git").join("config");
+    std::fs::write(
+        &git_config,
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+
+    let state = state_with_local_backend(root);
+    let args = RepoFetchArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: Some("main".to_string()),
+        commit_sha: None,
+        path: "../../../etc/passwd".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: Some(true),
+    };
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "path traversal via prefer_local should fail");
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 7: Code-host coverage workflows
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn corpus_repo_fetch_github_browser_url_transforms() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/raw/main/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("fn main() {}");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let base = server.base_url();
+    let raw_url = format!("{base}/raw/main/src/main.rs");
+    let args = RepoFetchArgs {
+        host: Some("github".into()),
+        owner: "test-owner".into(),
+        repo: "test-repo".into(),
+        ref_name: Some("main".into()),
+        commit_sha: None,
+        path: "src/main.rs".into(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: Some(raw_url),
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("repo_fetch should succeed");
+
+    assert_eq!(v["trust"], "external_untrusted");
+    assert_eq!(v["fetched"], true);
+    let locator = v["locator"].as_object().expect("locator");
+    assert_eq!(locator["kind"], "remote");
+    assert_eq!(locator["host"], "github");
+    assert_eq!(locator["owner"], "test-owner");
+    assert_eq!(locator["repo"], "test-repo");
+    assert_eq!(locator["path"], "src/main.rs");
+}
+
+#[tokio::test]
+async fn corpus_repo_fetch_line_range_bounds_correctly() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let file_content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n";
+    server.mock(|when, then| {
+        when.method(GET).path("/raw/main/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(file_content);
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let base = server.base_url();
+    let raw_url = format!("{base}/raw/main/src/main.rs");
+    let args = RepoFetchArgs {
+        host: Some("github".into()),
+        owner: "test-owner".into(),
+        repo: "test-repo".into(),
+        ref_name: Some("main".into()),
+        commit_sha: None,
+        path: "src/main.rs".into(),
+        line_start: Some(2),
+        line_end: Some(5),
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: Some(raw_url),
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("repo_fetch should succeed");
+
+    let lines = v["lines"].as_array().expect("lines should be array");
+    assert!(lines.len() >= 4, "should have at least 4 lines (2-5): {lines:?}");
+    let first_num = lines[0]["number"].as_u64().expect("line number");
+    let last_num = lines.last().unwrap()["number"].as_u64().expect("line number");
+    assert_eq!(first_num, 2);
+    assert_eq!(last_num, 5);
+}
+
+#[tokio::test]
+async fn corpus_batch_fetch_returns_structured_results() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page1.html");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body><p>Page 1 content</p></body></html>");
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/page2.html");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body><p>Page 2 content</p></body></html>");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let base = server.base_url();
+    let args = BatchFetchArgs {
+        items: vec![
+            BatchFetchItem::Web {
+                url: format!("{base}/page1.html"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            },
+            BatchFetchItem::Web {
+                url: format!("{base}/page2.html"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            },
+        ],
+        max_items: None,
+        max_chars_per_item: None,
+        max_total_chars: None,
+        timeout_ms: None,
+        continue_on_error: None,
+    };
+    let v = run_batch_fetch(state, args)
+        .await
+        .expect("batch_fetch should succeed");
+
+    assert_eq!(v["fetched"], 2);
+    assert_eq!(v["failed"], 0);
+    assert!(v["results"].is_array());
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    for r in results {
+        assert_eq!(r["ok"], true);
+        assert!(r["chars_returned"].as_u64().unwrap() > 0);
+    }
+}
+
+#[tokio::test]
+async fn corpus_batch_fetch_handles_mixed_success_failure() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/ok.html");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body><p>OK</p></body></html>");
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/fail.html");
+        then.status(500)
+            .body("Internal Server Error");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let base = server.base_url();
+    let args = BatchFetchArgs {
+        items: vec![
+            BatchFetchItem::Web {
+                url: format!("{base}/ok.html"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            },
+            BatchFetchItem::Web {
+                url: format!("{base}/fail.html"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            },
+        ],
+        max_items: None,
+        max_chars_per_item: None,
+        max_total_chars: None,
+        timeout_ms: None,
+        continue_on_error: Some(true),
+    };
+    let v = run_batch_fetch(state, args)
+        .await
+        .expect("batch_fetch should succeed");
+
+    assert_eq!(v["fetched"], 1);
+    assert_eq!(v["failed"], 1);
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0]["ok"], true);
+    assert_eq!(results[1]["ok"], false);
+    assert!(results[1]["error"].is_string());
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 3: Package and migration workflows (partial)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn corpus_repo_search_npm_package_lookup() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new(
+                "express - npm",
+                "https://www.npmjs.com/package/express",
+                "mock_a",
+            )
+            .with_snippet("Fast, unopinionated, minimalist web framework for Node.js"),
+            MockResult::new(
+                "express - GitHub",
+                "https://github.com/expressjs/express",
+                "mock_a",
+            )
+            .with_snippet("express source repository"),
+        ],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = RepoSearchArgs {
+        query: "express".into(),
+        ecosystem: Some("npm".into()),
+        package: Some("express".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args).await.expect("ok");
+
+    let groups = v["groups"].as_array().unwrap();
+    let kinds: Vec<&str> = groups
+        .iter()
+        .map(|g| g["kind"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        kinds.contains(&"package_registry") || kinds.contains(&"official_docs"),
+        "npm package lookup should have package_registry or official_docs group: {kinds:?}"
+    );
+}
+
+#[tokio::test]
+async fn corpus_repo_search_pypi_package_lookup() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new(
+                "requests - PyPI",
+                "https://pypi.org/project/requests/",
+                "mock_a",
+            )
+            .with_snippet("A simple, yet elegant, HTTP library"),
+            MockResult::new(
+                "requests - GitHub",
+                "https://github.com/psf/requests",
+                "mock_a",
+            )
+            .with_snippet("requests source repository"),
+        ],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = RepoSearchArgs {
+        query: "requests".into(),
+        ecosystem: Some("pypi".into()),
+        package: Some("requests".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args).await.expect("ok");
+
+    let groups = v["groups"].as_array().unwrap();
+    let kinds: Vec<&str> = groups
+        .iter()
+        .map(|g| g["kind"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        kinds.contains(&"package_registry") || kinds.contains(&"official_docs"),
+        "PyPI package lookup should have package_registry or official_docs group: {kinds:?}"
+    );
+}
+
+#[tokio::test]
+async fn corpus_repo_search_package_resolution_fallback() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "nonexistent-package - crates.io",
+            "https://crates.io/crates/nonexistent-package",
+            "mock_a",
+        )
+        .with_snippet("A package that does not exist on crates.io")],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = RepoSearchArgs {
+        query: "nonexistent-package".into(),
+        ecosystem: Some("crates.io".into()),
+        package: Some("nonexistent-package".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args).await.expect("ok");
+
+    let warnings = v["warnings"].as_array().expect("warnings is array");
+    let has_fallback_warning = warnings.iter().any(|w| {
+        w["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("package_resolution_fallback")
+    });
+    assert!(
+        has_fallback_warning,
+        "package resolution fallback should emit warning: {warnings:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 4: Security workflows (partial)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn corpus_security_ghsa_id_lookup() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "GHSA-abcd-1234-efgh: Test vulnerability",
+            "https://github.com/advisories/GHSA-abcd-1234-efgh",
+            "mock_a",
+        )
+        .with_snippet("A test GitHub Security Advisory")],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = SecuritySearchArgs {
+        query: None,
+        ghsa_id: Some("GHSA-abcd-1234-efgh".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_security_search(state, args).await.expect("ok");
+
+    let resolved = v["resolved_identifiers"].as_object().unwrap();
+    let ghsa_ids = resolved["ghsa_ids"].as_array().unwrap();
+    assert!(
+        ghsa_ids
+            .iter()
+            .any(|id| id.as_str() == Some("GHSA-ABCD-1234-EFGH")),
+        "should resolve GHSA-ABCD-1234-EFGH: {ghsa_ids:?}"
+    );
+}
+
+#[tokio::test]
+async fn corpus_security_rustsec_id_lookup() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "RUSTSEC-2024-0001: Test RustSec advisory",
+            "https://rustsec.org/advisories/RUSTSEC-2024-0001",
+            "mock_a",
+        )
+        .with_snippet("A test RustSec advisory for a Rust crate")],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = SecuritySearchArgs {
+        query: None,
+        rustsec_id: Some("RUSTSEC-2024-0001".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_security_search(state, args).await.expect("ok");
+
+    let resolved = v["resolved_identifiers"].as_object().unwrap();
+    let rustsec_ids = resolved["rustsec_ids"].as_array().unwrap();
+    assert!(
+        rustsec_ids
+            .iter()
+            .any(|id| id.as_str() == Some("RUSTSEC-2024-0001")),
+        "should resolve RUSTSEC-2024-0001: {rustsec_ids:?}"
+    );
+}
+
+#[tokio::test]
+async fn corpus_security_unknown_applicability_when_no_version() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "GHSA-xxxx-xxxx-xxxx: Vulnerability in axios",
+            "https://osv.dev/vulnerability/GHSA-xxxx-xxxx-xxxx",
+            "mock_a",
+        )
+        .with_snippet("Affected versions: < 1.6.0")],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = SecuritySearchArgs {
+        query: Some("axios vulnerability".into()),
+        ecosystem: Some("npm".into()),
+        package: Some("axios".into()),
+        version: None,
+        assess_applicability: Some(true),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_security_search(state, args).await.expect("ok");
+
+    let applicability = v["applicability"].as_array().cloned().unwrap_or_default();
+    if !applicability.is_empty() {
+        for a in &applicability {
+            let status = a["status"].as_str().unwrap_or("");
+            assert!(
+                status == "unknown" || status == "affected" || status == "not_affected",
+                "applicability status should be valid: {status}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn corpus_security_with_package_and_version_fields() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "GHSA-test-test-test: Vulnerability in test-pkg",
+            "https://osv.dev/vulnerability/GHSA-test-test-test",
+            "mock_a",
+        )
+        .with_snippet("Affected versions: < 2.0.0, Patched: 2.0.0")],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = SecuritySearchArgs {
+        query: Some("test-pkg vulnerability".into()),
+        ecosystem: Some("npm".into()),
+        package: Some("test-pkg".into()),
+        version: Some("1.5.0".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_security_search(state, args).await.expect("ok");
+    assert_eq!(v["mode"], "security_metasearch");
+    let groups = v["groups"].as_array().unwrap();
+    assert!(!groups.is_empty(), "should have groups");
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 5: Research workflows (partial)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn corpus_research_performance_investigation() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new(
+                "Tokio vs async-std benchmarks",
+                "https://tokio.rs/blog/2024/benchmarks",
+                "mock_a",
+            )
+            .with_snippet("Performance comparison of async runtimes"),
+            MockResult::new(
+                "Rust async runtime performance",
+                "https://fasterthanli.me/articles/async-rust",
+                "mock_a",
+            )
+            .with_snippet("Deep dive into async performance"),
+        ],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = ResearchSearchArgs {
+        query: "tokio vs async-std async runtime performance benchmarks".into(),
+        workflow: Some("performance_investigation".into()),
+        depth: Some("standard".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_research_search(state, args).await.expect("ok");
+    assert_eq!(v["mode"], "research_metasearch");
+
+    let groups = v["groups"].as_array().unwrap();
+    assert!(!groups.is_empty(), "performance investigation should have groups");
+    let subqueries = v["subqueries"].as_array().unwrap();
+    assert!(!subqueries.is_empty(), "should generate subqueries");
+}
+
+#[tokio::test]
+async fn corpus_research_security_review() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new(
+                "Axum security considerations",
+                "https://docs.rs/axum/latest/axum/security/",
+                "mock_a",
+            )
+            .with_snippet("Security best practices for axum"),
+            MockResult::new(
+                "Rust web framework security audit",
+                "https://blog.rust-lang.org/security-audit",
+                "mock_a",
+            )
+            .with_snippet("Security audit findings"),
+        ],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = ResearchSearchArgs {
+        query: "axum web framework security review CSRF authentication".into(),
+        workflow: Some("security_review".into()),
+        depth: Some("standard".into()),
+        include_security_considerations: Some(true),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_research_search(state, args).await.expect("ok");
+    assert_eq!(v["mode"], "research_metasearch");
+
+    let groups = v["groups"].as_array().unwrap();
+    assert!(!groups.is_empty(), "security review should have groups");
+}
+
+#[tokio::test]
+async fn corpus_research_migration_planning() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new(
+                "axum 0.7 migration guide",
+                "https://github.com/tokio-rs/axum/blob/main/MIGRATION.md",
+                "mock_a",
+            )
+            .with_snippet("Migration notes from 0.6 to 0.7"),
+            MockResult::new(
+                "axum 0.7 release notes",
+                "https://github.com/tokio-rs/axum/releases/tag/v0.7.0",
+                "mock_a",
+            )
+            .with_snippet("Breaking changes in axum 0.7"),
+        ],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = ResearchSearchArgs {
+        query: "axum migration from 0.6 to 0.7 breaking changes".into(),
+        workflow: Some("migration_planning".into()),
+        depth: Some("standard".into()),
+        compare_targets: vec!["axum".into()],
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_research_search(state, args).await.expect("ok");
+    assert_eq!(v["mode"], "research_metasearch");
+
+    let groups = v["groups"].as_array().unwrap();
+    assert!(!groups.is_empty(), "migration planning should have groups");
+}
+
+#[tokio::test]
+async fn corpus_research_ecosystem_survey() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new(
+                "Rust web framework ecosystem",
+                "https://www.shuttle.rs/blog/2024/01/rust-web-frameworks",
+                "mock_a",
+            )
+            .with_snippet("Overview of the Rust web framework ecosystem"),
+            MockResult::new(
+                "Rust async ecosystem",
+                "https://rustasync.com/",
+                "mock_a",
+            )
+            .with_snippet("Async Rust ecosystem overview"),
+        ],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = ResearchSearchArgs {
+        query: "Rust web framework ecosystem 2024 axum actix-web rocket".into(),
+        workflow: Some("ecosystem_survey".into()),
+        depth: Some("standard".into()),
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_research_search(state, args).await.expect("ok");
+    assert_eq!(v["mode"], "research_metasearch");
+    let groups = v["groups"].as_array().unwrap();
+    assert!(!groups.is_empty(), "ecosystem survey should have groups");
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 8: Ranking regression checks (partial)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn corpus_ranking_research_prioritizes_official_docs() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new(
+                "Random blog post about axum",
+                "https://blog.example.com/axum-tutorial",
+                "mock_a",
+            )
+            .with_snippet("My experience using axum"),
+            MockResult::new(
+                "Axum official documentation",
+                "https://docs.rs/axum/latest/axum/",
+                "mock_a",
+            )
+            .with_snippet("A web framework for Rust"),
+            MockResult::new(
+                "Axum GitHub repository",
+                "https://github.com/tokio-rs/axum",
+                "mock_a",
+            )
+            .with_snippet("A web framework for Rust"),
+        ],
+    )];
+    let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
+    let args = ResearchSearchArgs {
+        query: "axum official documentation and API reference".into(),
+        include_primary_sources: Some(true),
+        desired_source_types: vec!["official_docs".into()],
+        providers: vec!["mock_a".into()],
+        ..Default::default()
+    };
+    let v = run_research_search(state, args).await.expect("ok");
+
+    let groups = v["groups"].as_array().unwrap();
+    let kinds: Vec<&str> = groups
+        .iter()
+        .map(|g| g["kind"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        kinds.contains(&"official_docs") || kinds.contains(&"reference_implementations"),
+        "research with primary sources should have official_docs or reference_implementations group: {kinds:?}"
+    );
+
+    let fetches = v["suggested_fetches"].as_array().unwrap();
+    assert!(!fetches.is_empty(), "should suggest fetches");
+}
+
+// ---------------------------------------------------------------------------
+// Workstream 9: Live smoke tests (feature-gated) — extended
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "live-smoke")]
@@ -1356,5 +2462,60 @@ mod live_smoke {
         let v = run_web_search(state, args).await.expect("live web_search");
         let results = v["results"].as_array().unwrap();
         assert!(!results.is_empty(), "live search should return results");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live network and live-smoke feature"]
+    async fn smoke_repo_fetch_github_file() {
+        let state = state_with(AppConfig::default(), vec![], Duration::from_secs(10));
+        let args = RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "tokio-rs".into(),
+            repo: "axum".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "Cargo.toml".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        let v = run_repo_fetch(state, args)
+            .await
+            .expect("live repo_fetch");
+        assert_eq!(v["fetched"], true);
+        let text = v["text"].as_str().expect("text should be present");
+        assert!(
+            text.contains("[package]"),
+            "Cargo.toml should contain [package]: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live network and live-smoke feature"]
+    async fn smoke_repo_search_package_registry() {
+        let state = state_with(AppConfig::default(), vec![], Duration::from_secs(10));
+        let args = RepoSearchArgs {
+            query: "axum".into(),
+            ecosystem: Some("crates.io".into()),
+            package: Some("axum".into()),
+            version: Some("0.7.0".into()),
+            providers: vec![],
+            ..Default::default()
+        };
+        let v = run_repo_search(state, args)
+            .await
+            .expect("live repo_search for package");
+        let groups = v["groups"].as_array().unwrap();
+        assert!(!groups.is_empty(), "package search should have groups");
     }
 }
