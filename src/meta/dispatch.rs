@@ -143,13 +143,13 @@ pub(crate) async fn dispatch_parallel(
             .then(a.provider_order.cmp(&b.provider_order))
     });
 
-    // Track per-provider active counts and global active count
+    // Track per-provider active counts, global active count, and per-subquery running counts
     let mut provider_active: HashMap<String, usize> = HashMap::new();
     let mut global_active: usize = 0;
+    let mut running_subquery_counts: HashMap<String, usize> = HashMap::new();
 
     // Queue of job indices waiting to be started (in sorted order)
     let mut pending_queue: Vec<usize> = (0..sorted_jobs.len()).collect();
-    let pending_pos: usize = 0; // Current position in pending_queue
 
     // Track which subquery IDs exist for deadline accounting
     let mut all_subquery_ids = std::collections::HashSet::new();
@@ -185,7 +185,7 @@ pub(crate) async fn dispatch_parallel(
         let mut started_any = true;
         while started_any {
             started_any = false;
-            let mut i = pending_pos;
+            let mut i = 0;
             while i < pending_queue.len() {
                 let idx = pending_queue[i];
                 let provider_id = &sorted_jobs[idx].provider_id;
@@ -203,6 +203,7 @@ pub(crate) async fn dispatch_parallel(
 
                     provider_active.entry(job.provider_id.clone()).and_modify(|c| *c += 1).or_insert(1);
                     global_active += 1;
+                    *running_subquery_counts.entry(job.subquery_id.clone()).or_insert(0) += 1;
 
                     join_set.spawn(async move {
                         if job_remaining.is_zero() {
@@ -246,32 +247,26 @@ pub(crate) async fn dispatch_parallel(
         let remaining = overall_deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             deadline.exceeded = true;
-            // Mark queued jobs as skipped
-            for &idx in &pending_queue[pending_pos..] {
-                let _ = idx; // These are already queued
+
+            // Skipped: subquery IDs from pending queue where no jobs are running
+            let mut skipped = std::collections::HashSet::new();
+            for &idx in &pending_queue {
+                let sid = &sorted_jobs[idx].subquery_id;
+                let running = running_subquery_counts.get(sid).copied().unwrap_or(0);
+                if running == 0 && !completed_subquery_ids.contains(sid) {
+                    skipped.insert(sid.clone());
+                }
             }
-            // Count interrupted subqueries
+            deadline.subqueries_skipped = skipped.len();
+
+            // Interrupted: subquery IDs that had running jobs but didn't complete
             let mut interrupted = std::collections::HashSet::new();
-            for &idx in &pending_queue[pending_pos..] {
-                interrupted.insert(sorted_jobs[idx].subquery_id.clone());
-            }
-            // Also count running jobs as interrupted
-            // (We can't distinguish running from queued in the join_set,
-            // but we know the pending_queue has queued jobs and join_set has running)
-            // For now, count all non-completed subqueries as interrupted
             for sid in &all_subquery_ids {
-                if !completed_subquery_ids.contains(sid) {
+                if !completed_subquery_ids.contains(sid) && !skipped.contains(sid) {
                     interrupted.insert(sid.clone());
                 }
             }
             deadline.subqueries_interrupted = interrupted.len();
-
-            // Count skipped subqueries (queued jobs that never started)
-            let mut skipped = std::collections::HashSet::new();
-            for &idx in pending_queue.iter().skip(pending_pos) {
-                skipped.insert(sorted_jobs[idx].subquery_id.clone());
-            }
-            deadline.subqueries_skipped = skipped.len();
 
             warn!(
                 scope = search_scope,
@@ -290,6 +285,9 @@ pub(crate) async fn dispatch_parallel(
                         // Decrement active counts
                         global_active = global_active.saturating_sub(1);
                         if let Some(count) = provider_active.get_mut(&tr.provider_id) {
+                            *count = count.saturating_sub(1);
+                        }
+                        if let Some(count) = running_subquery_counts.get_mut(&tr.subquery_id) {
                             *count = count.saturating_sub(1);
                         }
 
@@ -329,24 +327,25 @@ pub(crate) async fn dispatch_parallel(
             Ok(None) => break,
             Err(_) => {
                 deadline.exceeded = true;
-                // Count subqueries that had running jobs
-                for &idx in &pending_queue[pending_pos..] {
-                    interrupted_subquery_ids.insert(sorted_jobs[idx].subquery_id.clone());
+
+                // Skipped: subquery IDs from pending queue where no jobs are running
+                let mut skipped = std::collections::HashSet::new();
+                for &idx in &pending_queue {
+                    let sid = &sorted_jobs[idx].subquery_id;
+                    let running = running_subquery_counts.get(sid).copied().unwrap_or(0);
+                    if running == 0 && !completed_subquery_ids.contains(sid) {
+                        skipped.insert(sid.clone());
+                    }
                 }
-                // All non-completed subqueries are interrupted
+                deadline.subqueries_skipped = skipped.len();
+
+                // Interrupted: subquery IDs that had running jobs but didn't complete
                 for sid in &all_subquery_ids {
-                    if !completed_subquery_ids.contains(sid) {
+                    if !completed_subquery_ids.contains(sid) && !skipped.contains(sid) {
                         interrupted_subquery_ids.insert(sid.clone());
                     }
                 }
                 deadline.subqueries_interrupted = interrupted_subquery_ids.len();
-
-                // Count skipped subqueries
-                let mut skipped = std::collections::HashSet::new();
-                for &idx in pending_queue.iter().skip(pending_pos) {
-                    skipped.insert(sorted_jobs[idx].subquery_id.clone());
-                }
-                deadline.subqueries_skipped = skipped.len();
 
                 warn!(
                     scope = search_scope,
@@ -972,15 +971,15 @@ mod tests {
         let output = dispatch_parallel(jobs, config, "test").await;
         assert!(output.deadline.exceeded);
         // sq0 was running when deadline hit → interrupted
-        assert!(
-            output.deadline.subqueries_interrupted >= 1,
-            "at least one subquery should be interrupted, got {}",
+        assert_eq!(
+            output.deadline.subqueries_interrupted, 1,
+            "exactly one subquery should be interrupted, got {}",
             output.deadline.subqueries_interrupted
         );
         // sq1 and sq2 never started → skipped
-        assert!(
-            output.deadline.subqueries_skipped >= 1,
-            "at least one subquery should be skipped, got {}",
+        assert_eq!(
+            output.deadline.subqueries_skipped, 2,
+            "exactly two subqueries should be skipped, got {}",
             output.deadline.subqueries_skipped
         );
     }
