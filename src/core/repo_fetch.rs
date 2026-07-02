@@ -155,6 +155,10 @@ pub struct RepoFetchResponse {
     /// Format: `fetch_<16hex>`. Derived from locator + line range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_id: Option<String>,
+    /// Deterministic source card ID linking this fetch back to the
+    /// source card or suggested fetch that triggered it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
     /// HTTP status code, if a network request was made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,

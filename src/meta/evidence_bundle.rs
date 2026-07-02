@@ -1079,4 +1079,208 @@ mod tests {
             bundle.gaps,
         );
     }
+
+    // -- Source-to-fetch linking via stable_id --
+
+    #[test]
+    fn explicit_source_id_match_links_fetch() {
+        use crate::core::identity::source_id;
+        use crate::core::source_card::SourceKind;
+
+        let source = make_source("https://docs.rs/axum", "axum", "duckduckgo");
+        let computed_source_id = source_id(
+            Some("duckduckgo"),
+            Some("https://docs.rs/axum"),
+            Some("axum"),
+            Some(SourceKind::Unknown),
+        );
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![source],
+            fetches: vec![make_fetch("https://other.com/page", Some(&computed_source_id))],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert_eq!(bundle.source_links.len(), 1);
+        assert_eq!(
+            bundle.source_links[0].link_reason,
+            EvidenceBundleLinkReason::SourceIdMatch
+        );
+        assert_eq!(bundle.source_links[0].source_id, computed_source_id);
+    }
+
+    #[test]
+    fn explicit_source_id_miss_falls_through_to_url() {
+        let source = make_source("https://docs.rs/axum", "axum", "duckduckgo");
+
+        // Fetch has a bogus source_id but matching URL — should link via URL match
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![source],
+            fetches: vec![make_fetch("https://docs.rs/axum", Some("src_nonexistent"))],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert_eq!(bundle.source_links.len(), 1);
+        assert_eq!(
+            bundle.source_links[0].link_reason,
+            EvidenceBundleLinkReason::UrlMatch
+        );
+    }
+
+    #[test]
+    fn locator_match_links_fetch() {
+        use crate::core::code_metadata::{CodeHost, CodeMetadata};
+        use crate::core::repo_fetch::{RepoLocator, RepoLocatorKind};
+        use crate::core::source_card::SourceMetadata;
+
+        // Source with code metadata that produces structured_repo_fetch
+        let source_input = EvidenceSourceInput {
+            id: None,
+            url: Some("https://github.com/tokio-rs/tokio/blob/main/src/lib.rs".to_string()),
+            title: Some("tokio/src/lib.rs".to_string()),
+            snippet: None,
+            providers: vec!["duckduckgo".to_string()],
+            score: None,
+            trust: None,
+            trust_markers: None,
+            metadata: Some(SourceMetadata {
+                source_kind: crate::core::source_card::SourceKind::SourceFile,
+                domain: Some("github.com".to_string()),
+                rank_reasons: vec![],
+                code: Some(CodeMetadata {
+                    host: Some(CodeHost::Github),
+                    owner: Some("tokio-rs".to_string()),
+                    repo: Some("tokio".to_string()),
+                    path: Some("src/lib.rs".to_string()),
+                    ref_name: None,
+                    language: None,
+                    symbol_hint: None,
+                    line_start: None,
+                    line_end: None,
+                }),
+                code_evidence: None,
+                issue: None,
+                release: None,
+                vulnerability: None,
+                local_repo_match: None,
+            }),
+            quality: None,
+        };
+
+        let fetch = EvidenceFetchInput {
+            source_id: None,
+            url: None,
+            locator: Some(RepoLocator {
+                kind: RepoLocatorKind::Remote,
+                host: Some(CodeHost::Github),
+                owner: Some("tokio-rs".to_string()),
+                repo: Some("tokio".to_string()),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                workspace_root: None,
+            }),
+            fetched: true,
+            content_type: None,
+            language: None,
+            selected_span: None,
+            line_start: None,
+            line_end: None,
+            text: Some("use tokio::main;".to_string()),
+            truncated: false,
+            trust: None,
+            trust_markers: None,
+            warnings: vec![],
+        };
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![source_input],
+            fetches: vec![fetch],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert_eq!(bundle.source_links.len(), 1);
+        assert_eq!(
+            bundle.source_links[0].link_reason,
+            EvidenceBundleLinkReason::LocatorMatch
+        );
+    }
+
+    #[test]
+    fn deduplication_by_stable_id() {
+        use std::collections::HashSet;
+
+        let sources: Vec<EvidenceSourceInput> = (0..5)
+            .map(|i| {
+                make_source(
+                    &format!("https://example.com/page{i}"),
+                    &format!("page {i}"),
+                    "test",
+                )
+            })
+            .collect();
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources,
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert_eq!(bundle.sources.len(), 5);
+
+        // All source_ids must be unique
+        let ids: HashSet<_> = bundle.sources.iter().map(|s| &s.source_id).collect();
+        assert_eq!(ids.len(), 5);
+    }
+
+    #[test]
+    fn gap_analysis_by_stable_id() {
+        // Two sources, only one fetched — should detect SourceUnfetched
+        let s1 = make_source("https://docs.rs/axum", "axum", "ddg");
+        let s2 = make_source("https://crates.io/axum", "axum crates", "brave");
+
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![s1, s2],
+            fetches: vec![make_fetch("https://docs.rs/axum", None)],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+        };
+
+        let bundle = build_evidence_bundle(req);
+        let unfetched: Vec<_> = bundle
+            .gaps
+            .iter()
+            .filter(|g| g.kind == EvidenceGapKind::SourceUnfetched)
+            .collect();
+        assert_eq!(unfetched.len(), 1, "expected exactly one SourceUnfetched gap");
+        assert!(unfetched[0].source_id.is_some(), "gap should reference a source_id");
+    }
 }

@@ -1734,6 +1734,7 @@ pub async fn run_repo_fetch(
             let fetch_response = RepoFetchResponse {
                 locator,
                 stable_id: None,
+                source_id: None,
                 fetched: resp.fetched,
                 status: Some(status),
                 content_type,
@@ -2649,6 +2650,7 @@ async fn run_workspace_fetch(
     let fetch_response = RepoFetchResponse {
         locator,
         stable_id: None,
+        source_id: None,
         fetched: true,
         status: None,
         content_type: None,

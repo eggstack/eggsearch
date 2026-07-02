@@ -45,6 +45,7 @@ pub fn generate_security_suggested_fetches(
             reasons: Vec::new(),
             information_gain: 0.0,
             stable: false,
+            source_card_stable_id: None,
         });
     }
     for ghsa_id in &resolved_ids.ghsa_ids {
@@ -66,6 +67,7 @@ pub fn generate_security_suggested_fetches(
             reasons: Vec::new(),
             information_gain: 0.0,
             stable: false,
+            source_card_stable_id: None,
         });
     }
     for osv_id in &resolved_ids.osv_ids {
@@ -87,6 +89,7 @@ pub fn generate_security_suggested_fetches(
             reasons: Vec::new(),
             information_gain: 0.0,
             stable: false,
+            source_card_stable_id: None,
         });
     }
 
@@ -112,6 +115,7 @@ pub fn generate_security_suggested_fetches(
                 reasons: Vec::new(),
                 information_gain: 0.0,
                 stable: false,
+                source_card_stable_id: None,
             }),
             "npm" => candidates.push(FetchCandidate {
                 url: format!("https://www.npmjs.com/package/{pkg}"),
@@ -131,6 +135,7 @@ pub fn generate_security_suggested_fetches(
                 reasons: Vec::new(),
                 information_gain: 0.0,
                 stable: false,
+                source_card_stable_id: None,
             }),
             _ => {}
         }
@@ -166,6 +171,7 @@ pub fn generate_security_suggested_fetches(
                 reasons: Vec::new(),
                 information_gain: 0.0,
                 stable: false,
+                source_card_stable_id: card.stable_id.clone(),
             });
         }
     }
@@ -215,6 +221,7 @@ pub fn generate_security_suggested_fetches(
                 reasons: vec![crate::meta::fetch_ranking::FetchRankReason::KindSourceFile],
                 information_gain: 0.3,
                 stable: false,
+                source_card_stable_id: None,
             });
         }
     }
@@ -259,6 +266,7 @@ pub fn generate_security_suggested_fetches(
                     .collect(),
                 information_gain: Some(candidate.information_gain),
                 stable_id: None,
+                source_id: candidate.source_card_stable_id,
             }
         })
         .collect()

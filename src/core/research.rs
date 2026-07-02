@@ -524,6 +524,10 @@ pub struct ResearchSuggestedFetch {
     /// Format: `suggested_<16hex>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_id: Option<String>,
+    /// Deterministic source card ID linking this suggested fetch back
+    /// to the source card that produced it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
     /// Deterministic score for this suggestion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score: Option<i32>,

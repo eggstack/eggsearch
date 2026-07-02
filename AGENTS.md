@@ -81,7 +81,7 @@ eggsearch/
       warning.rs         # WarningCode, AgentWarning, WarningAccumulator, conversion helpers
       provider.rs        # ProviderKind, ProviderCapabilities, ProviderDescriptor
       fetch.rs           # fetch-related types (ExtractMode, WebFetchRequest, etc.)
-      identity.rs        # Deterministic cross-tool identity: SourceKey, FetchKey, ID generation
+      identity.rs        # Deterministic cross-tool identity: SourceKey, FetchKey, RepoLocatorKey, DocChunkKey, ID generation
       code_metadata.rs   # CodeHost, CodeMetadata, deterministic URL parsing
       code_evidence.rs   # CodeEvidence, SourceRole, EvidenceConfidence, URL derivation
       code_host_fetch.rs # resolve_code_host_fetch_target, CodeHostFetchTarget
@@ -435,13 +435,25 @@ and cross-reference evidence across tools without content comparison.
 - `FetchKey`: `(url | locator, line_start, line_end, text_prefix)`
 - `SuggestedFetchKey`: `(url, group, priority)`
 - `BatchFetchKey`: `(label, index)`
+- `RepoLocatorKey`: `(host, owner, repo, ref_name, path)` — normalizes `.git` suffix, lowercases host enum
+- `DocKey`: `(url, title, kind)`
+- `DocChunkKey`: `(doc_id, chunk_index, heading_path)`
 
 **ID format and prefix conventions:**
 - Source: `src_<16hex>` — from `SourceKey` fields
 - Fetch: `fetch_<16hex>` — from `FetchKey` fields
 - Suggested: `suggested_<16hex>` — from `SuggestedFetchKey` fields
 - Batch: `batch_<16hex>` — from `BatchFetchKey` fields
+- Locator: `loc_<16hex>` — from `RepoLocatorKey` fields
+- Document: `doc_<16hex>` — from `DocKey` fields
+- Chunk: `chunk_<16hex>` — from `DocChunkKey` fields
 - Bundle: `bundle_<16hex>` — from goal + source + fetch IDs (existing)
+
+**URL canonicalization:** `canonicalize_url()` normalizes URLs before
+hashing: lowercases scheme, strips `www.` prefix, removes default ports
+(`:80` for HTTP, `:443` for HTTPS), strips fragments, strips trailing
+slashes (except bare root `/`). This ensures trivial URL variations
+do not produce spurious ID differences.
 
 **Hashing:** `DefaultHasher` (SipHash 1-3, stdlib). 64-bit output
 formatted as 16 hex chars. No external hashing dependencies.
@@ -456,6 +468,13 @@ formatted as 16 hex chars. No external hashing dependencies.
 - `BatchFetchResult.stable_id`: `None` (generated at construction time)
 - `EvidenceBundleSource.source_id`: `src_<16hex>` — deterministic via `compute_source_id`
 - `EvidenceBundleFetchedItem.fetch_id`: `fetch_<16hex>` — deterministic via `compute_fetch_id`
+
+**Source-to-fetch linking (`source_id`):**
+- `RepoSuggestedFetch.source_id`: links back to the source card `stable_id` that generated the suggestion
+- `SecuritySuggestedFetch.source_id`: links back (synthesized advisories have `None`)
+- `ResearchSuggestedFetch.source_id`: links back to the source card
+- `WebFetchResponse.source_id`: `None` (link established at call time)
+- `RepoFetchResponse.source_id`: `None` (link established at call time)
 
 **Backward compatibility:** The random UUID-based `id` on `SourceCard` is
 preserved for all existing consumers. The `stable_id` field is optional

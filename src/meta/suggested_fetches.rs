@@ -160,6 +160,7 @@ pub fn generate_suggested_fetches_with_mode(
                 reasons: Vec::new(),
                 information_gain: 0.0,
                 stable: false,
+                source_card_stable_id: card.stable_id.clone(),
             });
         }
     }
@@ -212,6 +213,7 @@ pub fn generate_suggested_fetches_with_mode(
                 information_gain: Some(candidate.information_gain),
                 stable: Some(candidate.stable),
                 stable_id: None,
+                source_id: candidate.source_card_stable_id,
                 preferred_tool,
             }
         })

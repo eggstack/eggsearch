@@ -141,6 +141,10 @@ pub struct WebFetchResponse {
     /// Format: `fetch_<16hex>`. Derived from (url, final_url).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_id: Option<String>,
+    /// Deterministic source card ID linking this fetch back to the
+    /// source card or suggested fetch that triggered it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
     /// Page title, if extracted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,

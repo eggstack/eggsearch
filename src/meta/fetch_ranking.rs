@@ -234,6 +234,9 @@ pub struct FetchCandidate {
     pub information_gain: f32,
     /// Whether the candidate is from a stable/pinned source.
     pub stable: bool,
+    /// Source card's `stable_id`, used to link suggested fetches
+    /// back to their originating source card.
+    pub source_card_stable_id: Option<String>,
 }
 
 /// Extract domain from a URL.
@@ -727,6 +730,7 @@ mod tests {
             reasons: Vec::new(),
             information_gain: 0.0,
             stable: false,
+            source_card_stable_id: None,
         }
     }
 

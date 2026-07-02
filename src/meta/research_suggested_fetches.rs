@@ -76,6 +76,7 @@ pub fn generate_research_suggested_fetches(
             reasons: Vec::new(),
             information_gain: 0.0,
             stable: false,
+            source_card_stable_id: card.stable_id.clone(),
         });
     }
 
@@ -123,6 +124,7 @@ pub fn generate_research_suggested_fetches(
                     .collect(),
                 information_gain: Some(candidate.information_gain),
                 stable_id: None,
+                source_id: candidate.source_card_stable_id,
             }
         })
         .collect()

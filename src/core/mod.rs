@@ -65,9 +65,10 @@ pub use evidence_bundle::{
     DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
 };
 pub use identity::{
-    batch_fetch_id, compute_batch_fetch_id, compute_fetch_id, compute_source_id,
-    compute_suggested_fetch_id, fetch_id, source_id, suggested_fetch_id, BatchFetchKey, FetchKey,
-    SourceKey, SuggestedFetchKey,
+    batch_fetch_id, canonicalize_url, chunk_id, compute_batch_fetch_id, compute_chunk_id,
+    compute_doc_id, compute_fetch_id, compute_locator_id, compute_source_id,
+    compute_suggested_fetch_id, doc_id, fetch_id, locator_id, source_id, suggested_fetch_id,
+    BatchFetchKey, DocChunkKey, DocKey, FetchKey, RepoLocatorKey, SourceKey, SuggestedFetchKey,
 };
 pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
