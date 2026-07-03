@@ -281,7 +281,9 @@ fn build_evidence_notes(
 }
 
 /// Extract deterministic claims from grouped research results.
-pub fn extract_claims(groups: &[ResearchResultGroup]) -> Vec<ResearchClaim> {
+///
+/// When `query` is provided, claim text references the original query for context.
+pub fn extract_claims(groups: &[ResearchResultGroup], query: Option<&str>) -> Vec<ResearchClaim> {
     let mut claims = Vec::new();
     let mut claim_index: usize = 0;
 
@@ -301,26 +303,29 @@ pub fn extract_claims(groups: &[ResearchResultGroup]) -> Vec<ResearchClaim> {
             .map(|c| c.stable_id.clone().unwrap_or_else(|| c.id.clone()))
             .collect();
 
+        let query_context = query.unwrap_or("the research topic");
+
         let (conflicting_source_ids, text) = if group.kind == ResearchResultGroupKind::Counterpoints
         {
             (
                 supporting_source_ids.clone(),
                 format!(
-                    "Evidence suggests {} supports the research topic (with counterpoints)",
-                    group.label
+                    "Counterpoint evidence from {} challenges findings on: {}",
+                    group.label, query_context
                 ),
             )
         } else {
             (
                 Vec::new(),
                 format!(
-                    "Evidence suggests {} supports the research topic",
-                    group.label
+                    "Evidence from {} supports findings on: {}",
+                    group.label, query_context
                 ),
             )
         };
 
-        let source_quality_notes = vec![format!("{} results", group.results.len())];
+        let source_quality_notes = build_source_quality_notes(group);
+        let missing_evidence = suggest_missing_evidence(&claim_type, group);
 
         claims.push(ResearchClaim {
             id: format!("claim_{:?}_{}", group.kind, claim_index),
@@ -329,7 +334,7 @@ pub fn extract_claims(groups: &[ResearchResultGroup]) -> Vec<ResearchClaim> {
             confidence,
             supporting_source_ids,
             conflicting_source_ids,
-            missing_evidence: Vec::new(),
+            missing_evidence,
             source_quality_notes,
         });
 
@@ -364,6 +369,95 @@ pub fn extract_claims(groups: &[ResearchResultGroup]) -> Vec<ResearchClaim> {
     claims
 }
 
+/// Build source-informed quality notes for a claim.
+fn build_source_quality_notes(group: &ResearchResultGroup) -> Vec<String> {
+    let mut notes = vec![format!("{} results", group.results.len())];
+
+    let classes: Vec<ResearchSourceClass> =
+        group.results.iter().map(classify_source_class).collect();
+
+    let unique_classes: Vec<ResearchSourceClass> = {
+        let mut seen = std::collections::HashSet::new();
+        classes
+            .into_iter()
+            .filter(|c| seen.insert(std::mem::discriminant(c)))
+            .collect()
+    };
+
+    if !unique_classes.is_empty() {
+        let class_names: Vec<String> = unique_classes
+            .iter()
+            .map(|c| format!("{:?}", c).to_lowercase().replace('_', " "))
+            .collect();
+        notes.push(format!("from {}", class_names.join(", ")));
+    }
+
+    let primary_count = group
+        .results
+        .iter()
+        .filter(|c| {
+            matches!(
+                classify_source_class(c),
+                ResearchSourceClass::OfficialDocs
+                    | ResearchSourceClass::SecurityAdvisory
+                    | ResearchSourceClass::Paper
+                    | ResearchSourceClass::StandardSpec
+            )
+        })
+        .count();
+    if primary_count > 0 {
+        notes.push(format!("{} primary source(s)", primary_count));
+    }
+
+    notes
+}
+
+/// Suggest missing evidence based on claim type and available source classes.
+fn suggest_missing_evidence(
+    claim_type: &ResearchClaimType,
+    group: &ResearchResultGroup,
+) -> Vec<String> {
+    let mut missing = Vec::new();
+    let classes: Vec<ResearchSourceClass> =
+        group.results.iter().map(classify_source_class).collect();
+
+    match claim_type {
+        ResearchClaimType::Performance
+            if !classes
+                .iter()
+                .any(|c| matches!(c, ResearchSourceClass::Benchmark)) =>
+        {
+            missing.push("benchmark data".to_string());
+        }
+        ResearchClaimType::Security
+            if !classes
+                .iter()
+                .any(|c| matches!(c, ResearchSourceClass::SecurityAdvisory)) =>
+        {
+            missing.push("security advisory".to_string());
+        }
+        ResearchClaimType::Maintenance
+            if !classes
+                .iter()
+                .any(|c| matches!(c, ResearchSourceClass::ReleaseNotes)) =>
+        {
+            missing.push("release notes".to_string());
+        }
+        _ => {}
+    }
+
+    if !classes.iter().any(|c| {
+        matches!(
+            c,
+            ResearchSourceClass::OfficialDocs | ResearchSourceClass::ReferenceDocs
+        )
+    }) {
+        missing.push("official documentation".to_string());
+    }
+
+    missing
+}
+
 fn group_kind_to_claim_type(kind: ResearchResultGroupKind) -> ResearchClaimType {
     match kind {
         ResearchResultGroupKind::PrimarySources
@@ -392,10 +486,6 @@ fn compute_claim_confidence(group: &ResearchResultGroup) -> ResultConfidence {
         if qs.primary_source_count > 0 {
             return ResultConfidence::Medium;
         }
-    }
-
-    if group.results.len() == 1 {
-        return ResultConfidence::Low;
     }
 
     ResultConfidence::Unknown
@@ -699,7 +789,7 @@ pub fn analyze_research_evidence(
     Vec<ResearchEvidenceGap>,
 ) {
     let source_quality = compute_source_qualities(groups);
-    let claims = extract_claims(groups);
+    let claims = extract_claims(groups, query);
     let conflicts = detect_conflicts(groups, &claims);
     let evidence_gaps = detect_evidence_gaps(groups, &claims, &conflicts, query);
     (claims, conflicts, source_quality, evidence_gaps)
@@ -903,7 +993,7 @@ mod tests {
             make_card(SourceKind::OfficialDocs, "https://docs.rs/serde"),
         ];
         let group = make_group(ResearchResultGroupKind::OfficialDocs, cards);
-        let claims = extract_claims(&[group]);
+        let claims = extract_claims(&[group], None);
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].claim_type, ResearchClaimType::Architecture);
         assert_eq!(claims[0].supporting_source_ids.len(), 2);
@@ -926,7 +1016,7 @@ mod tests {
                 make_group(ResearchResultGroupKind::OfficialDocs, cards)
             })
             .collect();
-        let claims = extract_claims(&groups);
+        let claims = extract_claims(&groups, None);
         assert!(claims.len() <= MAX_CLAIMS);
     }
 
@@ -944,7 +1034,7 @@ mod tests {
             make_group(ResearchResultGroupKind::OfficialDocs, normal_cards),
             make_group(ResearchResultGroupKind::Counterpoints, counterpoint_cards),
         ];
-        let claims = extract_claims(&groups);
+        let claims = extract_claims(&groups, None);
         // The counterpoint group should produce a claim with conflicting IDs
         let counterpoint_claim = claims.iter().find(|c| c.id.contains("Counterpoints"));
         assert!(counterpoint_claim.is_some());
@@ -958,7 +1048,7 @@ mod tests {
     fn claims_skips_single_result_groups() {
         let cards = vec![make_card(SourceKind::OfficialDocs, "https://docs.rs/axum")];
         let group = make_group(ResearchResultGroupKind::OfficialDocs, cards);
-        let claims = extract_claims(&[group]);
+        let claims = extract_claims(&[group], None);
         assert!(claims.is_empty());
     }
 
@@ -978,7 +1068,7 @@ mod tests {
             make_group(ResearchResultGroupKind::OfficialDocs, normal_cards),
             make_group(ResearchResultGroupKind::Counterpoints, counterpoint_cards),
         ];
-        let claims = extract_claims(&groups);
+        let claims = extract_claims(&groups, None);
         let conflicts = detect_conflicts(&groups, &claims);
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].id, "conflict_counterpoints_0");
@@ -1138,7 +1228,7 @@ mod tests {
             make_group(ResearchResultGroupKind::PrimarySources, primary_cards),
             make_group(ResearchResultGroupKind::Counterpoints, counterpoint_cards),
         ];
-        let claims = extract_claims(&groups);
+        let claims = extract_claims(&groups, None);
         assert!(!claims.is_empty());
         let primary_claim = claims.iter().find(|c| c.id.contains("PrimarySources"));
         assert!(primary_claim.is_some());
@@ -1309,8 +1399,8 @@ mod tests {
                 ],
             ),
         ];
-        let claims_a = extract_claims(&groups);
-        let claims_b = extract_claims(&groups);
+        let claims_a = extract_claims(&groups, None);
+        let claims_b = extract_claims(&groups, None);
         assert_eq!(claims_a.len(), claims_b.len());
         for (a, b) in claims_a.iter().zip(claims_b.iter()) {
             assert_eq!(a.id, b.id, "claim IDs must be deterministic");

@@ -1,4 +1,3 @@
-# Added 2026-07-02 for CI verification evidence (Workstream 7).
 name: CI
 
 on:
@@ -15,6 +14,20 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  check:
+    name: Check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+      - run: cargo check --all-features
+
   fmt:
     name: Formatting
     runs-on: ubuntu-latest

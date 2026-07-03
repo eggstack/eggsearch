@@ -598,6 +598,10 @@ pub struct RepoSuggestedFetch {
     /// Deterministic score for this suggestion. Higher = more relevant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score: Option<i32>,
+    /// Machine-readable reason code for this suggested fetch (e.g. "official_docs",
+    /// "source_evidence", "nearby_test_candidate").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
     /// Rank reasons explaining why this fetch was scored as it was.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rank_reasons: Vec<String>,

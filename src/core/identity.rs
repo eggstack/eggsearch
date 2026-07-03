@@ -510,6 +510,51 @@ pub fn batch_fetch_id(label: &str, index: usize) -> String {
 pub use crate::core::evidence_bundle::compute_bundle_id;
 
 // ---------------------------------------------------------------------------
+// Code Span ID
+// ---------------------------------------------------------------------------
+
+/// Canonical key for a code span's deterministic identity.
+#[derive(Clone, Debug, Default)]
+pub struct CodeSpanKey<'a> {
+    /// The locator string (URL or structured locator debug form).
+    pub locator: &'a str,
+    /// Start line of the span (1-indexed).
+    pub line_start: Option<u32>,
+    /// End line of the span (1-indexed).
+    pub line_end: Option<u32>,
+    /// Symbol name matched or enclosing the span.
+    pub symbol: Option<&'a str>,
+}
+
+/// Compute a deterministic code-span ID from a canonical key.
+///
+/// `span_id = span_<16hex(locator + line_start + line_end + symbol)>`
+pub fn compute_code_span_id(key: &CodeSpanKey<'_>) -> String {
+    let mut hasher = FnvHasher::new();
+    hasher.write(&entity_prefix("code_span"));
+    write_str(&mut hasher, key.locator);
+    write_opt_u32(&mut hasher, key.line_start);
+    write_opt_u32(&mut hasher, key.line_end);
+    write_opt_str(&mut hasher, key.symbol);
+    format!("span_{:016x}", hasher.finish())
+}
+
+/// Convenience: compute a code-span ID from individual fields.
+pub fn code_span_id(
+    locator: &str,
+    line_start: Option<u32>,
+    line_end: Option<u32>,
+    symbol: Option<&str>,
+) -> String {
+    compute_code_span_id(&CodeSpanKey {
+        locator,
+        line_start,
+        line_end,
+        symbol,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Repo Locator Key
 // ---------------------------------------------------------------------------
 
@@ -1238,6 +1283,84 @@ mod tests {
         assert_eq!(id, "chunk_c777b483a3765f9f");
     }
 
+    // -- Code Span ID tests --
+
+    #[test]
+    fn code_span_id_deterministic() {
+        let a = code_span_id(
+            "https://example.com/src.rs",
+            Some(10),
+            Some(20),
+            Some("main"),
+        );
+        let b = code_span_id(
+            "https://example.com/src.rs",
+            Some(10),
+            Some(20),
+            Some("main"),
+        );
+        assert_eq!(a, b);
+        assert!(a.starts_with("span_"));
+        assert_eq!(a.len(), 21); // "span_" + 16 hex
+    }
+
+    #[test]
+    fn code_span_id_differs_on_locator() {
+        let a = code_span_id("https://a.com/f.rs", Some(1), Some(10), None);
+        let b = code_span_id("https://b.com/f.rs", Some(1), Some(10), None);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn code_span_id_differs_on_line_range() {
+        let a = code_span_id("https://a.com/f.rs", Some(1), Some(10), None);
+        let b = code_span_id("https://a.com/f.rs", Some(5), Some(15), None);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn code_span_id_differs_on_symbol() {
+        let a = code_span_id("https://a.com/f.rs", Some(1), Some(10), Some("foo"));
+        let b = code_span_id("https://a.com/f.rs", Some(1), Some(10), Some("bar"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn code_span_id_none_symbol() {
+        let id = code_span_id("https://a.com/f.rs", Some(1), Some(10), None);
+        assert!(id.starts_with("span_"));
+        assert_eq!(id.len(), 21);
+    }
+
+    #[test]
+    fn code_span_key_struct_matches_convenience_fn() {
+        let key = CodeSpanKey {
+            locator: "https://example.com/src.rs",
+            line_start: Some(10),
+            line_end: Some(20),
+            symbol: Some("main"),
+        };
+        let from_struct = compute_code_span_id(&key);
+        let from_fn = code_span_id(
+            "https://example.com/src.rs",
+            Some(10),
+            Some(20),
+            Some("main"),
+        );
+        assert_eq!(from_struct, from_fn);
+    }
+
+    #[test]
+    fn code_span_id_golden() {
+        let id = code_span_id(
+            "https://example.com/src.rs",
+            Some(10),
+            Some(20),
+            Some("main"),
+        );
+        assert_eq!(id, "span_2b241f6240cde0ab");
+    }
+
     #[test]
     fn www_stripping_is_deliberate_dedup() {
         let id1 = source_id(
@@ -1292,6 +1415,7 @@ mod tests {
         });
         let doc = doc_id(Some("https://a.com"), None, None);
         let chunk = chunk_id(&doc, 0, "");
+        let span = code_span_id("https://a.com", Some(1), Some(10), None);
 
         assert!(src.starts_with("src_"));
         assert!(fetch.starts_with("fetch_"));
@@ -1300,9 +1424,10 @@ mod tests {
         assert!(loc.starts_with("loc_"));
         assert!(doc.starts_with("doc_"));
         assert!(chunk.starts_with("chunk_"));
+        assert!(span.starts_with("span_"));
 
         // No two prefix-bearing IDs should be equal
-        let all = [&src, &fetch, &suggested, &batch, &loc, &doc, &chunk];
+        let all = [&src, &fetch, &suggested, &batch, &loc, &doc, &chunk, &span];
         for i in 0..all.len() {
             for j in (i + 1)..all.len() {
                 assert_ne!(

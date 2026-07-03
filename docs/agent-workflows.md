@@ -112,7 +112,7 @@ eggsearch exposes machine-readable **workflow recipes** — compact retrieval pl
 
 ### Discovering Recipes
 
-Call `provider_status` to get the full recipe catalog in the `workflow_recipes` response field. Each recipe includes a `support` status indicating current availability:
+Call `provider_status` to get the full recipe catalog in the `workflow_recipes` response field. Use `recipe_detail` to control verbosity: `"summary"` (default) returns compact recipes without steps/fallbacks, `"full"` includes all fields including steps, fallbacks, and trust notes, and `"none"` omits recipes entirely. Each recipe includes a `support` status indicating current availability:
 
 - **`available`**: all required capabilities are present (e.g. `generic_search` is always available)
 - **`partial`**: some required capabilities are present; the recipe will operate with degraded coverage

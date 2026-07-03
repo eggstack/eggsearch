@@ -160,6 +160,7 @@ eggsearch/
 - Regression corpus suite: `tests/corpus_runner.rs` with JSON scenario files under `tests/corpus/`
   - Run corpus tests: `cargo test --features mock --test corpus_runner`
   - Live smoke tests (requires network): `cargo test --features live-smoke --test corpus_runner -- --ignored`
+- Total test count: ~2812 (unit + integration + corpus)
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
@@ -403,7 +404,10 @@ compatibility.
   with support status (`available`, `partial`, `unavailable`) evaluated
   against the current provider configuration. Each recipe includes
   `id`, `title`, `goal`, `steps`, `fallbacks`, `trust_notes`, and
-  capability requirements. See "Workflow Recipes" below.
+  capability requirements. Use `recipe_detail` to control verbosity:
+  `None` omits recipes entirely, `Summary` (default) returns
+  compact recipes without steps/fallbacks, and `Full` includes all
+  fields. See "Workflow Recipes" below.
 - This is the capability discovery endpoint for MCP clients. Clients
   can use it to determine which specialized tools are available before
   attempting to use them.
@@ -462,6 +466,7 @@ and cross-reference evidence across tools without content comparison.
 - `RepoLocatorKey`: `(host, owner, repo, ref_name, path)` — normalizes `.git` suffix, lowercases host enum
 - `DocKey`: `(url, title, kind)`
 - `DocChunkKey`: `(doc_id, chunk_index, heading_path)`
+- `CodeSpanKey`: `(url, language, line_start, line_end, symbol_name)` — for deterministic code span identity
 
 **ID format and prefix conventions:**
 - Source: `src_<16hex>` — from `SourceKey` fields
@@ -471,6 +476,7 @@ and cross-reference evidence across tools without content comparison.
 - Locator: `loc_<16hex>` — from `RepoLocatorKey` fields
 - Document: `doc_<16hex>` — from `DocKey` fields
 - Chunk: `chunk_<16hex>` — from `DocChunkKey` fields
+- Span: `span_<16hex>` — from `CodeSpanKey` fields
 - Bundle: `bundle_<16hex>` — from goal + source + fetch IDs (existing)
 
 **URL canonicalization:** `canonicalize_url()` normalizes URLs before
@@ -748,7 +754,8 @@ queries when the caller wants categorized results rather than a flat
   optional `error_context: Option<ErrorContext>`
 - `ErrorContext`: parsed error parts, redactions applied, subquery metadata
 - `RepoSuggestedFetch`: `url`, `reason`, `group`, `expected_kind`,
-  `recommended_extract_mode`, `priority`, optional `structured_repo_fetch`
+  `recommended_extract_mode`, `priority`, optional `structured_repo_fetch`,
+  optional `reason_code` (stable machine-readable reason code)
 
 **Exact-error mode:** When `mode: "exact_error"` is set on the request,
 the planner generates error-aware subqueries that preserve exact phrases,
@@ -1037,7 +1044,11 @@ fake `host: "github"` fields.
   line span was selected — present when symbol, match_text, or
   expand_to_block was used),
   `code_context: Option<CodeContext>` (optional structured context
-  for source code files — language, imports, enclosing symbol)
+  for source code files — language, imports, enclosing symbol),
+  `code_span: Option<CodeSpanEvidence>` (optional structured code
+  span with deterministic `span_id` (`span_<16hex>`), language,
+  line range, symbol name/kind — present when symbol, match_text,
+  or expand_to_block resolves a specific span)
 
 **Supported hosts:**
 - GitHub: full support (raw content via `raw.githubusercontent.com`)
@@ -1193,7 +1204,9 @@ web search results.
   `description`, `source`, `kev`
 - `SecurityRemediation`: defensive remediation action with `category: RemediationCategory`,
   `description`, `rationale`, `evidence_urls`, `fixed_versions`, `affected_packages`,
-  `source_ids`, `confidence: EvidenceConfidence`
+  `source_ids`, `confidence: EvidenceConfidence`. Includes `validate_text_safety()`
+  method that checks description/rationale against a 25-term exploit keyword blocklist
+  and returns warnings when exploit-like language is detected.
 - `RemediationCategory`: enum — `Upgrade`, `Pin`, `Replace`, `RemoveDependency`,
   `ConfigurationMitigation`, `FeatureDisable`, `VulnerableApiAvoidance`,
   `TransitiveOverride`, `VendorPatch`, `MonitorOnly`, `ManualReview`,
@@ -1736,6 +1749,12 @@ network calls.
 - Groups with 2+ results produce claims with type derived from the
   group kind (e.g. Benchmarks → `performance`, SecurityConsiderations
   → `security`)
+- Claims are query-aware: claim text references the original query
+  for context
+- `source_quality_notes` are populated with source-informed quality
+  signals from `ResearchSourceQuality`
+- `missing_evidence` is populated with specific evidence gaps when
+  the group lacks primary sources, recent sources, or benchmarks
 - Counterpoints group produces claims with `conflicting_source_ids`
 - Confidence is derived from group quality summary and result count
 

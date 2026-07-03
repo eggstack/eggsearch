@@ -76,10 +76,11 @@ pub use fetch::{
     WebFetchResponse,
 };
 pub use identity::{
-    batch_fetch_id, canonicalize_url, chunk_id, compute_batch_fetch_id, compute_chunk_id,
-    compute_doc_id, compute_fetch_id, compute_locator_id, compute_source_id,
-    compute_suggested_fetch_id, doc_id, fetch_id, locator_id, source_id, suggested_fetch_id,
-    BatchFetchKey, DocChunkKey, DocKey, FetchKey, RepoLocatorKey, SourceKey, SuggestedFetchKey,
+    batch_fetch_id, canonicalize_url, chunk_id, code_span_id, compute_batch_fetch_id,
+    compute_chunk_id, compute_code_span_id, compute_doc_id, compute_fetch_id, compute_locator_id,
+    compute_source_id, compute_suggested_fetch_id, doc_id, fetch_id, locator_id, source_id,
+    suggested_fetch_id, BatchFetchKey, CodeSpanKey, DocChunkKey, DocKey, FetchKey, RepoLocatorKey,
+    SourceKey, SuggestedFetchKey,
 };
 pub use local::{LocalConfig, LocalFileEntry, LocalMatch, LocalSearchRequest, LocalSearchResult};
 pub use package::{
@@ -100,7 +101,8 @@ pub use query::{
 };
 pub use repo_fetch::{
     apply_line_range, github_browser_url, github_permalink_url, github_raw_url, gitlab_browser_url,
-    gitlab_raw_url, RepoFetchRequest, RepoFetchResponse, RepoFetchedLine, RepoLocator,
+    gitlab_raw_url, CodeSpanEvidence, RepoFetchRequest, RepoFetchResponse, RepoFetchedLine,
+    RepoLocator,
 };
 pub use repo_map::{
     classify_important_directory, classify_important_file, ImportantDirKind, ImportantFileKind,
@@ -145,6 +147,6 @@ pub use warning::{
     convert_warnings, AgentWarning, WarningAccumulator, WarningCode, WarningSeverity,
 };
 pub use workflow::{
-    AgentNextAction, AgentWorkflowFallback, AgentWorkflowRecipe, AgentWorkflowStep, RecipeSupport,
-    MAX_NEXT_ACTIONS,
+    AgentNextAction, AgentWorkflowFallback, AgentWorkflowRecipe, AgentWorkflowStep, RecipeDetail,
+    RecipeSupport, MAX_NEXT_ACTIONS,
 };

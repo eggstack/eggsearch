@@ -71,6 +71,26 @@ fn expected_kind_for(source_kind: SourceKind) -> SourceKind {
     source_kind
 }
 
+/// Derive a machine-readable reason code from a result group kind.
+fn reason_code_for_group(kind: &RepoResultGroupKind) -> &'static str {
+    match kind {
+        RepoResultGroupKind::OfficialDocs => "official_docs",
+        RepoResultGroupKind::PackageRegistry => "database_record",
+        RepoResultGroupKind::Repository => "source_evidence",
+        RepoResultGroupKind::Readme => "readme_source",
+        RepoResultGroupKind::Examples => "example_evidence",
+        RepoResultGroupKind::Tests => "test_evidence",
+        RepoResultGroupKind::SourceFiles => "source_evidence",
+        RepoResultGroupKind::Issues => "issue_context",
+        RepoResultGroupKind::PullRequests => "issue_context",
+        RepoResultGroupKind::Releases => "release_notes",
+        RepoResultGroupKind::MigrationNotes => "changelog_source",
+        RepoResultGroupKind::Changelog => "changelog_source",
+        RepoResultGroupKind::CommunityDiscussion => "suggested_evidence",
+        RepoResultGroupKind::Other => "suggested_evidence",
+    }
+}
+
 /// Determine recommended extract mode from source kind and group.
 fn recommended_extract_mode(
     source_kind: SourceKind,
@@ -209,6 +229,7 @@ pub fn generate_suggested_fetches_with_mode(
                 priority: (pos + 1) as u8,
                 structured_repo_fetch,
                 score: Some(candidate.score),
+                reason_code: Some(reason_code_for_group(&group_kind).to_string()),
                 rank_reasons,
                 information_gain: Some(candidate.information_gain),
                 stable: Some(candidate.stable),
@@ -280,6 +301,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             priority: 0,
                             structured_repo_fetch: None,
                             score: None,
+                            reason_code: Some("nearby_test_candidate".to_string()),
                             rank_reasons: vec!["nearby_test_candidate".to_string()],
                             information_gain: None,
                             stable: None,
@@ -301,6 +323,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             priority: 0,
                             structured_repo_fetch: None,
                             score: None,
+                            reason_code: Some("example_candidate".to_string()),
                             rank_reasons: vec!["example_candidate".to_string()],
                             information_gain: None,
                             stable: None,
@@ -323,6 +346,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             priority: 0,
                             structured_repo_fetch: None,
                             score: None,
+                            reason_code: Some("implementation_candidate".to_string()),
                             rank_reasons: vec!["implementation_candidate".to_string()],
                             information_gain: None,
                             stable: None,
@@ -352,6 +376,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             priority: 0,
                             structured_repo_fetch: None,
                             score: None,
+                            reason_code: Some("manifest_context".to_string()),
                             rank_reasons: vec!["manifest_context".to_string()],
                             information_gain: None,
                             stable: None,
@@ -376,6 +401,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                     priority: 0,
                     structured_repo_fetch: None,
                     score: None,
+                    reason_code: Some("changelog_source".to_string()),
                     rank_reasons: vec!["changelog_source".to_string()],
                     information_gain: None,
                     stable: None,
@@ -1289,5 +1315,74 @@ mod tests {
             manifest_count, 2,
             "each implementation card should get its own manifest suggestion, got {manifest_count}"
         );
+    }
+
+    #[test]
+    fn all_suggested_fetches_have_reason_code() {
+        let groups = vec![
+            make_group(
+                RepoResultGroupKind::OfficialDocs,
+                vec![make_card("Docs", "https://docs.example.com/api")],
+            ),
+            make_group(
+                RepoResultGroupKind::SourceFiles,
+                vec![make_card(
+                    "Source",
+                    "https://github.com/foo/bar/blob/main/src/lib.rs",
+                )],
+            ),
+            make_group(
+                RepoResultGroupKind::Issues,
+                vec![make_card("Issue #1", "https://github.com/foo/bar/issues/1")],
+            ),
+            make_group(
+                RepoResultGroupKind::Releases,
+                vec![make_card(
+                    "Release v1.0",
+                    "https://github.com/foo/bar/releases/tag/v1.0",
+                )],
+            ),
+        ];
+        let hints = crate::core::repo_query::RepoQueryHints::default();
+        let fetches = generate_suggested_fetches(&groups, &hints);
+
+        for fetch in &fetches {
+            assert!(
+                fetch.reason_code.is_some(),
+                "reason_code should be populated for all fetches, missing on: {} (group {:?})",
+                fetch.url,
+                fetch.group
+            );
+        }
+    }
+
+    #[test]
+    fn complementary_suggestions_have_reason_code() {
+        let groups = vec![make_group(
+            RepoResultGroupKind::SourceFiles,
+            vec![{
+                let mut card =
+                    make_card("lib.rs", "https://github.com/foo/bar/blob/main/src/lib.rs");
+                card.metadata.code_evidence = Some(CodeEvidence {
+                    host: Some(CodeHost::Github),
+                    owner: Some("foo".to_string()),
+                    repo: Some("bar".to_string()),
+                    ref_name: Some("main".to_string()),
+                    path: Some("src/lib.rs".to_string()),
+                    source_role: Some(crate::core::code_evidence::SourceRole::Implementation),
+                    ..Default::default()
+                });
+                card
+            }],
+        )];
+        let suggestions = generate_complementary_suggestions(&groups);
+        for s in &suggestions {
+            assert!(
+                s.reason_code.is_some(),
+                "reason_code should be populated for all complementary suggestions, missing on: {} (reason: {})",
+                s.url,
+                s.reason
+            );
+        }
     }
 }

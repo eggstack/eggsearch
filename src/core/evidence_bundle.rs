@@ -177,6 +177,9 @@ pub struct EvidenceBundleFetchedItem {
     /// Selected span metadata, if a symbol/line range was used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_span: Option<SelectedSpan>,
+    /// Deterministic code-span ID linking this fetch to its code span.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_span_id: Option<String>,
     /// Effective line start (1-indexed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_start: Option<u32>,
@@ -378,6 +381,9 @@ pub struct EvidenceFetchInput {
     /// Selected span metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_span: Option<SelectedSpan>,
+    /// Deterministic code-span ID linking this fetch to its code span.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_span_id: Option<String>,
     /// Effective line start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_start: Option<u32>,
@@ -684,6 +690,7 @@ mod tests {
             content_type: None,
             language: None,
             selected_span: None,
+            code_span_id: None,
             line_start: Some(1),
             line_end: Some(10),
             text: Some("fn main() {}".to_string()),

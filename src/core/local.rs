@@ -282,10 +282,237 @@ mod tests {
     }
 
     #[test]
+    fn skip_dirs_contains_venv_dirs() {
+        assert!(SKIP_DIRS.contains(&".venv"));
+        assert!(SKIP_DIRS.contains(&"venv"));
+    }
+
+    #[test]
+    fn skip_dirs_contains_build_dirs() {
+        assert!(SKIP_DIRS.contains(&"dist"));
+        assert!(SKIP_DIRS.contains(&"build"));
+    }
+
+    #[test]
+    fn skip_dirs_contains_cache_dirs() {
+        assert!(SKIP_DIRS.contains(&".mypy_cache"));
+        assert!(SKIP_DIRS.contains(&".pytest_cache"));
+        assert!(SKIP_DIRS.contains(&".next"));
+        assert!(SKIP_DIRS.contains(&".turbo"));
+        assert!(SKIP_DIRS.contains(&"coverage"));
+    }
+
+    #[test]
+    fn binary_extensions_executables_and_libraries() {
+        assert!(is_binary_extension("prog.exe"));
+        assert!(is_binary_extension("lib.dll"));
+        assert!(is_binary_extension("lib.so"));
+        assert!(is_binary_extension("lib.dylib"));
+        assert!(is_binary_extension("lib.o"));
+        assert!(is_binary_extension("lib.a"));
+        assert!(is_binary_extension("lib.lib"));
+    }
+
+    #[test]
+    fn binary_extensions_images() {
+        assert!(is_binary_extension("photo.png"));
+        assert!(is_binary_extension("photo.jpg"));
+        assert!(is_binary_extension("photo.jpeg"));
+        assert!(is_binary_extension("photo.gif"));
+        assert!(is_binary_extension("photo.bmp"));
+        assert!(is_binary_extension("icon.ico"));
+        assert!(is_binary_extension("icon.svg"));
+        assert!(is_binary_extension("image.webp"));
+    }
+
+    #[test]
+    fn binary_extensions_audio_video() {
+        assert!(is_binary_extension("audio.mp3"));
+        assert!(is_binary_extension("audio.wav"));
+        assert!(is_binary_extension("audio.flac"));
+        assert!(is_binary_extension("video.mp4"));
+        assert!(is_binary_extension("video.avi"));
+        assert!(is_binary_extension("video.mov"));
+        assert!(is_binary_extension("video.mkv"));
+    }
+
+    #[test]
+    fn binary_extensions_archives() {
+        assert!(is_binary_extension("archive.zip"));
+        assert!(is_binary_extension("archive.tar"));
+        assert!(is_binary_extension("archive.gz"));
+        assert!(is_binary_extension("archive.bz2"));
+        assert!(is_binary_extension("archive.xz"));
+        assert!(is_binary_extension("archive.7z"));
+        assert!(is_binary_extension("archive.rar"));
+    }
+
+    #[test]
+    fn binary_extensions_documents_and_fonts() {
+        assert!(is_binary_extension("doc.pdf"));
+        assert!(is_binary_extension("doc.doc"));
+        assert!(is_binary_extension("doc.docx"));
+        assert!(is_binary_extension("sheet.xls"));
+        assert!(is_binary_extension("sheet.xlsx"));
+        assert!(is_binary_extension("slide.ppt"));
+        assert!(is_binary_extension("slide.pptx"));
+        assert!(is_binary_extension("data.bin"));
+        assert!(is_binary_extension("data.dat"));
+        assert!(is_binary_extension("data.db"));
+        assert!(is_binary_extension("data.sqlite"));
+        assert!(is_binary_extension("font.woff"));
+        assert!(is_binary_extension("font.woff2"));
+        assert!(is_binary_extension("font.ttf"));
+        assert!(is_binary_extension("font.otf"));
+        assert!(is_binary_extension("module.wasm"));
+    }
+
+    #[test]
+    fn text_extensions_not_binary() {
+        assert!(!is_binary_extension("main.rs"));
+        assert!(!is_binary_extension("app.py"));
+        assert!(!is_binary_extension("index.ts"));
+        assert!(!is_binary_extension("main.go"));
+        assert!(!is_binary_extension("style.css"));
+        assert!(!is_binary_extension("data.json"));
+        assert!(!is_binary_extension("config.toml"));
+        assert!(!is_binary_extension("doc.md"));
+        assert!(!is_binary_extension("page.html"));
+        assert!(!is_binary_extension("query.sql"));
+        assert!(!is_binary_extension("Makefile"));
+        assert!(!is_binary_extension("Dockerfile"));
+    }
+
+    #[test]
+    fn binary_extensions_return_none_from_language() {
+        assert_eq!(language_from_extension("image.png"), None);
+        assert_eq!(language_from_extension("archive.zip"), None);
+        assert_eq!(language_from_extension("document.pdf"), None);
+        assert_eq!(language_from_extension("font.ttf"), None);
+        assert_eq!(language_from_extension("module.wasm"), None);
+        assert_eq!(language_from_extension("data.db"), None);
+    }
+
+    #[test]
+    fn language_from_extension_extended() {
+        assert_eq!(language_from_extension("app.jsx"), Some("javascript"));
+        assert_eq!(language_from_extension("app.tsx"), Some("typescript"));
+        assert_eq!(language_from_extension("main.java"), Some("java"));
+        assert_eq!(language_from_extension("app.rb"), Some("ruby"));
+        assert_eq!(language_from_extension("main.c"), Some("c"));
+        assert_eq!(language_from_extension("main.cpp"), Some("cpp"));
+        assert_eq!(language_from_extension("main.cc"), Some("cpp"));
+        assert_eq!(language_from_extension("main.h"), Some("c"));
+        assert_eq!(language_from_extension("main.hpp"), Some("c"));
+        assert_eq!(language_from_extension("app.cs"), Some("csharp"));
+        assert_eq!(language_from_extension("app.swift"), Some("swift"));
+        assert_eq!(language_from_extension("app.kt"), Some("kotlin"));
+        assert_eq!(language_from_extension("app.kts"), Some("kotlin"));
+        assert_eq!(language_from_extension("app.scala"), Some("scala"));
+        assert_eq!(language_from_extension("script.sh"), Some("shell"));
+        assert_eq!(language_from_extension("script.bash"), Some("shell"));
+        assert_eq!(language_from_extension("app.yaml"), Some("yaml"));
+        assert_eq!(language_from_extension("app.yml"), Some("yaml"));
+        assert_eq!(language_from_extension("page.htm"), Some("html"));
+        assert_eq!(language_from_extension("app.proto"), Some("protobuf"));
+        assert_eq!(language_from_extension("app.dart"), Some("dart"));
+        assert_eq!(language_from_extension("app.ex"), Some("elixir"));
+        assert_eq!(language_from_extension("app.exs"), Some("elixir"));
+        assert_eq!(language_from_extension("app.erl"), Some("erlang"));
+        assert_eq!(language_from_extension("app.hrl"), Some("erlang"));
+        assert_eq!(language_from_extension("app.hs"), Some("haskell"));
+        assert_eq!(language_from_extension("app.lua"), Some("lua"));
+        assert_eq!(language_from_extension("app.zig"), Some("zig"));
+        assert_eq!(language_from_extension("app.nim"), Some("nim"));
+        assert_eq!(language_from_extension("app.v"), Some("v"));
+        assert_eq!(language_from_extension("app.ml"), Some("ocaml"));
+        assert_eq!(language_from_extension("app.mli"), Some("ocaml"));
+        assert_eq!(language_from_extension("app.clj"), Some("clojure"));
+        assert_eq!(language_from_extension("app.cljs"), Some("clojure"));
+        assert_eq!(language_from_extension("app.r"), Some("r"));
+        assert_eq!(language_from_extension("app.jl"), Some("julia"));
+        assert_eq!(language_from_extension("app.php"), Some("php"));
+    }
+
+    #[test]
+    fn language_from_extension_no_extension() {
+        assert_eq!(language_from_extension("Makefile"), None);
+        assert_eq!(language_from_extension("Dockerfile"), None);
+        assert_eq!(language_from_extension(".gitignore"), None);
+        assert_eq!(language_from_extension("justfile"), None);
+    }
+
+    #[test]
+    fn local_config_max_file_bytes_default() {
+        let cfg = LocalConfig::default();
+        assert_eq!(cfg.max_file_bytes, 1_048_576);
+    }
+
+    #[test]
+    fn local_config_max_indexed_files_default() {
+        let cfg = LocalConfig::default();
+        assert_eq!(cfg.max_indexed_files, 50_000);
+    }
+
+    #[test]
+    fn local_config_include_hidden_default() {
+        let cfg = LocalConfig::default();
+        assert!(!cfg.include_hidden);
+    }
+
+    #[test]
+    fn local_config_respect_gitignore_default() {
+        let cfg = LocalConfig::default();
+        assert!(cfg.respect_gitignore);
+    }
+
+    #[test]
+    fn local_config_follow_symlinks_default() {
+        let cfg = LocalConfig::default();
+        assert!(!cfg.follow_symlinks);
+    }
+
+    #[test]
+    fn local_config_roots_empty_by_default() {
+        let cfg = LocalConfig::default();
+        assert!(cfg.roots.is_empty());
+    }
+
+    #[test]
     fn local_search_request_defaults() {
         let req = LocalSearchRequest::default();
         assert!(req.query.is_empty());
         assert!(req.path.is_none());
         assert!(req.language.is_none());
+    }
+
+    #[test]
+    fn local_match_defaults() {
+        let req = LocalSearchResult::default();
+        assert!(req.matches.is_empty());
+        assert_eq!(req.files_scanned, 0);
+        assert!(!req.truncated);
+        assert!(!req.timed_out);
+    }
+
+    #[test]
+    fn is_binary_extension_case_sensitive() {
+        assert!(!is_binary_extension("image.PNG"));
+        assert!(!is_binary_extension("archive.ZIP"));
+        assert!(is_binary_extension("image.png"));
+        assert!(is_binary_extension("archive.zip"));
+    }
+
+    #[test]
+    fn is_binary_extension_no_extension() {
+        assert!(!is_binary_extension("Makefile"));
+        assert!(!is_binary_extension(".gitignore"));
+        assert!(!is_binary_extension("README"));
+    }
+
+    #[test]
+    fn is_binary_extension_double_extension() {
+        assert!(is_binary_extension("archive.tar.gz"));
+        assert!(is_binary_extension("backup.tar.bz2"));
     }
 }

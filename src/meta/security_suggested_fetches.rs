@@ -263,7 +263,10 @@ pub fn generate_security_suggested_fetches(
                 "PackageAdvisories" => Some("database_record".to_string()),
                 "KevEntries" => Some("kev_context".to_string()),
                 "PatchCommitsOrReleases" => Some("patch_evidence".to_string()),
+                "ExploitDiscussion" => Some("exploit_context".to_string()),
                 "DefensiveGuidance" => Some("defensive_guidance".to_string()),
+                "GeneralContext" => Some("general_context".to_string()),
+                "Other" => Some("other_source".to_string()),
                 _ => None,
             };
 
@@ -553,11 +556,26 @@ mod tests {
                 )],
             ),
             make_group(
+                SecurityResultGroupKind::ExploitDiscussion,
+                vec![make_card(
+                    "Exploit Discussion",
+                    "https://example.com/exploit-writeup",
+                )],
+            ),
+            make_group(
                 SecurityResultGroupKind::DefensiveGuidance,
                 vec![make_card(
                     "Mitigation Guide",
                     "https://example.com/mitigation",
                 )],
+            ),
+            make_group(
+                SecurityResultGroupKind::GeneralContext,
+                vec![make_card("General Context", "https://example.com/context")],
+            ),
+            make_group(
+                SecurityResultGroupKind::Other,
+                vec![make_card("Other Source", "https://example.com/other")],
             ),
         ];
         let ids = SecurityIdentifiers {
@@ -573,8 +591,10 @@ mod tests {
                 SecurityResultGroupKind::PackageAdvisories => Some("database_record"),
                 SecurityResultGroupKind::KevEntries => Some("kev_context"),
                 SecurityResultGroupKind::PatchCommitsOrReleases => Some("patch_evidence"),
+                SecurityResultGroupKind::ExploitDiscussion => Some("exploit_context"),
                 SecurityResultGroupKind::DefensiveGuidance => Some("defensive_guidance"),
-                _ => None,
+                SecurityResultGroupKind::GeneralContext => Some("general_context"),
+                SecurityResultGroupKind::Other => Some("other_source"),
             };
             assert_eq!(
                 fetch.reason_code.as_deref(),

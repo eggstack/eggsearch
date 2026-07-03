@@ -82,6 +82,12 @@ pub struct ProviderStatusArgs {
     /// implemented.
     #[serde(default)]
     pub probe: bool,
+    /// Controls recipe verbosity in the response.
+    /// `none`: omit workflow_recipes entirely.
+    /// `summary` (default): compact summaries with id, title, goal, support, step_tools.
+    /// `full`: full recipe objects with steps, fallbacks, trust_notes.
+    #[serde(default)]
+    pub recipe_detail: Option<crate::core::workflow::RecipeDetail>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1117,7 +1123,7 @@ pub async fn run_research_search(
 /// Run the `provider_status` tool.
 pub fn run_provider_status(
     state: Arc<ServerState>,
-    _args: ProviderStatusArgs,
+    args: ProviderStatusArgs,
 ) -> Result<serde_json::Value, String> {
     let mut descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
 
@@ -1211,7 +1217,16 @@ pub fn run_provider_status(
                 "max_total_chars": crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP,
             },
         },
-        "workflow_recipes": crate::meta::recipe_catalog::build_recipe_catalog(&descriptors, local_enabled),
+        "workflow_recipes": match args.recipe_detail.unwrap_or_default() {
+            crate::core::workflow::RecipeDetail::None => serde_json::json!([]),
+            crate::core::workflow::RecipeDetail::Summary => {
+                let recipes = crate::meta::recipe_catalog::build_recipe_catalog(&descriptors, local_enabled);
+                serde_json::json!(recipes.iter().map(|r| r.summarize()).collect::<Vec<_>>())
+            }
+            crate::core::workflow::RecipeDetail::Full => {
+                serde_json::json!(crate::meta::recipe_catalog::build_recipe_catalog(&descriptors, local_enabled))
+            }
+        },
     });
     Ok(payload)
 }
@@ -1759,6 +1774,29 @@ pub async fn run_repo_fetch(
                 target_line,
             ));
 
+            // Build deterministic code span evidence when span selection produced a result.
+            let locator_str_for_span = format!("{:?}", locator);
+            let code_span = selected_span.as_ref().map(|span| {
+                use crate::core::identity::code_span_id;
+                use crate::core::repo_fetch::CodeSpanEvidence;
+                let id = code_span_id(
+                    &locator_str_for_span,
+                    Some(span.line_start),
+                    Some(span.line_end),
+                    span.symbol.as_deref(),
+                );
+                CodeSpanEvidence {
+                    span_id: id,
+                    language: code_context.as_ref().and_then(|c| c.language.clone()),
+                    line_start: Some(span.line_start),
+                    line_end: Some(span.line_end),
+                    symbol: span.symbol.clone(),
+                    symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{:?}", k)),
+                    selection_kind: format!("{:?}", span.selection_kind),
+                    confidence: format!("{:?}", span.confidence),
+                }
+            });
+
             let fetch_response = RepoFetchResponse {
                 locator,
                 stable_id: None,
@@ -1788,6 +1826,7 @@ pub async fn run_repo_fetch(
                 trust: FetchTrust::ExternalUntrusted,
                 trust_markers,
                 selected_span,
+                code_span,
                 code_context,
             };
 
@@ -2692,6 +2731,29 @@ async fn run_workspace_fetch(
         }
     }
 
+    // Build deterministic code span evidence when span selection produced a result.
+    let locator_str_for_span = format!("{:?}", locator);
+    let code_span = selected_span.as_ref().map(|span| {
+        use crate::core::identity::code_span_id;
+        use crate::core::repo_fetch::CodeSpanEvidence;
+        let id = code_span_id(
+            &locator_str_for_span,
+            Some(span.line_start),
+            Some(span.line_end),
+            span.symbol.as_deref(),
+        );
+        CodeSpanEvidence {
+            span_id: id,
+            language: code_context.as_ref().and_then(|c| c.language.clone()),
+            line_start: Some(span.line_start),
+            line_end: Some(span.line_end),
+            symbol: span.symbol.clone(),
+            symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{:?}", k)),
+            selection_kind: format!("{:?}", span.selection_kind),
+            confidence: format!("{:?}", span.confidence),
+        }
+    });
+
     let fetch_response = RepoFetchResponse {
         locator,
         stable_id: None,
@@ -2721,6 +2783,7 @@ async fn run_workspace_fetch(
         trust: FetchTrust::LocalTrusted,
         trust_markers,
         selected_span,
+        code_span,
         code_context,
     };
 

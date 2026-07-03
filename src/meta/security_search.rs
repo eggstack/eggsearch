@@ -627,6 +627,14 @@ pub async fn run_security_search_plan(
         }
     }
 
+    // Validate remediation text safety in debug builds
+    debug_assert!(
+        remediation_actions
+            .iter()
+            .all(|r| r.validate_text_safety().is_ok()),
+        "remediation text must not contain exploit keywords"
+    );
+
     // Build security evidence summary
     let security_evidence_summary = if !vulnerabilities.is_empty()
         || !applicability_assessments.is_empty()

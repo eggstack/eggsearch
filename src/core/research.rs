@@ -299,8 +299,6 @@ pub enum ResearchGapKind {
     NoMigrationDocs,
     /// Limited provider coverage.
     ProviderCoverageLimited,
-    /// Ambiguous or underspecified research question.
-    AmbiguousQuestion,
 }
 
 /// A coverage gap with guidance for the calling agent.
@@ -606,7 +604,6 @@ pub enum ResearchQualitySignal {
     SecondarySource,
     AnecdotalSource,
     MarketingSource,
-    ConflictSource,
 }
 
 /// A structured research claim derived from grouped evidence.
@@ -659,7 +656,6 @@ pub enum ResearchEvidenceGapKind {
     NoMigrationChangelog,
     OnlySecondarySources,
     ConflictingEvidenceUnresolved,
-    SourceNeedsFetch,
     VersionContextMissing,
 }
 

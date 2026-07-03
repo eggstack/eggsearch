@@ -635,6 +635,12 @@ or `unknown` status with confidence and evidence. Provide
 local lock-file parsing. Applicability is advisory metadata
 comparison, not deployment risk assessment.
 
+**Text safety validation:** `SecurityRemediation` entries include a
+`validate_text_safety()` method that checks description and rationale
+text against a 25-term exploit keyword blocklist. When exploit-like
+language is detected, warnings are returned to flag potentially
+suspicious remediation guidance.
+
 **Important:** Security context is retrieval enrichment, not
 exploitability determination. It classifies what the sources say,
 not whether a particular deployment is vulnerable. Agents must
@@ -846,7 +852,7 @@ inspect full content.
   "claims": [
     {
       "id": "claim_primary_sources_0",
-      "text": "Evidence suggests Primary Sources supports the research topic",
+      "text": "Evidence suggests QUIC vs WebSocket IPC for a coding agent daemon supports the research topic",
       "claim_type": "architecture",
       "confidence": "high",
       "supporting_source_ids": ["src_abc123..."],
@@ -932,6 +938,8 @@ across the requested dimensions.
 - `providers_queried` / `providers_failed`: provider status for the search fan-out.
 - `warnings`: non-fatal advisory messages (e.g. subquery cap hit, freshness approximate, provider failures, empty groups, request deadline exceeded with interrupted subquery counts).
 - `trust_markers`: summarization of sanitization applied to untrusted text.
+- `claims`: structured claims derived from grouped evidence, query-aware (text references the original query), with source-quality notes and missing-evidence details.
+- `evidence_gaps`: missing evidence categories with recommended actions for follow-up.
 
 **Request deadline:** A single request-level deadline bounds all subqueries. When the budget is exhausted, remaining subqueries are skipped and a `request_deadline_exceeded` warning reports both interrupted (started but incomplete) and skipped (never started) subquery counts.
 
@@ -1025,7 +1033,10 @@ The response also includes a `workflow_recipes` field with 8 built-in
 workflow recipes (machine-readable retrieval playbooks) and their
 support status (`available`, `partial`, `unavailable`) based on enabled
 providers. Each recipe includes `id`, `title`, `goal`, `steps`,
-`fallbacks`, `trust_notes`, and capability requirements. See
+`fallbacks`, `trust_notes`, and capability requirements. The
+`recipe_detail` argument controls verbosity: `"none"` omits recipes
+entirely, `"summary"` (default) returns compact recipes without
+steps/fallbacks, and `"full"` includes all fields. See
 `docs/agent-workflows.md` for the full recipe catalog.
 
 ### `repo_search`
@@ -1351,6 +1362,11 @@ response includes a `selected_span` object describing how the final
 line span was chosen: `line_start`, `line_end`, `selection_kind`
 (e.g. `symbol_definition`, `match_text`, `expanded_explicit_range`),
 `confidence` (`exact`, `strong`, `weak`, `unknown`), and `reasons`.
+
+When a symbol, match, or block expansion resolves a specific span,
+the response also includes a `code_span` object with deterministic
+`span_id` (`span_<16hex>`), `language`, `line_start`, `line_end`,
+`symbol_name`, and `symbol_kind`.
 
 When a line range exceeds the file, it is silently clamped to the
 available lines. Context lines are applied after clamping. Workspace

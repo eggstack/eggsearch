@@ -320,6 +320,20 @@ const EXPLOIT_KEYWORDS: &[&str] = &[
     "pwn",
     "p0c",
     "proof of concept",
+    "buffer overflow",
+    "heap spray",
+    "use after free",
+    "double free",
+    "format string",
+    "privilege escalation",
+    "bypass authentication",
+    "sql injection",
+    "xss",
+    "cross-site scripting",
+    "command injection",
+    "deserialization attack",
+    "zero-day",
+    "0day",
 ];
 
 fn assert_no_exploit_instructions(remediation: &SecurityRemediation) {
@@ -906,4 +920,162 @@ fn evidence_bundle_deduplicates_security_sources_by_url() {
         Some(SourceKind::SecurityAdvisory),
         "deduplicated source must preserve SecurityAdvisory kind"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 9. validate_text_safety blocklist enforcement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn upgrade_remediation_passes_validate_text_safety() {
+    let remediation = SecurityRemediation {
+        category: RemediationCategory::Upgrade,
+        description: "Upgrade test-pkg to version 3.0.0 or later".to_string(),
+        rationale: "Advisory CVE-2024-9999 indicates this package is affected; fixed versions are available".to_string(),
+        evidence_urls: Vec::new(),
+        fixed_versions: vec!["3.0.0".to_string()],
+        affected_packages: vec!["test-pkg".to_string()],
+        source_ids: Vec::new(),
+        confidence: EvidenceConfidence::Strong,
+    };
+    assert!(
+        remediation.validate_text_safety().is_ok(),
+        "normal upgrade remediation must pass validation"
+    );
+}
+
+#[test]
+fn manual_review_remediation_passes_validate_text_safety() {
+    let remediation = SecurityRemediation {
+        category: RemediationCategory::ManualReview,
+        description: "Manual review required for test-pkg - no fixed version available".to_string(),
+        rationale:
+            "Advisory CVE-2024-9999 confirms affected status but no fixed version is documented"
+                .to_string(),
+        evidence_urls: Vec::new(),
+        fixed_versions: Vec::new(),
+        affected_packages: vec!["test-pkg".to_string()],
+        source_ids: Vec::new(),
+        confidence: EvidenceConfidence::Weak,
+    };
+    assert!(
+        remediation.validate_text_safety().is_ok(),
+        "manual review remediation must pass validation"
+    );
+}
+
+#[test]
+fn remediation_with_exploit_keyword_fails_validate_text_safety() {
+    let remediation = SecurityRemediation {
+        category: RemediationCategory::Upgrade,
+        description: "Upgrade to fix the vulnerability and prevent exploit".to_string(),
+        rationale: "This version is affected by a known exploit".to_string(),
+        evidence_urls: Vec::new(),
+        fixed_versions: vec!["3.0.0".to_string()],
+        affected_packages: vec!["test-pkg".to_string()],
+        source_ids: Vec::new(),
+        confidence: EvidenceConfidence::Strong,
+    };
+    let result = remediation.validate_text_safety();
+    assert!(
+        result.is_err(),
+        "text with 'exploit' keyword must fail validation"
+    );
+    assert_eq!(result.unwrap_err(), "exploit");
+}
+
+#[test]
+fn remediation_with_shellcode_fails_validate_text_safety() {
+    let remediation = SecurityRemediation {
+        category: RemediationCategory::ManualReview,
+        description: "Requires manual review of shellcode vector".to_string(),
+        rationale: "The advisory describes a shellcode vulnerability".to_string(),
+        evidence_urls: Vec::new(),
+        fixed_versions: Vec::new(),
+        affected_packages: vec!["test-pkg".to_string()],
+        source_ids: Vec::new(),
+        confidence: EvidenceConfidence::Unknown,
+    };
+    let result = remediation.validate_text_safety();
+    assert!(
+        result.is_err(),
+        "text with 'shellcode' keyword must fail validation"
+    );
+    assert_eq!(result.unwrap_err(), "shellcode");
+}
+
+#[test]
+fn remediation_with_rce_fails_validate_text_safety() {
+    let remediation = SecurityRemediation {
+        category: RemediationCategory::Upgrade,
+        description: "Upgrade to prevent rce through the vulnerable endpoint".to_string(),
+        rationale: "Remote code execution is possible".to_string(),
+        evidence_urls: Vec::new(),
+        fixed_versions: vec!["2.0.0".to_string()],
+        affected_packages: vec!["test-pkg".to_string()],
+        source_ids: Vec::new(),
+        confidence: EvidenceConfidence::Strong,
+    };
+    let result = remediation.validate_text_safety();
+    assert!(
+        result.is_err(),
+        "text with 'rce' keyword must fail validation"
+    );
+    assert_eq!(result.unwrap_err(), "rce");
+}
+
+#[test]
+fn remediation_with_proof_of_concept_fails_validate_text_safety() {
+    let remediation = SecurityRemediation {
+        category: RemediationCategory::ManualReview,
+        description: "Review proof of concept details in advisory".to_string(),
+        rationale: "Advisory references a proof of concept for this vulnerability".to_string(),
+        evidence_urls: Vec::new(),
+        fixed_versions: Vec::new(),
+        affected_packages: vec!["test-pkg".to_string()],
+        source_ids: Vec::new(),
+        confidence: EvidenceConfidence::Unknown,
+    };
+    let result = remediation.validate_text_safety();
+    assert!(
+        result.is_err(),
+        "text with 'proof of concept' must fail validation"
+    );
+    assert_eq!(result.unwrap_err(), "proof of concept");
+}
+
+#[test]
+fn all_remediation_categories_can_be_validated() {
+    let categories = vec![
+        RemediationCategory::Upgrade,
+        RemediationCategory::Pin,
+        RemediationCategory::Replace,
+        RemediationCategory::RemoveDependency,
+        RemediationCategory::ConfigurationMitigation,
+        RemediationCategory::FeatureDisable,
+        RemediationCategory::VulnerableApiAvoidance,
+        RemediationCategory::TransitiveOverride,
+        RemediationCategory::VendorPatch,
+        RemediationCategory::MonitorOnly,
+        RemediationCategory::ManualReview,
+        RemediationCategory::NoActionSupportedByEvidence,
+    ];
+
+    for category in categories {
+        let remediation = SecurityRemediation {
+            category,
+            description: format!("Remediation for category {:?}", category),
+            rationale: "Safe rationale text".to_string(),
+            evidence_urls: Vec::new(),
+            fixed_versions: Vec::new(),
+            affected_packages: Vec::new(),
+            source_ids: Vec::new(),
+            confidence: EvidenceConfidence::Unknown,
+        };
+        assert!(
+            remediation.validate_text_safety().is_ok(),
+            "safe remediation for category {:?} must pass validation",
+            category
+        );
+    }
 }

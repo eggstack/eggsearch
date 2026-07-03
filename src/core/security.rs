@@ -1036,6 +1036,60 @@ pub struct SecurityRemediation {
     pub confidence: crate::core::code_evidence::EvidenceConfidence,
 }
 
+/// Exploit-instruction keyword blocklist for remediation text safety.
+///
+/// These terms indicate potential exploit instructions or offensive
+/// security guidance that must never appear in remediation text.
+const EXPLOIT_KEYWORDS: &[&str] = &[
+    "exploit",
+    "payload",
+    "injection",
+    "shellcode",
+    "overflow",
+    "rop",
+    "gadget",
+    "rce",
+    "remote code execution",
+    "pwn",
+    "p0c",
+    "proof of concept",
+    "buffer overflow",
+    "heap spray",
+    "use after free",
+    "double free",
+    "format string",
+    "privilege escalation",
+    "bypass authentication",
+    "sql injection",
+    "xss",
+    "cross-site scripting",
+    "command injection",
+    "deserialization attack",
+    "zero-day",
+    "0day",
+];
+
+impl SecurityRemediation {
+    /// Validate that remediation text does not contain exploit instructions.
+    ///
+    /// Checks `description` and `rationale` against a blocklist of known
+    /// exploit-related keywords. Returns `Ok(())` if the text is safe,
+    /// or `Err(keyword)` if a dangerous term is found.
+    pub fn validate_text_safety(&self) -> Result<(), String> {
+        let combined = format!(
+            "{} {}",
+            self.description.to_lowercase(),
+            self.rationale.to_lowercase()
+        );
+        for &keyword in EXPLOIT_KEYWORDS {
+            if combined.contains(keyword) {
+                return Err(keyword.to_string());
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Classification of a security source's role in advisory evidence.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,

@@ -15,6 +15,37 @@ use crate::core::document::FetchDocument;
 use crate::core::sanitize::TrustMarkers;
 use crate::fetch::span::SelectedSpan;
 
+/// Lightweight code-span evidence extracted from a `repo_fetch` response.
+///
+/// This is the fetch-level counterpart to `CodeEvidence` (which is
+/// source-card-level from search results). It captures the deterministic
+/// identity and metadata of a fetched code span so it can be referenced
+/// in evidence bundles and cross-referenced across tools.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CodeSpanEvidence {
+    /// Deterministic span ID: `span_<16hex>`.
+    pub span_id: String,
+    /// Detected programming language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Effective start line (1-indexed, inclusive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_start: Option<u32>,
+    /// Effective end line (1-indexed, inclusive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_end: Option<u32>,
+    /// Matched or enclosing symbol name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Kind of the matched symbol (if known).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_kind: Option<String>,
+    /// How the span was selected (from `SelectedSpan.selection_kind`).
+    pub selection_kind: String,
+    /// Confidence in the span selection (from `SelectedSpan.confidence`).
+    pub confidence: String,
+}
+
 /// Discriminator for repository locator kinds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -236,6 +267,11 @@ pub struct RepoFetchResponse {
     /// Present when symbol, match_text, or expand_to_block was used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_span: Option<SelectedSpan>,
+    /// Deterministic code-span evidence for the fetched content.
+    /// Populated when `selected_span` is present and the response has
+    /// a recognized language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_span: Option<CodeSpanEvidence>,
     /// Lightweight code context extracted from the fetched content.
     /// Present when the fetched file is a recognized source code file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -904,6 +940,84 @@ mod tests {
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("> 0"));
+    }
+
+    #[test]
+    fn embedded_path_traversal_rejected() {
+        let req = RepoFetchRequest {
+            host: Some(CodeHost::Github),
+            owner: "tokio-rs".to_string(),
+            repo: "axum".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/../etc/passwd".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        let err = req.validate(50000).unwrap_err();
+        assert!(err.contains("traversal"));
+    }
+
+    #[test]
+    fn deep_path_traversal_rejected() {
+        let req = RepoFetchRequest {
+            host: Some(CodeHost::Github),
+            owner: "tokio-rs".to_string(),
+            repo: "axum".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "foo/../../etc/passwd".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        let err = req.validate(50000).unwrap_err();
+        assert!(err.contains("traversal"));
+    }
+
+    #[test]
+    fn trailing_dotdot_rejected() {
+        let req = RepoFetchRequest {
+            host: Some(CodeHost::Github),
+            owner: "tokio-rs".to_string(),
+            repo: "axum".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/lib.rs/..".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        let err = req.validate(50000).unwrap_err();
+        assert!(err.contains("traversal"));
     }
 
     #[test]

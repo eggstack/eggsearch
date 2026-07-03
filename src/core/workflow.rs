@@ -10,6 +10,19 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Verbosity level for workflow recipes in `provider_status` responses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecipeDetail {
+    /// Omit workflow_recipes from the response entirely.
+    None,
+    /// Return compact recipe summaries (id, title, goal, support, step_tools).
+    #[default]
+    Summary,
+    /// Return full recipe objects with steps, fallbacks, trust_notes.
+    Full,
+}
+
 /// Whether a recipe is fully supported, partially supported, or
 /// unsupported given the current provider configuration.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -104,6 +117,21 @@ pub struct AgentNextAction {
 
 /// Maximum number of next-action hints per response.
 pub const MAX_NEXT_ACTIONS: usize = 5;
+
+impl AgentWorkflowRecipe {
+    /// Return a compact summary suitable for `recipe_detail = "summary"`.
+    pub fn summarize(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id,
+            "title": self.title,
+            "goal": self.goal,
+            "support": self.support,
+            "required_capabilities": self.required_capabilities,
+            "optional_capabilities": self.optional_capabilities,
+            "step_tools": self.steps.iter().map(|s| s.tool.as_str()).collect::<Vec<_>>(),
+        })
+    }
+}
 
 impl AgentNextAction {
     /// Create a new next-action hint, clamping priority to 1..=5.
@@ -214,5 +242,69 @@ mod tests {
             support: RecipeSupport::Available,
         };
         assert!(recipe.id.chars().all(|c| c.is_alphanumeric() || c == '_'));
+    }
+
+    #[test]
+    fn recipe_detail_default_is_summary() {
+        assert_eq!(RecipeDetail::default(), RecipeDetail::Summary);
+    }
+
+    #[test]
+    fn recipe_detail_serde_variants() {
+        for (json, expected) in [
+            (r#""none""#, RecipeDetail::None),
+            (r#""summary""#, RecipeDetail::Summary),
+            (r#""full""#, RecipeDetail::Full),
+        ] {
+            let parsed: RecipeDetail = serde_json::from_str(json).unwrap();
+            assert_eq!(parsed, expected);
+        }
+    }
+
+    #[test]
+    fn summarize_produces_expected_compact_output() {
+        let recipe = AgentWorkflowRecipe {
+            id: "generic_lookup".into(),
+            title: "Generic Web Lookup".into(),
+            goal: "Discover and fetch evidence".into(),
+            suitable_when: vec![],
+            avoid_when: vec![],
+            required_capabilities: vec!["generic_search".into()],
+            optional_capabilities: vec![],
+            steps: vec![
+                AgentWorkflowStep {
+                    order: 1,
+                    tool: "web_search".into(),
+                    purpose: "Search".into(),
+                    input_hints: vec![],
+                    inspect_fields: vec![],
+                    next_action_rule: None,
+                },
+                AgentWorkflowStep {
+                    order: 2,
+                    tool: "web_fetch".into(),
+                    purpose: "Fetch".into(),
+                    input_hints: vec![],
+                    inspect_fields: vec![],
+                    next_action_rule: None,
+                },
+            ],
+            fallbacks: vec![],
+            expected_outputs: vec![],
+            trust_notes: vec![],
+            support: RecipeSupport::Available,
+        };
+        let summary = recipe.summarize();
+        assert_eq!(summary["id"], "generic_lookup");
+        assert_eq!(summary["title"], "Generic Web Lookup");
+        assert_eq!(summary["support"], "available");
+        assert_eq!(
+            summary["step_tools"],
+            serde_json::json!(["web_search", "web_fetch"])
+        );
+        // Should NOT contain steps, fallbacks, trust_notes
+        assert!(summary.get("steps").is_none());
+        assert!(summary.get("fallbacks").is_none());
+        assert!(summary.get("trust_notes").is_none());
     }
 }

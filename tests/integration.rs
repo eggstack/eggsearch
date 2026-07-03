@@ -40,6 +40,7 @@ use std::sync::Arc;
 
 use eggsearch::core::config::{AppConfig, Mode};
 use eggsearch::core::fetch::ExtractMode;
+use eggsearch::core::workflow::RecipeDetail;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
     run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_map, run_repo_search,
@@ -329,7 +330,14 @@ async fn web_search_unknown_provider_returns_error() {
 #[test]
 fn provider_status_returns_configured_providers() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let arr = v["providers"].as_array().expect("providers is array");
     let ids: Vec<&str> = arr
         .iter()
@@ -347,7 +355,14 @@ fn provider_status_returns_configured_providers() {
 #[test]
 fn provider_status_payload_shape_is_stable() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     assert!(v["mode"].is_string());
     let arr = v["providers"].as_array().unwrap();
     for p in arr {
@@ -364,7 +379,14 @@ fn provider_status_payload_shape_is_stable() {
 #[test]
 fn provider_status_includes_server_capabilities() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let caps = v["server_capabilities"]
         .as_object()
         .expect("server_capabilities is object");
@@ -661,7 +683,14 @@ async fn provider_status_with_mixed_enabled_disabled() {
         cfg,
         Arc::new(adapter),
     ));
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     // provider_status lists KNOWN_PROVIDERS (duckduckgo, brave, startpage,
     // yahoo, mojeek, searxng, brave_api, github_code, github_issues,
     // github_releases), not mock engine names. The mock engines aren't
@@ -4288,7 +4317,14 @@ async fn github_code_auth_error_returns_failure() {
 #[test]
 fn provider_status_includes_github_code() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let arr = v["providers"].as_array().expect("providers is array");
     let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
     assert!(
@@ -4300,7 +4336,14 @@ fn provider_status_includes_github_code() {
 #[test]
 fn provider_status_github_code_descriptor_shape() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let arr = v["providers"].as_array().expect("providers is array");
     let gh = arr
         .iter()
@@ -5309,7 +5352,14 @@ mod provider_status {
     #[test]
     fn all_known_providers_represented() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().expect("providers is array");
         let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
 
@@ -5329,7 +5379,14 @@ mod provider_status {
     #[test]
     fn enabled_providers_marked_enabled() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
 
         // The default config enables duckduckgo, brave, startpage, yahoo.
@@ -5354,7 +5411,14 @@ mod provider_status {
             "yahoo".to_string(),
         ];
         let state = Arc::new(ServerState::build(cfg).expect("state"));
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
 
         for id in &["duckduckgo", "brave", "startpage", "yahoo"] {
@@ -5371,7 +5435,14 @@ mod provider_status {
     #[test]
     fn api_providers_configured_only_when_enabled() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
 
         // API providers (brave_api, github_code, etc.) are not enabled
@@ -5399,7 +5470,14 @@ mod provider_status {
     #[test]
     fn capability_summary_matches_booleans() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
 
         for p in arr {
@@ -5532,8 +5610,14 @@ mod provider_status {
 
         // Default config: searxng disabled, no base_url → configured=false
         let state_default = state_with_default();
-        let v_default =
-            run_provider_status(state_default, ProviderStatusArgs { probe: false }).expect("ok");
+        let v_default = run_provider_status(
+            state_default,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr_default = v_default["providers"].as_array().unwrap();
         let searxng_default = arr_default
             .iter()
@@ -5552,8 +5636,14 @@ mod provider_status {
         };
         cfg.search.providers.insert("searxng".to_string(), true);
         let state_configured = Arc::new(ServerState::build(cfg).expect("searxng-configured state"));
-        let v_configured =
-            run_provider_status(state_configured, ProviderStatusArgs { probe: false }).expect("ok");
+        let v_configured = run_provider_status(
+            state_configured,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr_configured = v_configured["providers"].as_array().unwrap();
         let searxng_configured = arr_configured
             .iter()
@@ -5568,7 +5658,14 @@ mod provider_status {
     #[test]
     fn unknown_api_provider_ids_do_not_appear() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
         let ids: Vec<&str> = arr.iter().filter_map(|p| p["id"].as_str()).collect();
 
@@ -5585,7 +5682,14 @@ mod provider_status {
     #[test]
     fn capability_cross_checks_gitlab_code() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
         let desc = arr
             .iter()
@@ -5604,7 +5708,14 @@ mod provider_status {
     #[test]
     fn capability_cross_checks_gitlab_issues() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
         let desc = arr
             .iter()
@@ -5621,7 +5732,14 @@ mod provider_status {
     #[test]
     fn capability_cross_checks_gitlab_releases() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
         let desc = arr
             .iter()
@@ -5638,7 +5756,14 @@ mod provider_status {
     #[test]
     fn capability_cross_checks_gitea_code() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
         let desc = arr
             .iter()
@@ -5654,7 +5779,14 @@ mod provider_status {
     #[test]
     fn capability_cross_checks_gitea_issues() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
         let desc = arr
             .iter()
@@ -5670,7 +5802,14 @@ mod provider_status {
     #[test]
     fn capability_cross_checks_gitea_releases() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let arr = v["providers"].as_array().unwrap();
         let desc = arr
             .iter()
@@ -5686,7 +5825,14 @@ mod provider_status {
     #[test]
     fn code_hosts_summary_includes_gitlab_gitea() {
         let state = state_with_default();
-        let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
         let code_hosts = v["code_hosts"]
             .as_array()
             .expect("code_hosts should be array");
@@ -9043,8 +9189,14 @@ async fn repo_fetch_tool_in_server_capabilities() {
         .expect("state"),
     );
 
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false })
-        .expect("provider_status should succeed");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("provider_status should succeed");
 
     let caps = v["server_capabilities"]
         .as_object()
@@ -9390,7 +9542,14 @@ async fn workspace_fetch_rejects_path_traversal() {
 #[test]
 fn provider_status_local_workspace_not_enabled_by_default() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let arr = v["providers"].as_array().expect("providers is array");
     let local = arr
         .iter()
@@ -9419,7 +9578,14 @@ fn provider_status_local_workspace_enabled_when_configured() {
     state.local_backend = Some(Arc::new(backend));
     let state = Arc::new(state);
 
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let arr = v["providers"].as_array().expect("providers is array");
     let local = arr
         .iter()
@@ -11031,7 +11197,14 @@ async fn repo_search_explicit_unknown_provider_errors() {
 #[test]
 fn provider_status_includes_tool_capabilities() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
 
     let tc = v["tool_capabilities"]
         .as_object()
@@ -11098,7 +11271,14 @@ fn provider_status_tool_capabilities_local_enabled() {
     state.local_backend = Some(Arc::new(backend));
     let state = Arc::new(state);
 
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let tc = v["tool_capabilities"]
         .as_object()
         .expect("tool_capabilities");
@@ -11999,7 +12179,14 @@ async fn batch_fetch_total_budget_enforced() {
 #[test]
 fn batch_fetch_provider_status_capability() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let caps = v["server_capabilities"]
         .as_object()
         .expect("server_capabilities");
@@ -14202,7 +14389,14 @@ async fn repo_fetch_validation_error_zero_max_block_lines() {
 #[test]
 fn provider_status_includes_repo_map_and_repo_fetch_capabilities() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let caps = v["server_capabilities"]
         .as_object()
         .expect("server_capabilities is object");
@@ -14215,7 +14409,14 @@ fn provider_status_includes_repo_map_and_repo_fetch_capabilities() {
 #[test]
 fn provider_status_tool_capabilities_repo_fetch() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let tcaps = v["tool_capabilities"]
         .as_object()
         .expect("tool_capabilities is object");
@@ -14325,7 +14526,14 @@ async fn repo_map_suggested_fetches_are_bounded() {
 #[tokio::test]
 async fn repo_map_tool_in_server_surface() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let caps = v["server_capabilities"]
         .as_object()
         .expect("server_capabilities");
@@ -15110,7 +15318,14 @@ async fn repo_search_local_match_unknown_dirty_state() {
 #[tokio::test]
 async fn provider_status_repo_fetch_includes_symbol_capabilities() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let tool_caps = v["tool_capabilities"]
         .as_object()
         .expect("tool_capabilities");
@@ -15138,7 +15353,14 @@ async fn provider_status_repo_fetch_includes_symbol_capabilities() {
 #[tokio::test]
 async fn provider_status_repo_search_includes_supported_hosts() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let tool_caps = v["tool_capabilities"]
         .as_object()
         .expect("tool_capabilities");
@@ -15162,7 +15384,14 @@ async fn provider_status_repo_search_includes_supported_hosts() {
 #[tokio::test]
 async fn provider_status_repo_map_tool_capabilities() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let tool_caps = v["tool_capabilities"]
         .as_object()
         .expect("tool_capabilities");
@@ -15184,7 +15413,14 @@ async fn provider_status_repo_map_tool_capabilities() {
 #[test]
 fn provider_status_includes_workflow_recipes() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let recipes = v["workflow_recipes"]
         .as_array()
         .expect("workflow_recipes is array");
@@ -15214,7 +15450,14 @@ fn provider_status_includes_workflow_recipes() {
 #[test]
 fn provider_status_recipe_shape_is_stable() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: Some(RecipeDetail::Full),
+        },
+    )
+    .expect("ok");
     let recipes = v["workflow_recipes"]
         .as_array()
         .expect("workflow_recipes is array");
@@ -15253,7 +15496,14 @@ fn provider_status_recipe_shape_is_stable() {
 #[test]
 fn provider_status_recipe_support_shape() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
     let recipes = v["workflow_recipes"]
         .as_array()
         .expect("workflow_recipes is array");
@@ -15384,7 +15634,14 @@ async fn security_search_includes_next_actions() {
 #[test]
 fn workflow_recipe_no_crawling_step() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: Some(RecipeDetail::Full),
+        },
+    )
+    .expect("ok");
     let recipes = v["workflow_recipes"]
         .as_array()
         .expect("workflow_recipes is array");
@@ -15407,7 +15664,14 @@ fn workflow_recipe_no_crawling_step() {
 #[test]
 fn workflow_recipe_steps_use_real_tools() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: Some(RecipeDetail::Full),
+        },
+    )
+    .expect("ok");
     let recipes = v["workflow_recipes"]
         .as_array()
         .expect("workflow_recipes is array");
@@ -15440,7 +15704,14 @@ fn workflow_recipe_steps_use_real_tools() {
 #[test]
 fn provider_status_recipe_next_action_rules_are_valid() {
     let state = state_with_default();
-    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: Some(RecipeDetail::Full),
+        },
+    )
+    .expect("ok");
     let recipes = v["workflow_recipes"]
         .as_array()
         .expect("workflow_recipes is array");
