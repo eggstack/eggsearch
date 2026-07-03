@@ -245,6 +245,24 @@ pub struct SourceMetadata {
     /// from a local workspace checkout that matches the requested repo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_repo_match: Option<LocalRepoMatch>,
+    /// Whether this local file is generated (build output, auto-generated code).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_generated: Option<bool>,
+    /// Whether this local file is from a vendored/third-party directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_vendor: Option<bool>,
+    /// Whether this local file is a test file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_test: Option<bool>,
+    /// Whether this local file is an example file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_example: Option<bool>,
+    /// Whether this local file is a configuration file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_config: Option<bool>,
+    /// Whether this local file is a lockfile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_lockfile: Option<bool>,
 }
 
 /// Metadata for a local repository match, attached to local workspace
@@ -278,6 +296,12 @@ pub struct LocalRepoMatch {
     /// Canonical path to the local checkout root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_path: Option<String>,
+    /// Match confidence level based on how the match was established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_confidence: Option<crate::core::code_evidence::EvidenceConfidence>,
+    /// Reasons why this match was established.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
 }
 
 /// A single normalized result returned to MCP callers.
@@ -347,6 +371,12 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
         && m.vulnerability.is_none()
         && m.code_evidence.is_none()
         && m.local_repo_match.is_none()
+        && m.is_generated.is_none()
+        && m.is_vendor.is_none()
+        && m.is_test.is_none()
+        && m.is_example.is_none()
+        && m.is_config.is_none()
+        && m.is_lockfile.is_none()
 }
 
 impl SourceCard {
@@ -697,6 +727,62 @@ mod tests {
             classify_source_kind("https://example.com/some/page"),
             SourceKind::Unknown
         );
+    }
+
+    #[test]
+    fn local_repo_match_has_confidence_and_reasons() {
+        let m = LocalRepoMatch {
+            matched: true,
+            remote_host: Some("github".to_string()),
+            remote_owner: Some("tokio-rs".to_string()),
+            remote_repo: Some("axum".to_string()),
+            branch: Some("main".to_string()),
+            commit: Some("abc123".to_string()),
+            dirty_state: Some("clean".to_string()),
+            root_name: Some("axum".to_string()),
+            root_path: Some("/workspace/axum".to_string()),
+            match_confidence: Some(crate::core::code_evidence::EvidenceConfidence::Exact),
+            reasons: vec!["host_owner_repo_match".to_string()],
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(json.contains("match_confidence"));
+        assert!(json.contains("reasons"));
+        let parsed: LocalRepoMatch = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed.match_confidence,
+            Some(crate::core::code_evidence::EvidenceConfidence::Exact)
+        );
+        assert_eq!(parsed.reasons, vec!["host_owner_repo_match"]);
+    }
+
+    #[test]
+    fn source_metadata_file_classification_roundtrip() {
+        let m = SourceMetadata {
+            source_kind: SourceKind::SourceFile,
+            is_generated: Some(false),
+            is_vendor: Some(true),
+            is_test: Some(false),
+            is_example: Some(false),
+            is_config: Some(false),
+            is_lockfile: Some(false),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(json.contains("is_vendor"));
+        let parsed: SourceMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.is_vendor, Some(true));
+        assert_eq!(parsed.is_generated, Some(false));
+    }
+
+    #[test]
+    fn source_metadata_default_classification_fields_are_none() {
+        let m = SourceMetadata::default();
+        assert!(m.is_generated.is_none());
+        assert!(m.is_vendor.is_none());
+        assert!(m.is_test.is_none());
+        assert!(m.is_example.is_none());
+        assert!(m.is_config.is_none());
+        assert!(m.is_lockfile.is_none());
     }
 
     #[test]

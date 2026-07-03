@@ -849,6 +849,13 @@ impl LocalWorkspaceBackend {
                 let source_role =
                     crate::core::code_evidence::infer_source_role(&m.file.relative_path);
 
+                let is_generated = matches!(source_role, SourceRole::Generated);
+                let is_vendor = matches!(source_role, SourceRole::Vendor);
+                let is_test = matches!(source_role, SourceRole::Test);
+                let is_example = matches!(source_role, SourceRole::Example);
+                let is_config = matches!(source_role, SourceRole::Configuration);
+                let is_lockfile = matches!(source_role, SourceRole::Lockfile);
+
                 let code_metadata = CodeMetadata {
                     host: None,
                     owner: None,
@@ -886,8 +893,22 @@ impl LocalWorkspaceBackend {
                     imports: Vec::new(),
                 };
 
-                let local_repo_match =
-                    repo_identity.map(|rid| crate::core::source_card::LocalRepoMatch {
+                let local_repo_match = repo_identity.map(|rid| {
+                    let mut reasons = Vec::new();
+                    let confidence = if rid.matched_host.is_some()
+                        && rid.matched_owner.is_some()
+                        && rid.matched_repo.is_some()
+                    {
+                        reasons.push("host_owner_repo_match".to_string());
+                        EvidenceConfidence::Exact
+                    } else if rid.remotes.is_empty() {
+                        reasons.push("no_remotes_configured".to_string());
+                        EvidenceConfidence::Weak
+                    } else {
+                        reasons.push("partial_remote_match".to_string());
+                        EvidenceConfidence::Strong
+                    };
+                    crate::core::source_card::LocalRepoMatch {
                         matched: true,
                         remote_host: rid
                             .matched_host
@@ -900,7 +921,10 @@ impl LocalWorkspaceBackend {
                         dirty_state: Some(rid.dirty_state.to_string()),
                         root_name: Some(rid.root_name.clone()),
                         root_path: Some(rid.root_path.display().to_string()),
-                    });
+                        match_confidence: Some(confidence),
+                        reasons,
+                    }
+                });
 
                 let metadata = SourceMetadata {
                     source_kind: SourceKind::SourceFile,
@@ -912,6 +936,12 @@ impl LocalWorkspaceBackend {
                     vulnerability: None,
                     code_evidence: Some(code_evidence),
                     local_repo_match,
+                    is_generated: Some(is_generated),
+                    is_vendor: Some(is_vendor),
+                    is_test: Some(is_test),
+                    is_example: Some(is_example),
+                    is_config: Some(is_config),
+                    is_lockfile: Some(is_lockfile),
                 };
 
                 let raw_snippet = m
@@ -1351,6 +1381,90 @@ mod tests {
             cards[0].trust_markers.injection_hits > 0,
             "should detect injection markers in snippet"
         );
+    }
+
+    #[test]
+    fn to_source_cards_populates_file_classification() {
+        let dir = make_temp_workspace();
+        let root = dir.path().canonicalize().unwrap();
+        let roots = vec![(0, root.clone())];
+        let matches = vec![
+            LocalMatch {
+                file: LocalFileEntry {
+                    path: root.join("src/engine.rs"),
+                    relative_path: "src/engine.rs".to_string(),
+                    root_index: 0,
+                    size: 100,
+                    language: Some("rust".to_string()),
+                },
+                score: 50.0,
+                line_start: None,
+                line_end: None,
+                snippet: Some("pub struct Engine".to_string()),
+                matched_symbol: None,
+                symbol_kind: None,
+            },
+            LocalMatch {
+                file: LocalFileEntry {
+                    path: root.join("tests/integration.rs"),
+                    relative_path: "tests/integration.rs".to_string(),
+                    root_index: 0,
+                    size: 100,
+                    language: Some("rust".to_string()),
+                },
+                score: 30.0,
+                line_start: None,
+                line_end: None,
+                snippet: Some("#[test]".to_string()),
+                matched_symbol: None,
+                symbol_kind: None,
+            },
+        ];
+        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false, None);
+        assert_eq!(cards.len(), 2);
+        // Find cards by path
+        let engine_card = cards
+            .iter()
+            .find(|c| {
+                c.metadata.code.as_ref().map(|c| c.path.as_deref()) == Some(Some("src/engine.rs"))
+            })
+            .unwrap();
+        assert_eq!(engine_card.metadata.is_test, Some(false));
+        assert_eq!(engine_card.metadata.is_vendor, Some(false));
+        assert_eq!(engine_card.metadata.is_generated, Some(false));
+        let test_card = cards
+            .iter()
+            .find(|c| {
+                c.metadata.code.as_ref().map(|c| c.path.as_deref())
+                    == Some(Some("tests/integration.rs"))
+            })
+            .unwrap();
+        assert_eq!(test_card.metadata.is_test, Some(true));
+    }
+
+    #[test]
+    fn to_source_cards_populates_match_confidence() {
+        let dir = make_temp_workspace();
+        let root = dir.path().canonicalize().unwrap();
+        let roots = vec![(0, root.clone())];
+        let matches = vec![LocalMatch {
+            file: LocalFileEntry {
+                path: root.join("main.rs"),
+                relative_path: "main.rs".to_string(),
+                root_index: 0,
+                size: 50,
+                language: Some("rust".to_string()),
+            },
+            score: 100.0,
+            line_start: None,
+            line_end: None,
+            snippet: None,
+            matched_symbol: None,
+            symbol_kind: None,
+        }];
+        // No repo identity = no local_repo_match
+        let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false, None);
+        assert!(cards[0].metadata.local_repo_match.is_none());
     }
 
     #[test]

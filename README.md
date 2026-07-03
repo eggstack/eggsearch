@@ -169,6 +169,12 @@ fetched, and rolled-up trust markers across the entire evidence set.
 This tool is idempotent and deterministic -- the same inputs always
 produce the same output.
 
+**Local evidence gap kinds:**
+- `LocalRemoteMismatch` — local checkout exists but its remote identity does not match the requested repo
+- `LocalGeneratedOrVendorOnly` — all local sources are generated or vendor files with no first-party source
+- `LocalUntrackedFile` — a local file is untracked in the repository
+- `LocalSourceUnfetched` — a local source card was not fetched
+
 ## Install
 
 ### Install from crates.io
@@ -1818,9 +1824,24 @@ max_indexed_files = 50000
 
 When `local.enabled = true`, `repo_search` can return local files alongside remote results. The backend automatically discovers Git repositories under configured roots, normalizes remote URLs to structured identities, and matches incoming `repo_search` queries against local checkouts to attach repository identity metadata to local results. Local results use `trust = local_trusted` and workspace pseudo-URLs (`workspace://root-name/path`). When a `symbol` hint is present, the backend scans file content for function, struct, enum, trait, and class definitions across Rust, Python, JavaScript/TypeScript, Go, Java, and C/C++. Symbol matches receive a score boost to promote definition hits above generic path/text matches.
 
+**Workspace identity:** Each discovered Git workspace root exposes a `workspace_id` — a deterministic FNV-1a hash of the canonical root path, remote URLs, and HEAD commit. The workspace identity also includes git state: current branch, HEAD commit SHA, working tree dirty state (clean/dirty/unknown/not-git), and counts of untracked and ignored files (capped at 999). These fields let agents understand checkout state and detect stale or modified local evidence.
+
 `repo_fetch` with `host = "workspace"` reads files directly from the local filesystem, supporting line-range extraction. This bypasses `[fetch].enabled` since no network is involved. `repo_fetch` with `prefer_local: true` resolves a remote-style request (owner/repo/path) to a local workspace checkout when a matching checkout exists under the configured roots, falling back to remote fetch when no local match is found.
 
 **Local repository identity and routing:** When `[local].enabled = true`, eggsearch automatically discovers Git repositories under configured roots and normalizes their remote URLs to structured identities (host, owner, repo). When `repo_search` queries a specific `owner/repo` that matches a local checkout, local results include `local_repo_match` metadata with the remote host, owner, repo name, current branch and commit SHA, working tree dirty state (clean/dirty/unknown), and detected package manifests. Matched local results receive a +50 score boost to promote them above remote results. `repo_map` also discovers local checkouts and includes a `local_checkout` field with root name, path, remote identity, branch, commit, dirty state, and detected manifests. The adapter emits `local_repo_match:`, `local_repo_dirty:`, and `local_repo_state_unknown` warnings for visibility.
+
+**Remote matching:** Local results include `match_confidence` (exact/strong/weak) and `reasons` explaining how the match was established. Exact confidence means host, owner, and repo all matched; strong means owner and repo matched but host was partial; weak means no remotes were configured. HTTPS and SSH remote URL forms are supported with case-insensitive matching.
+
+**File classification:** Local results include boolean flags derived from path heuristics and the existing `SourceRole` classification: `is_generated` (build output, auto-generated code), `is_vendor` (vendored/third-party directories), `is_test` (test files), `is_example` (example files), `is_config` (configuration files), and `is_lockfile` (lockfiles). These flags help agents decide which local files are authoritative first-party code versus auxiliary artifacts.
+
+**Trust model:** Local results use `trust = local_trusted` (provenance-trusted, NOT instruction-trusted). Control chars are stripped and injection markers are scanned, but framing is deliberately not applied. Agents should treat local content as evidence, not instructions.
+
+**Agent guidance for local evidence:**
+- Prefer local evidence when the checkout is clean, first-party, and repo-matched
+- Avoid treating generated/vendor/test files as authoritative implementation evidence
+- Check `dirty_state` — dirty checkouts may have uncommitted changes affecting reproducibility
+- Use `workspace_id` to track which workspace a result came from across calls
+- Use `match_confidence` to gauge how precisely the local checkout matches the requested repo
 
 ## Project Structure
 

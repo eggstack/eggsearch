@@ -490,7 +490,58 @@ fn compute_gaps(
                         affected_source_ids: vec![],
                     });
                 }
+                // LocalRemoteMismatch: local_checkout exists but matched is false
+                if !lrm.matched {
+                    gaps.push(EvidenceGap {
+                        kind: EvidenceGapKind::LocalRemoteMismatch,
+                        message: format!(
+                            "local checkout '{}' remote identity does not match the requested repo",
+                            lrm.root_name.as_deref().unwrap_or("unknown"),
+                        ),
+                        source_id: Some(source.source_id.clone()),
+                        provider_id: source.provider_id.clone(),
+                        affected_source_ids: vec![],
+                    });
+                }
             }
+        }
+    }
+
+    // LocalGeneratedOrVendorOnly: all local sources are generated or vendor
+    let local_sources: Vec<&EvidenceBundleSource> = sources
+        .iter()
+        .filter(|s| s.trust == TrustLevel::LocalTrusted)
+        .collect();
+    if !local_sources.is_empty()
+        && local_sources.iter().all(|s| {
+            s.metadata
+                .as_ref()
+                .is_some_and(|m| m.is_generated == Some(true) || m.is_vendor == Some(true))
+        })
+    {
+        let affected: Vec<String> = local_sources.iter().map(|s| s.source_id.clone()).collect();
+        gaps.push(EvidenceGap {
+            kind: EvidenceGapKind::LocalGeneratedOrVendorOnly,
+            message: "all local sources are generated or vendor files".to_string(),
+            source_id: None,
+            provider_id: None,
+            affected_source_ids: affected,
+        });
+    }
+
+    // LocalSourceUnfetched: local sources that were not fetched
+    for source in &local_sources {
+        if !fetched_source_ids.contains(source.source_id.as_str()) {
+            gaps.push(EvidenceGap {
+                kind: EvidenceGapKind::LocalSourceUnfetched,
+                message: format!(
+                    "local source '{}' was not fetched",
+                    source.title.as_deref().unwrap_or(""),
+                ),
+                source_id: Some(source.source_id.clone()),
+                provider_id: source.provider_id.clone(),
+                affected_source_ids: vec![],
+            });
         }
     }
 
@@ -1310,6 +1361,12 @@ mod tests {
                 release: None,
                 vulnerability: None,
                 local_repo_match: None,
+                is_generated: None,
+                is_vendor: None,
+                is_test: None,
+                is_example: None,
+                is_config: None,
+                is_lockfile: None,
             }),
             quality: None,
         };
@@ -1492,6 +1549,12 @@ mod tests {
                     release: None,
                     vulnerability: None,
                     local_repo_match: None,
+                    is_generated: None,
+                    is_vendor: None,
+                    is_test: None,
+                    is_example: None,
+                    is_config: None,
+                    is_lockfile: None,
                 }),
                 quality: None,
             }],
@@ -1580,6 +1643,12 @@ mod tests {
                 release: None,
                 vulnerability: None,
                 local_repo_match: None,
+                is_generated: None,
+                is_vendor: None,
+                is_test: None,
+                is_example: None,
+                is_config: None,
+                is_lockfile: None,
             }),
             quality: None,
         };
@@ -1679,6 +1748,12 @@ mod tests {
                     release: None,
                     vulnerability: None,
                     local_repo_match: None,
+                    is_generated: None,
+                    is_vendor: None,
+                    is_test: None,
+                    is_example: None,
+                    is_config: None,
+                    is_lockfile: None,
                 }),
                 quality: None,
             }],
@@ -1763,6 +1838,12 @@ mod tests {
                     release: None,
                     vulnerability: None,
                     local_repo_match: None,
+                    is_generated: None,
+                    is_vendor: None,
+                    is_test: None,
+                    is_example: None,
+                    is_config: None,
+                    is_lockfile: None,
                 }),
                 quality: None,
             }],

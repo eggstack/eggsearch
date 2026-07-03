@@ -44,6 +44,14 @@ pub enum EvidenceGapKind {
     AllResultsExternalUntrusted,
     /// A local checkout is dirty (uncommitted changes).
     LocalCheckoutDirty,
+    /// Local checkout remote identity does not match the requested repo.
+    LocalRemoteMismatch,
+    /// All local results are generated/vendor files with no first-party source.
+    LocalGeneratedOrVendorOnly,
+    /// A local file is untracked in the repository.
+    LocalUntrackedFile,
+    /// A local source card was not fetched.
+    LocalSourceUnfetched,
     /// Native advisory provider was unavailable.
     NativeAdvisoryUnavailable,
     /// Symbol hint had no native provider.
@@ -719,6 +727,36 @@ mod tests {
         assert_eq!(source.url, restored.url);
         assert_eq!(source.title, restored.title);
         assert_eq!(source.trust, restored.trust);
+    }
+
+    #[test]
+    fn new_evidence_gap_kinds_serialize() {
+        let gaps = [
+            EvidenceGapKind::LocalRemoteMismatch,
+            EvidenceGapKind::LocalGeneratedOrVendorOnly,
+            EvidenceGapKind::LocalUntrackedFile,
+            EvidenceGapKind::LocalSourceUnfetched,
+        ];
+        for gap in &gaps {
+            let json = serde_json::to_string(gap).unwrap();
+            let _parsed: EvidenceGapKind = serde_json::from_str(&json).unwrap();
+        }
+        assert_eq!(
+            serde_json::to_string(&EvidenceGapKind::LocalRemoteMismatch).unwrap(),
+            "\"local_remote_mismatch\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EvidenceGapKind::LocalGeneratedOrVendorOnly).unwrap(),
+            "\"local_generated_or_vendor_only\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EvidenceGapKind::LocalUntrackedFile).unwrap(),
+            "\"local_untracked_file\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EvidenceGapKind::LocalSourceUnfetched).unwrap(),
+            "\"local_source_unfetched\""
+        );
     }
 
     #[test]

@@ -2200,6 +2200,12 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
                 crate::core::code_evidence::build_code_evidence(c, Some(&a.url), code_search_symbol)
             }),
             local_repo_match: None,
+            is_generated: None,
+            is_vendor: None,
+            is_test: None,
+            is_example: None,
+            is_config: None,
+            is_lockfile: None,
         },
         quality: None,
     };
@@ -2790,6 +2796,12 @@ mod tests {
                 vulnerability: None,
                 code_evidence: None,
                 local_repo_match: None,
+                is_generated: None,
+                is_vendor: None,
+                is_test: None,
+                is_example: None,
+                is_config: None,
+                is_lockfile: None,
             }),
             SourceCard::new(
                 "Docs.rs",
@@ -2808,6 +2820,12 @@ mod tests {
                 vulnerability: None,
                 code_evidence: None,
                 local_repo_match: None,
+                is_generated: None,
+                is_vendor: None,
+                is_test: None,
+                is_example: None,
+                is_config: None,
+                is_lockfile: None,
             }),
         ];
         apply_intent_reranking(

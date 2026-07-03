@@ -424,7 +424,11 @@ from native GitHub providers.
 When a local result comes from a Git checkout matching the requested repo,
 `SourceMetadata` also includes an optional `local_repo_match` field with
 repository identity and worktree state (branch, commit, dirty state,
-remotes, and detected manifests).
+remotes, detected manifests), `match_confidence` (exact/strong/weak),
+and `reasons` explaining how the match was established. Local results
+also include boolean file classification flags: `is_generated`,
+`is_vendor`, `is_test`, `is_example`, `is_config`, and `is_lockfile`,
+derived from `SourceRole` classification.
 
 Repo metadata is deterministic and advisory. Agents should use it to choose
 which result to fetch, but must still treat snippets and fetched content as
@@ -1411,6 +1415,11 @@ the operator has configured `[local]` in the config file.
 - `metadata.source_kind = source_file`
 - `metadata.code` and `metadata.code_evidence` populated with path,
   language, source role, line ranges, and symbol metadata when available
+- `metadata.is_generated`, `is_vendor`, `is_test`, `is_example`,
+  `is_config`, `is_lockfile` boolean flags derived from `SourceRole`
+  classification
+- `metadata.local_repo_match.match_confidence` (exact/strong/weak) and
+  `reasons` explaining how the match was established
 - URL uses workspace pseudo-URL scheme: `workspace://root-name/path`
 - Local results are merged with remote results before grouping
 - `providers_queried` includes `"local_workspace"` when local backend participates
@@ -1468,7 +1477,9 @@ manifest detection for local checkouts. It lets `repo_search` and
   `host_domain`, `owner`, `repo` fields. Derived from any remote URL form.
 - `LocalRepoIdentity`: identity and state of a local Git checkout —
   `root` (filesystem path), `remotes` (Vec of `NormalizedRepoId`),
-  `branch`, `commit`, `dirty` state, and `manifests`.
+  `branch`, `commit`, `dirty` state, `manifests`, `workspace_id`
+  (deterministic FNV-1a hash of root + remotes + HEAD), and
+  `untracked_count` / `ignored_count` (from `git status`, capped at 999).
 - `LocalDirtyState`: `Clean`, `Dirty`, `Unknown`, `NotGit`
 - `LocalManifestSummary`: detected package manifests at the repo root
   (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, etc.)
@@ -1514,8 +1525,9 @@ owner/repo hints. This prevents the planner from treating
 `repo_map` discovers local checkouts and includes a `local_checkout`
 field in the response when a matching local Git repository is found.
 This field contains root name, path, remote identity, branch, commit,
-dirty state, and detected manifests — providing coding agents with
-immediate local context without additional discovery calls.
+dirty state, workspace_id, untracked/ignored counts, and detected
+manifests — providing coding agents with immediate local context
+without additional discovery calls.
 
 **Telemetry:**
 - `providers_queried` includes `"local_workspace"` when active
@@ -1546,7 +1558,9 @@ repository identity metadata to local source results.
   `owner`, `repo` fields. Derived from any remote URL form.
 - `LocalRepoIdentity`: identity and state of a local Git checkout —
   `root` (filesystem path), `remotes` (Vec of `NormalizedRepoId`),
-  `branch`, `commit`, `dirty` state, and `manifests`.
+  `branch`, `commit`, `dirty` state, `manifests`, `workspace_id`
+  (deterministic FNV-1a hash of root + remotes + HEAD), and
+  `untracked_count` / `ignored_count` (from `git status`, capped at 999).
 - `LocalDirtyState`: `Clean`, `Dirty`, `Unknown`, `NotGit`
 - `LocalManifestSummary`: detected package manifests at the repo root
   (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, etc.)
@@ -1899,6 +1913,10 @@ lets agents deduplicate evidence across bundles without content comparison.
 - `SourceUnfetched`: a source card has no corresponding fetch
 - `AllResultsExternalUntrusted`: all sources are external untrusted (no local or verified content)
 - `LocalCheckoutDirty`: a local checkout has uncommitted changes
+- `LocalRemoteMismatch`: local checkout exists but its remote identity does not match the requested repo
+- `LocalGeneratedOrVendorOnly`: all local sources are generated or vendor files with no first-party source
+- `LocalUntrackedFile`: a local file is untracked in the repository
+- `LocalSourceUnfetched`: a local source card was not fetched
 - `NativeAdvisoryUnavailable`: native advisory provider was unavailable
 - `SymbolHintNoNativeProvider`: symbol hint present but no native code provider
 - `IssueSearchNoNativeProvider`: issues requested but no native issue provider

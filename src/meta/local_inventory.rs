@@ -141,6 +141,14 @@ pub struct LocalRepoIdentity {
     pub dirty_state: LocalDirtyState,
     /// Detected package manifests.
     pub manifests: Vec<LocalManifestSummary>,
+    /// Stable identifier derived from canonical root + remote URLs + HEAD commit.
+    pub workspace_id: String,
+    /// Number of untracked files (from `git status --porcelain`), capped at 999.
+    /// `None` if not a git repo.
+    pub untracked_count: Option<u32>,
+    /// Number of ignored files (from `git status --porcelain --ignored`), capped at 999.
+    /// `None` if not a git repo.
+    pub ignored_count: Option<u32>,
 }
 
 impl LocalRepoIdentity {
@@ -162,6 +170,24 @@ impl LocalRepoIdentity {
             None => true,
         }
     }
+}
+
+/// Compute a stable workspace identifier from the canonical root path,
+/// remote URLs, and HEAD commit.
+pub fn compute_workspace_id(
+    root: &Path,
+    remotes: &[NormalizedRepoId],
+    head_commit: Option<&str>,
+) -> String {
+    use crate::core::identity::{entity_prefix, write_str, FnvHasher};
+    let mut hasher = FnvHasher::new();
+    hasher.write(&entity_prefix("workspace"));
+    write_str(&mut hasher, &root.display().to_string());
+    for r in remotes {
+        write_str(&mut hasher, &r.to_string());
+    }
+    write_str(&mut hasher, head_commit.unwrap_or(""));
+    format!("ws_{:016x}", hasher.finish())
 }
 
 /// Parse a Git remote URL into a `NormalizedRepoId`.
@@ -470,6 +496,37 @@ pub fn detect_dirty_state(repo_root: &Path) -> LocalDirtyState {
     }
 }
 
+/// Count untracked (`??`) and ignored (`!!`) files from `git status --porcelain`.
+///
+/// Returns `(untracked_count, ignored_count)`. Each count is capped at 999.
+/// Returns `(None, None)` if not a git repo or if the command fails.
+fn count_untracked_ignored(repo_root: &Path) -> (Option<u32>, Option<u32>) {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("status")
+        .arg("--porcelain")
+        .arg("--ignored")
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let mut untracked = 0u32;
+            let mut ignored = 0u32;
+            for line in stdout.lines() {
+                if line.starts_with("??") {
+                    untracked = untracked.saturating_add(1).min(999);
+                } else if line.starts_with("!!") {
+                    ignored = ignored.saturating_add(1).min(999);
+                }
+            }
+            (Some(untracked), Some(ignored))
+        }
+        _ => (None, None),
+    }
+}
+
 /// Detect package manifests in a repository root.
 ///
 /// Scans the root directory for known manifest files and returns
@@ -640,6 +697,11 @@ fn build_repo_identity(repo_root: &Path) -> Option<LocalRepoIdentity> {
     let dirty_state = detect_dirty_state(repo_root);
     let manifests = detect_manifests(repo_root);
 
+    // Count untracked and ignored files from porcelain output
+    let (untracked_count, ignored_count) = count_untracked_ignored(repo_root);
+
+    let workspace_id = compute_workspace_id(repo_root, &remotes, current_commit.as_deref());
+
     Some(LocalRepoIdentity {
         root_name,
         root_path: repo_root.to_path_buf(),
@@ -652,6 +714,9 @@ fn build_repo_identity(repo_root: &Path) -> Option<LocalRepoIdentity> {
         current_commit,
         dirty_state,
         manifests,
+        workspace_id,
+        untracked_count,
+        ignored_count,
     })
 }
 
@@ -940,6 +1005,9 @@ mod tests {
             current_commit: None,
             dirty_state: LocalDirtyState::Clean,
             manifests: vec![],
+            workspace_id: "ws_test".to_string(),
+            untracked_count: None,
+            ignored_count: None,
         };
         assert!(id.matches(Some(&CodeHost::Github), "tokio-rs", "axum"));
         assert!(id.matches(Some(&CodeHost::Github), "Tokio-Rs", "Axum"));
@@ -963,6 +1031,9 @@ mod tests {
             current_commit: None,
             dirty_state: LocalDirtyState::Unknown,
             manifests: vec![],
+            workspace_id: "ws_test".to_string(),
+            untracked_count: None,
+            ignored_count: None,
         }];
         let found = match_local_repo(&identities, Some(&CodeHost::Github), "tokio-rs", "axum");
         assert!(found.is_some());
@@ -983,6 +1054,9 @@ mod tests {
             current_commit: None,
             dirty_state: LocalDirtyState::Unknown,
             manifests: vec![],
+            workspace_id: "ws_test".to_string(),
+            untracked_count: None,
+            ignored_count: None,
         }];
         let found = match_local_repo(&identities, Some(&CodeHost::Github), "other", "repo");
         assert!(found.is_none());
@@ -1262,6 +1336,49 @@ mod tests {
             !repos.iter().any(|r| r.root_name == "ignored_repo"),
             "should skip gitignored directory when respect_gitignore=true"
         );
+    }
+
+    #[test]
+    fn workspace_id_deterministic() {
+        let root = PathBuf::from("/workspace/myproject");
+        let remotes = vec![NormalizedRepoId {
+            host: CodeHost::Github,
+            host_domain: Some("github.com".to_string()),
+            owner: "tokio-rs".to_string(),
+            repo: "axum".to_string(),
+        }];
+        let id1 = compute_workspace_id(&root, &remotes, Some("abc123"));
+        let id2 = compute_workspace_id(&root, &remotes, Some("abc123"));
+        assert_eq!(id1, id2);
+        assert!(id1.starts_with("ws_"));
+    }
+
+    #[test]
+    fn workspace_id_changes_with_root() {
+        let remotes = vec![];
+        let id1 = compute_workspace_id(&PathBuf::from("/a"), &remotes, None);
+        let id2 = compute_workspace_id(&PathBuf::from("/b"), &remotes, None);
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn workspace_id_changes_with_remote() {
+        let root = PathBuf::from("/workspace");
+        let r1 = vec![NormalizedRepoId {
+            host: CodeHost::Github,
+            host_domain: Some("github.com".to_string()),
+            owner: "a".to_string(),
+            repo: "b".to_string(),
+        }];
+        let r2 = vec![NormalizedRepoId {
+            host: CodeHost::Github,
+            host_domain: Some("github.com".to_string()),
+            owner: "x".to_string(),
+            repo: "y".to_string(),
+        }];
+        let id1 = compute_workspace_id(&root, &r1, None);
+        let id2 = compute_workspace_id(&root, &r2, None);
+        assert_ne!(id1, id2);
     }
 
     #[test]
