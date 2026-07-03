@@ -632,7 +632,7 @@ pub async fn run_security_search_plan(
         remediation_actions
             .iter()
             .all(|r| r.validate_text_safety().is_ok()),
-        "remediation text must not contain exploit keywords"
+        "remediation text must not contain offensive-instruction or vulnerability-class keywords"
     );
 
     // Build security evidence summary

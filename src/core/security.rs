@@ -1036,54 +1036,109 @@ pub struct SecurityRemediation {
     pub confidence: crate::core::code_evidence::EvidenceConfidence,
 }
 
-/// Exploit-instruction keyword blocklist for remediation text safety.
+/// Offensive-instruction keyword blocklist for remediation text safety.
 ///
-/// These terms indicate potential exploit instructions or offensive
-/// security guidance that must never appear in remediation text.
-const EXPLOIT_KEYWORDS: &[&str] = &[
+/// These terms indicate active exploit techniques or offensive security
+/// guidance that must never appear in remediation text.
+const OFFENSIVE_INSTRUCTION_KEYWORDS: &[&str] = &[
     "exploit",
+    "exploit code",
     "payload",
-    "injection",
     "shellcode",
-    "overflow",
     "rop",
     "gadget",
-    "rce",
-    "remote code execution",
     "pwn",
     "p0c",
     "proof of concept",
-    "buffer overflow",
     "heap spray",
-    "use after free",
-    "double free",
-    "format string",
-    "privilege escalation",
+    "nop sled",
+    "buffer overflow exploit",
     "bypass authentication",
-    "sql injection",
-    "xss",
-    "cross-site scripting",
-    "command injection",
     "deserialization attack",
     "zero-day",
     "0day",
 ];
 
+/// Vulnerability-class keyword blocklist for remediation text safety.
+///
+/// These terms are vulnerability class names that may legitimately
+/// appear in security advisories but should be flagged in remediation
+/// action text where they suggest the text was copied from advisory
+/// prose rather than written as defensive guidance.
+const VULNERABILITY_CLASS_KEYWORDS: &[&str] = &[
+    "injection",
+    "overflow",
+    "rce",
+    "remote code execution",
+    "buffer overflow",
+    "use after free",
+    "double free",
+    "format string",
+    "privilege escalation",
+    "sql injection",
+    "xss",
+    "cross-site scripting",
+    "command injection",
+    "csrf",
+    "xxe",
+    "ssrf",
+];
+
+/// Category of a text-safety warning.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TextSafetyCategory {
+    /// Active exploit technique or offensive security instruction.
+    OffensiveInstruction,
+    /// Vulnerability class name that may appear in advisory prose.
+    VulnerabilityClass,
+}
+
+impl TextSafetyCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OffensiveInstruction => "offensive_instruction",
+            Self::VulnerabilityClass => "vulnerability_class",
+        }
+    }
+}
+
+/// A text-safety warning with the matched keyword and its category.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TextSafetyWarning {
+    /// The keyword that triggered the warning.
+    pub keyword: String,
+    /// Category of the matched keyword.
+    pub category: TextSafetyCategory,
+}
+
 impl SecurityRemediation {
     /// Validate that remediation text does not contain exploit instructions.
     ///
-    /// Checks `description` and `rationale` against a blocklist of known
+    /// Checks `description` and `rationale` against blocklists of known
     /// exploit-related keywords. Returns `Ok(())` if the text is safe,
-    /// or `Err(keyword)` if a dangerous term is found.
-    pub fn validate_text_safety(&self) -> Result<(), String> {
+    /// or `Err(TextSafetyWarning)` with the matched keyword and its
+    /// category if a flagged term is found.
+    pub fn validate_text_safety(&self) -> Result<(), TextSafetyWarning> {
         let combined = format!(
             "{} {}",
             self.description.to_lowercase(),
             self.rationale.to_lowercase()
         );
-        for &keyword in EXPLOIT_KEYWORDS {
+        for &keyword in OFFENSIVE_INSTRUCTION_KEYWORDS {
             if combined.contains(keyword) {
-                return Err(keyword.to_string());
+                return Err(TextSafetyWarning {
+                    keyword: keyword.to_string(),
+                    category: TextSafetyCategory::OffensiveInstruction,
+                });
+            }
+        }
+        for &keyword in VULNERABILITY_CLASS_KEYWORDS {
+            if combined.contains(keyword) {
+                return Err(TextSafetyWarning {
+                    keyword: keyword.to_string(),
+                    category: TextSafetyCategory::VulnerabilityClass,
+                });
             }
         }
         Ok(())

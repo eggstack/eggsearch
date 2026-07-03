@@ -430,7 +430,7 @@ fn exploit_like_remediation_text_fails_validation() {
         result.is_err(),
         "text with 'exploit' keyword must fail validation"
     );
-    assert_eq!(result.unwrap_err(), "exploit");
+    assert_eq!(result.unwrap_err().keyword, "exploit");
 }
 
 #[test]
@@ -448,7 +448,7 @@ fn shellcode_in_text_fails_validation() {
 
     let result = remediation.validate_text_safety();
     assert!(result.is_err(), "text with 'shellcode' must fail");
-    assert_eq!(result.unwrap_err(), "shellcode");
+    assert_eq!(result.unwrap_err().keyword, "shellcode");
 }
 
 #[test]
@@ -466,7 +466,7 @@ fn rce_in_text_fails_validation() {
 
     let result = remediation.validate_text_safety();
     assert!(result.is_err(), "text with 'rce' must fail");
-    assert_eq!(result.unwrap_err(), "rce");
+    assert_eq!(result.unwrap_err().keyword, "rce");
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn proof_of_concept_in_text_fails_validation() {
 
     let result = remediation.validate_text_safety();
     assert!(result.is_err(), "text with 'proof of concept' must fail");
-    assert_eq!(result.unwrap_err(), "proof of concept");
+    assert_eq!(result.unwrap_err().keyword, "proof of concept");
 }
 
 // ===========================================================================

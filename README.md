@@ -637,9 +637,11 @@ comparison, not deployment risk assessment.
 
 **Text safety validation:** `SecurityRemediation` entries include a
 `validate_text_safety()` method that checks description and rationale
-text against a 25-term exploit keyword blocklist. When exploit-like
-language is detected, warnings are returned to flag potentially
-suspicious remediation guidance.
+text against two blocklists: offensive-instruction keywords (16 terms
+like `shellcode`, `exploit`, `heap spray`) and vulnerability-class
+keywords (16 terms like `injection`, `rce`, `xss`). When flagged
+language is detected, a `TextSafetyWarning` is returned with the
+matched keyword and its category.
 
 **Important:** Security context is retrieval enrichment, not
 exploitability determination. It classifies what the sources say,

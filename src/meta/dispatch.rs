@@ -1203,6 +1203,142 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn swap_remove_does_not_corrupt_priority_ordering() {
+        // Regression: swap_remove moves the LAST element of pending_queue into
+        // position i. If that element is a low-priority job that happens to be
+        // startable, it could be launched before blocked higher-priority jobs at
+        // later positions. This test proves the scan-forward + swap_remove logic
+        // preserves priority order.
+        //
+        // Pending queue after sorting by (priority, subquery_order, provider_order):
+        //   [0] P0  sq_A  provider=A   (startable)
+        //   [1] P0  sq_B  provider=A   (blocked — A at capacity after sq_A)
+        //   [2] P0  sq_C  provider=A   (blocked)
+        //   [3] P1  sq_D  provider=A   (blocked)
+        //   [4] P2  sq_E  provider=B   (startable — different provider)
+        //   [5] P2  sq_F  provider=B   (blocked — B at capacity after sq_E)
+        //
+        // max_concurrent_jobs=2, max_per_provider=1
+        //
+        // Scan i=0: sq_A starts, swap_remove(0) → pending becomes [sq_F, sq_B, sq_C, sq_D, sq_E]
+        //   sq_F (P2, B) is now at position 0; it IS startable (B has capacity).
+        //   Without the scan-forward re-checking position 0, sq_F would sit at
+        //   the front and be picked up in the next while-loop pass. With the
+        //   re-check, it is also started immediately — which is fine because it
+        //   is on a different provider (B) and does not block sq_B/sq_C/sq_D.
+        //
+        // After sq_A and sq_E (or sq_F) complete, the blocked P0 jobs (sq_B, sq_C)
+        // must be dispatched before any remaining P1/P2 jobs.
+        let engine_a: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("a", Duration::from_millis(50)));
+        let engine_b: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("b", Duration::from_millis(50)));
+
+        let jobs = vec![
+            // P0 jobs on provider A
+            make_job("sq_A", "qA", "a", Arc::clone(&engine_a), 0, 0, 0),
+            make_job("sq_B", "qB", "a", Arc::clone(&engine_a), 0, 1, 0),
+            make_job("sq_C", "qC", "a", Arc::clone(&engine_a), 0, 2, 0),
+            // P1 job on provider A
+            make_job("sq_D", "qD", "a", Arc::clone(&engine_a), 1, 3, 0),
+            // P2 jobs on provider B
+            make_job("sq_E", "qE", "b", Arc::clone(&engine_b), 2, 4, 0),
+            make_job("sq_F", "qF", "b", Arc::clone(&engine_b), 2, 5, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 2,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.raw_results.len(), 6);
+
+        // raw_results are (provider_id, results) tuples. Collect provider_ids
+        // in output order — they should follow deterministic subquery_order.
+        let provider_ids: Vec<&str> = output
+            .raw_results
+            .iter()
+            .map(|r| r.0.as_str())
+            .collect();
+        // All 6 jobs must complete. A corrupted pending queue would either
+        // deadlock (hitting the deadline) or silently drop jobs.
+        assert_eq!(provider_ids.len(), 6, "all 6 jobs must complete");
+        // Provider sequence in subquery_order: A, A, A, A, B, B
+        assert_eq!(
+            provider_ids,
+            vec!["a", "a", "a", "a", "b", "b"],
+            "provider_ids should follow deterministic subquery_order"
+        );
+    }
+
+    #[tokio::test]
+    async fn swap_remove_preserves_priority_under_contention() {
+        // Tighter contention scenario: two providers, each at capacity=1, with
+        // interleaved priorities. After the first wave of startable jobs is
+        // swap_removed, lower-priority jobs from the tail land at the front of
+        // the pending queue. The scan-forward must not let them start before
+        // blocked higher-priority jobs that should go next.
+        //
+        // Pending queue after sorting:
+        //   [0] P0  sq_H1  provider=A  ─┐ wave 1 starts, both blocked after
+        //   [1] P0  sq_L1  provider=B  ─┘
+        //   [2] P1  sq_H2  provider=A    blocked (A busy)
+        //   [3] P1  sq_L2  provider=B    blocked (B busy)
+        //   [4] P2  sq_H3  provider=A    blocked
+        //   [5] P3  sq_L3  provider=B    blocked
+        //
+        // max_concurrent_jobs=4, max_per_provider=1
+        //
+        // After sq_H1 completes → sq_H2 (P1) starts (not sq_H3 or sq_L3)
+        // After sq_L1 completes → sq_L2 (P1) starts (not sq_H3)
+        // This proves swap_remove didn't reorder the pending queue.
+        let engine_a: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("a", Duration::from_millis(30)));
+        let engine_b: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("b", Duration::from_millis(30)));
+
+        let jobs = vec![
+            make_job("sq_H1", "qH1", "a", Arc::clone(&engine_a), 0, 0, 0),
+            make_job("sq_L1", "qL1", "b", Arc::clone(&engine_b), 0, 1, 0),
+            make_job("sq_H2", "qH2", "a", Arc::clone(&engine_a), 1, 2, 0),
+            make_job("sq_L2", "qL2", "b", Arc::clone(&engine_b), 1, 3, 0),
+            make_job("sq_H3", "qH3", "a", Arc::clone(&engine_a), 2, 4, 0),
+            make_job("sq_L3", "qL3", "b", Arc::clone(&engine_b), 3, 5, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 4,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.raw_results.len(), 6);
+
+        // raw_results are (provider_id, results) in deterministic subquery_order.
+        let provider_ids: Vec<&str> = output
+            .raw_results
+            .iter()
+            .map(|r| r.0.as_str())
+            .collect();
+        // All 6 jobs must complete. A corrupted pending queue would either
+        // deadlock (hitting the deadline) or silently drop jobs.
+        assert_eq!(provider_ids.len(), 6, "all 6 jobs must complete");
+        // Provider sequence in subquery_order: A, B, A, B, A, B
+        assert_eq!(
+            provider_ids,
+            vec!["a", "b", "a", "b", "a", "b"],
+            "provider_ids should follow deterministic subquery_order"
+        );
+    }
+
+    #[tokio::test]
     async fn parallel_dispatch_zero_config_clamped_to_one() {
         // Zero concurrency values should be clamped to 1, not deadlock
         let engine: Arc<dyn SearchEngine> =

@@ -652,6 +652,27 @@ mod tests {
         assert!(matches!(err, LocalFetchPathError::PathTraversal));
     }
 
+    /// Documents the conservative path traversal rejection policy.
+    ///
+    /// The `contains("..")` check on line 275 rejects any path containing
+    /// the `..` substring — including legitimate filenames like
+    /// `notes..draft.md` where `..` is not a directory traversal operator.
+    /// This is intentional: a substring check is simpler, cheaper, and
+    /// errs on the side of safety. The rare false positive is acceptable
+    /// for the security benefit of rejecting all `..` variants.
+    #[test]
+    fn validate_local_fetch_path_double_dot_in_filename_rejected() {
+        let root = std::env::temp_dir();
+        let cfg = LocalConfig::default();
+        // "notes..draft.md" contains ".." as a substring but is not a
+        // directory traversal. The conservative check rejects it anyway.
+        let err = validate_local_fetch_path(&root, "notes..draft.md", &cfg).unwrap_err();
+        assert!(
+            matches!(err, LocalFetchPathError::PathTraversal),
+            "expected PathTraversal for 'notes..draft.md', got {err:?}"
+        );
+    }
+
     #[test]
     fn validate_local_fetch_path_binary_rejected() {
         let root = std::env::temp_dir();

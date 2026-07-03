@@ -307,33 +307,42 @@ fn remediation_for_unknown_applicability_is_manual_review() {
 // 7. No exploit instructions in remediation action text
 // ---------------------------------------------------------------------------
 
-const EXPLOIT_KEYWORDS: &[&str] = &[
+const OFFENSIVE_INSTRUCTION_KEYWORDS: &[&str] = &[
     "exploit",
+    "exploit code",
     "payload",
-    "injection",
     "shellcode",
-    "overflow",
     "rop",
     "gadget",
-    "rce",
-    "remote code execution",
     "pwn",
     "p0c",
     "proof of concept",
-    "buffer overflow",
     "heap spray",
+    "nop sled",
+    "buffer overflow exploit",
+    "bypass authentication",
+    "deserialization attack",
+    "zero-day",
+    "0day",
+];
+
+const VULNERABILITY_CLASS_KEYWORDS: &[&str] = &[
+    "injection",
+    "overflow",
+    "rce",
+    "remote code execution",
+    "buffer overflow",
     "use after free",
     "double free",
     "format string",
     "privilege escalation",
-    "bypass authentication",
     "sql injection",
     "xss",
     "cross-site scripting",
     "command injection",
-    "deserialization attack",
-    "zero-day",
-    "0day",
+    "csrf",
+    "xxe",
+    "ssrf",
 ];
 
 fn assert_no_exploit_instructions(remediation: &SecurityRemediation) {
@@ -342,7 +351,7 @@ fn assert_no_exploit_instructions(remediation: &SecurityRemediation) {
         remediation.description.to_lowercase(),
         remediation.rationale.to_lowercase()
     );
-    for keyword in EXPLOIT_KEYWORDS {
+    for keyword in OFFENSIVE_INSTRUCTION_KEYWORDS.iter().chain(VULNERABILITY_CLASS_KEYWORDS) {
         assert!(
             !combined.contains(keyword),
             "remediation text must not contain exploit keyword '{}':\n  desc: {}\n  rationale: {}",
@@ -981,7 +990,7 @@ fn remediation_with_exploit_keyword_fails_validate_text_safety() {
         result.is_err(),
         "text with 'exploit' keyword must fail validation"
     );
-    assert_eq!(result.unwrap_err(), "exploit");
+    assert_eq!(result.unwrap_err().keyword, "exploit");
 }
 
 #[test]
@@ -1001,7 +1010,7 @@ fn remediation_with_shellcode_fails_validate_text_safety() {
         result.is_err(),
         "text with 'shellcode' keyword must fail validation"
     );
-    assert_eq!(result.unwrap_err(), "shellcode");
+    assert_eq!(result.unwrap_err().keyword, "shellcode");
 }
 
 #[test]
@@ -1021,7 +1030,7 @@ fn remediation_with_rce_fails_validate_text_safety() {
         result.is_err(),
         "text with 'rce' keyword must fail validation"
     );
-    assert_eq!(result.unwrap_err(), "rce");
+    assert_eq!(result.unwrap_err().keyword, "rce");
 }
 
 #[test]
@@ -1041,7 +1050,7 @@ fn remediation_with_proof_of_concept_fails_validate_text_safety() {
         result.is_err(),
         "text with 'proof of concept' must fail validation"
     );
-    assert_eq!(result.unwrap_err(), "proof of concept");
+    assert_eq!(result.unwrap_err().keyword, "proof of concept");
 }
 
 #[test]

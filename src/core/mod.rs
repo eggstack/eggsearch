@@ -135,8 +135,8 @@ pub use security::{
     SecurityIdentifierKind, SecurityIdentifiers, SecurityQueryKind, SecurityRankReason,
     SecurityRemediation, SecurityResultGroup, SecurityResultGroupKind, SecuritySearchRequest,
     SecuritySearchResponse, SecuritySourceClass, SecuritySourceQuality, SecuritySourceTier,
-    SecuritySuggestedFetch, SeverityLevel, VulnerabilityMetadata, VulnerabilityReference,
-    VulnerabilitySource, VulnerabilitySummary,
+    SecuritySuggestedFetch, SeverityLevel, TextSafetyCategory, TextSafetyWarning,
+    VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource, VulnerabilitySummary,
 };
 pub use security_applicability::{
     AdvisoryRange, ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
