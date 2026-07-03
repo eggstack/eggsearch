@@ -506,11 +506,14 @@ pub struct WarningAccumulator {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct DedupKey {
-    code: WarningCode,
-    provider_ids: Vec<String>,
-    result_ids: Vec<String>,
-    source_ids: Vec<String>,
+enum DedupKey {
+    AllEmpty(WarningCode),
+    Full {
+        code: WarningCode,
+        provider_ids: Vec<String>,
+        result_ids: Vec<String>,
+        source_ids: Vec<String>,
+    },
 }
 
 impl WarningAccumulator {
@@ -523,11 +526,19 @@ impl WarningAccumulator {
     /// source_ids)` key has already been seen, the warning is silently
     /// dropped.
     pub fn push(&mut self, warning: AgentWarning) {
-        let key = DedupKey {
-            code: warning.code.clone(),
-            provider_ids: sorted_clone(&warning.provider_ids),
-            result_ids: sorted_clone(&warning.result_ids),
-            source_ids: sorted_clone(&warning.source_ids),
+        let code = warning.code.clone();
+        let key = if warning.provider_ids.is_empty()
+            && warning.result_ids.is_empty()
+            && warning.source_ids.is_empty()
+        {
+            DedupKey::AllEmpty(code)
+        } else {
+            DedupKey::Full {
+                code,
+                provider_ids: sorted_clone(&warning.provider_ids),
+                result_ids: sorted_clone(&warning.result_ids),
+                source_ids: sorted_clone(&warning.source_ids),
+            }
         };
         if self.seen.insert(key) {
             self.warnings.push(warning);
@@ -808,6 +819,9 @@ pub fn convert_fetch_warnings(warnings: &[String]) -> Vec<AgentWarning> {
 }
 
 fn sorted_clone(v: &[String]) -> Vec<String> {
+    if v.len() <= 1 {
+        return v.to_vec();
+    }
     let mut s = v.to_vec();
     s.sort();
     s

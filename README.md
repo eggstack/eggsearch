@@ -33,7 +33,7 @@ for the default configuration.
 - **Result Quality and Uncertainty**: Deterministic per-result quality metadata (confidence, relevance, authority, freshness, evidence strength) with uncertainty reasons and group-level quality summaries
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 1800+ fast tests (no network required)
+- 2800+ fast tests (no network required)
 - **Local Workspace Search**: Optional local source-file discovery within configured workspace roots. Disabled by default; when enabled, `repo_search` can return local files alongside remote results with clear trust boundaries.
 - `build_evidence_bundle` MCP tool: deterministic, non-summarizing evidence packaging for multi-agent handoff with source/fetch linking, gap detection, and trust preservation
 
@@ -2241,6 +2241,57 @@ Mock engines (`src/meta/mock.rs`) let integration tests exercise happy
 path, partial failure, all-fail, global timeout, and provider override
 paths without any network access. Vendored engine tests
 (`src/meta/engines/`) verify HTML parsing against inline fixtures.
+
+## Performance & Deployment
+
+### Binary sizes
+
+| Build | Size |
+|-------|------|
+| Default release | ~10 MB |
+| All-features release (`--all-features`) | ~11 MB |
+
+Release profile uses thin LTO, single codegen unit, and symbol stripping.
+
+### Benchmarks
+
+Run the benchmark suite (requires criterion, dev-only):
+
+```bash
+cargo bench
+```
+
+Benchmarks cover JSON serialization, source-card construction, identity hashing, and provider-status serialization. All use fixture data with no network access.
+
+### Feature flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| (none) | yes | Minimal build: core search/fetch tools, no PDF, no mock engines |
+| `mock` | no | Test-only mock engine harness |
+| `pdf` | no | PDF text extraction via `lopdf` |
+| `live-smoke` | no | Live network smoke tests (requires `mock`) |
+
+### Minimal builds
+
+```bash
+# Smallest binary (no optional features)
+cargo build --release --no-default-features
+
+# With PDF support
+cargo build --release --features pdf
+```
+
+`cargo test --no-default-features` passes (2601 tests) — the minimal build exercises the full non-mock test surface.
+
+### CI
+
+GitHub Actions CI (`.github/workflows/ci.yml`) validates:
+- `cargo check` with `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`
+- `cargo test` with the same feature matrix
+- `cargo clippy --all-features -- -D warnings`
+- `cargo fmt --check`
+- `cargo build --release`
 
 ## Quality & Regression Testing
 

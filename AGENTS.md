@@ -49,6 +49,15 @@ cargo check --all-features
 
 # Dry-run publish check
 cargo publish --dry-run
+
+# Run tests without optional features
+cargo test --no-default-features
+
+# Run benchmarks
+cargo bench
+
+# Check no-default-features compilation
+cargo check --no-default-features
 ```
 
 ## Project Structure
@@ -161,6 +170,8 @@ eggsearch/
   - Run corpus tests: `cargo test --features mock --test corpus_runner`
   - Live smoke tests (requires network): `cargo test --features live-smoke --test corpus_runner -- --ignored`
 - Total test count: ~2812 (unit + integration + corpus)
+- Minimal build test count: ~2601 (`cargo test --no-default-features`)
+- Benchmarks: `cargo bench` (criterion, dev-only; JSON serialization, source-card construction, identity hashing, provider-status serialization)
 
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros

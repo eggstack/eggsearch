@@ -46,7 +46,6 @@ pub struct CodeSpanEvidence {
     pub confidence: String,
 
     // --- Linking / provenance fields ---
-
     /// Deterministic source card ID linking this span back to the
     /// source card that produced it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

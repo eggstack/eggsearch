@@ -55,7 +55,6 @@ use eggsearch::meta::mock::{
 };
 #[cfg(feature = "mock")]
 use eggsearch::meta::MetadataSearchAdapter;
-#[cfg(feature = "mock")]
 use std::time::Duration;
 
 fn state_with_default() -> Arc<ServerState> {

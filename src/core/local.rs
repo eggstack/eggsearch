@@ -648,8 +648,7 @@ mod tests {
     fn validate_local_fetch_path_embedded_traversal_rejected() {
         let root = std::env::temp_dir();
         let cfg = LocalConfig::default();
-        let err =
-            validate_local_fetch_path(&root, "a/../../secret.txt", &cfg).unwrap_err();
+        let err = validate_local_fetch_path(&root, "a/../../secret.txt", &cfg).unwrap_err();
         assert!(matches!(err, LocalFetchPathError::PathTraversal));
     }
 
@@ -673,8 +672,7 @@ mod tests {
             std::os::unix::fs::symlink(root.join("target.txt"), root.join("link.txt")).unwrap();
             let mut cfg = LocalConfig::default();
             cfg.follow_symlinks = false;
-            let err =
-                validate_local_fetch_path(root, "link.txt", &cfg).unwrap_err();
+            let err = validate_local_fetch_path(root, "link.txt", &cfg).unwrap_err();
             assert!(matches!(err, LocalFetchPathError::SymlinkNotAllowed));
         }
     }
@@ -683,8 +681,7 @@ mod tests {
     fn validate_local_fetch_path_not_found_rejected() {
         let dir = tempfile::tempdir().unwrap();
         let cfg = LocalConfig::default();
-        let err =
-            validate_local_fetch_path(dir.path(), "nonexistent.rs", &cfg).unwrap_err();
+        let err = validate_local_fetch_path(dir.path(), "nonexistent.rs", &cfg).unwrap_err();
         assert!(matches!(err, LocalFetchPathError::NotFound));
     }
 

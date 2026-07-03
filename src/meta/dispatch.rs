@@ -166,8 +166,8 @@ pub(crate) async fn dispatch_parallel(
     let mut join_set: JoinSet<TaskResult> = JoinSet::new();
 
     // Collected results and failures (collected as tasks complete)
-    let mut collected_results: Vec<DispatchedResult> = Vec::new();
-    let mut collected_failures: Vec<DispatchedFailure> = Vec::new();
+    let mut collected_results: Vec<DispatchedResult> = Vec::with_capacity(sorted_jobs.len());
+    let mut collected_failures: Vec<DispatchedFailure> = Vec::with_capacity(sorted_jobs.len());
 
     // Helper: check if a job can run given current capacity
     let can_start = |provider_id: &str,
@@ -239,10 +239,10 @@ pub(crate) async fn dispatch_parallel(
                         }
                     });
 
-                    // Remove from pending queue; Vec::remove shifts later
-                    // elements left, preserving sorted priority order.
-                    // Don't increment i — the next element slides into slot i.
-                    pending_queue.remove(i);
+                    // Remove from pending queue; swap_remove is safe because
+                    // the scan-forward loop re-checks slot i (the swapped-in
+                    // element) without incrementing i, preserving priority order.
+                    pending_queue.swap_remove(i);
                     started_any = true;
                 } else {
                     i += 1;
@@ -271,21 +271,21 @@ pub(crate) async fn dispatch_parallel(
             deadline.exceeded = true;
 
             // Skipped: subquery IDs from pending queue where no jobs are running
-            let mut skipped = std::collections::HashSet::new();
+            let mut skipped: std::collections::HashSet<&str> = std::collections::HashSet::new();
             for &idx in &pending_queue {
                 let sid = &sorted_jobs[idx].subquery_id;
                 let running = running_subquery_counts.get(sid).copied().unwrap_or(0);
                 if running == 0 && !completed_subquery_ids.contains(sid) {
-                    skipped.insert(sid.clone());
+                    skipped.insert(sid);
                 }
             }
             deadline.subqueries_skipped = skipped.len();
 
             // Interrupted: subquery IDs that had running jobs but didn't complete
-            let mut interrupted = std::collections::HashSet::new();
+            let mut interrupted: std::collections::HashSet<&str> = std::collections::HashSet::new();
             for sid in &all_subquery_ids {
-                if !completed_subquery_ids.contains(sid) && !skipped.contains(sid) {
-                    interrupted.insert(sid.clone());
+                if !completed_subquery_ids.contains(sid) && !skipped.contains(sid.as_str()) {
+                    interrupted.insert(sid);
                 }
             }
             deadline.subqueries_interrupted = interrupted.len();
@@ -351,19 +351,19 @@ pub(crate) async fn dispatch_parallel(
                 deadline.exceeded = true;
 
                 // Skipped: subquery IDs from pending queue where no jobs are running
-                let mut skipped = std::collections::HashSet::new();
+                let mut skipped: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for &idx in &pending_queue {
                     let sid = &sorted_jobs[idx].subquery_id;
                     let running = running_subquery_counts.get(sid).copied().unwrap_or(0);
                     if running == 0 && !completed_subquery_ids.contains(sid) {
-                        skipped.insert(sid.clone());
+                        skipped.insert(sid);
                     }
                 }
                 deadline.subqueries_skipped = skipped.len();
 
                 // Interrupted: subquery IDs that had running jobs but didn't complete
                 for sid in &all_subquery_ids {
-                    if !completed_subquery_ids.contains(sid) && !skipped.contains(sid) {
+                    if !completed_subquery_ids.contains(sid) && !skipped.contains(sid.as_str()) {
                         interrupted_subquery_ids.insert(sid.clone());
                     }
                 }

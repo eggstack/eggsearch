@@ -7,6 +7,7 @@
 //! `TrustLevel::LocalTrusted`.
 
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use regex::Regex;
@@ -43,6 +44,88 @@ impl std::fmt::Debug for LocalWorkspaceBackend {
             .finish()
     }
 }
+
+/// Lazily compiled regex patterns for symbol definition matching.
+static SYMBOL_PATTERNS: LazyLock<Vec<(Regex, SymbolKind)>> = LazyLock::new(|| {
+    vec![
+        (
+            Regex::new(r"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)").unwrap(),
+            SymbolKind::Function,
+        ),
+        (
+            Regex::new(r"(?:pub\s+)?struct\s+(\w+)").unwrap(),
+            SymbolKind::Struct,
+        ),
+        (
+            Regex::new(r"(?:pub\s+)?enum\s+(\w+)").unwrap(),
+            SymbolKind::Enum,
+        ),
+        (
+            Regex::new(r"(?:pub\s+)?trait\s+(\w+)").unwrap(),
+            SymbolKind::Trait,
+        ),
+        (
+            Regex::new(r"impl(?:<[^>]*>)?\s+(?:dyn\s+)?(\w+)").unwrap(),
+            SymbolKind::Struct,
+        ),
+        (
+            Regex::new(r"(?:pub\s+)?type\s+(\w+)").unwrap(),
+            SymbolKind::TypeAlias,
+        ),
+        (
+            Regex::new(r"macro_rules!\s+(\w+)").unwrap(),
+            SymbolKind::Macro,
+        ),
+        (
+            Regex::new(r"(?:pub\s+)?(?:const|static)\s+(?:\w+\s*:)?\s*(\w+)").unwrap(),
+            SymbolKind::Constant,
+        ),
+        (
+            Regex::new(r"(?:async\s+)?def\s+(\w+)").unwrap(),
+            SymbolKind::Function,
+        ),
+        (
+            Regex::new(r"class\s+(\w+)").unwrap(),
+            SymbolKind::Class,
+        ),
+        (
+            Regex::new(r"(?:export\s+)?(?:async\s+)?function\s+(\w+)").unwrap(),
+            SymbolKind::Function,
+        ),
+        (
+            Regex::new(r"(?:export\s+)?class\s+(\w+)").unwrap(),
+            SymbolKind::Class,
+        ),
+        (
+            Regex::new(r"(?:export\s+)?interface\s+(\w+)").unwrap(),
+            SymbolKind::Interface,
+        ),
+        (
+            Regex::new(r"(?:export\s+)?type\s+(\w+)").unwrap(),
+            SymbolKind::TypeAlias,
+        ),
+        (
+            Regex::new(r"func\s+(?:\([^)]*\)\s+)?(\w+)").unwrap(),
+            SymbolKind::Function,
+        ),
+        (
+            Regex::new(r"type\s+(\w+)\s+(?:struct|interface)").unwrap(),
+            SymbolKind::Struct,
+        ),
+        (
+            Regex::new(r"(?:public|private|protected|internal)\s+(?:static\s+)?(?:class|interface|enum)\s+(\w+)").unwrap(),
+            SymbolKind::Class,
+        ),
+        (
+            Regex::new(r"(?:typedef\s+)?(?:struct|class)\s+(\w+)").unwrap(),
+            SymbolKind::Struct,
+        ),
+        (
+            Regex::new(r"^(?:static|inline|extern|const)?\s*\w[\w\s\*]*\b(\w+)\s*\(").unwrap(),
+            SymbolKind::Function,
+        ),
+    ]
+});
 
 impl LocalWorkspaceBackend {
     /// Build a new local workspace backend from config.
@@ -773,60 +856,18 @@ impl LocalWorkspaceBackend {
     ) -> Option<(String, SymbolKind, u32)> {
         let hint_lower = symbol_hint.to_lowercase();
 
-        let patterns: &[(&str, SymbolKind)] = &[
-            (
-                r"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)",
-                SymbolKind::Function,
-            ),
-            (r"(?:pub\s+)?struct\s+(\w+)", SymbolKind::Struct),
-            (r"(?:pub\s+)?enum\s+(\w+)", SymbolKind::Enum),
-            (r"(?:pub\s+)?trait\s+(\w+)", SymbolKind::Trait),
-            (r"impl(?:<[^>]*>)?\s+(?:dyn\s+)?(\w+)", SymbolKind::Struct),
-            (r"(?:pub\s+)?type\s+(\w+)", SymbolKind::TypeAlias),
-            (r"macro_rules!\s+(\w+)", SymbolKind::Macro),
-            (
-                r"(?:pub\s+)?(?:const|static)\s+(?:\w+\s*:)?\s*(\w+)",
-                SymbolKind::Constant,
-            ),
-            (r"(?:async\s+)?def\s+(\w+)", SymbolKind::Function),
-            (r"class\s+(\w+)", SymbolKind::Class),
-            (
-                r"(?:export\s+)?(?:async\s+)?function\s+(\w+)",
-                SymbolKind::Function,
-            ),
-            (r"(?:export\s+)?class\s+(\w+)", SymbolKind::Class),
-            (r"(?:export\s+)?interface\s+(\w+)", SymbolKind::Interface),
-            (r"(?:export\s+)?type\s+(\w+)", SymbolKind::TypeAlias),
-            (r"func\s+(?:\([^)]*\)\s+)?(\w+)", SymbolKind::Function),
-            (r"type\s+(\w+)\s+(?:struct|interface)", SymbolKind::Struct),
-            (
-                r"(?:public|private|protected|internal)\s+(?:static\s+)?(?:class|interface|enum)\s+(\w+)",
-                SymbolKind::Class,
-            ),
-            (
-                r"(?:typedef\s+)?(?:struct|class)\s+(\w+)",
-                SymbolKind::Struct,
-            ),
-            (
-                r"^(?:static|inline|extern|const)?\s*\w[\w\s\*]*\b(\w+)\s*\(",
-                SymbolKind::Function,
-            ),
-        ];
-
         for (line_idx, line) in text.lines().enumerate() {
             let line_lower = line.to_lowercase();
             if !line_lower.contains(&hint_lower) {
                 continue;
             }
-            for (pattern_str, kind) in patterns {
-                if let Ok(re) = Regex::new(pattern_str) {
-                    if let Some(caps) = re.captures(line) {
-                        if let Some(name_match) = caps.get(1) {
-                            let name = name_match.as_str();
-                            if name.to_lowercase() == hint_lower {
-                                let line_num = (line_idx + 1) as u32;
-                                return Some((name.to_string(), *kind, line_num));
-                            }
+            for (re, kind) in SYMBOL_PATTERNS.iter() {
+                if let Some(caps) = re.captures(line) {
+                    if let Some(name_match) = caps.get(1) {
+                        let name = name_match.as_str();
+                        if name.to_lowercase() == hint_lower {
+                            let line_num = (line_idx + 1) as u32;
+                            return Some((name.to_string(), *kind, line_num));
                         }
                     }
                 }
