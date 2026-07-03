@@ -86,9 +86,16 @@ fn bundle_preserves_source_ids() {
 
     let bundle = build_evidence_bundle(req);
     assert_eq!(bundle.sources.len(), 2);
-    let source_ids: Vec<&str> = bundle.sources.iter().map(|s| s.source_id.as_str()).collect();
+    let source_ids: Vec<&str> = bundle
+        .sources
+        .iter()
+        .map(|s| s.source_id.as_str())
+        .collect();
     for id in &source_ids {
-        assert!(id.starts_with("src_"), "Source ID should start with src_: {id}");
+        assert!(
+            id.starts_with("src_"),
+            "Source ID should start with src_: {id}"
+        );
     }
 }
 
@@ -284,7 +291,13 @@ fn bundle_gap_analysis_detects_all_external_untrusted() {
 #[test]
 fn bundle_limit_enforcement_max_sources() {
     let sources: Vec<EvidenceSourceInput> = (0..10)
-        .map(|i| make_source(&format!("https://example.com/{i}"), &format!("page {i}"), "test"))
+        .map(|i| {
+            make_source(
+                &format!("https://example.com/{i}"),
+                &format!("page {i}"),
+                "test",
+            )
+        })
         .collect();
 
     let req = EvidenceBundleRequest {
@@ -413,8 +426,14 @@ fn bundle_provider_summary_tracks_providers() {
     };
 
     let bundle = build_evidence_bundle(req);
-    assert!(bundle.provider_summary.providers_used.contains(&"duckduckgo".to_string()));
-    assert!(bundle.provider_summary.providers_used.contains(&"brave".to_string()));
+    assert!(bundle
+        .provider_summary
+        .providers_used
+        .contains(&"duckduckgo".to_string()));
+    assert!(bundle
+        .provider_summary
+        .providers_used
+        .contains(&"brave".to_string()));
     assert_eq!(bundle.provider_summary.providers_used.len(), 2);
 
     let dd_count = bundle

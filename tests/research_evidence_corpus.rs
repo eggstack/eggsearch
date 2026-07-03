@@ -20,8 +20,8 @@ use eggsearch::core::research::{
 use eggsearch::core::result::TrustLevel;
 use eggsearch::core::source_card::{SourceCard, SourceKind, SourceMetadata};
 use eggsearch::meta::research_evidence_analysis::{
-    analyze_research_evidence, classify_quality_signals, classify_source_class, compute_source_qualities,
-    detect_conflicts, detect_evidence_gaps, extract_claims,
+    analyze_research_evidence, classify_quality_signals, classify_source_class,
+    compute_source_qualities, detect_conflicts, detect_evidence_gaps, extract_claims,
 };
 
 // ---------------------------------------------------------------------------
@@ -66,10 +66,7 @@ fn make_group(kind: ResearchResultGroupKind, cards: Vec<SourceCard>) -> Research
 #[test]
 fn architecture_decision_with_primary_docs_and_counterpoint() {
     let primary_cards = vec![
-        make_card(
-            SourceKind::OfficialDocs,
-            "https://docs.rs/axum",
-        ),
+        make_card(SourceKind::OfficialDocs, "https://docs.rs/axum"),
         make_card(
             SourceKind::OfficialDocs,
             "https://docs.rs/axum/0.7/router/index.html",
@@ -88,7 +85,10 @@ fn architecture_decision_with_primary_docs_and_counterpoint() {
         analyze_research_evidence(&groups, Some("axum router middleware"));
 
     // Claims are produced from groups with 2+ results
-    assert!(!claims.is_empty(), "must produce claims from non-empty groups");
+    assert!(
+        !claims.is_empty(),
+        "must produce claims from non-empty groups"
+    );
 
     // The OfficialDocs group produces an Architecture claim
     let docs_claim = claims
@@ -123,16 +123,21 @@ fn architecture_decision_with_primary_docs_and_counterpoint() {
 #[test]
 fn library_comparison_with_benchmark_source() {
     let benchmark_cards = vec![
-        make_card(SourceKind::Unknown, "https://example.com/axum-benchmark-2024"),
-        make_card(SourceKind::Unknown, "https://example.com/actix-benchmark-results"),
+        make_card(
+            SourceKind::Unknown,
+            "https://example.com/axum-benchmark-2024",
+        ),
+        make_card(
+            SourceKind::Unknown,
+            "https://example.com/actix-benchmark-results",
+        ),
     ];
     let groups = vec![make_group(
         ResearchResultGroupKind::Benchmarks,
         benchmark_cards,
     )];
 
-    let (claims, _conflicts, source_quality, _gaps) =
-        analyze_research_evidence(&groups, None);
+    let (claims, _conflicts, source_quality, _gaps) = analyze_research_evidence(&groups, None);
 
     // Benchmark group produces Performance claim type
     assert!(!claims.is_empty());
@@ -172,8 +177,7 @@ fn migration_planning_with_changelog_release_source() {
         release_cards,
     )];
 
-    let (_claims, _conflicts, source_quality, _gaps) =
-        analyze_research_evidence(&groups, None);
+    let (_claims, _conflicts, source_quality, _gaps) = analyze_research_evidence(&groups, None);
 
     // Release notes source class is recognized
     assert_eq!(source_quality.len(), 2);
@@ -207,8 +211,7 @@ fn security_research_with_advisory_source() {
         advisory_cards,
     )];
 
-    let (_claims, _conflicts, source_quality, _gaps) =
-        analyze_research_evidence(&groups, None);
+    let (_claims, _conflicts, source_quality, _gaps) = analyze_research_evidence(&groups, None);
 
     // Advisory sources are classified as SecurityAdvisory
     assert_eq!(source_quality.len(), 2);
@@ -235,7 +238,10 @@ fn only_secondary_sources_detected() {
     let groups = vec![
         make_group(
             ResearchResultGroupKind::CommunityDiscussion,
-            vec![make_card(SourceKind::Unknown, "https://stackoverflow.com/q/1")],
+            vec![make_card(
+                SourceKind::Unknown,
+                "https://stackoverflow.com/q/1",
+            )],
         ),
         make_group(
             ResearchResultGroupKind::RecentNews,
@@ -243,8 +249,7 @@ fn only_secondary_sources_detected() {
         ),
     ];
 
-    let (_claims, _conflicts, _source_quality, gaps) =
-        analyze_research_evidence(&groups, None);
+    let (_claims, _conflicts, _source_quality, gaps) = analyze_research_evidence(&groups, None);
 
     assert!(
         gaps.iter()
@@ -259,18 +264,15 @@ fn only_secondary_sources_detected() {
 
 #[test]
 fn stale_source_set_no_recent_source_gap() {
-    let groups = vec![
-        make_group(
-            ResearchResultGroupKind::OfficialDocs,
-            vec![
-                make_card(SourceKind::OfficialDocs, "https://docs.rs/axum"),
-                make_card(SourceKind::OfficialDocs, "https://docs.rs/serde"),
-            ],
-        ),
-    ];
+    let groups = vec![make_group(
+        ResearchResultGroupKind::OfficialDocs,
+        vec![
+            make_card(SourceKind::OfficialDocs, "https://docs.rs/axum"),
+            make_card(SourceKind::OfficialDocs, "https://docs.rs/serde"),
+        ],
+    )];
 
-    let (_claims, _conflicts, _source_quality, gaps) =
-        analyze_research_evidence(&groups, None);
+    let (_claims, _conflicts, _source_quality, gaps) = analyze_research_evidence(&groups, None);
 
     // No RecentNews group → NoRecentSource gap should fire
     assert!(
@@ -326,8 +328,14 @@ fn conflicting_evidence_unresolved_produces_conflict_with_sides() {
 
     let conflict = &conflicts[0];
     assert_eq!(conflict.id, "conflict_counterpoints_0");
-    assert!(!conflict.side_a_source_ids.is_empty(), "side A must have source IDs");
-    assert!(!conflict.side_b_source_ids.is_empty(), "side B must have source IDs");
+    assert!(
+        !conflict.side_a_source_ids.is_empty(),
+        "side A must have source IDs"
+    );
+    assert!(
+        !conflict.side_b_source_ids.is_empty(),
+        "side B must have source IDs"
+    );
     assert_eq!(
         conflict.topic, "Counterpoint evidence found",
         "conflict topic must be set"
@@ -343,18 +351,15 @@ fn conflicting_evidence_unresolved_produces_conflict_with_sides() {
 
 #[test]
 fn no_primary_source_found_detected() {
-    let groups = vec![
-        make_group(
-            ResearchResultGroupKind::CommunityDiscussion,
-            vec![
-                make_card(SourceKind::Unknown, "https://stackoverflow.com/q/1"),
-                make_card(SourceKind::Unknown, "https://stackoverflow.com/q/2"),
-            ],
-        ),
-    ];
+    let groups = vec![make_group(
+        ResearchResultGroupKind::CommunityDiscussion,
+        vec![
+            make_card(SourceKind::Unknown, "https://stackoverflow.com/q/1"),
+            make_card(SourceKind::Unknown, "https://stackoverflow.com/q/2"),
+        ],
+    )];
 
-    let (_claims, _conflicts, _source_quality, gaps) =
-        analyze_research_evidence(&groups, None);
+    let (_claims, _conflicts, _source_quality, gaps) = analyze_research_evidence(&groups, None);
 
     assert!(
         gaps.iter()
@@ -620,10 +625,9 @@ fn gap_no_primary_when_absent() {
         ],
     )];
     let gaps = detect_evidence_gaps(&groups, &[], &[], None);
-    assert!(
-        gaps.iter()
-            .any(|g| g.kind == ResearchEvidenceGapKind::NoPrimarySource)
-    );
+    assert!(gaps
+        .iter()
+        .any(|g| g.kind == ResearchEvidenceGapKind::NoPrimarySource));
 }
 
 #[test]
@@ -636,10 +640,9 @@ fn gap_no_benchmark_when_absent() {
         ],
     )];
     let gaps = detect_evidence_gaps(&groups, &[], &[], None);
-    assert!(
-        gaps.iter()
-            .any(|g| g.kind == ResearchEvidenceGapKind::NoBenchmarkSource)
-    );
+    assert!(gaps
+        .iter()
+        .any(|g| g.kind == ResearchEvidenceGapKind::NoBenchmarkSource));
 }
 
 #[test]
@@ -652,10 +655,9 @@ fn gap_no_recent_when_absent() {
         ],
     )];
     let gaps = detect_evidence_gaps(&groups, &[], &[], None);
-    assert!(
-        gaps.iter()
-            .any(|g| g.kind == ResearchEvidenceGapKind::NoRecentSource)
-    );
+    assert!(gaps
+        .iter()
+        .any(|g| g.kind == ResearchEvidenceGapKind::NoRecentSource));
 }
 
 #[test]
@@ -676,10 +678,9 @@ fn gap_conflicting_unresolved_when_conflicts_exist() {
         notes: vec![],
     }];
     let gaps = detect_evidence_gaps(&groups, &[], &conflicts, None);
-    assert!(
-        gaps.iter()
-            .any(|g| g.kind == ResearchEvidenceGapKind::ConflictingEvidenceUnresolved)
-    );
+    assert!(gaps
+        .iter()
+        .any(|g| g.kind == ResearchEvidenceGapKind::ConflictingEvidenceUnresolved));
 }
 
 #[test]
@@ -699,12 +700,14 @@ fn gaps_bounded() {
 
 #[test]
 fn analyze_empty_groups() {
-    let (claims, conflicts, source_quality, evidence_gaps) =
-        analyze_research_evidence(&[], None);
+    let (claims, conflicts, source_quality, evidence_gaps) = analyze_research_evidence(&[], None);
     assert!(claims.is_empty());
     assert!(conflicts.is_empty());
     assert!(source_quality.is_empty());
-    assert!(!evidence_gaps.is_empty(), "empty groups should produce gaps");
+    assert!(
+        !evidence_gaps.is_empty(),
+        "empty groups should produce gaps"
+    );
 }
 
 #[test]
@@ -819,11 +822,9 @@ fn compute_source_qualities_for_mixed_groups() {
         .iter()
         .find(|q| q.source_class == ResearchSourceClass::Benchmark)
         .expect("must have benchmark quality");
-    assert!(
-        bench_quality
-            .quality_signals
-            .contains(&ResearchQualitySignal::ReproducibleBenchmark)
-    );
+    assert!(bench_quality
+        .quality_signals
+        .contains(&ResearchQualitySignal::ReproducibleBenchmark));
 }
 
 // ===========================================================================

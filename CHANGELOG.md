@@ -7,19 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-03
+
 ### Fixed
 
+- **CI: `web_fetch_structured_warnings_present` test no longer hits external endpoint.** The test now uses `httpmock::MockServer` instead of `httpbin.org`, eliminating 503 failures that blocked CI. (`src/mcp/tools.rs`)
+- **CI: `cargo fmt` applied to all test files.** Many test files had formatting inconsistencies that failed `cargo fmt --check` in CI. (`tests/integration.rs`, `tests/schema_identity_registry.rs`, `tests/fetch_safety.rs`, `tests/security_applicability_corpus.rs`, `tests/security_applicability_phase8.rs`, `tests/research_evidence_corpus.rs`, `tests/recipes_next_actions.rs`, `tests/evidence_bundle_handoff.rs`)
 - **API-only live mode now requires configured providers.** Config validation now checks that at least one API provider has a resolvable `api_key_env` environment variable, not just `enabled = true`. Deployments with all scrape providers disabled and only unconfigured API providers are now correctly rejected. (`src/core/config.rs`)
 - **Fetch-layer warnings no longer misclassify as provider failure.** Unrecognized fetch warning strings now map to the new `FetchWarning` code instead of `ProviderFailed`. Unrecognized search warnings map to `UnknownWarning` instead of `ProviderFailed`. Recognized provider failure patterns (`[timeout]`, `[rate_limited]`) still map to the correct provider-specific codes. (`src/core/warning.rs`)
 - **Dispatch executor preserves scheduling priority order.** The bounded parallel dispatcher now uses `Vec::remove()` instead of `swap_remove()` when starting pending jobs, preventing incidental queue reordering. Scheduling respects sorted priority except for intentional provider-capacity bypass. (`src/meta/dispatch.rs`)
 - **Deterministic identity uses FNV-1a 64-bit instead of `DefaultHasher`.** Public stable IDs now use an explicit, documented FNV-1a 64-bit hash with a versioned input prefix (`eggsearch-id-v1\0`), removing dependency on stdlib hasher internals. Golden tests protect stable outputs. (`src/core/identity.rs`, `src/core/evidence_bundle.rs`)
 - **Documentation examples validated against real MCP schemas.** Fixed `repo_search` examples that used nonexistent `intent` field, `research_search` examples with nonexistent `include_benchmarks` field, and `research_domain` values using PascalCase instead of snake_case. Added deserialization tests to prevent future schema drift. (`docs/agent-workflows.md`, `src/mcp/tools.rs`)
-
 - **Critical: inverted `>=` in security applicability range evaluation.** The legacy `advisory_range::evaluate_range()` accepted versions *below* the floor for `>= X` clauses, producing false `affected` verdicts and false-negative `not_affected` verdicts. The corrected evaluator now uses the tri-state `RangeMatch` (`Affected | NotAffected | Unknown`) and exposes `evaluate_clause()` and `evaluate_range_expression()` as the public API. The legacy `(bool, reasons)` `version_in_ranges()` form is preserved for backward compatibility. (`src/meta/advisory_range.rs`)
 - **Security applicability now preserves `Unknown` vs `NotAffected`.** A new internal `RangeMatch::combine()` collapses `NotAffected` to `Unknown` only when another range could not be evaluated, eliminating the silent false-negative path where unparseable range syntax was treated as `not_affected`. The `security_search` MCP tool now maps through the tri-state result so `applicability[].status` reflects `unknown` honestly. (`src/core/security_applicability.rs`, `src/meta/security_search.rs`)
 - `version_compare::evaluate_semver_range` no longer treats an empty range string as `Some(true)`; empty input is now `None` (unknown) so callers don't silently accept degenerate ranges.
 - `parse_requirements_txt` no longer extracts `>=`-style ranges as installed versions; only `==` pinned versions are kept, so version ranges are not treated as exact installed versions.
 - `.github/workflows/ci.yml` adds `--locked` to the test and publish-check jobs (Cargo.lock is committed), grants minimal `contents: read` permissions, and documents its introduction.
+- `web_fetch` now validates `timeout_ms > 0` and rejects zero with a clear error. (`src/mcp/tools.rs`)
+- `security_search` provider routing now correctly respects profile-level provider selection. (`src/mcp/tools.rs`)
 
 ### Added
 
@@ -31,11 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`assess_version_applicability` regression suite**: `tests/security_applicability_regression.rs` with 19 tests directly exercising the tri-state evaluator to lock in the inverted-`>=` fix and the conservative `Unknown` collapse rules. Plus 5 corpus scenario stubs under `tests/corpus/scenarios/`.
 - `tests/security_applicability_regression.rs` covers 19 boundary cases including operator-by-operator `>=`, `>`, `<=`, `<`, `=`, comma-separated intersections, known-then-unknown clause ordering, mixed multi-range outcomes, and the inverted-`>=` regression.
 - **Neutral fallback warning codes** (`src/core/warning.rs`): `FetchWarning` for unrecognized fetch-layer warnings and `UnknownWarning` for unrecognized search warnings, replacing incorrect `ProviderFailed` fallback classification. Total warning codes: 58.
+- **Refactored MCP argument parsing** (`src/mcp/tools.rs`): extracted `parse_code_host_arg()`, `parse_symbol_kind_arg()`, and `workspace_relative_path_arg()` helpers for cleaner code-host and workspace-host argument handling.
 
 ### Changed
 
 - `src/meta/package_resolver.rs` module header now lists all 10 supported ecosystems (CratesIo, PyPI, npm, Go, Maven, NuGet, RubyGems, Packagist, OCI, GitHub Actions) and clarifies that resolution is metadata-only — no dependency solving, no artifact downloading. OCI/GitHub Actions are documented as exact-match only.
 - `repo_search` tool description in `src/mcp/tools.rs` lists all 10 package ecosystems (previously only crates.io/PyPI/npm).
+- MCP server instructions updated to document workspace host mode for `repo_fetch` (`src/mcp/server.rs`).
+- `repo_fetch` documentation updated for workspace host mode (`docs/tool-matrix.md`).
 
 ## [0.3.3] - 2026-06-30
 

@@ -248,7 +248,11 @@ fn recipe_support_unavailable_with_empty_providers() {
     for recipe in &catalog {
         // Recipes requiring only generic_search or explicit_fetch are Available
         // local_workspace_investigation requires local_workspace so should be Unavailable
-        if recipe.required_capabilities.iter().any(|c| c == "local_workspace") {
+        if recipe
+            .required_capabilities
+            .iter()
+            .any(|c| c == "local_workspace")
+        {
             assert_eq!(
                 recipe.support,
                 RecipeSupport::Unavailable,

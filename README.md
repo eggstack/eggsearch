@@ -33,7 +33,7 @@ for the default configuration.
 - **Result Quality and Uncertainty**: Deterministic per-result quality metadata (confidence, relevance, authority, freshness, evidence strength) with uncertainty reasons and group-level quality summaries
 - Configurable via TOML file (`$XDG_CONFIG_HOME/eggsearch/config.toml`)
 - Vendored search engine implementations (no heavyweight upstream deps)
-- 2800+ fast tests (no network required)
+- 3000+ fast tests (no network required)
 - **Local Workspace Search**: Optional local source-file discovery within configured workspace roots. Disabled by default; when enabled, `repo_search` can return local files alongside remote results with clear trust boundaries.
 - `build_evidence_bundle` MCP tool: deterministic, non-summarizing evidence packaging for multi-agent handoff with source/fetch linking, gap detection, and trust preservation
 

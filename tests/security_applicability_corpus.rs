@@ -15,6 +15,7 @@
 use eggsearch::core::code_evidence::EvidenceConfidence;
 use eggsearch::core::package::PackageEcosystem;
 use eggsearch::core::result::TrustLevel;
+use eggsearch::core::security::{assess_source_quality, SecuritySourceTier};
 use eggsearch::core::security::{
     KevMetadata, RemediationCategory, SecurityRemediation, SeverityLevel, VulnerabilityMetadata,
     VulnerabilitySource,
@@ -24,10 +25,7 @@ use eggsearch::core::security_applicability::{
     DependencyFinding, DependencyRelation, DependencySource,
 };
 use eggsearch::core::source_card::{SourceCard, SourceMetadata};
-use eggsearch::meta::advisory_range::{
-    assess_version_applicability, extract_advisory_ranges,
-};
-use eggsearch::core::security::{assess_source_quality, SecuritySourceTier};
+use eggsearch::meta::advisory_range::{assess_version_applicability, extract_advisory_ranges};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,7 +112,10 @@ fn affected_exact_version_returns_affected_high_confidence() {
         "must have at least one matched range"
     );
     assert!(
-        outcome.reasons.iter().any(|r| r.contains("matches affected range")),
+        outcome
+            .reasons
+            .iter()
+            .any(|r| r.contains("matches affected range")),
         "reasons must mention range match: {:?}",
         outcome.reasons
     );
@@ -136,7 +137,10 @@ fn unaffected_exact_version_returns_not_affected() {
 
     assert_eq!(outcome.status, ApplicabilityStatus::NotAffected);
     assert!(
-        outcome.reasons.iter().any(|r| r.contains("outside affected range")),
+        outcome
+            .reasons
+            .iter()
+            .any(|r| r.contains("outside affected range")),
         "reasons must mention outside range: {:?}",
         outcome.reasons
     );
@@ -158,7 +162,10 @@ fn unknown_range_syntax_returns_unknown() {
 
     assert_eq!(outcome.status, ApplicabilityStatus::Unknown);
     assert!(
-        outcome.reasons.iter().any(|r| r.contains("could not evaluate range")),
+        outcome
+            .reasons
+            .iter()
+            .any(|r| r.contains("could not evaluate range")),
         "reasons must mention range evaluation failure: {:?}",
         outcome.reasons
     );
@@ -304,8 +311,11 @@ fn no_fixed_version_produces_manual_review_remediation() {
 
     let remediation = SecurityRemediation {
         category: RemediationCategory::ManualReview,
-        description: "Manual review required — no fixed version available from advisory metadata.".to_string(),
-        rationale: "Advisory CVE-2024-9999 confirms affected status but no patched version is documented".to_string(),
+        description: "Manual review required — no fixed version available from advisory metadata."
+            .to_string(),
+        rationale:
+            "Advisory CVE-2024-9999 confirms affected status but no patched version is documented"
+                .to_string(),
         evidence_urls: Vec::new(),
         fixed_versions: Vec::new(),
         affected_packages: vec!["test-pkg".to_string()],
@@ -352,10 +362,7 @@ fn kev_present_emits_kev_match_warning() {
 #[test]
 fn kev_present_on_vulnerability_metadata_is_preserved() {
     let vuln = make_vuln(vec![">= 1.0.0"], vec![], vec![]);
-    assert!(
-        vuln.kev.is_none(),
-        "default vuln metadata has no KEV"
-    );
+    assert!(vuln.kev.is_none(), "default vuln metadata has no KEV");
 
     let mut vuln_with_kev = vuln;
     vuln_with_kev.kev = Some(KevMetadata {
@@ -376,10 +383,7 @@ fn kev_present_on_vulnerability_metadata_is_preserved() {
 #[test]
 fn kev_absent_not_proof_warning_type() {
     let vuln = make_vuln(vec![">= 1.0.0"], vec![], vec![]);
-    assert!(
-        vuln.kev.is_none(),
-        "no KEV data should be present"
-    );
+    assert!(vuln.kev.is_none(), "no KEV data should be present");
 
     // Simulate the warning that would be emitted
     let warning = "kev_absent_not_proof: no CVE identifiers available for KEV catalog lookup";
@@ -671,10 +675,7 @@ fn applicability_assessment_serde_roundtrip() {
     assert_eq!(parsed.package, "express");
     assert_eq!(parsed.version.as_deref(), Some("2.5.0"));
     assert_eq!(parsed.fixed_versions, vec!["3.0.0"]);
-    assert_eq!(
-        parsed.dependency_relation,
-        Some(DependencyRelation::Direct)
-    );
+    assert_eq!(parsed.dependency_relation, Some(DependencyRelation::Direct));
 }
 
 // ===========================================================================
@@ -757,7 +758,11 @@ fn security_source_tier_classifications() {
 
     for (url, expected_tier) in cases {
         let tier = eggsearch::core::security::classify_source_tier(url);
-        assert_eq!(tier, expected_tier, "URL {} should be {:?}", url, expected_tier);
+        assert_eq!(
+            tier, expected_tier,
+            "URL {} should be {:?}",
+            url, expected_tier
+        );
     }
 }
 

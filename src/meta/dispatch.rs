@@ -1259,11 +1259,7 @@ mod tests {
 
         // raw_results are (provider_id, results) tuples. Collect provider_ids
         // in output order — they should follow deterministic subquery_order.
-        let provider_ids: Vec<&str> = output
-            .raw_results
-            .iter()
-            .map(|r| r.0.as_str())
-            .collect();
+        let provider_ids: Vec<&str> = output.raw_results.iter().map(|r| r.0.as_str()).collect();
         // All 6 jobs must complete. A corrupted pending queue would either
         // deadlock (hitting the deadline) or silently drop jobs.
         assert_eq!(provider_ids.len(), 6, "all 6 jobs must complete");
@@ -1322,11 +1318,7 @@ mod tests {
         assert_eq!(output.raw_results.len(), 6);
 
         // raw_results are (provider_id, results) in deterministic subquery_order.
-        let provider_ids: Vec<&str> = output
-            .raw_results
-            .iter()
-            .map(|r| r.0.as_str())
-            .collect();
+        let provider_ids: Vec<&str> = output.raw_results.iter().map(|r| r.0.as_str()).collect();
         // All 6 jobs must complete. A corrupted pending queue would either
         // deadlock (hitting the deadline) or silently drop jobs.
         assert_eq!(provider_ids.len(), 6, "all 6 jobs must complete");

@@ -351,7 +351,10 @@ fn assert_no_exploit_instructions(remediation: &SecurityRemediation) {
         remediation.description.to_lowercase(),
         remediation.rationale.to_lowercase()
     );
-    for keyword in OFFENSIVE_INSTRUCTION_KEYWORDS.iter().chain(VULNERABILITY_CLASS_KEYWORDS) {
+    for keyword in OFFENSIVE_INSTRUCTION_KEYWORDS
+        .iter()
+        .chain(VULNERABILITY_CLASS_KEYWORDS)
+    {
         assert!(
             !combined.contains(keyword),
             "remediation text must not contain exploit keyword '{}':\n  desc: {}\n  rationale: {}",

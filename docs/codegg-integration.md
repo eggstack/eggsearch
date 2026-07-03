@@ -5,7 +5,7 @@ harnesses such as codegg. It is written for harness developers, not end
 users. All examples use JSON code blocks; truncated values are clearly
 marked.
 
-eggsearch version: **0.3.3** (current at time of writing). See
+eggsearch version: **0.3.4** (current at time of writing). See
 `Cargo.toml` for the live version.
 
 ## Table of Contents
@@ -178,6 +178,13 @@ max_indexed_files = 5000
 Use case: air-gapped environments where only local workspace files are
 available. `repo_search` will return local results only. `web_search`
 and `web_fetch` will deny requests with a policy message.
+
+For direct local file reads, call `repo_fetch` with
+`host = "workspace"`, `owner` set to the configured workspace root
+directory name, and `path` set to the root-relative file path. The
+`prefer_local = true` mode is different: it accepts a normal remote
+locator (`host`, `owner`, `repo`, `path`) and resolves to a matching
+local checkout when one is available.
 
 ### Generic Web Search
 

@@ -60,7 +60,9 @@ eggsearch/
     meta/                # MetadataSearchAdapter + vendored engines
     fetch/               # HTTP fetch client, HTML structural rendering, and extraction
     mcp/                 # MCP server (rmcp)
-  tests/integration.rs   # end-to-end tool tests with mock engines
+  tests/                 # integration, corpus, and contract tests
+  docs/                  # integration guides, tool matrix, architecture contracts
+  plans/                 # roadmap and phase documentation
 ```
 
 For a full module map, read `src/lib.rs` to see re-exports, then explore submodules as needed.

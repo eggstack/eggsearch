@@ -6799,6 +6799,52 @@ mod repo_search {
     }
 
     #[tokio::test]
+    async fn security_search_default_routing_queries_only_selected_providers() {
+        let engines = vec![
+            MockEngine::success(
+                "mock_a",
+                vec![MockResult::new(
+                    "Selected provider advisory",
+                    "https://example.com/a",
+                    "mock_a",
+                )],
+            ),
+            MockEngine::success(
+                "mock_b",
+                vec![MockResult::new(
+                    "Unselected provider advisory",
+                    "https://example.com/b",
+                    "mock_b",
+                )],
+            ),
+        ];
+        let mut cfg = test_cfg();
+        cfg.search.default_providers = vec!["mock_a".to_string()];
+        let state = security_state_with_engines(cfg, engines, Duration::from_secs(5));
+
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001".into()),
+                providers: vec![],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let queried = v["providers_queried"].as_array().unwrap();
+        let queried_ids: Vec<&str> = queried.iter().filter_map(|q| q.as_str()).collect();
+        assert_eq!(queried_ids, vec!["mock_a"]);
+
+        let selected = v["routing_decision"]["selected_providers"]
+            .as_array()
+            .expect("selected providers");
+        let selected_ids: Vec<&str> = selected.iter().filter_map(|q| q.as_str()).collect();
+        assert_eq!(selected_ids, vec!["mock_a"]);
+    }
+
+    #[tokio::test]
     async fn security_search_empty_query_without_identifiers_fails() {
         let state = state_with_default();
         let result = run_security_search(
@@ -9412,6 +9458,73 @@ async fn workspace_fetch_reads_local_file() {
     assert_eq!(lines.len(), 3, "should return lines 1-3, got: {lines:?}");
     assert_eq!(lines[0]["number"], 1);
     assert_eq!(lines[2]["number"], 3);
+}
+
+#[tokio::test]
+async fn workspace_fetch_uses_path_when_repo_differs() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n",
+    )
+    .unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "remote-repo-name".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("workspace fetch should succeed");
+
+    assert_eq!(v["locator"]["path"], "lib.rs");
+    assert_eq!(v["browser_url"], format!("workspace://{root_name}/lib.rs"));
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("pub fn add"),
+        "fetched text should contain the function: {text}"
+    );
 }
 
 #[tokio::test]

@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use eggsearch::core::evidence_bundle::{EvidenceGapKind, compute_bundle_id};
+use eggsearch::core::evidence_bundle::{compute_bundle_id, EvidenceGapKind};
 use eggsearch::core::identity::{
     batch_fetch_id, canonicalize_url, chunk_id, code_span_id, doc_id, fetch_id, locator_id,
     source_id, suggested_fetch_id,
@@ -18,7 +18,7 @@ use eggsearch::core::repo_search::{
     RepoResultGroupKind, RepoSearchMode, RepoSearchRequest, SearchProfile,
 };
 use eggsearch::core::research::{
-    ResearchClaimType, ResearchDomain, ResearchSourceClass, ResearchSearchRequest, ResearchWorkflow,
+    ResearchClaimType, ResearchDomain, ResearchSearchRequest, ResearchSourceClass, ResearchWorkflow,
 };
 use eggsearch::core::security::{
     RemediationCategory, SecurityResultGroupKind, SecuritySearchRequest, SeverityLevel,
@@ -27,11 +27,11 @@ use eggsearch::core::source_card::{RankReason, SourceKind};
 use eggsearch::core::warning::{WarningCode, WarningSeverity};
 use eggsearch::core::workflow::{RecipeDetail, RecipeSupport};
 use eggsearch::core::WebSearchRequest;
-use eggsearch::meta::fetch_ranking::FetchRankReason;
 use eggsearch::mcp::tools::{
     BatchFetchArgs, EvidenceBundleArgs, ProviderStatusArgs, RepoFetchArgs, RepoMapArgs,
     RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
 };
+use eggsearch::meta::fetch_ranking::FetchRankReason;
 
 // ===========================================================================
 // Workstream 1: MCP Schema Contract Tests
@@ -240,7 +240,11 @@ fn assert_serde_enum<T: serde::Serialize + for<'de> serde::Deserialize<'de> + st
     let json = serde_json::to_string(value).unwrap();
     assert_eq!(json, expected_json, "serialize mismatch for {value:?}");
     let parsed: T = serde_json::from_str(&json).unwrap();
-    assert_eq!(format!("{parsed:?}"), format!("{value:?}"), "roundtrip mismatch");
+    assert_eq!(
+        format!("{parsed:?}"),
+        format!("{value:?}"),
+        "roundtrip mismatch"
+    );
 }
 
 #[test]
@@ -355,10 +359,7 @@ fn research_domain_serialized_names_stability() {
     );
     assert_serde_enum(&ResearchDomain::Security, "\"security\"");
     assert_serde_enum(&ResearchDomain::Performance, "\"performance\"");
-    assert_serde_enum(
-        &ResearchDomain::LanguageEcosystem,
-        "\"language_ecosystem\"",
-    );
+    assert_serde_enum(&ResearchDomain::LanguageEcosystem, "\"language_ecosystem\"");
     assert_serde_enum(&ResearchDomain::MachineLearning, "\"machine_learning\"");
     assert_serde_enum(&ResearchDomain::Infrastructure, "\"infrastructure\"");
 }
@@ -366,10 +367,7 @@ fn research_domain_serialized_names_stability() {
 #[test]
 fn research_workflow_serialized_names_stability() {
     assert_serde_enum(&ResearchWorkflow::General, "\"general\"");
-    assert_serde_enum(
-        &ResearchWorkflow::ApiEvaluation,
-        "\"api_evaluation\"",
-    );
+    assert_serde_enum(&ResearchWorkflow::ApiEvaluation, "\"api_evaluation\"");
     assert_serde_enum(
         &ResearchWorkflow::LibraryComparison,
         "\"library_comparison\"",
@@ -383,10 +381,7 @@ fn research_workflow_serialized_names_stability() {
         &ResearchWorkflow::PerformanceInvestigation,
         "\"performance_investigation\"",
     );
-    assert_serde_enum(
-        &ResearchWorkflow::EcosystemSurvey,
-        "\"ecosystem_survey\"",
-    );
+    assert_serde_enum(&ResearchWorkflow::EcosystemSurvey, "\"ecosystem_survey\"");
     assert_serde_enum(
         &ResearchWorkflow::ArchitectureDecision,
         "\"architecture_decision\"",
@@ -471,18 +466,9 @@ fn evidence_gap_kind_serialized_names_stability() {
         "\"no_benchmarks_found\"",
     );
     assert_serde_enum(&EvidenceGapKind::MissingTests, "\"missing_tests\"");
-    assert_serde_enum(
-        &EvidenceGapKind::MissingExamples,
-        "\"missing_examples\"",
-    );
-    assert_serde_enum(
-        &EvidenceGapKind::MissingManifest,
-        "\"missing_manifest\"",
-    );
-    assert_serde_enum(
-        &EvidenceGapKind::MissingChangelog,
-        "\"missing_changelog\"",
-    );
+    assert_serde_enum(&EvidenceGapKind::MissingExamples, "\"missing_examples\"");
+    assert_serde_enum(&EvidenceGapKind::MissingManifest, "\"missing_manifest\"");
+    assert_serde_enum(&EvidenceGapKind::MissingChangelog, "\"missing_changelog\"");
     assert_serde_enum(
         &EvidenceGapKind::MissingSecurityPolicy,
         "\"missing_security_policy\"",
@@ -513,10 +499,7 @@ fn rank_reason_serialized_names_stability() {
         &RankReason::DomainPriorSecurity,
         "\"domain_prior_security\"",
     );
-    assert_serde_enum(
-        &RankReason::DomainPriorRelease,
-        "\"domain_prior_release\"",
-    );
+    assert_serde_enum(&RankReason::DomainPriorRelease, "\"domain_prior_release\"");
     assert_serde_enum(&RankReason::IntentMatch, "\"intent_match\"");
     assert_serde_enum(&RankReason::FreshnessMatch, "\"freshness_match\"");
     assert_serde_enum(&RankReason::ExactTitleMatch, "\"exact_title_match\"");
@@ -934,19 +917,52 @@ fn code_span_id_unrelated_fields_change_id() {
 #[test]
 fn all_warning_codes_serialize_to_expected_snake_case() {
     let expected: Vec<(&WarningCode, &str)> = vec![
-        (&WarningCode::UntrustedExternalContent, "untrusted_external_content"),
-        (&WarningCode::UntrustedLocalWorkspaceContent, "untrusted_local_workspace_content"),
-        (&WarningCode::PromptInjectionMarkerDetected, "prompt_injection_marker_detected"),
+        (
+            &WarningCode::UntrustedExternalContent,
+            "untrusted_external_content",
+        ),
+        (
+            &WarningCode::UntrustedLocalWorkspaceContent,
+            "untrusted_local_workspace_content",
+        ),
+        (
+            &WarningCode::PromptInjectionMarkerDetected,
+            "prompt_injection_marker_detected",
+        ),
         (&WarningCode::SafeSearchUnenforced, "safe_search_unenforced"),
         (&WarningCode::FreshnessUnenforced, "freshness_unenforced"),
-        (&WarningCode::NativeCodeSearchUnavailable, "native_code_search_unavailable"),
-        (&WarningCode::NativeIssueSearchUnavailable, "native_issue_search_unavailable"),
-        (&WarningCode::NativeReleaseSearchUnavailable, "native_release_search_unavailable"),
-        (&WarningCode::NativeAdvisorySearchUnavailable, "native_advisory_search_unavailable"),
-        (&WarningCode::SymbolHintNoNativeProvider, "symbol_hint_no_native_provider"),
-        (&WarningCode::RepoHintsNotEnforcedNatively, "repo_hints_not_enforced_natively"),
-        (&WarningCode::IssueSearchNoNativeProvider, "issue_search_no_native_provider"),
-        (&WarningCode::ReleaseSearchNoNativeProvider, "release_search_no_native_provider"),
+        (
+            &WarningCode::NativeCodeSearchUnavailable,
+            "native_code_search_unavailable",
+        ),
+        (
+            &WarningCode::NativeIssueSearchUnavailable,
+            "native_issue_search_unavailable",
+        ),
+        (
+            &WarningCode::NativeReleaseSearchUnavailable,
+            "native_release_search_unavailable",
+        ),
+        (
+            &WarningCode::NativeAdvisorySearchUnavailable,
+            "native_advisory_search_unavailable",
+        ),
+        (
+            &WarningCode::SymbolHintNoNativeProvider,
+            "symbol_hint_no_native_provider",
+        ),
+        (
+            &WarningCode::RepoHintsNotEnforcedNatively,
+            "repo_hints_not_enforced_natively",
+        ),
+        (
+            &WarningCode::IssueSearchNoNativeProvider,
+            "issue_search_no_native_provider",
+        ),
+        (
+            &WarningCode::ReleaseSearchNoNativeProvider,
+            "release_search_no_native_provider",
+        ),
         (&WarningCode::UnknownProvider, "unknown_provider"),
         (&WarningCode::DisabledProvider, "disabled_provider"),
         (&WarningCode::MissingApiKey, "missing_api_key"),
@@ -956,46 +972,107 @@ fn all_warning_codes_serialize_to_expected_snake_case() {
         (&WarningCode::ProviderCooldown, "provider_cooldown"),
         (&WarningCode::ProfileDegraded, "profile_degraded"),
         (&WarningCode::ProfilePartial, "profile_partial"),
-        (&WarningCode::ProfileProviderNotBuilt, "profile_provider_not_built"),
-        (&WarningCode::ProfileProviderUnknown, "profile_provider_unknown"),
-        (&WarningCode::ProfileProviderUnavailable, "profile_provider_unavailable"),
-        (&WarningCode::CodingProfileDegraded, "coding_profile_degraded"),
+        (
+            &WarningCode::ProfileProviderNotBuilt,
+            "profile_provider_not_built",
+        ),
+        (
+            &WarningCode::ProfileProviderUnknown,
+            "profile_provider_unknown",
+        ),
+        (
+            &WarningCode::ProfileProviderUnavailable,
+            "profile_provider_unavailable",
+        ),
+        (
+            &WarningCode::CodingProfileDegraded,
+            "coding_profile_degraded",
+        ),
         (&WarningCode::LocalRepoMatch, "local_repo_match"),
         (&WarningCode::LocalRepoDirty, "local_repo_dirty"),
-        (&WarningCode::LocalRepoStateUnknown, "local_repo_state_unknown"),
+        (
+            &WarningCode::LocalRepoStateUnknown,
+            "local_repo_state_unknown",
+        ),
         (&WarningCode::LocalSearchTimeout, "local_search_timeout"),
         (&WarningCode::LocalSearchTruncated, "local_search_truncated"),
-        (&WarningCode::FetchContentTruncated, "fetch_content_truncated"),
+        (
+            &WarningCode::FetchContentTruncated,
+            "fetch_content_truncated",
+        ),
         (&WarningCode::FetchLinksTruncated, "fetch_links_truncated"),
         (&WarningCode::FetchWarning, "fetch_warning"),
         (&WarningCode::UnknownWarning, "unknown_warning"),
-        (&WarningCode::RequestDeadlineExceeded, "request_deadline_exceeded"),
+        (
+            &WarningCode::RequestDeadlineExceeded,
+            "request_deadline_exceeded",
+        ),
         (&WarningCode::SubqueryCapApplied, "subquery_cap_applied"),
         (&WarningCode::KevMatch, "kev_match"),
         (&WarningCode::KevAbsentNotProof, "kev_absent_not_proof"),
         (&WarningCode::KevLookupFailed, "kev_lookup_failed"),
         (&WarningCode::KevLookupSkipped, "kev_lookup_skipped"),
         (&WarningCode::SeverityUnavailable, "severity_unavailable"),
-        (&WarningCode::VersionMatchUnavailable, "version_match_unavailable"),
+        (
+            &WarningCode::VersionMatchUnavailable,
+            "version_match_unavailable",
+        ),
         (&WarningCode::VersionMismatch, "version_mismatch"),
-        (&WarningCode::DependencyFileReadError, "dependency_file_read_error"),
-        (&WarningCode::ApplicabilityNotExploitability, "applicability_not_exploitability"),
-        (&WarningCode::PackageSecurityNoAdvisories, "package_security_no_advisories"),
-        (&WarningCode::PackageSecurityLookupFailed, "package_security_lookup_failed"),
-        (&WarningCode::PackageSecuritySkipped, "package_security_skipped"),
+        (
+            &WarningCode::DependencyFileReadError,
+            "dependency_file_read_error",
+        ),
+        (
+            &WarningCode::ApplicabilityNotExploitability,
+            "applicability_not_exploitability",
+        ),
+        (
+            &WarningCode::PackageSecurityNoAdvisories,
+            "package_security_no_advisories",
+        ),
+        (
+            &WarningCode::PackageSecurityLookupFailed,
+            "package_security_lookup_failed",
+        ),
+        (
+            &WarningCode::PackageSecuritySkipped,
+            "package_security_skipped",
+        ),
         (&WarningCode::PackageResolution, "package_resolution"),
-        (&WarningCode::PackageResolutionFallback, "package_resolution_fallback"),
-        (&WarningCode::NoNativeTreeProvider, "no_native_tree_provider"),
-        (&WarningCode::GenericContextUntrusted, "generic_context_untrusted"),
-        (&WarningCode::ProviderResolutionFailed, "provider_resolution_failed"),
-        (&WarningCode::DefaultProviderResolutionFailed, "default_provider_resolution_failed"),
+        (
+            &WarningCode::PackageResolutionFallback,
+            "package_resolution_fallback",
+        ),
+        (
+            &WarningCode::NoNativeTreeProvider,
+            "no_native_tree_provider",
+        ),
+        (
+            &WarningCode::GenericContextUntrusted,
+            "generic_context_untrusted",
+        ),
+        (
+            &WarningCode::ProviderResolutionFailed,
+            "provider_resolution_failed",
+        ),
+        (
+            &WarningCode::DefaultProviderResolutionFailed,
+            "default_provider_resolution_failed",
+        ),
         (&WarningCode::EmptyResultGroup, "empty_result_group"),
-        (&WarningCode::CardInjectionMarkerDetected, "card_injection_marker_detected"),
+        (
+            &WarningCode::CardInjectionMarkerDetected,
+            "card_injection_marker_detected",
+        ),
         (&WarningCode::MaxResultsClamped, "max_results_clamped"),
     ];
     for (code, expected_str) in &expected {
         let json = serde_json::to_string(code).unwrap();
-        assert_eq!(json, format!("\"{expected_str}\""), "serialize mismatch for {code:?}");
+        assert_eq!(
+            json,
+            format!("\"{expected_str}\""),
+            "serialize mismatch for {code:?}"
+        );
         let as_str = code.as_str();
         assert_eq!(as_str, *expected_str, "as_str mismatch for {code:?}");
     }
@@ -1068,7 +1145,10 @@ fn all_warning_codes_have_default_severity() {
         assert!(
             matches!(
                 severity,
-                WarningSeverity::Notice | WarningSeverity::Warning | WarningSeverity::Error | WarningSeverity::Info
+                WarningSeverity::Notice
+                    | WarningSeverity::Warning
+                    | WarningSeverity::Error
+                    | WarningSeverity::Info
             ),
             "WarningCode::{code:?} returned unexpected severity {severity:?}"
         );
@@ -1126,8 +1206,7 @@ fn fetch_rank_reason_serialization_stability() {
     // Verify all strings are snake_case
     for s in &strings {
         assert!(
-            s.chars()
-                .all(|c| c.is_ascii_lowercase() || c == '_'),
+            s.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
             "non-snake_case FetchRankReason: {s}"
         );
     }
@@ -1170,8 +1249,7 @@ fn evidence_gap_kind_all_snake_case() {
         // Remove quotes
         let s = json.trim_matches('"');
         assert!(
-            s.chars()
-                .all(|c| c.is_ascii_lowercase() || c == '_'),
+            s.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
             "non-snake_case EvidenceGapKind: {s}"
         );
         // Verify roundtrip
@@ -1243,7 +1321,10 @@ fn research_source_class_serialized_names_stability() {
         &ResearchSourceClass::RepositorySource,
         "\"repository_source\"",
     );
-    assert_serde_enum(&ResearchSourceClass::MaintainerIssue, "\"maintainer_issue\"");
+    assert_serde_enum(
+        &ResearchSourceClass::MaintainerIssue,
+        "\"maintainer_issue\"",
+    );
     assert_serde_enum(&ResearchSourceClass::ReleaseNotes, "\"release_notes\"");
     assert_serde_enum(&ResearchSourceClass::Benchmark, "\"benchmark\"");
     assert_serde_enum(&ResearchSourceClass::Paper, "\"paper\"");
@@ -1253,7 +1334,10 @@ fn research_source_class_serialized_names_stability() {
         "\"security_advisory\"",
     );
     assert_serde_enum(&ResearchSourceClass::VendorBlog, "\"vendor_blog\"");
-    assert_serde_enum(&ResearchSourceClass::EngineeringBlog, "\"engineering_blog\"");
+    assert_serde_enum(
+        &ResearchSourceClass::EngineeringBlog,
+        "\"engineering_blog\"",
+    );
     assert_serde_enum(&ResearchSourceClass::ForumThread, "\"forum_thread\"");
     assert_serde_enum(&ResearchSourceClass::NewsArticle, "\"news_article\"");
     assert_serde_enum(&ResearchSourceClass::Unknown, "\"unknown\"");
@@ -1448,7 +1532,11 @@ fn warning_severity_no_duplicate_serialized_names() {
 
 #[test]
 fn recipe_detail_no_duplicate_serialized_names() {
-    let variants = [RecipeDetail::None, RecipeDetail::Summary, RecipeDetail::Full];
+    let variants = [
+        RecipeDetail::None,
+        RecipeDetail::Summary,
+        RecipeDetail::Full,
+    ];
     let names = collect_enum_serialized_names(&variants);
     assert_no_duplicates(&names, "RecipeDetail");
 }
@@ -1507,10 +1595,8 @@ fn rank_reason_no_duplicate_serialized_names() {
 
 #[test]
 fn next_action_reason_codes_web_search() {
-    let actions = eggsearch::meta::recipe_catalog::web_search_next_actions(
-        &["src_1".to_string()],
-        true,
-    );
+    let actions =
+        eggsearch::meta::recipe_catalog::web_search_next_actions(&["src_1".to_string()], true);
     assert!(!actions.is_empty());
     for action in &actions {
         assert!(
@@ -1518,7 +1604,8 @@ fn next_action_reason_codes_web_search() {
             "reason_code must not be empty"
         );
         assert!(
-            action.reason_code
+            action
+                .reason_code
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c == '_'),
             "reason_code must be snake_case: {}",
@@ -1529,10 +1616,8 @@ fn next_action_reason_codes_web_search() {
 
 #[test]
 fn next_action_reason_codes_repo_search() {
-    let actions = eggsearch::meta::recipe_catalog::repo_search_next_actions(
-        &["src_1".to_string()],
-        true,
-    );
+    let actions =
+        eggsearch::meta::recipe_catalog::repo_search_next_actions(&["src_1".to_string()], true);
     assert!(!actions.is_empty());
     for action in &actions {
         assert!(
@@ -1540,7 +1625,8 @@ fn next_action_reason_codes_repo_search() {
             "reason_code must not be empty"
         );
         assert!(
-            action.reason_code
+            action
+                .reason_code
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c == '_'),
             "reason_code must be snake_case: {}",
@@ -1551,10 +1637,8 @@ fn next_action_reason_codes_repo_search() {
 
 #[test]
 fn next_action_reason_codes_security_search() {
-    let actions = eggsearch::meta::recipe_catalog::security_search_next_actions(
-        &["src_1".to_string()],
-        true,
-    );
+    let actions =
+        eggsearch::meta::recipe_catalog::security_search_next_actions(&["src_1".to_string()], true);
     assert!(!actions.is_empty());
     for action in &actions {
         assert!(
@@ -1562,7 +1646,8 @@ fn next_action_reason_codes_security_search() {
             "reason_code must not be empty"
         );
         assert!(
-            action.reason_code
+            action
+                .reason_code
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c == '_'),
             "reason_code must be snake_case: {}",
@@ -1573,10 +1658,8 @@ fn next_action_reason_codes_security_search() {
 
 #[test]
 fn next_action_reason_codes_research_search() {
-    let actions = eggsearch::meta::recipe_catalog::research_search_next_actions(
-        &["src_1".to_string()],
-        true,
-    );
+    let actions =
+        eggsearch::meta::recipe_catalog::research_search_next_actions(&["src_1".to_string()], true);
     assert!(!actions.is_empty());
     for action in &actions {
         assert!(
@@ -1584,7 +1667,8 @@ fn next_action_reason_codes_research_search() {
             "reason_code must not be empty"
         );
         assert!(
-            action.reason_code
+            action
+                .reason_code
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c == '_'),
             "reason_code must be snake_case: {}",
@@ -1659,13 +1743,9 @@ fn warning_code_as_str_all_snake_case() {
     ];
     for code in &all_codes {
         let s = code.as_str();
+        assert!(!s.is_empty(), "as_str() returned empty for {code:?}");
         assert!(
-            !s.is_empty(),
-            "as_str() returned empty for {code:?}"
-        );
-        assert!(
-            s.chars()
-                .all(|c| c.is_ascii_lowercase() || c == '_'),
+            s.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
             "as_str() not snake_case for {code:?}: {s}"
         );
     }

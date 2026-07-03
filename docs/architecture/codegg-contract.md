@@ -554,7 +554,7 @@ Per-tool feature details:
   },
   "repo_search": {
     "profiles": ["generic", "coding", "security", "research"],
-    "package_resolution": ["crates_io", "pypi", "npm", "go"],
+    "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
     "local_workspace": true,
     "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"]
   }

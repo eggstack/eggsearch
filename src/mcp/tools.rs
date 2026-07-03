@@ -41,6 +41,65 @@ impl std::fmt::Display for ToolError {
     }
 }
 
+fn parse_code_host_arg(
+    host: Option<&str>,
+) -> Result<Option<crate::core::code_metadata::CodeHost>, ToolError> {
+    let Some(host) = host else {
+        return Ok(None);
+    };
+
+    let parsed = match host.to_lowercase().as_str() {
+        "github" | "gh" => crate::core::code_metadata::CodeHost::Github,
+        "gitlab" | "gl" => crate::core::code_metadata::CodeHost::Gitlab,
+        "codeberg" | "cb" => crate::core::code_metadata::CodeHost::Codeberg,
+        "gitea" => crate::core::code_metadata::CodeHost::Gitea,
+        "forgejo" => crate::core::code_metadata::CodeHost::Forgejo,
+        other => {
+            return Err(ToolError::Validation(format!(
+                "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
+            )));
+        }
+    };
+
+    Ok(Some(parsed))
+}
+
+fn parse_symbol_kind_arg(
+    symbol_kind: Option<&str>,
+) -> Option<crate::core::code_evidence::SymbolKind> {
+    use crate::core::code_evidence::SymbolKind;
+
+    match symbol_kind?.to_lowercase().as_str() {
+        "function" | "fn" => Some(SymbolKind::Function),
+        "method" => Some(SymbolKind::Method),
+        "struct" => Some(SymbolKind::Struct),
+        "enum" => Some(SymbolKind::Enum),
+        "trait" => Some(SymbolKind::Trait),
+        "class" => Some(SymbolKind::Class),
+        "interface" => Some(SymbolKind::Interface),
+        "module" | "mod" => Some(SymbolKind::Module),
+        "constant" | "const" | "static" => Some(SymbolKind::Constant),
+        "type" | "typealias" => Some(SymbolKind::TypeAlias),
+        "macro" => Some(SymbolKind::Macro),
+        _ => None,
+    }
+}
+
+fn workspace_relative_path_arg(args: &RepoFetchArgs) -> Result<String, ToolError> {
+    let path = args.path.trim();
+    let legacy_repo_path = args.repo.trim();
+
+    if !path.is_empty() {
+        Ok(args.path.clone())
+    } else if !legacy_repo_path.is_empty() {
+        Ok(args.repo.clone())
+    } else {
+        Err(ToolError::Validation(
+            "workspace fetch path must not be empty".to_string(),
+        ))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebSearchArgs {
     /// Search query string. Must be non-empty.
@@ -733,22 +792,7 @@ pub async fn run_repo_search(
         return Err(ToolError::Validation(web_search_denied_message()));
     }
 
-    let host = if let Some(h) = &args.host {
-        match h.to_lowercase().as_str() {
-            "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
-            "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
-            "codeberg" | "cb" => Some(crate::core::code_metadata::CodeHost::Codeberg),
-            "gitea" => Some(crate::core::code_metadata::CodeHost::Gitea),
-            "forgejo" => Some(crate::core::code_metadata::CodeHost::Forgejo),
-            other => {
-                return Err(ToolError::Validation(format!(
-                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
-                )));
-            }
-        }
-    } else {
-        None
-    };
+    let host = parse_code_host_arg(args.host.as_deref())?;
 
     let freshness = args
         .freshness
@@ -1313,11 +1357,24 @@ pub async fn run_web_fetch(
         return Err(ToolError::Validation("max_chars must be > 0".to_string()));
     }
 
+    if let Some(0) = args.timeout_ms {
+        return Err(ToolError::Validation("timeout_ms must be > 0".to_string()));
+    }
+
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
 
-    let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
+    let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
         ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
+
+    let client =
+        if let Some(ms) = args.timeout_ms {
+            Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
+                ToolError::Internal(format!("failed to create timeout override: {e}"))
+            })?)
+        } else {
+            base_client
+        };
 
     let include_links = args
         .include_links
@@ -1453,22 +1510,7 @@ pub async fn run_repo_fetch(
     }
 
     // Parse host.
-    let host = if let Some(h) = &args.host {
-        match h.to_lowercase().as_str() {
-            "github" | "gh" => Some(CodeHost::Github),
-            "gitlab" | "gl" => Some(CodeHost::Gitlab),
-            "codeberg" | "cb" => Some(CodeHost::Codeberg),
-            "gitea" => Some(CodeHost::Gitea),
-            "forgejo" => Some(CodeHost::Forgejo),
-            other => {
-                return Err(ToolError::Validation(format!(
-                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
-                )));
-            }
-        }
-    } else {
-        None
-    };
+    let host = parse_code_host_arg(args.host.as_deref())?;
 
     // Determine effective host: infer from owner/repo if not explicit.
     // For now we require an explicit host or default to GitHub.
@@ -1476,25 +1518,7 @@ pub async fn run_repo_fetch(
 
     let ref_name = args.ref_name.unwrap_or_else(|| "main".to_string());
 
-    // Build and validate the request.
-    // Parse symbol_kind string to SymbolKind enum.
-    let parsed_symbol_kind = args.symbol_kind.as_deref().and_then(|s| {
-        use crate::core::code_evidence::SymbolKind;
-        match s.to_lowercase().as_str() {
-            "function" | "fn" => Some(SymbolKind::Function),
-            "method" => Some(SymbolKind::Method),
-            "struct" => Some(SymbolKind::Struct),
-            "enum" => Some(SymbolKind::Enum),
-            "trait" => Some(SymbolKind::Trait),
-            "class" => Some(SymbolKind::Class),
-            "interface" => Some(SymbolKind::Interface),
-            "module" | "mod" => Some(SymbolKind::Module),
-            "constant" | "const" | "static" => Some(SymbolKind::Constant),
-            "type" | "typealias" => Some(SymbolKind::TypeAlias),
-            "macro" => Some(SymbolKind::Macro),
-            _ => None,
-        }
-    });
+    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref());
 
     let req = RepoFetchRequest {
         host: Some(effective_host),
@@ -1863,22 +1887,7 @@ pub async fn run_repo_map(
         return Err(ToolError::Validation(web_search_denied_message()));
     }
 
-    let host = if let Some(h) = &args.host {
-        match h.to_lowercase().as_str() {
-            "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
-            "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
-            "codeberg" | "cb" => Some(crate::core::code_metadata::CodeHost::Codeberg),
-            "gitea" => Some(crate::core::code_metadata::CodeHost::Gitea),
-            "forgejo" => Some(crate::core::code_metadata::CodeHost::Forgejo),
-            other => {
-                return Err(ToolError::Validation(format!(
-                    "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
-                )));
-            }
-        }
-    } else {
-        None
-    };
+    let host = parse_code_host_arg(args.host.as_deref())?;
 
     let req = RepoMapRequest {
         query: String::new(),
@@ -2533,7 +2542,7 @@ async fn run_workspace_fetch(
     }
 
     let root_name = args.owner.clone();
-    let relative_path = args.repo.clone();
+    let relative_path = workspace_relative_path_arg(&args)?;
 
     // Find the root by name
     let roots = backend.roots();
@@ -2584,23 +2593,7 @@ async fn run_workspace_fetch(
 
     // Apply span selection: resolve symbol/match_text/explicit range
     // to a concrete line span before slicing.
-    let parsed_symbol_kind = args.symbol_kind.as_deref().and_then(|s| {
-        use crate::core::code_evidence::SymbolKind;
-        match s.to_lowercase().as_str() {
-            "function" | "fn" => Some(SymbolKind::Function),
-            "method" => Some(SymbolKind::Method),
-            "struct" => Some(SymbolKind::Struct),
-            "enum" => Some(SymbolKind::Enum),
-            "trait" => Some(SymbolKind::Trait),
-            "class" => Some(SymbolKind::Class),
-            "interface" => Some(SymbolKind::Interface),
-            "module" | "mod" => Some(SymbolKind::Module),
-            "constant" | "const" | "static" => Some(SymbolKind::Constant),
-            "type" | "typealias" => Some(SymbolKind::TypeAlias),
-            "macro" => Some(SymbolKind::Macro),
-            _ => None,
-        }
-    });
+    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref());
 
     let selected_span = crate::fetch::span::select_span(
         &all_lines,
@@ -2860,6 +2853,9 @@ pub async fn run_security_search(
         state.config.search.default_max_results,
         state.config.search.max_results_cap,
     );
+
+    let mut req = req;
+    req.providers = routing_decision.selected_providers.clone();
 
     let mut response = crate::meta::security_search::run_security_search_plan(
         &state.adapter,
@@ -3186,12 +3182,24 @@ mod tests {
 
     #[tokio::test]
     async fn web_fetch_structured_warnings_present() {
-        let cfg = AppConfig::default();
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let _mock = server.mock(|when, then| {
+            when.method(GET).path("/get");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("mock fetch body");
+        });
+
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
         let state = Arc::new(ServerState::build(cfg).unwrap());
         let args = WebFetchArgs {
-            url: "https://httpbin.org/get".to_string(),
+            url: server.url("/get"),
             max_chars: Some(1000),
-            timeout_ms: None,
+            timeout_ms: Some(1000),
             extract_mode: Some(ExtractMode::Text),
             include_links: Some(false),
         };
@@ -3200,6 +3208,27 @@ mod tests {
         assert!(
             value.get("structured_warnings").is_some(),
             "web_fetch response must always include structured_warnings"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_fetch_rejects_zero_timeout() {
+        let cfg = AppConfig::default();
+        let state = Arc::new(ServerState::build(cfg).unwrap());
+        let args = WebFetchArgs {
+            url: "https://example.com/".to_string(),
+            max_chars: Some(1000),
+            timeout_ms: Some(0),
+            extract_mode: Some(ExtractMode::Text),
+            include_links: Some(false),
+        };
+
+        let err = run_web_fetch(state, args)
+            .await
+            .expect_err("zero timeout should fail validation");
+        assert!(
+            err.to_string().contains("timeout_ms must be > 0"),
+            "unexpected error: {err}"
         );
     }
 
