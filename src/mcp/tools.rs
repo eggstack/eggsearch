@@ -1345,6 +1345,8 @@ pub async fn run_web_fetch(
             let payload = serde_json::json!({
                 "url": resp.url,
                 "final_url": resp.final_url,
+                "stable_id": resp.stable_id,
+                "source_id": resp.source_id,
                 "title": resp.title,
                 "description": resp.description,
                 "content_type": resp.content_type,
@@ -1785,6 +1787,10 @@ pub async fn run_repo_fetch(
                     Some(span.line_end),
                     span.symbol.as_deref(),
                 );
+                let imports = code_context
+                    .as_ref()
+                    .map(|c| c.imports.clone())
+                    .unwrap_or_default();
                 CodeSpanEvidence {
                     span_id: id,
                     language: code_context.as_ref().and_then(|c| c.language.clone()),
@@ -1794,6 +1800,14 @@ pub async fn run_repo_fetch(
                     symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{:?}", k)),
                     selection_kind: format!("{:?}", span.selection_kind),
                     confidence: format!("{:?}", span.confidence),
+                    source_id: None,
+                    fetch_id: None,
+                    path: Some(path.to_string()),
+                    source_role: Some(source_role),
+                    imports,
+                    trust: Some(FetchTrust::ExternalUntrusted),
+                    permalink_url: permalink_url.clone(),
+                    raw_permalink_url: raw_permalink_url.clone(),
                 }
             });
 
@@ -2502,6 +2516,7 @@ async fn run_workspace_fetch(
     args: RepoFetchArgs,
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::code_evidence::infer_source_role;
+    use crate::core::local::validate_local_fetch_path;
     use crate::core::repo_fetch::{
         apply_line_range, clamp_lines_to_max_chars, FetchTrust, RepoFetchResponse,
     };
@@ -2519,17 +2534,6 @@ async fn run_workspace_fetch(
 
     let root_name = args.owner.clone();
     let relative_path = args.repo.clone();
-
-    if relative_path.trim().is_empty() {
-        return Err(ToolError::Validation(
-            "repo (file path) must not be empty".to_string(),
-        ));
-    }
-    if relative_path.contains("..") {
-        return Err(ToolError::Validation(
-            "path must not contain '..' (path traversal)".to_string(),
-        ));
-    }
 
     // Find the root by name
     let roots = backend.roots();
@@ -2551,22 +2555,9 @@ async fn run_workspace_fetch(
         ))
     })?;
 
-    let file_path = root_path.join(&relative_path);
-    if !file_path.is_file() {
-        return Err(ToolError::Validation(format!(
-            "file not found: {relative_path}"
-        )));
-    }
-
-    // Validate path is still under the root (defense in depth)
-    let canonical = file_path
-        .canonicalize()
-        .map_err(|e| ToolError::Internal(format!("failed to canonicalize path: {e}")))?;
-    if !canonical.starts_with(root_path) {
-        return Err(ToolError::Validation(
-            "path escapes workspace root".to_string(),
-        ));
-    }
+    // Use centralized path validation for traversal, binary, symlink, and containment checks
+    let canonical = validate_local_fetch_path(root_path, &relative_path, backend.config())
+        .map_err(|e| ToolError::Validation(e.to_string()))?;
 
     // Validate line range
     if let (Some(start), Some(end)) = (args.line_start, args.line_end) {
@@ -2742,6 +2733,10 @@ async fn run_workspace_fetch(
             Some(span.line_end),
             span.symbol.as_deref(),
         );
+        let imports = code_context
+            .as_ref()
+            .map(|c| c.imports.clone())
+            .unwrap_or_default();
         CodeSpanEvidence {
             span_id: id,
             language: code_context.as_ref().and_then(|c| c.language.clone()),
@@ -2751,6 +2746,14 @@ async fn run_workspace_fetch(
             symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{:?}", k)),
             selection_kind: format!("{:?}", span.selection_kind),
             confidence: format!("{:?}", span.confidence),
+            source_id: None,
+            fetch_id: None,
+            path: Some(relative_path.clone()),
+            source_role: Some(source_role),
+            imports,
+            trust: Some(FetchTrust::LocalTrusted),
+            permalink_url: None,
+            raw_permalink_url: None,
         }
     });
 

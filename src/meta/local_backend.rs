@@ -86,6 +86,11 @@ impl LocalWorkspaceBackend {
         self.roots.clone()
     }
 
+    /// Return a reference to the local configuration.
+    pub fn config(&self) -> &LocalConfig {
+        &self.config
+    }
+
     /// Run a local workspace search.
     pub async fn search(&self, req: &LocalSearchRequest) -> LocalSearchResult {
         if !self.is_enabled() {
@@ -244,6 +249,14 @@ impl LocalWorkspaceBackend {
             }
 
             let path = entry.path();
+
+            if !config.follow_symlinks {
+                if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                    if meta.file_type().is_symlink() {
+                        continue;
+                    }
+                }
+            }
 
             if path.is_dir() {
                 if SKIP_DIRS.contains(&file_name_str.as_ref()) {
@@ -450,6 +463,14 @@ impl LocalWorkspaceBackend {
             }
 
             let path = entry.path();
+
+            if !config.follow_symlinks {
+                if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                    if meta.file_type().is_symlink() {
+                        continue;
+                    }
+                }
+            }
 
             if path.is_dir() {
                 if SKIP_DIRS.contains(&file_name_str.as_ref()) {

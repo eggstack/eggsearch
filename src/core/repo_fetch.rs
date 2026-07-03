@@ -44,6 +44,36 @@ pub struct CodeSpanEvidence {
     pub selection_kind: String,
     /// Confidence in the span selection (from `SelectedSpan.confidence`).
     pub confidence: String,
+
+    // --- Linking / provenance fields ---
+
+    /// Deterministic source card ID linking this span back to the
+    /// source card that produced it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    /// Deterministic fetch ID linking this span to the fetch that
+    /// retrieved its content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetch_id: Option<String>,
+    /// File path relative to repository or workspace root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Inferred source role for the file containing this span.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_role: Option<SourceRole>,
+    /// Top-level imports or use declarations extracted from the file
+    /// prefix (bounded to a small count for noise reduction).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<String>,
+    /// Trust label for the fetched content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<FetchTrust>,
+    /// Stable permalink URL (human-viewable, when commit SHA is known).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permalink_url: Option<String>,
+    /// Raw content URL at the commit SHA (when commit SHA is known).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_permalink_url: Option<String>,
 }
 
 /// Discriminator for repository locator kinds.

@@ -87,7 +87,7 @@ eggsearch/
       code_host_fetch.rs # resolve_code_host_fetch_target, CodeHostFetchTarget
       package.rs         # PackageEcosystem, PackageCoordinate, PackageResolution types
       workflow.rs        # AgentWorkflowRecipe, AgentNextAction, RecipeSupport types
-      local.rs            # LocalConfig, LocalSearchRequest, LocalSearchResult types
+      local.rs            # LocalConfig, LocalSearchRequest, LocalSearchResult types, validate_local_fetch_path
     meta/                # MetadataSearchAdapter + vendored engines
       mod.rs             # re-exports
       adapter.rs         # MetadataSearchAdapter, convert_aggregated, provider_status
@@ -1047,8 +1047,10 @@ fake `host: "github"` fields.
   for source code files — language, imports, enclosing symbol),
   `code_span: Option<CodeSpanEvidence>` (optional structured code
   span with deterministic `span_id` (`span_<16hex>`), language,
-  line range, symbol name/kind — present when symbol, match_text,
-  or expand_to_block resolves a specific span)
+  line range, symbol name/kind, plus linking fields: `source_id`,
+  `fetch_id`, `path`, `source_role`, `imports`, `trust`,
+  `permalink_url`, `raw_permalink_url` — present when symbol,
+  match_text, or expand_to_block resolves a specific span)
 
 **Supported hosts:**
 - GitHub: full support (raw content via `raw.githubusercontent.com`)
@@ -1477,6 +1479,23 @@ the operator has configured `[local]` in the config file.
   `local_content_marker_warning` emitted on hits. Source lines are NOT
   framed (no `<<<EXTERNAL_UNTRUSTED>>>` wrappers). `TrustMarkers` counts
   are populated in the response.
+
+**Local path validation (`validate_local_fetch_path`):**
+- Centralized path validation in `src/core/local.rs` used by both
+  `repo_fetch` workspace and `prefer_local` paths.
+- `LocalFetchPathError` enum: `Empty`, `PathTraversal`, `AbsolutePath`,
+  `EscapesRoot`, `BinaryFile`, `SymlinkEscapesRoot`, `SymlinkNotAllowed`,
+  `CanonicalizeFailed`, `NotFound`.
+- Checks: empty path, absolute path, `..` traversal, binary file
+  extension, symlink (when `follow_symlinks = false`), canonicalize
+  + root containment, `is_file`.
+- Symlink detection uses `std::fs::symlink_metadata()` to avoid
+  following the link before checking the policy.
+
+**Symlink enforcement in walk:**
+- Both `walk_root()` and `walk_dir_recursive()` in
+  `src/meta/local_backend.rs` use `symlink_metadata()` to detect
+  symlinks and skip them when `config.follow_symlinks = false`.
 
 ### Local Inventory
 

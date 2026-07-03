@@ -7,7 +7,7 @@
 
 use crate::core::code_evidence::SymbolKind;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Configuration for the `[local]` section of the eggsearch config file.
 ///
@@ -216,6 +216,110 @@ pub fn is_binary_extension(path: &str) -> bool {
         .and_then(|e| e.to_str())
         .unwrap_or("");
     BINARY_EXTENSIONS.contains(&ext)
+}
+
+/// Errors that can occur when validating a local fetch path.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum LocalFetchPathError {
+    /// The path is empty.
+    #[error("path must not be empty")]
+    Empty,
+    /// The path contains `..` traversal segments.
+    #[error("path contains '..' (path traversal)")]
+    PathTraversal,
+    /// The path is absolute (starts with `/`).
+    #[error("path must be relative, not absolute")]
+    AbsolutePath,
+    /// The resolved path escapes the allowed workspace root.
+    #[error("path escapes workspace root")]
+    EscapesRoot,
+    /// The file is a known binary extension and cannot be fetched as text.
+    #[error("binary file extension: {0}")]
+    BinaryFile(String),
+    /// The symlink target escapes the allowed workspace root.
+    #[error("symlink escapes workspace root")]
+    SymlinkEscapesRoot,
+    /// The file is a symlink but follow_symlinks is disabled.
+    #[error("symlink not followed (follow_symlinks = false)")]
+    SymlinkNotAllowed,
+    /// The path cannot be canonicalized.
+    #[error("failed to canonicalize path: {0}")]
+    CanonicalizeFailed(String),
+    /// The resolved path does not exist or is not a file.
+    #[error("file not found")]
+    NotFound,
+}
+
+/// Validate a local workspace fetch path against a known root and
+/// configuration. Returns the canonicalized path on success.
+///
+/// This centralizes all path safety checks for workspace fetch:
+/// traversal rejection, symlink policy enforcement, binary extension
+/// rejection, and canonical root containment.
+pub fn validate_local_fetch_path(
+    root: &Path,
+    requested_relative_path: &str,
+    cfg: &LocalConfig,
+) -> Result<PathBuf, LocalFetchPathError> {
+    // 1. Empty check
+    if requested_relative_path.trim().is_empty() {
+        return Err(LocalFetchPathError::Empty);
+    }
+
+    // 2. Absolute path rejection
+    if requested_relative_path.starts_with('/') {
+        return Err(LocalFetchPathError::AbsolutePath);
+    }
+
+    // 3. Path traversal rejection
+    if requested_relative_path.contains("..") {
+        return Err(LocalFetchPathError::PathTraversal);
+    }
+
+    // 4. Binary extension rejection
+    if is_binary_extension(requested_relative_path) {
+        return Err(LocalFetchPathError::BinaryFile(
+            requested_relative_path.to_string(),
+        ));
+    }
+
+    // 5. Build the candidate path
+    let candidate = root.join(requested_relative_path);
+
+    // 6. Verify it exists and is a regular file (before canonicalize, which fails on missing paths)
+    if !candidate.exists() {
+        return Err(LocalFetchPathError::NotFound);
+    }
+
+    // 7. Check symlink semantics (lmetadata does not follow symlinks)
+    if !cfg.follow_symlinks {
+        if let Ok(meta) = std::fs::symlink_metadata(&candidate) {
+            if meta.file_type().is_symlink() {
+                return Err(LocalFetchPathError::SymlinkNotAllowed);
+            }
+        }
+    }
+
+    // 8. Canonicalize (follows symlinks) and validate containment
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|e| LocalFetchPathError::CanonicalizeFailed(e.to_string()))?;
+
+    // Canonicalize root too (macOS /var → /private/var symlinks)
+    let root_canonical = root
+        .canonicalize()
+        .map_err(|e| LocalFetchPathError::CanonicalizeFailed(e.to_string()))?;
+
+    if !canonical.starts_with(&root_canonical) {
+        return Err(LocalFetchPathError::EscapesRoot);
+    }
+
+    // 9. Verify it's a regular file (redundant after exists(), but safe)
+    if !canonical.is_file() {
+        return Err(LocalFetchPathError::NotFound);
+    }
+
+    Ok(canonical)
 }
 
 #[cfg(test)]
@@ -514,5 +618,84 @@ mod tests {
     fn is_binary_extension_double_extension() {
         assert!(is_binary_extension("archive.tar.gz"));
         assert!(is_binary_extension("backup.tar.bz2"));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_empty_rejected() {
+        let root = std::env::temp_dir();
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(&root, "", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::Empty));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_absolute_rejected() {
+        let root = std::env::temp_dir();
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(&root, "/etc/passwd", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::AbsolutePath));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_traversal_rejected() {
+        let root = std::env::temp_dir();
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(&root, "../secret.txt", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::PathTraversal));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_embedded_traversal_rejected() {
+        let root = std::env::temp_dir();
+        let cfg = LocalConfig::default();
+        let err =
+            validate_local_fetch_path(&root, "a/../../secret.txt", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::PathTraversal));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_binary_rejected() {
+        let root = std::env::temp_dir();
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(&root, "image.png", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::BinaryFile(_)));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_symlink_not_allowed_when_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Create a real file
+        std::fs::write(root.join("target.txt"), "hello").unwrap();
+        // Create a symlink to it
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("target.txt"), root.join("link.txt")).unwrap();
+            let mut cfg = LocalConfig::default();
+            cfg.follow_symlinks = false;
+            let err =
+                validate_local_fetch_path(root, "link.txt", &cfg).unwrap_err();
+            assert!(matches!(err, LocalFetchPathError::SymlinkNotAllowed));
+        }
+    }
+
+    #[test]
+    fn validate_local_fetch_path_not_found_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = LocalConfig::default();
+        let err =
+            validate_local_fetch_path(dir.path(), "nonexistent.rs", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::NotFound));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_normal_file_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), "main.rs", &cfg);
+        assert!(result.is_ok());
+        let canonical = result.unwrap();
+        assert!(canonical.is_file());
     }
 }

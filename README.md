@@ -674,6 +674,7 @@ Secondary tool. Fetches one explicit HTTP(S) URL and returns bounded extracted t
 {
   "url": "https://docs.rs/tower-http/latest/tower_http/",
   "final_url": "https://docs.rs/tower-http/latest/tower_http/",
+  "stable_id": "fetch_a1b2c3d4e5f67890",
   "title": "tower_http - Rust",
   "description": null,
   "content_type": "text/html; charset=utf-8",
@@ -1366,7 +1367,9 @@ line span was chosen: `line_start`, `line_end`, `selection_kind`
 When a symbol, match, or block expansion resolves a specific span,
 the response also includes a `code_span` object with deterministic
 `span_id` (`span_<16hex>`), `language`, `line_start`, `line_end`,
-`symbol_name`, and `symbol_kind`.
+`symbol_name`, `symbol_kind`, plus linking fields: `source_id`,
+`fetch_id`, `path`, `source_role`, `imports`, `trust`,
+`permalink_url`, `raw_permalink_url`.
 
 When a line range exceeds the file, it is silently clamped to the
 available lines. Context lines are applied after clamping. Workspace
@@ -1843,6 +1846,8 @@ When `local.enabled = true`, `repo_search` can return local files alongside remo
 **Workspace identity:** Each discovered Git workspace root exposes a `workspace_id` — a deterministic FNV-1a hash of the canonical root path, remote URLs, and HEAD commit. The workspace identity also includes git state: current branch, HEAD commit SHA, working tree dirty state (clean/dirty/unknown/not-git), and counts of untracked and ignored files (capped at 999). These fields let agents understand checkout state and detect stale or modified local evidence.
 
 `repo_fetch` with `host = "workspace"` reads files directly from the local filesystem, supporting line-range extraction. This bypasses `[fetch].enabled` since no network is involved. `repo_fetch` with `prefer_local: true` resolves a remote-style request (owner/repo/path) to a local workspace checkout when a matching checkout exists under the configured roots, falling back to remote fetch when no local match is found.
+
+**Local path validation:** Workspace fetch uses a centralized `validate_local_fetch_path` helper that rejects empty paths, absolute paths, `..` traversal, binary file extensions, symlinks (when `follow_symlinks = false`), and paths that escape the configured root. Symlink detection uses `symlink_metadata()` to avoid following the link before checking the policy. The walk logic in `local_backend.rs` also skips symlinks when `follow_symlinks = false`.
 
 **Local repository identity and routing:** When `[local].enabled = true`, eggsearch automatically discovers Git repositories under configured roots and normalizes their remote URLs to structured identities (host, owner, repo). When `repo_search` queries a specific `owner/repo` that matches a local checkout, local results include `local_repo_match` metadata with the remote host, owner, repo name, current branch and commit SHA, working tree dirty state (clean/dirty/unknown), and detected package manifests. Matched local results receive a +50 score boost to promote them above remote results. `repo_map` also discovers local checkouts and includes a `local_checkout` field with root name, path, remote identity, branch, commit, dirty state, and detected manifests. The adapter emits `local_repo_match:`, `local_repo_dirty:`, and `local_repo_state_unknown` warnings for visibility.
 
