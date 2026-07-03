@@ -319,6 +319,10 @@ pub async fn run_security_search_plan(
                         ApplicabilityStatus::Unknown => assessment_reasons.push(format!(
                             "could not determine applicability of version {ver} for advisory {advisory_id}"
                         )),
+                        ApplicabilityStatus::InsufficientEvidence => assessment_reasons.push(
+                            "insufficient package/version data to assess applicability"
+                                .to_string(),
+                        ),
                     }
 
                     let key = (advisory_id.clone(), pkg.to_string(), ver.to_string());
@@ -334,10 +338,19 @@ pub async fn run_security_search_plan(
                             package: pkg.to_string(),
                             version: Some(ver.to_string()),
                             advisory_ids: vec![advisory_id],
-                            matched_ranges: outcome.matched_ranges,
+                            matched_ranges: outcome.matched_ranges.clone(),
+                            fixed_versions: outcome
+                                .matched_ranges
+                                .iter()
+                                .flat_map(|r| r.fixed_versions.iter().cloned())
+                                .collect(),
                             reasons: assessment_reasons,
                             evidence_urls: vuln.references.iter().map(|r| r.url.clone()).collect(),
                             warnings: Vec::new(),
+                            version_source: None,
+                            dependency_relation: None,
+                            source_ids: Vec::new(),
+                            fetch_ids: Vec::new(),
                         });
                     }
                 }
@@ -386,7 +399,12 @@ pub async fn run_security_search_plan(
                                 package: finding.package.clone(),
                                 version: Some(ver.clone()),
                                 advisory_ids: vec![advisory_id],
-                                matched_ranges: outcome.matched_ranges,
+                                matched_ranges: outcome.matched_ranges.clone(),
+                                fixed_versions: outcome
+                                    .matched_ranges
+                                    .iter()
+                                    .flat_map(|r| r.fixed_versions.iter().cloned())
+                                    .collect(),
                                 reasons,
                                 evidence_urls: vuln
                                     .references
@@ -394,6 +412,10 @@ pub async fn run_security_search_plan(
                                     .map(|r| r.url.clone())
                                     .collect(),
                                 warnings: Vec::new(),
+                                version_source: None,
+                                dependency_relation: None,
+                                source_ids: Vec::new(),
+                                fetch_ids: Vec::new(),
                             });
                         }
                     }
@@ -525,6 +547,144 @@ pub async fn run_security_search_plan(
         warnings: context_warnings,
     };
 
+    // Generate remediation actions from applicability assessments
+    let mut remediation_actions = Vec::new();
+    for assessment in &applicability_assessments {
+        match assessment.status {
+            crate::core::security_applicability::ApplicabilityStatus::Affected => {
+                if !assessment.fixed_versions.is_empty() {
+                    remediation_actions.push(crate::core::security::SecurityRemediation {
+                        category: crate::core::security::RemediationCategory::Upgrade,
+                        description: format!(
+                            "Upgrade {} to version {} or later",
+                            assessment.package,
+                            assessment.fixed_versions.first().unwrap_or(&String::new())
+                        ),
+                        rationale: format!(
+                            "Advisory {} indicates this package is affected; fixed versions are available",
+                            assessment.advisory_ids.first().unwrap_or(&String::new())
+                        ),
+                        evidence_urls: assessment.evidence_urls.clone(),
+                        fixed_versions: assessment.fixed_versions.clone(),
+                        affected_packages: vec![assessment.package.clone()],
+                        source_ids: assessment.source_ids.clone(),
+                        confidence: crate::core::code_evidence::EvidenceConfidence::Strong,
+                    });
+                } else {
+                    remediation_actions.push(crate::core::security::SecurityRemediation {
+                        category: crate::core::security::RemediationCategory::ManualReview,
+                        description: format!(
+                            "Manual review required for {} - no fixed version available in advisory metadata",
+                            assessment.package
+                        ),
+                        rationale: format!(
+                            "Advisory {} confirms affected status but no fixed version is documented",
+                            assessment.advisory_ids.first().unwrap_or(&String::new())
+                        ),
+                        evidence_urls: assessment.evidence_urls.clone(),
+                        fixed_versions: Vec::new(),
+                        affected_packages: vec![assessment.package.clone()],
+                        source_ids: assessment.source_ids.clone(),
+                        confidence: crate::core::code_evidence::EvidenceConfidence::Weak,
+                    });
+                }
+            }
+            crate::core::security_applicability::ApplicabilityStatus::Unknown => {
+                remediation_actions.push(crate::core::security::SecurityRemediation {
+                    category: crate::core::security::RemediationCategory::ManualReview,
+                    description: format!(
+                        "Manual review required for {} - applicability could not be determined",
+                        assessment.package
+                    ),
+                    rationale:
+                        "Advisory range syntax or version parsing prevented automated assessment"
+                            .to_string(),
+                    evidence_urls: assessment.evidence_urls.clone(),
+                    fixed_versions: assessment.fixed_versions.clone(),
+                    affected_packages: vec![assessment.package.clone()],
+                    source_ids: assessment.source_ids.clone(),
+                    confidence: crate::core::code_evidence::EvidenceConfidence::Unknown,
+                });
+            }
+            crate::core::security_applicability::ApplicabilityStatus::InsufficientEvidence => {
+                remediation_actions.push(crate::core::security::SecurityRemediation {
+                    category: crate::core::security::RemediationCategory::ManualReview,
+                    description: format!(
+                        "Manual review required for {} - insufficient version/dependency data to assess",
+                        assessment.package
+                    ),
+                    rationale: "Query lacked package version or dependency data needed for applicability assessment".to_string(),
+                    evidence_urls: assessment.evidence_urls.clone(),
+                    fixed_versions: Vec::new(),
+                    affected_packages: vec![assessment.package.clone()],
+                    source_ids: assessment.source_ids.clone(),
+                    confidence: crate::core::code_evidence::EvidenceConfidence::Unknown,
+                });
+            }
+            crate::core::security_applicability::ApplicabilityStatus::NotAffected => {
+                // No remediation needed for not-affected packages
+            }
+        }
+    }
+
+    // Build security evidence summary
+    let security_evidence_summary = if !vulnerabilities.is_empty()
+        || !applicability_assessments.is_empty()
+    {
+        let affected_count = applicability_assessments
+            .iter()
+            .filter(|a| {
+                a.status == crate::core::security_applicability::ApplicabilityStatus::Affected
+            })
+            .count();
+        let not_affected_count = applicability_assessments
+            .iter()
+            .filter(|a| {
+                a.status == crate::core::security_applicability::ApplicabilityStatus::NotAffected
+            })
+            .count();
+        let unknown_count = applicability_assessments
+            .iter()
+            .filter(|a| {
+                a.status == crate::core::security_applicability::ApplicabilityStatus::Unknown
+            })
+            .count();
+        let insufficient_evidence_count = applicability_assessments.iter()
+            .filter(|a| a.status == crate::core::security_applicability::ApplicabilityStatus::InsufficientEvidence)
+            .count();
+        let kev_match_present = vulnerabilities.iter().any(|v| v.kev.is_some());
+        let highest_severity = vulnerabilities
+            .iter()
+            .filter_map(|v| v.severity)
+            .max_by_key(|s| match s {
+                crate::core::security::SeverityLevel::Critical => 4,
+                crate::core::security::SeverityLevel::High => 3,
+                crate::core::security::SeverityLevel::Medium => 2,
+                crate::core::security::SeverityLevel::Low => 1,
+                crate::core::security::SeverityLevel::Unknown => 0,
+            });
+        Some(crate::core::security::SecurityEvidenceSummary {
+            total_vulnerabilities: vulnerabilities.len(),
+            total_assessments: applicability_assessments.len(),
+            affected_count,
+            not_affected_count,
+            unknown_count,
+            insufficient_evidence_count,
+            remediation_count: remediation_actions.len(),
+            highest_severity,
+            kev_match_present,
+            source_quality_tier: security_context.source_quality.tier,
+            has_authoritative_source: matches!(
+                security_context.source_quality.tier,
+                crate::core::security::SecuritySourceTier::PrimaryAdvisory
+                    | crate::core::security::SecuritySourceTier::VendorAdvisory
+                    | crate::core::security::SecuritySourceTier::PackageRegistryAdvisory
+            ),
+        })
+    } else {
+        None
+    };
+
     let structured_warnings = crate::core::warning::convert_warnings(&warnings);
 
     SecuritySearchResponse {
@@ -550,6 +710,8 @@ pub async fn run_security_search_plan(
         dependency_findings,
         structured_warnings,
         next_actions: vec![],
+        remediation_actions,
+        security_evidence_summary,
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::core::package::PackageEcosystem;
 use crate::core::security_applicability::{
-    ApplicabilityConfidence, DependencyFinding, DependencySource,
+    ApplicabilityConfidence, DependencyFinding, DependencyRelation, DependencySource,
 };
 
 /// Parse a dependency file and extract dependency findings.
@@ -71,6 +71,7 @@ fn parse_cargo_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num.saturating_sub(2)),
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
             in_package = true;
@@ -101,6 +102,7 @@ fn parse_cargo_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
             source_line: Some(line_num.saturating_sub(1)),
             source_kind: DependencySource::LockFile,
             confidence: Some(ApplicabilityConfidence::High),
+            relation: Some(DependencyRelation::Transitive),
         });
     }
 
@@ -137,6 +139,7 @@ fn parse_cargo_toml(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: Some(line_num),
                         source_kind: DependencySource::Manifest,
                         confidence: Some(ApplicabilityConfidence::Medium),
+                        relation: Some(DependencyRelation::Direct),
                     });
                 }
             } else if let Some(name) = trimmed.split_once(" = ") {
@@ -165,6 +168,7 @@ fn parse_cargo_toml(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: Some(line_num),
                         source_kind: DependencySource::Manifest,
                         confidence: Some(ApplicabilityConfidence::Medium),
+                        relation: Some(DependencyRelation::Direct),
                     });
                 }
             }
@@ -206,6 +210,7 @@ fn parse_package_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: None,
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
         }
@@ -222,6 +227,7 @@ fn parse_package_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: None,
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
         }
@@ -277,6 +283,7 @@ fn parse_go_mod(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num),
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
         }
@@ -343,6 +350,7 @@ fn parse_requirements_txt(content: &str, path: &str) -> Vec<DependencyFinding> {
             source_line: Some(line_num),
             source_kind: DependencySource::Manifest,
             confidence: Some(confidence),
+            relation: Some(DependencyRelation::Direct),
         });
     }
 
@@ -388,6 +396,7 @@ fn parse_gemfile_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                             source_line: Some(line_num),
                             source_kind: DependencySource::LockFile,
                             confidence: Some(ApplicabilityConfidence::High),
+                            relation: Some(DependencyRelation::Transitive),
                         });
                     }
                 }
@@ -422,6 +431,7 @@ fn parse_composer_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: None,
                         source_kind: DependencySource::LockFile,
                         confidence: Some(ApplicabilityConfidence::High),
+                        relation: Some(DependencyRelation::Transitive),
                     });
                 }
             }
@@ -466,6 +476,7 @@ fn parse_pom_xml(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num),
                     source_kind: DependencySource::Manifest,
                     confidence: Some(ApplicabilityConfidence::Medium),
+                    relation: Some(DependencyRelation::Direct),
                 });
             }
             artifact_id.clear();
@@ -499,6 +510,7 @@ fn parse_pom_xml(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: Some(line_num),
                         source_kind: DependencySource::Manifest,
                         confidence: Some(ApplicabilityConfidence::Medium),
+                        relation: Some(DependencyRelation::Direct),
                     });
                 }
                 artifact_id.clear();
@@ -549,6 +561,7 @@ fn parse_csproj(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num),
                     source_kind: DependencySource::Manifest,
                     confidence: Some(ApplicabilityConfidence::Medium),
+                    relation: Some(DependencyRelation::Direct),
                 });
             }
         }
@@ -601,6 +614,7 @@ fn parse_workflow_yml(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: Some(line_num),
                         source_kind: DependencySource::WorkflowFile,
                         confidence: Some(ApplicabilityConfidence::High),
+                        relation: Some(DependencyRelation::Unknown),
                     });
                 }
             }
@@ -633,6 +647,7 @@ fn parse_dockerfile(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: Some(line_num),
                         source_kind: DependencySource::LockFile,
                         confidence: Some(ApplicabilityConfidence::Medium),
+                        relation: Some(DependencyRelation::Transitive),
                     });
                 }
             }
@@ -651,6 +666,7 @@ fn parse_dockerfile(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: Some(line_num),
                         source_kind: DependencySource::LockFile,
                         confidence: Some(ApplicabilityConfidence::Medium),
+                        relation: Some(DependencyRelation::Transitive),
                     });
                 }
             }
@@ -716,6 +732,7 @@ fn parse_yarn_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num),
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
         }
@@ -761,6 +778,7 @@ fn parse_pnpm_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                                 source_line: Some(line_num),
                                 source_kind: DependencySource::LockFile,
                                 confidence: Some(ApplicabilityConfidence::High),
+                                relation: Some(DependencyRelation::Transitive),
                             });
                         }
                     }
@@ -798,6 +816,7 @@ fn parse_poetry_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num.saturating_sub(2)),
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
             in_package = true;
@@ -827,6 +846,7 @@ fn parse_poetry_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
             source_line: Some(line_num),
             source_kind: DependencySource::LockFile,
             confidence: Some(ApplicabilityConfidence::High),
+            relation: Some(DependencyRelation::Transitive),
         });
     }
 
@@ -853,6 +873,7 @@ fn parse_pipfile_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: None,
                         source_kind: DependencySource::LockFile,
                         confidence: Some(ApplicabilityConfidence::High),
+                        relation: Some(DependencyRelation::Transitive),
                     });
                 }
             }
@@ -888,6 +909,7 @@ fn parse_uv_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num.saturating_sub(2)),
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
             in_package = true;
@@ -917,6 +939,7 @@ fn parse_uv_lock(content: &str, path: &str) -> Vec<DependencyFinding> {
             source_line: Some(line_num),
             source_kind: DependencySource::LockFile,
             confidence: Some(ApplicabilityConfidence::High),
+            relation: Some(DependencyRelation::Transitive),
         });
     }
 
@@ -947,6 +970,7 @@ fn parse_go_sum(content: &str, path: &str) -> Vec<DependencyFinding> {
                     source_line: Some(line_num),
                     source_kind: DependencySource::LockFile,
                     confidence: Some(ApplicabilityConfidence::High),
+                    relation: Some(DependencyRelation::Transitive),
                 });
             }
         }
@@ -980,6 +1004,7 @@ fn parse_gradle_lockfile(content: &str, path: &str) -> Vec<DependencyFinding> {
                         source_line: Some(line_num),
                         source_kind: DependencySource::LockFile,
                         confidence: Some(ApplicabilityConfidence::High),
+                        relation: Some(DependencyRelation::Transitive),
                     });
                 }
             }
@@ -1033,6 +1058,7 @@ fn parse_build_gradle(content: &str, path: &str) -> Vec<DependencyFinding> {
                             source_line: Some(line_num),
                             source_kind: DependencySource::Manifest,
                             confidence: Some(ApplicabilityConfidence::Medium),
+                            relation: Some(DependencyRelation::Direct),
                         });
                     }
                 }
@@ -1060,6 +1086,7 @@ fn parse_packages_lock_json(content: &str, path: &str) -> Vec<DependencyFinding>
                         source_line: None,
                         source_kind: DependencySource::LockFile,
                         confidence: Some(ApplicabilityConfidence::High),
+                        relation: Some(DependencyRelation::Transitive),
                     });
                 }
             }

@@ -1163,6 +1163,8 @@ web search results.
 - `SecuritySearchResponse`: vulnerabilities + groups + suggested fetches + security context
   - `applicability: Vec<ApplicabilityAssessment>` — per-package/version applicability assessments (when assess_applicability=true)
   - `dependency_findings: Vec<DependencyFinding>` — dependency entries parsed from local files
+  - `remediation_actions: Vec<SecurityRemediation>` — defensive remediation actions derived from advisory evidence
+  - `security_evidence_summary: Option<SecurityEvidenceSummary>` — aggregate evidence summary with assessment counts, severity, KEV, and source quality
 - `SecurityContext`: structured security context with `query_kind`, `identifiers`,
   `affected_packages`, `vulnerability_summaries`, `defensive_guidance`,
   `source_quality`, `warnings`
@@ -1181,9 +1183,33 @@ web search results.
 - `DefensiveGuidanceCategory`: enum — `Mitigation`, `Workaround`, `ConfigurationChange`,
   `Patching`, `Monitoring`, `AccessControl`, `InputValidation`, `General`
 - `AffectedPackageSummary`: per-package summary with `name`, `ecosystem`,
-  `affected_versions`, `patched_versions`, `severity`, `latest_advisory`
+  `affected_ranges`, `patched_versions`
 - `VulnerabilitySummary`: compact vulnerability summary with `id`, `severity`,
-  `cvss_score`, `affected_packages`, `summary`, `published_at`
+  `description`, `source`, `kev`
+- `SecurityRemediation`: defensive remediation action with `category: RemediationCategory`,
+  `description`, `rationale`, `evidence_urls`, `fixed_versions`, `affected_packages`,
+  `source_ids`, `confidence: EvidenceConfidence`
+- `RemediationCategory`: enum — `Upgrade`, `Pin`, `Replace`, `RemoveDependency`,
+  `ConfigurationMitigation`, `FeatureDisable`, `VulnerableApiAvoidance`,
+  `TransitiveOverride`, `VendorPatch`, `MonitorOnly`, `ManualReview`,
+  `NoActionSupportedByEvidence` (default)
+- `SecuritySourceClass`: enum — `PrimaryAdvisory`, `VendorAdvisory`,
+  `MaintainerAdvisory`, `DatabaseRecord`, `KevRecord`, `ReleaseNote`,
+  `PatchCommit`, `IssueThread`, `ExploitDiscussion`, `DefensiveGuidance`,
+  `SecondaryArticle`, `Unknown` (default)
+- `SecurityRankReason`: enum — `OfficialDatabase`, `VendorMaintained`,
+  `MaintainerSource`, `VersionRangePresent`, `FixedVersionPresent`,
+  `KevMatch`, `PatchEvidence`, `ReleaseNoteEvidence`, `LowAuthority`,
+  `Unknown` (default)
+- `SecurityEvidenceSummary`: aggregate counts — `total_vulnerabilities`,
+  `total_assessments`, `affected_count`, `not_affected_count`, `unknown_count`,
+  `insufficient_evidence_count`, `remediation_count`, `highest_severity`,
+  `kev_match_present`, `source_quality_tier`, `has_authoritative_source`
+- `SecuritySuggestedFetch`: `url`, `reason`, `group`, `priority`, optional
+  `stable_id`, optional `source_id`, optional `score`, optional `rank_reasons`,
+  optional `information_gain`, optional `reason_code` (stable machine-readable
+  reason code), optional `advisory_ids` (Vec of related advisory IDs),
+  optional `package` (related package name), optional `version` (related version)
 
 **Group kinds:** `AuthoritativeAdvisories`, `VendorAdvisories`,
 `PackageAdvisories`, `KevEntries`, `PatchCommitsOrReleases`,
@@ -1300,14 +1326,21 @@ versions and returns structured assessments.
 - `dependency_findings: Vec<DependencyFinding>` — parsed dependency entries
 
 **Applicability assessment model:**
-- `status`: `affected`, `not_affected`, or `unknown`
+- `status`: `affected`, `not_affected`, `unknown`, or `insufficient_evidence`
 - `confidence`: `high` (structured ranges + exact version), `medium`
   (manifest range or best-effort), `low` (no structured ranges)
 - `advisory_ids`: matched advisory identifiers
 - `matched_ranges`: advisory ranges used for comparison
+- `fixed_versions`: fixed versions recommended by advisory metadata
 - `reasons`: human-readable explanation of the assessment
 - `evidence_urls`: advisory source URLs
 - `warnings`: assessment-specific warnings
+- `version_source`: source of the dependency version (`lock_file`, `manifest`,
+  `dockerfile`, `workflow_file`, `advisory_metadata`, or `request_field`)
+- `dependency_relation`: whether the dependency is `direct`, `transitive`,
+  or `unknown`
+- `source_ids`: source card IDs this assessment is linked to
+- `fetch_ids`: fetch item IDs this assessment is linked to
 
 **Supported dependency files:**
 - Rust: `Cargo.lock`, `Cargo.toml`
@@ -1325,6 +1358,11 @@ versions and returns structured assessments.
 - OSV JSON: `affected[].ranges[]` with `introduced`/`fixed`/`last_affected` events
 - RustSec: patched/unaffected ranges from advisory metadata
 - Generic: `VulnerabilityMetadata.affected_ranges` and `patched_ranges`
+
+**Dependency relation types (`DependencyRelation` enum):**
+- `Direct`: direct dependency listed in the manifest
+- `Transitive`: transitive dependency resolved via a lockfile
+- `Unknown`: dependency relation could not be determined
 
 **Version comparison:**
 - SemVer-like: crates.io, npm, Go, NuGet, RubyGems, Packagist, PyPI

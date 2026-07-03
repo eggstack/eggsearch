@@ -11,8 +11,13 @@ use crate::core::package::PackageEcosystem;
 pub enum ApplicabilityStatus {
     Affected,
     NotAffected,
+    /// Advisory range syntax, ecosystem mapping, package aliasing, or
+    /// version parsing prevents a firm answer.
     #[default]
     Unknown,
+    /// The query lacks package/version/dependency data needed to assess
+    /// applicability.
+    InsufficientEvidence,
 }
 
 /// Internal tri-state result for advisory range evaluation.
@@ -102,6 +107,21 @@ pub struct AdvisoryRange {
     pub source: String,
 }
 
+/// Whether a dependency is direct or transitive.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyRelation {
+    /// Direct dependency listed in the manifest.
+    Direct,
+    /// Transitive dependency resolved via a lockfile.
+    Transitive,
+    #[default]
+    /// Dependency relation could not be determined.
+    Unknown,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DependencyFinding {
     pub ecosystem: PackageEcosystem,
@@ -115,6 +135,9 @@ pub struct DependencyFinding {
     pub source_kind: DependencySource,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<ApplicabilityConfidence>,
+    /// Whether this is a direct or transitive dependency.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation: Option<DependencyRelation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -130,9 +153,23 @@ pub struct ApplicabilityAssessment {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub matched_ranges: Vec<AdvisoryRange>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixed_versions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasons: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_urls: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// Source of the dependency version (lockfile, manifest, request field, etc.).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_source: Option<DependencySource>,
+    /// Whether this is a direct or transitive dependency.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependency_relation: Option<DependencyRelation>,
+    /// Source card IDs this assessment is linked to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_ids: Vec<String>,
+    /// Fetch item IDs this assessment is linked to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fetch_ids: Vec<String>,
 }

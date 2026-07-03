@@ -127,15 +127,16 @@ pub use sanitize::{
 pub use security::{
     assess_source_quality, build_identifier_list, classify_query_kind, classify_source_tier,
     AffectedPackageSummary, CompactSecurityContext, DefensiveGuidance, DefensiveGuidanceCategory,
-    KevMetadata, SecurityContext, SecurityIdentifier, SecurityIdentifierKind, SecurityIdentifiers,
-    SecurityQueryKind, SecurityResultGroup, SecurityResultGroupKind, SecuritySearchRequest,
-    SecuritySearchResponse, SecuritySourceQuality, SecuritySourceTier, SecuritySuggestedFetch,
-    SeverityLevel, VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
-    VulnerabilitySummary,
+    KevMetadata, RemediationCategory, SecurityContext, SecurityEvidenceSummary, SecurityIdentifier,
+    SecurityIdentifierKind, SecurityIdentifiers, SecurityQueryKind, SecurityRankReason,
+    SecurityRemediation, SecurityResultGroup, SecurityResultGroupKind, SecuritySearchRequest,
+    SecuritySearchResponse, SecuritySourceClass, SecuritySourceQuality, SecuritySourceTier,
+    SecuritySuggestedFetch, SeverityLevel, VulnerabilityMetadata, VulnerabilityReference,
+    VulnerabilitySource, VulnerabilitySummary,
 };
 pub use security_applicability::{
     AdvisoryRange, ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
-    DependencyFinding, DependencySource,
+    DependencyFinding, DependencyRelation, DependencySource,
 };
 pub use source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
 pub use warning::{

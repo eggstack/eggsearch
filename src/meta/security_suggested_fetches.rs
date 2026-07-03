@@ -253,6 +253,35 @@ pub fn generate_security_suggested_fetches(
                 .first()
                 .map(|r| r.as_str().to_string())
                 .unwrap_or_else(|| "suggested".to_string());
+
+            let reason_code = if candidate.group == "AuthoritativeAdvisories" {
+                Some("primary_advisory".to_string())
+            } else {
+                None
+            };
+
+            let mut advisory_ids: Vec<String> = Vec::new();
+            for id in &resolved_ids.cve_ids {
+                if !advisory_ids.contains(id) {
+                    advisory_ids.push(id.clone());
+                }
+            }
+            for id in &resolved_ids.ghsa_ids {
+                if !advisory_ids.contains(id) {
+                    advisory_ids.push(id.clone());
+                }
+            }
+            for id in &resolved_ids.osv_ids {
+                if !advisory_ids.contains(id) {
+                    advisory_ids.push(id.clone());
+                }
+            }
+            for id in &resolved_ids.rustsec_ids {
+                if !advisory_ids.contains(id) {
+                    advisory_ids.push(id.clone());
+                }
+            }
+
             SecuritySuggestedFetch {
                 url: candidate.url,
                 reason,
@@ -267,6 +296,10 @@ pub fn generate_security_suggested_fetches(
                 information_gain: Some(candidate.information_gain),
                 stable_id: None,
                 source_id: candidate.source_card_stable_id,
+                reason_code,
+                advisory_ids,
+                package: package.map(String::from),
+                version: None,
             }
         })
         .collect()

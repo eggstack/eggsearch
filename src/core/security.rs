@@ -951,7 +951,218 @@ impl DefensiveGuidanceCategory {
     }
 }
 
-/// Aggregated security context returned with `security_search` responses.
+/// Defensive remediation action category.
+///
+/// Each category maps to a concrete action a coding agent can take.
+/// The action is evidence-linked and based on advisory metadata, not
+/// runtime exploitability assessment.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RemediationCategory {
+    /// Upgrade to a fixed version.
+    Upgrade,
+    /// Pin to a specific safe version.
+    Pin,
+    /// Replace the vulnerable dependency with an alternative.
+    Replace,
+    /// Remove the dependency entirely.
+    RemoveDependency,
+    /// Apply a configuration-level mitigation.
+    ConfigurationMitigation,
+    /// Disable the vulnerable feature or code path.
+    FeatureDisable,
+    /// Avoid calling the vulnerable API surface.
+    VulnerableApiAvoidance,
+    /// Override a transitive dependency version.
+    TransitiveOverride,
+    /// Apply a vendor-provided patch.
+    VendorPatch,
+    /// Monitor for upstream fixes; no immediate action possible.
+    MonitorOnly,
+    /// Manual review required; insufficient evidence for automated action.
+    ManualReview,
+    /// No actionable remediation supported by available evidence.
+    #[default]
+    NoActionSupportedByEvidence,
+}
+
+impl RemediationCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Upgrade => "upgrade",
+            Self::Pin => "pin",
+            Self::Replace => "replace",
+            Self::RemoveDependency => "remove_dependency",
+            Self::ConfigurationMitigation => "configuration_mitigation",
+            Self::FeatureDisable => "feature_disable",
+            Self::VulnerableApiAvoidance => "vulnerable_api_avoidance",
+            Self::TransitiveOverride => "transitive_override",
+            Self::VendorPatch => "vendor_patch",
+            Self::MonitorOnly => "monitor_only",
+            Self::ManualReview => "manual_review",
+            Self::NoActionSupportedByEvidence => "no_action_supported_by_evidence",
+        }
+    }
+}
+
+/// A defensive remediation action derived from advisory evidence.
+///
+/// Remediation actions are category-based, evidence-linked, and
+/// defensive. They do NOT include exploit instructions or runtime
+/// exploitability determinations.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SecurityRemediation {
+    /// The remediation category.
+    pub category: RemediationCategory,
+    /// Short description of the recommended action.
+    pub description: String,
+    /// Rationale explaining why this action is recommended.
+    pub rationale: String,
+    /// Advisory or evidence URLs supporting this action.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_urls: Vec<String>,
+    /// Fixed versions recommended by advisory metadata, if available.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixed_versions: Vec<String>,
+    /// Packages affected by this remediation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affected_packages: Vec<String>,
+    /// Source card IDs linking to evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_ids: Vec<String>,
+    /// Confidence in the remediation recommendation.
+    pub confidence: crate::core::code_evidence::EvidenceConfidence,
+}
+
+/// Classification of a security source's role in advisory evidence.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SecuritySourceClass {
+    /// Official CVE/NVD/OSV/RustSec advisory.
+    PrimaryAdvisory,
+    /// Vendor-published security advisory.
+    VendorAdvisory,
+    /// Maintainer-published security notice.
+    MaintainerAdvisory,
+    /// Database record (NVD, OSV, GitHub Advisory).
+    DatabaseRecord,
+    /// CISA KEV catalog entry.
+    KevRecord,
+    /// Release notes or changelog with security content.
+    ReleaseNote,
+    /// Patch commit or PR.
+    PatchCommit,
+    /// Issue thread discussing a vulnerability.
+    IssueThread,
+    /// Exploit discussion or proof-of-concept.
+    ExploitDiscussion,
+    /// Defensive guidance or mitigation advice.
+    DefensiveGuidance,
+    /// Secondary article or blog post.
+    SecondaryArticle,
+    #[default]
+    /// Source class could not be determined.
+    Unknown,
+}
+
+impl SecuritySourceClass {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PrimaryAdvisory => "primary_advisory",
+            Self::VendorAdvisory => "vendor_advisory",
+            Self::MaintainerAdvisory => "maintainer_advisory",
+            Self::DatabaseRecord => "database_record",
+            Self::KevRecord => "kev_record",
+            Self::ReleaseNote => "release_note",
+            Self::PatchCommit => "patch_commit",
+            Self::IssueThread => "issue_thread",
+            Self::ExploitDiscussion => "exploit_discussion",
+            Self::DefensiveGuidance => "defensive_guidance",
+            Self::SecondaryArticle => "secondary_article",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Rank reason for security source quality assessment.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityRankReason {
+    /// Source is an official advisory database.
+    OfficialDatabase,
+    /// Source is vendor-maintained.
+    VendorMaintained,
+    /// Source is from the package maintainer.
+    MaintainerSource,
+    /// Advisory contains version range information.
+    VersionRangePresent,
+    /// Advisory contains a fixed version.
+    FixedVersionPresent,
+    /// CVE is in the CISA KEV catalog.
+    KevMatch,
+    /// Source includes patch commit evidence.
+    PatchEvidence,
+    /// Source includes release note evidence.
+    ReleaseNoteEvidence,
+    /// Source is low authority or secondary only.
+    LowAuthority,
+    #[default]
+    /// Rank reason could not be determined.
+    Unknown,
+}
+
+impl SecurityRankReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OfficialDatabase => "official_database",
+            Self::VendorMaintained => "vendor_maintained",
+            Self::MaintainerSource => "maintainer_source",
+            Self::VersionRangePresent => "version_range_present",
+            Self::FixedVersionPresent => "fixed_version_present",
+            Self::KevMatch => "kev_match",
+            Self::PatchEvidence => "patch_evidence",
+            Self::ReleaseNoteEvidence => "release_note_evidence",
+            Self::LowAuthority => "low_authority",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Aggregate security evidence summary for the response.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SecurityEvidenceSummary {
+    /// Total number of vulnerability records found.
+    pub total_vulnerabilities: usize,
+    /// Total number of applicability assessments made.
+    pub total_assessments: usize,
+    /// Count of assessments with `affected` status.
+    pub affected_count: usize,
+    /// Count of assessments with `not_affected` status.
+    pub not_affected_count: usize,
+    /// Count of assessments with `unknown` status.
+    pub unknown_count: usize,
+    /// Count of assessments with `insufficient_evidence` status.
+    pub insufficient_evidence_count: usize,
+    /// Number of remediation actions generated.
+    pub remediation_count: usize,
+    /// Highest severity among found vulnerabilities.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highest_severity: Option<SeverityLevel>,
+    /// Whether any CVE is in the KEV catalog.
+    pub kev_match_present: bool,
+    /// Aggregate source quality tier.
+    pub source_quality_tier: SecuritySourceTier,
+    /// Whether any authoritative advisory source was found.
+    pub has_authoritative_source: bool,
+}
+
+/// A suggested URL for follow-up reading.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SecurityContext {
     /// Classified query intent.
@@ -1082,6 +1293,18 @@ pub struct SecuritySuggestedFetch {
     /// Information gain estimate (0.0 to 1.0).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub information_gain: Option<f32>,
+    /// Stable machine-readable reason code for this suggested fetch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    /// Advisory IDs this suggested fetch relates to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub advisory_ids: Vec<String>,
+    /// Package name this suggested fetch relates to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// Version this suggested fetch relates to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 /// Input shape for the MCP `security_search` tool.
@@ -1197,6 +1420,12 @@ pub struct SecuritySearchResponse {
     /// Next-action hints for chaining tool calls.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub next_actions: Vec<crate::core::workflow::AgentNextAction>,
+    /// Defensive remediation actions derived from advisory evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remediation_actions: Vec<SecurityRemediation>,
+    /// Aggregate security evidence summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_evidence_summary: Option<SecurityEvidenceSummary>,
 }
 
 #[cfg(test)]
@@ -2079,6 +2308,8 @@ mod tests {
             dependency_findings: vec![],
             structured_warnings: vec![],
             next_actions: vec![],
+            remediation_actions: vec![],
+            security_evidence_summary: None,
         };
         let json = serde_json::to_value(&resp).unwrap();
         let groups = json["groups"].as_array().expect("groups");
