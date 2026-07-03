@@ -782,13 +782,133 @@ fn remediation_category_as_str_coverage() {
         ),
     ];
 
-    for (category, expected_str) in all_categories {
-        assert_eq!(
-            category.as_str(),
-            expected_str,
-            "RemediationCategory::{:?} must serialize to '{}'",
-            category,
-            expected_str
-        );
+        for (category, expected_str) in all_categories {
+            assert_eq!(
+                category.as_str(),
+                expected_str,
+                "RemediationCategory::{:?} must serialize to '{}'",
+                category,
+                expected_str
+            );
+        }
     }
+
+// ---------------------------------------------------------------------------
+// 13. Evidence bundle preserves security source metadata
+// -----------------------------------------------------------------------
+
+#[test]
+fn evidence_bundle_preserves_security_source_metadata() {
+    use eggsearch::core::evidence_bundle::{
+        EvidenceBundleRequest, EvidenceSourceInput,
+    };
+    use eggsearch::core::source_card::{SourceKind, SourceMetadata};
+    use eggsearch::meta::evidence_bundle::build_evidence_bundle;
+
+    let metadata = SourceMetadata {
+        source_kind: SourceKind::SecurityAdvisory,
+        domain: Some("osv.dev".to_string()),
+        ..Default::default()
+    };
+
+    let request = EvidenceBundleRequest {
+        goal: Some("security triage for CVE-2024-9999".to_string()),
+        sources: vec![EvidenceSourceInput {
+            id: Some("src_security_001".to_string()),
+            url: Some("https://osv.dev/vulnerability/CVE-2024-9999".to_string()),
+            title: Some("CVE-2024-9999 in test-pkg".to_string()),
+            snippet: Some("Affected versions: >= 2.0.0".to_string()),
+            providers: vec!["osv".to_string()],
+            score: Some(100.0),
+            trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
+            trust_markers: None,
+            metadata: Some(metadata),
+            quality: None,
+        }],
+        fetches: vec![],
+        include_unfetched_sources: Some(true),
+        max_sources: Some(50),
+        max_fetched_items: Some(20),
+        max_total_chars: Some(100_000),
+        warnings: vec![],
+    };
+
+    let bundle = build_evidence_bundle(request);
+
+    assert_eq!(bundle.sources.len(), 1, "must have one source");
+    let source = &bundle.sources[0];
+    assert_eq!(
+        source.source_kind,
+        Some(SourceKind::SecurityAdvisory),
+        "source_kind must be preserved as SecurityAdvisory"
+    );
+    assert_eq!(
+        source.url.as_deref(),
+        Some("https://osv.dev/vulnerability/CVE-2024-9999")
+    );
+    assert_eq!(
+        source.title.as_deref(),
+        Some("CVE-2024-9999 in test-pkg")
+    );
+    assert_eq!(source.provider_id.as_deref(), Some("osv"));
+    assert_eq!(
+        source.trust,
+        eggsearch::core::result::TrustLevel::ExternalUntrusted
+    );
+}
+
+#[test]
+fn evidence_bundle_deduplicates_security_sources_by_url() {
+    use eggsearch::core::evidence_bundle::{
+        EvidenceBundleRequest, EvidenceSourceInput,
+    };
+    use eggsearch::core::source_card::{SourceKind, SourceMetadata};
+    use eggsearch::meta::evidence_bundle::build_evidence_bundle;
+
+    let make_security_source = |id: &str, provider: &str| {
+        EvidenceSourceInput {
+            id: Some(id.to_string()),
+            url: Some("https://osv.dev/vulnerability/CVE-2024-9999".to_string()),
+            title: Some("CVE-2024-9999".to_string()),
+            snippet: Some("Vulnerability details".to_string()),
+            providers: vec![provider.to_string()],
+            score: Some(100.0),
+            trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
+            trust_markers: None,
+            metadata: Some(SourceMetadata {
+                source_kind: SourceKind::SecurityAdvisory,
+                domain: Some("osv.dev".to_string()),
+                ..Default::default()
+            }),
+            quality: None,
+        }
+    };
+
+    let request = EvidenceBundleRequest {
+        goal: Some("dedup test".to_string()),
+        sources: vec![
+            make_security_source("src_001", "osv"),
+            make_security_source("src_002", "duckduckgo"),
+        ],
+        fetches: vec![],
+        include_unfetched_sources: Some(true),
+        max_sources: Some(50),
+        max_fetched_items: Some(20),
+        max_total_chars: Some(100_000),
+        warnings: vec![],
+    };
+
+    let bundle = build_evidence_bundle(request);
+
+    assert_eq!(
+        bundle.sources.len(),
+        1,
+        "duplicate sources with same URL must be deduplicated"
+    );
+    let source = &bundle.sources[0];
+    assert_eq!(
+        source.source_kind,
+        Some(SourceKind::SecurityAdvisory),
+        "deduplicated source must preserve SecurityAdvisory kind"
+    );
 }

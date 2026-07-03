@@ -254,10 +254,17 @@ pub fn generate_security_suggested_fetches(
                 .map(|r| r.as_str().to_string())
                 .unwrap_or_else(|| "suggested".to_string());
 
-            let reason_code = if candidate.group == "AuthoritativeAdvisories" {
-                Some("primary_advisory".to_string())
-            } else {
-                None
+            let reason_code = match candidate.group.as_str() {
+                "AuthoritativeAdvisories" => Some("primary_advisory".to_string()),
+                "VendorAdvisories" => Some("vendor_guidance".to_string()),
+                "PackageAdvisories" if candidate.url.starts_with("workspace://") => {
+                    Some("dependency_context".to_string())
+                }
+                "PackageAdvisories" => Some("database_record".to_string()),
+                "KevEntries" => Some("kev_context".to_string()),
+                "PatchCommitsOrReleases" => Some("patch_evidence".to_string()),
+                "DefensiveGuidance" => Some("defensive_guidance".to_string()),
+                _ => None,
             };
 
             let mut advisory_ids: Vec<String> = Vec::new();
@@ -504,6 +511,117 @@ mod tests {
         assert!(
             !fetch.rank_reasons.is_empty(),
             "rank_reasons should be populated"
+        );
+    }
+
+    #[test]
+    fn reason_code_is_populated_for_all_group_types() {
+        let groups = vec![
+            make_group(
+                SecurityResultGroupKind::AuthoritativeAdvisories,
+                vec![make_card(
+                    "Advisory",
+                    "https://osv.dev/vulnerability/CVE-2024-0001",
+                )],
+            ),
+            make_group(
+                SecurityResultGroupKind::VendorAdvisories,
+                vec![make_card(
+                    "Vendor Advisory",
+                    "https://example.com/vendor-advisory",
+                )],
+            ),
+            make_group(
+                SecurityResultGroupKind::PackageAdvisories,
+                vec![make_card(
+                    "Package Advisory",
+                    "https://crates.io/crates/serde",
+                )],
+            ),
+            make_group(
+                SecurityResultGroupKind::KevEntries,
+                vec![make_card(
+                    "KEV Entry",
+                    "https://www.cisa.gov/known-exploited-vulnerabilities",
+                )],
+            ),
+            make_group(
+                SecurityResultGroupKind::PatchCommitsOrReleases,
+                vec![make_card(
+                    "Patch Release",
+                    "https://github.com/example/repo/releases/tag/v1.2.3",
+                )],
+            ),
+            make_group(
+                SecurityResultGroupKind::DefensiveGuidance,
+                vec![make_card(
+                    "Mitigation Guide",
+                    "https://example.com/mitigation",
+                )],
+            ),
+        ];
+        let ids = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            ..Default::default()
+        };
+        let fetches =
+            generate_security_suggested_fetches(&groups, &ids, None, None, &[]);
+
+        for fetch in &fetches {
+            let expected = match fetch.group {
+                SecurityResultGroupKind::AuthoritativeAdvisories => {
+                    Some("primary_advisory")
+                }
+                SecurityResultGroupKind::VendorAdvisories => {
+                    Some("vendor_guidance")
+                }
+                SecurityResultGroupKind::PackageAdvisories => {
+                    Some("database_record")
+                }
+                SecurityResultGroupKind::KevEntries => Some("kev_context"),
+                SecurityResultGroupKind::PatchCommitsOrReleases => {
+                    Some("patch_evidence")
+                }
+                SecurityResultGroupKind::DefensiveGuidance => {
+                    Some("defensive_guidance")
+                }
+                _ => None,
+            };
+            assert_eq!(
+                fetch.reason_code.as_deref(),
+                expected,
+                "reason_code mismatch for group {:?}: expected {:?}, got {:?}",
+                fetch.group,
+                expected,
+                fetch.reason_code
+            );
+        }
+    }
+
+    #[test]
+    fn dependency_context_reason_code_for_workspace_urls() {
+        let finding = DependencyFinding {
+            ecosystem: crate::core::package::PackageEcosystem::Npm,
+            package: "qs".to_string(),
+            version: Some("6.5.3".to_string()),
+            source_file: Some("/app/package-lock.json".to_string()),
+            source_line: Some(100),
+            source_kind: crate::core::security_applicability::DependencySource::LockFile,
+            confidence: Some(crate::core::security_applicability::ApplicabilityConfidence::Medium),
+            relation: Some(crate::core::security_applicability::DependencyRelation::Transitive),
+        };
+        let ids = SecurityIdentifiers::default();
+        let fetches =
+            generate_security_suggested_fetches(&[], &ids, None, None, &[finding]);
+
+        let dep_fetch = fetches
+            .iter()
+            .find(|f| f.url.contains("workspace://"))
+            .expect("workspace dependency fetch should be present");
+        assert_eq!(
+            dep_fetch.reason_code.as_deref(),
+            Some("dependency_context"),
+            "workspace dependency fetch should have dependency_context reason_code"
         );
     }
 
