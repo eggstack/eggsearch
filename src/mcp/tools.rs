@@ -676,6 +676,14 @@ pub async fn run_web_search(
         })
         .collect();
 
+    let source_ids: Vec<String> = resp
+        .results
+        .iter()
+        .filter_map(|r| r.stable_id.clone())
+        .collect();
+    let has_suggestions = !resp.results.is_empty();
+    let next_actions = crate::meta::web_search_next_actions(&source_ids, has_suggestions);
+
     let payload = serde_json::json!({
         "query": resp.query,
         "mode": resp.mode,
@@ -688,6 +696,7 @@ pub async fn run_web_search(
             .unwrap_or(serde_json::json!({})),
         "routing_decision": serde_json::to_value(&routing_decision)
             .unwrap_or(serde_json::json!({})),
+        "next_actions": next_actions,
     });
 
     if providers_failed.len() == effective_providers.len()
@@ -975,6 +984,17 @@ pub async fn run_repo_search(
     // Add routing decision telemetry
     response.telemetry.routing_decision = Some(routing_decision);
 
+    // Add next-action hints
+    let source_ids: Vec<String> = response
+        .groups
+        .iter()
+        .flat_map(|g| &g.results)
+        .filter_map(|r| r.stable_id.clone())
+        .collect();
+    let has_suggested_fetches = !response.suggested_fetches.is_empty();
+    response.next_actions =
+        crate::meta::repo_search_next_actions(&source_ids, has_suggested_fetches);
+
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
 
@@ -1076,6 +1096,17 @@ pub async fn run_research_search(
             ),
         );
     }
+
+    // Add next-action hints
+    let source_ids: Vec<String> = response
+        .groups
+        .iter()
+        .flat_map(|g| &g.results)
+        .filter_map(|r| r.stable_id.clone())
+        .collect();
+    let has_suggested_fetches = !response.suggested_fetches.is_empty();
+    response.next_actions =
+        crate::meta::research_search_next_actions(&source_ids, has_suggested_fetches);
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
@@ -1180,6 +1211,7 @@ pub fn run_provider_status(
                 "max_total_chars": crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP,
             },
         },
+        "workflow_recipes": crate::meta::recipe_catalog::build_recipe_catalog(&descriptors, local_enabled),
     });
     Ok(payload)
 }
@@ -2773,6 +2805,17 @@ pub async fn run_security_search(
     .await;
 
     response.routing_decision = Some(routing_decision);
+
+    // Add next-action hints
+    let source_ids: Vec<String> = response
+        .groups
+        .iter()
+        .flat_map(|g| &g.results)
+        .filter_map(|r| r.stable_id.clone())
+        .collect();
+    let has_suggested_fetches = !response.suggested_fetches.is_empty();
+    response.next_actions =
+        crate::meta::security_search_next_actions(&source_ids, has_suggested_fetches);
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;

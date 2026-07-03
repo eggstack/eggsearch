@@ -1279,6 +1279,7 @@ impl MetadataSearchAdapter {
             security_context,
             error_context,
             structured_warnings,
+            next_actions: vec![],
         }
     }
 
@@ -1524,6 +1525,7 @@ impl MetadataSearchAdapter {
             workflow_context,
             telemetry,
             structured_warnings,
+            next_actions: vec![],
         }
     }
 }

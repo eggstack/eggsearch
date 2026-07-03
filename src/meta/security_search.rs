@@ -549,6 +549,7 @@ pub async fn run_security_search_plan(
         applicability: applicability_assessments,
         dependency_findings,
         structured_warnings,
+        next_actions: vec![],
     }
 }
 

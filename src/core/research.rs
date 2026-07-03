@@ -571,6 +571,9 @@ pub struct ResearchSearchResponse {
     /// Structured warnings with stable machine-readable codes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
+    /// Suggested next actions for the agent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_actions: Vec<crate::core::workflow::AgentNextAction>,
 }
 
 #[cfg(test)]
@@ -801,6 +804,7 @@ mod tests {
             workflow_context: None,
             telemetry: None,
             structured_warnings: vec![],
+            next_actions: vec![],
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();
@@ -915,6 +919,7 @@ mod tests {
                 routing_decision: None,
             }),
             structured_warnings: vec![],
+            next_actions: vec![],
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();

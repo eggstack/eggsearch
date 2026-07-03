@@ -36,6 +36,8 @@ pub mod package_resolver;
 pub mod planner;
 /// Provider health tracking, routing decisions, and capability enforcement telemetry.
 pub mod provider_diagnostics;
+/// Built-in recipe catalog and capability-to-recipe gating.
+pub mod recipe_catalog;
 pub mod repo_grouping;
 pub mod repo_mapper;
 pub mod repo_planner;
@@ -57,6 +59,10 @@ pub use planner::{build_search_plan, SearchPlan};
 pub use provider_diagnostics::{
     CapabilityEnforcementTelemetry, ProviderHealthRegistry, ProviderHealthSnapshot,
     ProviderHealthStatus, ProviderRoutingDecision, ProviderRoutingError, ProviderSkipReason,
+};
+pub use recipe_catalog::{
+    build_recipe_catalog, repo_search_next_actions, research_search_next_actions,
+    security_search_next_actions, web_search_next_actions,
 };
 pub use repo_grouping::{classify_group, group_results};
 pub use repo_planner::{

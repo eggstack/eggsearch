@@ -86,6 +86,7 @@ eggsearch/
       code_evidence.rs   # CodeEvidence, SourceRole, EvidenceConfidence, URL derivation
       code_host_fetch.rs # resolve_code_host_fetch_target, CodeHostFetchTarget
       package.rs         # PackageEcosystem, PackageCoordinate, PackageResolution types
+      workflow.rs        # AgentWorkflowRecipe, AgentNextAction, RecipeSupport types
       local.rs            # LocalConfig, LocalSearchRequest, LocalSearchResult types
     meta/                # MetadataSearchAdapter + vendored engines
       mod.rs             # re-exports
@@ -109,6 +110,7 @@ eggsearch/
       local_inventory.rs    # local repo identity: remote URL normalization, worktree state, manifest detection
       dispatch.rs          # bounded parallel dispatch for multi-subquery searches
       provider_diagnostics.rs # provider health tracking, routing decisions, capability enforcement
+      recipe_catalog.rs   # 8 built-in workflow recipes with capability gating
       mock.rs            # MockEngine (feature-gated behind `mock`)
       response.rs        # WebSearchResponse, ProviderFailure
       engines/           # vendored search engine implementations
@@ -396,6 +398,11 @@ compatibility.
   - `batch_fetch`: `max_items`, `max_items_cap`, `max_chars_per_item`, `max_total_chars`, `concurrency`
   - `evidence_bundle`: `summarizes: false`, `persists: false`, `max_sources`, `max_fetched_items`, `max_total_chars`
   - `local_workspace`: `enabled`, `symbol_enrichment` (includes `local_repo_match` metadata)
+- `workflow_recipes`: array of 8 built-in `AgentWorkflowRecipe` objects
+  with support status (`available`, `partial`, `unavailable`) evaluated
+  against the current provider configuration. Each recipe includes
+  `id`, `title`, `goal`, `steps`, `fallbacks`, `trust_notes`, and
+  capability requirements. See "Workflow Recipes" below.
 - This is the capability discovery endpoint for MCP clients. Clients
   can use it to determine which specialized tools are available before
   attempting to use them.
@@ -1857,6 +1864,68 @@ how it was linked, what trust level applies, and what evidence is missing.
 **Implementation:**
 - `src/core/evidence_bundle.rs`: core types (`EvidenceBundle`, `EvidenceBundleSource`, `EvidenceBundleFetchedItem`, `EvidenceSourceInput`, `EvidenceFetchInput`, `EvidenceBundleLink`, `EvidenceTrustSummary`, `EvidenceProviderSummary`, `EvidenceGap`, `EvidenceBundleLimits`)
 - `src/meta/evidence_bundle.rs`: deterministic bundling logic, ID computation, gap detection, trust aggregation
+
+### Workflow Recipes
+
+`provider_status` returns a `workflow_recipes` field containing 8
+built-in workflow recipes — machine-readable retrieval playbooks that
+teach agent harnesses when to use which eggsearch tools. Recipes are
+deterministic guidance derived from provider capabilities; they never
+instruct autonomous crawling or automatic link following.
+
+**Recipe support status:**
+- `available`: all required capabilities are present (e.g. `generic_search`
+  is always available)
+- `partial`: some required capabilities are present; the recipe operates
+  with degraded coverage
+- `unavailable`: no required capabilities are present
+
+**Built-in recipe IDs:**
+- `generic_web_lookup` — general web search and fetch
+- `documentation_api_lookup` — find authoritative docs and API references
+- `repository_investigation` — code, issues, releases in a specific repo
+- `exact_error_investigation` — debug compiler/runtime errors
+- `security_package_triage` — vulnerability lookup and applicability
+- `dependency_upgrade_research` — changelogs, migration guides, breaking changes
+- `architecture_deep_research` — multi-source comparison and architectural decisions
+- `local_workspace_investigation` — investigate local workspace source files
+
+**Recipe structure** (`AgentWorkflowRecipe` in `src/core/workflow.rs`):
+- `id`, `title`, `goal`: identity and purpose
+- `suitable_when`, `avoid_when`: when to use (and when not to)
+- `required_capabilities`, `optional_capabilities`: capability gating
+- `steps`: ordered `AgentWorkflowStep` entries with `tool`, `purpose`,
+  `input_hints`, `inspect_fields`, and `next_action_rule`
+- `fallbacks`: alternative paths when the preferred tool is unavailable
+- `expected_outputs`, `trust_notes`: what the recipe produces and safety guidance
+- `support`: current `RecipeSupport` based on enabled providers
+
+**Capability strings** (in `src/meta/recipe_catalog.rs`):
+- `generic_search`, `code_search`, `issue_search`, `release_search`,
+  `security_search`, `local_workspace`, `repo_filter`, `explicit_fetch`
+
+**Next-action hints:**
+`web_search`, `repo_search`, `security_search`, and `research_search`
+responses include a `next_actions` field with up to 5 `AgentNextAction`
+entries. Each entry suggests the most productive follow-up tool call.
+
+**`AgentNextAction` fields** (in `src/core/workflow.rs`):
+- `tool`: target tool name
+- `reason_code`: machine-readable reason (e.g. `inspect_top_source`,
+  `fetch_primary_advisory`, `fetch_counterpoint`, `bundle_evidence`)
+- `priority`: 1 (highest) through 5 (lowest), clamped to 1..=5
+- `input_template`: `serde_json::Value` with suggested input (replace
+  `<placeholders>`)
+- `source_ids`: source card IDs this action relates to
+
+**Agent guidance:**
+- Call `provider_status` to discover available recipes before complex tasks
+- Use `next_actions` from search responses to chain tools without
+  prompt-level reasoning
+- Priority 1 actions are the most productive next step
+- Recipe `support` status is advisory — `partial` recipes still provide
+  value with degraded coverage
+- Recipes never instruct autonomous crawling or link following
 
 ### Code-Host Fetch
 

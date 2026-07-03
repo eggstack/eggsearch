@@ -650,6 +650,9 @@ pub struct RepoSearchResponse {
     /// Structured warnings with stable machine-readable codes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
+    /// Next-action hints for chaining tool calls.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_actions: Vec<crate::core::workflow::AgentNextAction>,
 }
 
 #[cfg(test)]

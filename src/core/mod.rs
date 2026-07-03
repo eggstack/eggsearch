@@ -40,6 +40,8 @@ pub mod security_applicability;
 pub mod source_card;
 /// Structured warning model with stable codes, severity, and deduplication.
 pub mod warning;
+/// Agent workflow recipes and next-action hints for tool sequencing guidance.
+pub mod workflow;
 
 pub use crate::fetch::span::SelectedSpan;
 pub use batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult};
@@ -138,4 +140,8 @@ pub use security_applicability::{
 pub use source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
 pub use warning::{
     convert_warnings, AgentWarning, WarningAccumulator, WarningCode, WarningSeverity,
+};
+pub use workflow::{
+    AgentNextAction, AgentWorkflowFallback, AgentWorkflowRecipe, AgentWorkflowStep, RecipeSupport,
+    MAX_NEXT_ACTIONS,
 };

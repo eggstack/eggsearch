@@ -15178,3 +15178,283 @@ async fn provider_status_repo_map_tool_capabilities() {
         "repo_map should include github in supported_hosts: {hosts:?}"
     );
 }
+
+// ── Phase 7: Workflow Recipes & Next-Action Hints ────────────────
+
+#[test]
+fn provider_status_includes_workflow_recipes() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let recipes = v["workflow_recipes"]
+        .as_array()
+        .expect("workflow_recipes is array");
+    assert!(
+        recipes.len() >= 8,
+        "expected at least 8 recipes, got {}",
+        recipes.len()
+    );
+    let ids: Vec<&str> = recipes.iter().filter_map(|r| r["id"].as_str()).collect();
+    for expected in [
+        "generic_web_lookup",
+        "documentation_api_lookup",
+        "repository_investigation",
+        "exact_error_investigation",
+        "security_package_triage",
+        "dependency_upgrade_research",
+        "architecture_deep_research",
+        "local_workspace_investigation",
+    ] {
+        assert!(
+            ids.contains(&expected),
+            "expected recipe id {expected} in workflow_recipes, got {ids:?}"
+        );
+    }
+}
+
+#[test]
+fn provider_status_recipe_shape_is_stable() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let recipes = v["workflow_recipes"]
+        .as_array()
+        .expect("workflow_recipes is array");
+    for recipe in recipes {
+        assert!(recipe["id"].is_string(), "missing id: {recipe}");
+        assert!(recipe["title"].is_string(), "missing title: {recipe}");
+        assert!(recipe["goal"].is_string(), "missing goal: {recipe}");
+        assert!(
+            recipe["suitable_when"].is_array(),
+            "missing suitable_when: {recipe}"
+        );
+        assert!(
+            recipe["avoid_when"].is_array(),
+            "missing avoid_when: {recipe}"
+        );
+        assert!(recipe["steps"].is_array(), "missing steps: {recipe}");
+        assert!(recipe["support"].is_string(), "missing support: {recipe}");
+        // Every step must reference a known tool
+        let steps = recipe["steps"].as_array().unwrap();
+        assert!(!steps.is_empty(), "recipe {} has no steps", recipe["id"]);
+        for step in steps {
+            assert!(
+                step["tool"].is_string(),
+                "step missing tool in recipe {}: {step}",
+                recipe["id"]
+            );
+            assert!(
+                step["purpose"].is_string(),
+                "step missing purpose in recipe {}: {step}",
+                recipe["id"]
+            );
+        }
+    }
+}
+
+#[test]
+fn provider_status_recipe_support_shape() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let recipes = v["workflow_recipes"]
+        .as_array()
+        .expect("workflow_recipes is array");
+    for recipe in recipes {
+        let status = recipe["support"]
+            .as_str()
+            .expect("support should be string");
+        assert!(
+            matches!(status, "available" | "partial" | "unavailable"),
+            "unexpected support status '{status}' in recipe {}",
+            recipe["id"]
+        );
+    }
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_includes_next_actions() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "test",
+            "https://example.com/test",
+            "mock_a",
+        )],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+
+    let v = run_repo_search(
+        state,
+        RepoSearchArgs {
+            query: "test query".to_string(),
+            providers: vec!["mock_a".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("ok");
+
+    let next_actions = v["next_actions"].as_array().expect("next_actions is array");
+    // With mock results, we should get at least one next action
+    assert!(
+        !next_actions.is_empty(),
+        "repo_search should return next_actions with results"
+    );
+    for action in next_actions {
+        assert!(action["tool"].is_string(), "next_action missing tool");
+        assert!(
+            action["reason_code"].is_string(),
+            "next_action missing reason_code"
+        );
+        assert!(
+            action["priority"].is_number(),
+            "next_action missing priority"
+        );
+        let priority = action["priority"].as_i64().unwrap();
+        assert!(
+            (1..=5).contains(&priority),
+            "priority should be 1-5, got {priority}"
+        );
+    }
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_includes_next_actions() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "test result",
+            "https://example.com/result",
+            "mock_a",
+        )],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+
+    let v = run_web_search(state, args_for(&["mock_a"], "test query"))
+        .await
+        .expect("ok");
+
+    let next_actions = v["next_actions"].as_array().expect("next_actions is array");
+    // With results, web_search should suggest next actions
+    assert!(
+        !next_actions.is_empty(),
+        "web_search should return next_actions with results"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn security_search_includes_next_actions() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new(
+            "CVE-2024-0001 advisory",
+            "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+            "mock_a",
+        )],
+    )];
+    let mut cfg = test_cfg();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+
+    let v = run_security_search(
+        state,
+        SecuritySearchArgs {
+            query: Some("CVE-2024-0001".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("ok");
+
+    let next_actions = v["next_actions"].as_array().expect("next_actions is array");
+    assert!(
+        !next_actions.is_empty(),
+        "security_search should return next_actions with results"
+    );
+    for action in next_actions {
+        assert!(action["tool"].is_string(), "next_action missing tool");
+        assert!(
+            action["reason_code"].is_string(),
+            "next_action missing reason_code"
+        );
+    }
+}
+
+#[test]
+fn workflow_recipe_no_crawling_step() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let recipes = v["workflow_recipes"]
+        .as_array()
+        .expect("workflow_recipes is array");
+    for recipe in recipes {
+        let steps = recipe["steps"].as_array().unwrap();
+        for step in steps {
+            let tool = step["tool"].as_str().unwrap();
+            let purpose = step["purpose"].as_str().unwrap().to_lowercase();
+            assert!(
+                !purpose.contains("crawl") && !purpose.contains("follow links"),
+                "recipe {} step {} purpose should not suggest crawling: {}",
+                recipe["id"],
+                tool,
+                step["purpose"]
+            );
+        }
+    }
+}
+
+#[test]
+fn workflow_recipe_steps_use_real_tools() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let recipes = v["workflow_recipes"]
+        .as_array()
+        .expect("workflow_recipes is array");
+    let known_tools = [
+        "web_search",
+        "web_fetch",
+        "repo_search",
+        "repo_fetch",
+        "repo_map",
+        "security_search",
+        "research_search",
+        "batch_fetch",
+        "provider_status",
+        "build_evidence_bundle",
+    ];
+    for recipe in recipes {
+        let steps = recipe["steps"].as_array().unwrap();
+        for step in steps {
+            let tool = step["tool"].as_str().unwrap();
+            assert!(
+                known_tools.contains(&tool),
+                "recipe {} step uses unknown tool '{}'",
+                recipe["id"],
+                tool
+            );
+        }
+    }
+}
+
+#[test]
+fn provider_status_recipe_next_action_rules_are_valid() {
+    let state = state_with_default();
+    let v = run_provider_status(state, ProviderStatusArgs { probe: false }).expect("ok");
+    let recipes = v["workflow_recipes"]
+        .as_array()
+        .expect("workflow_recipes is array");
+    for recipe in recipes {
+        let steps = recipe["steps"].as_array().unwrap();
+        for step in steps {
+            if let Some(rule) = step.get("next_action_rule").and_then(|r| r.as_str()) {
+                assert!(
+                    !rule.is_empty(),
+                    "empty next_action_rule in recipe {} step {}",
+                    recipe["id"],
+                    step["tool"]
+                );
+            }
+        }
+    }
+}
