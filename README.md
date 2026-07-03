@@ -1900,6 +1900,13 @@ The server discovers tools via the standard MCP `tools/list` handshake.
 The `initialize` response includes `instructions` that tell the agent how
 to use the tools safely.
 
+### Integration guides
+
+- **[Codegg integration guide](docs/codegg-integration.md)** — comprehensive integration reference for coding-agent harnesses covering tool selection policy, task workflows, configuration examples, trust boundaries, evidence bundle handoff, UI/UX guidance, failure handling, and versioning policy.
+- **[Response handling contract](docs/architecture/codegg-contract.md)** — deterministic ID system, structured warning semantics, trust model, next-action handling, and schema stability rules.
+- **[Agent workflows](docs/agent-workflows.md)** — recommended tool call sequences for common agent tasks.
+- **[Tool matrix](docs/tool-matrix.md)** — compact reference table for all 10 stable MCP tools.
+
 ## Security
 
 - All live web results are labeled `external_untrusted`. Agents should

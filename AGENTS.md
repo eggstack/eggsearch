@@ -146,6 +146,13 @@ eggsearch/
   tests/integration.rs   # end-to-end tool tests with mock engines
 ```
 
+## Integration Guides
+
+- `docs/codegg-integration.md` — comprehensive integration reference for coding-agent harnesses (tool selection policy, task workflows, configuration examples, trust boundaries, evidence bundles, UI/UX guidance, failure handling, versioning)
+- `docs/architecture/codegg-contract.md` — response handling contract (deterministic IDs, structured warnings, trust model, next-action semantics, schema stability)
+- `docs/agent-workflows.md` — recommended tool call sequences for common agent tasks
+- `docs/tool-matrix.md` — compact reference table for all 10 stable MCP tools
+
 ## Key Conventions
 
 ### Feature Flags
