@@ -99,6 +99,7 @@ eggsearch/
       research_grouping.rs  # deterministic classification of research results
       research_planner.rs   # subquery generation for research search
       research_suggested_fetches.rs # suggested fetch URL generation for research groups
+      research_evidence_analysis.rs # deterministic claim/conflict/quality/gap analysis
       research_workflow.rs   # workflow dimension generation, coverage, gaps, diversity
       suggested_fetches.rs # suggested fetch URL generation for repo groups
       repo_mapper.rs     # build_fallback_response, suggested fetch generation, subquery planning
@@ -1669,6 +1670,91 @@ budget. When budget is exhausted, subqueries are skipped with a
 
 **Fallback:** if `research_search` is unavailable, use `web_search`
 with `intent` hint.
+
+### Research Evidence Model
+
+`research_search` now includes deterministic evidence analysis: claims,
+conflicts, source quality metadata, and evidence gaps. These are
+computed purely from the grouped result set — no LLM inference, no
+network calls.
+
+**New response fields on `ResearchSearchResponse`:**
+
+- `claims: Vec<ResearchClaim>` — structured claims derived from grouped
+  evidence, bounded at 10
+- `conflicts: Vec<ResearchConflict>` — detected conflicts between
+  sources with opposing evidence, bounded at 5
+- `source_quality: Vec<ResearchSourceQuality>` — per-source quality
+  metadata with class, signals, and staleness indicators
+- `evidence_gaps: Vec<ResearchEvidenceGap>` — missing evidence
+  categories with recommended actions, bounded at 9
+
+**New types** (in `src/core/research.rs`):
+
+- `ResearchClaimType`: `performance`, `security`, `maintenance`,
+  `compatibility`, `architecture`, `api_design`, `operational`,
+  `ecosystem`, `cost`, `unknown`
+- `ResearchSourceClass`: `official_docs`, `reference_docs`,
+  `repository_source`, `maintainer_issue`, `release_notes`, `benchmark`,
+  `paper`, `standard_spec`, `security_advisory`, `vendor_blog`,
+  `engineering_blog`, `forum_thread`, `news_article`, `unknown`
+- `ResearchQualitySignal`: `primary_source`, `maintained_current`,
+  `version_specific`, `commit_pinned`, `reproducible_benchmark`,
+  `peer_reviewed`, `standard_spec_source`, `maintainer_authored`,
+  `stale_source`, `secondary_source`, `anecdotal_source`,
+  `marketing_source`, `conflict_source`
+- `ResearchClaim`: `id`, `text`, `claim_type`, `confidence`,
+  `supporting_source_ids`, `conflicting_source_ids`, `missing_evidence`,
+  `source_quality_notes`
+- `ResearchConflict`: `id`, `topic`, `claim_ids`, `side_a_source_ids`,
+  `side_b_source_ids`, `notes`
+- `ResearchEvidenceGap`: `kind`, `message`, `affected_claim_ids`,
+  `affected_source_ids`, `recommended_actions`
+- `ResearchSourceQuality`: `source_id`, `source_class`,
+  `quality_signals`, `is_stale`, `is_primary`, `evidence_notes`
+
+**Evidence gap kinds:** `no_primary_source`, `no_recent_source`,
+`no_benchmark_source`, `no_security_source`, `no_migration_changelog`,
+`only_secondary_sources`, `conflicting_evidence_unresolved`,
+`source_needs_fetch`, `version_context_missing`
+
+**Claim extraction logic** (in `src/meta/research_evidence_analysis.rs`):
+- Groups with 2+ results produce claims with type derived from the
+  group kind (e.g. Benchmarks → `performance`, SecurityConsiderations
+  → `security`)
+- Counterpoints group produces claims with `conflicting_source_ids`
+- Confidence is derived from group quality summary and result count
+
+**Conflict detection:**
+- Counterpoints group creates a conflict linking to the main claim
+- Groups where cards have very different quality tiers create
+  quality-disagreement conflicts
+
+**Source class classification:**
+- Maps `SourceKind` + URL heuristics to `ResearchSourceClass`
+- URLs containing commit SHAs receive `commit_pinned` signal
+- arxiv.org → `paper`, ietf.org → `standard_spec`
+- stackoverflow.com → `forum_thread`
+- vendor blog domains → `marketing_source`
+
+**Suggested fetch enhancements:**
+- `ResearchSuggestedFetch` now includes optional `source_class` and
+  `reason_code` fields for machine-readable classification
+
+**Evidence bundle integration:**
+- `EvidenceBundleRequest` accepts optional `research_claims` and
+  `research_conflicts` fields
+- `EvidenceBundle` includes the same fields for preserving research
+  context during multi-agent handoff
+
+**Agent guidance:**
+- Use `claims` to understand what structured assertions the evidence
+  supports, and `conflicts` to identify areas of disagreement
+- Use `source_quality` to prefer high-quality sources when fetching
+- Use `evidence_gaps` to identify missing evidence categories and
+  follow `recommended_actions` to fill gaps
+- Claims are deterministic metadata, not truth judgments — agents
+  must still verify claims by fetching primary sources
 
 ### Repo Map
 

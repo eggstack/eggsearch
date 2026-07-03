@@ -114,10 +114,12 @@ pub use repo_search::{
     RepoSearchTelemetry, RepoSuggestedFetch, ResolvedRepoIdentity, SearchProfile,
 };
 pub use research::{
-    EvidenceQuality, ResearchCoverage, ResearchDepth, ResearchDimension, ResearchDomain,
-    ResearchGap, ResearchGapKind, ResearchResultGroup, ResearchResultGroupKind,
-    ResearchSearchRequest, ResearchSearchResponse, ResearchSourceType, ResearchSubquery,
-    ResearchSuggestedFetch, ResearchTelemetry, ResearchWorkflow, ResearchWorkflowContext,
+    EvidenceQuality, ResearchClaim, ResearchClaimType, ResearchConflict, ResearchCoverage,
+    ResearchDepth, ResearchDimension, ResearchDomain, ResearchEvidenceGap, ResearchEvidenceGapKind,
+    ResearchGap, ResearchGapKind, ResearchQualitySignal, ResearchResultGroup,
+    ResearchResultGroupKind, ResearchSearchRequest, ResearchSearchResponse, ResearchSourceClass,
+    ResearchSourceQuality, ResearchSourceType, ResearchSubquery, ResearchSuggestedFetch,
+    ResearchTelemetry, ResearchWorkflow, ResearchWorkflowContext,
 };
 pub use result::{SearchWarning, TrustLevel};
 pub use sanitize::{

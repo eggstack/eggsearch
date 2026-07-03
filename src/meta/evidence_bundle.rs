@@ -107,6 +107,8 @@ pub fn build_evidence_bundle(request: EvidenceBundleRequest) -> EvidenceBundle {
         structured_warnings: crate::core::warning::convert_warnings(&request.warnings),
         warnings: request.warnings,
         limits,
+        research_claims: request.research_claims,
+        research_conflicts: request.research_conflicts,
     }
 }
 
@@ -703,6 +705,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -723,6 +727,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -749,6 +755,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -776,6 +784,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -798,6 +808,8 @@ mod tests {
             max_fetched_items: Some(3),
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -849,6 +861,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: Some(100),
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -912,6 +926,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -936,6 +952,8 @@ mod tests {
                 "_system",
                 "freshness_unenforced: no provider supports freshness".to_string(),
             )],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -971,6 +989,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -991,6 +1011,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1022,6 +1044,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1045,6 +1069,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1063,6 +1089,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let b1 = build_evidence_bundle(make_req());
@@ -1087,6 +1115,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1132,6 +1162,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1161,6 +1193,8 @@ mod tests {
                 "local_workspace",
                 "local_repo_dirty: local checkout has uncommitted changes".to_string(),
             )],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1201,6 +1235,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1226,6 +1262,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1311,6 +1349,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1344,6 +1384,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1369,6 +1411,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1457,6 +1501,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1558,6 +1604,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1640,6 +1688,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1722,6 +1772,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1746,6 +1798,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);
@@ -1799,6 +1853,8 @@ mod tests {
             max_fetched_items: None,
             max_total_chars: None,
             warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
         };
 
         let bundle = build_evidence_bundle(req);

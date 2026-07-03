@@ -564,27 +564,16 @@ mod tests {
             cve_ids: vec!["CVE-2024-0001".to_string()],
             ..Default::default()
         };
-        let fetches =
-            generate_security_suggested_fetches(&groups, &ids, None, None, &[]);
+        let fetches = generate_security_suggested_fetches(&groups, &ids, None, None, &[]);
 
         for fetch in &fetches {
             let expected = match fetch.group {
-                SecurityResultGroupKind::AuthoritativeAdvisories => {
-                    Some("primary_advisory")
-                }
-                SecurityResultGroupKind::VendorAdvisories => {
-                    Some("vendor_guidance")
-                }
-                SecurityResultGroupKind::PackageAdvisories => {
-                    Some("database_record")
-                }
+                SecurityResultGroupKind::AuthoritativeAdvisories => Some("primary_advisory"),
+                SecurityResultGroupKind::VendorAdvisories => Some("vendor_guidance"),
+                SecurityResultGroupKind::PackageAdvisories => Some("database_record"),
                 SecurityResultGroupKind::KevEntries => Some("kev_context"),
-                SecurityResultGroupKind::PatchCommitsOrReleases => {
-                    Some("patch_evidence")
-                }
-                SecurityResultGroupKind::DefensiveGuidance => {
-                    Some("defensive_guidance")
-                }
+                SecurityResultGroupKind::PatchCommitsOrReleases => Some("patch_evidence"),
+                SecurityResultGroupKind::DefensiveGuidance => Some("defensive_guidance"),
                 _ => None,
             };
             assert_eq!(
@@ -611,8 +600,7 @@ mod tests {
             relation: Some(crate::core::security_applicability::DependencyRelation::Transitive),
         };
         let ids = SecurityIdentifiers::default();
-        let fetches =
-            generate_security_suggested_fetches(&[], &ids, None, None, &[finding]);
+        let fetches = generate_security_suggested_fetches(&[], &ids, None, None, &[finding]);
 
         let dep_fetch = fetches
             .iter()

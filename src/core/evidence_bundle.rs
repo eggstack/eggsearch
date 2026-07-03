@@ -303,6 +303,12 @@ pub struct EvidenceBundle {
     pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
     /// Limits that were applied to this bundle.
     pub limits: EvidenceBundleLimits,
+    /// Research claims from the original research search, if bundled evidence came from research_search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_claims: Option<Vec<crate::core::research::ResearchClaim>>,
+    /// Research conflicts from the original research search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_conflicts: Option<Vec<crate::core::research::ResearchConflict>>,
 }
 
 /// Input for a source card from a search response.
@@ -418,6 +424,12 @@ pub struct EvidenceBundleRequest {
     /// Warnings to carry into the bundle from prior responses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<SearchWarning>,
+    /// Optional research claims to include in the bundle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_claims: Option<Vec<crate::core::research::ResearchClaim>>,
+    /// Optional research conflicts to include in the bundle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_conflicts: Option<Vec<crate::core::research::ResearchConflict>>,
 }
 
 /// Default maximum sources in a bundle.

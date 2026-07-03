@@ -41,6 +41,7 @@ pub mod recipe_catalog;
 pub mod repo_grouping;
 pub mod repo_mapper;
 pub mod repo_planner;
+pub mod research_evidence_analysis;
 pub mod research_grouping;
 pub mod research_planner;
 pub mod research_suggested_fetches;

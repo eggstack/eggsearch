@@ -2852,6 +2852,8 @@ pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json:
         max_fetched_items: args.max_fetched_items,
         max_total_chars: args.max_total_chars,
         warnings: vec![],
+        research_claims: None,
+        research_conflicts: None,
     };
 
     let bundle = crate::meta::evidence_bundle::build_evidence_bundle(request);

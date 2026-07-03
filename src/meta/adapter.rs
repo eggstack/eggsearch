@@ -25,6 +25,7 @@ use crate::meta::engines::models::{AggregatedResult, ResultMetadata, SearchResul
 use crate::meta::engines::{build_http_client, SearchEngine};
 use crate::meta::planner::build_search_plan;
 use crate::meta::provider_diagnostics::{FailureClass, ProviderHealthRegistry};
+use crate::meta::research_evidence_analysis::analyze_research_evidence;
 use crate::meta::response::{ProviderFailure, WebSearchResponse};
 
 /// Coarse error class for provider failures. Exposed via `provider_status`
@@ -1511,6 +1512,8 @@ impl MetadataSearchAdapter {
 
         let structured_warnings = crate::core::warning::convert_warnings(&warnings);
 
+        let analysis = analyze_research_evidence(&groups, Some(&req.query));
+
         ResearchSearchResponse {
             query: req.query.clone(),
             mode: "research_metasearch".to_string(),
@@ -1526,6 +1529,10 @@ impl MetadataSearchAdapter {
             telemetry,
             structured_warnings,
             next_actions: vec![],
+            claims: analysis.0,
+            conflicts: analysis.1,
+            source_quality: analysis.2,
+            evidence_gaps: analysis.3,
         }
     }
 }

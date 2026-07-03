@@ -537,6 +537,162 @@ pub struct ResearchSuggestedFetch {
     /// Information gain estimate (0.0 to 1.0).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub information_gain: Option<f32>,
+    /// Source class of the suggested URL's evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_class: Option<ResearchSourceClass>,
+    /// Machine-readable reason code for this suggestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+}
+
+/// Type of claim extracted from research evidence.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum ResearchClaimType {
+    Performance,
+    Security,
+    Maintenance,
+    Compatibility,
+    Architecture,
+    ApiDesign,
+    Operational,
+    Ecosystem,
+    Cost,
+    #[default]
+    Unknown,
+}
+
+/// Classification of a source's role in the research evidence model.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum ResearchSourceClass {
+    OfficialDocs,
+    ReferenceDocs,
+    RepositorySource,
+    MaintainerIssue,
+    ReleaseNotes,
+    Benchmark,
+    Paper,
+    StandardSpec,
+    SecurityAdvisory,
+    VendorBlog,
+    EngineeringBlog,
+    ForumThread,
+    NewsArticle,
+    #[default]
+    Unknown,
+}
+
+/// Quality signal attached to a research source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum ResearchQualitySignal {
+    PrimarySource,
+    MaintainedCurrent,
+    VersionSpecific,
+    CommitPinned,
+    ReproducibleBenchmark,
+    PeerReviewed,
+    StandardSpecSource,
+    MaintainerAuthored,
+    StaleSource,
+    SecondarySource,
+    AnecdotalSource,
+    MarketingSource,
+    ConflictSource,
+}
+
+/// A structured research claim derived from grouped evidence.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchClaim {
+    /// Deterministic claim identifier.
+    pub id: String,
+    /// Human-readable claim text.
+    pub text: String,
+    /// Type of claim (performance, security, etc.).
+    pub claim_type: ResearchClaimType,
+    /// Confidence level in the claim.
+    pub confidence: crate::core::quality::ResultConfidence,
+    /// Source card IDs supporting this claim.
+    pub supporting_source_ids: Vec<String>,
+    /// Source card IDs conflicting with this claim.
+    pub conflicting_source_ids: Vec<String>,
+    /// Missing evidence categories that would strengthen this claim.
+    pub missing_evidence: Vec<String>,
+    /// Brief quality notes about the supporting sources.
+    pub source_quality_notes: Vec<String>,
+}
+
+/// A detected conflict between sources with opposing evidence.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchConflict {
+    /// Deterministic conflict identifier.
+    pub id: String,
+    /// Topic of the conflict.
+    pub topic: String,
+    /// Claim IDs involved in this conflict.
+    pub claim_ids: Vec<String>,
+    /// Source IDs on side A of the conflict.
+    pub side_a_source_ids: Vec<String>,
+    /// Source IDs on side B of the conflict.
+    pub side_b_source_ids: Vec<String>,
+    /// Human-readable notes about the conflict.
+    pub notes: Vec<String>,
+}
+
+/// Kind of evidence gap detected in the research response.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum ResearchEvidenceGapKind {
+    NoPrimarySource,
+    NoRecentSource,
+    NoBenchmarkSource,
+    NoSecuritySource,
+    NoMigrationChangelog,
+    OnlySecondarySources,
+    ConflictingEvidenceUnresolved,
+    SourceNeedsFetch,
+    VersionContextMissing,
+}
+
+/// An evidence gap with guidance for the calling agent.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchEvidenceGap {
+    /// Kind of evidence gap.
+    pub kind: ResearchEvidenceGapKind,
+    /// Human-readable description of the gap.
+    pub message: String,
+    /// Claim IDs affected by this gap.
+    pub affected_claim_ids: Vec<String>,
+    /// Source IDs affected by this gap.
+    pub affected_source_ids: Vec<String>,
+    /// Recommended next actions to address this gap.
+    pub recommended_actions: Vec<crate::core::workflow::AgentNextAction>,
+}
+
+/// Source quality metadata for a single source card.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResearchSourceQuality {
+    /// Deterministic source ID matching the card's stable_id.
+    pub source_id: String,
+    /// Classification of the source's role.
+    pub source_class: ResearchSourceClass,
+    /// Quality signals attached to this source.
+    pub quality_signals: Vec<ResearchQualitySignal>,
+    /// Whether the source appears stale (old content).
+    pub is_stale: bool,
+    /// Whether this is a primary/authoritative source.
+    pub is_primary: bool,
+    /// Brief human-readable quality notes.
+    pub evidence_notes: Vec<String>,
 }
 
 /// Response from research_search.
@@ -574,6 +730,18 @@ pub struct ResearchSearchResponse {
     /// Suggested next actions for the agent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub next_actions: Vec<crate::core::workflow::AgentNextAction>,
+    /// Structured research claims derived from grouped evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claims: Vec<ResearchClaim>,
+    /// Detected conflicts between sources with opposing evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflicts: Vec<ResearchConflict>,
+    /// Evidence quality metadata for each source card.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_quality: Vec<ResearchSourceQuality>,
+    /// Evidence gap analysis for the research response.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_gaps: Vec<ResearchEvidenceGap>,
 }
 
 #[cfg(test)]
@@ -805,6 +973,10 @@ mod tests {
             telemetry: None,
             structured_warnings: vec![],
             next_actions: vec![],
+            claims: vec![],
+            conflicts: vec![],
+            source_quality: vec![],
+            evidence_gaps: vec![],
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();
@@ -920,6 +1092,10 @@ mod tests {
             }),
             structured_warnings: vec![],
             next_actions: vec![],
+            claims: vec![],
+            conflicts: vec![],
+            source_quality: vec![],
+            evidence_gaps: vec![],
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();

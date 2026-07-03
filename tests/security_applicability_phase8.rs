@@ -782,16 +782,16 @@ fn remediation_category_as_str_coverage() {
         ),
     ];
 
-        for (category, expected_str) in all_categories {
-            assert_eq!(
-                category.as_str(),
-                expected_str,
-                "RemediationCategory::{:?} must serialize to '{}'",
-                category,
-                expected_str
-            );
-        }
+    for (category, expected_str) in all_categories {
+        assert_eq!(
+            category.as_str(),
+            expected_str,
+            "RemediationCategory::{:?} must serialize to '{}'",
+            category,
+            expected_str
+        );
     }
+}
 
 // ---------------------------------------------------------------------------
 // 13. Evidence bundle preserves security source metadata
@@ -799,9 +799,7 @@ fn remediation_category_as_str_coverage() {
 
 #[test]
 fn evidence_bundle_preserves_security_source_metadata() {
-    use eggsearch::core::evidence_bundle::{
-        EvidenceBundleRequest, EvidenceSourceInput,
-    };
+    use eggsearch::core::evidence_bundle::{EvidenceBundleRequest, EvidenceSourceInput};
     use eggsearch::core::source_card::{SourceKind, SourceMetadata};
     use eggsearch::meta::evidence_bundle::build_evidence_bundle;
 
@@ -831,6 +829,8 @@ fn evidence_bundle_preserves_security_source_metadata() {
         max_fetched_items: Some(20),
         max_total_chars: Some(100_000),
         warnings: vec![],
+        research_claims: None,
+        research_conflicts: None,
     };
 
     let bundle = build_evidence_bundle(request);
@@ -846,10 +846,7 @@ fn evidence_bundle_preserves_security_source_metadata() {
         source.url.as_deref(),
         Some("https://osv.dev/vulnerability/CVE-2024-9999")
     );
-    assert_eq!(
-        source.title.as_deref(),
-        Some("CVE-2024-9999 in test-pkg")
-    );
+    assert_eq!(source.title.as_deref(), Some("CVE-2024-9999 in test-pkg"));
     assert_eq!(source.provider_id.as_deref(), Some("osv"));
     assert_eq!(
         source.trust,
@@ -859,29 +856,25 @@ fn evidence_bundle_preserves_security_source_metadata() {
 
 #[test]
 fn evidence_bundle_deduplicates_security_sources_by_url() {
-    use eggsearch::core::evidence_bundle::{
-        EvidenceBundleRequest, EvidenceSourceInput,
-    };
+    use eggsearch::core::evidence_bundle::{EvidenceBundleRequest, EvidenceSourceInput};
     use eggsearch::core::source_card::{SourceKind, SourceMetadata};
     use eggsearch::meta::evidence_bundle::build_evidence_bundle;
 
-    let make_security_source = |id: &str, provider: &str| {
-        EvidenceSourceInput {
-            id: Some(id.to_string()),
-            url: Some("https://osv.dev/vulnerability/CVE-2024-9999".to_string()),
-            title: Some("CVE-2024-9999".to_string()),
-            snippet: Some("Vulnerability details".to_string()),
-            providers: vec![provider.to_string()],
-            score: Some(100.0),
-            trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
-            trust_markers: None,
-            metadata: Some(SourceMetadata {
-                source_kind: SourceKind::SecurityAdvisory,
-                domain: Some("osv.dev".to_string()),
-                ..Default::default()
-            }),
-            quality: None,
-        }
+    let make_security_source = |id: &str, provider: &str| EvidenceSourceInput {
+        id: Some(id.to_string()),
+        url: Some("https://osv.dev/vulnerability/CVE-2024-9999".to_string()),
+        title: Some("CVE-2024-9999".to_string()),
+        snippet: Some("Vulnerability details".to_string()),
+        providers: vec![provider.to_string()],
+        score: Some(100.0),
+        trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
+        trust_markers: None,
+        metadata: Some(SourceMetadata {
+            source_kind: SourceKind::SecurityAdvisory,
+            domain: Some("osv.dev".to_string()),
+            ..Default::default()
+        }),
+        quality: None,
     };
 
     let request = EvidenceBundleRequest {
@@ -896,6 +889,8 @@ fn evidence_bundle_deduplicates_security_sources_by_url() {
         max_fetched_items: Some(20),
         max_total_chars: Some(100_000),
         warnings: vec![],
+        research_claims: None,
+        research_conflicts: None,
     };
 
     let bundle = build_evidence_bundle(request);

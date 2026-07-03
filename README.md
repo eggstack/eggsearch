@@ -836,13 +836,48 @@ inspect full content.
   "providers_queried": ["duckduckgo", "brave"],
   "providers_failed": [],
   "warnings": [],
-  "trust_markers": {
-    "text_sanitized": true,
-    "text_truncated": false,
-    "text_framed": true,
-    "control_chars_removed": 0,
-    "injection_hits": 0
-  }
+  "trust_markers": { "..." },
+  "claims": [
+    {
+      "id": "claim_primary_sources_0",
+      "text": "Evidence suggests Primary Sources supports the research topic",
+      "claim_type": "architecture",
+      "confidence": "high",
+      "supporting_source_ids": ["src_abc123..."],
+      "conflicting_source_ids": [],
+      "missing_evidence": [],
+      "source_quality_notes": ["official docs, maintained"]
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "conflict_counterpoints_0",
+      "topic": "Counterpoint evidence found",
+      "claim_ids": ["claim_primary_sources_0"],
+      "side_a_source_ids": ["src_abc123..."],
+      "side_b_source_ids": ["src_def456..."],
+      "notes": ["Sources present opposing viewpoints"]
+    }
+  ],
+  "source_quality": [
+    {
+      "source_id": "src_abc123...",
+      "source_class": "official_docs",
+      "quality_signals": ["primary_source", "maintained_current"],
+      "is_stale": false,
+      "is_primary": true,
+      "evidence_notes": ["official docs, maintained"]
+    }
+  ],
+  "evidence_gaps": [
+    {
+      "kind": "no_benchmark_source",
+      "message": "No benchmark sources found in results",
+      "affected_claim_ids": [],
+      "affected_source_ids": [],
+      "recommended_actions": []
+    }
+  ]
 }
 ```
 

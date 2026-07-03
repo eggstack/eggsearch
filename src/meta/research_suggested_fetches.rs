@@ -6,8 +6,10 @@ use crate::core::research::{
 };
 use crate::core::source_card::SourceKind;
 use crate::meta::fetch_ranking::{
-    extract_domain, rank_and_select, DiversityConfig, FetchCandidate, FetchRankMode, RankContext,
+    extract_domain, rank_and_select, DiversityConfig, FetchCandidate, FetchRankMode,
+    FetchRankReason, RankContext,
 };
+use crate::meta::research_evidence_analysis::classify_source_class;
 use crate::meta::research_grouping::classify_evidence_quality;
 
 /// Map a group string label back to its `ResearchResultGroupKind`.
@@ -102,11 +104,15 @@ pub fn generate_research_suggested_fetches(
                 .map(classify_evidence_quality)
                 .unwrap_or(EvidenceQuality::Unknown);
 
+            let source_class = card.map(classify_source_class);
+
             let reason = candidate
                 .reasons
                 .first()
                 .map(|r| r.as_str().to_string())
                 .unwrap_or_else(|| "suggested".to_string());
+
+            let reason_code = Some(resolve_reason_code(&candidate.reasons, group_kind));
 
             ResearchSuggestedFetch {
                 url: candidate.url,
@@ -125,9 +131,40 @@ pub fn generate_research_suggested_fetches(
                 information_gain: Some(candidate.information_gain),
                 stable_id: None,
                 source_id: candidate.source_card_stable_id,
+                source_class,
+                reason_code,
             }
         })
         .collect()
+}
+
+/// Resolve a machine-readable reason code from rank reasons and group kind.
+fn resolve_reason_code(rank_reasons: &[FetchRankReason], group: ResearchResultGroupKind) -> String {
+    for reason in rank_reasons {
+        match reason {
+            FetchRankReason::PinnedRawPermalink | FetchRankReason::PinnedBrowserPermalink => {
+                return "commit_pinned_evidence".to_string();
+            }
+            FetchRankReason::AuthoritativeAdvisory => return "primary_advisory".to_string(),
+            FetchRankReason::KindOfficialDocs | FetchRankReason::SourceRoleDocumentation => {
+                return "official_docs".to_string();
+            }
+            FetchRankReason::PrimaryResearchSource => return "maintainer_source".to_string(),
+            FetchRankReason::SymbolHintMatch => return "symbol_hint_match".to_string(),
+            _ => {}
+        }
+    }
+
+    match group {
+        ResearchResultGroupKind::Counterpoints => "counterpoint_evidence".to_string(),
+        ResearchResultGroupKind::PrimarySources | ResearchResultGroupKind::OfficialDocs => {
+            "primary_source_evidence".to_string()
+        }
+        ResearchResultGroupKind::Benchmarks => "benchmark_evidence".to_string(),
+        ResearchResultGroupKind::SecurityConsiderations => "security_evidence".to_string(),
+        ResearchResultGroupKind::ReleaseNotes => "release_notes_evidence".to_string(),
+        _ => "suggested_evidence".to_string(),
+    }
 }
 
 fn find_group(
@@ -559,6 +596,78 @@ mod tests {
                 fetch.url
             );
         }
+    }
+
+    #[test]
+    fn source_class_is_populated() {
+        let groups = vec![
+            make_group(
+                ResearchResultGroupKind::PrimarySources,
+                vec![make_card("P1", "https://primary.example.com/p1")],
+            ),
+            make_group(
+                ResearchResultGroupKind::OfficialDocs,
+                vec![make_card("D1", "https://docs.example.com/d1")],
+            ),
+        ];
+        let fetches = generate_research_suggested_fetches(&groups);
+        for fetch in &fetches {
+            assert!(
+                fetch.source_class.is_some(),
+                "source_class should be populated for {}",
+                fetch.url
+            );
+        }
+    }
+
+    #[test]
+    fn reason_code_is_populated() {
+        let groups = vec![
+            make_group(
+                ResearchResultGroupKind::PrimarySources,
+                vec![make_card("P1", "https://primary.example.com/p1")],
+            ),
+            make_group(
+                ResearchResultGroupKind::Benchmarks,
+                vec![make_card("B1", "https://bench.example.com/b1")],
+            ),
+        ];
+        let fetches = generate_research_suggested_fetches(&groups);
+        for fetch in &fetches {
+            assert!(
+                fetch.reason_code.is_some(),
+                "reason_code should be populated for {}",
+                fetch.url
+            );
+        }
+    }
+
+    #[test]
+    fn reason_code_reflects_group_kind() {
+        let groups = vec![make_group(
+            ResearchResultGroupKind::SecurityConsiderations,
+            vec![make_card(
+                "SC",
+                "https://osv.dev/vulnerability/CVE-2024-0001",
+            )],
+        )];
+        let fetches = generate_research_suggested_fetches(&groups);
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason_code.as_deref(), Some("security_evidence"));
+    }
+
+    #[test]
+    fn reason_code_counterpoints() {
+        let groups = vec![make_group(
+            ResearchResultGroupKind::Counterpoints,
+            vec![make_card("CP1", "https://blog.example.com/critique")],
+        )];
+        let fetches = generate_research_suggested_fetches(&groups);
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(
+            fetches[0].reason_code.as_deref(),
+            Some("counterpoint_evidence")
+        );
     }
 
     #[test]
