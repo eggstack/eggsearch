@@ -63,6 +63,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-features -- -D warnings
 
+  schema-corpus:
+    name: Schema Corpus Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --features mock --test schema_identity_registry --test fetch_safety --test security_applicability_corpus --test research_evidence_corpus --test recipes_next_actions --test evidence_bundle_handoff
+
   fmt:
     name: Format
     runs-on: ubuntu-latest

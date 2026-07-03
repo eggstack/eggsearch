@@ -173,6 +173,48 @@ eggsearch/
 - Minimal build test count: ~2601 (`cargo test --no-default-features`)
 - Benchmarks: `cargo bench` (criterion, dev-only; JSON serialization, source-card construction, identity hashing, provider-status serialization)
 
+### Phase 13 Regression Harness
+
+The `tests/` directory contains contract and corpus tests that protect MCP
+schemas, deterministic IDs, warning/reason-code registries, fetch safety,
+security applicability, research evidence, workflow recipes, and evidence
+bundle handoff.
+
+**Test files:**
+- `schema_identity_registry.rs` — MCP schema contracts, golden identity tests, warning/reason-code registry
+- `fetch_safety.rs` — offline HTML/markdown/code fixtures, prompt injection, span expansion, local safety
+- `security_applicability_corpus.rs` — security applicability regression scenarios
+- `research_evidence_corpus.rs` — research evidence analysis regression scenarios
+- `recipes_next_actions.rs` — workflow recipe and next-action contract tests
+- `evidence_bundle_handoff.rs` — evidence bundle handoff tests
+
+**Run all contract tests:**
+```bash
+cargo test --features mock --test schema_identity_registry --test fetch_safety --test security_applicability_corpus --test research_evidence_corpus --test recipes_next_actions --test evidence_bundle_handoff
+```
+
+**Or use the Makefile:**
+```bash
+make schema-corpus
+```
+
+**Adding a new fixture:**
+1. Add the fixture data (inline const string or constructed struct) in the appropriate test file.
+2. Add a test function that exercises the fixture.
+3. Run the specific test binary to verify.
+4. Run `cargo clippy --all-features -- -D warnings` to check.
+
+**What counts as a breaking schema change:**
+- Removing or renaming an enum variant
+- Removing or renaming a struct field
+- Changing a serialized enum string value
+- Changing a deterministic ID for the same input
+- Removing a WarningCode or FetchRankReason variant
+- Changing a recipe ID or step tool reference
+
+**Live smoke tests:**
+Live smoke tests (`cargo test --features live-smoke --test corpus_runner -- --ignored`) require network access and are ignored by default. They validate end-to-end behavior against live search providers.
+
 ### MCP Protocol
 - Server uses `rmcp` crate with `tool_router` proc macros
 - Tools: `web_search` (live metasearch with optional `intent`/`freshness` retrieval hints), `web_fetch` (bounded URL fetch), `provider_status` (diagnostic/host-facing), `repo_search` (structured repository evidence discovery with grouped bundles), `repo_fetch` (fetches repository files by structured locator with optional line ranges), `repo_map` (bounded repository structure discovery with important-file classification and suggested fetches), `batch_fetch` (bounded batch fetch over explicit URLs or structured repo locators, returns per-item results with trust markers; not a crawler), `security_search` (security-oriented retrieval with normalized vulnerability metadata and grouped source cards), `research_search` (research-oriented multi-source evidence discovery with grouped source-card bundles), and `build_evidence_bundle` (packages already-selected evidence into a deterministic, non-summarizing bundle for multi-agent handoff)

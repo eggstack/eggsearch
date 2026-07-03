@@ -2305,6 +2305,20 @@ outputs.
 cargo test --features mock --test corpus_runner
 ```
 
+### Phase 13 Regression Harness
+
+Contract and corpus tests protect MCP schemas, deterministic IDs, warning/reason-code
+registries, fetch safety, security applicability, research evidence analysis, workflow
+recipes, and evidence bundle handoff. These tests run offline and require no mock engines.
+
+```bash
+# Run all contract/corpus tests
+cargo test --features mock --test schema_identity_registry --test fetch_safety --test security_applicability_corpus --test research_evidence_corpus --test recipes_next_actions --test evidence_bundle_handoff
+
+# Or use the quality gate
+make check
+```
+
 Live smoke tests hit real upstream providers and require network access:
 
 ```bash
