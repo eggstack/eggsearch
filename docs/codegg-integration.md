@@ -72,11 +72,11 @@ On macOS this is typically `~/.config/eggsearch/config.toml`.
 ```toml
 [search]
 mode = "live"                    # "live" or "off"
-default_max_results = 8
-max_results_cap = 20
-max_query_chars = 500
-timeout_ms = 15000
-default_providers = ["duckduckgo", "brave"]
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage", "yahoo"]
 sanitize_output = true
 multiquery_concurrency = 8
 multiquery_provider_concurrency = 2
@@ -89,9 +89,9 @@ redact_sensitive_tokens = true
 
 [fetch]
 enabled = true
-timeout_ms = 10000
-max_bytes = 5242880
-max_chars_default = 15000
+timeout_ms = 8000
+max_bytes = 2000000
+max_chars_default = 12000
 max_chars_cap = 50000
 redirect_limit = 5
 allow_private_network = false
@@ -99,12 +99,12 @@ allow_localhost = false
 include_links_default = false
 sanitize_output = true
 pdf_enabled = false
-batch_max_items = 10
-batch_max_items_cap = 25
+batch_max_items = 8
+batch_max_items_cap = 20
 batch_max_chars_per_item = 12000
 batch_max_total_chars = 50000
-batch_max_total_chars_cap = 200000
-batch_concurrency = 5
+batch_max_total_chars_cap = 120000
+batch_concurrency = 4
 
 [local]
 enabled = true
@@ -120,29 +120,38 @@ follow_symlinks = false
 
 ```toml
 # HTML scraper providers (enabled by default)
-default_providers = ["duckduckgo", "brave"]
+default_providers = ["duckduckgo", "startpage", "yahoo"]
+
+# Individual provider toggles (all enabled unless noted)
+[search.providers]
+duckduckgo = true
+brave = true
+startpage = true
+yahoo = true
+mojeek = false           # disabled by default
+osv = true
 
 # SearXNG instance (optional)
 [search.searxng]
 enabled = false
 base_url = "https://search.example.com"
 
-# API-key providers
+# API-key providers (all disabled by default)
 [search.api.brave_api]
 enabled = false
 api_key_env = "BRAVE_API_KEY"
 base_url = "https://api.search.brave.com/res/v1/web/search"
 
 [search.api.github_code]
-enabled = true
+enabled = false
 api_key_env = "GITHUB_TOKEN"
 
 [search.api.github_issues]
-enabled = true
+enabled = false
 api_key_env = "GITHUB_TOKEN"
 
 [search.api.github_releases]
-enabled = true
+enabled = false
 api_key_env = "GITHUB_TOKEN"
 
 [search.api.gitlab_code]
@@ -150,7 +159,27 @@ enabled = false
 api_key_env = "GITLAB_TOKEN"
 base_url = "https://gitlab.com"
 
+[search.api.gitlab_issues]
+enabled = false
+api_key_env = "GITLAB_TOKEN"
+base_url = "https://gitlab.com"
+
+[search.api.gitlab_releases]
+enabled = false
+api_key_env = "GITLAB_TOKEN"
+base_url = "https://gitlab.com"
+
 [search.api.gitea_code]
+enabled = false
+api_key_env = "FORGEJO_TOKEN"
+base_url = "https://git.example.com"
+
+[search.api.gitea_issues]
+enabled = false
+api_key_env = "FORGEJO_TOKEN"
+base_url = "https://git.example.com"
+
+[search.api.gitea_releases]
 enabled = false
 api_key_env = "FORGEJO_TOKEN"
 base_url = "https://git.example.com"
@@ -947,13 +976,13 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 
 | Tool | Field | Default | Cap |
 |------|-------|---------|-----|
-| `web_search` | `max_results` | 8 | 20 (`max_results_cap`) |
-| `web_fetch` | `max_chars` | 15,000 | 50,000 (`max_chars_cap`) |
+| `web_search` | `max_results` | 10 | 50 (`max_results_cap`) |
+| `web_fetch` | `max_chars` | 12,000 | 50,000 (`max_chars_cap`) |
 | `batch_fetch` | `max_chars` (per item) | 12,000 | — |
-| `batch_fetch` | `max_total_chars` | 50,000 | 200,000 |
-| `batch_fetch` | items count | 10 | 25 |
-| `repo_fetch` | `max_chars` | 15,000 | 50,000 |
-| `repo_search` | `max_results` | 8 | 20 |
+| `batch_fetch` | `max_total_chars` | 50,000 | 120,000 |
+| `batch_fetch` | items count | 8 | 20 |
+| `repo_fetch` | `max_chars` | 12,000 | 50,000 |
+| `repo_search` | `max_results` | 10 | 50 |
 | `repo_search` | `max_per_group` | 4 | 10 |
 
 ### Concurrency Controls
@@ -962,14 +991,14 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 |-------|---------|---------|
 | `multiquery_concurrency` | 8 | Global max in-flight subquery jobs |
 | `multiquery_provider_concurrency` | 2 | Per-provider max concurrent jobs |
-| `batch_concurrency` | 5 | Max concurrent fetches in batch_fetch |
+| `batch_concurrency` | 4 | Max concurrent fetches in batch_fetch |
 
 ### Timeout Controls
 
 | Tool | Field | Default |
 |------|-------|---------|
-| Search | `timeout_ms` | 15,000 |
-| Fetch | `timeout_ms` | 10,000 |
+| Search | `timeout_ms` | 8,000 |
+| Fetch | `timeout_ms` | 8,000 |
 | Batch | `timeout_ms` | — (uses per-item fetch timeout) |
 
 ### Reducing Response Size

@@ -1527,11 +1527,11 @@ caller.
 - Items must be explicit URLs or structured locators — no crawling,
   no link following, no directory listing.
 - Total output is bounded by `batch_max_total_chars` (default 50000,
-  cap 200000) and per-item output by `batch_max_chars_per_item`
+  cap 120000) and per-item output by `batch_max_chars_per_item`
   (default 12000).
-- Maximum items per request is `batch_max_items` (default 10,
-  cap 25). Items are fetched in bounded concurrent waves of
-  `batch_concurrency` (default 5) size, preserving input order.
+- Maximum items per request is `batch_max_items` (default 8,
+  cap 20). Items are fetched in bounded concurrent waves of
+  `batch_concurrency` (default 4) size, preserving input order.
 - A failure on one item does not abort the remaining items
   (`continue_on_error` semantics). Each item result includes its
   own `trust` label and `trust_markers`.
@@ -1704,6 +1704,7 @@ startpage  = true
 yahoo      = true
 mojeek     = false   # no-key HTML provider; opt-in
 searxng    = false   # JSON adapter; opt-in, requires [search].searxng
+osv        = true    # native advisory provider; no API key needed
 
 [search.searxng]
 enabled  = false
@@ -1795,7 +1796,7 @@ redirect_limit = 5
 allow_private_network = false
 allow_localhost = false
 include_links_default = false
-user_agent = "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)"
+user_agent = "eggsearch/0.3.4 (+https://github.com/eggstack/eggsearch)"
 sanitize_output = true
 pdf_enabled = false
 pdf_max_pages = 25
@@ -1814,7 +1815,7 @@ pdf_max_total_chars = 50000
 | `allow_private_network` | `false` | Allow RFC1918 private-network IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7). |
 | `allow_localhost` | `false` | Allow `127.0.0.1` and `::1` loopback addresses. |
 | `include_links_default` | `false` | Default for `include_links` when the client omits it. |
-| `user_agent` | `eggsearch/0.1 (+https://github.com/eggstack/eggsearch)` | HTTP `User-Agent` header for fetch requests. |
+| `user_agent` | `eggsearch/0.3.4 (+https://github.com/eggstack/eggsearch)` | HTTP `User-Agent` header for fetch requests. |
 | `sanitize_output` | `true` | Wrap untrusted fetched text in framing delimiters and emit prompt-injection warnings. |
 | `pdf_enabled` | `false` | Enable PDF text extraction (requires `pdf` feature). |
 | `pdf_max_pages` | `25` | Maximum number of PDF pages to extract text from. |

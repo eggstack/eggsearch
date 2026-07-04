@@ -95,22 +95,20 @@ fn handle_warning(warning: &AgentWarning) {
 | Code | Severity | Meaning |
 |------|----------|---------|
 | `safe_search_unenforced` | Warning | safe_search requested but no provider enforces it |
-| `freshness_unenforced` | Notice | freshness hint requested but no provider enforces it |
+| `freshness_unenforced` | Warning | freshness hint requested but no provider enforces it |
 | `native_code_search_unavailable` | Notice | intent=code but no code search provider |
 | `profile_degraded` | Warning | profile fell back to default providers |
-| `profile_provider_not_built` | Notice | provider in profile has no constructed engine |
+| `profile_provider_not_built` | Warning | provider in profile has no constructed engine |
 | `local_repo_match` | Info | local checkout found matching requested repo |
 | `local_repo_dirty` | Warning | local checkout has uncommitted changes |
 | `request_deadline_exceeded` | Warning | subqueries skipped due to deadline |
 | `native_advisory_search_unavailable` | Warning | only generic web search was used |
-| `identifier_not_found` | Notice | requested ID not found in native providers |
-| `version_match_unavailable` | Notice | affected version could not be determined |
-| `kev_match` | Notice | CVE(s) found in KEV catalog |
-| `kev_absent_not_proof` | Info | no CVE(s) found (absence is not proof) |
-| `prompt_injection_marker_detected` | Warning | injection markers detected in content |
+| `version_match_unavailable` | Warning | affected version could not be determined |
+| `kev_match` | Error | CVE(s) found in KEV catalog |
+| `kev_absent_not_proof` | Warning | no CVE(s) found (absence is not proof) |
+| `prompt_injection_marker_detected` | Error | injection markers detected in content |
 | `coding_profile_degraded` | Warning | coding profile fell back to default |
-| `package_resolution_fallback` | Notice | registry API failed, using fallback metadata |
-| `source_quality_low` | Notice | only low-tier sources were found |
+| `package_resolution_fallback` | Warning | registry API failed, using fallback metadata |
 
 ### 2.3 Warning Entity Scope
 

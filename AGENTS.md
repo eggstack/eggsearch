@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers (DuckDuckGo, Brave, Startpage, Yahoo, Mojeek), deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches explicit HTTP(S) URLs on demand with bounded text extraction. Transport is MCP over stdio.
+eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers (DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, SearXNG, Brave API, GitHub/GitLab/Gitea code/issues/releases, OSV, local workspace), deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches explicit HTTP(S) URLs on demand with bounded text extraction. Transport is MCP over stdio.
 
 ## Build & Verification
 
@@ -38,8 +38,13 @@ src/
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, and contract tests
-docs/              # integration guides, tool matrix
-plans/             # roadmap and phase documentation
+docs/
+  architecture/    # response handling contract, schema stability rules
+  codegg-integration.md  # comprehensive integration reference
+  agent-workflows.md     # recommended tool call sequences
+  tool-matrix.md         # compact tool reference table
+.skills/           # agent skill files for development, MCP, release, architecture
+plans/             # roadmap and phase documentation (historical)
 ```
 
 Read `src/lib.rs` for the module map, then explore submodules as needed.
@@ -51,7 +56,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | **check** | `cargo check` × 4 feature combos |
 | **test** | `cargo test` × 4 feature combos |
 | **clippy** | `cargo clippy --all-features -- -D warnings` |
-| **schema-corpus** | 6 regression test binaries |
+| **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
 
@@ -140,3 +145,28 @@ Pre-publish: clippy clean, tests pass, fmt clean, version bumped in Cargo.toml, 
 - **Hardcoding provider lists** — use `resolve_providers()` which validates enabled/known status
 - **Changing deterministic IDs** — breaks regression corpus tests and cross-tool deduplication
 - **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`
+
+Skills provide specialized instructions and workflows for specific tasks.
+Use the skill tool to load a skill when a task matches its description.
+<available_skills>
+  <skill>
+    <name>eggsearch-dev</name>
+    <description>Build, test, verify, and develop eggsearch code. Use when editing source code, adding tests, or running CI checks.</description>
+    <location>.skills/eggsearch-dev.md</location>
+  </skill>
+  <skill>
+    <name>eggsearch-mcp</name>
+    <description>MCP tool usage, integration patterns, workflow recipes, trust model, and agent discipline rules. Use when integrating with eggsearch MCP tools or writing agent workflows.</description>
+    <location>.skills/eggsearch-mcp.md</location>
+  </skill>
+  <skill>
+    <name>eggsearch-release</name>
+    <description>Release process, versioning, publishing, CI pipeline. Use when preparing or performing a release.</description>
+    <location>.skills/eggsearch-release.md</location>
+  </skill>
+  <skill>
+    <name>eggsearch-architecture</name>
+    <description>Crate layout, adapter pattern, provider model, deterministic IDs, sanitization tiers, config, and transport. Use when navigating the codebase architecture.</description>
+    <location>.skills/eggsearch-architecture.md</location>
+  </skill>
+</available_skills>
