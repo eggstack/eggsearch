@@ -149,6 +149,9 @@ pub fn bound_text(s: &str, max_chars: usize) -> (String, bool) {
     if max_chars == 0 {
         return (String::new(), true);
     }
+    if s.len() <= max_chars {
+        return (s.to_string(), false);
+    }
     let total = s.chars().count();
     if total <= max_chars {
         return (s.to_string(), false);

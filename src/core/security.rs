@@ -107,56 +107,71 @@ pub struct VulnerabilityMetadata {
 impl VulnerabilityMetadata {
     pub fn merge(self, other: VulnerabilityMetadata) -> VulnerabilityMetadata {
         let mut cve_ids = self.cve_ids;
+        let mut seen_cve: std::collections::HashSet<String> = cve_ids.iter().cloned().collect();
         for id in &other.cve_ids {
-            if !cve_ids.contains(id) {
+            if seen_cve.insert(id.clone()) {
                 cve_ids.push(id.clone());
             }
         }
         let mut ghsa_ids = self.ghsa_ids;
+        let mut seen_ghsa: std::collections::HashSet<String> = ghsa_ids.iter().cloned().collect();
         for id in &other.ghsa_ids {
-            if !ghsa_ids.contains(id) {
+            if seen_ghsa.insert(id.clone()) {
                 ghsa_ids.push(id.clone());
             }
         }
         let mut osv_ids = self.osv_ids;
+        let mut seen_osv: std::collections::HashSet<String> = osv_ids.iter().cloned().collect();
         for id in &other.osv_ids {
-            if !osv_ids.contains(id) {
+            if seen_osv.insert(id.clone()) {
                 osv_ids.push(id.clone());
             }
         }
         let mut rustsec_ids = self.rustsec_ids;
+        let mut seen_rustsec: std::collections::HashSet<String> =
+            rustsec_ids.iter().cloned().collect();
         for id in &other.rustsec_ids {
-            if !rustsec_ids.contains(id) {
+            if seen_rustsec.insert(id.clone()) {
                 rustsec_ids.push(id.clone());
             }
         }
         let mut affected_ranges = self.affected_ranges;
+        let mut seen_affected: std::collections::HashSet<String> =
+            affected_ranges.iter().cloned().collect();
         for r in &other.affected_ranges {
-            if !affected_ranges.contains(r) {
+            if seen_affected.insert(r.clone()) {
                 affected_ranges.push(r.clone());
             }
         }
         let mut patched_ranges = self.patched_ranges;
+        let mut seen_patched: std::collections::HashSet<String> =
+            patched_ranges.iter().cloned().collect();
         for r in &other.patched_ranges {
-            if !patched_ranges.contains(r) {
+            if seen_patched.insert(r.clone()) {
                 patched_ranges.push(r.clone());
             }
         }
         let mut vulnerable_versions = self.vulnerable_versions;
+        let mut seen_vv: std::collections::HashSet<String> =
+            vulnerable_versions.iter().cloned().collect();
         for v in &other.vulnerable_versions {
-            if !vulnerable_versions.contains(v) {
+            if seen_vv.insert(v.clone()) {
                 vulnerable_versions.push(v.clone());
             }
         }
         let mut patched_versions = self.patched_versions;
+        let mut seen_pv: std::collections::HashSet<String> =
+            patched_versions.iter().cloned().collect();
         for v in &other.patched_versions {
-            if !patched_versions.contains(v) {
+            if seen_pv.insert(v.clone()) {
                 patched_versions.push(v.clone());
             }
         }
         let mut references = self.references;
+        let mut seen_refs: std::collections::HashSet<String> =
+            references.iter().map(|r| r.url.clone()).collect();
         for r in &other.references {
-            if !references.iter().any(|existing| existing.url == r.url) {
+            if seen_refs.insert(r.url.clone()) {
                 references.push(r.clone());
             }
         }
@@ -571,7 +586,7 @@ pub fn build_identifier_list(ids: &SecurityIdentifiers) -> Vec<SecurityIdentifie
 
 /// Classify a URL's source tier for security context.
 pub fn classify_source_tier(url: &str) -> SecuritySourceTier {
-    let url_lower = url.to_lowercase();
+    let url_lower = url.to_ascii_lowercase();
 
     // Primary advisory databases
     if url_lower.contains("nvd.nist.gov")

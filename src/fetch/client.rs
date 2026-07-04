@@ -269,11 +269,17 @@ impl FetchClient {
         // application/octet-stream or text/plain.
         let mut pdf_magic_chunk = None;
         if !is_pdf {
-            if let Ok(Some(first_chunk)) = response.chunk().await {
-                if first_chunk.len() >= 5 && &first_chunk[..5] == b"%PDF-" {
-                    is_pdf = true;
+            match response.chunk().await {
+                Ok(Some(first_chunk)) => {
+                    if first_chunk.len() >= 5 && &first_chunk[..5] == b"%PDF-" {
+                        is_pdf = true;
+                    }
+                    pdf_magic_chunk = Some(first_chunk);
                 }
-                pdf_magic_chunk = Some(first_chunk);
+                Ok(None) => {}
+                Err(e) => {
+                    return Err(FetchError::NetworkError(e.to_string()));
+                }
             }
         }
 

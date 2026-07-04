@@ -138,5 +138,6 @@ fn init_tracing(verbose: u8) {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(level))
         .with_target(false)
+        .with_writer(std::io::stderr)
         .try_init();
 }

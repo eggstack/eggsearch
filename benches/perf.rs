@@ -172,12 +172,13 @@ fn bench_identity_hash(c: &mut Criterion) {
             hash ^= b as u64;
             hash = hash.wrapping_mul(0x100000001b3);
         }
-        // entity sub-namespace + null separator
+        // entity sub-namespace
         for &b in entity.as_bytes() {
             hash ^= b as u64;
             hash = hash.wrapping_mul(0x100000001b3);
         }
-        hash ^= 0_u64;
+        // null separator (matches eggsearch::core::identity::entity_prefix)
+        hash ^= 0;
         hash = hash.wrapping_mul(0x100000001b3);
         for &b in data {
             hash ^= b as u64;

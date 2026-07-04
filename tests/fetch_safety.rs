@@ -706,3 +706,33 @@ fn f7_valid_relative_path_not_found_when_root_missing() {
         "expected NotFound or CanonicalizeFailed, got: {err:?}"
     );
 }
+
+#[test]
+fn f8_symlink_rejected_when_follow_symlinks_false() {
+    let tmp = std::env::temp_dir().join(format!("eggsearch_symlink_test_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("create tmp dir");
+    let outside =
+        std::env::temp_dir().join(format!("eggsearch_outside_target_{}", std::process::id()));
+    let _ = std::fs::remove_file(&outside);
+    std::fs::write(&outside, "secret").expect("write outside file");
+    let link_path = tmp.join("link_to_outside");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, &link_path).expect("create symlink");
+    #[cfg(not(unix))]
+    {
+        let _ = outside;
+        let _ = link_path;
+        return;
+    }
+
+    let cfg = default_local_config();
+    let err = validate_local_fetch_path(&tmp, "link_to_outside", &cfg).unwrap_err();
+    assert!(
+        matches!(err, LocalFetchPathError::SymlinkNotAllowed),
+        "expected SymlinkNotAllowed for symlink with follow_symlinks=false, got: {err:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::remove_file(&outside);
+}

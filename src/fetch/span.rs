@@ -310,8 +310,8 @@ fn clamp_and_truncate(
     max_block_lines: Option<usize>,
     reasons: &mut Vec<String>,
 ) -> (u32, u32, bool) {
-    let ls = (block_start as u32) + 1;
-    let mut le = (block_end as u32) + 1;
+    let ls = u32::try_from(block_start).unwrap_or(u32::MAX) + 1;
+    let mut le = u32::try_from(block_end).unwrap_or(u32::MAX) + 1;
     let mut truncated = false;
     if let Some(max) = max_block_lines {
         let max = max as u32;

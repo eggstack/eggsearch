@@ -273,10 +273,11 @@ fn extract_pdf_title(doc: &lopdf::Document) -> Option<String> {
                             && title_bytes[0] == 0xFE
                             && title_bytes[1] == 0xFF
                         {
-                            // UTF-16BE BOM
+                            let payload = &title_bytes[2..];
+                            let payload = &payload[..payload.len() & !1];
                             String::from_utf16_lossy(
-                                &title_bytes[2..]
-                                    .chunks(2)
+                                &payload
+                                    .chunks_exact(2)
                                     .map(|c| u16::from_be_bytes([c[0], c[1]]))
                                     .collect::<Vec<_>>(),
                             )

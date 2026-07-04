@@ -79,7 +79,8 @@ impl EggsearchServer {
         let state = self.state.clone();
         match run_provider_status(state, args) {
             Ok(v) => Self::json_result(v),
-            Err(e) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
+            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
         }
     }
 
@@ -119,7 +120,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "repo_fetch",
-        description = "Fetch a specific file or line range from a repository by structured locator. Required: `owner`, `repo`, `path`. Optional: `host` (github, gitlab), `ref_name` (branch/tag, default main), `commit_sha`, `line_start`, `line_end`, `context_before`, `context_after`, `max_chars`, `symbol` (search for a definition and expand to block), `symbol_kind` (function, struct, enum, etc.), `match_text` (find text and expand around it), `expand_to_block` (expand range to enclosing block), `max_block_lines` (cap expanded block size). Returns source text with stable line numbers, range metadata, and optional `selected_span` describing how the span was chosen. Use `repo_search` to discover source evidence first, then `repo_fetch` to inspect a known file/span. Use `web_fetch` for arbitrary non-repository URLs."
+        description = "Fetch a specific file or line range from a repository by structured locator. Required: `owner`, `repo`, `path`. Optional: `host` (github, gitlab, codeberg, gitea, forgejo), `ref_name` (branch/tag, default main), `commit_sha`, `line_start`, `line_end`, `context_before`, `context_after`, `max_chars`, `symbol` (search for a definition and expand to block), `symbol_kind` (function, struct, enum, etc.), `match_text` (find text and expand around it), `expand_to_block` (expand range to enclosing block), `max_block_lines` (cap expanded block size). Returns source text with stable line numbers, range metadata, and optional `selected_span` describing how the span was chosen. Use `repo_search` to discover source evidence first, then `repo_fetch` to inspect a known file/span. Use `web_fetch` for arbitrary non-repository URLs."
     )]
     async fn repo_fetch(
         &self,
@@ -212,7 +213,8 @@ impl EggsearchServer {
     ) -> Result<CallToolResult, McpError> {
         match run_build_evidence_bundle(args) {
             Ok(v) => Self::json_result(v),
-            Err(e) => Err(McpError::invalid_params(e, None)),
+            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
+            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
         }
     }
 }
@@ -261,7 +263,7 @@ Tools:
 
 Agent discipline:
 - Use web_search for generic discovery. The minimum call is {\"query\": \"...\"}.
-- Use repo_search for repository/API/codebase discovery. Minimum call: {\"repo\": \"owner/name\"}. Supports query, profile, and package fields.
+- Use repo_search for repository/API/codebase discovery. Minimum call: {\"query\": \"\", \"repo\": \"owner/name\"}. Supports query, profile, and package fields.
 - Use repo_map to understand repository structure before repo_search. Minimum call: {\"owner\": \"name\", \"repo\": \"name\"}.
 - Use repo_search with mode=\"exact_error\" for compiler/runtime/toolchain errors with the error as the query.
 - Use repo_fetch for known repository file paths or line ranges.

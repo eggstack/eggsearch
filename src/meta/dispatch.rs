@@ -9,9 +9,11 @@
 //! not affect results.
 
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::FutureExt;
 use tokio::task::JoinSet;
 use tracing::warn;
 
@@ -159,8 +161,6 @@ pub(crate) async fn dispatch_parallel(
 
     // Track which subqueries have completed (succeeded or failed)
     let mut completed_subquery_ids = std::collections::HashSet::new();
-    // Track which subqueries had at least one running job at deadline
-    let mut interrupted_subquery_ids = std::collections::HashSet::new();
 
     // JoinSet for in-flight tasks
     let mut join_set: JoinSet<TaskResult> = JoinSet::new();
@@ -199,8 +199,10 @@ pub(crate) async fn dispatch_parallel(
                     let candidate_limit = config.candidate_limit;
                     let provider = Arc::clone(&job.provider);
                     let subquery_id = job.subquery_id.clone();
+                    let subquery_id_panic = subquery_id.clone();
                     let subquery_order = job.subquery_order;
                     let provider_id_str = job.provider_id.clone();
+                    let provider_id_str_panic = provider_id_str.clone();
                     let provider_order = job.provider_order;
                     let job_remaining =
                         overall_deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -215,28 +217,51 @@ pub(crate) async fn dispatch_parallel(
                         .or_insert(0) += 1;
 
                     join_set.spawn(async move {
-                        if job_remaining.is_zero() {
-                            return TaskResult {
+                        let provider_id_str_for_inner = provider_id_str.clone();
+                        let inner = async move {
+                            if job_remaining.is_zero() {
+                                return TaskResult {
+                                    subquery_id,
+                                    subquery_order,
+                                    provider_id: provider_id_str_for_inner,
+                                    provider_order,
+                                    result: Err(EngineError::Timeout {
+                                        engine: provider.name(),
+                                    }),
+                                };
+                            }
+
+                            let result = provider
+                                .search(&query, candidate_limit, job_remaining)
+                                .await;
+                            TaskResult {
                                 subquery_id,
                                 subquery_order,
-                                provider_id: provider_id_str,
+                                provider_id: provider_id_str_for_inner,
                                 provider_order,
-                                result: Err(EngineError::Timeout {
-                                    engine: provider.name(),
-                                }),
-                            };
-                        }
-
-                        let result = provider
-                            .search(&query, candidate_limit, job_remaining)
-                            .await;
-                        TaskResult {
-                            subquery_id,
-                            subquery_order,
-                            provider_id: provider_id_str,
-                            provider_order,
-                            result,
-                        }
+                                result,
+                            }
+                        };
+                        AssertUnwindSafe(inner)
+                            .catch_unwind()
+                            .await
+                            .unwrap_or_else(|_| {
+                                warn!(
+                                    provider_id = %provider_id_str_panic,
+                                    subquery_id = %subquery_id_panic,
+                                    "dispatch task panicked; releasing concurrency slot"
+                                );
+                                TaskResult {
+                                    subquery_id: subquery_id_panic,
+                                    subquery_order: 0,
+                                    provider_id: provider_id_str_panic,
+                                    provider_order: 0,
+                                    result: Err(EngineError::NetworkError {
+                                        engine: "dispatch",
+                                        reason: "task panicked during dispatch".to_string(),
+                                    }),
+                                }
+                            })
                     });
 
                     // Remove from pending queue; swap_remove is safe because
@@ -362,12 +387,14 @@ pub(crate) async fn dispatch_parallel(
                 deadline.subqueries_skipped = skipped.len();
 
                 // Interrupted: subquery IDs that had running jobs but didn't complete
+                let mut interrupted: std::collections::HashSet<&str> =
+                    std::collections::HashSet::new();
                 for sid in &all_subquery_ids {
                     if !completed_subquery_ids.contains(sid) && !skipped.contains(sid.as_str()) {
-                        interrupted_subquery_ids.insert(sid.clone());
+                        interrupted.insert(sid);
                     }
                 }
-                deadline.subqueries_interrupted = interrupted_subquery_ids.len();
+                deadline.subqueries_interrupted = interrupted.len();
 
                 warn!(
                     scope = search_scope,

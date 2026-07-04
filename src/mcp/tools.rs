@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::fetch::FetchClient;
 use crate::mcp::policy::{
-    fetch_allowed, live_allowed, web_fetch_denied_message, web_search_denied_message, Policy,
+    fetch_allowed, live_allowed, live_search_denied_message, web_fetch_denied_message, Policy,
 };
 use crate::mcp::state::ServerState;
 
@@ -152,8 +152,9 @@ pub struct ProviderStatusArgs {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoSearchArgs {
     /// Free-text query. May contain repo hints (repo:owner/name, etc.).
+    #[serde(default)]
     pub query: String,
-    /// Optional. Code host to target (github, gitlab, codeberg).
+    /// Optional. Code host to target (github, gitlab, codeberg, gitea, forgejo).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
     /// Optional. Repository owner.
@@ -596,7 +597,9 @@ pub async fn run_web_search(
     args: WebSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Internal(web_search_denied_message()));
+        return Err(ToolError::Internal(live_search_denied_message(
+            "web_search",
+        )));
     }
 
     let mut req = WebSearchRequest {
@@ -789,7 +792,9 @@ pub async fn run_repo_search(
     use crate::core::repo_search::RepoSearchRequest;
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Validation(web_search_denied_message()));
+        return Err(ToolError::Internal(live_search_denied_message(
+            "repo_search",
+        )));
     }
 
     let host = parse_code_host_arg(args.host.as_deref())?;
@@ -1061,7 +1066,9 @@ pub async fn run_research_search(
     };
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Validation(web_search_denied_message()));
+        return Err(ToolError::Internal(live_search_denied_message(
+            "research_search",
+        )));
     }
 
     let research_domain = args
@@ -1168,7 +1175,7 @@ pub async fn run_research_search(
 pub fn run_provider_status(
     state: Arc<ServerState>,
     args: ProviderStatusArgs,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ToolError> {
     let mut descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
 
     // Update local_workspace descriptor to reflect actual backend state
@@ -1296,6 +1303,7 @@ fn build_code_hosts_summary(descriptors: &[ProviderDescriptor]) -> Vec<serde_jso
         let kind = match desc.id.as_str() {
             "github_code" | "github_issues" | "github_releases" => "github",
             "gitlab_code" | "gitlab_issues" | "gitlab_releases" => "gitlab",
+            "codeberg_code" | "codeberg_issues" | "codeberg_releases" => "codeberg",
             "gitea_code" | "gitea_issues" | "gitea_releases" => "gitea",
             _ => continue,
         };
@@ -1351,6 +1359,14 @@ pub async fn run_web_fetch(
 
     if args.url.trim().is_empty() {
         return Err(ToolError::Validation("url must not be empty".into()));
+    }
+
+    let trimmed_url = args.url.trim();
+    if !trimmed_url.starts_with("http://") && !trimmed_url.starts_with("https://") {
+        return Err(ToolError::Validation(format!(
+            "url scheme must be http or https, got: {}",
+            &trimmed_url[..trimmed_url.len().min(20)]
+        )));
     }
 
     if let Some(0) = args.max_chars {
@@ -1470,6 +1486,11 @@ pub async fn run_repo_fetch(
                         .and_then(|h| match h.to_lowercase().as_str() {
                             "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
                             "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
+                            "codeberg" | "cb" => {
+                                Some(crate::core::code_metadata::CodeHost::Codeberg)
+                            }
+                            "gitea" => Some(crate::core::code_metadata::CodeHost::Gitea),
+                            "forgejo" => Some(crate::core::code_metadata::CodeHost::Forgejo),
                             _ => None,
                         })
                         .as_ref(),
@@ -1884,7 +1905,7 @@ pub async fn run_repo_map(
     use crate::core::repo_map::RepoMapRequest;
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Validation(web_search_denied_message()));
+        return Err(ToolError::Internal(live_search_denied_message("repo_map")));
     }
 
     let host = parse_code_host_arg(args.host.as_deref())?;
@@ -2577,8 +2598,10 @@ async fn run_workspace_fetch(
         }
     }
 
-    // Read file content
-    let content = std::fs::read_to_string(&canonical)
+    // Read file content (off the runtime thread)
+    let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&canonical))
+        .await
+        .map_err(|e| ToolError::Internal(format!("failed to join read task: {e}")))?
         .map_err(|e| ToolError::Internal(format!("failed to read file: {e}")))?;
 
     let all_lines: Vec<String> = content.lines().map(String::from).collect();
@@ -2796,7 +2819,9 @@ pub async fn run_security_search(
     use crate::core::SecuritySearchRequest;
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Internal(web_search_denied_message()));
+        return Err(ToolError::Internal(live_search_denied_message(
+            "security_search",
+        )));
     }
 
     let query = args.query.unwrap_or_default();
@@ -2895,14 +2920,14 @@ fn mode_str(mode: Mode) -> &'static str {
 /// Run the `build_evidence_bundle` tool. Packages already-selected
 /// evidence from search and fetch responses into a deterministic,
 /// non-summarizing bundle for multi-agent handoff.
-pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json::Value, String> {
+pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json::Value, ToolError> {
     use crate::core::evidence_bundle::EvidenceBundleRequest;
 
     if args.sources.is_empty() && args.fetches.is_empty() {
-        return Err(
+        return Err(ToolError::Validation(
             "at least one source or fetch input is required to build an evidence bundle"
                 .to_string(),
-        );
+        ));
     }
 
     let request = EvidenceBundleRequest {
@@ -2920,7 +2945,8 @@ pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json:
 
     let bundle = crate::meta::evidence_bundle::build_evidence_bundle(request);
 
-    let value = serde_json::to_value(&bundle).map_err(|e| format!("serialization error: {e}"))?;
+    let value = serde_json::to_value(&bundle)
+        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
     Ok(value)
 }
 

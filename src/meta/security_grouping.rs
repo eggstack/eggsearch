@@ -23,8 +23,8 @@ const CANONICAL_GROUP_ORDER: &[SecurityResultGroupKind] = &[
 
 /// Classify a single source card into a security result group.
 pub fn classify_security_result(card: &SourceCard) -> SecurityResultGroupKind {
-    let url_lower = card.url.to_lowercase();
-
+    let url = card.url.as_str();
+    let url_lower = url.to_ascii_lowercase();
     // Authoritative advisory databases
     if url_lower.contains("osv.dev") || url_lower.contains("nvd.nist.gov") {
         return SecurityResultGroupKind::AuthoritativeAdvisories;
@@ -54,7 +54,7 @@ pub fn classify_security_result(card: &SourceCard) -> SecurityResultGroupKind {
 
     // Exploit discussion
     if url_lower.contains("exploit")
-        || url_contains_token(&url_lower, "poc")
+        || url_contains_token_ci(url, "poc")
         || url_lower.contains("proof-of-concept")
         || url_lower.contains("metasploit")
     {
@@ -81,10 +81,9 @@ pub fn classify_security_result(card: &SourceCard) -> SecurityResultGroupKind {
     SecurityResultGroupKind::GeneralContext
 }
 
-fn url_contains_token(url_lower: &str, token: &str) -> bool {
-    url_lower
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|part| part == token)
+fn url_contains_token_ci(url: &str, token: &str) -> bool {
+    url.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|part| part.eq_ignore_ascii_case(token))
 }
 
 /// Group source cards into security result groups.

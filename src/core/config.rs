@@ -225,7 +225,10 @@ fn default_redirect_limit() -> usize {
     5
 }
 fn default_user_agent() -> String {
-    "eggsearch/0.1 (+https://github.com/eggstack/eggsearch)".to_string()
+    format!(
+        "eggsearch/{} (+https://github.com/eggstack/eggsearch)",
+        env!("CARGO_PKG_VERSION")
+    )
 }
 fn default_sanitize_output() -> bool {
     true

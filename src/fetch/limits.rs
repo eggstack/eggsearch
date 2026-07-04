@@ -121,6 +121,14 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
                         )));
                     }
                 }
+                if let std::net::IpAddr::V6(ipv6) = ip {
+                    if is_blocked_v6(ipv6) {
+                        return Err(FetchError::PrivateNetworkBlocked(format!(
+                            "private IP access is disabled: {}",
+                            ip
+                        )));
+                    }
+                }
             }
             if host_str.ends_with(".internal")
                 || host_str.ends_with(".private")
@@ -198,6 +206,14 @@ pub async fn validate_fetch_target(url: &Url, limits: &FetchLimits) -> Result<()
                 }
                 if let std::net::IpAddr::V4(ipv4) = ip {
                     if ipv4.is_private() {
+                        return Err(FetchError::PrivateNetworkBlocked(format!(
+                            "private IP access is disabled: {}",
+                            ip
+                        )));
+                    }
+                }
+                if let std::net::IpAddr::V6(ipv6) = ip {
+                    if is_blocked_v6(ipv6) {
                         return Err(FetchError::PrivateNetworkBlocked(format!(
                             "private IP access is disabled: {}",
                             ip

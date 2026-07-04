@@ -836,7 +836,8 @@ impl LocalWorkspaceBackend {
             if line.to_lowercase().contains(&query_lower) {
                 let snippet = line.trim().to_string();
                 let snippet = if snippet.len() > 500 {
-                    format!("{}...", &snippet[..500])
+                    let truncated: String = snippet.chars().take(500).collect();
+                    format!("{truncated}...")
                 } else {
                     snippet
                 };

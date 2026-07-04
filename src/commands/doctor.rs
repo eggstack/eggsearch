@@ -9,17 +9,24 @@ use std::path::PathBuf;
 pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) -> Result<()> {
     cfg.validate().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let path_display = match config_path {
-        Some(p) => p.display().to_string(),
-        None => eggsearch::core::config::default_config_path()
-            .display()
-            .to_string(),
+    let resolved_path = match config_path {
+        Some(p) => p.clone(),
+        None => eggsearch::core::config::default_config_path(),
+    };
+    let path_display = resolved_path.display().to_string();
+    let config_file_exists = resolved_path.exists();
+    let config_file_loaded = if config_file_exists {
+        AppConfig::load(&resolved_path).is_ok()
+    } else {
+        false
     };
 
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
             "config_path": path_display,
+            "config_file_exists": config_file_exists,
+            "config_file_loaded": config_file_loaded,
             "mode": format!("{:?}", cfg.search.mode),
             "providers": {
                 "enabled": cfg.enabled_provider_ids(),
@@ -42,6 +49,13 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
             "warnings": collect_warnings(cfg),
         }))?
     );
+
+    if cfg.search.mode == eggsearch::core::config::Mode::Off {
+        if probe {
+            println!("\n--- Skipping provider probe (mode=off) ---");
+        }
+        return Ok(());
+    }
 
     let state = ServerState::build(cfg.clone())?;
     let healthy = !state.adapter.provider_ids().is_empty();

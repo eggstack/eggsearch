@@ -47,6 +47,11 @@ pub fn web_fetch_denied_message() -> String {
     policy_message("web_fetch", "[fetch].enabled = true")
 }
 
+/// Policy message for any live-search tool gated by `[search].mode`.
+pub fn live_search_denied_message(tool: &str) -> String {
+    policy_message(tool, "[search].mode = \"live\"")
+}
+
 #[allow(dead_code)]
 pub(crate) fn policy_for_web_search(cfg: &AppConfig) -> Policy {
     live_allowed(cfg.search.mode)

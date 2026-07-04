@@ -2,8 +2,11 @@
 //! Callers receive eggsearch-owned types; engine types do not leak past
 //! this module.
 
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Duration;
+
+use futures::FutureExt;
 
 use crate::core::config::ApiProviderConfig;
 use crate::core::provider::{
@@ -523,6 +526,7 @@ impl MetadataSearchAdapter {
         for engine in &engines {
             let engine = Arc::clone(engine);
             let provider_id = engine.name().to_string();
+            let provider_id_panic = provider_id.clone();
             let query = plan
                 .provider_queries
                 .get(&provider_id)
@@ -531,10 +535,24 @@ impl MetadataSearchAdapter {
             let engine_timeout = effective_timeout;
             let per_provider_limit = candidate_limit;
             join_set.spawn(async move {
-                let result = engine
-                    .search(&query, per_provider_limit, engine_timeout)
-                    .await;
-                (provider_id, result)
+                let inner = async move {
+                    let result = engine
+                        .search(&query, per_provider_limit, engine_timeout)
+                        .await;
+                    (provider_id, result)
+                };
+                AssertUnwindSafe(inner)
+                    .catch_unwind()
+                    .await
+                    .unwrap_or_else(|_| {
+                        (
+                            provider_id_panic,
+                            Err(crate::meta::engines::error::EngineError::NetworkError {
+                                engine: "dispatch",
+                                reason: "task panicked during dispatch".to_string(),
+                            }),
+                        )
+                    })
             });
         }
 
@@ -2077,11 +2095,12 @@ fn aggregate_rrf(
 
     let mut ranked: Vec<AggregatedResult> = map.into_values().collect();
 
-    ranked.sort_unstable_by(|a, b| {
+    ranked.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.title.cmp(&b.title))
+            .then_with(|| a.url.cmp(&b.url))
     });
 
     ranked.truncate(max_results);

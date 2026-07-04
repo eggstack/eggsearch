@@ -453,14 +453,22 @@ async fn corpus_exact_error_redacts_sensitive_tokens() {
     };
     let v = run_repo_search(state, args).await.expect("ok");
 
-    // error_context should be present and contain redaction info
-    if let Some(ctx) = v.get("error_context") {
-        if let Some(redactions) = ctx.get("redactions_applied") {
-            // Redactions may or may not fire depending on the exact
-            // redaction rules — just check the field exists.
-            assert!(redactions.is_array(), "redactions_applied must be array");
-        }
-    }
+    // error_context should be present and contain redactions info
+    let ctx = v
+        .get("error_context")
+        .expect("error_context should be present for exact_error query");
+    assert!(ctx.is_object(), "error_context must be an object");
+    let redactions = ctx
+        .get("redactions_applied")
+        .expect("error_context.redactions_applied must be present");
+    assert!(
+        redactions.is_array(),
+        "redactions_applied must be array, got: {redactions:?}"
+    );
+    assert!(
+        !redactions.as_array().unwrap().is_empty(),
+        "redactions_applied should not be empty when sensitive tokens are present"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -922,27 +930,37 @@ async fn corpus_ranking_commit_pinned_outranks_mutable_url() {
     };
     let v = run_repo_search(state, args).await.expect("ok");
 
-    // Check that suggested fetches prioritize pinned URLs
-    let fetches = v["suggested_fetches"].as_array().unwrap();
-    if !fetches.is_empty() {
-        // At minimum, check that rank_reasons exist on the cards
-        let groups = v["groups"].as_array().unwrap();
+    // Both the pinned URL and the mutable URL should appear in the
+    // suggested fetches / results, confirming the test setup exercises
+    // both code paths. The pinning logic should ensure the pinned
+    // URL appears in the result set at all (regression guard against
+    // dropping pinned URLs during dedup).
+    let mut all_urls: Vec<String> = Vec::new();
+    if let Some(groups) = v["groups"].as_array() {
         for group in groups {
             if let Some(results) = group["results"].as_array() {
                 for card in results {
-                    let rank_reasons = card["metadata"]["rank_reasons"].as_array();
-                    if let Some(reasons) = rank_reasons {
-                        // At least one card should have rank reasons
-                        if !reasons.is_empty() {
-                            return; // Found rank reasons, test passes
-                        }
+                    if let Some(u) = card["url"].as_str() {
+                        all_urls.push(u.to_string());
                     }
                 }
             }
         }
-        // If we get here, at least check that fetches are present
-        assert!(!fetches.is_empty(), "should have suggested fetches");
     }
+    if let Some(fetches) = v["suggested_fetches"].as_array() {
+        for f in fetches {
+            if let Some(u) = f["url"].as_str() {
+                all_urls.push(u.to_string());
+            }
+        }
+    }
+    let has_pinned = all_urls.iter().any(|u| u.contains("abc123def"));
+    let has_mutable = all_urls.iter().any(|u| u.contains("/blob/main/"));
+    assert!(has_pinned, "pinned URL missing from results: {all_urls:?}");
+    assert!(
+        has_mutable,
+        "mutable URL missing from results: {all_urls:?}"
+    );
 }
 
 #[tokio::test]
@@ -2239,14 +2257,16 @@ async fn corpus_security_unknown_applicability_when_no_version() {
     let v = run_security_search(state, args).await.expect("ok");
 
     let applicability = v["applicability"].as_array().cloned().unwrap_or_default();
-    if !applicability.is_empty() {
-        for a in &applicability {
-            let status = a["status"].as_str().unwrap_or("");
-            assert!(
-                status == "unknown" || status == "affected" || status == "not_affected",
-                "applicability status should be valid: {status}"
-            );
-        }
+    for a in &applicability {
+        let status = a["status"].as_str().unwrap_or("");
+        // Without a version provided, applicability must be unknown or
+        // insufficient_evidence. "affected" without a version is a
+        // regression because we can't possibly know the package is
+        // affected.
+        assert!(
+            status == "unknown" || status == "insufficient_evidence",
+            "applicability status without version should be unknown/insufficient_evidence, got: {status}"
+        );
     }
 }
 
