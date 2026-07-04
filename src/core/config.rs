@@ -435,7 +435,7 @@ impl AppConfig {
     /// If override_list is empty, uses default_providers filtered to only enabled.
     /// If override_list is non-empty, validates explicitly-disabled providers and deduplicates.
     pub fn resolve_providers(&self, override_list: &[String]) -> CoreResult<Vec<String>> {
-        let enabled_ids: Vec<String> = self.enabled_provider_ids();
+        let enabled_ids: Vec<String> = self.effective_provider_ids();
         let enabled: std::collections::BTreeSet<&str> =
             enabled_ids.iter().map(|s| s.as_str()).collect();
         let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
@@ -457,7 +457,7 @@ impl AppConfig {
                     {
                         return false;
                     }
-                    enabled.contains(id_str) || api_known.contains(id_str)
+                    enabled.contains(id_str)
                 })
                 .cloned()
                 .collect();
@@ -496,16 +496,15 @@ impl AppConfig {
                 )));
             }
 
-            // Check for explicitly DISABLED providers (config key exists with value false)
-            let explicitly_disabled: Vec<String> = deduped
+            let unavailable: Vec<String> = deduped
                 .iter()
-                .filter(|id| self.search.providers.get(*id).is_some_and(|v| !*v))
+                .filter(|id| !enabled.contains(id.as_str()))
                 .cloned()
                 .collect();
-            if !explicitly_disabled.is_empty() {
+            if !unavailable.is_empty() {
                 return Err(CoreError::Config(format!(
-                    "provider(s) disabled: {}; enable them in [search].providers or remove them from request",
-                    explicitly_disabled.join(", ")
+                    "provider(s) disabled or unavailable: {}; enable them in [search].providers, or configure a usable API provider in [search].api",
+                    unavailable.join(", ")
                 )));
             }
             Ok(deduped)
@@ -522,12 +521,39 @@ impl AppConfig {
             .collect()
     }
 
+    /// Returns provider IDs that can be built for live search.
+    pub fn effective_provider_ids(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .enabled_provider_ids()
+            .into_iter()
+            .filter(|id| !API_PROVIDER_IDS.contains(&id.as_str()))
+            .collect();
+        for (id, cfg) in &self.search.api {
+            if api_provider_is_configured(id, cfg) && !out.iter().any(|existing| existing == id) {
+                out.push(id.clone());
+            }
+        }
+        out
+    }
+
+    /// Returns true when a provider can be routed to a built engine.
+    pub fn provider_is_available(&self, id: &str) -> bool {
+        if API_PROVIDER_IDS.contains(&id) {
+            return self
+                .search
+                .api
+                .get(id)
+                .is_some_and(|cfg| api_provider_is_configured(id, cfg));
+        }
+        self.search.providers.get(id).copied().unwrap_or(false)
+    }
+
     /// Returns the provider ids listed in `default_providers` that are
-    /// not enabled in `search.providers`. These are silently filtered
-    /// out by `resolve_providers`; operators should be told at startup
-    /// so they can fix the config.
+    /// not available for live routing. These are silently filtered out
+    /// by `resolve_providers`; operators should be told at startup so
+    /// they can fix the config.
     pub fn misconfigured_default_providers(&self) -> Vec<String> {
-        let enabled_ids = self.enabled_provider_ids();
+        let enabled_ids = self.effective_provider_ids();
         let enabled: std::collections::BTreeSet<&str> =
             enabled_ids.iter().map(|s| s.as_str()).collect();
         self.search
@@ -865,7 +891,7 @@ impl AppConfig {
             }
         }
 
-        let enabled_ids = self.enabled_provider_ids();
+        let enabled_ids = self.effective_provider_ids();
         let enabled: std::collections::BTreeSet<&str> =
             enabled_ids.iter().map(|s| s.as_str()).collect();
         let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
@@ -882,7 +908,7 @@ impl AppConfig {
             let id_str = id.as_str();
             let is_known =
                 known.contains(id_str) || configured.contains(id_str) || api_known.contains(id_str);
-            let is_enabled = enabled.contains(id_str) || api_known.contains(id_str);
+            let is_enabled = enabled.contains(id_str);
 
             if !is_known {
                 // Unknown provider IDs are skipped with warning
@@ -1152,6 +1178,25 @@ mod tests {
         assert!(ids.contains(&"duckduckgo".to_string()));
         assert!(!ids.contains(&"brave".to_string()));
         assert!(ids.contains(&"startpage".to_string()));
+    }
+
+    #[test]
+    fn effective_provider_ids_include_configured_api_provider() {
+        let mut c = AppConfig::default();
+        let env = "EGGSEARCH_TEST_EFFECTIVE_PROVIDER_KEY";
+        std::env::set_var(env, "test_key");
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+
+        let ids = c.effective_provider_ids();
+        std::env::remove_var(env);
+        assert!(ids.contains(&"brave_api".to_string()), "got: {ids:?}");
     }
 
     #[test]
@@ -1459,6 +1504,26 @@ mod tests {
         assert_eq!(out, vec!["duckduckgo".to_string()]);
     }
 
+    #[test]
+    fn resolve_providers_filters_unconfigured_api_default_provider() {
+        let mut c = AppConfig::default();
+        c.search.default_providers = vec!["brave_api".to_string()];
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("EGGSEARCH_TEST_MISSING_DEFAULT_API_KEY".to_string()),
+                base_url: None,
+            },
+        );
+
+        let err = c.resolve_providers(&[]).unwrap_err();
+        assert!(
+            err.to_string().contains("no default providers are enabled"),
+            "got: {err}"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // API provider config tests
     // -----------------------------------------------------------------------
@@ -1577,18 +1642,58 @@ mod tests {
     }
 
     #[test]
-    fn resolve_providers_accepts_brave_api_in_explicit_list() {
-        let c = AppConfig::default();
-        // brave_api is in KNOWN_PROVIDER_IDS, so it should be accepted
-        // (not rejected as "unknown provider"). It is NOT in the default
-        // providers map, so it passes through successfully.
+    fn resolve_providers_accepts_configured_brave_api_in_explicit_list() {
+        let mut c = AppConfig::default();
+        let env = "EGGSEARCH_TEST_EXPLICIT_BRAVE_API_KEY";
+        std::env::set_var(env, "test_key");
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+
         let result = c.resolve_providers(&["brave_api".to_string()]);
+        std::env::remove_var(env);
         assert!(
             result.is_ok(),
             "brave_api should be accepted: {:?}",
             result.err()
         );
         assert_eq!(result.unwrap(), vec!["brave_api".to_string()]);
+    }
+
+    #[test]
+    fn resolve_providers_rejects_unconfigured_api_in_explicit_list() {
+        let mut c = AppConfig::default();
+        c.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("EGGSEARCH_TEST_MISSING_EXPLICIT_API_KEY".to_string()),
+                base_url: None,
+            },
+        );
+
+        let err = c.resolve_providers(&["brave_api".to_string()]).unwrap_err();
+        assert!(
+            err.to_string().contains("disabled or unavailable"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_providers_rejects_api_enabled_only_in_provider_map() {
+        let mut c = AppConfig::default();
+        c.search.providers.insert("brave_api".to_string(), true);
+
+        let err = c.resolve_providers(&["brave_api".to_string()]).unwrap_err();
+        assert!(
+            err.to_string().contains("disabled or unavailable"),
+            "got: {err}"
+        );
     }
 
     #[test]

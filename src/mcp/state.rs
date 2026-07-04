@@ -52,12 +52,7 @@ impl ServerState {
 
         let config = Arc::new(config);
 
-        let enabled: Vec<String> = config
-            .search
-            .providers
-            .iter()
-            .filter_map(|(id, on)| if *on { Some(id.clone()) } else { None })
-            .collect();
+        let enabled = config.effective_provider_ids();
 
         let global_timeout = Duration::from_millis(config.search.timeout_ms);
         let user_agent = Some(config.fetch.user_agent.clone());
@@ -104,8 +99,8 @@ impl ServerState {
             tracing::warn!(
                 provider_id = %id,
                 "provider listed in [search].default_providers is not enabled; \
-                 it will be silently skipped. Enable it in [search].providers or \
-                 remove it from default_providers."
+                 it will be skipped. Enable it in [search].providers, configure \
+                 a usable [search].api entry, or remove it from default_providers."
             );
         }
 
@@ -198,5 +193,35 @@ impl ServerState {
     /// unexpectedly absent.
     pub fn fetch_client(&self) -> Option<Arc<FetchClient>> {
         self.fetch_client.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::config::ApiProviderConfig;
+
+    #[test]
+    fn build_includes_configured_api_provider() {
+        let env = "EGGSEARCH_TEST_STATE_BRAVE_API_KEY";
+        std::env::set_var(env, "test_key");
+        let mut config = AppConfig::default();
+        config.search.default_providers = vec!["brave_api".to_string()];
+        config.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+
+        let state = ServerState::build(config).expect("state builds");
+        std::env::remove_var(env);
+        assert!(state
+            .adapter
+            .provider_ids()
+            .iter()
+            .any(|id| id == "brave_api"));
     }
 }

@@ -1709,7 +1709,7 @@ searxng    = false   # JSON adapter; opt-in, requires [search].searxng
 enabled  = false
 base_url = ""       # e.g. "https://searx.example.org"
 
-[search.api.brave]
+[search.api.brave_api]
 enabled       = false
 api_key_env   = "BRAVE_SEARCH_API_KEY"  # env var holding the API key
 base_url      = "https://api.search.brave.com/res/v1/web/search"
@@ -1729,17 +1729,32 @@ enabled       = false
 api_key_env   = "GITHUB_TOKEN"
 base_url      = "https://api.github.com"
 
-[search.api.gitlab_com]
+[search.api.gitlab_code]
 enabled       = false
 api_key_env   = "GITLAB_TOKEN"
 base_url      = "https://gitlab.com"
 
-[search.api.company_gitlab]
+[search.api.gitlab_issues]
 enabled       = false
-api_key_env   = "COMPANY_GITLAB_TOKEN"
-base_url      = "https://gitlab.example.com"
+api_key_env   = "GITLAB_TOKEN"
+base_url      = "https://gitlab.com"
 
-[search.api.forgejo_local]
+[search.api.gitlab_releases]
+enabled       = false
+api_key_env   = "GITLAB_TOKEN"
+base_url      = "https://gitlab.com"
+
+[search.api.gitea_code]
+enabled       = false
+api_key_env   = "FORGEJO_TOKEN"
+base_url      = "https://git.example.com"
+
+[search.api.gitea_issues]
+enabled       = false
+api_key_env   = "FORGEJO_TOKEN"
+base_url      = "https://git.example.com"
+
+[search.api.gitea_releases]
 enabled       = false
 api_key_env   = "FORGEJO_TOKEN"
 base_url      = "https://git.example.com"
@@ -1805,12 +1820,12 @@ pdf_max_total_chars = 50000
 | `pdf_max_pages` | `25` | Maximum number of PDF pages to extract text from. |
 | `pdf_max_chars_per_page` | `12000` | Maximum characters extracted per PDF page. |
 | `pdf_max_total_chars` | `50000` | Maximum total characters extracted from a PDF document. |
-| `batch_max_items` | `10` | Maximum number of items per `batch_fetch` request. |
-| `batch_max_items_cap` | `25` | Server-enforced upper bound on `batch_fetch` items. |
+| `batch_max_items` | `8` | Maximum number of items per `batch_fetch` request. |
+| `batch_max_items_cap` | `20` | Server-enforced upper bound on `batch_fetch` items. |
 | `batch_max_chars_per_item` | `12000` | Per-item extraction cap for `batch_fetch`. |
 | `batch_max_total_chars` | `50000` | Total character budget across all items in `batch_fetch`. |
-| `batch_max_total_chars_cap` | `200000` | Server-enforced upper bound on total chars for `batch_fetch`. |
-| `batch_concurrency` | `5` | Maximum concurrent fetches for `batch_fetch`. |
+| `batch_max_total_chars_cap` | `120000` | Server-enforced upper bound on total chars for `batch_fetch`. |
+| `batch_concurrency` | `4` | Maximum concurrent fetches for `batch_fetch`. |
 
 > **Note.** The `[search].live.user_agent` and `[search].live.respect_robots_txt` config fields are parsed but have no effect in the current build. The vendored HTML engines use a hard-coded browser-like user agent that upstream providers expect. Setting either field logs a startup warning.
 
@@ -2048,9 +2063,12 @@ conflate:
   `[search].default_providers`; they are queried automatically when
   a `web_search` request omits the `providers` field.
 
-`providers` controls which providers are *available* to the server.
-`default_providers` controls which *enabled* providers are queried
-when a `web_search` request does not specify providers explicitly.
+`providers` controls which HTML/JSON providers are available to the
+server. API-key providers are available when their fixed provider ID
+is enabled under `[search.api.<provider_id>]` and the configured env
+var is set. `default_providers` controls which available providers
+are queried when a `web_search` request does not specify providers
+explicitly.
 
 ### Engines and adapters
 
@@ -2074,9 +2092,9 @@ Bing, Brave, Marginalia, etc.) from one configuration point. The
 The optional `brave_api` adapter is a JSON client for the
 [Brave Search API](https://api.search.brave.com/app/documentation/web-search/get-started).
 It requires an API key, supplied via the env-var named in
-`[search].api.brave.api_key_env`. The adapter is disabled by
+`[search].api.brave_api.api_key_env`. The adapter is disabled by
 default; it is built only when
-`[search].api.brave.enabled = true` and the env var is set.
+`[search].api.brave_api.enabled = true` and the env var is set.
 
 The optional `github_code` adapter is a JSON client for the
 [GitHub Code Search API](https://docs.github.com/en/rest/search/search?apiVersion=2022-11-28#search-code).
@@ -2133,20 +2151,22 @@ tags, timestamps).
 
 **Configuration:**
 
-All host-native providers use the `[search.api.<id>]` section:
+All host-native providers use fixed provider IDs in
+`[search.api.<provider_id>]`. Set `base_url` to target GitLab or
+Gitea/Forgejo instances other than the public defaults.
 
 ```toml
-[search.api.gitlab_com]
+[search.api.gitlab_code]
 enabled       = true
 api_key_env   = "GITLAB_TOKEN"
 base_url      = "https://gitlab.com"
 
-[search.api.company_gitlab]
-enabled       = false
-api_key_env   = "COMPANY_GITLAB_TOKEN"
-base_url      = "https://gitlab.example.com"
+[search.api.gitlab_issues]
+enabled       = true
+api_key_env   = "GITLAB_TOKEN"
+base_url      = "https://gitlab.com"
 
-[search.api.forgejo_local]
+[search.api.gitea_code]
 enabled       = false
 api_key_env   = "FORGEJO_TOKEN"
 base_url      = "https://git.example.com"

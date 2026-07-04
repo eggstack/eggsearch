@@ -128,7 +128,7 @@ enabled = false
 base_url = "https://search.example.com"
 
 # API-key providers
-[search.api.brave]
+[search.api.brave_api]
 enabled = false
 api_key_env = "BRAVE_API_KEY"
 base_url = "https://api.search.brave.com/res/v1/web/search"
@@ -281,7 +281,7 @@ enabled = false
 ### API-Provider Config with Env Vars
 
 ```toml
-[search.api.brave]
+[search.api.brave_api]
 enabled = true
 api_key_env = "BRAVE_API_KEY"       # set this env var
 

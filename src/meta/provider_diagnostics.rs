@@ -559,7 +559,7 @@ fn resolve_explicit_providers(
             let is_known = KNOWN_PROVIDER_IDS.contains(&id.as_str())
                 || config.search.providers.contains_key(id)
                 || config.search.api.contains_key(id);
-            if is_known && !config.enabled_provider_ids().contains(id) {
+            if is_known && !config.provider_is_available(id) {
                 if strict {
                     return Err(ProviderRoutingError::DisabledProvider(id.clone()));
                 }
@@ -1153,18 +1153,15 @@ mod tests {
 
     #[test]
     fn routing_profile_partial_when_one_unavailable() {
-        // Both providers enabled in config, but only one is built by the adapter
-        let mut cfg =
-            test_config_with_providers(&["duckduckgo", "github_code", "gitlab_code"], &[]);
+        let mut cfg = test_config_with_providers(&["duckduckgo", "startpage"], &[]);
         cfg.search.profiles.insert(
             "coding".to_string(),
             crate::core::config::ProfileConfig {
-                providers: vec!["github_code".to_string(), "gitlab_code".to_string()],
+                providers: vec!["duckduckgo".to_string(), "startpage".to_string()],
             },
         );
         let health = ProviderHealthRegistry::new();
-        // Only github_code is built; gitlab_code is enabled but not constructed
-        let adapter_ids = vec!["github_code".to_string(), "duckduckgo".to_string()];
+        let adapter_ids = vec!["duckduckgo".to_string()];
 
         let result = resolve_provider_routing(
             &[],
@@ -1179,9 +1176,9 @@ mod tests {
         assert!(!result.degraded);
         assert!(result
             .selected_providers
-            .contains(&"github_code".to_string()));
+            .contains(&"duckduckgo".to_string()));
         assert_eq!(result.skipped_providers.len(), 1);
-        assert_eq!(result.skipped_providers[0].provider_id, "gitlab_code");
+        assert_eq!(result.skipped_providers[0].provider_id, "startpage");
     }
 
     #[test]

@@ -29,7 +29,7 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
             "config_file_loaded": config_file_loaded,
             "mode": format!("{:?}", cfg.search.mode),
             "providers": {
-                "enabled": cfg.enabled_provider_ids(),
+                "enabled": cfg.effective_provider_ids(),
                 "default": cfg.search.default_providers,
                 "disabled": {
                     "known": KNOWN_PROVIDER_IDS.iter()
@@ -172,17 +172,10 @@ fn fetch_status(cfg: &AppConfig) -> serde_json::Value {
 fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    // Disabled default providers
-    let disabled_defaults: Vec<String> = cfg
-        .search
-        .default_providers
-        .iter()
-        .filter(|id| cfg.search.providers.get(id.as_str()).is_some_and(|v| !*v))
-        .cloned()
-        .collect();
+    let disabled_defaults = cfg.misconfigured_default_providers();
     if !disabled_defaults.is_empty() {
         warnings.push(format!(
-            "default_providers contains disabled provider(s): {}",
+            "default_providers contains unavailable provider(s): {}",
             disabled_defaults.join(", ")
         ));
     }
