@@ -1527,8 +1527,8 @@ async fn web_search_uses_default_max_results_when_omitted() {
 // Task 7: MCP Tool Surface Regression Test (mock state)
 //
 // Verifies that EggsearchServer built with mock state still exposes
-// exactly the three expected tools: web_search, web_fetch,
-// provider_status. Catches accidental unregistration of any tool.
+// exactly the ten stable MCP tools exposed by the current public surface.
+// Catches accidental unregistration of any tool.
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "mock")]

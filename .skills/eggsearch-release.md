@@ -5,7 +5,7 @@
 1. `make check` passes (fmt + clippy + tests + schema-corpus)
 2. Version bumped in `Cargo.toml`
 3. `CHANGELOG.md` updated with new version entry
-4. `cargo publish --dry-run` succeeds
+4. `cargo publish --dry-run --locked` succeeds
 5. README stays concise; release-facing detail belongs in `docs/config.md`, `docs/safety.md`, `docs/tool-matrix.md`, `docs/agent-workflows.md`, and `docs/architecture/codegg-contract.md`
 
 ## Release Steps
@@ -48,7 +48,7 @@ Follows Semantic Versioning. Breaking changes to MCP tool schemas require a majo
 | schema-corpus | 6 regression test binaries |
 | fmt | `cargo fmt --check` |
 | release-build | `cargo build --release` |
-| publish-check | `cargo publish --dry-run` |
+| publish-check | `cargo publish --dry-run --locked` |
 | docs | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
 ## Feature Flags
@@ -68,4 +68,4 @@ keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
 categories = ["command-line-utilities", "web-programming"]
 ```
 
-Ensure `README.md`, `LICENSE`, `CHANGELOG.md` are in the `include` list.
+Ensure `README.md`, `LICENSE`, `CHANGELOG.md`, and `docs/**/*.md` are in the `include` list.

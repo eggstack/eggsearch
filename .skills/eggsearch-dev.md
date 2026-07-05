@@ -12,7 +12,7 @@ cargo clippy --all-features -- -D warnings
 cargo test --all-features
 cargo test --no-default-features
 cargo build --release
-cargo publish --dry-run
+cargo publish --dry-run --locked
 ```
 
 **Critical:** Integration/corpus tests require `--features mock`. Running `cargo test` without features misses most integration tests. CI runs 4 feature combos: `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`.
