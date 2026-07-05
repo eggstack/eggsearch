@@ -1190,7 +1190,9 @@ pub fn run_provider_status(
     // Build health snapshots from the adapter's health registry
     let health_snapshots = state.adapter.health().all_snapshots(
         state.adapter.provider_ids(),
-        &std::collections::BTreeMap::new(),
+        state.adapter.searxng_configured(),
+        state.adapter.api_configured(),
+        state.local_backend.is_some(),
     );
 
     let payload = serde_json::json!({

@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::provider::{built_in_provider_descriptor, KNOWN_PROVIDER_IDS};
+use crate::core::provider::{
+    built_in_provider_descriptor, provider_configured_state, KNOWN_PROVIDER_IDS,
+};
 use crate::core::repo_search::SearchProfile;
 
 /// Coarse error class for health tracking. Matches `ErrorClass` from adapter.
@@ -282,16 +284,23 @@ impl ProviderHealthRegistry {
     pub fn all_snapshots(
         &self,
         enabled_ids: &[String],
+        searxng_configured: bool,
         api_configured: &BTreeMap<String, bool>,
+        local_backend_available: bool,
     ) -> Vec<ProviderHealthSnapshot> {
         let mut snapshots = Vec::new();
         for id in KNOWN_PROVIDER_IDS {
-            let enabled = enabled_ids.iter().any(|s| s.as_str() == *id);
-            let configured = if *id == "searxng" {
-                enabled
+            let enabled = if *id == "local_workspace" {
+                local_backend_available
             } else {
-                api_configured.get(*id).copied().unwrap_or(false)
+                enabled_ids.iter().any(|s| s.as_str() == *id)
             };
+            let configured = provider_configured_state(
+                id,
+                searxng_configured,
+                api_configured.get(*id).copied().unwrap_or(false),
+                local_backend_available,
+            );
             snapshots.push(self.snapshot(id, enabled, configured));
         }
         // Add API-configured providers not in KNOWN_PROVIDER_IDS
@@ -1060,6 +1069,48 @@ mod tests {
         assert!(json.contains("duckduckgo"));
         let parsed: ProviderHealthSnapshot = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.status, ProviderHealthStatus::Healthy);
+    }
+
+    #[test]
+    fn all_snapshots_reflect_configured_state() {
+        let registry = ProviderHealthRegistry::new();
+        let enabled_ids = vec![
+            "duckduckgo".to_string(),
+            "searxng".to_string(),
+            "brave_api".to_string(),
+            "local_workspace".to_string(),
+        ];
+        let mut api_configured = BTreeMap::new();
+        api_configured.insert("brave_api".to_string(), true);
+        let snapshots = registry.all_snapshots(&enabled_ids, true, &api_configured, true);
+
+        let duck = snapshots
+            .iter()
+            .find(|s| s.provider_id == "duckduckgo")
+            .expect("duckduckgo snapshot");
+        assert!(duck.enabled);
+        assert!(duck.configured);
+
+        let searxng = snapshots
+            .iter()
+            .find(|s| s.provider_id == "searxng")
+            .expect("searxng snapshot");
+        assert!(searxng.enabled);
+        assert!(searxng.configured);
+
+        let brave_api = snapshots
+            .iter()
+            .find(|s| s.provider_id == "brave_api")
+            .expect("brave_api snapshot");
+        assert!(brave_api.enabled);
+        assert!(brave_api.configured);
+
+        let local = snapshots
+            .iter()
+            .find(|s| s.provider_id == "local_workspace")
+            .expect("local snapshot");
+        assert!(local.enabled);
+        assert!(local.configured);
     }
 
     #[test]

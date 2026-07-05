@@ -10,7 +10,8 @@ use futures::FutureExt;
 
 use crate::core::config::ApiProviderConfig;
 use crate::core::provider::{
-    built_in_provider_descriptor, CapabilityOption, ProviderDescriptor, KNOWN_PROVIDER_IDS,
+    built_in_provider_descriptor, provider_configured_state, CapabilityOption, ProviderDescriptor,
+    KNOWN_PROVIDER_IDS,
 };
 use crate::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
@@ -285,6 +286,16 @@ impl MetadataSearchAdapter {
         &self.health
     }
 
+    /// Whether the SearXNG provider has a valid base URL.
+    pub fn searxng_configured(&self) -> bool {
+        self.searxng_configured
+    }
+
+    /// Runtime configured state for API-key providers.
+    pub fn api_configured(&self) -> &std::collections::BTreeMap<String, bool> {
+        &self.api_configured
+    }
+
     /// Record provider health from raw dispatch results and failures.
     /// Call after dispatch completes but before `provider_failures()`.
     /// Also records timeout failures for providers that never responded.
@@ -440,17 +451,12 @@ impl MetadataSearchAdapter {
             .filter_map(|id| {
                 let is_enabled = enabled.contains(id);
                 let is_default = defaults.contains(id);
-                let configured = if *id == "searxng" {
-                    self.searxng_configured
-                } else if let Some(&cfg) = self.api_configured.get(*id) {
-                    // API-key providers: use the env-var-based
-                    // configured flag from the api_configured map.
-                    cfg
-                } else {
-                    // HTML scrape and other known providers are
-                    // always "configured" when known.
-                    true
-                };
+                let configured = provider_configured_state(
+                    id,
+                    self.searxng_configured,
+                    self.api_configured.get(*id).copied().unwrap_or(false),
+                    false,
+                );
                 built_in_provider_descriptor(id, is_enabled, is_default, configured)
             })
             .collect();
@@ -862,7 +868,7 @@ impl MetadataSearchAdapter {
                     language: req.language.clone(),
                     file: req.file.clone(),
                     symbol: req.symbol.clone(),
-                    max_results: Some(effective_max_results / 2),
+                    max_results: Some(local_result_budget(effective_max_results)),
                     timeout_ms: req.timeout_ms,
                 };
                 let local_result = backend.search(&local_req).await;
@@ -2039,6 +2045,14 @@ fn candidate_pool_size(final_max_results: usize, candidate_cap: usize) -> usize 
         .min(candidate_cap.max(final_max_results))
 }
 
+fn local_result_budget(effective_max_results: usize) -> usize {
+    if effective_max_results == 0 {
+        0
+    } else {
+        (effective_max_results / 2).max(1)
+    }
+}
+
 fn aggregate_rrf(
     engine_results: Vec<(String, Vec<SearchResult>)>,
     max_results: usize,
@@ -2888,6 +2902,15 @@ mod tests {
         // the helper should still be panic-safe for that case.
         assert_eq!(candidate_pool_size(0, 50), 0);
         assert_eq!(candidate_pool_size(0, 0), 0);
+    }
+
+    #[test]
+    fn local_result_budget_never_returns_zero_for_positive_budget() {
+        assert_eq!(local_result_budget(0), 0);
+        assert_eq!(local_result_budget(1), 1);
+        assert_eq!(local_result_budget(2), 1);
+        assert_eq!(local_result_budget(3), 1);
+        assert_eq!(local_result_budget(4), 2);
     }
 
     #[tokio::test]

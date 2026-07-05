@@ -4,15 +4,18 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use reqwest::Client;
+use std::net::SocketAddr;
 
 use super::detect;
 use super::extract::{extract_links_from_html, LinkExtractionResult};
-use super::limits::{validate_fetch_target, validate_url, FetchLimits};
+use super::limits::{
+    validate_fetch_target, validate_fetch_target_with_resolved_addrs, validate_url, FetchLimits,
+};
 use super::render;
 use super::types::FetchError;
 use crate::core::code_host_fetch::resolve_code_host_fetch_target;
 use crate::core::document::{
-    DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument, FetchRenderMetadata,
+    build_document_chunks, DocumentKind, DocumentOutlineEntry, FetchDocument, FetchRenderMetadata,
     RenderFormat,
 };
 use crate::core::fetch::{ExtractMode, FetchTrust, WebFetchResponse};
@@ -80,6 +83,25 @@ impl FetchClient {
         })
     }
 
+    fn client_for_url(
+        &self,
+        url: &url::Url,
+        addrs: Option<&[SocketAddr]>,
+    ) -> Result<Client, FetchError> {
+        if let (Some(host), Some(addrs)) = (url.host_str(), addrs) {
+            if !addrs.is_empty() {
+                return Client::builder()
+                    .timeout(Duration::from_millis(self.limits.timeout_ms))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .user_agent(&self.user_agent)
+                    .resolve_to_addrs(host, addrs)
+                    .build()
+                    .map_err(|e| FetchError::NetworkError(e.to_string()));
+            }
+        }
+        Ok(self.client.clone())
+    }
+
     /// Fetches a URL and extracts content.
     ///
     /// # Arguments
@@ -107,8 +129,6 @@ impl FetchClient {
             if let Some(ref raw_url) = target.raw_url {
                 // Validate the raw URL through the same safety pipeline.
                 let raw_url_parsed = validate_url(raw_url, &self.limits)?;
-                // Also apply full validation (credentials, localhost, DNS).
-                validate_fetch_target(&raw_url_parsed, &self.limits).await?;
                 let transform = target.to_fetch_transform(raw_url);
                 (raw_url_parsed, transform)
             } else {
@@ -127,10 +147,13 @@ impl FetchClient {
 
         let mut response = loop {
             // Full validation: credentials, localhost, DNS resolution, IP checks.
-            validate_fetch_target(&current_url, &self.limits).await?;
+            let resolved_addrs =
+                validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?;
+            // Reuse the validated address set so the connect path
+            // cannot drift to a different DNS answer for this attempt.
+            let request_client = self.client_for_url(&current_url, resolved_addrs.as_deref())?;
 
-            let resp = self
-                .client
+            let resp = request_client
                 .get(current_url.clone())
                 .send()
                 .await
@@ -530,6 +553,8 @@ impl FetchClient {
             links_truncated,
         ) = if extract_mode == ExtractMode::MetadataOnly {
             if is_html {
+                // Keep metadata extraction bounded, but skip body text
+                // and structured document construction.
                 let (t, d, _blocks, w, _) =
                     render::blocks::render_blocks(&body, &final_url, max_chars, false);
                 let LinkExtractionResult {
@@ -770,25 +795,12 @@ impl FetchClient {
                 (Vec::new(), Vec::new(), 0, false)
             };
 
-            // Build a single chunk from all blocks.
-            let chunks = if !blocks.is_empty() {
-                let chunk_text = blocks
-                    .iter()
-                    .map(|b| b.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                vec![DocumentChunk {
-                    chunk_id: "chunk_0".to_string(),
-                    text: chunk_text,
-                    heading_path: outline.iter().map(|e| e.title.clone()).collect(),
-                    block_start: 0,
-                    block_end: blocks.len().saturating_sub(1),
-                    page_start: None,
-                    page_end: None,
-                }]
-            } else {
-                Vec::new()
-            };
+            let document_id = crate::core::identity::doc_id(
+                Some(&final_url),
+                raw_title.as_deref(),
+                Some(doc_kind.as_str()),
+            );
+            let chunks = build_document_chunks(&document_id, &outline, &blocks, max_chars);
 
             Some(FetchDocument {
                 kind: doc_kind,

@@ -38,6 +38,25 @@ pub enum DocumentKind {
     Unknown,
 }
 
+impl DocumentKind {
+    /// Returns the stable snake_case label for this document kind.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::PlainText => "plain_text",
+            Self::Markdown => "markdown",
+            Self::Code => "code",
+            Self::Json => "json",
+            Self::Toml => "toml",
+            Self::Yaml => "yaml",
+            Self::Diff => "diff",
+            Self::Patch => "patch",
+            Self::Pdf => "pdf",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// The render format used to represent the document content.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -163,6 +182,155 @@ pub struct DocumentChunk {
     pub page_end: Option<usize>,
 }
 
+const DEFAULT_CHUNK_CHAR_LIMIT: usize = 4096;
+const DEFAULT_CHUNK_BLOCK_LIMIT: usize = 8;
+
+/// Build bounded, deterministic chunks from rendered document blocks.
+pub fn build_document_chunks(
+    doc_id: &str,
+    outline: &[DocumentOutlineEntry],
+    blocks: &[RenderedBlock],
+    max_chars: usize,
+) -> Vec<DocumentChunk> {
+    if blocks.is_empty() {
+        return Vec::new();
+    }
+
+    let chunk_char_limit = max_chars.clamp(1, DEFAULT_CHUNK_CHAR_LIMIT);
+    let chunk_block_limit = DEFAULT_CHUNK_BLOCK_LIMIT.max(1);
+    let has_heading_blocks = blocks.iter().any(|block| block.kind == BlockKind::Heading);
+    let mut heading_stack: Vec<(usize, String)> = if has_heading_blocks {
+        Vec::new()
+    } else {
+        outline
+            .iter()
+            .map(|entry| (entry.level, entry.title.clone()))
+            .collect()
+    };
+
+    let mut chunks = Vec::new();
+    let mut chunk_start = 0usize;
+    let mut chunk_chars = 0usize;
+    let mut chunk_blocks = 0usize;
+    let mut chunk_heading_path = current_heading_path(&heading_stack);
+    let mut chunk_page_start: Option<usize> = None;
+    let mut chunk_page_end: Option<usize> = None;
+
+    let mut push_chunk = |block_start: usize,
+                          block_end: usize,
+                          heading_path: &[String],
+                          page_start: Option<usize>,
+                          page_end: Option<usize>| {
+        if block_start > block_end {
+            return;
+        }
+
+        let text = blocks[block_start..=block_end]
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let heading_path_joined = heading_path.join("/");
+        let chunk_index = chunks.len();
+        chunks.push(DocumentChunk {
+            chunk_id: crate::core::identity::chunk_id(doc_id, chunk_index, &heading_path_joined),
+            text,
+            heading_path: heading_path.to_vec(),
+            block_start,
+            block_end,
+            page_start,
+            page_end,
+        });
+    };
+
+    for (block_index, block) in blocks.iter().enumerate() {
+        let block_chars = block.text.chars().count();
+        let next_chars = if chunk_blocks == 0 {
+            block_chars
+        } else {
+            chunk_chars + 1 + block_chars
+        };
+        let would_overflow = chunk_blocks > 0
+            && (next_chars > chunk_char_limit || chunk_blocks >= chunk_block_limit);
+
+        if would_overflow {
+            push_chunk(
+                chunk_start,
+                block_index - 1,
+                &chunk_heading_path,
+                chunk_page_start,
+                chunk_page_end,
+            );
+            chunk_start = block_index;
+            chunk_chars = 0;
+            chunk_blocks = 0;
+            chunk_heading_path = current_heading_path(&heading_stack);
+            chunk_page_start = None;
+            chunk_page_end = None;
+        }
+
+        if block.kind == BlockKind::Heading {
+            if chunk_blocks > 0 {
+                push_chunk(
+                    chunk_start,
+                    block_index - 1,
+                    &chunk_heading_path,
+                    chunk_page_start,
+                    chunk_page_end,
+                );
+                chunk_start = block_index;
+                chunk_chars = 0;
+                chunk_blocks = 0;
+                chunk_page_start = None;
+                chunk_page_end = None;
+            }
+            update_heading_stack(
+                &mut heading_stack,
+                block.level.unwrap_or(1),
+                block.text.clone(),
+            );
+            chunk_heading_path = current_heading_path(&heading_stack);
+        }
+
+        if chunk_blocks > 0 {
+            chunk_chars += 1;
+        }
+        chunk_chars += block_chars;
+        chunk_blocks += 1;
+        if let Some(page) = block.page {
+            chunk_page_start = Some(chunk_page_start.map_or(page, |current| current.min(page)));
+            chunk_page_end = Some(chunk_page_end.map_or(page, |current| current.max(page)));
+        }
+
+        if block_index + 1 == blocks.len() {
+            push_chunk(
+                chunk_start,
+                block_index,
+                &chunk_heading_path,
+                chunk_page_start,
+                chunk_page_end,
+            );
+        }
+    }
+
+    chunks
+}
+
+fn update_heading_stack(stack: &mut Vec<(usize, String)>, level: usize, title: String) {
+    let level = level.max(1);
+    while let Some((current_level, _)) = stack.last() {
+        if *current_level < level {
+            break;
+        }
+        stack.pop();
+    }
+    stack.push((level, title));
+}
+
+fn current_heading_path(stack: &[(usize, String)]) -> Vec<String> {
+    stack.iter().map(|(_, title)| title.clone()).collect()
+}
+
 /// A structured document representation of fetched content.
 ///
 /// This is the primary new type introduced in Phase 1 of the
@@ -199,4 +367,104 @@ pub struct FetchDocument {
     /// Semantic chunks of the document.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chunks: Vec<DocumentChunk>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_document_chunks_splits_on_headings() {
+        let outline = vec![DocumentOutlineEntry {
+            level: 1,
+            title: "Doc Title".to_string(),
+            anchor: None,
+            block_index: Some(0),
+        }];
+        let blocks = vec![
+            RenderedBlock {
+                kind: BlockKind::Heading,
+                text: "Intro".to_string(),
+                level: Some(1),
+                anchor: None,
+                language: None,
+                line_start: None,
+                line_end: None,
+                page: Some(1),
+            },
+            RenderedBlock {
+                kind: BlockKind::Paragraph,
+                text: "Alpha".to_string(),
+                level: None,
+                anchor: None,
+                language: None,
+                line_start: None,
+                line_end: None,
+                page: Some(1),
+            },
+            RenderedBlock {
+                kind: BlockKind::Heading,
+                text: "Next".to_string(),
+                level: Some(2),
+                anchor: None,
+                language: None,
+                line_start: None,
+                line_end: None,
+                page: Some(2),
+            },
+            RenderedBlock {
+                kind: BlockKind::Paragraph,
+                text: "Beta".to_string(),
+                level: None,
+                anchor: None,
+                language: None,
+                line_start: None,
+                line_end: None,
+                page: Some(2),
+            },
+        ];
+
+        let chunks = build_document_chunks("doc_test", &outline, &blocks, 4096);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(
+            chunks[0].chunk_id,
+            crate::core::identity::chunk_id("doc_test", 0, "Intro")
+        );
+        assert_eq!(chunks[0].block_start, 0);
+        assert_eq!(chunks[0].block_end, 1);
+        assert_eq!(chunks[0].page_start, Some(1));
+        assert_eq!(chunks[0].page_end, Some(1));
+        assert_eq!(
+            chunks[1].chunk_id,
+            crate::core::identity::chunk_id("doc_test", 1, "Intro/Next")
+        );
+        assert_eq!(chunks[1].block_start, 2);
+        assert_eq!(chunks[1].block_end, 3);
+        assert_eq!(chunks[1].page_start, Some(2));
+        assert_eq!(chunks[1].page_end, Some(2));
+    }
+
+    #[test]
+    fn build_document_chunks_uses_outline_when_no_heading_blocks_exist() {
+        let outline = vec![DocumentOutlineEntry {
+            level: 1,
+            title: "Page Title".to_string(),
+            anchor: None,
+            block_index: Some(0),
+        }];
+        let blocks = vec![RenderedBlock {
+            kind: BlockKind::Paragraph,
+            text: "Alpha".to_string(),
+            level: None,
+            anchor: None,
+            language: None,
+            line_start: None,
+            line_end: None,
+            page: None,
+        }];
+
+        let chunks = build_document_chunks("doc_outline", &outline, &blocks, 4096);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].heading_path, vec!["Page Title".to_string()]);
+    }
 }

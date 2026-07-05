@@ -1400,6 +1400,84 @@ async fn web_fetch_unsupported_scheme_returns_error() {
     );
 }
 
+#[tokio::test]
+async fn web_fetch_embedded_credentials_returns_error() {
+    let state = state_with_default();
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: "https://user:pass@example.com/secret".into(),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected credential rejection");
+    assert!(err.to_string().contains("credentials"), "got: {err}");
+}
+
+#[tokio::test]
+async fn web_fetch_localhost_and_private_network_literals_return_error() {
+    let state = state_with_default();
+    for url in ["http://localhost/", "http://192.168.1.1/secret"] {
+        let res = run_web_fetch(
+            state.clone(),
+            WebFetchArgs {
+                url: url.into(),
+                max_chars: None,
+                timeout_ms: None,
+                extract_mode: None,
+                include_links: None,
+            },
+        )
+        .await;
+        let err = res.expect_err("expected private-network rejection");
+        assert!(
+            err.to_string().contains("private network") || err.to_string().contains("localhost"),
+            "got: {err}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_fetch_redirect_target_with_credentials_is_blocked() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/redirect");
+        then.status(302)
+            .header("location", "https://user:pass@example.com/steal");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/redirect"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await;
+
+    let err = res.expect_err("expected redirect target rejection");
+    assert!(
+        err.to_string().contains("redirect target blocked"),
+        "got: {err}"
+    );
+    assert!(err.to_string().contains("credentials"), "got: {err}");
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_disabled_provider_in_explicit_request_returns_error() {
@@ -1671,6 +1749,7 @@ async fn web_fetch_mcp_level_full_response_shape() {
 
 #[tokio::test]
 async fn web_fetch_mcp_level_metadata_only_mode() {
+    use eggsearch::core::sanitize::{SNIPPET_MAX_CHARS, TITLE_MAX_CHARS};
     use httpmock::prelude::*;
 
     let server = MockServer::start();
@@ -1680,8 +1759,8 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
             .header("content-type", "text/html; charset=utf-8")
             .body(
                 b"<!DOCTYPE html><html><head>\
-                  <title>Meta Page</title>\
-                  <meta name=\"description\" content=\"Desc only\">\
+                  <title>Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page Meta Page</title>\
+                  <meta name=\"description\" content=\"Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only Desc only\">\
                   </head><body><p>Body text here</p></body></html>",
             );
     });
@@ -1712,9 +1791,17 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
     );
 
     // Metadata-only should still have title and description.
+    let title = v["title"].as_str().expect("title should be present");
     assert!(
-        v["title"].as_str().is_some(),
-        "title should be present: {v:?}"
+        title.chars().count() <= TITLE_MAX_CHARS,
+        "title should be bounded: {title}"
+    );
+    let description = v["description"]
+        .as_str()
+        .expect("description should be present");
+    assert!(
+        description.chars().count() <= SNIPPET_MAX_CHARS,
+        "description should be bounded: {description}"
     );
 
     // With sanitize_output = false, framing should be off.
@@ -2058,6 +2145,95 @@ async fn web_fetch_document_has_blocks_and_chunks() {
     assert!(
         block.get("text").is_some(),
         "block should have text: {block:?}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_document_chunks_are_split_and_stable() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/chunked");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                b"<!DOCTYPE html><html><head>\
+                  <title>Chunked</title>\
+                  </head><body>\
+                  <p>Intro paragraph before sections.</p>\
+                  <h2>Section One</h2>\
+                  <p>First section paragraph.</p>\
+                  <h2>Section Two</h2>\
+                  <p>Second section paragraph.</p>\
+                  <h2>Section Three</h2>\
+                  <p>Third section paragraph.</p>\
+                  </body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/chunked"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("ok");
+
+    let doc = v["document"]
+        .as_object()
+        .expect("document should be present");
+    let blocks = doc["blocks"].as_array().expect("blocks should be an array");
+    let chunks = doc["chunks"].as_array().expect("chunks should be an array");
+    assert!(
+        chunks.len() >= 4,
+        "expected multiple chunks for separate sections: {chunks:?}"
+    );
+
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut previous_end = None;
+    for chunk in chunks {
+        let chunk_id = chunk["chunk_id"].as_str().expect("chunk_id");
+        assert!(
+            chunk_id.starts_with("chunk_"),
+            "chunk_id should be stable: {chunk:?}"
+        );
+        assert!(
+            seen_ids.insert(chunk_id),
+            "chunk ids should be unique: {chunks:?}"
+        );
+
+        let block_start = chunk["block_start"].as_u64().expect("block_start") as usize;
+        let block_end = chunk["block_end"].as_u64().expect("block_end") as usize;
+        assert!(block_start <= block_end, "invalid chunk range: {chunk:?}");
+        assert!(
+            block_end < blocks.len(),
+            "chunk range out of bounds: {chunk:?}"
+        );
+        if let Some(prev) = previous_end {
+            assert!(block_start > prev, "chunks should not overlap: {chunks:?}");
+        }
+        previous_end = Some(block_end);
+    }
+
+    let second_chunk_path = chunks[1]["heading_path"]
+        .as_array()
+        .expect("heading_path should be array");
+    assert!(
+        second_chunk_path
+            .iter()
+            .any(|v| v.as_str().unwrap_or("") == "Section One"),
+        "expected Section One in heading path: {chunks:?}"
     );
 }
 
@@ -4586,12 +4762,17 @@ async fn web_fetch_code_host_url_rewrite_validates_raw_url_safety() {
             .unwrap();
 
     // The raw URL should be on raw.githubusercontent.com (public)
-    let raw_url = target.raw_url.unwrap();
+    let raw_url = target.raw_url.as_deref().expect("raw url");
     assert!(raw_url.starts_with("https://raw.githubusercontent.com/"));
     assert!(!raw_url.contains("localhost"));
     assert!(!raw_url.contains("127.0.0.1"));
     assert!(!raw_url.contains("192.168."));
     assert!(!raw_url.contains("10."));
+    let transform = target.to_fetch_transform(raw_url).expect("transform");
+    assert_eq!(
+        transform.kind,
+        eggsearch::core::fetch::FetchTransformKind::GithubRawFile
+    );
 }
 
 #[test]
@@ -5652,6 +5833,34 @@ mod provider_status {
             searxng_configured["configured"], true,
             "searxng should be configured=true when base_url is set"
         );
+    }
+
+    #[test]
+    fn provider_status_health_marks_default_html_providers_configured() {
+        let state = state_with_default();
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
+
+        let health = v["health"].as_array().expect("health should be array");
+        let duck = health
+            .iter()
+            .find(|p| p["provider_id"].as_str() == Some("duckduckgo"))
+            .expect("duckduckgo health entry");
+        assert_eq!(duck["enabled"], true);
+        assert_eq!(duck["configured"], true);
+
+        let brave_api = health
+            .iter()
+            .find(|p| p["provider_id"].as_str() == Some("brave_api"))
+            .expect("brave_api health entry");
+        assert_eq!(brave_api["enabled"], false);
+        assert_eq!(brave_api["configured"], false);
     }
 
     #[test]
@@ -9705,6 +9914,14 @@ fn provider_status_local_workspace_enabled_when_configured() {
         .expect("local_workspace should be listed");
     assert_eq!(local["enabled"], true);
     assert_eq!(local["configured"], true);
+
+    let health = v["health"].as_array().expect("health is array");
+    let local_health = health
+        .iter()
+        .find(|p| p["provider_id"].as_str() == Some("local_workspace"))
+        .expect("local_workspace health entry");
+    assert_eq!(local_health["enabled"], true);
+    assert_eq!(local_health["configured"], true);
 }
 
 #[cfg(feature = "mock")]

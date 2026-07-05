@@ -512,8 +512,11 @@ metadata.
 
 ## 9. Capability Discovery
 
-`provider_status` returns `server_capabilities` and `tool_capabilities`
-advertising which tool classes are available.
+`provider_status` returns provider descriptors, cached health snapshots,
+`code_hosts`, `server_capabilities`, `tool_capabilities`, and
+`workflow_recipes`. The `probe` request field is reserved and currently
+ignored; the tool reports configured state rather than performing live
+provider probes.
 
 ### 9.1 Server Capabilities
 
@@ -525,6 +528,7 @@ advertising which tool classes are available.
   "repo_search": true,
   "repo_fetch": true,
   "repo_map": true,
+  "document_fetch": true,
   "security_search": true,
   "research_search": true,
   "evidence_bundle": true,
@@ -547,13 +551,17 @@ Per-tool feature details:
     "remote_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
     "workspace": true,
     "line_ranges": true,
+    "context_lines": true,
+    "max_chars_enforced": true,
     "symbol_search": true,
-    "expand_to_block": true
+    "expand_to_block": true,
+    "max_block_lines": true
   },
   "repo_search": {
     "profiles": ["generic", "coding", "security", "research"],
     "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
     "local_workspace": true,
+    "subquery_telemetry": true,
     "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"]
   }
 }
@@ -584,6 +592,20 @@ Every search response includes a `routing_decision` field:
 
 Harnesses should use `routing_decision.degraded` to decide whether to
 warn the user about reduced capability.
+
+### 9.4 `web_fetch` Metadata-Only Mode
+
+`web_fetch` supports `extract_mode = "metadata_only"` for explicit URL
+fetches.
+
+- HTML pages return title and description metadata without body text or
+  a structured document.
+- Non-HTML responses suppress body text and do not build a structured
+  document.
+- PDF responses with the `pdf` feature enabled return a minimal
+  document that carries fetch context but no extracted body text.
+
+Use `metadata_only` when you need page metadata but not the body.
 
 ---
 

@@ -29,7 +29,7 @@ src/
 
 `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`. Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
 
-### Known Providers (16+)
+### Known Providers (18 built-ins)
 HTML scrapers: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`
 JSON API: `searxng`
 API-key: `brave_api`, `github_code`, `github_issues`, `github_releases`, `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`, `gitea_issues`, `gitea_releases`
@@ -51,6 +51,7 @@ SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashe
 3. **Tier 3 (default on):** Prompt-injection pattern scan
 
 Configured via `[search].sanitize_output` and `[fetch].sanitize_output` (both default `true`).
+`web_fetch` supports `extract_mode = "metadata_only"`: HTML returns title/description only, non-HTML suppresses body text, and PDF returns a minimal metadata document when the `pdf` feature is enabled.
 
 ## Config
 
@@ -62,7 +63,8 @@ MCP over stdio only. Server instructions in `EGGSEARCH_INSTRUCTIONS` constant in
 
 ## Key Architecture Docs
 
+- `docs/config.md` — config defaults, provider enablement, provider_status semantics
+- `docs/safety.md` — trust model, fetch safety, `metadata_only`
 - `docs/architecture/codegg-contract.md` — deterministic IDs, warnings, trust model, schema stability
-- `docs/codegg-integration.md` — full integration reference for harness developers
 - `docs/agent-workflows.md` — tool call sequences and workflow recipes
 - `docs/tool-matrix.md` — compact tool reference table

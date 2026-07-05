@@ -2,8 +2,9 @@
 
 use anyhow::Result;
 use eggsearch::core::config::AppConfig;
-use eggsearch::core::provider::KNOWN_PROVIDER_IDS;
+use eggsearch::core::provider::{is_api_provider, provider_configured_state, KNOWN_PROVIDER_IDS};
 use eggsearch::mcp::ServerState;
+use eggsearch::meta::local_backend::LocalWorkspaceBackend;
 use std::path::PathBuf;
 
 pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) -> Result<()> {
@@ -20,6 +21,14 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
     } else {
         false
     };
+    let local_backend_available = LocalWorkspaceBackend::new(cfg.local.clone())
+        .map(|backend| backend.is_enabled())
+        .unwrap_or(false);
+    let enabled_ids = KNOWN_PROVIDER_IDS
+        .iter()
+        .filter(|id| provider_enabled_state(cfg, id, local_backend_available))
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
 
     println!(
         "{}",
@@ -29,15 +38,15 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
             "config_file_loaded": config_file_loaded,
             "mode": format!("{:?}", cfg.search.mode),
             "providers": {
-                "enabled": cfg.effective_provider_ids(),
+                "enabled": enabled_ids,
                 "default": cfg.search.default_providers,
                 "disabled": {
                     "known": KNOWN_PROVIDER_IDS.iter()
-                        .filter(|id| cfg.search.providers.get(**id).is_some_and(|v| !*v))
+                        .filter(|id| !provider_enabled_state(cfg, id, local_backend_available))
                         .map(|s| s.to_string())
                         .collect::<Vec<_>>(),
                 },
-                "capabilities": provider_capability_summary(cfg),
+                "capabilities": provider_capability_summary(cfg, local_backend_available),
             },
             "search": {
                 "default_max_results": cfg.search.default_max_results,
@@ -71,10 +80,18 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
     Ok(())
 }
 
-fn provider_capability_summary(cfg: &AppConfig) -> Vec<serde_json::Value> {
+fn provider_capability_summary(
+    cfg: &AppConfig,
+    local_backend_available: bool,
+) -> Vec<serde_json::Value> {
     use eggsearch::core::provider::built_in_provider_descriptor;
 
     let mut out = Vec::new();
+    let enabled_set: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS
+        .iter()
+        .copied()
+        .filter(|id| provider_enabled_state(cfg, id, local_backend_available))
+        .collect();
     let default_set: std::collections::BTreeSet<&str> = cfg
         .search
         .default_providers
@@ -83,20 +100,27 @@ fn provider_capability_summary(cfg: &AppConfig) -> Vec<serde_json::Value> {
         .collect();
 
     for id in KNOWN_PROVIDER_IDS {
-        let enabled = cfg.search.providers.get(*id).copied().unwrap_or(false);
+        let enabled = enabled_set.contains(id);
         let is_default = default_set.contains(id);
-        let configured = match *id {
-            "searxng" => {
-                cfg.search.searxng.enabled
-                    && cfg
-                        .search
-                        .searxng
-                        .base_url
-                        .as_deref()
-                        .is_some_and(|u| !u.is_empty())
-            }
-            _ => true,
-        };
+        let searxng_configured = cfg
+            .search
+            .searxng
+            .base_url
+            .as_deref()
+            .is_some_and(|u| url::Url::parse(u).is_ok());
+        let api_configured = cfg.search.api.get(*id).is_some_and(|api_cfg| {
+            api_cfg.enabled
+                && api_cfg
+                    .api_key_env
+                    .as_deref()
+                    .is_some_and(|env| std::env::var(env).is_ok())
+        });
+        let configured = provider_configured_state(
+            id,
+            searxng_configured,
+            api_configured,
+            local_backend_available,
+        );
         if let Some(desc) = built_in_provider_descriptor(id, enabled, is_default, configured) {
             out.push(serde_json::json!({
                 "id": desc.id,
@@ -109,6 +133,21 @@ fn provider_capability_summary(cfg: &AppConfig) -> Vec<serde_json::Value> {
         }
     }
     out
+}
+
+fn provider_enabled_state(cfg: &AppConfig, id: &str, local_backend_available: bool) -> bool {
+    match id {
+        "local_workspace" => local_backend_available,
+        "searxng" => {
+            cfg.search.providers.get(id).copied().unwrap_or(false) && cfg.search.searxng.enabled
+        }
+        _ if is_api_provider(id) => cfg
+            .search
+            .api
+            .get(id)
+            .is_some_and(|api_cfg| api_cfg.enabled),
+        _ => cfg.search.providers.get(id).copied().unwrap_or(false),
+    }
 }
 
 fn provider_kind_str(kind: &eggsearch::core::provider::ProviderKind) -> &'static str {
@@ -299,4 +338,124 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eggsearch::core::config::{ApiProviderConfig, AppConfig, SearxngConfig};
+
+    #[test]
+    fn provider_capability_summary_reflects_default_configuration() {
+        let cfg = AppConfig::default();
+        let summary = provider_capability_summary(&cfg, false);
+
+        let duck = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("duckduckgo"))
+            .expect("duckduckgo provider");
+        assert_eq!(duck["enabled"], true);
+        assert_eq!(duck["configured"], true);
+
+        let osv = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("osv"))
+            .expect("osv provider");
+        assert_eq!(osv["enabled"], true);
+        assert_eq!(osv["configured"], true);
+
+        let brave_api = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("brave_api"))
+            .expect("brave_api provider");
+        assert_eq!(brave_api["enabled"], false);
+        assert_eq!(brave_api["configured"], false);
+
+        let local = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("local_workspace"))
+            .expect("local_workspace provider");
+        assert_eq!(local["enabled"], false);
+        assert_eq!(local["configured"], false);
+    }
+
+    #[test]
+    fn provider_capability_summary_marks_api_provider_configured_when_env_set() {
+        let env = "EGGSEARCH_DOCTOR_TEST_API_ENABLED_KEY";
+        std::env::set_var(env, "test_key");
+
+        let mut cfg = AppConfig::default();
+        cfg.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+
+        let summary = provider_capability_summary(&cfg, false);
+        std::env::remove_var(env);
+
+        let brave_api = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("brave_api"))
+            .expect("brave_api provider");
+        assert_eq!(brave_api["enabled"], true);
+        assert_eq!(brave_api["configured"], true);
+    }
+
+    #[test]
+    fn provider_capability_summary_marks_api_provider_unconfigured_when_env_missing() {
+        let env = "EGGSEARCH_DOCTOR_TEST_API_MISSING_KEY";
+        std::env::remove_var(env);
+
+        let mut cfg = AppConfig::default();
+        cfg.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+
+        let summary = provider_capability_summary(&cfg, false);
+        let brave_api = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("brave_api"))
+            .expect("brave_api provider");
+        assert_eq!(brave_api["enabled"], true);
+        assert_eq!(brave_api["configured"], false);
+    }
+
+    #[test]
+    fn provider_capability_summary_marks_searxng_configured_when_base_url_set() {
+        let mut cfg = AppConfig::default();
+        cfg.search.providers.insert("searxng".to_string(), true);
+        cfg.search.searxng = SearxngConfig {
+            enabled: true,
+            base_url: Some("https://search.example.org".to_string()),
+        };
+
+        let summary = provider_capability_summary(&cfg, false);
+        let searxng = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("searxng"))
+            .expect("searxng provider");
+        assert_eq!(searxng["enabled"], true);
+        assert_eq!(searxng["configured"], true);
+    }
+
+    #[test]
+    fn provider_capability_summary_marks_local_workspace_available_when_backend_exists() {
+        let cfg = AppConfig::default();
+        let summary = provider_capability_summary(&cfg, true);
+        let local = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("local_workspace"))
+            .expect("local_workspace provider");
+        assert_eq!(local["enabled"], true);
+        assert_eq!(local["configured"], true);
+    }
 }

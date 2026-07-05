@@ -10,6 +10,8 @@ use eggsearch::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
 };
 use eggsearch::core::SymbolKind;
+use eggsearch::core::{code_host_fetch::resolve_code_host_fetch_target, fetch::FetchTransformKind};
+use eggsearch::fetch::limits::{validate_fetch_target, validate_url, FetchLimits};
 use eggsearch::fetch::render::code::{render_code, render_diff, render_plaintext};
 use eggsearch::fetch::render::markdown_source::render_markdown_source;
 use eggsearch::fetch::render::render_blocks;
@@ -735,4 +737,74 @@ fn f8_symlink_rejected_when_follow_symlinks_false() {
 
     let _ = std::fs::remove_dir_all(&tmp);
     let _ = std::fs::remove_file(&outside);
+}
+
+// =========================================================================
+// G. Fetch Target Validation Tests
+// =========================================================================
+
+#[test]
+fn g1_validate_url_rejects_unsupported_scheme() {
+    let limits = FetchLimits::default();
+    assert!(validate_url("file:///etc/passwd", &limits).is_err());
+    assert!(validate_url("ftp://example.com/", &limits).is_err());
+}
+
+#[tokio::test]
+async fn g2_validate_fetch_target_rejects_credentials() {
+    let limits = FetchLimits::default();
+    let url = url::Url::parse("https://user:pass@example.com/secret").unwrap();
+    let err = validate_fetch_target(&url, &limits)
+        .await
+        .expect_err("expected credential rejection");
+    assert!(matches!(
+        err,
+        eggsearch::fetch::FetchError::EmbeddedCredentialsBlocked(_)
+    ));
+}
+
+#[tokio::test]
+async fn g3_validate_fetch_target_blocks_localhost_and_private_network() {
+    let limits = FetchLimits::default();
+
+    for url_str in ["http://localhost/", "http://127.0.0.1/", "http://[::1]/"] {
+        let url = url::Url::parse(url_str).unwrap();
+        let err = validate_fetch_target(&url, &limits)
+            .await
+            .expect_err("expected localhost rejection");
+        assert!(matches!(
+            err,
+            eggsearch::fetch::FetchError::PrivateNetworkBlocked(_)
+        ));
+    }
+
+    for url_str in ["http://192.168.1.1/", "http://10.0.0.1/"] {
+        let url = url::Url::parse(url_str).unwrap();
+        let err = validate_fetch_target(&url, &limits)
+            .await
+            .expect_err("expected private-network rejection");
+        assert!(matches!(
+            err,
+            eggsearch::fetch::FetchError::PrivateNetworkBlocked(_)
+        ));
+    }
+}
+
+#[test]
+fn g4_code_host_rewrite_produces_stable_raw_url_and_transform() {
+    let target = resolve_code_host_fetch_target(
+        "https://codeberg.org/owner/repo/src/branch/main/src/lib.rs",
+    )
+    .expect("expected code-host target");
+    let raw_url = target.raw_url.as_deref().expect("raw url");
+    assert_eq!(
+        raw_url,
+        "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs"
+    );
+    let transform = target.to_fetch_transform(raw_url).expect("transform");
+    assert_eq!(transform.kind, FetchTransformKind::CodebergRawFile);
+    assert_eq!(
+        transform.transformed_url,
+        "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs"
+    );
 }

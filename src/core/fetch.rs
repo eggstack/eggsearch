@@ -17,7 +17,8 @@ pub enum ExtractMode {
     /// converts headings, lists, code blocks, tables, and other
     /// semantic elements into their Markdown equivalents.
     Markdown,
-    /// Extract only metadata (title, description, etc.), no body text.
+    /// Extract only metadata (title, description, etc.), with no
+    /// body text or structured body document.
     MetadataOnly,
 }
 
@@ -193,10 +194,8 @@ pub struct WebFetchResponse {
     #[serde(default)]
     pub trust_markers: TrustMarkers,
     /// Structured document representation of the fetched content.
-    /// Present when the fetch succeeded and content was extracted.
-    /// Agents can inspect this for document kind, render format,
-    /// outline, blocks, and chunks. The legacy `text` field is
-    /// always populated for backward compatibility.
+    /// Present when the fetch succeeded and structured body content
+    /// was extracted. Metadata-only requests intentionally omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<FetchDocument>,
     /// When a code-host source-file URL was rewritten to a raw content

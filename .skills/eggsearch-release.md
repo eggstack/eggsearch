@@ -6,6 +6,7 @@
 2. Version bumped in `Cargo.toml`
 3. `CHANGELOG.md` updated with new version entry
 4. `cargo publish --dry-run` succeeds
+5. README stays concise; release-facing detail belongs in `docs/config.md`, `docs/safety.md`, `docs/tool-matrix.md`, `docs/agent-workflows.md`, and `docs/architecture/codegg-contract.md`
 
 ## Release Steps
 
@@ -52,7 +53,7 @@ Follows Semantic Versioning. Breaking changes to MCP tool schemas require a majo
 
 | Flag | Purpose |
 |------|---------|
-| `mock` | Test-only mock engine harness |
+| `mock` | Test-only mock engine harness; required for integration/corpus tests |
 | `pdf` | PDF text extraction via `lopdf` |
 | `live-smoke` | Live network smoke tests (requires `mock`); ignored by default |
 

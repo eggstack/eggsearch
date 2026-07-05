@@ -7,7 +7,7 @@
 | `web_search` | Live metasearch over configured providers |
 | `web_fetch` | Bounded extraction of one explicit HTTP(S) URL |
 | `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators |
-| `provider_status` | Capability discovery, recipe catalog, health |
+| `provider_status` | Capability discovery, recipe catalog, health, code-host summaries |
 | `repo_search` | Structured repo evidence with grouped bundles |
 | `repo_fetch` | Structured repo file fetch by locator |
 | `repo_map` | Repository structure discovery |
@@ -78,7 +78,8 @@ Package already-selected evidence for multi-agent handoff. Links source cards wi
 
 ## Key Documentation
 
-- `docs/codegg-integration.md` — comprehensive integration reference
+- `docs/config.md` — config defaults, provider enablement, provider_status semantics
+- `docs/safety.md` — trust model, fetch safety, `metadata_only`
 - `docs/architecture/codegg-contract.md` — deterministic ID system, warnings, trust model
 - `docs/agent-workflows.md` — recommended tool call sequences
 - `docs/tool-matrix.md` — compact reference table for all 10 tools

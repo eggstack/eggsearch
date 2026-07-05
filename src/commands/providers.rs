@@ -7,7 +7,12 @@ use eggsearch::mcp::ServerState;
 
 pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
     let state = ServerState::build(cfg.clone())?;
-    let descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
+    let mut descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
+    if let Some(desc) = descriptors.iter_mut().find(|d| d.id == "local_workspace") {
+        let backend_enabled = state.local_backend.is_some();
+        desc.enabled = backend_enabled;
+        desc.configured = backend_enabled;
+    }
 
     if as_json {
         let payload = serde_json::json!({

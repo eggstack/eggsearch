@@ -2,6 +2,10 @@
 
 Recommended tool call sequences for common agent tasks.
 
+Use `provider_status` first when you need the current provider/capability picture. The `probe` field is reserved, and `recipe_detail` defaults to `summary`.
+
+`web_fetch` also supports `extract_mode = "metadata_only"` when you only need page metadata and do not need the body text.
+
 ## 1. Repo Map → Repo Search → Repo Fetch (Repository Exploration)
 
 ```jsonc
@@ -97,8 +101,8 @@ Recommended tool call sequences for common agent tasks.
 
 // Step 3: Bundle evidence for handoff
 // NOTE: sources and fetches are Vec<EvidenceSourceInput> / Vec<EvidenceFetchInput>
-// with specific fields (id, url, title, snippet, metadata, etc.) — see README
-// for full shapes. These placeholders show the call structure only.
+// with specific fields (id, url, title, snippet, metadata, etc.) — see
+// docs/tool-matrix.md and docs/architecture/codegg-contract.md for the stable shapes.
 {
   "goal": "rate limiting middleware implementation options",
   "sources": ["<SourceCards from step 1>"],
@@ -112,7 +116,7 @@ eggsearch exposes machine-readable **workflow recipes** — compact retrieval pl
 
 ### Discovering Recipes
 
-Call `provider_status` to get the full recipe catalog in the `workflow_recipes` response field. Use `recipe_detail` to control verbosity: `"summary"` (default) returns compact recipes without steps/fallbacks, `"full"` includes all fields including steps, fallbacks, and trust notes, and `"none"` omits recipes entirely. Each recipe includes a `support` status indicating current availability:
+Call `provider_status` to get the recipe catalog in the `workflow_recipes` response field. Use `recipe_detail` to control verbosity: `"summary"` (default) returns compact recipes without steps/fallbacks, `"full"` includes all fields including steps, fallbacks, and trust notes, and `"none"` omits recipes entirely. Each recipe includes a `support` status indicating current availability:
 
 - **`available`**: all required capabilities are present (e.g. `generic_search` is always available)
 - **`partial`**: some required capabilities are present; the recipe will operate with degraded coverage

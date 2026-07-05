@@ -51,6 +51,22 @@ pub fn is_api_provider(id: &str) -> bool {
     API_PROVIDER_IDS.contains(&id)
 }
 
+/// Return the provider-specific readiness signal used by status
+/// surfaces before the generic `enabled` gate is applied.
+pub fn provider_configured_state(
+    id: &str,
+    searxng_configured: bool,
+    api_configured: bool,
+    local_backend_available: bool,
+) -> bool {
+    match id {
+        "searxng" => searxng_configured,
+        "local_workspace" => local_backend_available,
+        _ if is_api_provider(id) => api_configured,
+        _ => true,
+    }
+}
+
 /// Whether the provider scrapes HTML or speaks a JSON API, or
 /// requires an API key.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -331,7 +347,7 @@ pub fn built_in_provider_descriptor(
             enabled,
             default: is_default,
             requires_api_key: false,
-            configured,
+            configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
         }),
         "brave" => Some(ProviderDescriptor {
@@ -341,7 +357,7 @@ pub fn built_in_provider_descriptor(
             enabled,
             default: is_default,
             requires_api_key: false,
-            configured,
+            configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
         }),
         "startpage" => Some(ProviderDescriptor {
@@ -351,7 +367,7 @@ pub fn built_in_provider_descriptor(
             enabled,
             default: is_default,
             requires_api_key: false,
-            configured,
+            configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
         }),
         "yahoo" => Some(ProviderDescriptor {
@@ -361,7 +377,7 @@ pub fn built_in_provider_descriptor(
             enabled,
             default: is_default,
             requires_api_key: false,
-            configured,
+            configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
         }),
         "mojeek" => Some(ProviderDescriptor {
@@ -371,7 +387,7 @@ pub fn built_in_provider_descriptor(
             enabled,
             default: is_default,
             requires_api_key: false,
-            configured,
+            configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
         }),
         "searxng" => Some(ProviderDescriptor {
@@ -678,7 +694,7 @@ pub fn built_in_provider_descriptor(
             enabled,
             default: is_default,
             requires_api_key: false,
-            configured: true,
+            configured: configured && enabled,
             capabilities: ProviderCapabilities {
                 supports_safe_search: false,
                 supports_freshness: false,
@@ -705,7 +721,7 @@ pub fn built_in_provider_descriptor(
             enabled,
             default: is_default,
             requires_api_key: false,
-            configured,
+            configured: configured && enabled,
             capabilities: ProviderCapabilities {
                 supports_safe_search: false,
                 supports_freshness: false,
@@ -772,6 +788,42 @@ mod tests {
     fn searxng_configured_true_when_enabled_and_configured() {
         let desc = built_in_provider_descriptor("searxng", true, false, true).unwrap();
         assert!(desc.configured);
+    }
+
+    #[test]
+    fn duckduckgo_descriptor_configured_false_when_disabled() {
+        let desc = built_in_provider_descriptor("duckduckgo", false, false, true).unwrap();
+        assert!(!desc.configured);
+        assert!(!desc.enabled);
+    }
+
+    #[test]
+    fn osv_descriptor_configured_false_when_disabled() {
+        let desc = built_in_provider_descriptor("osv", false, false, true).unwrap();
+        assert!(!desc.configured);
+        assert!(!desc.enabled);
+    }
+
+    #[test]
+    fn provider_configured_state_matches_provider_kind() {
+        assert!(provider_configured_state("duckduckgo", false, false, false));
+        assert!(provider_configured_state("osv", false, false, false));
+        assert!(provider_configured_state("searxng", true, false, false));
+        assert!(!provider_configured_state("searxng", false, true, false));
+        assert!(provider_configured_state("brave_api", false, true, false));
+        assert!(!provider_configured_state("brave_api", false, false, false));
+        assert!(provider_configured_state(
+            "local_workspace",
+            false,
+            false,
+            true
+        ));
+        assert!(!provider_configured_state(
+            "local_workspace",
+            false,
+            false,
+            false
+        ));
     }
 
     #[test]

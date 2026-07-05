@@ -5,8 +5,7 @@ harnesses such as codegg. It is written for harness developers, not end
 users. All examples use JSON code blocks; truncated values are clearly
 marked.
 
-eggsearch version: **0.3.4** (current at time of writing). See
-`Cargo.toml` for the live version.
+eggsearch version: see `Cargo.toml` for the live release number.
 
 ## Table of Contents
 
@@ -34,7 +33,8 @@ eggsearch mcp
 
 # 2. Discover capabilities
 # Call: provider_status({})
-# Response includes: providers, server_capabilities, workflow_recipes
+# Response includes: providers, code_hosts, health, server_capabilities,
+# tool_capabilities, and workflow_recipes
 
 # 3. Search for code in a repo
 # Call: repo_search({"query": "middleware", "host": "github", "owner": "tokio-rs", "repo": "axum", "profile": "coding"})
@@ -1173,8 +1173,8 @@ These changes do not break existing harnesses:
 
 Before shipping codegg integration, verify:
 
-- [ ] **Documentation complete**: `docs/codegg-integration.md` exists
-  and covers all 10 workstreams
+- [ ] **Documentation complete**: the deep docs set exists and covers
+  configuration, safety, tool routing, recipes, and the response contract
 - [ ] **Examples are schema-valid or clearly abbreviated**: every JSON
   example either matches the current MCP schema or is marked
   `(abbreviated)` / `(truncated)`

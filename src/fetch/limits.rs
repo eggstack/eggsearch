@@ -158,7 +158,20 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
 /// 2. Embedded credentials rejection
 /// 3. Localhost/literal private-IP rejection (unless `allow_localhost`)
 /// 4. DNS resolution and IP-range validation (unless `allow_private_network`)
+///
+/// When DNS validation runs, the fetch client reuses the validated
+/// address set to pin the outbound request to the same resolution
+/// result for that attempt.
 pub async fn validate_fetch_target(url: &Url, limits: &FetchLimits) -> Result<(), FetchError> {
+    validate_fetch_target_with_resolved_addrs(url, limits)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn validate_fetch_target_with_resolved_addrs(
+    url: &Url,
+    limits: &FetchLimits,
+) -> Result<Option<Vec<SocketAddr>>, FetchError> {
     // 1. Scheme check
     match url.scheme() {
         "http" | "https" => {}
@@ -238,12 +251,12 @@ pub async fn validate_fetch_target(url: &Url, limits: &FetchLimits) -> Result<()
 
     // 4. DNS resolution + IP-range validation
     if limits.allow_private_network && limits.allow_localhost {
-        return Ok(());
+        return Ok(None);
     }
 
     let host = match url.host_str() {
         Some(h) if !h.is_empty() => h.to_string(),
-        _ => return Ok(()),
+        _ => return Ok(None),
     };
 
     let port = url.port_or_known_default().unwrap_or(match url.scheme() {
@@ -277,7 +290,7 @@ pub async fn validate_fetch_target(url: &Url, limits: &FetchLimits) -> Result<()
         }
     }
 
-    Ok(())
+    Ok(Some(addrs))
 }
 
 /// Returns true if the given resolved socket address falls into a

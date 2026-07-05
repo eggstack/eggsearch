@@ -31,6 +31,15 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - `mcp/` — MCP server (rmcp), tool definitions, server state
 - `tests/` — integration, corpus, and contract tests
 
+## Reference Docs
+
+- `README.md` — concise product and surface overview
+- `docs/config.md` — config defaults, provider enablement, provider_status semantics
+- `docs/safety.md` — trust model, fetch safety, `metadata_only`
+- `docs/tool-matrix.md` — stable tool reference
+- `docs/agent-workflows.md` — recipe catalog and chaining guidance
+- `docs/architecture/codegg-contract.md` — stable contract, IDs, warnings, and trust model
+
 ## Adding Tests
 
 - **New file** when testing a distinct subsystem or targeting a specific bug class
