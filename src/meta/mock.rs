@@ -3,7 +3,6 @@
 //! Gated behind the `mock` feature so that downstream binaries don't
 //! pull in this code by default.
 
-#![cfg(feature = "mock")]
 #![allow(missing_docs)]
 
 use std::future::pending;
