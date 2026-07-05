@@ -44,22 +44,19 @@ impl std::fmt::Display for ToolError {
 fn parse_code_host_arg(
     host: Option<&str>,
 ) -> Result<Option<crate::core::code_metadata::CodeHost>, ToolError> {
+    use crate::core::code_metadata::CodeHost;
+
     let Some(host) = host else {
         return Ok(None);
     };
 
-    let parsed = match host.to_lowercase().as_str() {
-        "github" | "gh" => crate::core::code_metadata::CodeHost::Github,
-        "gitlab" | "gl" => crate::core::code_metadata::CodeHost::Gitlab,
-        "codeberg" | "cb" => crate::core::code_metadata::CodeHost::Codeberg,
-        "gitea" => crate::core::code_metadata::CodeHost::Gitea,
-        "forgejo" => crate::core::code_metadata::CodeHost::Forgejo,
-        other => {
-            return Err(ToolError::Validation(format!(
-                "unknown host '{other}'; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
-            )));
-        }
-    };
+    let parsed = CodeHost::parse_alias(host).ok_or_else(|| {
+        ToolError::Validation(format!(
+            "unknown host '{}'; accepted values: {}",
+            host.trim().to_ascii_lowercase(),
+            CodeHost::accepted_aliases()
+        ))
+    })?;
 
     Ok(Some(parsed))
 }
@@ -1483,16 +1480,7 @@ pub async fn run_repo_fetch(
                     &inventory,
                     args.host
                         .as_ref()
-                        .and_then(|h| match h.to_lowercase().as_str() {
-                            "github" | "gh" => Some(crate::core::code_metadata::CodeHost::Github),
-                            "gitlab" | "gl" => Some(crate::core::code_metadata::CodeHost::Gitlab),
-                            "codeberg" | "cb" => {
-                                Some(crate::core::code_metadata::CodeHost::Codeberg)
-                            }
-                            "gitea" => Some(crate::core::code_metadata::CodeHost::Gitea),
-                            "forgejo" => Some(crate::core::code_metadata::CodeHost::Forgejo),
-                            _ => None,
-                        })
+                        .and_then(|h| crate::core::code_metadata::CodeHost::parse_alias(h))
                         .as_ref(),
                     &args.owner,
                     &args.repo,
@@ -2133,14 +2121,14 @@ pub async fn run_batch_fetch(
                     )));
                 }
                 if let Some(h) = host {
-                    match h.to_lowercase().as_str() {
-                        "github" | "gh" | "gitlab" | "gl" | "codeberg" | "cb" | "gitea"
-                        | "forgejo" | "workspace" => {}
-                        other => {
-                            return Err(ToolError::Validation(format!(
-                                "item {i}: unknown host '{other}'; accepted: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo, workspace"
-                            )));
-                        }
+                    let normalized_host = h.trim().to_ascii_lowercase();
+                    if normalized_host != "workspace"
+                        && crate::core::code_metadata::CodeHost::parse_alias(h).is_none()
+                    {
+                        return Err(ToolError::Validation(format!(
+                            "item {i}: unknown host '{normalized_host}'; accepted: {}, workspace",
+                            crate::core::code_metadata::CodeHost::accepted_aliases()
+                        )));
                     }
                 }
                 if let Some(mc) = max_chars {

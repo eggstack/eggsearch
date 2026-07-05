@@ -30,6 +30,25 @@ pub enum CodeHost {
     Forgejo,
 }
 
+impl CodeHost {
+    /// Parse a user-facing code host name or alias.
+    pub fn parse_alias(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "github" | "gh" | "github.com" => Some(Self::Github),
+            "gitlab" | "gl" | "gitlab.com" => Some(Self::Gitlab),
+            "codeberg" | "cb" | "codeberg.org" => Some(Self::Codeberg),
+            "gitea" => Some(Self::Gitea),
+            "forgejo" => Some(Self::Forgejo),
+            _ => None,
+        }
+    }
+
+    /// User-facing host aliases accepted by MCP tools and query hints.
+    pub fn accepted_aliases() -> &'static str {
+        "github (gh), gitlab (gl), codeberg (cb), gitea, forgejo"
+    }
+}
+
 /// Structured code/repo metadata extracted from a code-host URL.
 ///
 /// All fields are optional because not every URL shape produces every
@@ -624,6 +643,31 @@ pub fn classify_and_extract(url: &str) -> (SourceKind, Option<CodeMetadata>, Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_code_host_aliases() {
+        assert_eq!(CodeHost::parse_alias("github"), Some(CodeHost::Github));
+        assert_eq!(CodeHost::parse_alias("gh"), Some(CodeHost::Github));
+        assert_eq!(CodeHost::parse_alias("github.com"), Some(CodeHost::Github));
+        assert_eq!(CodeHost::parse_alias("gitlab"), Some(CodeHost::Gitlab));
+        assert_eq!(CodeHost::parse_alias("gl"), Some(CodeHost::Gitlab));
+        assert_eq!(CodeHost::parse_alias("gitlab.com"), Some(CodeHost::Gitlab));
+        assert_eq!(CodeHost::parse_alias("codeberg"), Some(CodeHost::Codeberg));
+        assert_eq!(CodeHost::parse_alias("cb"), Some(CodeHost::Codeberg));
+        assert_eq!(
+            CodeHost::parse_alias("codeberg.org"),
+            Some(CodeHost::Codeberg)
+        );
+        assert_eq!(CodeHost::parse_alias("gitea"), Some(CodeHost::Gitea));
+        assert_eq!(CodeHost::parse_alias("forgejo"), Some(CodeHost::Forgejo));
+    }
+
+    #[test]
+    fn parse_code_host_alias_trims_and_normalizes() {
+        assert_eq!(CodeHost::parse_alias(" GitHub "), Some(CodeHost::Github));
+        assert_eq!(CodeHost::parse_alias("FORGEJO"), Some(CodeHost::Forgejo));
+        assert_eq!(CodeHost::parse_alias("bitbucket"), None);
+    }
 
     // --- GitHub URL tests ---
 

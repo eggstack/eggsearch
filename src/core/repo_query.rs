@@ -192,12 +192,7 @@ fn parsed_value_eq(token: &str, prefix: &str) -> bool {
 }
 
 fn parse_host(value: &str) -> CodeHost {
-    match value.to_lowercase().as_str() {
-        "github" | "gh" => CodeHost::Github,
-        "gitlab" | "gl" => CodeHost::Gitlab,
-        "codeberg" | "cb" => CodeHost::Codeberg,
-        _ => CodeHost::Unknown,
-    }
+    CodeHost::parse_alias(value).unwrap_or(CodeHost::Unknown)
 }
 
 fn looks_like_owner_repo(token: &str) -> bool {
@@ -422,9 +417,34 @@ mod tests {
     }
 
     #[test]
+    fn host_gitea_full() {
+        let h = RepoQueryHints::parse("host:gitea");
+        assert_eq!(h.host, Some(CodeHost::Gitea));
+        assert_eq!(h.residual_query, "");
+    }
+
+    #[test]
+    fn host_forgejo_full() {
+        let h = RepoQueryHints::parse("host:forgejo");
+        assert_eq!(h.host, Some(CodeHost::Forgejo));
+        assert_eq!(h.residual_query, "");
+    }
+
+    #[test]
+    fn host_domain_aliases() {
+        let github = RepoQueryHints::parse("host:github.com");
+        let gitlab = RepoQueryHints::parse("host:gitlab.com");
+        let codeberg = RepoQueryHints::parse("host:codeberg.org");
+        assert_eq!(github.host, Some(CodeHost::Github));
+        assert_eq!(gitlab.host, Some(CodeHost::Gitlab));
+        assert_eq!(codeberg.host, Some(CodeHost::Codeberg));
+    }
+
+    #[test]
     fn host_unknown() {
         let h = RepoQueryHints::parse("host:bitbucket");
         assert_eq!(h.host, Some(CodeHost::Unknown));
+        assert_eq!(h.residual_query, "");
     }
 
     #[test]
