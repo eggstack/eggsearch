@@ -387,7 +387,7 @@ fn build_source_quality_notes(group: &ResearchResultGroup) -> Vec<String> {
     if !unique_classes.is_empty() {
         let class_names: Vec<String> = unique_classes
             .iter()
-            .map(|c| format!("{:?}", c).to_lowercase().replace('_', " "))
+            .map(|c| format!("{c:?}").to_lowercase().replace('_', " "))
             .collect();
         notes.push(format!("from {}", class_names.join(", ")));
     }
@@ -406,7 +406,7 @@ fn build_source_quality_notes(group: &ResearchResultGroup) -> Vec<String> {
         })
         .count();
     if primary_count > 0 {
-        notes.push(format!("{} primary source(s)", primary_count));
+        notes.push(format!("{primary_count} primary source(s)"));
     }
 
     notes

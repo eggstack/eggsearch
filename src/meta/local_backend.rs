@@ -976,7 +976,7 @@ impl LocalWorkspaceBackend {
                         remote_host: rid
                             .matched_host
                             .as_ref()
-                            .map(|h| format!("{:?}", h).to_lowercase()),
+                            .map(|h| format!("{h:?}").to_lowercase()),
                         remote_owner: rid.matched_owner.clone(),
                         remote_repo: rid.matched_repo.clone(),
                         branch: rid.current_branch.clone(),

@@ -249,8 +249,7 @@ fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
                 .unwrap_or(false);
             if !key_set {
                 warnings.push(format!(
-                    "API provider '{}' is enabled but its api_key_env is not set",
-                    id
+                    "API provider '{id}' is enabled but its api_key_env is not set"
                 ));
             }
         }
@@ -320,10 +319,7 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
                 .first()
                 .map(|f| f.error_class.as_str())
                 .unwrap_or("unknown");
-            println!(
-                "  [FAIL]   {} ({}ms) - {}: {}",
-                provider_id, elapsed, class, msg
-            );
+            println!("  [FAIL]   {provider_id} ({elapsed}ms) - {class}: {msg}");
             if !resp.results.is_empty() {
                 println!(
                     "           (returned {} result(s) despite failure)",

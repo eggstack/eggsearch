@@ -125,8 +125,7 @@ impl KevClient {
         let status = response.status();
         if !status.is_success() {
             return Err(anyhow::anyhow!(
-                "KEV catalog fetch failed with status: {}",
-                status
+                "KEV catalog fetch failed with status: {status}"
             ));
         }
 

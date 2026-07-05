@@ -21,7 +21,7 @@ pub async fn run(
 
     let effective_providers = cfg
         .resolve_providers(providers)
-        .map_err(|e| anyhow!("{}", e))?;
+        .map_err(|e| anyhow!("{e}"))?;
     let (_, unknown) = state.adapter.select_engines(&effective_providers);
     if !unknown.is_empty() {
         anyhow::bail!("unknown provider id(s): {}", unknown.join(", "));

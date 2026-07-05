@@ -335,7 +335,7 @@ fn normalize_npm_repo_url(url: &str) -> String {
         .unwrap_or(url);
     // Also handle github: shorthand
     if let Some(path) = url.strip_prefix("github:") {
-        return format!("https://github.com/{}", path);
+        return format!("https://github.com/{path}");
     }
     url.to_string()
 }

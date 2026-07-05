@@ -78,8 +78,7 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
         }
         other => {
             return Err(FetchError::UnsupportedScheme(format!(
-                "scheme '{}' is not supported (only http/https allowed)",
-                other
+                "scheme '{other}' is not supported (only http/https allowed)"
             )));
         }
     }
@@ -97,8 +96,7 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
                 || host_lower.starts_with("0.0.0.0")
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "localhost access is disabled: {}",
-                    host
+                    "localhost access is disabled: {host}"
                 )));
             }
         }
@@ -109,23 +107,20 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
             if let Ok(ip) = IpAddr::from_str(host_str) {
                 if ip.is_loopback() {
                     return Err(FetchError::PrivateNetworkBlocked(format!(
-                        "private IP access is disabled: {}",
-                        ip
+                        "private IP access is disabled: {ip}"
                     )));
                 }
                 if let std::net::IpAddr::V4(ipv4) = ip {
                     if ipv4.is_private() {
                         return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {}",
-                            ip
+                            "private IP access is disabled: {ip}"
                         )));
                     }
                 }
                 if let std::net::IpAddr::V6(ipv6) = ip {
                     if is_blocked_v6(ipv6) {
                         return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {}",
-                            ip
+                            "private IP access is disabled: {ip}"
                         )));
                     }
                 }
@@ -138,8 +133,7 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
                 || host_str.starts_with("10.")
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "private network access is disabled: {}",
-                    host_str
+                    "private network access is disabled: {host_str}"
                 )));
             }
         }
@@ -177,8 +171,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
         "http" | "https" => {}
         other => {
             return Err(FetchError::UnsupportedScheme(format!(
-                "scheme '{}' is not supported (only http/https allowed)",
-                other
+                "scheme '{other}' is not supported (only http/https allowed)"
             )));
         }
     }
@@ -201,8 +194,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
                 || host_lower.starts_with("0.0.0.0")
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "localhost access is disabled: {}",
-                    host
+                    "localhost access is disabled: {host}"
                 )));
             }
         }
@@ -213,23 +205,20 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
             if let Ok(ip) = IpAddr::from_str(host_str) {
                 if ip.is_loopback() {
                     return Err(FetchError::PrivateNetworkBlocked(format!(
-                        "private IP access is disabled: {}",
-                        ip
+                        "private IP access is disabled: {ip}"
                     )));
                 }
                 if let std::net::IpAddr::V4(ipv4) = ip {
                     if ipv4.is_private() {
                         return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {}",
-                            ip
+                            "private IP access is disabled: {ip}"
                         )));
                     }
                 }
                 if let std::net::IpAddr::V6(ipv6) = ip {
                     if is_blocked_v6(ipv6) {
                         return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {}",
-                            ip
+                            "private IP access is disabled: {ip}"
                         )));
                     }
                 }
@@ -242,8 +231,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
                 || host_str.starts_with("10.")
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "private network access is disabled: {}",
-                    host_str
+                    "private network access is disabled: {host_str}"
                 )));
             }
         }
@@ -264,7 +252,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
         _ => 80,
     });
 
-    let resolve_target = format!("{}:{}", host, port);
+    let resolve_target = format!("{host}:{port}");
     let resolved = tokio::task::spawn_blocking(move || {
         resolve_target
             .to_socket_addrs()

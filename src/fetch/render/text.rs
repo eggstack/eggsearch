@@ -31,7 +31,7 @@ pub fn render_blocks_text(blocks: &[RenderedBlock]) -> String {
             }
             BlockKind::BlockQuote => {
                 for line in block.text.lines() {
-                    parts.push(format!("> {}", line));
+                    parts.push(format!("> {line}"));
                 }
                 parts.push(String::new());
             }

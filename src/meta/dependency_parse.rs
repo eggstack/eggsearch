@@ -465,7 +465,7 @@ fn parse_pom_xml(content: &str, path: &str) -> Vec<DependencyFinding> {
                     package: if group_id.is_empty() {
                         artifact_id.clone()
                     } else {
-                        format!("{}:{}", group_id, artifact_id)
+                        format!("{group_id}:{artifact_id}")
                     },
                     version: if version.is_empty() {
                         None
@@ -499,7 +499,7 @@ fn parse_pom_xml(content: &str, path: &str) -> Vec<DependencyFinding> {
                         package: if group_id.is_empty() {
                             artifact_id.clone()
                         } else {
-                            format!("{}:{}", group_id, artifact_id)
+                            format!("{group_id}:{artifact_id}")
                         },
                         version: if version.is_empty() {
                             None
@@ -524,8 +524,8 @@ fn parse_pom_xml(content: &str, path: &str) -> Vec<DependencyFinding> {
 }
 
 fn extract_xml_tag(line: &str, tag: &str) -> Option<String> {
-    let open = format!("<{}>", tag);
-    let close = format!("</{}>", tag);
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
     if let Some(start) = line.find(&open) {
         let rest = &line[start + open.len()..];
         if let Some(end) = rest.find(&close) {
@@ -571,7 +571,7 @@ fn parse_csproj(content: &str, path: &str) -> Vec<DependencyFinding> {
 }
 
 fn extract_xml_attr(line: &str, attr: &str) -> Option<String> {
-    let pattern = format!("{}=\"", attr);
+    let pattern = format!("{attr}=\"");
     let start = line.find(&pattern)? + pattern.len();
     let end = line[start..].find('"')? + start;
     let val = line[start..end].trim();

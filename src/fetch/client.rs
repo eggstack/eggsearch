@@ -178,8 +178,7 @@ impl FetchClient {
                     Some(loc) if !loc.is_empty() => loc,
                     _ => {
                         return Err(FetchError::InvalidRedirectLocation(format!(
-                            "HTTP {} missing or empty Location header",
-                            status
+                            "HTTP {status} missing or empty Location header"
                         )));
                     }
                 };
@@ -187,8 +186,7 @@ impl FetchClient {
                 // Resolve relative redirects against the current URL.
                 let redirect_url = current_url.join(&location).map_err(|e| {
                     FetchError::InvalidRedirectLocation(format!(
-                        "failed to resolve redirect location '{}': {}",
-                        location, e
+                        "failed to resolve redirect location '{location}': {e}"
                     ))
                 })?;
 
@@ -249,7 +247,7 @@ impl FetchClient {
         }
 
         if !(200..300).contains(&status) {
-            return Err(FetchError::HttpStatus(status, format!("HTTP {}", status)));
+            return Err(FetchError::HttpStatus(status, format!("HTTP {status}")));
         }
 
         let is_html = content_type

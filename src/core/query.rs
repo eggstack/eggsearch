@@ -276,8 +276,7 @@ pub fn resolve_max_results(
 
     let warning = clamped.then(|| {
         format!(
-            "Requested max_results={} exceeded server cap={}; using {}.",
-            requested_or_default, max_results_cap, effective
+            "Requested max_results={requested_or_default} exceeded server cap={max_results_cap}; using {effective}."
         )
     });
 

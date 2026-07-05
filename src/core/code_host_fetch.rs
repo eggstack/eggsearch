@@ -88,7 +88,7 @@ pub fn resolve_code_host_fetch_target(url: &str) -> Option<CodeHostFetchTarget> 
                 if owner.is_empty() {
                     repo.to_string()
                 } else {
-                    format!("{}/{}", owner, repo)
+                    format!("{owner}/{repo}")
                 }
             } else {
                 repo.to_string()

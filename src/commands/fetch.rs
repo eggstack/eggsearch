@@ -71,13 +71,13 @@ pub async fn run(
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("# Fetch: {}\n", url);
+        println!("# Fetch: {url}\n");
         println!("Final URL: {}", response.final_url);
         if let Some(title) = &response.title {
-            println!("Title: {}", title);
+            println!("Title: {title}");
         }
         if let Some(desc) = &response.description {
-            println!("Description: {}", desc);
+            println!("Description: {desc}");
         }
         println!("Status: {}", response.status);
         println!(
@@ -88,7 +88,7 @@ pub async fn run(
         println!("Truncated: {}", response.truncated);
         if let Some(text) = &response.text {
             println!("\n--- Content ({} chars) ---", text.chars().count());
-            println!("{}", text);
+            println!("{text}");
         }
         if !response.links.is_empty() {
             println!(
@@ -113,7 +113,7 @@ pub async fn run(
         if !response.warnings.is_empty() {
             println!("\nWarnings:");
             for w in &response.warnings {
-                println!("  - {}", w);
+                println!("  - {w}");
             }
         }
     }

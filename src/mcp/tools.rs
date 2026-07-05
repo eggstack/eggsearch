@@ -1812,7 +1812,7 @@ pub async fn run_repo_fetch(
             ));
 
             // Build deterministic code span evidence when span selection produced a result.
-            let locator_str_for_span = format!("{:?}", locator);
+            let locator_str_for_span = format!("{locator:?}");
             let code_span = selected_span.as_ref().map(|span| {
                 use crate::core::identity::code_span_id;
                 use crate::core::repo_fetch::CodeSpanEvidence;
@@ -1832,7 +1832,7 @@ pub async fn run_repo_fetch(
                     line_start: Some(span.line_start),
                     line_end: Some(span.line_end),
                     symbol: span.symbol.clone(),
-                    symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{:?}", k)),
+                    symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{k:?}")),
                     selection_kind: format!("{:?}", span.selection_kind),
                     confidence: format!("{:?}", span.confidence),
                     source_id: None,
@@ -1949,7 +1949,7 @@ pub async fn run_repo_map(
                     remote_host: rid
                         .matched_host
                         .as_ref()
-                        .map(|h| format!("{:?}", h).to_lowercase()),
+                        .map(|h| format!("{h:?}").to_lowercase()),
                     remote_owner: rid.matched_owner.clone(),
                     remote_repo: rid.matched_repo.clone(),
                     branch: rid.current_branch.clone(),
@@ -2729,7 +2729,7 @@ async fn run_workspace_fetch(
     }
 
     // Build deterministic code span evidence when span selection produced a result.
-    let locator_str_for_span = format!("{:?}", locator);
+    let locator_str_for_span = format!("{locator:?}");
     let code_span = selected_span.as_ref().map(|span| {
         use crate::core::identity::code_span_id;
         use crate::core::repo_fetch::CodeSpanEvidence;
@@ -2749,7 +2749,7 @@ async fn run_workspace_fetch(
             line_start: Some(span.line_start),
             line_end: Some(span.line_end),
             symbol: span.symbol.clone(),
-            symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{:?}", k)),
+            symbol_kind: span.symbol_kind.as_ref().map(|k| format!("{k:?}")),
             selection_kind: format!("{:?}", span.selection_kind),
             confidence: format!("{:?}", span.confidence),
             source_id: None,

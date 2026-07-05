@@ -160,7 +160,7 @@ pub fn extract_pdf_text(
         // Add outline entry for each page with text
         outline.push(DocumentOutlineEntry {
             level: 1,
-            title: format!("Page {}", page_num),
+            title: format!("Page {page_num}"),
             anchor: None,
             block_index: Some(blocks.len() - 1),
         });
@@ -174,8 +174,7 @@ pub fn extract_pdf_text(
             return Err(FetchError::PdfNoExtractableText);
         }
         warnings.push(format!(
-            "{} of {} pages had no extractable text",
-            pages_blank, total_page_count
+            "{pages_blank} of {total_page_count} pages had no extractable text"
         ));
     }
 
@@ -189,9 +188,9 @@ pub fn extract_pdf_text(
     for block in &blocks {
         let page = block.page.unwrap_or(0);
         if !first_page {
-            legacy_text_parts.push(format!("\n--- Page {} ---\n", page));
+            legacy_text_parts.push(format!("\n--- Page {page} ---\n"));
         } else {
-            legacy_text_parts.push(format!("--- Page {} ---\n", page));
+            legacy_text_parts.push(format!("--- Page {page} ---\n"));
             first_page = false;
         }
         legacy_text_parts.push(block.text.clone());

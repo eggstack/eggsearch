@@ -256,7 +256,7 @@ pub fn select_span(
             let start = line_idx.saturating_sub(context);
             let end = (line_idx + context).min(all_lines.len().saturating_sub(1));
             let (ls, le, truncated) = clamp_and_truncate(start, end, max_block_lines, &mut reasons);
-            reasons.push(format!("context window: lines {}-{} around match", ls, le));
+            reasons.push(format!("context window: lines {ls}-{le} around match"));
             return Some(SelectedSpan {
                 line_start: ls,
                 line_end: le,

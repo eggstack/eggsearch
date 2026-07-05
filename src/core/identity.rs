@@ -401,7 +401,7 @@ pub fn compute_fetch_id(key: &FetchKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
     hasher.write(&entity_prefix("fetch"));
     if let Some(loc) = key.locator {
-        write_str(&mut hasher, &format!("{:?}", loc));
+        write_str(&mut hasher, &format!("{loc:?}"));
     } else {
         match key.url {
             Some(u) => write_str(&mut hasher, &canonicalize_url(u)),

@@ -430,7 +430,7 @@ fn collect_text_parts<'a>(
             // Inline code: wrap in backticks.
             let inner = collect_raw_text(node).trim().to_string();
             if !inner.is_empty() {
-                parts.push(format!("`{}`", inner));
+                parts.push(format!("`{inner}`"));
             }
             return;
         }
@@ -440,7 +440,7 @@ fn collect_text_parts<'a>(
             let link_text = collect_raw_text(node).trim().to_string();
             if !link_text.is_empty() && !href.is_empty() {
                 let resolved = resolve_url(href, base_url);
-                parts.push(format!("[{}]({})", link_text, resolved));
+                parts.push(format!("[{link_text}]({resolved})"));
             } else if !link_text.is_empty() {
                 parts.push(link_text);
             }
@@ -559,7 +559,7 @@ fn render_table_text(table: &ElementRef) -> (String, bool) {
     for (i, row) in rows.iter().enumerate() {
         let mut line = String::from("|");
         for cell in row {
-            line.push_str(&format!(" {} |", cell));
+            line.push_str(&format!(" {cell} |"));
         }
         for _ in row.len()..max_cols {
             line.push_str(" |");
@@ -568,7 +568,7 @@ fn render_table_text(table: &ElementRef) -> (String, bool) {
 
         if i == 0 {
             let sep: String = (0..max_cols).map(|_| " --- |").collect();
-            lines.push(format!("|{}", sep));
+            lines.push(format!("|{sep}"));
         }
     }
 
@@ -597,7 +597,7 @@ fn render_definition_list(
                     } else if definition.is_empty() {
                         current_term.clone()
                     } else {
-                        format!("{}: {}", current_term, definition)
+                        format!("{current_term}: {definition}")
                     };
                     if !text.is_empty() {
                         blocks.push(RenderedBlock {
