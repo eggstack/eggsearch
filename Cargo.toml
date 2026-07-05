@@ -2,7 +2,7 @@
 name = "eggsearch"
 version = "0.3.4"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 authors = ["eggstack"]
 license = "MIT"
 description = "Lightweight MCP metasearch server for AI agents"
