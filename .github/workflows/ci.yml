@@ -6,87 +6,114 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   check:
-    name: Check
+    name: check (${{ matrix.features }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - features: "--all-features"
-            label: all
-          - features: "--no-default-features"
-            label: none
-          - features: "--features mock"
-            label: mock
-          - features: "--features pdf"
-            label: pdf
+        features:
+          - "--all-features"
+          - "--no-default-features"
+          - "--features mock"
+          - "--features pdf"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+        with:
+          toolchain: "1.85"
       - run: cargo check ${{ matrix.features }}
 
   test:
-    name: Test
+    name: test (${{ matrix.features }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - features: "--all-features"
-            label: all
-          - features: "--no-default-features"
-            label: none
-          - features: "--features mock"
-            label: mock
-          - features: "--features pdf"
-            label: pdf
+        features:
+          - "--all-features"
+          - "--no-default-features"
+          - "--features mock"
+          - "--features pdf"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test ${{ matrix.features }}
+        with:
+          toolchain: "1.85"
+      - run: cargo test --locked ${{ matrix.features }}
 
   clippy:
-    name: Clippy
+    name: clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.85"
           components: clippy
-      - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-features -- -D warnings
 
   schema-corpus:
-    name: Schema Corpus Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --features mock --test schema_identity_registry --test fetch_safety --test security_applicability_corpus --test research_evidence_corpus --test recipes_next_actions --test evidence_bundle_handoff
-
-  fmt:
-    name: Format
+    name: schema-corpus
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.85"
+      - run: cargo test --features mock --test schema_identity_registry
+      - run: cargo test --features mock --test fetch_safety
+      - run: cargo test --features mock --test security_applicability_corpus
+      - run: cargo test --features mock --test research_evidence_corpus
+      - run: cargo test --features mock --test recipes_next_actions
+      - run: cargo test --features mock --test evidence_bundle_handoff
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
           components: rustfmt
       - run: cargo fmt --check
 
   release-build:
-    name: Release Build
+    name: release-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+        with:
+          toolchain: "1.85"
       - run: cargo build --release
+
+  publish-check:
+    name: publish-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+      - run: cargo publish --dry-run --locked
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+      - run: cargo doc --all-features --no-deps

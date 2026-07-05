@@ -408,7 +408,7 @@ impl RepoSearchRequest {
     /// Merge explicit fields with parsed hints from the query string.
     /// Explicit fields always override parsed query hints.
     /// Slash-form repo identity (e.g. `repo = "owner/name"`) is normalized
-    /// into separate owner/repo hints via [`resolved_repo_identity`].
+    /// into separate owner/repo hints via `resolved_repo_identity`.
     pub fn resolved_hints(&self) -> RepoQueryHints {
         let mut hints = RepoQueryHints::parse(&self.query);
         // Normalize repo identity: slash-form repo is split into owner/repo,

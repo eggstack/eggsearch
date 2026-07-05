@@ -60,6 +60,8 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
+| **publish-check** | `cargo publish --dry-run` |
+| **docs** | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
 ## Feature Flags
 

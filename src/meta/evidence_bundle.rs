@@ -1,6 +1,6 @@
 //! Evidence bundle builder.
 //!
-//! Pure, testable logic for constructing an [`EvidenceBundle`] from
+//! Pure, testable logic for constructing an [`EvidenceBundle`](crate::core::evidence_bundle::EvidenceBundle) from
 //! source-card inputs and fetch-response inputs. The builder
 //! deduplicates sources, links fetches to sources, applies bundle
 //! caps, merges trust markers, computes deterministic gaps, and

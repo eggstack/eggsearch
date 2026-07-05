@@ -40,4 +40,4 @@ Compact reference for the ten stable MCP tools.
 
 `provider_status` returns a `workflow_recipes` field with eight built-in recipes and their current support status: `available`, `partial`, or `unavailable`.
 
-See [Agent workflows](docs/agent-workflows.md) for the recipe catalog and usage guidance.
+See [Agent workflows](agent-workflows.md) for the recipe catalog and usage guidance.

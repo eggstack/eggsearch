@@ -1533,7 +1533,7 @@ async fn web_search_uses_default_max_results_when_omitted() {
 
 #[cfg(feature = "mock")]
 #[test]
-fn mcp_tool_surface_all_nine_tools_with_mock_state() {
+fn mcp_tool_surface_all_ten_tools_with_mock_state() {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
     let server = eggsearch::mcp::EggsearchServer::new(state);

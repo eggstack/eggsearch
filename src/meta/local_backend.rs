@@ -1,9 +1,9 @@
 //! Local workspace search backend: bounded file walking, scoring, and
 //! SourceCard conversion.
 //!
-//! The [`LocalWorkspaceBackend`] walks configured filesystem roots,
+//! The `LocalWorkspaceBackend` walks configured filesystem roots,
 //! applies ignore rules and extension filters, scores path/text/language
-//! matches, and converts results into [`SourceCard`] values with
+//! matches, and converts results into [`SourceCard`](crate::core::source_card::SourceCard) values with
 //! `TrustLevel::LocalTrusted`.
 
 use std::path::{Path, PathBuf};

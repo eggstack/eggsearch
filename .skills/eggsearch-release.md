@@ -48,6 +48,8 @@ Follows Semantic Versioning. Breaking changes to MCP tool schemas require a majo
 | schema-corpus | 6 regression test binaries |
 | fmt | `cargo fmt --check` |
 | release-build | `cargo build --release` |
+| publish-check | `cargo publish --dry-run` |
+| docs | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
 ## Feature Flags
 

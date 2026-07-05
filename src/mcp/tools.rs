@@ -249,7 +249,7 @@ pub struct RepoSearchArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_migration_guides: Option<bool>,
     /// Include local workspace results when available. When true and
-    /// the server operator has configured [local] roots, the search
+    /// the server operator has configured `local` roots, the search
     /// includes source files from local Git checkouts matching the
     /// requested repo. Local results carry trust=local_trusted and
     /// may have symbol-enriched metadata. Default true when local

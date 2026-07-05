@@ -200,13 +200,13 @@ impl PackageCoordinate {
 pub struct PackageResolution {
     /// The original coordinate that was resolved.
     pub coordinate: PackageCoordinate,
-    /// Registry listing URL (e.g. https://crates.io/crates/axum).
+    /// Registry listing URL (e.g. <https://crates.io/crates/axum>).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry_url: Option<String>,
-    /// Documentation URL (e.g. https://docs.rs/axum/0.7.0).
+    /// Documentation URL (e.g. <https://docs.rs/axum/0.7.0>).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs_url: Option<String>,
-    /// Source repository URL (e.g. https://github.com/tokio-rs/axum).
+    /// Source repository URL (e.g. <https://github.com/tokio-rs/axum>).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_repository_url: Option<String>,
     /// Homepage URL.
