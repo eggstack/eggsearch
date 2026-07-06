@@ -1,7 +1,6 @@
 //! Compact `SourceCard` representation passed to agents.
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::core::result::TrustLevel;
 use crate::core::sanitize::TrustMarkers;
@@ -409,11 +408,19 @@ impl SourceCard {
         score: Option<f64>,
         trust: TrustLevel,
     ) -> Self {
+        let title = title.into();
+        let url = url.into();
+        let id = crate::core::identity::source_id(
+            providers.first().map(|s| s.as_str()),
+            Some(&url),
+            Some(&title),
+            None,
+        );
         Self {
-            id: format!("src_{}", Uuid::new_v4().simple()),
-            stable_id: None,
-            title: title.into(),
-            url: url.into(),
+            id: id.clone(),
+            stable_id: Some(id),
+            title,
+            url,
             snippet: None,
             providers,
             score,

@@ -2359,9 +2359,18 @@ pub async fn run_batch_fetch(
         // indices that are missing (panic, cancellation, or tool error).
         for idx in &wave_indices {
             match wave_results.remove(idx) {
-                Some(batch_result) => {
+                Some(mut batch_result) => {
                     if !batch_result.ok && !continue_on_error {
                         aborted = true;
+                    }
+                    // Enforce the aggregate total_chars budget per result:
+                    // metadata fields (title/description/links) accounted in
+                    // chars_returned may push the running total past
+                    // max_total_chars even though the per-item cap was respected.
+                    let remaining = total_cap.saturating_sub(total_chars);
+                    if batch_result.chars_returned > remaining {
+                        batch_result.chars_returned = remaining;
+                        batch_result.truncated = true;
                     }
                     total_chars += batch_result.chars_returned;
                     // The result's index is already correct from the future.

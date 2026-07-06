@@ -126,12 +126,15 @@ pub fn extract_imports(text: &str, language: ExtractionLanguage) -> Vec<String> 
         };
 
         if is_import {
-            let import_text = if trimmed.len() > MAX_IMPORT_LINE_CHARS {
-                &trimmed[..MAX_IMPORT_LINE_CHARS]
-            } else {
+            let import_text = if trimmed.chars().count() > MAX_IMPORT_LINE_CHARS {
                 trimmed
+                    .chars()
+                    .take(MAX_IMPORT_LINE_CHARS)
+                    .collect::<String>()
+            } else {
+                trimmed.to_string()
             };
-            imports.push(import_text.to_string());
+            imports.push(import_text);
         }
     }
     imports
@@ -692,6 +695,16 @@ use actual_module;
             .join("\n");
         let imports = extract_imports(&text, ExtractionLanguage::Rust);
         assert_eq!(imports.len(), MAX_IMPORTS);
+    }
+
+    #[test]
+    fn extract_imports_truncates_non_ascii_safely() {
+        let padding = "é".repeat(250);
+        let text = format!("use crate::{};", padding);
+        let imports = extract_imports(&text, ExtractionLanguage::Rust);
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].chars().count(), MAX_IMPORT_LINE_CHARS);
+        assert!(imports[0].starts_with("use crate::é"));
     }
 
     // --- Enclosing symbol tests ---

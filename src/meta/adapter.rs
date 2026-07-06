@@ -2266,10 +2266,19 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
     }
     let providers: Vec<String> = a.engines.into_iter().collect();
 
+    // Deterministic source metadata from URL/domain heuristics.
+    let (source_kind, code, domain) = crate::core::code_metadata::classify_and_extract(&a.url);
+
     // Allocate the id first so the framing can identify which card
-    // the title/snippet text came from. The title/snippet are
-    // replaced below after sanitization.
-    let id = format!("src_{}", uuid::Uuid::new_v4().simple());
+    // the title/snippet text came from. The id is the deterministic
+    // stable_id derived from (provider, url, title, source_kind), so
+    // repeated runs over the same inputs produce the same id.
+    let id = crate::core::identity::source_id(
+        providers.first().map(|s| s.as_str()),
+        Some(&a.url),
+        Some(&a.title),
+        Some(source_kind),
+    );
 
     let mut warnings: Vec<String> = Vec::new();
     let (title, title_markers) = sanitize_field(
@@ -2305,8 +2314,6 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         _ => None,
     };
 
-    // Deterministic source metadata from URL/domain heuristics.
-    let (source_kind, code, domain) = crate::core::code_metadata::classify_and_extract(&a.url);
     let mut rank_reasons: Vec<crate::core::source_card::RankReason> = Vec::new();
     if providers.len() > 1 {
         rank_reasons.push(crate::core::source_card::RankReason::RrfMultiProvider);
@@ -2349,8 +2356,8 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
     };
 
     let mut source_card = SourceCard {
-        id,
-        stable_id: None,
+        id: id.clone(),
+        stable_id: Some(id),
         title,
         url: a.url.clone(),
         providers,
@@ -2380,14 +2387,6 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         },
         quality: None,
     };
-
-    // Populate the deterministic stable_id from the card's identity fields.
-    source_card.stable_id = Some(crate::core::identity::source_id(
-        source_card.providers.first().map(|s| s.as_str()),
-        Some(&source_card.url),
-        Some(&source_card.title),
-        Some(source_card.metadata.source_kind),
-    ));
 
     // Compute deterministic quality metadata for the card.
     source_card.quality = Some(crate::core::quality::compute_card_quality(&source_card));

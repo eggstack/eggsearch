@@ -43,9 +43,13 @@ use eggsearch::core::fetch::ExtractMode;
 use eggsearch::core::workflow::RecipeDetail;
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
-    run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_map, run_repo_search,
-    run_security_search, run_web_fetch, run_web_search, BatchFetchArgs, ProviderStatusArgs,
-    RepoFetchArgs, RepoMapArgs, RepoSearchArgs, SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
+    run_batch_fetch, run_provider_status, run_repo_fetch, run_repo_map, run_web_fetch,
+    run_web_search, BatchFetchArgs, ProviderStatusArgs, RepoFetchArgs, RepoMapArgs, WebFetchArgs,
+    WebSearchArgs,
+};
+#[cfg(feature = "mock")]
+use eggsearch::mcp::tools::{
+    run_repo_search, run_security_search, RepoSearchArgs, SecuritySearchArgs,
 };
 use rmcp::ServerHandler;
 
@@ -5024,6 +5028,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
 // ---------------------------------------------------------------------------
 
 mod intent_neutral_generic_search {
+    #[cfg(feature = "mock")]
     use super::*;
 
     #[cfg(feature = "mock")]
@@ -5280,6 +5285,7 @@ mod intent_neutral_generic_search {
 // Workstream 5: Intent regression tests
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "mock")]
 mod intent_reranking_regression {
     use super::*;
     use eggsearch::meta::engines::error::EngineError;
@@ -8100,6 +8106,7 @@ mod research_search {
         }
     }
 
+    #[cfg(feature = "mock")]
     fn research_args_multi(providers: &[&str], query: &str) -> ResearchSearchArgs {
         ResearchSearchArgs {
             query: query.to_string(),
@@ -13372,6 +13379,63 @@ async fn batch_fetch_concurrent_total_budget_not_exceeded() {
     );
 }
 
+#[tokio::test]
+async fn batch_fetch_metadata_overhead_cannot_exceed_total_budget() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let title = format!("LongTitle{}", "x".repeat(120));
+    let desc = format!("LongDescription{}", "y".repeat(120));
+    let body = format!(
+        "<html><head><title>{title}</title><meta name=\"description\" content=\"{desc}\"></head><body></body></html>"
+    );
+    for i in 0..3 {
+        let body_clone = body.clone();
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/p{i}"));
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(body_clone.as_str());
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 3;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..3)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/p{i}")),
+            extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+            include_links: None,
+            max_chars: Some(50),
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(10),
+            timeout_ms: None,
+            continue_on_error: Some(true),
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let total = v["total_chars_returned"].as_u64().unwrap_or(0);
+    assert!(
+        total <= 10,
+        "aggregate chars_returned {} must not exceed max_total_chars=10 even with metadata overhead: {v:?}",
+        total
+    );
+}
+
 #[test]
 fn batch_fetch_provider_status_capability() {
     let state = state_with_default();
@@ -15474,6 +15538,7 @@ async fn repo_map_with_local_checkout() {
 // =========================================================================
 
 /// Helper: create a temp git repo with a remote URL for local matching tests.
+#[cfg(feature = "mock")]
 fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
