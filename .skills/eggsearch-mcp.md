@@ -7,7 +7,7 @@
 | `web_search` | Live metasearch over configured providers |
 | `web_fetch` | Bounded extraction of one explicit HTTP(S) URL |
 | `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators |
-| `provider_status` | Capability discovery, recipe catalog, health, code-host summaries |
+| `provider_status` | Capability discovery, routability, recipe catalog, health, code-host summaries |
 | `repo_search` | Structured repo evidence with grouped bundles |
 | `repo_fetch` | Structured repo file fetch by locator |
 | `repo_map` | Repository structure discovery |
@@ -30,6 +30,8 @@
 ## Workflow Recipes
 
 Call `provider_status` to get 8 built-in workflow recipes. Use `recipe_detail` to control verbosity. Each recipe has a `support` status (`available`, `partial`, `unavailable`) based on enabled providers.
+
+Each provider in the response includes `routable` (bool) and `skip_reason` (optional string). A provider is `routable: true` only when it is both enabled and fully configured.
 
 | Recipe ID | Purpose |
 |-----------|---------|

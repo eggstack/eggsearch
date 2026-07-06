@@ -326,6 +326,13 @@ pub struct ProviderDescriptor {
     pub configured: bool,
     /// Feature capabilities.
     pub capabilities: ProviderCapabilities,
+    /// Whether this provider can actually be used right now (enabled +
+    /// configured and not in cooldown).
+    #[serde(default)]
+    pub routable: bool,
+    /// Human-readable reason if not routable.
+    #[serde(default)]
+    pub skip_reason: Option<String>,
 }
 
 /// Build a [`ProviderDescriptor`] for a known provider id.
@@ -338,6 +345,8 @@ pub fn built_in_provider_descriptor(
     enabled: bool,
     is_default: bool,
     configured: bool,
+    routable: bool,
+    skip_reason: Option<String>,
 ) -> Option<ProviderDescriptor> {
     match id {
         "duckduckgo" => Some(ProviderDescriptor {
@@ -349,6 +358,8 @@ pub fn built_in_provider_descriptor(
             requires_api_key: false,
             configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
+            routable,
+            skip_reason,
         }),
         "brave" => Some(ProviderDescriptor {
             id: "brave".into(),
@@ -359,6 +370,8 @@ pub fn built_in_provider_descriptor(
             requires_api_key: false,
             configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
+            routable,
+            skip_reason,
         }),
         "startpage" => Some(ProviderDescriptor {
             id: "startpage".into(),
@@ -369,6 +382,8 @@ pub fn built_in_provider_descriptor(
             requires_api_key: false,
             configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
+            routable,
+            skip_reason,
         }),
         "yahoo" => Some(ProviderDescriptor {
             id: "yahoo".into(),
@@ -379,6 +394,8 @@ pub fn built_in_provider_descriptor(
             requires_api_key: false,
             configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
+            routable,
+            skip_reason,
         }),
         "mojeek" => Some(ProviderDescriptor {
             id: "mojeek".into(),
@@ -389,6 +406,8 @@ pub fn built_in_provider_descriptor(
             requires_api_key: false,
             configured: configured && enabled,
             capabilities: ProviderCapabilities::none(),
+            routable,
+            skip_reason,
         }),
         "searxng" => Some(ProviderDescriptor {
             id: "searxng".into(),
@@ -416,6 +435,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: false,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "brave_api" => Some(ProviderDescriptor {
             id: "brave_api".into(),
@@ -443,6 +464,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: false,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "github_code" => Some(ProviderDescriptor {
             id: "github_code".into(),
@@ -470,6 +493,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: false,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "github_issues" => Some(ProviderDescriptor {
             id: "github_issues".into(),
@@ -497,6 +522,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: true,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "github_releases" => Some(ProviderDescriptor {
             id: "github_releases".into(),
@@ -524,6 +551,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: true,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "gitlab_code" => Some(ProviderDescriptor {
             id: "gitlab_code".into(),
@@ -551,6 +580,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: false,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "gitlab_issues" => Some(ProviderDescriptor {
             id: "gitlab_issues".into(),
@@ -578,6 +609,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: true,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "gitlab_releases" => Some(ProviderDescriptor {
             id: "gitlab_releases".into(),
@@ -605,6 +638,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: true,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "gitea_code" => Some(ProviderDescriptor {
             id: "gitea_code".into(),
@@ -632,6 +667,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: false,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "gitea_issues" => Some(ProviderDescriptor {
             id: "gitea_issues".into(),
@@ -659,6 +696,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: true,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "gitea_releases" => Some(ProviderDescriptor {
             id: "gitea_releases".into(),
@@ -686,6 +725,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: true,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         "osv" => Some(ProviderDescriptor {
             id: "osv".into(),
@@ -713,6 +754,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: false,
                 supports_security_search: true,
             },
+            routable,
+            skip_reason,
         }),
         "local_workspace" => Some(ProviderDescriptor {
             id: "local_workspace".into(),
@@ -740,6 +783,8 @@ pub fn built_in_provider_descriptor(
                 supports_result_timestamps: false,
                 supports_security_search: false,
             },
+            routable,
+            skip_reason,
         }),
         _ => None,
     }
@@ -752,7 +797,7 @@ mod tests {
     #[test]
     fn known_provider_ids_are_all_describable() {
         for id in KNOWN_PROVIDER_IDS {
-            let desc = built_in_provider_descriptor(id, true, false, true)
+            let desc = built_in_provider_descriptor(id, true, false, true, false, None)
                 .expect("known id should have descriptor");
             assert_eq!(desc.id, *id);
         }
@@ -760,7 +805,7 @@ mod tests {
 
     #[test]
     fn unknown_provider_returns_none() {
-        assert!(built_in_provider_descriptor("ghost", true, false, true).is_none());
+        assert!(built_in_provider_descriptor("ghost", true, false, true, false, None).is_none());
     }
 
     #[test]
@@ -771,7 +816,7 @@ mod tests {
 
     #[test]
     fn capabilities_summary_searxng() {
-        let desc = built_in_provider_descriptor("searxng", true, false, true).unwrap();
+        let desc = built_in_provider_descriptor("searxng", true, false, true, false, None).unwrap();
         let summary = desc.capabilities.summary();
         // SearXNG adapter only forwards hardcoded en-US/general params;
         // no capability flags are set because none are actually passed through.
@@ -780,26 +825,28 @@ mod tests {
 
     #[test]
     fn searxng_configured_false_when_disabled() {
-        let desc = built_in_provider_descriptor("searxng", false, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("searxng", false, false, true, false, None).unwrap();
         assert!(!desc.configured);
     }
 
     #[test]
     fn searxng_configured_true_when_enabled_and_configured() {
-        let desc = built_in_provider_descriptor("searxng", true, false, true).unwrap();
+        let desc = built_in_provider_descriptor("searxng", true, false, true, false, None).unwrap();
         assert!(desc.configured);
     }
 
     #[test]
     fn duckduckgo_descriptor_configured_false_when_disabled() {
-        let desc = built_in_provider_descriptor("duckduckgo", false, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("duckduckgo", false, false, true, false, None).unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }
 
     #[test]
     fn osv_descriptor_configured_false_when_disabled() {
-        let desc = built_in_provider_descriptor("osv", false, false, true).unwrap();
+        let desc = built_in_provider_descriptor("osv", false, false, true, false, None).unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }
@@ -836,7 +883,8 @@ mod tests {
 
     #[test]
     fn provider_descriptor_serde_roundtrip() {
-        let desc = built_in_provider_descriptor("duckduckgo", true, true, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("duckduckgo", true, true, true, false, None).unwrap();
         let json = serde_json::to_string(&desc).unwrap();
         let parsed: ProviderDescriptor = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, desc.id);
@@ -848,7 +896,7 @@ mod tests {
 
     #[test]
     fn brave_api_descriptor_is_api_key_kind() {
-        let desc = built_in_provider_descriptor("brave_api", true, false, true)
+        let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None)
             .expect("brave_api should have descriptor");
         assert_eq!(desc.id, "brave_api");
         assert_eq!(desc.display_name, "Brave Search API");
@@ -861,14 +909,16 @@ mod tests {
 
     #[test]
     fn brave_api_descriptor_configured_false_when_disabled() {
-        let desc = built_in_provider_descriptor("brave_api", false, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("brave_api", false, false, true, false, None).unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }
 
     #[test]
     fn brave_api_descriptor_capabilities() {
-        let desc = built_in_provider_descriptor("brave_api", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("brave_api", true, false, true, false, None).unwrap();
         // Brave API adapter only forwards q and count; safe_search,
         // freshness, language, and region are not passed through.
         assert!(!desc.capabilities.supports_safe_search);
@@ -881,7 +931,8 @@ mod tests {
 
     #[test]
     fn brave_api_capabilities_summary() {
-        let desc = built_in_provider_descriptor("brave_api", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("brave_api", true, false, true, false, None).unwrap();
         let summary = desc.capabilities.summary();
         assert_eq!(summary, "basic");
     }
@@ -974,7 +1025,8 @@ mod tests {
 
     #[test]
     fn github_issues_supports_result_timestamps_but_not_freshness() {
-        let desc = built_in_provider_descriptor("github_issues", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("github_issues", true, false, true, false, None).unwrap();
         // Provider-side: false. The /search/issues endpoint does not
         // accept a freshness parameter.
         assert!(!desc.capabilities.supports_freshness);
@@ -985,14 +1037,16 @@ mod tests {
 
     #[test]
     fn github_releases_supports_result_timestamps_but_not_freshness() {
-        let desc = built_in_provider_descriptor("github_releases", true, false, true).unwrap();
+        let desc = built_in_provider_descriptor("github_releases", true, false, true, false, None)
+            .unwrap();
         assert!(!desc.capabilities.supports_freshness);
         assert!(desc.capabilities.supports_result_timestamps);
     }
 
     #[test]
     fn github_code_supports_neither_freshness_flag() {
-        let desc = built_in_provider_descriptor("github_code", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("github_code", true, false, true, false, None).unwrap();
         assert!(!desc.capabilities.supports_freshness);
         assert!(!desc.capabilities.supports_result_timestamps);
     }
@@ -1000,7 +1054,7 @@ mod tests {
     #[test]
     fn html_scrape_providers_supports_neither_freshness_flag() {
         for id in ["duckduckgo", "brave", "startpage", "yahoo", "mojeek"] {
-            let desc = built_in_provider_descriptor(id, true, false, true).unwrap();
+            let desc = built_in_provider_descriptor(id, true, false, true, false, None).unwrap();
             assert!(
                 !desc.capabilities.supports_freshness,
                 "{id} should not advertise provider-side freshness"
@@ -1019,7 +1073,8 @@ mod tests {
 
     #[test]
     fn gitea_code_capabilities_are_conservative() {
-        let desc = built_in_provider_descriptor("gitea_code", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("gitea_code", true, false, true, false, None).unwrap();
         assert!(desc.capabilities.supports_code_search);
         // Gitea global search API does not support repo/path/language filters.
         assert!(!desc.capabilities.supports_repo_filter);
@@ -1034,7 +1089,8 @@ mod tests {
 
     #[test]
     fn gitea_issues_capabilities_are_conservative() {
-        let desc = built_in_provider_descriptor("gitea_issues", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("gitea_issues", true, false, true, false, None).unwrap();
         assert!(desc.capabilities.supports_issue_search);
         assert!(desc.capabilities.supports_result_timestamps);
         // Gitea issues search does not support repo/language filters.
@@ -1048,7 +1104,8 @@ mod tests {
 
     #[test]
     fn gitea_releases_capabilities_are_conservative() {
-        let desc = built_in_provider_descriptor("gitea_releases", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("gitea_releases", true, false, true, false, None).unwrap();
         assert!(desc.capabilities.supports_release_search);
         assert!(desc.capabilities.supports_result_timestamps);
         // Gitea releases API does not support repo/language/code search.
@@ -1062,24 +1119,21 @@ mod tests {
 
     #[test]
     fn forgejo_providers_share_gitea_descriptors() {
-        // Forgejo uses the same gitea_* provider IDs (gitea_code, gitea_issues,
-        // gitea_releases) since Forgejo is API-compatible with Gitea.
-        // The "forgejo" host is handled at the MCP tool layer, not at the
-        // provider descriptor layer.
-        let code = built_in_provider_descriptor("gitea_code", true, false, true).unwrap();
+        let code =
+            built_in_provider_descriptor("gitea_code", true, false, true, false, None).unwrap();
         assert!(code.capabilities.supports_code_search);
-        let issues = built_in_provider_descriptor("gitea_issues", true, false, true).unwrap();
+        let issues =
+            built_in_provider_descriptor("gitea_issues", true, false, true, false, None).unwrap();
         assert!(issues.capabilities.supports_issue_search);
-        let releases = built_in_provider_descriptor("gitea_releases", true, false, true).unwrap();
+        let releases =
+            built_in_provider_descriptor("gitea_releases", true, false, true, false, None).unwrap();
         assert!(releases.capabilities.supports_release_search);
     }
 
     #[test]
     fn gitea_providers_do_not_claim_tree_or_repo_map() {
-        // No provider should claim native repo_map or tree API support.
-        // The repo_map tool uses fallback search for ALL hosts.
         for id in ["gitea_code", "gitea_issues", "gitea_releases"] {
-            let desc = built_in_provider_descriptor(id, true, false, true).unwrap();
+            let desc = built_in_provider_descriptor(id, true, false, true, false, None).unwrap();
             // None of these flags exist in ProviderCapabilities currently,
             // but if they are added, they must not be claimed for Gitea.
             assert!(
@@ -1102,8 +1156,8 @@ mod tests {
     #[test]
     fn api_provider_ids_match_requires_api_key() {
         for id in API_PROVIDER_IDS {
-            let desc =
-                built_in_provider_descriptor(id, true, false, true).expect("known API provider");
+            let desc = built_in_provider_descriptor(id, true, false, true, false, None)
+                .expect("known API provider");
             assert!(
                 desc.requires_api_key,
                 "API_PROVIDER_IDS entry {id} should have requires_api_key=true"

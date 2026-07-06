@@ -937,7 +937,9 @@ mod tests {
 
     fn make_providers(ids: &[(&str, bool)]) -> Vec<ProviderDescriptor> {
         ids.iter()
-            .filter_map(|(id, enabled)| built_in_provider_descriptor(id, *enabled, false, *enabled))
+            .filter_map(|(id, enabled)| {
+                built_in_provider_descriptor(id, *enabled, false, *enabled, *enabled, None)
+            })
             .collect()
     }
 

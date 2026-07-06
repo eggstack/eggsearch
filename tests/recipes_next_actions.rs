@@ -50,7 +50,7 @@ fn full_providers() -> Vec<eggsearch::core::provider::ProviderDescriptor> {
         "osv",
     ]
     .iter()
-    .filter_map(|id| built_in_provider_descriptor(id, true, false, true))
+    .filter_map(|id| built_in_provider_descriptor(id, true, false, true, false, None))
     .collect()
 }
 

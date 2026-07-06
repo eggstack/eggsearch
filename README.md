@@ -15,7 +15,7 @@ eggsearch exposes ten stable MCP tools:
 - `web_search` - live metasearch over configured providers
 - `web_fetch` - bounded fetch of one explicit HTTP(S) URL
 - `batch_fetch` - bounded batch fetch over explicit URLs or repo locators
-- `provider_status` - diagnostic provider/capability report plus workflow recipes
+- `provider_status` - diagnostic provider/capability report with routability info plus workflow recipes
 - `repo_search` - structured repository evidence discovery with grouped bundles
 - `repo_fetch` - fetch a specific repo file span or symbol
 - `repo_map` - bounded repository structure discovery
@@ -31,7 +31,7 @@ Search tools return machine-readable `next_actions` hints. `web_fetch` supports 
 - Local workspace results are `local_trusted`, but they are still not instruction-trusted.
 - `sanitize_output` defaults to `true` for both search and fetch.
 - `web_fetch` is bounded and explicit: it does not crawl, does not execute JavaScript, and only fetches one requested URL.
-- `provider_status` is diagnostic only; it reports configured providers, capabilities, cached health, and workflow recipes.
+- `provider_status` is diagnostic only; it reports configured providers, routability, capabilities, cached health, and workflow recipes.
 
 ## Install
 

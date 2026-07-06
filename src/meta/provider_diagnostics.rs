@@ -668,7 +668,7 @@ impl CapabilityEnforcementTelemetry {
         let mut release_enforced = false;
 
         for id in selected_providers {
-            if let Some(desc) = built_in_provider_descriptor(id, true, false, true) {
+            if let Some(desc) = built_in_provider_descriptor(id, true, false, true, false, None) {
                 if desc.capabilities.supports_repo_filter {
                     repo_enforced = true;
                 }
@@ -796,7 +796,7 @@ impl CapabilityEnforcementTelemetry {
         let mut package_enforced = false;
 
         for id in selected_providers {
-            if let Some(desc) = built_in_provider_descriptor(id, true, false, true) {
+            if let Some(desc) = built_in_provider_descriptor(id, true, false, true, false, None) {
                 if desc.capabilities.supports_security_search {
                     advisory_enforced = true;
                     package_enforced = true;

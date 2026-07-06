@@ -121,7 +121,9 @@ fn provider_capability_summary(
             api_configured,
             local_backend_available,
         );
-        if let Some(desc) = built_in_provider_descriptor(id, enabled, is_default, configured) {
+        if let Some(desc) =
+            built_in_provider_descriptor(id, enabled, is_default, configured, false, None)
+        {
             out.push(serde_json::json!({
                 "id": desc.id,
                 "enabled": desc.enabled,

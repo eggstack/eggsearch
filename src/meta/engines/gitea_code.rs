@@ -826,7 +826,8 @@ mod tests {
     fn test_provider_descriptor_for_gitea_code() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("gitea_code", true, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("gitea_code", true, false, true, false, None).unwrap();
         assert_eq!(desc.id, "gitea_code");
         assert_eq!(desc.display_name, "Gitea/Forgejo Code Search");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);
@@ -843,7 +844,8 @@ mod tests {
     fn test_provider_descriptor_gitea_code_unconfigured_when_disabled() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("gitea_code", false, false, true).unwrap();
+        let desc =
+            built_in_provider_descriptor("gitea_code", false, false, true, false, None).unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }

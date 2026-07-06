@@ -35,6 +35,33 @@ enabled = false
 roots = []
 ```
 
+## Provider Requirements
+
+All 18 built-in providers:
+
+| Provider | Kind | Requires | Notes |
+|----------|------|----------|-------|
+| `duckduckgo` | html_scrape | — | Default generic provider |
+| `brave` | html_scrape | — | |
+| `startpage` | html_scrape | — | Default generic provider |
+| `yahoo` | html_scrape | — | Default generic provider |
+| `mojeek` | html_scrape | — | |
+| `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
+| `brave_api` | api_key | `BRAVE_API_KEY` | |
+| `github_code` | api_key | `GITHUB_TOKEN` | |
+| `github_issues` | api_key | `GITHUB_TOKEN` | |
+| `github_releases` | api_key | `GITHUB_TOKEN` | |
+| `gitlab_code` | api_key | `GITLAB_TOKEN` | |
+| `gitlab_issues` | api_key | `GITLAB_TOKEN` | |
+| `gitlab_releases` | api_key | `GITLAB_TOKEN` | |
+| `gitea_code` | api_key | custom env | Requires `base_url` in `[search.api.gitea_code]` |
+| `gitea_issues` | api_key | custom env | Requires `base_url` in `[search.api.gitea_issues]` |
+| `gitea_releases` | api_key | custom env | Requires `base_url` in `[search.api.gitea_releases]` |
+| `osv` | html_scrape | — | Security advisory search |
+| `local_workspace` | local | — | Requires `[local]` config |
+
+`provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured").
+
 ## Search Defaults
 
 The shipped generic search defaults favor:
@@ -160,6 +187,34 @@ enabled = true
 base_url = "https://search.example.org"
 ```
 
+### Gitea
+
+```toml eggsearch-config-parse-only
+[search]
+default_providers = ["gitea_code", "gitea_issues", "gitea_releases", "duckduckgo"]
+
+[search.providers]
+duckduckgo = true
+gitea_code = true
+gitea_issues = true
+gitea_releases = true
+
+[search.api.gitea_code]
+enabled = true
+api_key_env = "GITEA_TOKEN"
+base_url = "https://gitea.example.org"
+
+[search.api.gitea_issues]
+enabled = true
+api_key_env = "GITEA_TOKEN"
+base_url = "https://gitea.example.org"
+
+[search.api.gitea_releases]
+enabled = true
+api_key_env = "GITEA_TOKEN"
+base_url = "https://gitea.example.org"
+```
+
 ## Fetch Defaults
 
 | Setting | Default |
@@ -203,5 +258,14 @@ When enabled, local results use `local_trusted` trust labels and can be surfaced
 ## Provider Status
 
 `provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, and workflow recipes. The `probe` field is reserved and currently has no effect.
+
+Each provider descriptor includes:
+
+- `id`, `display_name`, `kind` — identity
+- `enabled`, `default`, `configured` — config state
+- `requires_api_key` — whether an API key env var is needed
+- `routable` — whether the provider can actually be queried right now
+- `skip_reason` — human-readable explanation when `routable` is `false`
+- `capabilities` — feature flags (code search, freshness, etc.)
 
 Use `provider_status` to decide whether to call specialized tools or fall back to generic search.

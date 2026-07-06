@@ -29,6 +29,8 @@ src/
 
 `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`. Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
 
+`ProviderDescriptor` includes `routable: bool` and `skip_reason: Option<String>` fields. A provider is routable only when enabled + fully configured. `SkippedProvider` struct tracks engine build failures with human-readable reasons.
+
 ### Known Providers (18 built-ins)
 HTML scrapers: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`
 JSON API: `searxng`

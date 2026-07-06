@@ -32,6 +32,16 @@ use crate::meta::provider_diagnostics::{FailureClass, ProviderHealthRegistry};
 use crate::meta::research_evidence_analysis::analyze_research_evidence;
 use crate::meta::response::{ProviderFailure, WebSearchResponse};
 
+/// A provider that was skipped during engine construction, with a
+/// human-readable reason explaining why it could not be built.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkippedProvider {
+    /// The provider id that was skipped.
+    pub id: String,
+    /// Human-readable reason the provider was skipped.
+    pub reason: String,
+}
+
 /// Coarse error class for provider failures. Exposed via `provider_status`
 /// and the `web_search` tool's `providers_failed` field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -166,7 +176,8 @@ impl MetadataSearchAdapter {
             api_providers,
         )?;
         if !skipped.is_empty() {
-            warn!(?skipped, "skipped provider ids in config");
+            let skipped_ids: Vec<String> = skipped.iter().map(|s| s.id.clone()).collect();
+            warn!(?skipped_ids, "skipped provider ids in config");
         }
         if engines.is_empty() {
             return Err(anyhow::anyhow!(
@@ -424,7 +435,9 @@ impl MetadataSearchAdapter {
             } else {
                 true
             };
-            if let Some(desc) = built_in_provider_descriptor(id, true, false, configured) {
+            if let Some(desc) =
+                built_in_provider_descriptor(id, true, false, configured, false, None)
+            {
                 if !desc.capabilities.supports(option) {
                     unsupported.push(id.to_string());
                 }
@@ -457,21 +470,53 @@ impl MetadataSearchAdapter {
                     self.api_configured.get(*id).copied().unwrap_or(false),
                     false,
                 );
-                built_in_provider_descriptor(id, is_enabled, is_default, configured)
+                let routable = is_enabled && configured;
+                let skip_reason = if !routable {
+                    if !is_enabled {
+                        Some("not built (unknown provider ID)".to_string())
+                    } else if !configured {
+                        Some("provider not configured".to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                built_in_provider_descriptor(
+                    id,
+                    is_enabled,
+                    is_default,
+                    configured,
+                    routable,
+                    skip_reason,
+                )
             })
             .collect();
 
-        // Emit any API provider descriptors from the api_configured
-        // map that are NOT in KNOWN_PROVIDER_IDS (unknown providers
-        // configured by the operator).
         for (id, &configured) in &self.api_configured {
             if KNOWN_PROVIDER_IDS.contains(&id.as_str()) {
                 continue;
             }
             let is_enabled = enabled.contains(id.as_str());
             let is_default = defaults.contains(id.as_str());
-            if let Some(desc) = built_in_provider_descriptor(id, is_enabled, is_default, configured)
-            {
+            let routable = is_enabled && configured;
+            let skip_reason = if !routable {
+                if !is_enabled {
+                    Some("not built (unknown provider ID)".to_string())
+                } else {
+                    Some("provider not configured".to_string())
+                }
+            } else {
+                None
+            };
+            if let Some(desc) = built_in_provider_descriptor(
+                id,
+                is_enabled,
+                is_default,
+                configured,
+                routable,
+                skip_reason,
+            ) {
                 descriptors.push(desc);
             }
         }
@@ -1826,8 +1871,8 @@ fn any_engine_supports(
     check: impl Fn(&crate::core::provider::ProviderCapabilities) -> bool,
 ) -> bool {
     engines.iter().any(|e| {
-        let configured = true; // adapters only hold live engines
-        built_in_provider_descriptor(e.name(), true, false, configured)
+        let configured = true;
+        built_in_provider_descriptor(e.name(), true, false, configured, true, None)
             .is_some_and(|desc| check(&desc.capabilities))
     })
 }
@@ -1853,7 +1898,7 @@ pub fn build_default_engines(
     user_agent: Option<String>,
     searxng_base_url: Option<String>,
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
-) -> anyhow::Result<(EngineList, Vec<String>)> {
+) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
     use crate::meta::engines::{
         BraveApiEngine, BraveEngine, DuckDuckGoEngine, GiteaCodeEngine, GiteaIssuesEngine,
         GiteaReleasesEngine, GithubCodeEngine, GithubIssuesEngine, GithubReleasesEngine,
@@ -1863,7 +1908,7 @@ pub fn build_default_engines(
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
     let mut engines: EngineList = Vec::new();
-    let mut skipped: Vec<String> = Vec::new();
+    let mut skipped: Vec<SkippedProvider> = Vec::new();
 
     for id in enabled_providers {
         match id.as_str() {
@@ -1890,15 +1935,19 @@ pub fn build_default_engines(
                     client: client.clone(),
                     base_url: base.to_string(),
                 })),
-                None => skipped.push(id.clone()),
+                None => skipped.push(SkippedProvider {
+                    id: id.clone(),
+                    reason: "SearXNG base_url not configured".to_string(),
+                }),
             },
-            // API providers are handled below; skip them here.
             _ if api_providers.contains_key(id) => {}
-            other => skipped.push(other.to_string()),
+            other => skipped.push(SkippedProvider {
+                id: other.to_string(),
+                reason: "not built (unknown provider ID)".to_string(),
+            }),
         }
     }
 
-    // Build API providers
     for (id, api_cfg) in api_providers {
         if !api_cfg.enabled {
             continue;
@@ -1913,7 +1962,10 @@ pub fn build_default_engines(
         {
             Some(key) if !key.is_empty() => key,
             _ => {
-                skipped.push(id.clone());
+                skipped.push(SkippedProvider {
+                    id: id.clone(),
+                    reason: "API key not configured".to_string(),
+                });
                 continue;
             }
         };
@@ -1963,7 +2015,10 @@ pub fn build_default_engines(
             "gitea_code" => {
                 let base = api_cfg.base_url.clone().unwrap_or_default();
                 if base.is_empty() {
-                    skipped.push(id.clone());
+                    skipped.push(SkippedProvider {
+                        id: id.clone(),
+                        reason: "Gitea base_url not configured".to_string(),
+                    });
                     continue;
                 }
                 engines.push(Arc::new(GiteaCodeEngine {
@@ -1975,7 +2030,10 @@ pub fn build_default_engines(
             "gitea_issues" => {
                 let base = api_cfg.base_url.clone().unwrap_or_default();
                 if base.is_empty() {
-                    skipped.push(id.clone());
+                    skipped.push(SkippedProvider {
+                        id: id.clone(),
+                        reason: "Gitea base_url not configured".to_string(),
+                    });
                     continue;
                 }
                 engines.push(Arc::new(GiteaIssuesEngine {
@@ -1987,7 +2045,10 @@ pub fn build_default_engines(
             "gitea_releases" => {
                 let base = api_cfg.base_url.clone().unwrap_or_default();
                 if base.is_empty() {
-                    skipped.push(id.clone());
+                    skipped.push(SkippedProvider {
+                        id: id.clone(),
+                        reason: "Gitea base_url not configured".to_string(),
+                    });
                     continue;
                 }
                 engines.push(Arc::new(GiteaReleasesEngine {
@@ -2690,25 +2751,30 @@ mod tests {
     #[test]
     fn known_providers_includes_new_ids() {
         for id in crate::core::provider::KNOWN_PROVIDER_IDS {
-            let desc = crate::core::provider::built_in_provider_descriptor(id, true, false, true)
-                .expect("known id should have descriptor");
+            let desc = crate::core::provider::built_in_provider_descriptor(
+                id, true, false, true, false, None,
+            )
+            .expect("known id should have descriptor");
             assert_eq!(desc.id, *id);
         }
     }
 
     #[test]
     fn provider_descriptor_mojeek_is_html_scrape() {
-        let desc = crate::core::provider::built_in_provider_descriptor("mojeek", true, false, true)
-            .unwrap();
+        let desc = crate::core::provider::built_in_provider_descriptor(
+            "mojeek", true, false, true, false, None,
+        )
+        .unwrap();
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::HtmlScrape);
         assert!(!desc.requires_api_key);
     }
 
     #[test]
     fn provider_descriptor_searxng_is_json_api() {
-        let desc =
-            crate::core::provider::built_in_provider_descriptor("searxng", true, false, true)
-                .unwrap();
+        let desc = crate::core::provider::built_in_provider_descriptor(
+            "searxng", true, false, true, false, None,
+        )
+        .unwrap();
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::JsonApi);
         assert!(!desc.requires_api_key);
     }
@@ -2746,7 +2812,8 @@ mod tests {
             build_default_engines(&enabled, None, None, &std::collections::BTreeMap::new())
                 .expect("build");
         assert!(engines.is_empty());
-        assert_eq!(skipped, vec!["searxng".to_string()]);
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].id, "searxng");
     }
 
     #[test]
@@ -2760,7 +2827,24 @@ mod tests {
         )
         .expect("build");
         assert!(engines.is_empty());
-        assert_eq!(skipped, vec!["searxng".to_string()]);
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].id, "searxng");
+        assert!(
+            !skipped[0].reason.is_empty(),
+            "skip reason should not be empty"
+        );
+    }
+
+    #[test]
+    fn build_default_engines_skips_unknown_provider() {
+        let enabled = vec!["nonexistent_provider".to_string()];
+        let (engines, skipped) =
+            build_default_engines(&enabled, None, None, &std::collections::BTreeMap::new())
+                .expect("build");
+        assert!(engines.is_empty());
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].id, "nonexistent_provider");
+        assert!(!skipped[0].reason.is_empty());
     }
 
     #[test]

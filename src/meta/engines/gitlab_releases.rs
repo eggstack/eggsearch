@@ -926,7 +926,8 @@ mod tests {
     fn test_provider_descriptor_for_gitlab_releases() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("gitlab_releases", true, false, true).unwrap();
+        let desc = built_in_provider_descriptor("gitlab_releases", true, false, true, false, None)
+            .unwrap();
         assert_eq!(desc.id, "gitlab_releases");
         assert_eq!(desc.display_name, "GitLab Releases");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);
@@ -947,7 +948,8 @@ mod tests {
     fn test_provider_descriptor_gitlab_releases_unconfigured_when_disabled() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("gitlab_releases", false, false, true).unwrap();
+        let desc = built_in_provider_descriptor("gitlab_releases", false, false, true, false, None)
+            .unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }

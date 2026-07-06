@@ -889,7 +889,8 @@ mod tests {
     fn test_provider_descriptor_for_github_releases() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("github_releases", true, false, true).unwrap();
+        let desc = built_in_provider_descriptor("github_releases", true, false, true, false, None)
+            .unwrap();
         assert_eq!(desc.id, "github_releases");
         assert_eq!(desc.display_name, "GitHub Releases");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);
@@ -909,7 +910,8 @@ mod tests {
     fn test_provider_descriptor_github_releases_unconfigured_when_disabled() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("github_releases", false, false, true).unwrap();
+        let desc = built_in_provider_descriptor("github_releases", false, false, true, false, None)
+            .unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }

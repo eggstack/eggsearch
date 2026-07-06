@@ -372,6 +372,11 @@ fn provider_status_payload_shape_is_stable() {
             p["requires_api_key"].is_boolean(),
             "missing requires_api_key: {p}"
         );
+        assert!(p["routable"].is_boolean(), "missing routable: {p}");
+        assert!(
+            p["skip_reason"].is_null() || p["skip_reason"].is_string(),
+            "skip_reason must be null or string: {p}"
+        );
     }
 }
 
@@ -717,6 +722,55 @@ async fn provider_status_with_mixed_enabled_disabled() {
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
     assert_eq!(ids.len(), 18);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn provider_status_routability_reflects_config() {
+    use eggsearch::core::config::{AppConfig, Mode};
+
+    let engines = vec![MockEngine::success("duckduckgo", vec![])];
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("duckduckgo".to_string(), true);
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        eggsearch::meta::mock::mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let state = Arc::new(eggsearch::mcp::state::ServerState::with_adapter(
+        cfg,
+        Arc::new(adapter),
+    ));
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let arr = v["providers"].as_array().unwrap();
+    for p in arr {
+        let id = p["id"].as_str().unwrap();
+        assert!(p["routable"].is_boolean(), "missing routable on {id}");
+        if id == "duckduckgo" {
+            assert_eq!(p["routable"], true, "duckduckgo should be routable");
+            assert!(
+                p["skip_reason"].is_null(),
+                "duckduckgo should have no skip_reason"
+            );
+        } else {
+            assert_eq!(
+                p["routable"], false,
+                "{id} should not be routable (not built)"
+            );
+            assert!(
+                p["skip_reason"].is_string(),
+                "{id} should have a skip_reason"
+            );
+        }
+    }
 }
 
 #[cfg(feature = "mock")]
@@ -4545,7 +4599,7 @@ fn provider_status_github_code_descriptor_shape() {
 fn github_code_provider_descriptor_known() {
     use eggsearch::core::provider::built_in_provider_descriptor;
 
-    let desc = built_in_provider_descriptor("github_code", true, false, true)
+    let desc = built_in_provider_descriptor("github_code", true, false, true, false, None)
         .expect("github_code should have descriptor");
     assert_eq!(desc.id, "github_code");
     assert_eq!(desc.display_name, "GitHub Code Search");
@@ -4567,7 +4621,7 @@ fn github_code_provider_descriptor_known() {
 fn github_code_provider_descriptor_unconfigured_when_disabled() {
     use eggsearch::core::provider::built_in_provider_descriptor;
 
-    let desc = built_in_provider_descriptor("github_code", false, false, true)
+    let desc = built_in_provider_descriptor("github_code", false, false, true, false, None)
         .expect("github_code should have descriptor");
     assert!(!desc.configured);
     assert!(!desc.enabled);
@@ -4578,7 +4632,7 @@ fn github_code_provider_descriptor_unconfigured_when_disabled() {
 fn github_code_capabilities_summary() {
     use eggsearch::core::provider::built_in_provider_descriptor;
 
-    let desc = built_in_provider_descriptor("github_code", true, false, true).unwrap();
+    let desc = built_in_provider_descriptor("github_code", true, false, true, false, None).unwrap();
     let summary = desc.capabilities.summary();
     assert!(summary.contains("code_search"));
     assert!(summary.contains("repo_filter"));
