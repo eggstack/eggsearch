@@ -215,6 +215,31 @@ api_key_env = "GITEA_TOKEN"
 base_url = "https://gitea.example.org"
 ```
 
+### Low-Power / Conservative
+
+Reduced caps for Raspberry Pi or low-bandwidth environments.
+
+```toml eggsearch-config-parse-only
+[search]
+default_max_results = 6
+max_results_cap = 20
+timeout_ms = 6000
+multiquery_concurrency = 4
+multiquery_provider_concurrency = 1
+
+[fetch]
+timeout_ms = 6000
+max_bytes = 1000000
+max_chars_default = 8000
+max_chars_cap = 24000
+batch_max_items = 4
+batch_max_items_cap = 8
+batch_max_chars_per_item = 8000
+batch_max_total_chars = 24000
+batch_max_total_chars_cap = 60000
+batch_concurrency = 2
+```
+
 ## Fetch Defaults
 
 | Setting | Default |

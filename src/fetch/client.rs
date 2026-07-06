@@ -540,6 +540,8 @@ impl FetchClient {
             });
         }
 
+        let mut cached_html_render: Option<render::blocks::RenderedBlocks> = None;
+
         let (
             mut title,
             mut description,
@@ -597,6 +599,9 @@ impl FetchClient {
             let tt = rendered.text_truncated;
             // Truncate text to max_chars
             let (bounded_txt, txt_truncated) = bound_text(&txt, max_chars);
+            // Cache rendered blocks for document construction (avoids
+            // a second render_blocks call below).
+            cached_html_render = Some(rendered);
             (
                 t,
                 d,
@@ -713,10 +718,12 @@ impl FetchClient {
                 .filter(|e| !e.is_empty());
 
             let (blocks, outline, text_chars, block_truncated) = if is_html {
-                // Use the new renderer for HTML
-                let is_markdown = extract_mode == ExtractMode::Markdown;
-                let (_t, _d, rendered, _w, _non_utf8) =
-                    render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown);
+                // Reuse cached render from the extraction phase (avoids
+                // a second parse + DOM walk of the same HTML body).
+                let rendered = cached_html_render.take().unwrap_or_else(|| {
+                    let is_markdown = extract_mode == ExtractMode::Markdown;
+                    render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown).2
+                });
                 // text_chars is computed from the truncated text (raw_text),
                 // not from the full blocks.
                 let text_chars = raw_text.as_ref().map_or(0, |t| t.chars().count());
@@ -752,8 +759,13 @@ impl FetchClient {
                 // Non-HTML path: use detected kind to pick the right renderer.
                 let text_chars = t.chars().count();
 
-                let rendered = if detected.line_preserving {
-                    match detected.kind {
+                let rendered = match detected.kind {
+                    DocumentKind::Notebook => render::notebook::render_notebook(t, max_chars),
+                    DocumentKind::Csv => render::csv::render_csv(t, max_chars),
+                    DocumentKind::Xml | DocumentKind::Rst | DocumentKind::AsciiDoc => {
+                        render::code::render_plaintext(t, max_chars)
+                    }
+                    _ if detected.line_preserving => match detected.kind {
                         DocumentKind::Markdown => {
                             let md = render::markdown_source::render_markdown_source(t, max_chars);
                             render::code::RenderedContent {
@@ -766,14 +778,9 @@ impl FetchClient {
                         DocumentKind::Diff | DocumentKind::Patch => {
                             render::code::render_diff(t, max_chars)
                         }
-                        _ => {
-                            // Code, Json, Toml, Yaml, and other structured text
-                            render::code::render_code(t, detected.language.as_deref(), max_chars)
-                        }
-                    }
-                } else {
-                    // Plain text prose: paragraph-based rendering
-                    render::code::render_plaintext(t, max_chars)
+                        _ => render::code::render_code(t, detected.language.as_deref(), max_chars),
+                    },
+                    _ => render::code::render_plaintext(t, max_chars),
                 };
 
                 // Apply Tier 1 (strip + bound) to each block's text

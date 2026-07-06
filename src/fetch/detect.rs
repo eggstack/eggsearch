@@ -91,6 +91,14 @@ fn detect_from_content_type(ct: &str) -> Option<DocumentKind> {
             Some(DocumentKind::Yaml)
         }
         "text/x-diff" | "text/x-patch" => Some(DocumentKind::Diff),
+        "text/csv" | "text/tab-separated-values" | "application/csv" | "application/tsv" => {
+            Some(DocumentKind::Csv)
+        }
+        "application/xml"
+        | "text/xml"
+        | "application/rss+xml"
+        | "application/atom+xml"
+        | "application/soap+xml" => Some(DocumentKind::Xml),
         "text/x-rust"
         | "text/x-c"
         | "text/x-c++"
@@ -176,8 +184,23 @@ fn detect_from_url(url: &str) -> Option<DocumentKind> {
         // Markdown
         "md" | "mdx" | "markdown" | "mkd" => Some(DocumentKind::Markdown),
 
+        // Notebook
+        "ipynb" => Some(DocumentKind::Notebook),
+
+        // CSV/TSV
+        "csv" | "tsv" => Some(DocumentKind::Csv),
+
+        // XML
+        "xml" | "rss" | "atom" => Some(DocumentKind::Xml),
+
+        // AsciiDoc
+        "adoc" | "asciidoc" => Some(DocumentKind::AsciiDoc),
+
+        // reStructuredText
+        "rst" => Some(DocumentKind::Rst),
+
         // Log/plain text
-        "log" | "txt" | "text" | "cfg" | "conf" | "ini" | "env" | "xml" => None,
+        "log" | "txt" | "text" | "cfg" | "conf" | "ini" | "env" => None,
 
         // Binary (not text)
         "pdf" => Some(DocumentKind::Pdf),

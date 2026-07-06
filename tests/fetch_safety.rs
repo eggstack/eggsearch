@@ -11,9 +11,12 @@ use eggsearch::core::sanitize::{
 };
 use eggsearch::core::SymbolKind;
 use eggsearch::core::{code_host_fetch::resolve_code_host_fetch_target, fetch::FetchTransformKind};
+use eggsearch::fetch::detect::classify;
 use eggsearch::fetch::limits::{validate_fetch_target, validate_url, FetchLimits};
 use eggsearch::fetch::render::code::{render_code, render_diff, render_plaintext};
+use eggsearch::fetch::render::csv::render_csv;
 use eggsearch::fetch::render::markdown_source::render_markdown_source;
+use eggsearch::fetch::render::notebook::render_notebook;
 use eggsearch::fetch::render::render_blocks;
 use eggsearch::fetch::span::{select_span, SpanConfidence, SpanSelectionKind};
 
@@ -807,4 +810,223 @@ fn g4_code_host_rewrite_produces_stable_raw_url_and_transform() {
         transform.transformed_url,
         "https://codeberg.org/owner/repo/raw/branch/main/src/lib.rs"
     );
+}
+
+// =========================================================================
+// H. CSV/TSV Renderer Tests
+// =========================================================================
+
+#[test]
+fn h1_csv_basic_header_and_rows() {
+    let csv = "name,age,city\nAlice,30,NYC\nBob,25,LA\n";
+    let rendered = render_csv(csv, 10000);
+    assert!(!rendered.blocks.is_empty());
+    let meta = &rendered.blocks[0];
+    assert_eq!(meta.kind, eggsearch::core::BlockKind::Code);
+    assert_eq!(meta.language, Some("csv".to_string()));
+    assert!(meta.text.contains("3 columns, 3 rows"));
+    let data_block = &rendered.blocks[1];
+    assert!(data_block.text.contains("name,age,city"));
+    assert!(rendered
+        .blocks
+        .iter()
+        .any(|b| b.text.contains("Alice,30,NYC")));
+    assert!(!rendered.text_truncated);
+    assert!(!rendered.block_truncated);
+}
+
+#[test]
+fn h2_csv_row_limit_truncates_at_100() {
+    let mut csv = String::from("id,value\n");
+    for i in 0..150 {
+        csv.push_str(&format!("{},x\n", i));
+    }
+    let rendered = render_csv(&csv, 100000);
+    assert!(rendered.text_truncated);
+    let last_block = rendered.blocks.last().unwrap();
+    assert!(last_block.text.contains("98,"));
+}
+
+#[test]
+fn h3_csv_char_budget_truncates_blocks() {
+    let csv = "a,b,c\n1,2,3\n4,5,6\n";
+    let rendered = render_csv(csv, 20);
+    assert!(rendered.block_truncated);
+}
+
+#[test]
+fn h4_csv_quoted_commas_not_split() {
+    let csv = "name,desc\nAlice,\"likes cats, dogs\"\n";
+    let rendered = render_csv(csv, 10000);
+    let meta = &rendered.blocks[0];
+    assert!(meta.text.contains("2 columns"));
+}
+
+#[test]
+fn h5_csv_empty_input() {
+    let rendered = render_csv("", 10000);
+    assert!(rendered.blocks.is_empty());
+}
+
+// =========================================================================
+// I. Notebook Renderer Tests
+// =========================================================================
+
+const SAMPLE_NOTEBOOK: &str = r##"
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": ["# Hello World\n", "This is a notebook."]
+    },
+    {
+      "cell_type": "code",
+      "source": ["print('hello')"]
+    },
+    {
+      "cell_type": "code",
+      "source": []
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "Python 3"
+    }
+  }
+}
+"##;
+
+#[test]
+fn i1_notebook_extracts_markdown_and_code_cells() {
+    let rendered = render_notebook(SAMPLE_NOTEBOOK, 10000);
+    assert!(!rendered.blocks.is_empty());
+    let md = &rendered.blocks[0];
+    assert_eq!(md.kind, eggsearch::core::BlockKind::Paragraph);
+    assert!(md.text.contains("# Hello World"));
+    assert!(md.text.contains("[cell 1 (markdown)]"));
+
+    let code = &rendered.blocks[1];
+    assert_eq!(code.kind, eggsearch::core::BlockKind::Code);
+    assert_eq!(code.language, Some("python".to_string()));
+    assert!(code.text.contains("print('hello')"));
+    assert!(code.text.contains("[cell 2 (code)]"));
+
+    assert_eq!(rendered.blocks.len(), 2);
+}
+
+#[test]
+fn i2_notebook_outline_from_kernelspec() {
+    let rendered = render_notebook(SAMPLE_NOTEBOOK, 10000);
+    assert_eq!(rendered.outline.len(), 1);
+    assert_eq!(rendered.outline[0].title, "Python 3");
+    assert_eq!(rendered.outline[0].level, 1);
+}
+
+#[test]
+fn i3_notebook_invalid_json_falls_back_to_raw_text() {
+    let rendered = render_notebook("not json at all", 10000);
+    assert_eq!(rendered.blocks.len(), 1);
+    assert_eq!(rendered.blocks[0].kind, eggsearch::core::BlockKind::RawText);
+    assert_eq!(rendered.blocks[0].text, "not json at all");
+}
+
+#[test]
+fn i4_notebook_missing_cells_key_falls_back_to_raw() {
+    let rendered = render_notebook(r#"{"metadata": {}}"#, 10000);
+    assert_eq!(rendered.blocks.len(), 1);
+    assert_eq!(rendered.blocks[0].kind, eggsearch::core::BlockKind::RawText);
+}
+
+#[test]
+fn i5_notebook_empty_source_cells_skipped() {
+    let nb = r#"{"cells": [{"cell_type": "code", "source": []}, {"cell_type": "markdown", "source": ["content"]}]}"#;
+    let rendered = render_notebook(nb, 10000);
+    assert_eq!(rendered.blocks.len(), 1);
+    assert!(rendered.blocks[0].text.contains("content"));
+}
+
+#[test]
+fn i6_notebook_cell_limit_truncates_at_200() {
+    let mut cells = Vec::new();
+    for i in 0..250 {
+        cells.push(format!(
+            r#"{{"cell_type": "code", "source": ["line {}"]}}"#,
+            i
+        ));
+    }
+    let nb = format!(r#"{{"cells": [{}]}}"#, cells.join(","));
+    let rendered = render_notebook(&nb, 1000000);
+    assert!(rendered.text_truncated);
+    assert_eq!(rendered.blocks.len(), 200);
+}
+
+// =========================================================================
+// J. Content Detection Tests
+// =========================================================================
+
+#[test]
+fn j1_detect_csv_from_content_type() {
+    let detected = classify(Some("text/csv"), "https://example.com/data", b"a,b\n1,2\n");
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Csv);
+}
+
+#[test]
+fn j2_detect_csv_from_url_extension() {
+    let detected = classify(None, "https://example.com/data.csv", b"a,b\n1,2\n");
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Csv);
+}
+
+#[test]
+fn j3_detect_tsv_from_content_type() {
+    let detected = classify(
+        Some("text/tab-separated-values"),
+        "https://example.com/data",
+        b"a\tb\n1\t2\n",
+    );
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Csv);
+}
+
+#[test]
+fn j4_detect_xml_from_content_type() {
+    let detected = classify(
+        Some("application/xml"),
+        "https://example.com/data",
+        b"<root><item/></root>",
+    );
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Xml);
+}
+
+#[test]
+fn j5_detect_xml_from_url_extension() {
+    let detected = classify(None, "https://example.com/data.xml", b"<root/>");
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Xml);
+}
+
+#[test]
+fn j6_detect_notebook_from_url_extension() {
+    let nb = r#"{"cells": [], "metadata": {}}"#;
+    let detected = classify(None, "https://example.com/work.ipynb", nb.as_bytes());
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Notebook);
+}
+
+#[test]
+fn j7_detect_asciidoc_from_url_extension() {
+    let detected = classify(None, "https://example.com/readme.adoc", b"= Title\n");
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::AsciiDoc);
+}
+
+#[test]
+fn j8_detect_rst_from_url_extension() {
+    let detected = classify(None, "https://example.com/readme.rst", b"Title\n====\n");
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Rst);
+}
+
+#[test]
+fn j9_detect_rss_xml_from_content_type() {
+    let detected = classify(
+        Some("application/rss+xml"),
+        "https://example.com/feed",
+        b"<rss><channel/></rss>",
+    );
+    assert_eq!(detected.kind, eggsearch::core::DocumentKind::Xml);
 }

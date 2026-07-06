@@ -33,6 +33,16 @@ pub enum DocumentKind {
     Patch,
     /// PDF document (optional feature-gated extraction via the `pdf` Cargo feature).
     Pdf,
+    /// Jupyter notebook (.ipynb).
+    Notebook,
+    /// CSV or TSV spreadsheet.
+    Csv,
+    /// XML document (including RSS/Atom feeds).
+    Xml,
+    /// reStructuredText document.
+    Rst,
+    /// AsciiDoc document.
+    AsciiDoc,
     /// Unrecognized content type.
     #[default]
     Unknown,
@@ -52,6 +62,11 @@ impl DocumentKind {
             Self::Diff => "diff",
             Self::Patch => "patch",
             Self::Pdf => "pdf",
+            Self::Notebook => "notebook",
+            Self::Csv => "csv",
+            Self::Xml => "xml",
+            Self::Rst => "rst",
+            Self::AsciiDoc => "asciidoc",
             Self::Unknown => "unknown",
         }
     }
