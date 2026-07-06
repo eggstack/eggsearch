@@ -170,8 +170,23 @@ pub struct WebFetchResponse {
     /// Trust label.
     pub trust: FetchTrust,
     /// Extracted text content (None if extract_mode = MetadataOnly).
+    /// Tier 2 framing (`<<<EXTERNAL_UNTRUSTED ...>>>`) is applied here
+    /// when `[fetch].sanitize_output = true`. Callers that need
+    /// unframed source text (e.g. `repo_fetch` line selection) should
+    /// use `raw_text` instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Unframed extracted text content. Tier 1 (control-char
+    /// stripping + length bounding) is applied, but Tier 2
+    /// (`<<<EXTERNAL_UNTRUSTED` framing) is NOT. Bounded by the
+    /// configured `max_chars_cap` rather than the request
+    /// `max_chars`, so callers can perform line/span selection on
+    /// the full source text before clamping output to a smaller
+    /// budget. `None` if `extract_mode = MetadataOnly`. Intended for
+    /// internal pipeline consumers (e.g. `repo_fetch`), not tool
+    /// output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_text: Option<String>,
     /// Extracted links (if include_links = true).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<ExtractedLink>,

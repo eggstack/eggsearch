@@ -4934,6 +4934,7 @@ fn web_fetch_response_includes_fetch_transform_field() {
         truncated: false,
         trust: eggsearch::core::FetchTrust::ExternalUntrusted,
         text: Some("fn main() {}".to_string()),
+        raw_text: None,
         links: vec![],
         links_seen: None,
         links_truncated: false,
@@ -4974,6 +4975,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         truncated: false,
         trust: eggsearch::core::FetchTrust::ExternalUntrusted,
         text: Some("hello".to_string()),
+        raw_text: None,
         links: vec![],
         links_seen: None,
         links_truncated: false,
@@ -9479,6 +9481,148 @@ async fn repo_fetch_code_context_present_for_rust_file() {
 }
 
 #[tokio::test]
+async fn repo_fetch_line_range_with_sanitize_output_true_returns_unframed_source_line() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/three_lines.txt");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("alpha\nbeta\ngamma\n");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = true;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "owner".into(),
+            repo: "repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/three_lines.txt".into(),
+            line_start: Some(1),
+            line_end: Some(1),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/three_lines.txt")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let lines = v["lines"].as_array().expect("lines should be array");
+    assert_eq!(
+        lines.len(),
+        1,
+        "should return exactly one line for line_start=line_end=1"
+    );
+    let first_text = lines[0]["text"].as_str().expect("line text");
+    assert_eq!(
+        first_text, "alpha",
+        "line 1 should be 'alpha' (first source line), got '{first_text}'"
+    );
+    assert!(
+        !first_text.contains("EXTERNAL_UNTRUSTED"),
+        "line 1 must not contain framing markers: '{first_text}'"
+    );
+    assert_eq!(
+        lines[0]["number"].as_u64().expect("line number"),
+        1,
+        "returned line number should be 1"
+    );
+
+    let text = v["text"].as_str().expect("text");
+    assert_eq!(text, "alpha");
+    assert!(!text.contains("EXTERNAL_UNTRUSTED"));
+}
+
+#[tokio::test]
+async fn repo_fetch_returns_target_line_past_default_text_cap() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mut body = String::new();
+    let target_line: usize = 800;
+    for i in 1..=1000 {
+        body.push_str(&format!("line {:04} filler content\n", i));
+    }
+    let expected = format!("line {:04} filler content", target_line);
+    server.mock(|when, then| {
+        when.method(GET).path("/src/large.txt");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(body);
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = true;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "owner".into(),
+            repo: "repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/large.txt".into(),
+            line_start: Some(target_line as u32),
+            line_end: Some(target_line as u32),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/large.txt")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let lines = v["lines"].as_array().expect("lines should be array");
+    assert_eq!(lines.len(), 1);
+    let text = lines[0]["text"].as_str().expect("line text");
+    assert_eq!(
+        text, expected,
+        "should return target source line even though it is past default text cap"
+    );
+    assert!(!text.contains("EXTERNAL_UNTRUSTED"));
+}
+
+#[tokio::test]
 async fn repo_fetch_429_via_run_repo_fetch() {
     use httpmock::prelude::*;
 
@@ -13213,6 +13357,96 @@ async fn batch_fetch_rejects_zero_max_chars_repo() {
     let err = res.expect_err("expected validation error for zero max_chars");
     assert!(
         err.to_string().contains("max_chars must be > 0"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_zero_max_items() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "https://example.com".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: Some(0),
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for zero max_items");
+    assert!(
+        err.to_string().contains("max_items must be > 0"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_zero_max_chars_per_item() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "https://example.com".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: Some(0),
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for zero max_chars_per_item");
+    assert!(
+        err.to_string().contains("max_chars_per_item must be > 0"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_zero_max_total_chars() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "https://example.com".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(0),
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for zero max_total_chars");
+    assert!(
+        err.to_string().contains("max_total_chars must be > 0"),
         "got: {err}"
     );
 }

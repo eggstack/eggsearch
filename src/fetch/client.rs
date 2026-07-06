@@ -142,6 +142,15 @@ impl FetchClient {
             .unwrap_or(self.limits.max_chars_default)
             .min(self.limits.max_chars_cap);
 
+        // `max_chars_raw` bounds the body text stored in
+        // `WebFetchResponse::raw_text`. Use the configured
+        // `max_chars_cap` so that internal consumers (e.g.
+        // `repo_fetch` line/span selection) get the full source text
+        // even when the caller's requested `max_chars` is small. This
+        // is the input budget for line selection, not the tool output
+        // budget; output is still clamped to the caller's `max_chars`.
+        let max_chars_raw = self.limits.max_chars_cap;
+
         let mut current_url = fetch_url;
         let mut redirect_count: usize = 0;
 
@@ -430,6 +439,7 @@ impl FetchClient {
                     truncated,
                     trust: FetchTrust::ExternalUntrusted,
                     text: None,
+                    raw_text: None,
                     links: Vec::new(),
                     links_seen: None,
                     links_truncated: false,
@@ -533,6 +543,7 @@ impl FetchClient {
                 truncated,
                 trust: FetchTrust::ExternalUntrusted,
                 text: Some(text),
+                raw_text: None,
                 links: Vec::new(),
                 links_seen: None,
                 links_truncated: false,
@@ -626,8 +637,22 @@ impl FetchClient {
         let mut warnings = extract_warnings;
 
         // Save raw extracted text before sanitization for document
-        // construction (blocks use Tier 1 only, no framing).
-        let raw_text = text.clone();
+        // construction (blocks use Tier 1 only, no framing). `pre_framing_text`
+        // captures the bounded-by-max_chars Tier-1 text for
+        // `text_chars` computation; `raw_text` (the new
+        // `WebFetchResponse` field) holds the unframed text bounded
+        // by `max_chars_raw` (= `max_chars_cap`) so callers performing
+        // line/span selection (e.g. `repo_fetch`) get the full source
+        // text even when their requested `max_chars` is small.
+        let pre_framing_text = text.clone();
+        let raw_text: Option<String> = if extract_mode != ExtractMode::MetadataOnly {
+            let decoded = String::from_utf8_lossy(&body);
+            let (stripped, _) = strip_control_chars(&decoded);
+            let (bounded, _) = bound_text(&stripped, max_chars_raw);
+            Some(bounded)
+        } else {
+            None
+        };
         let raw_title = title.clone();
 
         // Sanitize each untrusted field. Tier 1 (strip + bound) is
@@ -728,9 +753,12 @@ impl FetchClient {
                     let is_markdown = extract_mode == ExtractMode::Markdown;
                     render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown).2
                 });
-                // text_chars is computed from the truncated text (raw_text),
-                // not from the full blocks.
-                let text_chars = raw_text.as_ref().map_or(0, |t| t.chars().count());
+                // text_chars is computed from the truncated text
+                // (`pre_framing_text`, bounded by `max_chars`), not
+                // from the new `raw_text` field which is bounded by
+                // `max_chars_cap` for internal consumers like
+                // `repo_fetch`.
+                let text_chars = pre_framing_text.as_ref().map_or(0, |t| t.chars().count());
                 let block_truncated = rendered.block_truncated;
 
                 // Apply Tier 1 (strip + bound) to each block's text
@@ -759,9 +787,13 @@ impl FetchClient {
                 }
 
                 (blocks, outline, text_chars, block_truncated)
-            } else if let Some(ref t) = raw_text {
-                // Non-HTML path: use detected kind to pick the right renderer.
-                let text_chars = t.chars().count();
+            } else if let Some(ref t) = pre_framing_text {
+                // Non-HTML path: use detected kind to pick the right
+                // renderer. `text_chars` is computed from
+                // `pre_framing_text` (bounded by `max_chars`), not
+                // from `raw_text` which is bounded by `max_chars_cap`
+                // for internal consumers like `repo_fetch`.
+                let text_chars = pre_framing_text.as_ref().map_or(0, |t| t.chars().count());
 
                 let rendered = match detected.kind {
                     DocumentKind::Notebook => render::notebook::render_notebook(t, max_chars),
@@ -858,6 +890,7 @@ impl FetchClient {
             truncated,
             trust: FetchTrust::ExternalUntrusted,
             text,
+            raw_text,
             links,
             links_seen: if links_seen > 0 {
                 Some(links_seen)

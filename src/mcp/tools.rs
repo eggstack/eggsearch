@@ -1453,10 +1453,10 @@ pub async fn run_repo_fetch(
     use crate::core::code_metadata::CodeHost;
     use crate::core::fetch::ExtractMode;
     use crate::core::repo_fetch::{
-        apply_line_range, codeberg_browser_url, codeberg_raw_url, gitea_browser_url, gitea_raw_url,
-        github_browser_url, github_permalink_url, github_raw_permalink_url, github_raw_url,
-        gitlab_browser_url, gitlab_raw_url, FetchTrust, RepoFetchRequest, RepoFetchResponse,
-        RepoLocator,
+        apply_line_range, clamp_lines_to_max_chars, codeberg_browser_url, codeberg_raw_url,
+        gitea_browser_url, gitea_raw_url, github_browser_url, github_permalink_url,
+        github_raw_permalink_url, github_raw_url, gitlab_browser_url, gitlab_raw_url, FetchTrust,
+        RepoFetchRequest, RepoFetchResponse, RepoLocator,
     };
 
     // --- workspace:// local file fetch (bypasses fetch policy) ---
@@ -1696,7 +1696,6 @@ pub async fn run_repo_fetch(
     let language = crate::core::code_metadata::language_from_extension(path).map(String::from);
     let source_role = infer_source_role(path);
 
-    let max_chars = req.max_chars;
     let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
         ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
@@ -1720,21 +1719,31 @@ pub async fn run_repo_fetch(
         .as_deref()
         .unwrap_or(canonical_fetch_url);
 
+    // Fetch up to the configured `max_chars_cap` so line/span
+    // selection operates on full source text. The user-requested
+    // `max_chars` is applied as an *output* budget via
+    // `clamp_lines_to_max_chars` after span slicing. Source lines
+    // must be parsed from `resp.raw_text` (Tier 1 only) rather than
+    // `resp.text` (Tier 2 framed) so trust markers don't shift line
+    // numbers.
+    let fetch_max_chars = state.config.fetch.max_chars_cap;
     let response = client
-        .fetch(fetch_url, max_chars, ExtractMode::Text, false)
+        .fetch(fetch_url, Some(fetch_max_chars), ExtractMode::Text, false)
         .await;
 
     match response {
         Ok(resp) => {
             let status = resp.status;
             let content_type = resp.content_type.clone();
-            let truncated = resp.truncated;
+            let mut truncated = resp.truncated;
             let warnings = resp.warnings.clone();
-            let trust_markers = resp.trust_markers.clone();
-            let text = resp.text.clone();
+            let mut trust_markers = resp.trust_markers.clone();
 
-            // Parse lines from text for line slicing.
-            let all_lines: Vec<String> = text
+            // Parse lines from raw (Tier-1, unframed) text for line
+            // slicing. Falls back to empty when raw_text is absent
+            // (e.g. MetadataOnly).
+            let raw_text = resp.raw_text.clone();
+            let all_lines: Vec<String> = raw_text
                 .as_deref()
                 .unwrap_or("")
                 .lines()
@@ -1778,11 +1787,18 @@ pub async fn run_repo_fetch(
                     req.context_after.unwrap_or(0),
                 );
 
-            // Build text from sliced lines.
-            let sliced_text = if sliced_lines.is_empty() {
+            // Clamp sliced lines to user-requested `max_chars` budget.
+            let (clamped_lines, char_truncated) = {
+                let (lines, _txt, ct) = clamp_lines_to_max_chars(&sliced_lines, req.max_chars);
+                (lines, ct)
+            };
+
+            // Build text from clamped lines (unframed source, like
+            // workspace_fetch).
+            let sliced_text = if clamped_lines.is_empty() {
                 None
             } else {
-                let t: String = sliced_lines
+                let t: String = clamped_lines
                     .iter()
                     .map(|l| l.text.as_str())
                     .collect::<Vec<_>>()
@@ -1793,6 +1809,9 @@ pub async fn run_repo_fetch(
             let mut warnings = warnings;
             if let Some(w) = line_warning {
                 warnings.push(w);
+            }
+            if char_truncated {
+                warnings.push("remote_repo_fetch_truncated_by_max_chars".to_string());
             }
             if selected_span.is_none() && (req.symbol.is_some() || req.match_text.is_some()) {
                 warnings.push(format!(
@@ -1811,6 +1830,15 @@ pub async fn run_repo_fetch(
                 path,
                 target_line,
             ));
+
+            // Propagate text-level extraction truncation (Tier 1
+            // length bounding at `fetch_max_chars`) into the boolean
+            // `truncated` flag so callers know the file may have been
+            // longer than what was sliced.
+            if char_truncated {
+                truncated = true;
+                trust_markers.text_truncated = true;
+            }
 
             // Build deterministic code span evidence when span selection produced a result.
             let locator_str_for_span = format!("{locator:?}");
@@ -1868,7 +1896,7 @@ pub async fn run_repo_fetch(
                 returned_line_end: returned_end,
                 total_lines,
                 text: sliced_text,
-                lines: sliced_lines,
+                lines: clamped_lines,
                 document: resp.document,
                 truncated,
                 structured_warnings: crate::core::warning::convert_fetch_warnings(&warnings),
@@ -2028,6 +2056,26 @@ pub async fn run_batch_fetch(
     // Validate items non-empty
     if args.items.is_empty() {
         return Err(ToolError::Validation("items must not be empty".to_string()));
+    }
+
+    // Validate top-level budget arguments. Per-item `max_chars` is
+    // validated below in the pre-validation loop. A zero top-level
+    // budget is rejected here because silently promoting it to 1
+    // (via `.max(1)` later) would contradict the bounded-budget
+    // contract and could return content when the caller requested
+    // zero total output.
+    if let Some(0) = args.max_items {
+        return Err(ToolError::Validation("max_items must be > 0".to_string()));
+    }
+    if let Some(0) = args.max_chars_per_item {
+        return Err(ToolError::Validation(
+            "max_chars_per_item must be > 0".to_string(),
+        ));
+    }
+    if let Some(0) = args.max_total_chars {
+        return Err(ToolError::Validation(
+            "max_total_chars must be > 0".to_string(),
+        ));
     }
 
     // Resolve effective limits
