@@ -1362,7 +1362,8 @@ pub async fn run_web_fetch(
     }
 
     let trimmed_url = args.url.trim();
-    if !trimmed_url.starts_with("http://") && !trimmed_url.starts_with("https://") {
+    let lower = trimmed_url.to_ascii_lowercase();
+    if !lower.starts_with("http://") && !lower.starts_with("https://") {
         return Err(ToolError::Validation(format!(
             "url scheme must be http or https, got: {}",
             &trimmed_url[..trimmed_url.len().min(20)]
@@ -1397,7 +1398,7 @@ pub async fn run_web_fetch(
         .unwrap_or(state.config.fetch.include_links_default);
 
     let response = client
-        .fetch(&args.url, args.max_chars, extract_mode, include_links)
+        .fetch(trimmed_url, args.max_chars, extract_mode, include_links)
         .await;
 
     match response {
@@ -2077,6 +2078,9 @@ pub async fn run_batch_fetch(
             "max_total_chars must be > 0".to_string(),
         ));
     }
+    if let Some(0) = args.timeout_ms {
+        return Err(ToolError::Validation("timeout_ms must be > 0".to_string()));
+    }
 
     // Resolve effective limits
     let batch_max_items = args
@@ -2122,9 +2126,10 @@ pub async fn run_batch_fetch(
                         "item {i}: url must not be empty"
                     )));
                 }
-                // Validate URL scheme early (http/https only)
+                // Validate URL scheme early (http/https only, case-insensitive)
                 let trimmed = url.trim();
-                if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+                let lower = trimmed.to_ascii_lowercase();
+                if !lower.starts_with("http://") && !lower.starts_with("https://") {
                     return Err(ToolError::Validation(format!(
                         "item {i}: url scheme must be http or https, got: {}",
                         &trimmed[..trimmed.len().min(20)]
@@ -2445,15 +2450,17 @@ fn make_batch_fetch_future(
                     .acquire_owned()
                     .await
                     .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
-                let response = client.fetch(&url, Some(em), mode, il).await;
+                let web_client: Arc<FetchClient> = if let Some(ms) = timeout_ms {
+                    Arc::new(client.with_timeout_ms(ms).map_err(|e| {
+                        ToolError::Internal(format!("failed to create timeout override: {e}"))
+                    })?)
+                } else {
+                    client
+                };
+                let response = web_client.fetch(&url, Some(em), mode, il).await;
                 let ok_label = label.clone();
                 match response {
                     Ok(resp) => {
-                        let text_len = resp
-                            .document
-                            .as_ref()
-                            .map(|d| d.text_chars_returned)
-                            .unwrap_or_else(|| resp.text.as_ref().map(|t| t.len()).unwrap_or(0));
                         let truncated = resp.truncated;
                         let payload = serde_json::json!({
                             "url": resp.url,
@@ -2475,6 +2482,22 @@ fn make_batch_fetch_future(
                             "document": resp.document,
                             "fetch_transform": resp.fetch_transform,
                         });
+                        // Account for body text plus metadata-only fields
+                        // (title/description/links) so metadata-only responses
+                        // are not silently counted as zero body chars.
+                        let body_chars = resp
+                            .document
+                            .as_ref()
+                            .map(|d| d.text_chars_returned)
+                            .unwrap_or_else(|| resp.text.as_ref().map(|t| t.len()).unwrap_or(0));
+                        let meta_chars = resp.title.as_ref().map(|s| s.len()).unwrap_or(0)
+                            + resp.description.as_ref().map(|s| s.len()).unwrap_or(0)
+                            + resp
+                                .links
+                                .iter()
+                                .map(|l| l.url.len() + l.text.len())
+                                .sum::<usize>();
+                        let text_len = body_chars + meta_chars;
                         Ok(BatchFetchResult {
                             index: i,
                             item_type: BatchFetchItemType::Web,

@@ -1502,6 +1502,9 @@ impl SecuritySearchRequest {
         if let Some(0) = self.max_per_group {
             return Err("max_per_group must be > 0".to_string());
         }
+        if let Some(0) = self.timeout_ms {
+            return Err("timeout_ms must be > 0".to_string());
+        }
         Ok(())
     }
 
@@ -1797,6 +1800,17 @@ mod tests {
             ..Default::default()
         };
         assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_zero_timeout_ms() {
+        let req = SecuritySearchRequest {
+            query: "CVE-2024-0001".to_string(),
+            timeout_ms: Some(0),
+            ..Default::default()
+        };
+        let err = req.validate(512).unwrap_err();
+        assert!(err.contains("timeout_ms"));
     }
 
     #[test]

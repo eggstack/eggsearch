@@ -385,6 +385,9 @@ impl RepoSearchRequest {
         if let Some(0) = self.max_results {
             return Err("max_results must be > 0".to_string());
         }
+        if let Some(0) = self.timeout_ms {
+            return Err("timeout_ms must be > 0".to_string());
+        }
         // Validate package coordinate: ecosystem requires package name and vice versa.
         if self.ecosystem.is_some() != self.package.is_some() {
             return Err("both 'ecosystem' and 'package' must be provided together".to_string());
@@ -804,6 +807,17 @@ mod tests {
             ..Default::default()
         };
         assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_timeout_ms() {
+        let req = RepoSearchRequest {
+            query: "test".to_string(),
+            timeout_ms: Some(0),
+            ..Default::default()
+        };
+        let err = req.validate(512).unwrap_err();
+        assert!(err.contains("timeout_ms"));
     }
 
     #[test]

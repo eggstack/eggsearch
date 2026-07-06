@@ -248,6 +248,9 @@ impl RepoMapRequest {
         if let Some(0) = self.max_depth {
             return Err("max_depth must be > 0".to_string());
         }
+        if let Some(0) = self.timeout_ms {
+            return Err("timeout_ms must be > 0".to_string());
+        }
         Ok(())
     }
 }
@@ -1046,6 +1049,18 @@ mod tests {
         };
         let err = req.validate().unwrap_err();
         assert!(err.contains("max_depth"));
+    }
+
+    #[test]
+    fn validate_zero_timeout_ms() {
+        let req = RepoMapRequest {
+            owner: "owner".to_string(),
+            repo: "repo".to_string(),
+            timeout_ms: Some(0),
+            ..Default::default()
+        };
+        let err = req.validate().unwrap_err();
+        assert!(err.contains("timeout_ms"));
     }
 
     #[test]

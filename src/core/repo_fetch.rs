@@ -425,6 +425,11 @@ impl RepoFetchRequest {
             }
         }
 
+        // Validate timeout_ms.
+        if let Some(0) = self.timeout_ms {
+            return Err("timeout_ms must be > 0".to_string());
+        }
+
         Ok(())
     }
 }
@@ -981,6 +986,32 @@ mod tests {
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("> 0"));
+    }
+
+    #[test]
+    fn zero_timeout_ms_rejected() {
+        let req = RepoFetchRequest {
+            host: Some(CodeHost::Github),
+            owner: "tokio-rs".to_string(),
+            repo: "axum".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "src/lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: Some(0),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+        let err = req.validate(50000).unwrap_err();
+        assert!(err.contains("timeout_ms"));
     }
 
     #[test]

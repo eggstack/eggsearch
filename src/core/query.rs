@@ -243,6 +243,9 @@ impl WebSearchRequest {
         if let Some(0) = self.max_results {
             return Err(CoreError::InvalidQuery("max_results must be > 0".into()));
         }
+        if let Some(0) = self.timeout_ms {
+            return Err(CoreError::InvalidQuery("timeout_ms must be > 0".into()));
+        }
         Ok(())
     }
 
@@ -320,6 +323,14 @@ mod tests {
         let mut req = WebSearchRequest::new("test");
         req.max_results = Some(0);
         assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_timeout_ms() {
+        let mut req = WebSearchRequest::new("test");
+        req.timeout_ms = Some(0);
+        let err = req.validate(512).unwrap_err();
+        assert!(err.to_string().contains("timeout_ms"));
     }
 
     #[test]

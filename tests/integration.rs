@@ -253,6 +253,29 @@ async fn web_search_zero_max_results_returns_validation_error() {
     );
 }
 
+#[tokio::test]
+async fn web_search_zero_timeout_ms_returns_validation_error() {
+    let state = state_with_default();
+    let res = run_web_search(
+        state,
+        WebSearchArgs {
+            query: "rust".into(),
+            max_results: None,
+            providers: vec![],
+            safe_search: None,
+            timeout_ms: Some(0),
+            intent: None,
+            freshness: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error");
+    assert!(
+        err.to_string().contains("timeout_ms must be > 0"),
+        "got: {err}"
+    );
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_oversized_max_results_clamps_and_warns() {
@@ -6299,6 +6322,26 @@ mod repo_search {
     }
 
     #[tokio::test]
+    async fn repo_search_zero_timeout_ms_returns_validation_error() {
+        let state = state_with_default();
+        let res = run_repo_search(
+            state,
+            RepoSearchArgs {
+                query: "rust".into(),
+                providers: vec!["mock_a".into()],
+                timeout_ms: Some(0),
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected validation error");
+        assert!(
+            err.to_string().contains("timeout_ms must be > 0"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
     async fn repo_search_oversized_query_returns_validation_error() {
         let state = state_with_default();
         let too_long = "a".repeat(2_000);
@@ -7216,6 +7259,26 @@ mod repo_search {
     }
 
     #[tokio::test]
+    async fn security_search_zero_timeout_ms_returns_validation_error() {
+        let state = state_with_default();
+        let result = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-12345".into()),
+                providers: vec!["mock_a".into()],
+                timeout_ms: Some(0),
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = result.expect_err("expected validation error");
+        assert!(
+            err.to_string().contains("timeout_ms must be > 0"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
     async fn security_search_with_explicit_cve_id() {
         let engines = vec![MockEngine::success(
             "mock_a",
@@ -8074,6 +8137,26 @@ mod research_search {
         let err = res.expect_err("expected validation error");
         assert!(
             err.to_string().contains("max_results must be > 0"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn research_search_zero_timeout_ms_returns_validation_error() {
+        let state = state_with_default();
+        let res = run_research_search(
+            state,
+            ResearchSearchArgs {
+                query: "rust async".into(),
+                providers: vec!["mock_a".into()],
+                timeout_ms: Some(0),
+                ..Default::default()
+            },
+        )
+        .await;
+        let err = res.expect_err("expected validation error");
+        assert!(
+            err.to_string().contains("timeout_ms must be > 0"),
             "got: {err}"
         );
     }
@@ -8962,6 +9045,42 @@ async fn repo_fetch_validation_error_max_chars_zero() {
     assert!(
         err.to_string().contains("> 0"),
         "error should mention > 0: {err}"
+    );
+}
+
+#[tokio::test]
+async fn repo_fetch_validation_error_zero_timeout_ms() {
+    let state = repo_fetch_state();
+    let result = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: None,
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: Some(0),
+            test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await;
+
+    let err = result.expect_err("expected validation error for zero timeout_ms");
+    assert!(
+        err.to_string().contains("timeout_ms must be > 0"),
+        "got: {err}"
     );
 }
 
@@ -13856,6 +13975,78 @@ async fn batch_fetch_url_scheme_error_message_is_spaced_correctly() {
         !msg.contains("orhttps"),
         "error message should not contain 'orhttps', got: {msg}"
     );
+}
+
+#[tokio::test]
+async fn batch_fetch_rejects_zero_timeout_ms() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "https://example.com".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: Some(0),
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("expected validation error for zero timeout_ms");
+    assert!(
+        err.to_string().contains("timeout_ms must be > 0"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_uppercase_scheme_is_accepted() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("hello");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let url = server.url("/page");
+    let upper = url.replace("http://", "HTTP://");
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: upper,
+                extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed with uppercase scheme");
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["ok"], true);
 }
 
 #[cfg(feature = "mock")]
