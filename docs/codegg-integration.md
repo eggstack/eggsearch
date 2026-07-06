@@ -29,7 +29,7 @@ eggsearch version: see `Cargo.toml` for the live release number.
 
 ```bash
 # 1. Start the MCP server (stdio transport)
-eggsearch mcp
+eggsearch mcp stdio
 
 # 2. Discover capabilities
 # Call: provider_status({})
@@ -55,10 +55,10 @@ messages.
 
 ```bash
 # Start the server
-eggsearch mcp
+eggsearch mcp stdio
 
 # Or specify a config file explicitly
-EGGSEARCH_CONFIG=/path/to/config.toml eggsearch mcp
+eggsearch --config /path/to/config.toml mcp stdio
 ```
 
 ### Config File Location

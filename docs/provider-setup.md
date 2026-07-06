@@ -312,13 +312,13 @@ api_key_env = "SEMANTIC_SCHOLAR_API_KEY"
 ### Sourcegraph
 
 - ID: `sourcegraph`
-- Requires `SOURCEGRAPH_ACCESS_TOKEN`
+- Requires `SOURCEGRAPH_API_KEY`
 - Enable in `[search.api.sourcegraph]`:
 
 ```toml
 [search.api.sourcegraph]
 enabled = true
-api_key_env = "SOURCEGRAPH_ACCESS_TOKEN"
+api_key_env = "SOURCEGRAPH_API_KEY"
 ```
 
 ### Local Workspace

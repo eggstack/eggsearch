@@ -74,7 +74,7 @@ eggsearch mcp stdio
 Or set a custom config path:
 
 ```bash
-EGGSEARCH_CONFIG=/path/to/config.toml eggsearch mcp stdio
+eggsearch --config /path/to/config.toml mcp stdio
 ```
 
 The server reads MCP JSON-RPC messages from stdin and writes responses to stdout.

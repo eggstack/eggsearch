@@ -217,7 +217,10 @@ async fn search_by_cve(
     timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
     let url = format!("{DEFAULT_BASE_URL}/advisories?cve_id={cve_id}");
-    let bytes = fetch_json(client, api_key, &url, timeout).await?;
+    let bytes = match fetch_json(client, api_key, &url, timeout).await? {
+        Some(b) => b,
+        None => return Ok(Vec::new()),
+    };
     let parsed: GhAdvisoryResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
             engine: ENGINE,
@@ -237,7 +240,10 @@ async fn search_by_ghsa(
     timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
     let url = format!("{DEFAULT_BASE_URL}/advisories/{ghsa_id}");
-    let bytes = fetch_json(client, api_key, &url, timeout).await?;
+    let bytes = match fetch_json(client, api_key, &url, timeout).await? {
+        Some(b) => b,
+        None => return Ok(Vec::new()),
+    };
     let advisory: GhAdvisory =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
             engine: ENGINE,
@@ -254,7 +260,10 @@ async fn search_by_keyword(
 ) -> Result<Vec<SearchResult>, EngineError> {
     let encoded = urlencoding::encode(keyword);
     let url = format!("{DEFAULT_BASE_URL}/advisories?affects={encoded}");
-    let bytes = fetch_json(client, api_key, &url, timeout).await?;
+    let bytes = match fetch_json(client, api_key, &url, timeout).await? {
+        Some(b) => b,
+        None => return Ok(Vec::new()),
+    };
     let parsed: GhAdvisoryResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
             engine: ENGINE,
@@ -275,7 +284,10 @@ async fn search_by_package(
     timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
     let url = format!("{DEFAULT_BASE_URL}/advisories?affects={ecosystem}:{package}");
-    let bytes = fetch_json(client, api_key, &url, timeout).await?;
+    let bytes = match fetch_json(client, api_key, &url, timeout).await? {
+        Some(b) => b,
+        None => return Ok(Vec::new()),
+    };
     let parsed: GhAdvisoryResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
             engine: ENGINE,
@@ -293,7 +305,7 @@ async fn fetch_json(
     api_key: &str,
     url: &str,
     timeout: Duration,
-) -> Result<Vec<u8>, EngineError> {
+) -> Result<Option<Vec<u8>>, EngineError> {
     let response = tokio::time::timeout(
         timeout,
         client
@@ -312,10 +324,7 @@ async fn fetch_json(
 
     let status = response.status();
     if status.as_u16() == 404 {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: "not found".to_string(),
-        });
+        return Ok(None);
     }
     if !status.is_success() {
         return Err(EngineError::BadStatus {
@@ -335,7 +344,7 @@ async fn fetch_json(
         });
     }
 
-    Ok(bytes.to_vec())
+    Ok(Some(bytes.to_vec()))
 }
 
 fn convert_to_result(advisory: GhAdvisory) -> SearchResult {

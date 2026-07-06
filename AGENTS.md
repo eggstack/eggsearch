@@ -21,7 +21,7 @@ cargo build --release        # release build
 cargo publish --dry-run      # pre-publish check
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. The CI runs tests across4 feature combos: `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. The CI runs tests across 4 feature combos: `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`.
 
 ## Project Structure
 

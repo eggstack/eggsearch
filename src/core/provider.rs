@@ -993,7 +993,7 @@ pub fn built_in_provider_descriptor(
         "nvd" => Some(ProviderDescriptor {
             id: "nvd".into(),
             display_name: "NIST National Vulnerability Database".into(),
-            kind: ProviderKind::ApiKey,
+            kind: ProviderKind::JsonApi,
             enabled,
             default: is_default,
             requires_api_key: false,

@@ -4,7 +4,7 @@
 
 - [ ] Version bumped in `Cargo.toml`
 - [ ] `CHANGELOG.md` updated with all notable changes since last release
-- [ ] `make check` passes (formatting, clippy, tests, schema-corpus)
+- [ ] `make check` passes (fmt, clippy, test-all, test-no-default, schema-corpus, docs-tests)
 - [ ] CI green on `main` branch
 
 ## Release
