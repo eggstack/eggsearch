@@ -9,7 +9,7 @@ fmt:
 
 # Clippy
 clippy:
-	cargo clippy --all-features -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
 
 # All tests
 test-all:

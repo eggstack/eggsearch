@@ -933,15 +933,6 @@ fn local_workspace_investigation() -> AgentWorkflowRecipe {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::provider::built_in_provider_descriptor;
-
-    fn make_providers(ids: &[(&str, bool)]) -> Vec<ProviderDescriptor> {
-        ids.iter()
-            .filter_map(|(id, enabled)| {
-                built_in_provider_descriptor(id, *enabled, false, *enabled, *enabled, None)
-            })
-            .collect()
-    }
 
     #[test]
     fn catalog_has_all_eight_recipes() {

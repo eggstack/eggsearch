@@ -252,7 +252,11 @@ impl FetchClient {
 
         let is_html = content_type
             .as_ref()
-            .map(|ct| ct.starts_with("text/html") || ct.starts_with("application/xhtml"))
+            .map(|ct| {
+                let ct_lower = ct.to_lowercase();
+                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
+                ct_base == "text/html" || ct_base == "application/xhtml+xml"
+            })
             .unwrap_or(false);
 
         // Detect PDF by Content-Type or URL extension. PDFs are
@@ -312,7 +316,7 @@ impl FetchClient {
             .map(|ct| {
                 let ct_lower = ct.to_lowercase();
                 let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
-                ct.starts_with("text/")
+                ct_base.starts_with("text/")
                     || ct_base == "application/json"
                     || ct_base == "application/ld+json"
                     || ct_base.starts_with("application/") && ct_base.ends_with("+json")

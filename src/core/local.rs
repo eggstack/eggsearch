@@ -698,8 +698,10 @@ mod tests {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(root.join("target.txt"), root.join("link.txt")).unwrap();
-            let mut cfg = LocalConfig::default();
-            cfg.follow_symlinks = false;
+            let cfg = LocalConfig {
+                follow_symlinks: false,
+                ..LocalConfig::default()
+            };
             let err = validate_local_fetch_path(root, "link.txt", &cfg).unwrap_err();
             assert!(matches!(err, LocalFetchPathError::SymlinkNotAllowed));
         }
@@ -755,8 +757,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         std::fs::write(outside.path().join("escaped.txt"), "pwned").unwrap();
-        let mut cfg = LocalConfig::default();
-        cfg.follow_symlinks = true;
+        let cfg = LocalConfig {
+            follow_symlinks: true,
+            ..LocalConfig::default()
+        };
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(

@@ -670,7 +670,7 @@ import (
 func main() {}
 "#;
         let imports = extract_imports(text, ExtractionLanguage::Go);
-        assert!(imports.len() >= 1);
+        assert!(!imports.is_empty());
     }
 
     #[test]

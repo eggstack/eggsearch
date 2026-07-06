@@ -14,7 +14,7 @@ make check
 
 # Individual targets
 cargo fmt --check            # format check (CI fails on this)
-cargo clippy --all-features -- -D warnings  # zero warnings required
+cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required
 cargo test --all-features    # all tests
 cargo test --no-default-features  # no-default compilation + tests
 cargo build --release        # release build
@@ -56,7 +56,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 |-----|-------------|
 | **check** | `cargo check` × 4 feature combos |
 | **test** | `cargo test` × 4 feature combos |
-| **clippy** | `cargo clippy --all-features -- -D warnings` |
+| **clippy** | `cargo clippy --all-targets --all-features -- -D warnings` |
 | **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
 | **docs-contract** | 3 documentation contract tests: `docs_config_snippets`, `docs_provider_inventory`, `docs_tool_names` |
 | **fmt** | `cargo fmt --check` |
@@ -112,13 +112,13 @@ cargo test --all-features --test docs_config_snippets --test docs_provider_inven
 - **Extend `integration.rs`** for MCP tool input validation, provider failures, tool response shape
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
-- Always run `cargo clippy --all-features -- -D warnings` after adding
+- Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
 
 ## Code Conventions
 
 - **No comments** unless explicitly requested
 - **Formatter:** `cargo fmt` (standard rustfmt). CI checks `cargo fmt --check`.
-- **Linter:** `cargo clippy --all-features -- -D warnings` — zero warnings.
+- **Linter:** `cargo clippy --all-targets --all-features -- -D warnings` — zero warnings.
 - **Error handling:** `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`.
 - **Deterministic IDs:** SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
 - **Sanitization:** All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.

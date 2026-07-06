@@ -14,8 +14,8 @@
 
 use eggsearch::core::quality::ResultConfidence;
 use eggsearch::core::research::{
-    ResearchClaimType, ResearchConflict, ResearchEvidenceGap, ResearchEvidenceGapKind,
-    ResearchQualitySignal, ResearchResultGroup, ResearchResultGroupKind, ResearchSourceClass,
+    ResearchClaimType, ResearchConflict, ResearchEvidenceGapKind, ResearchQualitySignal,
+    ResearchResultGroup, ResearchResultGroupKind, ResearchSourceClass,
 };
 use eggsearch::core::result::TrustLevel;
 use eggsearch::core::source_card::{SourceCard, SourceKind, SourceMetadata};
@@ -317,7 +317,7 @@ fn conflicting_evidence_unresolved_produces_conflict_with_sides() {
         make_group(ResearchResultGroupKind::Counterpoints, counterpoint_cards),
     ];
 
-    let (claims, conflicts, _source_quality, gaps) =
+    let (_claims, conflicts, _source_quality, _gaps) =
         analyze_research_evidence(&groups, Some("axum vs actix"));
 
     // Conflicts are detected

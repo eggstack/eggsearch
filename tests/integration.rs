@@ -982,6 +982,78 @@ async fn web_fetch_respects_include_links_default() {
     );
 }
 
+#[tokio::test]
+async fn web_fetch_accepts_uppercase_html_content_type() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "Text/HTML; charset=utf-8")
+            .body(b"<!DOCTYPE html><html><body><p>hello</p></body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("uppercase content-type should be accepted as HTML");
+
+    assert_eq!(v["status"], 200);
+    assert!(
+        v["text"].as_str().unwrap_or("").contains("hello"),
+        "text should be extracted, got: {v:?}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_accepts_uppercase_text_plain_content_type() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "TEXT/PLAIN; charset=utf-8")
+            .body("plain text body");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("uppercase text/plain content-type should be accepted");
+
+    assert_eq!(v["status"], 200);
+    assert!(
+        v["text"].as_str().unwrap_or("").contains("plain text body"),
+        "text should be extracted, got: {v:?}"
+    );
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_threads_effective_per_request_timeout() {

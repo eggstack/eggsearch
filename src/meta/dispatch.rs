@@ -264,10 +264,10 @@ pub(crate) async fn dispatch_parallel(
                             })
                     });
 
-                    // Remove from pending queue; swap_remove is safe because
-                    // the scan-forward loop re-checks slot i (the swapped-in
-                    // element) without incrementing i, preserving priority order.
-                    pending_queue.swap_remove(i);
+                    // Remove from pending queue preserving order. The scan-forward
+                    // loop re-checks slot i without incrementing i, so a stable
+                    // remove keeps later pending jobs in priority order.
+                    pending_queue.remove(i);
                     started_any = true;
                 } else {
                     i += 1;
@@ -774,6 +774,50 @@ mod tests {
         }
     }
 
+    /// A mock engine that records its start sequence and sleeps for a fixed delay.
+    struct StartOrderEngine {
+        name: &'static str,
+        delay: Duration,
+        start_log: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl StartOrderEngine {
+        fn new(
+            name: &'static str,
+            delay: Duration,
+            start_log: Arc<std::sync::Mutex<Vec<String>>>,
+        ) -> Self {
+            Self {
+                name,
+                delay,
+                start_log,
+            }
+        }
+    }
+
+    impl SearchEngine for StartOrderEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn search<'a>(
+            &'a self,
+            query: &'a str,
+            _max_results: usize,
+            _timeout: Duration,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
+        {
+            let start_log = Arc::clone(&self.start_log);
+            let delay = self.delay;
+            let marker = query.to_string();
+            Box::pin(async move {
+                start_log.lock().unwrap().push(marker);
+                tokio::time::sleep(delay).await;
+                Ok(vec![])
+            })
+        }
+    }
+
     #[tokio::test]
     async fn parallel_dispatch_provider_receives_real_timeout() {
         // Provider should receive the real remaining budget, not a hardcoded 30s
@@ -1230,12 +1274,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn swap_remove_does_not_corrupt_priority_ordering() {
-        // Regression: swap_remove moves the LAST element of pending_queue into
-        // position i. If that element is a low-priority job that happens to be
-        // startable, it could be launched before blocked higher-priority jobs at
-        // later positions. This test proves the scan-forward + swap_remove logic
-        // preserves priority order.
+    async fn pending_queue_remove_preserves_priority_ordering() {
+        // Regression: the pending queue is removed from the front in sorted
+        // priority order. A stable remove (rather than swap_remove) ensures the
+        // remaining queue stays in (priority, subquery_order, provider_order)
+        // order so blocked jobs are picked up in priority order when capacity
+        // opens up.
         //
         // Pending queue after sorting by (priority, subquery_order, provider_order):
         //   [0] P0  sq_A  provider=A   (startable)
@@ -1247,15 +1291,8 @@ mod tests {
         //
         // max_concurrent_jobs=2, max_per_provider=1
         //
-        // Scan i=0: sq_A starts, swap_remove(0) → pending becomes [sq_F, sq_B, sq_C, sq_D, sq_E]
-        //   sq_F (P2, B) is now at position 0; it IS startable (B has capacity).
-        //   Without the scan-forward re-checking position 0, sq_F would sit at
-        //   the front and be picked up in the next while-loop pass. With the
-        //   re-check, it is also started immediately — which is fine because it
-        //   is on a different provider (B) and does not block sq_B/sq_C/sq_D.
-        //
-        // After sq_A and sq_E (or sq_F) complete, the blocked P0 jobs (sq_B, sq_C)
-        // must be dispatched before any remaining P1/P2 jobs.
+        // After sq_A and sq_E complete, the blocked P0 jobs (sq_B, sq_C)
+        // must be dispatched before sq_D, sq_F.
         let engine_a: Arc<dyn SearchEngine> =
             Arc::new(SlowEngine::new("a", Duration::from_millis(50)));
         let engine_b: Arc<dyn SearchEngine> =
@@ -1299,12 +1336,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn swap_remove_preserves_priority_under_contention() {
+    async fn pending_queue_remove_preserves_priority_under_contention() {
         // Tighter contention scenario: two providers, each at capacity=1, with
         // interleaved priorities. After the first wave of startable jobs is
-        // swap_removed, lower-priority jobs from the tail land at the front of
-        // the pending queue. The scan-forward must not let them start before
-        // blocked higher-priority jobs that should go next.
+        // removed, the stable remove keeps remaining jobs in priority order so
+        // the next-started job is always the highest-priority eligible one.
         //
         // Pending queue after sorting:
         //   [0] P0  sq_H1  provider=A  ─┐ wave 1 starts, both blocked after
@@ -1318,7 +1354,7 @@ mod tests {
         //
         // After sq_H1 completes → sq_H2 (P1) starts (not sq_H3 or sq_L3)
         // After sq_L1 completes → sq_L2 (P1) starts (not sq_H3)
-        // This proves swap_remove didn't reorder the pending queue.
+        // This proves the pending queue stays in priority order after removals.
         let engine_a: Arc<dyn SearchEngine> =
             Arc::new(SlowEngine::new("a", Duration::from_millis(30)));
         let engine_b: Arc<dyn SearchEngine> =
@@ -1379,5 +1415,66 @@ mod tests {
         // Both should complete (serialized at concurrency=1)
         assert_eq!(output.raw_results.len(), 2);
         assert!(!output.deadline.exceeded);
+    }
+
+    #[tokio::test]
+    async fn dispatch_preserves_start_order_by_priority() {
+        // Regression: with max_concurrent_jobs=1, jobs must start in the sorted
+        // (priority, subquery_order, provider_order) order. A non-stable queue
+        // removal (e.g., swap_remove) would corrupt this order.
+        let start_log: Arc<std::sync::Mutex<Vec<String>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let make = |_q: &'static str, d: Duration| -> Arc<dyn SearchEngine> {
+            Arc::new(StartOrderEngine::new("e", d, Arc::clone(&start_log)))
+        };
+
+        let jobs = vec![
+            make_job(
+                "sq_low",
+                "low",
+                "e",
+                make("low", Duration::from_millis(30)),
+                10,
+                2,
+                0,
+            ),
+            make_job(
+                "sq_high",
+                "high",
+                "e",
+                make("high", Duration::from_millis(30)),
+                0,
+                0,
+                0,
+            ),
+            make_job(
+                "sq_mid",
+                "mid",
+                "e",
+                make("mid", Duration::from_millis(30)),
+                5,
+                1,
+                0,
+            ),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 1,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.raw_results.len(), 3);
+
+        let log = start_log.lock().unwrap().clone();
+        assert_eq!(
+            log,
+            vec!["high", "mid", "low"],
+            "jobs must start in priority order (lowest priority value first)"
+        );
     }
 }
