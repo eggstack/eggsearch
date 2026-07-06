@@ -623,7 +623,7 @@ pub fn clamp_lines_to_max_chars(
         .collect::<Vec<_>>()
         .join("\n");
 
-    if full_text.len() <= max {
+    if full_text.chars().count() <= max {
         return (lines.to_vec(), Some(full_text), false);
     }
 
@@ -631,7 +631,7 @@ pub fn clamp_lines_to_max_chars(
     let mut used = 0usize;
     let mut kept = Vec::new();
     for line in lines {
-        let line_len = line.text.len();
+        let line_len = line.text.chars().count();
         // Account for newline separator (except before first line).
         let cost = if kept.is_empty() {
             line_len
@@ -1572,5 +1572,27 @@ mod tests {
         assert_eq!(kept.len(), 1);
         assert!(!truncated);
         assert_eq!(text.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn clamp_counts_chars_not_bytes_for_multibyte() {
+        // Each "é" is 2 UTF-8 bytes but 1 character.
+        let lines = make_fetched_lines(&["ééé"]);
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&lines, Some(3));
+        assert_eq!(kept.len(), 1);
+        assert!(!truncated);
+        assert_eq!(text.as_deref(), Some("ééé"));
+    }
+
+    #[test]
+    fn clamp_truncates_multibyte_by_char_count() {
+        // 4 chars, each 2 bytes — byte-length budget of 6 would cut too much.
+        let lines = make_fetched_lines(&["ééé", "éé"]);
+        let (kept, text, truncated) = clamp_lines_to_max_chars(&lines, Some(5));
+        // "ééé" = 3 chars, fits alone (cost 3). Adding "éé" + '\n' = 5 more,
+        // total 8 > 5, so only first line is kept.
+        assert_eq!(kept.len(), 1);
+        assert!(truncated);
+        assert_eq!(text.as_deref(), Some("ééé"));
     }
 }

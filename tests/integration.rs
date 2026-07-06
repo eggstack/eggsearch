@@ -11023,6 +11023,184 @@ async fn workspace_fetch_max_chars_lines_text_consistency() {
     );
 }
 
+/// Regression: returned_line_start/returned_line_end must reflect the
+/// post-clamp line numbers, not the pre-clamp span.
+#[tokio::test]
+async fn workspace_fetch_returned_line_bounds_after_clamp() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let content: String = (1..=20)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(root.join("clamp.txt"), &content).unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("workspace".to_string()),
+            owner: root_name.to_string(),
+            repo: "clamp.txt".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "clamp.txt".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: Some(40),
+            timeout_ms: None,
+            test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("workspace fetch should succeed");
+
+    let lines = v["lines"].as_array().expect("lines should be array");
+    let first_num = lines
+        .first()
+        .and_then(|l| l["number"].as_u64())
+        .expect("first line number");
+    let last_num = lines
+        .last()
+        .and_then(|l| l["number"].as_u64())
+        .expect("last line number");
+
+    let returned_start = v["returned_line_start"]
+        .as_u64()
+        .expect("returned_line_start present");
+    let returned_end = v["returned_line_end"]
+        .as_u64()
+        .expect("returned_line_end present");
+    assert_eq!(
+        returned_start, first_num,
+        "returned_line_start should match first lines[].number"
+    );
+    assert_eq!(
+        returned_end, last_num,
+        "returned_line_end should match last lines[].number"
+    );
+}
+
+/// Regression: workspace repo_fetch should populate a deterministic
+/// `stable_id` matching the format `fetch_<16hex>`.
+#[tokio::test]
+async fn workspace_fetch_populates_stable_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("stable.rs"), "fn main() {}").unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let v1 = run_repo_fetch(
+        state.clone(),
+        RepoFetchArgs {
+            host: Some("workspace".to_string()),
+            owner: root_name.to_string(),
+            repo: "stable.rs".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "stable.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("workspace fetch should succeed");
+    let v2 = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("workspace".to_string()),
+            owner: root_name.to_string(),
+            repo: "stable.rs".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "stable.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("workspace fetch should succeed");
+
+    let id1 = v1["stable_id"].as_str().expect("stable_id present");
+    let id2 = v2["stable_id"].as_str().expect("stable_id present");
+    assert!(
+        id1.starts_with("fetch_"),
+        "stable_id should start with 'fetch_': {id1}"
+    );
+    assert_eq!(id1.len(), 6 + 16, "stable_id length: {id1}");
+    assert_eq!(id1, id2, "stable_id should be deterministic across calls");
+}
+
 #[tokio::test]
 async fn workspace_fetch_with_context_and_line_range() {
     let dir = tempfile::tempdir().unwrap();
@@ -12327,6 +12505,172 @@ async fn repo_fetch_gitlab_nested_namespace_locator() {
     );
 }
 
+/// Regression: remote repo_fetch populates a deterministic `stable_id`
+/// and reuses the same id across repeated identical requests.
+#[tokio::test]
+async fn repo_fetch_remote_populates_stable_id() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(b"fn main() {}");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v1 = run_repo_fetch(
+        state.clone(),
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+    let v2 = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let id1 = v1["stable_id"].as_str().expect("stable_id present");
+    let id2 = v2["stable_id"].as_str().expect("stable_id present");
+    assert!(
+        id1.starts_with("fetch_"),
+        "stable_id should start with 'fetch_': {id1}"
+    );
+    assert_eq!(id1.len(), 6 + 16, "stable_id length: {id1}");
+    assert_eq!(id1, id2, "stable_id should be deterministic across calls");
+}
+
+/// Regression: returned_line_start/returned_line_end reflect the
+/// post-clamp line numbers when max_chars truncates the slice.
+#[tokio::test]
+async fn repo_fetch_remote_returned_line_bounds_after_clamp() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(
+                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n",
+            );
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: Some(15),
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    let lines = v["lines"].as_array().expect("lines should be array");
+    let first_num = lines
+        .first()
+        .and_then(|l| l["number"].as_u64())
+        .expect("first line number");
+    let last_num = lines
+        .last()
+        .and_then(|l| l["number"].as_u64())
+        .expect("last line number");
+
+    let returned_start = v["returned_line_start"]
+        .as_u64()
+        .expect("returned_line_start present");
+    let returned_end = v["returned_line_end"]
+        .as_u64()
+        .expect("returned_line_end present");
+    assert_eq!(
+        returned_start, first_num,
+        "returned_line_start should match first lines[].number after clamp"
+    );
+    assert_eq!(
+        returned_end, last_num,
+        "returned_line_end should match last lines[].number after clamp"
+    );
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn suggested_fetch_prefers_raw_permalink_over_raw_url() {
@@ -12907,6 +13251,124 @@ async fn batch_fetch_total_budget_enforced() {
     assert!(
         has_budget_warning,
         "should have budget exhaustion warning: {v:?}"
+    );
+}
+
+/// Regression: when `continue_on_error = true` (default) and more items are
+/// queued than `batch_concurrency`, a failure in an early wave must not
+/// prevent later waves from being attempted.
+#[tokio::test]
+async fn batch_fetch_continue_on_error_across_waves() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/ok");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(b"OK");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/ok"),
+                    extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+                    include_links: None,
+                    max_chars: None,
+                },
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: "https://198.51.100.1/nope".to_string(),
+                    extract_mode: None,
+                    include_links: None,
+                    max_chars: None,
+                },
+                eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/ok"),
+                    extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+                    include_links: None,
+                    max_chars: None,
+                },
+            ],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: Some(true),
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results");
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0]["ok"], true);
+    assert_eq!(results[1]["ok"], false);
+    assert_eq!(
+        results[2]["ok"], true,
+        "third item must be attempted when continue_on_error is true: {v:?}"
+    );
+}
+
+/// Regression: with concurrency > 1 and a very small `max_total_chars`,
+/// the aggregate response must not exceed the budget. The wave should
+/// skip items that cannot be allocated any budget.
+#[tokio::test]
+async fn batch_fetch_concurrent_total_budget_not_exceeded() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    for i in 0..4 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/p{i}"));
+            then.status(200)
+                .header("content-type", "text/plain; charset=utf-8")
+                .body(format!("page {i} content"));
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.fetch.batch_concurrency = 4;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..4)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/p{i}")),
+            extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
+            include_links: None,
+            max_chars: Some(50),
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(1),
+            timeout_ms: None,
+            continue_on_error: Some(true),
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let total = v["total_chars_returned"].as_u64().unwrap_or(0);
+    assert!(
+        total <= 1,
+        "aggregate chars_returned {} must not exceed max_total_chars=1: {v:?}",
+        total
     );
 }
 

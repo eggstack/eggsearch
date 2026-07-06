@@ -1779,7 +1779,7 @@ pub async fn run_repo_fetch(
             };
 
             // Apply line range.
-            let (sliced_lines, returned_start, returned_end, _line_truncated, line_warning) =
+            let (sliced_lines, _returned_start, _returned_end, _line_truncated, line_warning) =
                 apply_line_range(
                     &all_lines,
                     effective_line_start,
@@ -1877,8 +1877,14 @@ pub async fn run_repo_fetch(
             });
 
             let fetch_response = RepoFetchResponse {
-                locator,
-                stable_id: None,
+                locator: locator.clone(),
+                stable_id: Some(crate::core::identity::fetch_id(
+                    None,
+                    Some(&locator),
+                    clamped_lines.first().map(|l| l.number),
+                    clamped_lines.last().map(|l| l.number),
+                    sliced_text.as_deref(),
+                )),
                 source_id: None,
                 fetched: resp.fetched,
                 status: Some(status),
@@ -1893,8 +1899,8 @@ pub async fn run_repo_fetch(
                 ref_resolved: Some(rn.to_string()),
                 line_start: req.line_start,
                 line_end: req.line_end,
-                returned_line_start: returned_start,
-                returned_line_end: returned_end,
+                returned_line_start: clamped_lines.first().map(|l| l.number),
+                returned_line_end: clamped_lines.last().map(|l| l.number),
                 total_lines,
                 text: sliced_text,
                 lines: clamped_lines,
@@ -2268,9 +2274,17 @@ pub async fn run_batch_fetch(
             .checked_div(wave_len)
             .unwrap_or(remaining_budget);
         let item_budget_cap = per_item_cap.max(1).min(per_wave_item_budget.max(1));
+        // Maximum number of wave items that can be safely spawned without
+        // overshooting the total budget. When remaining_budget is smaller
+        // than wave_len, the remaining items are skipped before launching.
+        let launchable = remaining_budget;
 
         let mut join_set = tokio::task::JoinSet::new();
         let mut wave_indices = Vec::new();
+        // Number of items already spawned in this wave. Each spawn
+        // reserves at least 1 character of the remaining budget so the
+        // aggregate response cannot exceed max_total_chars.
+        let mut spawned_in_wave: usize = 0;
 
         for (i, item) in effective_items
             .iter()
@@ -2278,7 +2292,7 @@ pub async fn run_batch_fetch(
             .take(wave_end)
             .skip(wave_start)
         {
-            if budget_exhausted {
+            if budget_exhausted || spawned_in_wave >= launchable {
                 results.push(BatchFetchResult {
                     index: i,
                     item_type: match item {
@@ -2297,6 +2311,7 @@ pub async fn run_batch_fetch(
             }
 
             wave_indices.push(i);
+            spawned_in_wave += 1;
 
             let fetch_future = make_batch_fetch_future(
                 i,
@@ -2345,7 +2360,7 @@ pub async fn run_batch_fetch(
         for idx in &wave_indices {
             match wave_results.remove(idx) {
                 Some(batch_result) => {
-                    if !batch_result.ok {
+                    if !batch_result.ok && !continue_on_error {
                         aborted = true;
                     }
                     total_chars += batch_result.chars_returned;
@@ -2355,7 +2370,9 @@ pub async fn run_batch_fetch(
                 }
                 None => {
                     // Index was not returned — task panicked or tool error.
-                    aborted = true;
+                    if !continue_on_error {
+                        aborted = true;
+                    }
                     let item_type = match &effective_items[*idx] {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
@@ -2489,14 +2506,21 @@ fn make_batch_fetch_future(
                             .document
                             .as_ref()
                             .map(|d| d.text_chars_returned)
-                            .unwrap_or_else(|| resp.text.as_ref().map(|t| t.len()).unwrap_or(0));
-                        let meta_chars = resp.title.as_ref().map(|s| s.len()).unwrap_or(0)
-                            + resp.description.as_ref().map(|s| s.len()).unwrap_or(0)
-                            + resp
-                                .links
-                                .iter()
-                                .map(|l| l.url.len() + l.text.len())
-                                .sum::<usize>();
+                            .unwrap_or_else(|| {
+                                resp.text.as_ref().map(|t| t.chars().count()).unwrap_or(0)
+                            });
+                        let meta_chars =
+                            resp.title.as_ref().map(|s| s.chars().count()).unwrap_or(0)
+                                + resp
+                                    .description
+                                    .as_ref()
+                                    .map(|s| s.chars().count())
+                                    .unwrap_or(0)
+                                + resp
+                                    .links
+                                    .iter()
+                                    .map(|l| l.url.chars().count() + l.text.chars().count())
+                                    .sum::<usize>();
                         let text_len = body_chars + meta_chars;
                         Ok(BatchFetchResult {
                             index: i,
@@ -2571,7 +2595,7 @@ fn make_batch_fetch_future(
                         let text_len = payload
                             .get("text")
                             .and_then(|t| t.as_str())
-                            .map(|s| s.len())
+                            .map(|s| s.chars().count())
                             .unwrap_or(0);
                         let truncated = payload
                             .get("truncated")
@@ -2712,7 +2736,7 @@ async fn run_workspace_fetch(
     };
 
     // Apply line range
-    let (sliced_lines, returned_start, returned_end, _line_truncated, line_warning) =
+    let (sliced_lines, _returned_start, _returned_end, _line_truncated, line_warning) =
         apply_line_range(
             &all_lines,
             effective_line_start,
@@ -2847,8 +2871,14 @@ async fn run_workspace_fetch(
     });
 
     let fetch_response = RepoFetchResponse {
-        locator,
-        stable_id: None,
+        locator: locator.clone(),
+        stable_id: Some(crate::core::identity::fetch_id(
+            None,
+            Some(&locator),
+            clamped_lines.first().map(|l| l.number),
+            clamped_lines.last().map(|l| l.number),
+            sliced_text.as_deref(),
+        )),
         source_id: None,
         fetched: true,
         status: None,
@@ -2863,8 +2893,8 @@ async fn run_workspace_fetch(
         ref_resolved: None,
         line_start: args.line_start,
         line_end: args.line_end,
-        returned_line_start: returned_start,
-        returned_line_end: returned_end,
+        returned_line_start: clamped_lines.first().map(|l| l.number),
+        returned_line_end: clamped_lines.last().map(|l| l.number),
         total_lines,
         text: sliced_text,
         lines: clamped_lines,
