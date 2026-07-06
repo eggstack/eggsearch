@@ -69,7 +69,7 @@ On macOS this is typically `~/.config/eggsearch/config.toml`.
 
 ### Config File Structure
 
-```toml
+```toml eggsearch-config
 [search]
 mode = "live"                    # "live" or "off"
 default_max_results = 10
@@ -80,6 +80,11 @@ default_providers = ["duckduckgo", "startpage", "yahoo"]
 sanitize_output = true
 multiquery_concurrency = 8
 multiquery_provider_concurrency = 2
+
+[search.providers]
+duckduckgo = true
+startpage = true
+yahoo = true
 
 [search.exact_error]
 enabled = true
@@ -105,20 +110,11 @@ batch_max_chars_per_item = 12000
 batch_max_total_chars = 50000
 batch_max_total_chars_cap = 120000
 batch_concurrency = 4
-
-[local]
-enabled = true
-roots = ["/Users/dev/projects"]
-max_file_bytes = 1048576
-max_indexed_files = 50000
-include_hidden = false
-respect_gitignore = true
-follow_symlinks = false
 ```
 
 ### Provider Configuration
 
-```toml
+```toml eggsearch-config-parse-only
 # HTML scraper providers (enabled by default)
 default_providers = ["duckduckgo", "startpage", "yahoo"]
 
@@ -191,9 +187,14 @@ base_url = "https://git.example.com"
 
 ### Minimal: Local-Only, No Network
 
-```toml
+```toml eggsearch-config-parse-only
 [search]
 mode = "off"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage", "yahoo"]
 
 [fetch]
 enabled = false
@@ -217,10 +218,18 @@ local checkout when one is available.
 
 ### Generic Web Search
 
-```toml
+```toml eggsearch-config
 [search]
 mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
 default_providers = ["duckduckgo", "brave"]
+
+[search.providers]
+duckduckgo = true
+brave = true
 
 [fetch]
 enabled = true
@@ -231,11 +240,12 @@ default.
 
 ### Codegg Coding Profile with Local Workspace
 
-```toml
+```toml eggsearch-config-parse-only
 [search]
 mode = "live"
 default_max_results = 10
 max_results_cap = 25
+max_query_chars = 512
 timeout_ms = 20000
 default_providers = ["duckduckgo", "brave"]
 sanitize_output = true
@@ -268,12 +278,18 @@ respect_gitignore = true
 
 ### Security-Focused
 
-```toml
+```toml eggsearch-config
 [search]
 mode = "live"
 default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
 default_providers = ["duckduckgo", "brave"]
 timeout_ms = 20000
+
+[search.providers]
+duckduckgo = true
+brave = true
 
 [fetch]
 enabled = true
@@ -289,14 +305,19 @@ in requests for version-range matching.
 
 ### Research-Focused
 
-```toml
+```toml eggsearch-config
 [search]
 mode = "live"
 default_max_results = 15
 max_results_cap = 30
+max_query_chars = 512
 timeout_ms = 25000
 default_providers = ["duckduckgo", "brave"]
 multiquery_concurrency = 12
+
+[search.providers]
+duckduckgo = true
+brave = true
 
 [fetch]
 enabled = true
@@ -309,7 +330,7 @@ enabled = false
 
 ### API-Provider Config with Env Vars
 
-```toml
+```toml eggsearch-config-parse-only
 [search.api.brave_api]
 enabled = true
 api_key_env = "BRAVE_API_KEY"       # set this env var

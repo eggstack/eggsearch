@@ -58,6 +58,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | **test** | `cargo test` × 4 feature combos |
 | **clippy** | `cargo clippy --all-features -- -D warnings` |
 | **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
+| **docs-contract** | 3 documentation contract tests: `docs_config_snippets`, `docs_provider_inventory`, `docs_tool_names` |
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
 | **publish-check** | `cargo publish --dry-run` |
@@ -90,6 +91,9 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/research_evidence_corpus.rs` | `mock` | Research evidence regression |
 | `tests/recipes_next_actions.rs` | `mock` | Workflow hint generation |
 | `tests/evidence_bundle_handoff.rs` | None | Evidence bundle packaging |
+| `tests/docs_config_snippets.rs` | None | TOML snippet validation against AppConfig |
+| `tests/docs_provider_inventory.rs` | None | Provider ID validation against KNOWN_PROVIDER_IDS |
+| `tests/docs_tool_names.rs` | None | Tool name validation against MCP tools |
 
 ### Running specific suites
 
@@ -98,6 +102,8 @@ cargo test --features mock --test integration              # integration only
 cargo test --features mock --test corpus_runner            # corpus regression
 cargo test --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
 make schema-corpus                                         # all contract tests
+make docs-tests                                            # documentation contract tests
+cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
 ```
 
 ### Adding tests

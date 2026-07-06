@@ -75,6 +75,14 @@ jobs:
       - run: cargo test --features mock --test recipes_next_actions
       - run: cargo test --features mock --test evidence_bundle_handoff
 
+  docs-contract:
+    name: docs-contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+
   fmt:
     name: fmt
     runs-on: ubuntu-latest

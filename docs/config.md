@@ -4,14 +4,20 @@ eggsearch reads `$XDG_CONFIG_HOME/eggsearch/config.toml` and falls back to defau
 
 ## Minimal Default
 
-```toml
+```toml eggsearch-config
 [search]
 mode = "live"
 default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage", "yahoo"]
 sanitize_output = true
+
+[search.providers]
+duckduckgo = true
+startpage = true
+yahoo = true
 
 [fetch]
 enabled = true
@@ -56,8 +62,13 @@ Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`
 
 ### Coding Agent
 
-```toml
+```toml eggsearch-config
 [search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
 default_providers = ["github_code", "github_issues", "github_releases", "duckduckgo", "startpage"]
 
 [search.providers]
@@ -85,8 +96,13 @@ Repeat the same `search.api` pattern for `gitlab_code`, `gitlab_issues`, `gitlab
 
 ### Security Search
 
-```toml
+```toml eggsearch-config
 [search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
 default_providers = ["osv", "duckduckgo", "startpage"]
 
 [search.providers]
@@ -100,8 +116,13 @@ osv = true
 
 ### Research Search
 
-```toml
+```toml eggsearch-config
 [search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
 default_providers = ["brave_api", "searxng", "duckduckgo", "startpage", "mojeek"]
 
 [search.providers]
@@ -117,7 +138,7 @@ base_url = "https://search.example.org"
 
 ### Local Workspace
 
-```toml
+```toml eggsearch-config-parse-only
 [local]
 enabled = true
 roots = ["/Users/alice/projects/checkout"]
@@ -130,7 +151,7 @@ follow_symlinks = false
 
 ### SearXNG
 
-```toml
+```toml eggsearch-config-parse-only
 [search.providers]
 searxng = true
 

@@ -1,7 +1,7 @@
-.PHONY: check test clippy fmt doc schema-corpus
+.PHONY: check test clippy fmt doc schema-corpus docs-tests
 
 # Full offline quality gate (all CI checks)
-check: fmt clippy test-all test-no-default schema-corpus
+check: fmt clippy test-all test-no-default schema-corpus docs-tests
 
 # Format check
 fmt:
@@ -27,6 +27,10 @@ schema-corpus:
 	cargo test --features mock --test research_evidence_corpus
 	cargo test --features mock --test recipes_next_actions
 	cargo test --features mock --test evidence_bundle_handoff
+
+# Documentation contract tests
+docs-tests:
+	cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
 
 # Live smoke tests (requires network, ignored by default)
 live-smoke:
