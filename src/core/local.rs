@@ -7,7 +7,7 @@
 
 use crate::core::code_evidence::SymbolKind;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Configuration for the `[local]` section of the eggsearch config file.
 ///
@@ -250,6 +250,17 @@ pub enum LocalFetchPathError {
     NotFound,
 }
 
+fn has_parent_dir_component(path: &Path) -> bool {
+    path.components().any(|c| matches!(c, Component::ParentDir))
+}
+
+fn is_absolute_or_prefixed(path: &Path) -> bool {
+    path.is_absolute()
+        || path
+            .components()
+            .any(|c| matches!(c, Component::RootDir | Component::Prefix(_)))
+}
+
 /// Validate a local workspace fetch path against a known root and
 /// configuration. Returns the canonicalized path on success.
 ///
@@ -266,13 +277,15 @@ pub fn validate_local_fetch_path(
         return Err(LocalFetchPathError::Empty);
     }
 
-    // 2. Absolute path rejection
-    if requested_relative_path.starts_with('/') {
+    let requested_path = Path::new(requested_relative_path);
+
+    // 2. Absolute/prefix path rejection
+    if is_absolute_or_prefixed(requested_path) {
         return Err(LocalFetchPathError::AbsolutePath);
     }
 
-    // 3. Path traversal rejection
-    if requested_relative_path.contains("..") {
+    // 3. Path traversal rejection (component-aware: only reject ParentDir)
+    if has_parent_dir_component(requested_path) {
         return Err(LocalFetchPathError::PathTraversal);
     }
 
@@ -652,24 +665,18 @@ mod tests {
         assert!(matches!(err, LocalFetchPathError::PathTraversal));
     }
 
-    /// Documents the conservative path traversal rejection policy.
-    ///
-    /// The `contains("..")` check on line 275 rejects any path containing
-    /// the `..` substring — including legitimate filenames like
-    /// `notes..draft.md` where `..` is not a directory traversal operator.
-    /// This is intentional: a substring check is simpler, cheaper, and
-    /// errs on the side of safety. The rare false positive is acceptable
-    /// for the security benefit of rejecting all `..` variants.
+    /// Validates that filenames containing `..` as a substring are accepted
+    /// when `..` is not a directory traversal component.
     #[test]
-    fn validate_local_fetch_path_double_dot_in_filename_rejected() {
-        let root = std::env::temp_dir();
+    fn validate_local_fetch_path_double_dot_in_filename_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("notes..draft.md");
+        std::fs::write(&file, "draft content").unwrap();
         let cfg = LocalConfig::default();
-        // "notes..draft.md" contains ".." as a substring but is not a
-        // directory traversal. The conservative check rejects it anyway.
-        let err = validate_local_fetch_path(&root, "notes..draft.md", &cfg).unwrap_err();
+        let result = validate_local_fetch_path(dir.path(), "notes..draft.md", &cfg);
         assert!(
-            matches!(err, LocalFetchPathError::PathTraversal),
-            "expected PathTraversal for 'notes..draft.md', got {err:?}"
+            result.is_ok(),
+            "expected Ok for 'notes..draft.md', got {result:?}"
         );
     }
 
@@ -715,5 +722,53 @@ mod tests {
         assert!(result.is_ok());
         let canonical = result.unwrap();
         assert!(canonical.is_file());
+    }
+
+    #[test]
+    fn validate_local_fetch_path_nested_double_dot_filename_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("src");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join("generated..schema.rs"), "schema").unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), "src/generated..schema.rs", &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for 'src/generated..schema.rs', got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_single_dot_segment_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("file.rs"), "content").unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), "./file.rs", &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for './file.rs', got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_symlink_escape_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("escaped.txt"), "pwned").unwrap();
+        let mut cfg = LocalConfig::default();
+        cfg.follow_symlinks = true;
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                outside.path().join("escaped.txt"),
+                dir.path().join("link.txt"),
+            )
+            .unwrap();
+            let err = validate_local_fetch_path(dir.path(), "link.txt", &cfg).unwrap_err();
+            assert!(
+                matches!(err, LocalFetchPathError::EscapesRoot),
+                "expected EscapesRoot for symlink escaping root, got {err:?}"
+            );
+        }
     }
 }

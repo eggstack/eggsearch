@@ -8,6 +8,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::core::code_evidence::{SourceRole, SymbolKind};
 use crate::core::code_metadata::CodeHost;
@@ -336,12 +337,23 @@ impl RepoFetchRequest {
         }
 
         // Path must be relative, not absolute.
-        if self.path.starts_with('/') {
+        let path = Path::new(&self.path);
+        if path.is_absolute()
+            || path.components().any(|c| {
+                matches!(
+                    c,
+                    std::path::Component::RootDir | std::path::Component::Prefix(_)
+                )
+            })
+        {
             return Err("path must be relative, not absolute (do not start with '/')".to_string());
         }
 
         // Reject path traversal.
-        if self.path.contains("..") {
+        if path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return Err("path must not contain '..' (path traversal)".to_string());
         }
 

@@ -23,11 +23,13 @@ For DNS-backed hosts, eggsearch validates the resolved address set and reuses th
 Local repository fetches use separate path validation. The path checks reject:
 
 - empty paths
-- absolute paths
-- `..` traversal
+- absolute or prefix paths (cross-platform)
+- parent-directory (`..`) traversal components
 - known binary extensions
 - symlinks when `follow_symlinks = false`
 - paths that escape the configured workspace root
+
+Filenames that merely contain two dots (e.g. `foo..bar.rs`) are accepted.
 
 ## Sanitization Defaults
 

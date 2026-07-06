@@ -18,6 +18,7 @@ use crate::core::config::Mode;
 use crate::core::provider::ProviderDescriptor;
 use crate::core::WebSearchRequest;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::fetch::FetchClient;
 use crate::mcp::policy::{
@@ -2112,12 +2113,23 @@ pub async fn run_batch_fetch(
                         "item {i}: path must not be empty"
                     )));
                 }
-                if path.contains("..") {
+                let path_obj = Path::new(path);
+                if path_obj
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+                {
                     return Err(ToolError::Validation(format!(
                         "item {i}: path must not contain '..'"
                     )));
                 }
-                if path.starts_with('/') {
+                if path_obj.is_absolute()
+                    || path_obj.components().any(|c| {
+                        matches!(
+                            c,
+                            std::path::Component::RootDir | std::path::Component::Prefix(_)
+                        )
+                    })
+                {
                     return Err(ToolError::Validation(format!(
                         "item {i}: path must not be absolute (starts with '/')"
                     )));
