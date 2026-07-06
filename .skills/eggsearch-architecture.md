@@ -31,11 +31,11 @@ src/
 
 `ProviderDescriptor` includes `routable: bool` and `skip_reason: Option<String>` fields. A provider is routable only when enabled + fully configured. `SkippedProvider` struct tracks engine build failures with human-readable reasons.
 
-### Known Providers (18 built-ins)
+### Known Providers (34 built-ins)
 HTML scrapers: `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`
-JSON API: `searxng`
-API-key: `brave_api`, `github_code`, `github_issues`, `github_releases`, `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`, `gitea_issues`, `gitea_releases`
-Native advisory: `osv`
+JSON API: `searxng`, `cisa_kev`, `rustsec`, `crates_io`, `pypi`, `npm_registry`, `go_pkg`, `maven_central`, `nuget`, `rubygems`, `packagist`, `openalex`, `crossref`
+API-key: `brave_api`, `github_code`, `github_issues`, `github_releases`, `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`, `gitea_issues`, `gitea_releases`, `github_advisory`, `semantic_scholar`, `sourcegraph`
+Native advisory: `osv`, `nvd`
 Local: `local_workspace`
 
 ## Profiles

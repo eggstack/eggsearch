@@ -83,6 +83,10 @@ fn classify_unknown_quality(
     if url_lower.contains("arxiv.org")
         || url_lower.contains("acm.org")
         || url_lower.contains("ieee.org")
+        || url_lower.contains("doi.org")
+        || url_lower.contains("semanticscholar.org")
+        || url_lower.contains("openalex.org")
+        || url_lower.contains("crossref.org")
     {
         return EvidenceQuality::AcademicOrFormal;
     }
@@ -262,6 +266,10 @@ fn classify_unknown_group(
     if url_lower.contains("arxiv.org")
         || url_lower.contains("acm.org")
         || url_lower.contains("ieee.org")
+        || url_lower.contains("doi.org")
+        || url_lower.contains("semanticscholar.org")
+        || url_lower.contains("openalex.org")
+        || url_lower.contains("crossref.org")
     {
         return ResearchResultGroupKind::AcademicOrFormalSources;
     }

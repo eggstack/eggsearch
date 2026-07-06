@@ -47,6 +47,26 @@ pub fn generate_security_suggested_fetches(
             stable: false,
             source_card_stable_id: None,
         });
+        candidates.push(FetchCandidate {
+            url: format!("https://nvd.nist.gov/vuln/detail/{cve_id}"),
+            structured_repo_fetch: false,
+            group: "AuthoritativeAdvisories".to_string(),
+            expected_kind: SourceKind::SecurityAdvisory,
+            recommended_extract_mode: None,
+            original_order: candidates.len(),
+            source_kind: SourceKind::SecurityAdvisory,
+            source_role: None,
+            evidence_confidence: None,
+            is_pinned_permalink: false,
+            is_raw_url: false,
+            is_browser_url: true,
+            domain: extract_domain("https://nvd.nist.gov"),
+            score: 0,
+            reasons: Vec::new(),
+            information_gain: 0.0,
+            stable: false,
+            source_card_stable_id: None,
+        });
     }
     for ghsa_id in &resolved_ids.ghsa_ids {
         candidates.push(FetchCandidate {
@@ -85,6 +105,28 @@ pub fn generate_security_suggested_fetches(
             is_raw_url: false,
             is_browser_url: true,
             domain: extract_domain("https://osv.dev"),
+            score: 0,
+            reasons: Vec::new(),
+            information_gain: 0.0,
+            stable: false,
+            source_card_stable_id: None,
+        });
+    }
+    for rustsec_id in &resolved_ids.rustsec_ids {
+        candidates.push(FetchCandidate {
+            url: format!("https://rustsec.org/advisories/{rustsec_id}"),
+            structured_repo_fetch: false,
+            group: "AuthoritativeAdvisories".to_string(),
+            expected_kind: SourceKind::SecurityAdvisory,
+            recommended_extract_mode: None,
+            original_order: candidates.len(),
+            source_kind: SourceKind::SecurityAdvisory,
+            source_role: None,
+            evidence_confidence: None,
+            is_pinned_permalink: false,
+            is_raw_url: false,
+            is_browser_url: true,
+            domain: extract_domain("https://rustsec.org"),
             score: 0,
             reasons: Vec::new(),
             information_gain: 0.0,

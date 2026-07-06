@@ -1900,10 +1900,14 @@ pub fn build_default_engines(
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
 ) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
     use crate::meta::engines::{
-        BraveApiEngine, BraveEngine, DuckDuckGoEngine, GiteaCodeEngine, GiteaIssuesEngine,
-        GiteaReleasesEngine, GithubCodeEngine, GithubIssuesEngine, GithubReleasesEngine,
-        GitlabCodeEngine, GitlabIssuesEngine, GitlabReleasesEngine, MojeekEngine, OsvEngine,
-        SearxngEngine, StartpageEngine, YahooEngine,
+        BraveApiEngine, BraveEngine, CisaKevEngine, CratesIoRegistryEngine, CrossRefEngine,
+        DuckDuckGoEngine, GiteaCodeEngine, GiteaIssuesEngine, GiteaReleasesEngine,
+        GithubAdvisoryEngine, GithubCodeEngine, GithubIssuesEngine, GithubReleasesEngine,
+        GitlabCodeEngine, GitlabIssuesEngine, GitlabReleasesEngine, GoPkgRegistryEngine,
+        MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine, NugetRegistryEngine,
+        NvdEngine, OpenAlexEngine, OsvEngine, PackagistRegistryEngine, PypiRegistryEngine,
+        RubygemsRegistryEngine, RustSecEngine, SearxngEngine, SemanticScholarEngine,
+        SourcegraphCodeEngine, StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -1930,6 +1934,67 @@ pub fn build_default_engines(
             "osv" => engines.push(Arc::new(OsvEngine {
                 client: client.clone(),
             })),
+            "cisa_kev" => {
+                engines.push(Arc::new(CisaKevEngine::new((*client).clone())));
+            }
+            "rustsec" => engines.push(Arc::new(RustSecEngine {
+                client: (*client).clone(),
+            })),
+            "crates_io" => engines.push(Arc::new(CratesIoRegistryEngine {
+                client: client.clone(),
+            })),
+            "pypi" => engines.push(Arc::new(PypiRegistryEngine {
+                client: client.clone(),
+            })),
+            "npm_registry" => engines.push(Arc::new(NpmRegistryEngine {
+                client: client.clone(),
+            })),
+            "go_pkg" => engines.push(Arc::new(GoPkgRegistryEngine {
+                client: client.clone(),
+            })),
+            "maven_central" => engines.push(Arc::new(MavenCentralRegistryEngine {
+                client: client.clone(),
+            })),
+            "nuget" => engines.push(Arc::new(NugetRegistryEngine {
+                client: client.clone(),
+            })),
+            "rubygems" => engines.push(Arc::new(RubygemsRegistryEngine {
+                client: client.clone(),
+            })),
+            "packagist" => engines.push(Arc::new(PackagistRegistryEngine {
+                client: client.clone(),
+            })),
+            "openalex" => engines.push(Arc::new(OpenAlexEngine {
+                client: client.clone(),
+            })),
+            "crossref" => engines.push(Arc::new(CrossRefEngine {
+                client: client.clone(),
+            })),
+            "semantic_scholar" => {
+                let api_key = std::env::var("SEMANTIC_SCHOLAR_API_KEY")
+                    .ok()
+                    .filter(|k| !k.is_empty());
+                engines.push(Arc::new(SemanticScholarEngine {
+                    client: client.clone(),
+                    api_key,
+                }));
+            }
+            "sourcegraph" => {
+                let api_key = std::env::var("SOURCEGRAPH_API_KEY")
+                    .ok()
+                    .filter(|k| !k.is_empty());
+                engines.push(Arc::new(SourcegraphCodeEngine {
+                    client: client.clone(),
+                    api_key,
+                }));
+            }
+            "nvd" => {
+                let api_key = std::env::var("NVD_API_KEY").ok().filter(|k| !k.is_empty());
+                engines.push(Arc::new(NvdEngine {
+                    client: (*client).clone(),
+                    api_key,
+                }));
+            }
             "searxng" => match searxng_base_url.as_deref().filter(|s| !s.is_empty()) {
                 Some(base) => engines.push(Arc::new(SearxngEngine {
                     client: client.clone(),
@@ -2055,6 +2120,12 @@ pub fn build_default_engines(
                     client: client.clone(),
                     api_key,
                     base_url: base,
+                }));
+            }
+            "github_advisory" => {
+                engines.push(Arc::new(GithubAdvisoryEngine {
+                    client: (*client).clone(),
+                    api_key,
                 }));
             }
             _ => {
@@ -2256,7 +2327,13 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             (None, Some(m.clone()), None)
         }
         ResultMetadata::Advisory(m) => {
-            if providers.iter().any(|p| p == "osv") {
+            if providers.iter().any(|p| {
+                p == "osv"
+                    || p == "github_advisory"
+                    || p == "nvd"
+                    || p == "cisa_kev"
+                    || p == "rustsec"
+            }) {
                 rank_reasons
                     .push(crate::core::source_card::RankReason::ProviderNativeAdvisorySearch);
             }

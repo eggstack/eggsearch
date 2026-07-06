@@ -37,7 +37,7 @@ roots = []
 
 ## Provider Requirements
 
-All 18 built-in providers:
+All 34 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
@@ -58,6 +58,22 @@ All 18 built-in providers:
 | `gitea_issues` | api_key | custom env | Requires `base_url` in `[search.api.gitea_issues]` |
 | `gitea_releases` | api_key | custom env | Requires `base_url` in `[search.api.gitea_releases]` |
 | `osv` | html_scrape | — | Security advisory search |
+| `github_advisory` | api_key | `GITHUB_TOKEN` | GitHub Security Advisories |
+| `nvd` | api_key | — | NIST National Vulnerability Database |
+| `cisa_kev` | json_api | — | CISA Known Exploited Vulnerabilities |
+| `rustsec` | json_api | — | RustSec Advisory Database |
+| `crates_io` | json_api | — | crates.io package metadata |
+| `pypi` | json_api | — | PyPI package metadata |
+| `npm_registry` | json_api | — | npm package metadata |
+| `go_pkg` | json_api | — | Go Proxy module metadata |
+| `maven_central` | json_api | — | Maven Central artifact metadata |
+| `nuget` | json_api | — | NuGet package metadata |
+| `rubygems` | json_api | — | RubyGems gem metadata |
+| `packagist` | json_api | — | Packagist package metadata |
+| `openalex` | json_api | — | OpenAlex scholarly search |
+| `crossref` | json_api | — | Crossref scholarly search |
+| `semantic_scholar` | api_key | `SEMANTIC_SCHOLAR_API_KEY` | Semantic Scholar scholarly search |
+| `sourcegraph` | api_key | `SOURCEGRAPH_ACCESS_TOKEN` | Sourcegraph code search |
 | `local_workspace` | local | — | Requires `[local]` config |
 
 `provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured").

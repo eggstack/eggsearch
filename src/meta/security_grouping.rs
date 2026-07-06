@@ -25,6 +25,11 @@ const CANONICAL_GROUP_ORDER: &[SecurityResultGroupKind] = &[
 pub fn classify_security_result(card: &SourceCard) -> SecurityResultGroupKind {
     let url = card.url.as_str();
     let url_lower = url.to_ascii_lowercase();
+    // Known exploited vulnerabilities
+    if url_lower.contains("cisa.gov") || url_lower.contains("known-exploited-vulnerabilities") {
+        return SecurityResultGroupKind::KevEntries;
+    }
+
     // Authoritative advisory databases
     if url_lower.contains("osv.dev") || url_lower.contains("nvd.nist.gov") {
         return SecurityResultGroupKind::AuthoritativeAdvisories;

@@ -6,23 +6,39 @@
 
 pub mod brave;
 pub mod brave_api;
+pub mod cisa_kev;
+pub mod crates_io;
+pub mod crossref;
 pub mod duckduckgo;
 pub mod error;
 pub mod gitea_code;
 pub mod gitea_issues;
 pub mod gitea_releases;
+pub mod github_advisory;
 pub mod github_code;
 pub mod github_issues;
 pub mod github_releases;
 pub mod gitlab_code;
 pub mod gitlab_issues;
 pub mod gitlab_releases;
+pub mod go_pkg;
 pub mod kev;
+pub mod maven_central;
 pub mod models;
 pub mod mojeek;
 pub mod normalizer;
+pub mod npm_registry;
+pub mod nuget;
+pub mod nvd;
+pub mod openalex;
 pub mod osv;
+pub mod packagist;
+pub mod pypi;
+pub mod rubygems;
+pub mod rustsec;
 pub mod searxng;
+pub mod semantic_scholar;
+pub mod sourcegraph;
 pub mod startpage;
 pub mod yahoo;
 
@@ -164,6 +180,56 @@ pub struct GiteaReleasesEngine {
 
 pub struct OsvEngine {
     pub client: Arc<Client>,
+}
+
+pub struct CratesIoRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct PypiRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct NpmRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct GoPkgRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct MavenCentralRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct NugetRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct RubygemsRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct PackagistRegistryEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct OpenAlexEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct CrossRefEngine {
+    pub client: Arc<Client>,
+}
+
+pub struct SemanticScholarEngine {
+    pub client: Arc<Client>,
+    pub api_key: Option<String>,
+}
+
+pub struct SourcegraphCodeEngine {
+    pub client: Arc<Client>,
+    pub api_key: Option<String>,
 }
 
 impl SearchEngine for DuckDuckGoEngine {
@@ -561,6 +627,219 @@ impl SearchEngine for OsvEngine {
         ))
     }
 }
+
+impl SearchEngine for CratesIoRegistryEngine {
+    fn name(&self) -> &'static str {
+        "crates_io"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(crates_io::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for PypiRegistryEngine {
+    fn name(&self) -> &'static str {
+        "pypi"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(pypi::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for NpmRegistryEngine {
+    fn name(&self) -> &'static str {
+        "npm_registry"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(npm_registry::search(
+            &self.client,
+            query,
+            max_results,
+            timeout,
+        ))
+    }
+}
+
+impl SearchEngine for GoPkgRegistryEngine {
+    fn name(&self) -> &'static str {
+        "go_pkg"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(go_pkg::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for MavenCentralRegistryEngine {
+    fn name(&self) -> &'static str {
+        "maven_central"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(maven_central::search(
+            &self.client,
+            query,
+            max_results,
+            timeout,
+        ))
+    }
+}
+
+impl SearchEngine for NugetRegistryEngine {
+    fn name(&self) -> &'static str {
+        "nuget"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(nuget::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for RubygemsRegistryEngine {
+    fn name(&self) -> &'static str {
+        "rubygems"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(rubygems::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for PackagistRegistryEngine {
+    fn name(&self) -> &'static str {
+        "packagist"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(packagist::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for OpenAlexEngine {
+    fn name(&self) -> &'static str {
+        "openalex"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(openalex::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for CrossRefEngine {
+    fn name(&self) -> &'static str {
+        "crossref"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(crossref::search(&self.client, query, max_results, timeout))
+    }
+}
+
+impl SearchEngine for SemanticScholarEngine {
+    fn name(&self) -> &'static str {
+        "semantic_scholar"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            semantic_scholar::search(
+                &self.client,
+                query,
+                max_results,
+                timeout,
+                self.api_key.as_deref(),
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for SourcegraphCodeEngine {
+    fn name(&self) -> &'static str {
+        "sourcegraph"
+    }
+
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            sourcegraph::search(
+                &self.client,
+                self.api_key.as_deref(),
+                query,
+                max_results,
+                timeout,
+            )
+            .await
+        })
+    }
+}
+
+pub use cisa_kev::CisaKevEngine;
+pub use github_advisory::GithubAdvisoryEngine;
+pub use nvd::NvdEngine;
+pub use rustsec::RustSecEngine;
 
 // Browser-like UA used as the fallback when no operator-supplied UA is provided.
 // Mimic a real browser as closely as possible to avoid bot-detection rejections

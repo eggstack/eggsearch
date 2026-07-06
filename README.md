@@ -6,7 +6,7 @@
 
 eggsearch is a lightweight MCP (Model Context Protocol) search and fetch server for AI agents. It combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio.
 
-Generic search uses the server's configured default provider list. The shipped defaults favor DuckDuckGo, Startpage, and Yahoo; other providers such as Brave, SearXNG, GitHub/GitLab/Gitea code and issue search, OSV, and local workspace search are available when configured.
+Generic search uses the server's configured default provider list. The shipped defaults favor DuckDuckGo, Startpage, and Yahoo; other providers such as Brave, SearXNG, GitHub/GitLab/Gitea code and issue search, OSV, local workspace search, security advisory databases (GitHub Advisory, NVD, CISA KEV, RustSec), package registries (crates.io, PyPI, npm, Go Proxy, Maven Central, NuGet, RubyGems, Packagist), scholarly search (OpenAlex, Crossref, Semantic Scholar), and Sourcegraph code search are available when configured.
 
 ## Stable MCP Surface
 

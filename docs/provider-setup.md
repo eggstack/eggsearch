@@ -1,6 +1,6 @@
 # Provider Setup
 
-eggsearch supports 18 search providers across four categories: web search (HTML scrapers), API-key providers, aggregators, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
+eggsearch supports 34 search providers across six categories: web search (HTML scrapers), API-key providers, aggregators, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
 ## Web Search Providers
 
@@ -201,6 +201,125 @@ Both flags must be set and `base_url` must be non-empty for the SearXNG provider
 - Enabled by default: yes
 - No API key needed
 - Used primarily by `security_search` for vulnerability lookups
+
+## Security Advisory Providers
+
+### GitHub Security Advisories
+
+- ID: `github_advisory`
+- Requires `GITHUB_TOKEN`
+- Enable in `[search.api.github_advisory]`:
+
+```toml
+[search.api.github_advisory]
+enabled = true
+api_key_env = "GITHUB_TOKEN"
+```
+
+### NIST National Vulnerability Database
+
+- ID: `nvd`
+- No API key needed
+- Enabled by default: yes
+- Advisory lookup by CVE ID
+
+### CISA Known Exploited Vulnerabilities
+
+- ID: `cisa_kev`
+- No API key needed
+- Enabled by default: yes
+- KEV catalog for exploit status checks
+
+### RustSec Advisory Database
+
+- ID: `rustsec`
+- No API key needed
+- Enabled by default: yes
+- Rust-specific security advisories
+
+## Package Registry Providers
+
+All package registry providers use JSON APIs and require no API key. They provide package metadata, version history, and structured changelogs.
+
+### crates.io
+
+- ID: `crates_io`
+- Rust package metadata from crates.io
+
+### PyPI
+
+- ID: `pypi`
+- Python package metadata from PyPI
+
+### npm
+
+- ID: `npm_registry`
+- Node.js package metadata from npm
+
+### Go Proxy
+
+- ID: `go_pkg`
+- Go module metadata from the Go module proxy
+
+### Maven Central
+
+- ID: `maven_central`
+- Java/JVM artifact metadata from Maven Central
+
+### NuGet
+
+- ID: `nuget`
+- .NET package metadata from NuGet
+
+### RubyGems
+
+- ID: `rubygems`
+- Ruby gem metadata from RubyGems
+
+### Packagist
+
+- ID: `packagist`
+- PHP package metadata from Packagist
+
+## Scholarly Search Providers
+
+### OpenAlex
+
+- ID: `openalex`
+- No API key needed
+- Open-access scholarly literature search with DOI lookup
+
+### Crossref
+
+- ID: `crossref`
+- No API key needed
+- Scholarly literature search with DOI lookup
+
+### Semantic Scholar
+
+- ID: `semantic_scholar`
+- Requires `SEMANTIC_SCHOLAR_API_KEY`
+- Enable in `[search.api.semantic_scholar]`:
+
+```toml
+[search.api.semantic_scholar]
+enabled = true
+api_key_env = "SEMANTIC_SCHOLAR_API_KEY"
+```
+
+## Code Search Providers
+
+### Sourcegraph
+
+- ID: `sourcegraph`
+- Requires `SOURCEGRAPH_ACCESS_TOKEN`
+- Enable in `[search.api.sourcegraph]`:
+
+```toml
+[search.api.sourcegraph]
+enabled = true
+api_key_env = "SOURCEGRAPH_ACCESS_TOKEN"
+```
 
 ### Local Workspace
 

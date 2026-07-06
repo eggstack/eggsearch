@@ -718,10 +718,26 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"gitea_issues"));
     assert!(ids.contains(&"gitea_releases"));
     assert!(ids.contains(&"osv"));
+    assert!(ids.contains(&"github_advisory"));
+    assert!(ids.contains(&"nvd"));
+    assert!(ids.contains(&"cisa_kev"));
+    assert!(ids.contains(&"rustsec"));
     assert!(ids.contains(&"local_workspace"));
+    assert!(ids.contains(&"crates_io"));
+    assert!(ids.contains(&"pypi"));
+    assert!(ids.contains(&"npm_registry"));
+    assert!(ids.contains(&"go_pkg"));
+    assert!(ids.contains(&"maven_central"));
+    assert!(ids.contains(&"nuget"));
+    assert!(ids.contains(&"rubygems"));
+    assert!(ids.contains(&"packagist"));
+    assert!(ids.contains(&"openalex"));
+    assert!(ids.contains(&"crossref"));
+    assert!(ids.contains(&"semantic_scholar"));
+    assert!(ids.contains(&"sourcegraph"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 18);
+    assert_eq!(ids.len(), 34);
 }
 
 #[cfg(feature = "mock")]
