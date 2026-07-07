@@ -301,30 +301,58 @@ fn is_blocked_address(addr: SocketAddr, limits: &FetchLimits) -> bool {
 }
 
 fn is_blocked_v4(v4: Ipv4Addr) -> bool {
-    // loopback, private (RFC 1918 + 100.64/10), link-local
-    // (169.254/16), unspecified (0.0.0.0).
-    v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+    let o = v4.octets();
+    let octet0 = o[0];
+
+    v4.is_loopback()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || octet0 == 0
+        || octet0 == 10
+        || (octet0 == 100 && (o[1] & 0b1100_0000) == 0b0100_0000)
+        || octet0 == 127
+        || (octet0 == 169 && o[1] == 254)
+        || (octet0 == 172 && (o[1] & 0b1111_0000) == 16)
+        || (octet0 == 192 && o[1] == 0)
+        || (octet0 == 192 && o[1] == 0 && o[2] == 2)
+        || (octet0 == 192 && o[1] == 88 && o[2] == 99)
+        || (octet0 == 192 && o[1] == 168)
+        || (octet0 == 198 && (o[1] & 0b1111_1110) == 18)
+        || (octet0 == 198 && o[1] == 51 && o[2] == 100)
+        || (octet0 == 203 && o[1] == 0 && o[2] == 113)
+        || (224..=239).contains(&octet0)
+        || octet0 >= 240
 }
 
 fn is_blocked_v6(v6: Ipv6Addr) -> bool {
     if v6.is_loopback() || v6.is_unspecified() {
         return true;
     }
-    // IPv6 unique-local (fc00::/7) - not covered by is_private on
-    // older stdlibs, and is_private on Ipv6Addr as of 1.80 also
-    // covers other ranges we may not want to block, so be explicit.
     let seg0 = v6.segments()[0];
     if (seg0 & 0xfe00) == 0xfc00 {
         return true;
     }
-    // IPv6 link-local (fe80::/10). Manual check for MSRV 1.80
-    // (Ipv6Addr::is_unicast_link_local stabilized in 1.84).
     if (seg0 & 0xffc0) == 0xfe80 {
         return true;
     }
-    // IPv4-mapped IPv6 (::ffff:a.b.c.d) - extract and re-check v4.
     if let Some(v4) = ipv4_mapped_from_v6(v6) {
         return is_blocked_v4(v4);
+    }
+    if v6.is_multicast() {
+        return true;
+    }
+    let seg1 = v6.segments()[1];
+    if seg0 == 0x2001 && seg1 == 0x0db8 {
+        return true;
+    }
+    if seg0 == 0x2001 && seg1 == 0x0002 {
+        return true;
+    }
+    if seg0 == 0x2001 && seg1 == 0x0000 {
+        return true;
+    }
+    if seg0 == 0x2002 {
+        return true;
     }
     false
 }
@@ -339,6 +367,19 @@ fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     } else {
         None
     }
+}
+
+#[allow(dead_code)]
+fn ipv4_to_u32(octets: [u8; 4]) -> u32 {
+    u32::from_be_bytes(octets)
+}
+
+#[allow(dead_code)]
+fn ipv4_in_cidr(addr: [u8; 4], prefix_bits: u32, network: [u8; 4]) -> bool {
+    let addr_u32 = ipv4_to_u32(addr);
+    let network_u32 = ipv4_to_u32(network);
+    let mask = u32::MAX << (32 - prefix_bits);
+    (addr_u32 & mask) == (network_u32 & mask)
 }
 
 #[cfg(test)]

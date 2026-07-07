@@ -18,6 +18,34 @@ Code-host source-file URLs are rewritten to raw fetch targets, then run through 
 
 For DNS-backed hosts, eggsearch validates the resolved address set and reuses that validated set for the outbound request attempt. Redirect targets are revalidated and re-pinned before they are followed.
 
+## Blocked Address Ranges
+
+When `allow_private_network = false` (the default), eggsearch blocks fetches to the following IPv4 ranges:
+
+| Range | RFC | Purpose |
+|-------|-----|---------|
+| `0.0.0.0/8` | RFC 1122 | "This" network |
+| `10.0.0.0/8` | RFC 1918 | Private (Class A) |
+| `100.64.0.0/10` | RFC 6598 | Shared address space (carrier-grade NAT) |
+| `127.0.0.0/8` | RFC 1122 | Loopback |
+| `169.254.0.0/16` | RFC 3927 | Link-local |
+| `172.16.0.0/12` | RFC 1918 | Private (Class B) |
+| `192.0.0.0/24` | RFC 6890 | IETF protocol assignments |
+| `192.0.2.0/24` | RFC 5737 | Documentation (TEST-NET-1) |
+| `192.88.99.0/24` | RFC 3068 | 6to4 relay (deprecated) |
+| `192.168.0.0/16` | RFC 1918 | Private (Class C) |
+| `198.18.0.0/15` | RFC 2544 | Benchmarking |
+| `198.51.100.0/24` | RFC 5737 | Documentation (TEST-NET-2) |
+| `203.0.113.0/24` | RFC 5737 | Documentation (TEST-NET-3) |
+| `224.0.0.0/4` | RFC 5771 | Multicast |
+| `240.0.0.0/4` | RFC 1112 | Reserved |
+
+When `allow_localhost = false` (the default), loopback addresses are blocked regardless of `allow_private_network`.
+
+IPv6 blocked ranges include: loopback (`::1`), unspecified (`::`), unique-local (`fc00::/7`), link-local (`fe80::/10`), multicast (`ff00::/8`), documentation (`2001:db8::/32`), benchmarking (`2001:2::/48`), discard-only (`2001::/32`), deprecated 6to4 (`2002::/16`), and IPv4-mapped addresses targeting any blocked IPv4 range.
+
+Redirect targets are revalidated against these same ranges before being followed.
+
 `allow_private_network = true` and `allow_localhost = true` are operator escape hatches. Keep them off for general MCP exposure.
 
 Local repository fetches use separate path validation. The path checks reject:

@@ -925,6 +925,225 @@ fn g4_code_host_rewrite_produces_stable_raw_url_and_transform() {
 }
 
 // =========================================================================
+// G2. Blocked IPv4 Literal URL Tests
+// =========================================================================
+
+#[test]
+fn g2_blocked_ipv4_literal_urls() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let urls = [
+        "http://127.0.0.1/",
+        "http://10.0.0.1/",
+        "http://172.16.0.1/",
+        "http://192.168.0.1/",
+        "http://0.0.0.0/",
+    ];
+    for url in urls {
+        let result = validate_url(url, &limits);
+        assert!(result.is_err(), "Expected rejection for {url}, got Ok");
+    }
+}
+
+#[tokio::test]
+async fn g2b_blocked_ipv4_literal_urls_full_validation() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let urls = [
+        "http://127.0.0.1/",
+        "http://10.0.0.1/",
+        "http://172.16.0.1/",
+        "http://192.168.0.1/",
+        "http://100.64.0.1/",
+        "http://169.254.169.254/",
+        "http://0.0.0.0/",
+        "http://192.0.0.1/",
+        "http://192.0.2.1/",
+        "http://192.88.99.1/",
+        "http://198.18.0.1/",
+        "http://198.51.100.1/",
+        "http://203.0.113.1/",
+        "http://224.0.0.1/",
+        "http://240.0.0.1/",
+    ];
+    for url in urls {
+        let req_url = url::Url::parse(url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(result.is_err(), "Expected rejection for {url}, got Ok");
+    }
+}
+
+// =========================================================================
+// G3. Allowed Public IPv4 Literal URL Tests
+// =========================================================================
+
+#[test]
+fn g3_allowed_public_ipv4_literal_urls() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let urls = ["http://8.8.8.8/", "http://1.1.1.1/"];
+    for url in urls {
+        let result = validate_url(url, &limits);
+        assert!(result.is_ok(), "Expected Ok for {url}, got {result:?}");
+    }
+}
+
+// =========================================================================
+// G4. Blocked IPv6 Literal URL Tests
+// =========================================================================
+
+#[tokio::test]
+async fn g4_blocked_ipv6_literal_urls() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let blocked = [
+        "http://[::1]/",
+        "http://[fc00::1]/",
+        "http://[fe80::1]/",
+        "http://[::ffff:10.0.0.1]/",
+        "http://[::ffff:192.168.1.1]/",
+        "http://[ff00::1]/",
+        "http://[2001:db8::1]/",
+    ];
+    for url in blocked {
+        let req_url = url::Url::parse(url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(
+            matches!(
+                result,
+                Err(eggsearch::fetch::FetchError::PrivateNetworkBlocked(_))
+            ),
+            "Expected PrivateNetworkBlocked for {url}, got {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn g5_allowed_public_ipv6_literal_url() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let req_url = url::Url::parse("http://[2607:f8b0:4004:800::200e]/").unwrap();
+    let result = validate_fetch_target(&req_url, &limits).await;
+    assert!(
+        result.is_ok(),
+        "Expected Ok for public IPv6, got {result:?}"
+    );
+}
+
+// =========================================================================
+// G6. Code-Host URL Rewrite SSRF Safety Tests
+// =========================================================================
+
+#[test]
+fn g6_code_host_url_rewrite_prevents_ssrf() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let attacks = [
+        "http://127.0.0.1:8080/raw/main/secret.txt",
+        "http://192.168.1.100/raw/main/secret.txt",
+        "http://10.0.0.1/raw/main/secret.txt",
+    ];
+    for raw_url in attacks {
+        let result = validate_url(raw_url, &limits);
+        assert!(
+            result.is_err(),
+            "Expected rejection for {raw_url}, got {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn g6b_code_host_url_rewrite_blocks_ipv6_and_extended_ranges() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let attacks = [
+        "http://[::1]/raw/main/secret.txt",
+        "http://[fc00::1]/raw/main/secret.txt",
+        "http://[fe80::1]/raw/main/secret.txt",
+        "http://100.64.0.1/raw/main/secret.txt",
+        "http://169.254.169.254/raw/main/secret.txt",
+        "http://192.0.0.1/raw/main/secret.txt",
+    ];
+    for raw_url in attacks {
+        let req_url = url::Url::parse(raw_url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(result.is_err(), "Expected rejection for {raw_url}, got Ok");
+    }
+}
+
+// =========================================================================
+// G7. Redirect-to-Blocked-Target Validation Tests
+// =========================================================================
+
+#[tokio::test]
+async fn g7_redirect_target_private_network_blocked() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let targets = [
+        "http://192.168.1.1/",
+        "http://10.0.0.1/",
+        "http://172.16.0.1/",
+        "http://127.0.0.1/",
+        "http://[::1]/",
+        "http://[fc00::1]/",
+        "http://[fe80::1]/",
+    ];
+    for url in targets {
+        let req_url = url::Url::parse(url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(
+            matches!(
+                result,
+                Err(eggsearch::fetch::FetchError::PrivateNetworkBlocked(_))
+            ),
+            "Redirect target {url} should be blocked, got {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn g8_redirect_target_public_allowed() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let targets = ["http://8.8.8.8/", "http://1.1.1.1/"];
+    for url in targets {
+        let req_url = url::Url::parse(url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(
+            result.is_ok(),
+            "Redirect target {url} should be allowed, got {result:?}"
+        );
+    }
+}
+
+// =========================================================================
 // H. CSV/TSV Renderer Tests
 // =========================================================================
 
