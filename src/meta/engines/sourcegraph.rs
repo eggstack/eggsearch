@@ -479,7 +479,8 @@ mod tests {
         use crate::core::provider::built_in_provider_descriptor;
 
         let desc =
-            built_in_provider_descriptor("sourcegraph", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("sourcegraph", true, false, true, false, None, None)
+                .unwrap();
         assert_eq!(desc.id, "sourcegraph");
         assert_eq!(desc.display_name, "Sourcegraph");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);

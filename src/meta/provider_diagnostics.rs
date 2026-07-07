@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::core::provider::{
-    built_in_provider_descriptor, provider_configured_state, KNOWN_PROVIDER_IDS,
+    built_in_provider_descriptor, provider_configured_state, ProviderSkipCode, KNOWN_PROVIDER_IDS,
 };
 use crate::core::repo_search::SearchProfile;
 
@@ -348,6 +348,9 @@ pub struct ProviderSkipReason {
     /// When cooldown expires, if skipped due to cooldown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooldown_until: Option<String>,
+    /// Machine-actionable skip code for programmatic handling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_code: Option<ProviderSkipCode>,
 }
 
 /// Result of provider routing resolution.
@@ -457,6 +460,7 @@ pub fn resolve_provider_routing(
                         ),
                         failure_class: snapshot.recent_failure_class,
                         cooldown_until: snapshot.cooldown_until,
+                        skip_code: Some(ProviderSkipCode::CooldownActive),
                     });
                     any_skipped = true;
                 } else {
@@ -466,9 +470,14 @@ pub fn resolve_provider_routing(
                 skipped.push(ProviderSkipReason {
                     provider_id: id.clone(),
                     reason_code: "not_built".to_string(),
-                    reason: "provider not built (missing API key or not configured)".to_string(),
+                    reason: format!(
+                        "[{}] {}",
+                        ProviderSkipCode::NotBuilt.as_str(),
+                        ProviderSkipCode::NotBuilt.display_name()
+                    ),
                     failure_class: None,
                     cooldown_until: None,
+                    skip_code: Some(ProviderSkipCode::NotBuilt),
                 });
                 any_skipped = true;
             }
@@ -515,6 +524,7 @@ pub fn resolve_provider_routing(
                     ),
                     failure_class: snapshot.recent_failure_class,
                     cooldown_until: snapshot.cooldown_until,
+                    skip_code: Some(ProviderSkipCode::CooldownActive),
                 });
             }
         }
@@ -668,7 +678,9 @@ impl CapabilityEnforcementTelemetry {
         let mut release_enforced = false;
 
         for id in selected_providers {
-            if let Some(desc) = built_in_provider_descriptor(id, true, false, true, false, None) {
+            if let Some(desc) =
+                built_in_provider_descriptor(id, true, false, true, false, None, None)
+            {
                 if desc.capabilities.supports_repo_filter {
                     repo_enforced = true;
                 }
@@ -796,7 +808,9 @@ impl CapabilityEnforcementTelemetry {
         let mut package_enforced = false;
 
         for id in selected_providers {
-            if let Some(desc) = built_in_provider_descriptor(id, true, false, true, false, None) {
+            if let Some(desc) =
+                built_in_provider_descriptor(id, true, false, true, false, None, None)
+            {
                 if desc.capabilities.supports_security_search {
                     advisory_enforced = true;
                     package_enforced = true;
@@ -1125,6 +1139,7 @@ mod tests {
                 reason: "not built".to_string(),
                 failure_class: None,
                 cooldown_until: None,
+                skip_code: Some(ProviderSkipCode::NotBuilt),
             }],
             degraded: false,
             partial: true,

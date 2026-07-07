@@ -395,7 +395,7 @@ mod tests {
         use crate::core::provider::built_in_provider_descriptor;
 
         let desc =
-            built_in_provider_descriptor("openalex", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("openalex", true, false, true, false, None, None).unwrap();
         assert_eq!(desc.id, "openalex");
         assert_eq!(desc.display_name, "OpenAlex");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::JsonApi);

@@ -32,7 +32,7 @@ Search tools return machine-readable `next_actions` hints. `web_fetch` supports 
 - `sanitize_output` defaults to `true` for both search and fetch.
 - `web_fetch` is bounded and explicit: it does not crawl, does not execute JavaScript, and only fetches one requested URL.
 - Fetch targets are validated against blocked address ranges (private networks, loopback, link-local, multicast, reserved, and documentation addresses). Redirect targets are revalidated before being followed.
-- `provider_status` is diagnostic only; it reports configured providers, routability, capabilities, cached health, and workflow recipes.
+- `provider_status` is diagnostic only; it reports configured providers, routability, skip reasons and codes, capabilities, cached health, and workflow recipes.
 
 ## Install
 

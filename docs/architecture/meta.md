@@ -198,7 +198,7 @@ The adapter tracks per-provider health:
 - Capability enforcement telemetry
 - Routing decisions (which providers were selected and why)
 
-Health data surfaces through `provider_status` tool and structured warnings.
+Health data surfaces through `provider_status` tool and structured warnings. Each skipped provider includes both a human-readable `skip_reason` and a machine-readable `skip_code` (a stable snake_case string from the `ProviderSkipCode` enum) for programmatic diagnostics.
 
 ---
 

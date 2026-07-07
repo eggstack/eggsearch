@@ -190,7 +190,7 @@ mod tests {
         use crate::core::provider::built_in_provider_descriptor;
 
         let desc =
-            built_in_provider_descriptor("cisa_kev", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("cisa_kev", true, false, true, false, None, None).unwrap();
         assert_eq!(desc.id, "cisa_kev");
         assert!(desc.capabilities.supports_exploit_kev_status);
         assert!(desc.capabilities.supports_advisory_lookup_by_id);

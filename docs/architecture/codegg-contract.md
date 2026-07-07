@@ -518,6 +518,15 @@ metadata.
 ignored; the tool reports configured state rather than performing live
 provider probes.
 
+Each provider descriptor includes `routable` (bool), `skip_reason`
+(optional human-readable string), and `skip_code` (optional machine-readable
+code from the `ProviderSkipCode` enum). Stable `skip_code` values:
+`unknown_provider`, `disabled_by_user`, `missing_api_key`,
+`missing_searxng_config`, `missing_base_url`, `invalid_base_url`,
+`missing_local_backend`, `credential_not_configured`,
+`credential_env_missing`, `credential_invalid`, `cooldown_active`,
+`not_built`, `unknown`.
+
 ### 9.1 Server Capabilities
 
 ```json
@@ -579,7 +588,7 @@ Every search response includes a `routing_decision` field:
     "skipped_providers": [
       {
         "provider_id": "gitlab_code",
-        "reason": "provider not built (missing API key)",
+        "reason": "[not_built] Not built",
         "reason_code": "not_built"
       }
     ],

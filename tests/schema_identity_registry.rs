@@ -1750,3 +1750,62 @@ fn warning_code_as_str_all_snake_case() {
         );
     }
 }
+
+// ===========================================================================
+// ProviderSkipCode schema contract tests
+// ===========================================================================
+
+use eggsearch::core::provider::ProviderSkipCode;
+
+#[test]
+fn provider_skip_code_serialized_names_stability() {
+    assert_serde_enum(&ProviderSkipCode::UnknownProvider, "\"unknown_provider\"");
+    assert_serde_enum(&ProviderSkipCode::DisabledByUser, "\"disabled_by_user\"");
+    assert_serde_enum(&ProviderSkipCode::MissingApiKey, "\"missing_api_key\"");
+    assert_serde_enum(
+        &ProviderSkipCode::MissingSearxngConfig,
+        "\"missing_searxng_config\"",
+    );
+    assert_serde_enum(&ProviderSkipCode::MissingBaseUrl, "\"missing_base_url\"");
+    assert_serde_enum(&ProviderSkipCode::InvalidBaseUrl, "\"invalid_base_url\"");
+    assert_serde_enum(
+        &ProviderSkipCode::MissingLocalBackend,
+        "\"missing_local_backend\"",
+    );
+    assert_serde_enum(
+        &ProviderSkipCode::CredentialNotConfigured,
+        "\"credential_not_configured\"",
+    );
+    assert_serde_enum(
+        &ProviderSkipCode::CredentialEnvMissing,
+        "\"credential_env_missing\"",
+    );
+    assert_serde_enum(
+        &ProviderSkipCode::CredentialInvalid,
+        "\"credential_invalid\"",
+    );
+    assert_serde_enum(&ProviderSkipCode::CooldownActive, "\"cooldown_active\"");
+    assert_serde_enum(&ProviderSkipCode::NotBuilt, "\"not_built\"");
+    assert_serde_enum(&ProviderSkipCode::Unknown, "\"unknown\"");
+}
+
+#[test]
+fn provider_skip_code_no_duplicate_serialized_names() {
+    let variants = [
+        ProviderSkipCode::UnknownProvider,
+        ProviderSkipCode::DisabledByUser,
+        ProviderSkipCode::MissingApiKey,
+        ProviderSkipCode::MissingSearxngConfig,
+        ProviderSkipCode::MissingBaseUrl,
+        ProviderSkipCode::InvalidBaseUrl,
+        ProviderSkipCode::MissingLocalBackend,
+        ProviderSkipCode::CredentialNotConfigured,
+        ProviderSkipCode::CredentialEnvMissing,
+        ProviderSkipCode::CredentialInvalid,
+        ProviderSkipCode::CooldownActive,
+        ProviderSkipCode::NotBuilt,
+        ProviderSkipCode::Unknown,
+    ];
+    let names = collect_enum_serialized_names(&variants);
+    assert_no_duplicates(&names, "ProviderSkipCode");
+}

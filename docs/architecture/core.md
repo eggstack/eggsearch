@@ -14,6 +14,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
 | `config.rs` | `AppConfig`, `SearchSection`, `FetchSection`, `Mode`, `ProfileConfig`, `ApiProviderConfig`, `SearxngConfig`, `LiveConfig` | TOML config model. Path defaults to `$XDG_CONFIG_HOME/eggsearch/config.toml`. Provider resolution with enabled/known validation. |
+| `provider.rs` | `ProviderDescriptor`, `ProviderSkipCode`, `ProviderKind`, `ProviderCapabilities` | Provider identity, diagnostics, and capability flags. `ProviderSkipCode` is a stable snake_case enum for machine-readable skip reasons (13 variants). `ProviderDescriptor` includes `routable`, `skip_reason`, and `skip_code` fields. |
 
 ### Error Handling
 
@@ -58,6 +59,12 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
 | `quality.rs` | `ResultQuality`, `GroupQualitySummary`, `SearchUncertaintySummary`, `ResultConfidence`, `RelevanceEstimate`, `AuthorityEstimate`, `FreshnessEstimate`, `EvidenceStrength`, `UncertaintyReason`, `QualityReason` | Heuristic quality metadata computed from URL/domain heuristics and structured result metadata. `compute_card_quality()` and `compute_group_quality()` are pure functions |
+
+### Provider Diagnostics
+
+| File | Key Types | Responsibility |
+|------|-----------|----------------|
+| `provider.rs` | `ProviderSkipCode` | 13-variant enum serialized as stable snake_case strings. Variants: `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, `unknown`. Used by `ProviderDescriptor.skip_code` and `ProviderSkipReason.skip_code` for machine-readable diagnostics. |
 
 ### Workflow Guidance
 

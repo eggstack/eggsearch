@@ -364,7 +364,7 @@ mod tests {
         use crate::core::provider::built_in_provider_descriptor;
 
         let desc =
-            built_in_provider_descriptor("crossref", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("crossref", true, false, true, false, None, None).unwrap();
         assert_eq!(desc.id, "crossref");
         assert_eq!(desc.display_name, "Crossref");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::JsonApi);

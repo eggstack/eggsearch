@@ -157,7 +157,7 @@ Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` with `tool_r
 
 - **Adapter pattern** — `MetadataSearchAdapter` wraps all engines. MCP tools never call engines directly.
 - **Deterministic IDs** — FNV-1a 64-bit hashes with versioned prefix (`eggsearch-id-v1\0`). URL canonicalization prevents spurious ID changes.
-- **Soft failures** — Adapter returns `WebSearchResponse` with warnings, never errors. Partial provider failures are surfaced as warnings.
+- **Soft failures** — Adapter returns `WebSearchResponse` with warnings, never errors. Partial provider failures are surfaced as warnings. Non-routable providers include a machine-readable `skip_code` for programmatic diagnostics.
 - **Trust model** — All web content is `external_untrusted`. Local content is `local_trusted` (provenance only, not instruction trust). Three sanitization tiers.
 - **Profile-based routing** — 4 profiles influence provider selection. Degraded profiles fall back to defaults with warnings.
 - **Bounded everything** — Timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits.

@@ -806,7 +806,8 @@ mod tests {
         use crate::core::provider::built_in_provider_descriptor;
 
         let desc =
-            built_in_provider_descriptor("gitlab_code", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("gitlab_code", true, false, true, false, None, None)
+                .unwrap();
         assert_eq!(desc.id, "gitlab_code");
         assert_eq!(desc.display_name, "GitLab Code Search");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);
@@ -830,7 +831,8 @@ mod tests {
         use crate::core::provider::built_in_provider_descriptor;
 
         let desc =
-            built_in_provider_descriptor("gitlab_code", false, false, true, false, None).unwrap();
+            built_in_provider_descriptor("gitlab_code", false, false, true, false, None, None)
+                .unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }

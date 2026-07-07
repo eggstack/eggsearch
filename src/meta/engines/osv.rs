@@ -1059,7 +1059,8 @@ mod tests {
     async fn test_osv_provider_descriptor() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("osv", true, false, true, false, None).unwrap();
+        let desc =
+            built_in_provider_descriptor("osv", true, false, true, false, None, None).unwrap();
         assert_eq!(desc.id, "osv");
         assert_eq!(desc.display_name, "OSV (Open Source Vulnerabilities)");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::JsonApi);

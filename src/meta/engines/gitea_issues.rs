@@ -669,7 +669,8 @@ mod tests {
         use crate::core::provider::built_in_provider_descriptor;
 
         let desc =
-            built_in_provider_descriptor("gitea_issues", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("gitea_issues", true, false, true, false, None, None)
+                .unwrap();
         assert_eq!(desc.id, "gitea_issues");
         assert_eq!(desc.display_name, "Gitea/Forgejo Issues");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);

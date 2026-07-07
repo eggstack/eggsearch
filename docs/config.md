@@ -76,7 +76,7 @@ All 34 built-in providers:
 | `sourcegraph` | api_key | `SOURCEGRAPH_API_KEY` | Sourcegraph code search |
 | `local_workspace` | local | — | Requires `[local]` config |
 
-`provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured").
+`provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured") and a machine-readable `skip_code` (e.g. `missing_api_key`, `missing_searxng_config`, `disabled_by_user`, `cooldown_active`).
 
 ## Search Defaults
 
@@ -312,6 +312,9 @@ Each provider descriptor includes:
 - `requires_api_key` — whether an API key env var is needed
 - `routable` — whether the provider can actually be queried right now
 - `skip_reason` — human-readable explanation when `routable` is `false`
+- `skip_code` — machine-readable skip code when `routable` is `false`
 - `capabilities` — feature flags (code search, freshness, etc.)
+
+Skip codes are stable snake_case strings: `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, `unknown`.
 
 Use `provider_status` to decide whether to call specialized tools or fall back to generic search.

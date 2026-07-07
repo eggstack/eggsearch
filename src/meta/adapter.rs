@@ -11,7 +11,7 @@ use futures::FutureExt;
 use crate::core::config::ApiProviderConfig;
 use crate::core::provider::{
     built_in_provider_descriptor, provider_configured_state, CapabilityOption, ProviderDescriptor,
-    KNOWN_PROVIDER_IDS,
+    ProviderSkipCode, KNOWN_PROVIDER_IDS,
 };
 use crate::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
@@ -436,7 +436,7 @@ impl MetadataSearchAdapter {
                 true
             };
             if let Some(desc) =
-                built_in_provider_descriptor(id, true, false, configured, false, None)
+                built_in_provider_descriptor(id, true, false, configured, false, None, None)
             {
                 if !desc.capabilities.supports(option) {
                     unsupported.push(id.to_string());
@@ -472,15 +472,37 @@ impl MetadataSearchAdapter {
                 );
                 let routable = is_enabled && configured;
                 let skip_reason = if !routable {
-                    if !is_enabled {
-                        Some("not built (unknown provider ID)".to_string())
-                    } else if !configured {
-                        Some("provider not configured".to_string())
+                    let code = if !is_enabled {
+                        ProviderSkipCode::DisabledByUser
+                    } else if *id == "local_workspace" {
+                        ProviderSkipCode::MissingLocalBackend
+                    } else if crate::core::provider::is_api_provider(id) {
+                        ProviderSkipCode::MissingApiKey
+                    } else if id.contains("searxng") && !self.searxng_configured {
+                        ProviderSkipCode::MissingSearxngConfig
                     } else {
-                        None
-                    }
+                        ProviderSkipCode::Unknown
+                    };
+                    Some(format!("[{}] {}", code.as_str(), code.display_name()))
                 } else {
                     None
+                };
+                let skip_code = if routable {
+                    None
+                } else if !is_enabled {
+                    Some(ProviderSkipCode::DisabledByUser)
+                } else if !configured {
+                    if *id == "local_workspace" {
+                        Some(ProviderSkipCode::MissingLocalBackend)
+                    } else if crate::core::provider::is_api_provider(id) {
+                        Some(ProviderSkipCode::MissingApiKey)
+                    } else if id.contains("searxng") && !self.searxng_configured {
+                        Some(ProviderSkipCode::MissingSearxngConfig)
+                    } else {
+                        Some(ProviderSkipCode::Unknown)
+                    }
+                } else {
+                    Some(ProviderSkipCode::Unknown)
                 };
                 built_in_provider_descriptor(
                     id,
@@ -489,6 +511,7 @@ impl MetadataSearchAdapter {
                     configured,
                     routable,
                     skip_reason,
+                    skip_code,
                 )
             })
             .collect();
@@ -501,13 +524,21 @@ impl MetadataSearchAdapter {
             let is_default = defaults.contains(id.as_str());
             let routable = is_enabled && configured;
             let skip_reason = if !routable {
-                if !is_enabled {
-                    Some("not built (unknown provider ID)".to_string())
+                let code = if !is_enabled {
+                    ProviderSkipCode::NotBuilt
                 } else {
-                    Some("provider not configured".to_string())
-                }
+                    ProviderSkipCode::UnknownProvider
+                };
+                Some(format!("[{}] {}", code.as_str(), code.display_name()))
             } else {
                 None
+            };
+            let skip_code = if routable {
+                None
+            } else if !is_enabled {
+                Some(ProviderSkipCode::NotBuilt)
+            } else {
+                Some(ProviderSkipCode::Unknown)
             };
             if let Some(desc) = built_in_provider_descriptor(
                 id,
@@ -516,6 +547,7 @@ impl MetadataSearchAdapter {
                 configured,
                 routable,
                 skip_reason,
+                skip_code,
             ) {
                 descriptors.push(desc);
             }
@@ -1872,7 +1904,7 @@ fn any_engine_supports(
 ) -> bool {
     engines.iter().any(|e| {
         let configured = true;
-        built_in_provider_descriptor(e.name(), true, false, configured, true, None)
+        built_in_provider_descriptor(e.name(), true, false, configured, true, None, None)
             .is_some_and(|desc| check(&desc.capabilities))
     })
 }
@@ -2002,13 +2034,21 @@ pub fn build_default_engines(
                 })),
                 None => skipped.push(SkippedProvider {
                     id: id.clone(),
-                    reason: "SearXNG base_url not configured".to_string(),
+                    reason: format!(
+                        "[{}] {}",
+                        ProviderSkipCode::MissingSearxngConfig.as_str(),
+                        ProviderSkipCode::MissingSearxngConfig.display_name()
+                    ),
                 }),
             },
             _ if api_providers.contains_key(id) => {}
             other => skipped.push(SkippedProvider {
                 id: other.to_string(),
-                reason: "not built (unknown provider ID)".to_string(),
+                reason: format!(
+                    "[{}] {}",
+                    ProviderSkipCode::UnknownProvider.as_str(),
+                    ProviderSkipCode::UnknownProvider.display_name()
+                ),
             }),
         }
     }
@@ -2029,7 +2069,11 @@ pub fn build_default_engines(
             _ => {
                 skipped.push(SkippedProvider {
                     id: id.clone(),
-                    reason: "API key not configured".to_string(),
+                    reason: format!(
+                        "[{}] {}",
+                        ProviderSkipCode::MissingApiKey.as_str(),
+                        ProviderSkipCode::MissingApiKey.display_name()
+                    ),
                 });
                 continue;
             }
@@ -2082,7 +2126,11 @@ pub fn build_default_engines(
                 if base.is_empty() {
                     skipped.push(SkippedProvider {
                         id: id.clone(),
-                        reason: "Gitea base_url not configured".to_string(),
+                        reason: format!(
+                            "[{}] {}",
+                            ProviderSkipCode::MissingBaseUrl.as_str(),
+                            ProviderSkipCode::MissingBaseUrl.display_name()
+                        ),
                     });
                     continue;
                 }
@@ -2097,7 +2145,11 @@ pub fn build_default_engines(
                 if base.is_empty() {
                     skipped.push(SkippedProvider {
                         id: id.clone(),
-                        reason: "Gitea base_url not configured".to_string(),
+                        reason: format!(
+                            "[{}] {}",
+                            ProviderSkipCode::MissingBaseUrl.as_str(),
+                            ProviderSkipCode::MissingBaseUrl.display_name()
+                        ),
                     });
                     continue;
                 }
@@ -2112,7 +2164,11 @@ pub fn build_default_engines(
                 if base.is_empty() {
                     skipped.push(SkippedProvider {
                         id: id.clone(),
-                        reason: "Gitea base_url not configured".to_string(),
+                        reason: format!(
+                            "[{}] {}",
+                            ProviderSkipCode::MissingBaseUrl.as_str(),
+                            ProviderSkipCode::MissingBaseUrl.display_name()
+                        ),
                     });
                     continue;
                 }
@@ -2828,7 +2884,7 @@ mod tests {
     fn known_providers_includes_new_ids() {
         for id in crate::core::provider::KNOWN_PROVIDER_IDS {
             let desc = crate::core::provider::built_in_provider_descriptor(
-                id, true, false, true, false, None,
+                id, true, false, true, false, None, None,
             )
             .expect("known id should have descriptor");
             assert_eq!(desc.id, *id);
@@ -2838,7 +2894,7 @@ mod tests {
     #[test]
     fn provider_descriptor_mojeek_is_html_scrape() {
         let desc = crate::core::provider::built_in_provider_descriptor(
-            "mojeek", true, false, true, false, None,
+            "mojeek", true, false, true, false, None, None,
         )
         .unwrap();
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::HtmlScrape);
@@ -2848,7 +2904,7 @@ mod tests {
     #[test]
     fn provider_descriptor_searxng_is_json_api() {
         let desc = crate::core::provider::built_in_provider_descriptor(
-            "searxng", true, false, true, false, None,
+            "searxng", true, false, true, false, None, None,
         )
         .unwrap();
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::JsonApi);

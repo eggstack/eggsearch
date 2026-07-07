@@ -959,7 +959,7 @@ pub async fn run_repo_search(
     // Convert routing decision skipped_providers into SearchWarnings
     let mut profile_warnings: Vec<crate::core::result::SearchWarning> = Vec::new();
     for skip in &routing_decision.skipped_providers {
-        if skip.reason.contains("not built") {
+        if skip.skip_code == Some(crate::core::provider::ProviderSkipCode::NotBuilt) {
             profile_warnings.push(crate::core::result::SearchWarning::new(
                 "_system",
                 format!(
@@ -967,7 +967,7 @@ pub async fn run_repo_search(
                     skip.provider_id, req.profile
                 ),
             ));
-        } else if skip.reason.contains("cooldown") {
+        } else if skip.skip_code == Some(crate::core::provider::ProviderSkipCode::CooldownActive) {
             profile_warnings.push(crate::core::result::SearchWarning::new(
                 "_system",
                 format!(
@@ -1025,7 +1025,7 @@ pub async fn run_repo_search(
 
     // Merge profile warnings into structured warnings
     for skip in &routing_decision.skipped_providers {
-        if skip.reason.contains("not built") {
+        if skip.skip_code == Some(crate::core::provider::ProviderSkipCode::NotBuilt) {
             response.structured_warnings.push(
                 crate::core::warning::AgentWarning::new(
                     crate::core::warning::WarningCode::ProfileProviderNotBuilt,
@@ -1037,7 +1037,7 @@ pub async fn run_repo_search(
                 .with_provider_ids(vec![skip.provider_id.clone()])
                 .with_severity(crate::core::warning::WarningSeverity::Warning),
             );
-        } else if skip.reason.contains("cooldown") {
+        } else if skip.skip_code == Some(crate::core::provider::ProviderSkipCode::CooldownActive) {
             response.structured_warnings.push(
                 crate::core::warning::AgentWarning::new(
                     crate::core::warning::WarningCode::ProviderCooldown,

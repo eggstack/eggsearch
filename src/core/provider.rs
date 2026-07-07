@@ -404,6 +404,80 @@ impl CapabilityOption {
     }
 }
 
+/// Machine-actionable skip code for programmatic handling of
+/// non-routable providers. Stable across versions — agents can match
+/// on these.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSkipCode {
+    /// Provider id is not in `KNOWN_PROVIDER_IDS`.
+    UnknownProvider,
+    /// Provider is disabled in config.
+    DisabledByUser,
+    /// API-key provider missing a configured API key.
+    MissingApiKey,
+    /// SearXNG provider missing base_url config.
+    MissingSearxngConfig,
+    /// Provider missing a required base URL.
+    MissingBaseUrl,
+    /// Provider has an invalid base URL.
+    InvalidBaseUrl,
+    /// Local workspace provider missing backend availability.
+    MissingLocalBackend,
+    /// Credential present but not configured.
+    CredentialNotConfigured,
+    /// Credential environment variable not set.
+    CredentialEnvMissing,
+    /// Credential present but invalid.
+    CredentialInvalid,
+    /// Provider is in cooldown after repeated failures.
+    CooldownActive,
+    /// Provider was not built (feature-gated or compiled out).
+    NotBuilt,
+    /// Catch-all for unrecognized skip conditions.
+    Unknown,
+}
+
+impl ProviderSkipCode {
+    /// Stable snake-case string for programmatic matching.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::UnknownProvider => "unknown_provider",
+            Self::DisabledByUser => "disabled_by_user",
+            Self::MissingApiKey => "missing_api_key",
+            Self::MissingSearxngConfig => "missing_searxng_config",
+            Self::MissingBaseUrl => "missing_base_url",
+            Self::InvalidBaseUrl => "invalid_base_url",
+            Self::MissingLocalBackend => "missing_local_backend",
+            Self::CredentialNotConfigured => "credential_not_configured",
+            Self::CredentialEnvMissing => "credential_env_missing",
+            Self::CredentialInvalid => "credential_invalid",
+            Self::CooldownActive => "cooldown_active",
+            Self::NotBuilt => "not_built",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Human-readable display name for CLI / logging.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::UnknownProvider => "Unknown provider",
+            Self::DisabledByUser => "Disabled by user",
+            Self::MissingApiKey => "Missing API key",
+            Self::MissingSearxngConfig => "SearXNG not configured",
+            Self::MissingBaseUrl => "Missing base URL",
+            Self::InvalidBaseUrl => "Invalid base URL",
+            Self::MissingLocalBackend => "Local backend not available",
+            Self::CredentialNotConfigured => "Credential not configured",
+            Self::CredentialEnvMissing => "Credential environment variable not set",
+            Self::CredentialInvalid => "Credential invalid (empty)",
+            Self::CooldownActive => "Cooldown active",
+            Self::NotBuilt => "Not built",
+            Self::Unknown => "Unknown",
+        }
+    }
+}
+
 /// Full descriptor for a built-in provider, returned by
 /// `provider_status` and the `eggsearch providers` CLI.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -433,6 +507,9 @@ pub struct ProviderDescriptor {
     /// Human-readable reason if not routable.
     #[serde(default)]
     pub skip_reason: Option<String>,
+    /// Machine-actionable skip code for programmatic handling.
+    #[serde(default)]
+    pub skip_code: Option<ProviderSkipCode>,
 }
 
 /// Build a [`ProviderDescriptor`] for a known provider id.
@@ -447,6 +524,7 @@ pub fn built_in_provider_descriptor(
     configured: bool,
     routable: bool,
     skip_reason: Option<String>,
+    skip_code: Option<ProviderSkipCode>,
 ) -> Option<ProviderDescriptor> {
     match id {
         "duckduckgo" => Some(ProviderDescriptor {
@@ -460,6 +538,7 @@ pub fn built_in_provider_descriptor(
             capabilities: ProviderCapabilities::none(),
             routable,
             skip_reason,
+            skip_code,
         }),
         "brave" => Some(ProviderDescriptor {
             id: "brave".into(),
@@ -472,6 +551,7 @@ pub fn built_in_provider_descriptor(
             capabilities: ProviderCapabilities::none(),
             routable,
             skip_reason,
+            skip_code,
         }),
         "startpage" => Some(ProviderDescriptor {
             id: "startpage".into(),
@@ -484,6 +564,7 @@ pub fn built_in_provider_descriptor(
             capabilities: ProviderCapabilities::none(),
             routable,
             skip_reason,
+            skip_code,
         }),
         "yahoo" => Some(ProviderDescriptor {
             id: "yahoo".into(),
@@ -496,6 +577,7 @@ pub fn built_in_provider_descriptor(
             capabilities: ProviderCapabilities::none(),
             routable,
             skip_reason,
+            skip_code,
         }),
         "mojeek" => Some(ProviderDescriptor {
             id: "mojeek".into(),
@@ -508,6 +590,7 @@ pub fn built_in_provider_descriptor(
             capabilities: ProviderCapabilities::none(),
             routable,
             skip_reason,
+            skip_code,
         }),
         "searxng" => Some(ProviderDescriptor {
             id: "searxng".into(),
@@ -545,6 +628,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "brave_api" => Some(ProviderDescriptor {
             id: "brave_api".into(),
@@ -582,6 +666,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "github_code" => Some(ProviderDescriptor {
             id: "github_code".into(),
@@ -619,6 +704,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "github_issues" => Some(ProviderDescriptor {
             id: "github_issues".into(),
@@ -656,6 +742,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "github_releases" => Some(ProviderDescriptor {
             id: "github_releases".into(),
@@ -693,6 +780,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "gitlab_code" => Some(ProviderDescriptor {
             id: "gitlab_code".into(),
@@ -730,6 +818,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "gitlab_issues" => Some(ProviderDescriptor {
             id: "gitlab_issues".into(),
@@ -767,6 +856,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "gitlab_releases" => Some(ProviderDescriptor {
             id: "gitlab_releases".into(),
@@ -804,6 +894,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "gitea_code" => Some(ProviderDescriptor {
             id: "gitea_code".into(),
@@ -841,6 +932,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "gitea_issues" => Some(ProviderDescriptor {
             id: "gitea_issues".into(),
@@ -878,6 +970,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "gitea_releases" => Some(ProviderDescriptor {
             id: "gitea_releases".into(),
@@ -915,6 +1008,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "osv" => Some(ProviderDescriptor {
             id: "osv".into(),
@@ -952,6 +1046,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "github_advisory" => Some(ProviderDescriptor {
             id: "github_advisory".into(),
@@ -989,6 +1084,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "nvd" => Some(ProviderDescriptor {
             id: "nvd".into(),
@@ -1026,6 +1122,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "cisa_kev" => Some(ProviderDescriptor {
             id: "cisa_kev".into(),
@@ -1063,6 +1160,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "rustsec" => Some(ProviderDescriptor {
             id: "rustsec".into(),
@@ -1100,6 +1198,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "crates_io" => Some(ProviderDescriptor {
             id: "crates_io".into(),
@@ -1137,6 +1236,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "pypi" => Some(ProviderDescriptor {
             id: "pypi".into(),
@@ -1174,6 +1274,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "npm_registry" => Some(ProviderDescriptor {
             id: "npm_registry".into(),
@@ -1211,6 +1312,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "go_pkg" => Some(ProviderDescriptor {
             id: "go_pkg".into(),
@@ -1248,6 +1350,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "maven_central" => Some(ProviderDescriptor {
             id: "maven_central".into(),
@@ -1285,6 +1388,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "nuget" => Some(ProviderDescriptor {
             id: "nuget".into(),
@@ -1322,6 +1426,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "rubygems" => Some(ProviderDescriptor {
             id: "rubygems".into(),
@@ -1359,6 +1464,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "packagist" => Some(ProviderDescriptor {
             id: "packagist".into(),
@@ -1396,6 +1502,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "local_workspace" => Some(ProviderDescriptor {
             id: "local_workspace".into(),
@@ -1433,6 +1540,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "openalex" => Some(ProviderDescriptor {
             id: "openalex".into(),
@@ -1470,6 +1578,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "crossref" => Some(ProviderDescriptor {
             id: "crossref".into(),
@@ -1507,6 +1616,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "semantic_scholar" => Some(ProviderDescriptor {
             id: "semantic_scholar".into(),
@@ -1544,6 +1654,7 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         "sourcegraph" => Some(ProviderDescriptor {
             id: "sourcegraph".into(),
@@ -1581,9 +1692,50 @@ pub fn built_in_provider_descriptor(
             },
             routable,
             skip_reason,
+            skip_code,
         }),
         _ => None,
     }
+}
+
+/// Compute the correct [`ProviderSkipCode`] for a non-routable provider.
+///
+/// Returns `None` when `routable` is true.
+pub fn provider_skip_code(
+    id: &str,
+    kind: ProviderKind,
+    is_known: bool,
+    is_enabled: bool,
+    configured: bool,
+    searxng_configured: bool,
+    routable: bool,
+) -> Option<ProviderSkipCode> {
+    if routable {
+        return None;
+    }
+    if !is_known {
+        return Some(ProviderSkipCode::NotBuilt);
+    }
+    if !is_enabled {
+        return Some(ProviderSkipCode::DisabledByUser);
+    }
+    if !configured {
+        match kind {
+            ProviderKind::Local => {
+                return Some(ProviderSkipCode::MissingLocalBackend);
+            }
+            ProviderKind::ApiKey => {
+                return Some(ProviderSkipCode::MissingApiKey);
+            }
+            _ => {
+                if id.contains("searxng") && !searxng_configured {
+                    return Some(ProviderSkipCode::MissingSearxngConfig);
+                }
+                return Some(ProviderSkipCode::Unknown);
+            }
+        }
+    }
+    Some(ProviderSkipCode::Unknown)
 }
 
 #[cfg(test)]
@@ -1593,7 +1745,7 @@ mod tests {
     #[test]
     fn known_provider_ids_are_all_describable() {
         for id in KNOWN_PROVIDER_IDS {
-            let desc = built_in_provider_descriptor(id, true, false, true, false, None)
+            let desc = built_in_provider_descriptor(id, true, false, true, false, None, None)
                 .expect("known id should have descriptor");
             assert_eq!(desc.id, *id);
         }
@@ -1601,7 +1753,9 @@ mod tests {
 
     #[test]
     fn unknown_provider_returns_none() {
-        assert!(built_in_provider_descriptor("ghost", true, false, true, false, None).is_none());
+        assert!(
+            built_in_provider_descriptor("ghost", true, false, true, false, None, None).is_none()
+        );
     }
 
     #[test]
@@ -1612,7 +1766,8 @@ mod tests {
 
     #[test]
     fn capabilities_summary_searxng() {
-        let desc = built_in_provider_descriptor("searxng", true, false, true, false, None).unwrap();
+        let desc =
+            built_in_provider_descriptor("searxng", true, false, true, false, None, None).unwrap();
         let summary = desc.capabilities.summary();
         // SearXNG adapter only forwards hardcoded en-US/general params;
         // no capability flags are set because none are actually passed through.
@@ -1622,27 +1777,30 @@ mod tests {
     #[test]
     fn searxng_configured_false_when_disabled() {
         let desc =
-            built_in_provider_descriptor("searxng", false, false, true, false, None).unwrap();
+            built_in_provider_descriptor("searxng", false, false, true, false, None, None).unwrap();
         assert!(!desc.configured);
     }
 
     #[test]
     fn searxng_configured_true_when_enabled_and_configured() {
-        let desc = built_in_provider_descriptor("searxng", true, false, true, false, None).unwrap();
+        let desc =
+            built_in_provider_descriptor("searxng", true, false, true, false, None, None).unwrap();
         assert!(desc.configured);
     }
 
     #[test]
     fn duckduckgo_descriptor_configured_false_when_disabled() {
         let desc =
-            built_in_provider_descriptor("duckduckgo", false, false, true, false, None).unwrap();
+            built_in_provider_descriptor("duckduckgo", false, false, true, false, None, None)
+                .unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }
 
     #[test]
     fn osv_descriptor_configured_false_when_disabled() {
-        let desc = built_in_provider_descriptor("osv", false, false, true, false, None).unwrap();
+        let desc =
+            built_in_provider_descriptor("osv", false, false, true, false, None, None).unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }
@@ -1679,8 +1837,8 @@ mod tests {
 
     #[test]
     fn provider_descriptor_serde_roundtrip() {
-        let desc =
-            built_in_provider_descriptor("duckduckgo", true, true, true, false, None).unwrap();
+        let desc = built_in_provider_descriptor("duckduckgo", true, true, true, false, None, None)
+            .unwrap();
         let json = serde_json::to_string(&desc).unwrap();
         let parsed: ProviderDescriptor = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, desc.id);
@@ -1692,7 +1850,7 @@ mod tests {
 
     #[test]
     fn brave_api_descriptor_is_api_key_kind() {
-        let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None)
+        let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None, None)
             .expect("brave_api should have descriptor");
         assert_eq!(desc.id, "brave_api");
         assert_eq!(desc.display_name, "Brave Search API");
@@ -1705,16 +1863,16 @@ mod tests {
 
     #[test]
     fn brave_api_descriptor_configured_false_when_disabled() {
-        let desc =
-            built_in_provider_descriptor("brave_api", false, false, true, false, None).unwrap();
+        let desc = built_in_provider_descriptor("brave_api", false, false, true, false, None, None)
+            .unwrap();
         assert!(!desc.configured);
         assert!(!desc.enabled);
     }
 
     #[test]
     fn brave_api_descriptor_capabilities() {
-        let desc =
-            built_in_provider_descriptor("brave_api", true, false, true, false, None).unwrap();
+        let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None, None)
+            .unwrap();
         // Brave API adapter only forwards q and count; safe_search,
         // freshness, language, and region are not passed through.
         assert!(!desc.capabilities.supports_safe_search);
@@ -1727,8 +1885,8 @@ mod tests {
 
     #[test]
     fn brave_api_capabilities_summary() {
-        let desc =
-            built_in_provider_descriptor("brave_api", true, false, true, false, None).unwrap();
+        let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None, None)
+            .unwrap();
         let summary = desc.capabilities.summary();
         assert_eq!(summary, "basic");
     }
@@ -1888,7 +2046,8 @@ mod tests {
     #[test]
     fn github_issues_supports_result_timestamps_but_not_freshness() {
         let desc =
-            built_in_provider_descriptor("github_issues", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("github_issues", true, false, true, false, None, None)
+                .unwrap();
         // Provider-side: false. The /search/issues endpoint does not
         // accept a freshness parameter.
         assert!(!desc.capabilities.supports_freshness);
@@ -1899,8 +2058,9 @@ mod tests {
 
     #[test]
     fn github_releases_supports_result_timestamps_but_not_freshness() {
-        let desc = built_in_provider_descriptor("github_releases", true, false, true, false, None)
-            .unwrap();
+        let desc =
+            built_in_provider_descriptor("github_releases", true, false, true, false, None, None)
+                .unwrap();
         assert!(!desc.capabilities.supports_freshness);
         assert!(desc.capabilities.supports_result_timestamps);
     }
@@ -1908,7 +2068,8 @@ mod tests {
     #[test]
     fn github_code_supports_neither_freshness_flag() {
         let desc =
-            built_in_provider_descriptor("github_code", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("github_code", true, false, true, false, None, None)
+                .unwrap();
         assert!(!desc.capabilities.supports_freshness);
         assert!(!desc.capabilities.supports_result_timestamps);
     }
@@ -1916,7 +2077,8 @@ mod tests {
     #[test]
     fn html_scrape_providers_supports_neither_freshness_flag() {
         for id in ["duckduckgo", "brave", "startpage", "yahoo", "mojeek"] {
-            let desc = built_in_provider_descriptor(id, true, false, true, false, None).unwrap();
+            let desc =
+                built_in_provider_descriptor(id, true, false, true, false, None, None).unwrap();
             assert!(
                 !desc.capabilities.supports_freshness,
                 "{id} should not advertise provider-side freshness"
@@ -1935,8 +2097,8 @@ mod tests {
 
     #[test]
     fn gitea_code_capabilities_are_conservative() {
-        let desc =
-            built_in_provider_descriptor("gitea_code", true, false, true, false, None).unwrap();
+        let desc = built_in_provider_descriptor("gitea_code", true, false, true, false, None, None)
+            .unwrap();
         assert!(desc.capabilities.supports_code_search);
         // Gitea global search API does not support repo/path/language filters.
         assert!(!desc.capabilities.supports_repo_filter);
@@ -1952,7 +2114,8 @@ mod tests {
     #[test]
     fn gitea_issues_capabilities_are_conservative() {
         let desc =
-            built_in_provider_descriptor("gitea_issues", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("gitea_issues", true, false, true, false, None, None)
+                .unwrap();
         assert!(desc.capabilities.supports_issue_search);
         assert!(desc.capabilities.supports_result_timestamps);
         // Gitea issues search does not support repo/language filters.
@@ -1967,7 +2130,8 @@ mod tests {
     #[test]
     fn gitea_releases_capabilities_are_conservative() {
         let desc =
-            built_in_provider_descriptor("gitea_releases", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("gitea_releases", true, false, true, false, None, None)
+                .unwrap();
         assert!(desc.capabilities.supports_release_search);
         assert!(desc.capabilities.supports_result_timestamps);
         // Gitea releases API does not support repo/language/code search.
@@ -1981,21 +2145,24 @@ mod tests {
 
     #[test]
     fn forgejo_providers_share_gitea_descriptors() {
-        let code =
-            built_in_provider_descriptor("gitea_code", true, false, true, false, None).unwrap();
+        let code = built_in_provider_descriptor("gitea_code", true, false, true, false, None, None)
+            .unwrap();
         assert!(code.capabilities.supports_code_search);
         let issues =
-            built_in_provider_descriptor("gitea_issues", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("gitea_issues", true, false, true, false, None, None)
+                .unwrap();
         assert!(issues.capabilities.supports_issue_search);
         let releases =
-            built_in_provider_descriptor("gitea_releases", true, false, true, false, None).unwrap();
+            built_in_provider_descriptor("gitea_releases", true, false, true, false, None, None)
+                .unwrap();
         assert!(releases.capabilities.supports_release_search);
     }
 
     #[test]
     fn gitea_providers_do_not_claim_tree_or_repo_map() {
         for id in ["gitea_code", "gitea_issues", "gitea_releases"] {
-            let desc = built_in_provider_descriptor(id, true, false, true, false, None).unwrap();
+            let desc =
+                built_in_provider_descriptor(id, true, false, true, false, None, None).unwrap();
             // None of these flags exist in ProviderCapabilities currently,
             // but if they are added, they must not be claimed for Gitea.
             assert!(
@@ -2018,7 +2185,7 @@ mod tests {
     #[test]
     fn api_provider_ids_match_requires_api_key() {
         for id in API_PROVIDER_IDS {
-            let desc = built_in_provider_descriptor(id, true, false, true, false, None)
+            let desc = built_in_provider_descriptor(id, true, false, true, false, None, None)
                 .expect("known API provider");
             assert!(
                 desc.requires_api_key,
@@ -2044,5 +2211,176 @@ mod tests {
         assert!(!is_api_provider("searxng"));
         assert!(!is_api_provider("local_workspace"));
         assert!(!is_api_provider("nonexistent"));
+    }
+
+    #[test]
+    fn provider_skip_code_serde_roundtrip() {
+        let variants = [
+            ProviderSkipCode::UnknownProvider,
+            ProviderSkipCode::DisabledByUser,
+            ProviderSkipCode::MissingApiKey,
+            ProviderSkipCode::MissingSearxngConfig,
+            ProviderSkipCode::MissingBaseUrl,
+            ProviderSkipCode::InvalidBaseUrl,
+            ProviderSkipCode::MissingLocalBackend,
+            ProviderSkipCode::CredentialNotConfigured,
+            ProviderSkipCode::CredentialEnvMissing,
+            ProviderSkipCode::CredentialInvalid,
+            ProviderSkipCode::CooldownActive,
+            ProviderSkipCode::NotBuilt,
+            ProviderSkipCode::Unknown,
+        ];
+        for variant in &variants {
+            let json = serde_json::to_string(variant).unwrap();
+            let parsed: ProviderSkipCode = serde_json::from_str(&json).unwrap();
+            assert_eq!(&parsed, variant, "roundtrip failed for {json}");
+        }
+    }
+
+    #[test]
+    fn provider_skip_code_as_str_matches_serialized_form() {
+        let variants = [
+            ProviderSkipCode::UnknownProvider,
+            ProviderSkipCode::DisabledByUser,
+            ProviderSkipCode::MissingApiKey,
+            ProviderSkipCode::MissingSearxngConfig,
+            ProviderSkipCode::MissingBaseUrl,
+            ProviderSkipCode::InvalidBaseUrl,
+            ProviderSkipCode::MissingLocalBackend,
+            ProviderSkipCode::CredentialNotConfigured,
+            ProviderSkipCode::CredentialEnvMissing,
+            ProviderSkipCode::CredentialInvalid,
+            ProviderSkipCode::CooldownActive,
+            ProviderSkipCode::NotBuilt,
+            ProviderSkipCode::Unknown,
+        ];
+        for variant in &variants {
+            let json = serde_json::to_string(variant).unwrap();
+            let expected = format!("\"{}\"", variant.as_str());
+            assert_eq!(json, expected, "as_str mismatch for {variant:?}");
+        }
+    }
+
+    #[test]
+    fn provider_skip_code_display_name_non_empty() {
+        let variants = [
+            ProviderSkipCode::UnknownProvider,
+            ProviderSkipCode::DisabledByUser,
+            ProviderSkipCode::MissingApiKey,
+            ProviderSkipCode::MissingSearxngConfig,
+            ProviderSkipCode::MissingBaseUrl,
+            ProviderSkipCode::InvalidBaseUrl,
+            ProviderSkipCode::MissingLocalBackend,
+            ProviderSkipCode::CredentialNotConfigured,
+            ProviderSkipCode::CredentialEnvMissing,
+            ProviderSkipCode::CredentialInvalid,
+            ProviderSkipCode::CooldownActive,
+            ProviderSkipCode::NotBuilt,
+            ProviderSkipCode::Unknown,
+        ];
+        for variant in &variants {
+            let name = variant.display_name();
+            assert!(!name.is_empty(), "display_name is empty for {variant:?}");
+        }
+    }
+
+    #[test]
+    fn provider_skip_code_routable_returns_none() {
+        let result = provider_skip_code(
+            "duckduckgo",
+            ProviderKind::HtmlScrape,
+            true,
+            true,
+            true,
+            false,
+            true,
+        );
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn provider_skip_code_unknown_provider_not_built() {
+        let result = provider_skip_code(
+            "nonexistent",
+            ProviderKind::HtmlScrape,
+            false,
+            true,
+            true,
+            false,
+            false,
+        );
+        assert_eq!(result, Some(ProviderSkipCode::NotBuilt));
+    }
+
+    #[test]
+    fn provider_skip_code_disabled_by_user() {
+        let result = provider_skip_code(
+            "duckduckgo",
+            ProviderKind::HtmlScrape,
+            true,
+            false,
+            true,
+            false,
+            false,
+        );
+        assert_eq!(result, Some(ProviderSkipCode::DisabledByUser));
+    }
+
+    #[test]
+    fn provider_skip_code_missing_searxng_config() {
+        let result = provider_skip_code(
+            "searxng",
+            ProviderKind::JsonApi,
+            true,
+            true,
+            false,
+            false,
+            false,
+        );
+        assert_eq!(result, Some(ProviderSkipCode::MissingSearxngConfig));
+    }
+
+    #[test]
+    fn provider_skip_code_missing_api_key() {
+        let result = provider_skip_code(
+            "brave_api",
+            ProviderKind::ApiKey,
+            true,
+            true,
+            false,
+            false,
+            false,
+        );
+        assert_eq!(result, Some(ProviderSkipCode::MissingApiKey));
+    }
+
+    #[test]
+    fn provider_skip_code_missing_local_backend() {
+        let result = provider_skip_code(
+            "local_workspace",
+            ProviderKind::Local,
+            true,
+            true,
+            false,
+            false,
+            false,
+        );
+        assert_eq!(result, Some(ProviderSkipCode::MissingLocalBackend));
+    }
+
+    #[test]
+    fn provider_descriptor_with_skip_code() {
+        let desc = built_in_provider_descriptor(
+            "duckduckgo",
+            true,
+            true,
+            true,
+            true,
+            None,
+            Some(ProviderSkipCode::DisabledByUser),
+        )
+        .unwrap();
+        assert_eq!(desc.skip_code, Some(ProviderSkipCode::DisabledByUser));
+        assert!(desc.routable);
     }
 }

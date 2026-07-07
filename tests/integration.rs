@@ -4713,7 +4713,7 @@ fn provider_status_github_code_descriptor_shape() {
 fn github_code_provider_descriptor_known() {
     use eggsearch::core::provider::built_in_provider_descriptor;
 
-    let desc = built_in_provider_descriptor("github_code", true, false, true, false, None)
+    let desc = built_in_provider_descriptor("github_code", true, false, true, false, None, None)
         .expect("github_code should have descriptor");
     assert_eq!(desc.id, "github_code");
     assert_eq!(desc.display_name, "GitHub Code Search");
@@ -4735,7 +4735,7 @@ fn github_code_provider_descriptor_known() {
 fn github_code_provider_descriptor_unconfigured_when_disabled() {
     use eggsearch::core::provider::built_in_provider_descriptor;
 
-    let desc = built_in_provider_descriptor("github_code", false, false, true, false, None)
+    let desc = built_in_provider_descriptor("github_code", false, false, true, false, None, None)
         .expect("github_code should have descriptor");
     assert!(!desc.configured);
     assert!(!desc.enabled);
@@ -4746,7 +4746,8 @@ fn github_code_provider_descriptor_unconfigured_when_disabled() {
 fn github_code_capabilities_summary() {
     use eggsearch::core::provider::built_in_provider_descriptor;
 
-    let desc = built_in_provider_descriptor("github_code", true, false, true, false, None).unwrap();
+    let desc =
+        built_in_provider_descriptor("github_code", true, false, true, false, None, None).unwrap();
     let summary = desc.capabilities.summary();
     assert!(summary.contains("code_search"));
     assert!(summary.contains("repo_filter"));
@@ -18580,4 +18581,93 @@ async fn web_search_response_has_query_and_mode() {
         v["providers_failed"].as_array().is_some(),
         "response must have providers_failed array"
     );
+}
+
+#[test]
+fn provider_status_includes_skip_code_field() {
+    let state = state_with_default();
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let arr = v["providers"].as_array().expect("providers is array");
+    for p in arr {
+        let id = p["id"].as_str().unwrap_or("");
+        let skip_code = &p["skip_code"];
+        assert!(
+            skip_code.is_string() || skip_code.is_null(),
+            "provider {id}: skip_code must be a string or null, got: {skip_code}"
+        );
+    }
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn provider_status_disabled_provider_has_disabled_by_user_skip_code() {
+    let engines = vec![MockEngine::success("duckduckgo", vec![])];
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("duckduckgo".to_string(), true);
+    cfg.search.providers.insert("brave".to_string(), false);
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        eggsearch::meta::mock::mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let state = Arc::new(eggsearch::mcp::state::ServerState::with_adapter(
+        cfg,
+        Arc::new(adapter),
+    ));
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let arr = v["providers"].as_array().unwrap();
+    let brave = arr
+        .iter()
+        .find(|p| p["id"].as_str() == Some("brave"))
+        .expect("brave should be present");
+    assert_eq!(brave["skip_code"], "disabled_by_user");
+    assert_eq!(brave["routable"], false);
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn provider_status_routable_provider_has_null_skip_code() {
+    let engines = vec![MockEngine::success("duckduckgo", vec![])];
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    cfg.search.providers.clear();
+    cfg.search.providers.insert("duckduckgo".to_string(), true);
+    let adapter = eggsearch::meta::MetadataSearchAdapter::from_engines(
+        eggsearch::meta::mock::mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let state = Arc::new(eggsearch::mcp::state::ServerState::with_adapter(
+        cfg,
+        Arc::new(adapter),
+    ));
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let arr = v["providers"].as_array().unwrap();
+    let ddg = arr
+        .iter()
+        .find(|p| p["id"].as_str() == Some("duckduckgo"))
+        .expect("duckduckgo should be present");
+    assert_eq!(ddg["skip_code"], serde_json::Value::Null);
+    assert_eq!(ddg["routable"], true);
 }

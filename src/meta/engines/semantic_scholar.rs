@@ -364,8 +364,9 @@ mod tests {
     fn test_semantic_scholar_provider_descriptor() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("semantic_scholar", true, false, true, false, None)
-            .unwrap();
+        let desc =
+            built_in_provider_descriptor("semantic_scholar", true, false, true, false, None, None)
+                .unwrap();
         assert_eq!(desc.id, "semantic_scholar");
         assert_eq!(desc.display_name, "Semantic Scholar");
         assert_eq!(desc.kind, crate::core::provider::ProviderKind::ApiKey);

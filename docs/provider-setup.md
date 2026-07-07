@@ -363,7 +363,7 @@ Search profiles (`generic`, `coding`, `security`, `research`) have their own pro
 
 ### Misconfigured Defaults
 
-If a provider listed in `default_providers` is disabled or lacks a valid API key, eggsearch emits a startup warning. Run `eggsearch doctor` to diagnose configuration issues.
+If a provider listed in `default_providers` is disabled or lacks a valid API key, eggsearch emits a startup warning. Run `eggsearch doctor` to diagnose configuration issues. Each skipped provider includes a `skip_code` (e.g. `missing_api_key`, `disabled_by_user`, `missing_searxng_config`) for machine-readable diagnostics alongside the human-readable `skip_reason`.
 
 ## Troubleshooting
 

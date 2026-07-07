@@ -486,7 +486,8 @@ mod tests {
     fn test_provider_descriptor() {
         use crate::core::provider::built_in_provider_descriptor;
 
-        let desc = built_in_provider_descriptor("nvd", true, false, true, false, None).unwrap();
+        let desc =
+            built_in_provider_descriptor("nvd", true, false, true, false, None, None).unwrap();
         assert_eq!(desc.id, "nvd");
         assert!(desc.capabilities.supports_security_search);
         assert!(desc.capabilities.supports_advisory_lookup_by_id);
