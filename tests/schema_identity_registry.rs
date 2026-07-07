@@ -1846,10 +1846,7 @@ fn web_fetch_response_raw_text_metadata_present_when_raw_text_present() {
     assert_eq!(json["raw_text"], "hello raw");
     assert_eq!(json["raw_text_chars_returned"], 9);
     assert!(
-        !json
-            .as_object()
-            .unwrap()
-            .contains_key("raw_text_truncated"),
+        !json.as_object().unwrap().contains_key("raw_text_truncated"),
         "raw_text_truncated should be omitted when false (skip_serializing_if)"
     );
     assert_eq!(json["raw_text_cap"], 50000);
@@ -1896,10 +1893,7 @@ fn web_fetch_response_raw_text_metadata_absent_when_raw_text_none() {
         "raw_text_chars_returned should be absent when None"
     );
     assert!(
-        !json
-            .as_object()
-            .unwrap()
-            .contains_key("raw_text_cap"),
+        !json.as_object().unwrap().contains_key("raw_text_cap"),
         "raw_text_cap should be absent when None"
     );
 }
@@ -1934,10 +1928,7 @@ fn web_fetch_response_raw_text_truncated_omitted_when_false() {
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
-        !json
-            .as_object()
-            .unwrap()
-            .contains_key("raw_text_truncated"),
+        !json.as_object().unwrap().contains_key("raw_text_truncated"),
         "raw_text_truncated should be omitted when false"
     );
 }

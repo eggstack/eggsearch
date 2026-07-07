@@ -1292,10 +1292,18 @@ pub fn run_provider_status(
         state.local_backend.is_some(),
     );
 
+    // Build per-provider health views for direct embedding
+    let health_registry = state.adapter.health();
+    let health_views: std::collections::BTreeMap<String, _> = descriptors
+        .iter()
+        .map(|d| (d.id.clone(), health_registry.health_view(&d.id)))
+        .collect();
+
     let payload = serde_json::json!({
         "providers": descriptors,
         "code_hosts": code_hosts,
         "health": health_snapshots,
+        "health_views": health_views,
         "probe": if args.probe {
             serde_json::json!({
                 "requested": true,

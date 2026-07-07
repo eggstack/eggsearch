@@ -192,13 +192,46 @@ The planner rewrites queries based on intent:
 
 ## Provider Health
 
-The adapter tracks per-provider health:
-- Success/failure counts
-- Response time statistics
-- Capability enforcement telemetry
-- Routing decisions (which providers were selected and why)
+The adapter tracks per-provider health via `ProviderHealthRegistry` (process-local, `Mutex<BTreeMap>`):
 
-Health data surfaces through `provider_status` tool and structured warnings. Each skipped provider includes both a human-readable `skip_reason` and a machine-readable `skip_code` (a stable snake_case string from the `ProviderSkipCode` enum) for programmatic diagnostics.
+### Health Recording
+
+After every search call (`web_search`, `repo_search`, `security_search`, `research_search`), the adapter records success or failure per provider:
+- **Success**: resets `consecutive_failures` to 0, clears cooldown, records latency.
+- **Failure**: increments `consecutive_failures`, records failure class and message (bounded to 512 chars).
+
+### Cooldown
+
+After 3 consecutive failures (`COOLDOWN_THRESHOLD`), a provider enters cooldown:
+- **Rate-limited**: 60s cooldown
+- **Timeout**: 15s cooldown
+- **Transport/NetworkError**: 30s cooldown
+- **Panic**: 30s cooldown (mapped from dispatch panics)
+
+Cooldown is cleared immediately on any success. Cooled-down providers are skipped for profile/default routing but **never** skipped for explicitly requested providers.
+
+### Failure Classes
+
+`FailureClass` enum: `Timeout`, `HttpStatus`, `ParseError`, `NetworkError`, `RateLimited`, `Panic`, `Unknown`.
+
+Panics are detected by matching `"panicked during dispatch"` in `EngineError::NetworkError` reason strings (produced by `catch_unwind` in adapter/dispatch).
+
+### Health Surfaces
+
+| Surface | What it returns |
+|---------|----------------|
+| `provider_status` tool | `health_views` (per-provider `ProviderHealthView` with status, error class/message, timestamps, cooldown) + `health` (snapshots) |
+| CLI `providers` command | Health column per provider (JSON and table mode) |
+| `provider_diagnostics.rs` | `ProviderHealthView` type with `status`, `consecutive_failures`, `last_error_class`, `last_error_message`, `cooldown_until`, `cooldown_reason`, `last_latency_ms`, `last_success_at`, `last_failure_at` |
+
+### Health Statuses
+
+`ProviderHealthStatus` enum: `Healthy`, `Degraded`, `Cooldown`, `Unknown`.
+
+- `Healthy`: at least one success recorded, no active cooldown
+- `Degraded`: consecutive failures > 0 but below threshold
+- `Cooldown`: 3+ consecutive failures, cooldown active
+- `Unknown`: no health data recorded yet
 
 ---
 

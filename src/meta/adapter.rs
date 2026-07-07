@@ -56,6 +56,8 @@ pub enum ErrorClass {
     NetworkError,
     /// The engine returned HTTP 429 (rate-limited).
     RateLimited,
+    /// The provider task panicked during dispatch.
+    Panic,
     /// Unclassified failure.
     Unknown,
 }
@@ -69,6 +71,7 @@ impl ErrorClass {
             Self::ParseError => "parse_error",
             Self::NetworkError => "network_error",
             Self::RateLimited => "rate_limited",
+            Self::Panic => "panic",
             Self::Unknown => "unknown",
         }
     }
@@ -81,6 +84,9 @@ fn classify(err: &EngineError) -> ErrorClass {
         BadStatus { status, .. } if *status == 429 => ErrorClass::RateLimited,
         BadStatus { .. } => ErrorClass::HttpStatus,
         ParseFailed { .. } => ErrorClass::ParseError,
+        NetworkError { reason, .. } if reason.contains("panicked during dispatch") => {
+            ErrorClass::Panic
+        }
         Http { .. } | NetworkError { .. } => ErrorClass::NetworkError,
     }
 }

@@ -2295,8 +2295,7 @@ fn outline_titles_contain_heading_text() {
 <h2>Second Level</h2>
 <p>More content.</p>
 </body></html>"#;
-    let (_, _, rendered, _, _) =
-        render_blocks(html, "https://example.com/", 10000, false);
+    let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
     assert!(
         !rendered.outline.is_empty(),
         "should have outline entries from headings"

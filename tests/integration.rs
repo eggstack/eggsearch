@@ -1950,7 +1950,9 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
         "MCP output must not include raw_text: {v:?}"
     );
     assert!(
-        !v.as_object().unwrap().contains_key("raw_text_chars_returned"),
+        !v.as_object()
+            .unwrap()
+            .contains_key("raw_text_chars_returned"),
         "MCP output must not include raw_text_chars_returned: {v:?}"
     );
     assert!(

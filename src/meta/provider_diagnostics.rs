@@ -29,8 +29,33 @@ pub enum FailureClass {
     NetworkError,
     /// The engine returned HTTP 429 (rate-limited).
     RateLimited,
+    /// The provider task panicked during dispatch.
+    Panic,
     /// Unclassified failure.
     Unknown,
+}
+
+/// Maximum length for error messages exposed through health snapshots.
+const MAX_ERROR_MESSAGE_LEN: usize = 512;
+
+/// Bound an error message string for safe exposure in MCP/CLI output.
+///
+/// Strips control characters, truncates to [`MAX_ERROR_MESSAGE_LEN`],
+/// and returns `None` for empty strings.
+pub fn bound_error_message(msg: &str) -> Option<String> {
+    let cleaned: String = msg
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n')
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        None
+    } else if trimmed.chars().count() > MAX_ERROR_MESSAGE_LEN {
+        let truncated: String = trimmed.chars().take(MAX_ERROR_MESSAGE_LEN).collect();
+        Some(format!("{truncated}…"))
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 impl FailureClass {
@@ -42,6 +67,7 @@ impl FailureClass {
             Self::ParseError => "parse_error",
             Self::NetworkError => "network_error",
             Self::RateLimited => "rate_limited",
+            Self::Panic => "panic",
             Self::Unknown => "unknown",
         }
     }
@@ -55,6 +81,7 @@ impl FailureClass {
             "parse_error" => Self::ParseError,
             "network_error" => Self::NetworkError,
             "rate_limited" => Self::RateLimited,
+            "panic" => Self::Panic,
             _ => Self::Unknown,
         }
     }
@@ -68,6 +95,7 @@ impl From<crate::meta::adapter::ErrorClass> for FailureClass {
             crate::meta::adapter::ErrorClass::ParseError => Self::ParseError,
             crate::meta::adapter::ErrorClass::NetworkError => Self::NetworkError,
             crate::meta::adapter::ErrorClass::RateLimited => Self::RateLimited,
+            crate::meta::adapter::ErrorClass::Panic => Self::Panic,
             crate::meta::adapter::ErrorClass::Unknown => Self::Unknown,
         }
     }
@@ -85,6 +113,40 @@ pub enum ProviderHealthStatus {
     Cooldown,
     /// No health data recorded yet.
     Unknown,
+}
+
+/// A compact per-provider health view embedded in provider descriptors.
+///
+/// Distinct from [`ProviderHealthSnapshot`] which mixes config state
+/// (enabled, configured) with health. This view is purely health-focused
+/// and designed to be embedded in provider status output.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderHealthView {
+    /// Derived health status.
+    pub status: ProviderHealthStatus,
+    /// Number of consecutive failures (0 if last call succeeded).
+    pub consecutive_failures: u32,
+    /// Error class of the most recent failure, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error_class: Option<String>,
+    /// Bounded human-readable message of the most recent failure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error_message: Option<String>,
+    /// When the provider will exit cooldown, if in cooldown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_until: Option<String>,
+    /// Reason for the current cooldown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_reason: Option<String>,
+    /// Latency of the most recent call in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_latency_ms: Option<u64>,
+    /// When the last successful call occurred (ISO 8601 / RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_success_at: Option<String>,
+    /// When the last failed call occurred (ISO 8601 / RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_failure_at: Option<String>,
 }
 
 /// A serializable snapshot of a single provider's health state.
@@ -158,6 +220,36 @@ impl ProviderHealthEntry {
         }
         ProviderHealthStatus::Unknown
     }
+
+    fn view(&self, now: Instant) -> ProviderHealthView {
+        ProviderHealthView {
+            status: self.status(now),
+            consecutive_failures: self.consecutive_failures,
+            last_error_class: self.last_failure_class.map(|c| c.as_str().to_string()),
+            last_error_message: self
+                .last_failure_message
+                .as_deref()
+                .and_then(bound_error_message),
+            cooldown_until: self.cooldown_until.and_then(|until| {
+                if now < until {
+                    let remaining = until.duration_since(now).as_secs();
+                    Some(format!("{remaining}s"))
+                } else {
+                    None
+                }
+            }),
+            cooldown_reason: self.cooldown_reason.clone(),
+            last_latency_ms: self.last_latency_ms,
+            last_success_at: self.last_success_at.map(|t| {
+                let elapsed = t.elapsed().as_secs();
+                format!("{elapsed}s ago")
+            }),
+            last_failure_at: self.last_failure_at.map(|t| {
+                let elapsed = t.elapsed().as_secs();
+                format!("{elapsed}s ago")
+            }),
+        }
+    }
 }
 
 /// Default cooldown durations.
@@ -206,13 +298,14 @@ impl ProviderHealthRegistry {
         latency_ms: u64,
     ) {
         let now = Instant::now();
+        let bounded = bound_error_message(message);
         let mut entries = self.entries.lock().unwrap();
         let entry = entries
             .entry(provider_id.to_string())
             .or_insert_with(ProviderHealthEntry::new);
         entry.last_failure_at = Some(now);
         entry.last_failure_class = Some(failure_class);
-        entry.last_failure_message = Some(message.to_string());
+        entry.last_failure_message = bounded;
         entry.last_latency_ms = Some(latency_ms);
         entry.consecutive_failures += 1;
 
@@ -240,6 +333,26 @@ impl ProviderHealthRegistry {
             }
         }
         false
+    }
+
+    /// Get a compact health view for a single provider.
+    pub fn health_view(&self, provider_id: &str) -> ProviderHealthView {
+        let entries = self.entries.lock().unwrap();
+        let now = Instant::now();
+        entries
+            .get(provider_id)
+            .map(|e| e.view(now))
+            .unwrap_or(ProviderHealthView {
+                status: ProviderHealthStatus::Unknown,
+                consecutive_failures: 0,
+                last_error_class: None,
+                last_error_message: None,
+                cooldown_until: None,
+                cooldown_reason: None,
+                last_latency_ms: None,
+                last_success_at: None,
+                last_failure_at: None,
+            })
     }
 
     /// Get a serializable health snapshot for a single provider.
@@ -986,6 +1099,7 @@ mod tests {
             FailureClass::ParseError,
             FailureClass::NetworkError,
             FailureClass::RateLimited,
+            FailureClass::Panic,
             FailureClass::Unknown,
         ] {
             let s = class.as_str();
@@ -1623,5 +1737,164 @@ mod tests {
         assert!(telemetry
             .approximated
             .contains(&"primary_source_preference".to_string()));
+    }
+
+    // --- Provider health view tests ---
+
+    #[test]
+    fn health_view_unknown_when_no_data() {
+        let registry = ProviderHealthRegistry::new();
+        let view = registry.health_view("duckduckgo");
+        assert_eq!(view.status, ProviderHealthStatus::Unknown);
+        assert_eq!(view.consecutive_failures, 0);
+        assert!(view.last_error_class.is_none());
+        assert!(view.last_error_message.is_none());
+        assert!(view.cooldown_until.is_none());
+    }
+
+    #[test]
+    fn health_view_healthy_after_success() {
+        let registry = ProviderHealthRegistry::new();
+        registry.record_success("brave", 150);
+        let view = registry.health_view("brave");
+        assert_eq!(view.status, ProviderHealthStatus::Healthy);
+        assert_eq!(view.consecutive_failures, 0);
+        assert!(view.last_success_at.is_some());
+        assert!(view.last_error_class.is_none());
+    }
+
+    #[test]
+    fn health_view_degraded_after_failure() {
+        let registry = ProviderHealthRegistry::new();
+        registry.record_failure("brave", FailureClass::Timeout, "timed out", 5000);
+        let view = registry.health_view("brave");
+        assert_eq!(view.status, ProviderHealthStatus::Degraded);
+        assert_eq!(view.consecutive_failures, 1);
+        assert_eq!(view.last_error_class.as_deref(), Some("timeout"));
+        assert!(view.last_failure_at.is_some());
+    }
+
+    #[test]
+    fn health_view_cooldown_after_threshold() {
+        let registry = ProviderHealthRegistry::new();
+        for _ in 0..3 {
+            registry.record_failure("brave", FailureClass::RateLimited, "429", 100);
+        }
+        let view = registry.health_view("brave");
+        assert_eq!(view.status, ProviderHealthStatus::Cooldown);
+        assert_eq!(view.consecutive_failures, 3);
+        assert!(view.cooldown_until.is_some());
+        assert_eq!(view.cooldown_reason.as_deref(), Some("rate limited"));
+    }
+
+    #[test]
+    fn health_view_panic_failure_class() {
+        let registry = ProviderHealthRegistry::new();
+        registry.record_failure(
+            "brave",
+            FailureClass::Panic,
+            "task panicked during dispatch",
+            0,
+        );
+        let view = registry.health_view("brave");
+        assert_eq!(view.last_error_class.as_deref(), Some("panic"));
+    }
+
+    #[test]
+    fn health_view_success_clears_cooldown() {
+        let registry = ProviderHealthRegistry::new();
+        for _ in 0..3 {
+            registry.record_failure("brave", FailureClass::Timeout, "timed out", 100);
+        }
+        registry.record_success("brave", 200);
+        let view = registry.health_view("brave");
+        assert_eq!(view.status, ProviderHealthStatus::Healthy);
+        assert!(view.cooldown_until.is_none());
+        assert!(view.cooldown_reason.is_none());
+    }
+
+    // --- Error message bounding tests ---
+
+    #[test]
+    fn bound_error_message_short() {
+        assert_eq!(
+            bound_error_message("connection refused"),
+            Some("connection refused".to_string())
+        );
+    }
+
+    #[test]
+    fn bound_error_message_empty() {
+        assert_eq!(bound_error_message(""), None);
+        assert_eq!(bound_error_message("   "), None);
+    }
+
+    #[test]
+    fn bound_error_message_control_chars_stripped() {
+        let msg = "error\x00\x01\x02 with controls";
+        let result = bound_error_message(msg).unwrap();
+        assert!(!result.contains('\x00'));
+        assert!(!result.contains('\x01'));
+        assert!(!result.contains('\x02'));
+        assert!(result.contains("error"));
+        assert!(result.contains("with controls"));
+    }
+
+    #[test]
+    fn bound_error_message_truncated() {
+        let msg = "x".repeat(1000);
+        let result = bound_error_message(&msg).unwrap();
+        assert!(result.len() <= 515);
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn bound_error_message_exactly_at_limit() {
+        let msg = "a".repeat(512);
+        let result = bound_error_message(&msg).unwrap();
+        assert_eq!(result.len(), 512);
+        assert!(!result.ends_with('…'));
+    }
+
+    #[test]
+    fn bound_error_message_one_over_limit() {
+        let msg = "a".repeat(513);
+        let result = bound_error_message(&msg).unwrap();
+        assert!(result.len() <= 515);
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn record_failure_bounds_message() {
+        let registry = ProviderHealthRegistry::new();
+        let long_msg = "e".repeat(2000);
+        registry.record_failure("brave", FailureClass::NetworkError, &long_msg, 0);
+        let view = registry.health_view("brave");
+        let msg = view.last_error_message.unwrap();
+        assert!(msg.len() <= 515);
+        assert!(msg.ends_with('…'));
+    }
+
+    // --- ProviderHealthView serialization ---
+
+    #[test]
+    fn health_view_serialization() {
+        let view = ProviderHealthView {
+            status: ProviderHealthStatus::Healthy,
+            consecutive_failures: 0,
+            last_error_class: None,
+            last_error_message: None,
+            cooldown_until: None,
+            cooldown_reason: None,
+            last_latency_ms: Some(150),
+            last_success_at: Some("5s ago".to_string()),
+            last_failure_at: None,
+        };
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("healthy"));
+        assert!(json.contains("150"));
+        let parsed: ProviderHealthView = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.status, ProviderHealthStatus::Healthy);
+        assert_eq!(parsed.last_latency_ms, Some(150));
     }
 }

@@ -14,14 +14,39 @@ pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
         desc.configured = backend_enabled;
     }
 
+    // Build per-provider health views
+    let health_registry = state.adapter.health();
+    let health_views: Vec<_> = descriptors
+        .iter()
+        .map(|d| health_registry.health_view(&d.id))
+        .collect();
+
     if as_json {
+        let providers_with_health: Vec<_> = descriptors
+            .iter()
+            .zip(health_views.iter())
+            .map(|(desc, hv)| {
+                serde_json::json!({
+                    "id": desc.id,
+                    "enabled": desc.enabled,
+                    "default": desc.default,
+                    "kind": kind_str(&desc.kind),
+                    "requires_api_key": desc.requires_api_key,
+                    "configured": desc.configured,
+                    "routable": desc.routable,
+                    "skip_reason": desc.skip_reason,
+                    "skip_code": desc.skip_code.map(|c| c.as_str()),
+                    "capabilities": desc.capabilities.summary(),
+                    "health": hv,
+                })
+            })
+            .collect();
         let payload = serde_json::json!({
-            "providers": descriptors,
+            "providers": providers_with_health,
             "mode": format!("{:?}", cfg.search.mode),
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        // Compute column widths dynamically for alignment
         let id_w = descriptors
             .iter()
             .map(|d| d.id.len())
@@ -46,9 +71,15 @@ pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
             .max()
             .unwrap_or(5)
             .max(5);
+        let health_w = health_views
+            .iter()
+            .map(|hv| format!("{:?}", hv.status).len())
+            .max()
+            .unwrap_or(7)
+            .max(7);
 
         println!(
-            "{:<width_id$}  {:<8}  {:<8}  {:<width_kind$}  {:<5}  {:<12}  {:<8}  {:<width_skip$}  {:<width_caps$}",
+            "{:<width_id$}  {:<8}  {:<8}  {:<width_kind$}  {:<5}  {:<12}  {:<8}  {:<width_skip$}  {:<width_health$}  {:<width_caps$}",
             "ID",
             "Enabled",
             "Default",
@@ -57,15 +88,17 @@ pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
             "Configured",
             "Routable",
             "SkipCode",
+            "Health",
             "Capabilities",
             width_id = id_w,
             width_kind = kind_w,
             width_skip = skip_w,
+            width_health = health_w,
             width_caps = caps_w,
         );
-        let total_width = id_w + 8 + 8 + kind_w + 5 + 12 + 8 + skip_w + caps_w + 18; // separators
+        let total_width = id_w + 8 + 8 + kind_w + 5 + 12 + 8 + skip_w + health_w + caps_w + 22;
         println!("{}", "-".repeat(total_width));
-        for d in &descriptors {
+        for (d, hv) in descriptors.iter().zip(health_views.iter()) {
             let enabled = if d.enabled { "yes" } else { "no" };
             let default = if d.default { "yes" } else { "no" };
             let key = if d.requires_api_key { "yes" } else { "no" };
@@ -75,9 +108,10 @@ pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
                 .skip_code
                 .map(|c| c.as_str().to_string())
                 .unwrap_or_else(|| "-".to_string());
+            let health_status = format!("{:?}", hv.status);
             let caps = d.capabilities.summary();
             println!(
-                "{:<width_id$}  {:<8}  {:<8}  {:<width_kind$}  {:<5}  {:<12}  {:<8}  {:<width_skip$}  {:<width_caps$}",
+                "{:<width_id$}  {:<8}  {:<8}  {:<width_kind$}  {:<5}  {:<12}  {:<8}  {:<width_skip$}  {:<width_health$}  {:<width_caps$}",
                 d.id,
                 enabled,
                 default,
@@ -86,10 +120,12 @@ pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
                 configured,
                 routable,
                 skip_code,
+                health_status,
                 caps,
                 width_id = id_w,
                 width_kind = kind_w,
                 width_skip = skip_w,
+                width_health = health_w,
                 width_caps = caps_w,
             );
         }
