@@ -39,7 +39,7 @@ src/
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, and contract tests
 docs/
-  architecture/    # response handling contract, schema stability rules
+  architecture/    # codegg-contract.md — stable contract, IDs, warnings, trust model
   config.md         # config defaults, provider enablement, provider_status semantics
   safety.md        # trust model, fetch safety, metadata_only behavior
   agent-workflows.md # recommended tool call sequences and recipe catalog
