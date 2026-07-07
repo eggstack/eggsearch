@@ -172,9 +172,12 @@ pub struct WebSearchArgs {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderStatusArgs {
-    /// Reserved for future use. The `provider_status` tool currently
-    /// reports configuration only; live network probes are not
-    /// implemented.
+    /// Accepted for forward compatibility. The `provider_status` tool
+    /// does not currently perform live network probes; when `true`, the
+    /// response includes a `probe` field that explicitly states the
+    /// probe is reserved for a future bounded implementation. Use
+    /// `eggsearch doctor --probe` or the `live-smoke` test target for
+    /// real network diagnostics in the meantime.
     #[serde(default)]
     pub probe: bool,
     /// Controls recipe verbosity in the response.
@@ -1293,6 +1296,18 @@ pub fn run_provider_status(
         "providers": descriptors,
         "code_hosts": code_hosts,
         "health": health_snapshots,
+        "probe": if args.probe {
+            serde_json::json!({
+                "requested": true,
+                "implemented": false,
+                "message": "provider_status.probe is reserved for a future bounded live probe; use `eggsearch doctor --probe` or the `live-smoke` test target for real network diagnostics in the meantime",
+            })
+        } else {
+            serde_json::json!({
+                "requested": false,
+                "implemented": false,
+            })
+        },
         "mode": mode_str(state.config.search.mode),
         "server_capabilities": {
             "generic_search": true,

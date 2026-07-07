@@ -6261,6 +6261,67 @@ mod provider_status {
             "gitea should have release_search"
         );
     }
+
+    #[test]
+    fn probe_field_is_present_when_requested_true() {
+        let state = state_with_default();
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: true,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
+        let probe = v["probe"]
+            .as_object()
+            .expect("probe should be an object when requested=true");
+        assert_eq!(probe["requested"], serde_json::json!(true));
+        assert_eq!(probe["implemented"], serde_json::json!(false));
+        let message = probe["message"]
+            .as_str()
+            .expect("probe.message should be a string when requested=true");
+        assert!(
+            message.contains("reserved") || message.contains("future"),
+            "probe.message should mention reservation: got {message}"
+        );
+    }
+
+    #[test]
+    fn probe_field_is_present_when_requested_false() {
+        let state = state_with_default();
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
+        let probe = v["probe"]
+            .as_object()
+            .expect("probe should always be an object");
+        assert_eq!(probe["requested"], serde_json::json!(false));
+        assert_eq!(probe["implemented"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn probe_field_omits_message_when_not_requested() {
+        let state = state_with_default();
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
+        let probe = v["probe"].as_object().unwrap();
+        assert!(
+            probe.get("message").is_none(),
+            "probe.message should be omitted when requested=false; got {probe:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

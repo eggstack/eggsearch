@@ -49,6 +49,9 @@ jobs:
           toolchain: "1.88"
       - run: cargo test --locked ${{ matrix.features }}
 
+  # CI clippy intentionally mirrors the Makefile release gate so local and
+  # remote checks stay in lockstep. Do not weaken the flags here without
+  # also updating the Makefile.
   clippy:
     name: clippy
     runs-on: ubuntu-latest
@@ -58,7 +61,7 @@ jobs:
         with:
           toolchain: "1.88"
           components: clippy
-      - run: cargo clippy --all-features -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
   schema-corpus:
     name: schema-corpus

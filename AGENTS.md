@@ -44,6 +44,8 @@ docs/
   safety.md        # trust model, fetch safety, metadata_only behavior
   agent-workflows.md # recommended tool call sequences and recipe catalog
   tool-matrix.md   # compact tool reference table
+  release.md       # authoritative release process and pre-release command sequence
+  release-checklist.md # short operational checklist (links to release.md)
 .skills/           # agent skill files for development, MCP, release, architecture
 plans/             # roadmap and phase documentation (historical)
 ```
@@ -146,6 +148,13 @@ make publish-check  # runs cargo publish --dry-run
 ```
 
 Pre-publish: clippy clean, tests pass, fmt clean, version bumped in Cargo.toml, CHANGELOG.md updated.
+
+The authoritative pre-release command sequence, required CI checks, and
+live-smoke policy live in [`docs/release.md`](docs/release.md). The short
+operational checklist lives in [`docs/release-checklist.md`](docs/release-checklist.md).
+The `Makefile`, `.github/workflows/ci.yml`, and `docs/release.md` are kept in
+sync; if you change a flag or command in one, update the others in the same
+commit.
 
 ## Pitfalls
 

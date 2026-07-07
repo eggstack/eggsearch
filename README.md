@@ -70,3 +70,4 @@ Documentation contract tests verify that code snippets in docs stay in sync with
 - [Tool matrix](docs/tool-matrix.md)
 - [Agent workflows](docs/agent-workflows.md)
 - [Architecture contract](docs/architecture/codegg-contract.md)
+- [Release checklist](docs/release.md)

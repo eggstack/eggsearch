@@ -2,11 +2,16 @@
 
 ## Pre-Release Checklist
 
-1. `make check` passes (fmt + clippy + tests + schema-corpus)
+1. `make check` passes (fmt + clippy + tests + schema-corpus + docs-tests)
 2. Version bumped in `Cargo.toml`
 3. `CHANGELOG.md` updated with new version entry
 4. `cargo publish --dry-run --locked` succeeds
-5. README stays concise; release-facing detail belongs in `docs/config.md`, `docs/safety.md`, `docs/tool-matrix.md`, `docs/agent-workflows.md`, and `docs/architecture/codegg-contract.md`
+5. All required GitHub Actions jobs are green on the exact release commit
+6. README stays concise; release-facing detail belongs in `docs/config.md`, `docs/safety.md`, `docs/tool-matrix.md`, `docs/agent-workflows.md`, `docs/architecture/codegg-contract.md`, and `docs/release.md`
+
+The full authoritative pre-release command sequence, required CI checks, and
+live-smoke policy live in `docs/release.md`. Read it before cutting a release;
+this skill is a quick reference and points back to that document.
 
 ## Release Steps
 
@@ -15,9 +20,13 @@
 make check
 
 # 2. Dry-run publish check
-make publish-check
+cargo publish --dry-run --locked
 
-# 3. Publish to crates.io
+# 3. Tag and push
+git tag v{VERSION}
+git push origin v{VERSION}
+
+# 4. Publish to crates.io
 cargo publish
 ```
 
@@ -40,16 +49,26 @@ Follows Semantic Versioning. Breaking changes to MCP tool schemas require a majo
 
 ## CI Pipeline
 
+The CI pipeline in `.github/workflows/ci.yml` intentionally mirrors the
+`Makefile` release gate. CI clippy uses the same flags as `make clippy`
+(`--all-targets --all-features -- -D warnings`); if you change one, change the
+other in the same commit.
+
 | Job | What it runs |
 |-----|-------------|
 | check | `cargo check` × 4 feature combos |
-| test | `cargo test` × 4 feature combos |
-| clippy | `cargo clippy --all-features -- -D warnings` |
+| test | `cargo test --locked` × 4 feature combos |
+| clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
 | schema-corpus | 6 regression test binaries |
+| docs-contract | 3 documentation contract tests |
 | fmt | `cargo fmt --check` |
 | release-build | `cargo build --release` |
 | publish-check | `cargo publish --dry-run --locked` |
 | docs | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
+
+Branch protection and required-check settings are managed in the GitHub UI;
+they are not enforceable from repository code alone. See `docs/release.md` for
+the recommended required-check list and the live-smoke policy.
 
 ## Feature Flags
 

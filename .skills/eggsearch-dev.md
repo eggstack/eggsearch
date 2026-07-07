@@ -39,6 +39,8 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - `docs/tool-matrix.md` — stable tool reference
 - `docs/agent-workflows.md` — recipe catalog and chaining guidance
 - `docs/architecture/codegg-contract.md` — stable contract, IDs, warnings, and trust model
+- `docs/release.md` — authoritative release process and pre-release command sequence
+- `docs/release-checklist.md` — short operational checklist (links to release.md)
 
 ## Adding Tests
 

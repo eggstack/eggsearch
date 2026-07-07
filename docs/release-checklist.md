@@ -1,23 +1,30 @@
 # Release Checklist
 
+This document is a short operational checklist for cutting a release. The
+authoritative release process — including the exact pre-release command
+sequence, the required CI checks, and the live-smoke policy — lives in
+[`docs/release.md`](release.md). Read that document before tagging.
+
 ## Pre-release
 
+- [ ] All required CI jobs are green on the exact release commit
+      (see [`docs/release.md`](release.md#required-ci-checks))
+- [ ] `make check` passes locally
+- [ ] `cargo publish --dry-run --locked` passes
 - [ ] Version bumped in `Cargo.toml`
 - [ ] `CHANGELOG.md` updated with all notable changes since last release
-- [ ] `make check` passes (fmt, clippy, test-all, test-no-default, schema-corpus, docs-tests)
-- [ ] CI green on `main` branch
 
 ## Release
 
 - [ ] Create git tag: `git tag v{VERSION}`
 - [ ] Push tag: `git push origin v{VERSION}`
-- [ ] Wait for CI to build release artifacts
+- [ ] Wait for the `release-build` and `publish-check` jobs to run against the tag
 - [ ] Publish to crates.io: `cargo publish`
 - [ ] Create GitHub release with changelog excerpt
 
 ## Post-release
 
-- [ ] Verify crates.io listing at https://crates.io/crates/eggsearch
+- [ ] Verify crates.io listing at <https://crates.io/crates/eggsearch>
 - [ ] Update any external documentation or references to the old version
 - [ ] Announce if applicable
 
@@ -27,10 +34,14 @@
 # Full CI gate before release
 make check
 
-# Publish dry-run (catches packaging issues)
-cargo publish --dry-run
+# Publish dry-run (catches packaging issues; --locked is mandatory)
+cargo publish --dry-run --locked
 
 # After tagging, confirm the tag is correct
 git tag -l 'v*'
 git log --oneline -5
 ```
+
+If `docs/release.md`, the `Makefile`, and `.github/workflows/ci.yml` ever
+disagree, `docs/release.md` is the source of truth and the others must be
+updated to match.
