@@ -40,7 +40,7 @@ const MAX_ERROR_MESSAGE_LEN: usize = 512;
 
 /// Bound an error message string for safe exposure in MCP/CLI output.
 ///
-/// Strips control characters, truncates to [`MAX_ERROR_MESSAGE_LEN`],
+/// Strips control characters, truncates to 512 chars,
 /// and returns `None` for empty strings.
 pub fn bound_error_message(msg: &str) -> Option<String> {
     let cleaned: String = msg

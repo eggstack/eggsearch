@@ -313,7 +313,7 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
         || octet0 == 127
         || (octet0 == 169 && o[1] == 254)
         || (octet0 == 172 && (o[1] & 0b1111_0000) == 16)
-        || (octet0 == 192 && o[1] == 0)
+        || (octet0 == 192 && o[1] == 0 && o[2] == 0)
         || (octet0 == 192 && o[1] == 0 && o[2] == 2)
         || (octet0 == 192 && o[1] == 88 && o[2] == 99)
         || (octet0 == 192 && o[1] == 168)
@@ -367,19 +367,6 @@ fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     } else {
         None
     }
-}
-
-#[allow(dead_code)]
-fn ipv4_to_u32(octets: [u8; 4]) -> u32 {
-    u32::from_be_bytes(octets)
-}
-
-#[allow(dead_code)]
-fn ipv4_in_cidr(addr: [u8; 4], prefix_bits: u32, network: [u8; 4]) -> bool {
-    let addr_u32 = ipv4_to_u32(addr);
-    let network_u32 = ipv4_to_u32(network);
-    let mask = u32::MAX << (32 - prefix_bits);
-    (addr_u32 & mask) == (network_u32 & mask)
 }
 
 #[cfg(test)]
@@ -524,5 +511,27 @@ mod tests {
     fn ipv4_mapped_from_v6_rejects_unmapped() {
         let v6: Ipv6Addr = "2001:db8::1".parse().unwrap();
         assert!(ipv4_mapped_from_v6(v6).is_none());
+    }
+
+    #[test]
+    fn is_blocked_v4_192_0_0_24_exact() {
+        let blocked = [
+            Ipv4Addr::new(192, 0, 0, 0),
+            Ipv4Addr::new(192, 0, 0, 1),
+            Ipv4Addr::new(192, 0, 0, 255),
+            Ipv4Addr::new(192, 0, 2, 1),
+        ];
+        for addr in blocked {
+            assert!(is_blocked_v4(addr), "{addr} should be blocked");
+        }
+
+        let allowed = [
+            Ipv4Addr::new(192, 0, 3, 0),
+            Ipv4Addr::new(192, 0, 3, 1),
+            Ipv4Addr::new(192, 0, 255, 1),
+        ];
+        for addr in allowed {
+            assert!(!is_blocked_v4(addr), "{addr} should be allowed");
+        }
     }
 }

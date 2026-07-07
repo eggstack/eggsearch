@@ -2312,3 +2312,154 @@ fn outline_titles_contain_heading_text() {
         titles
     );
 }
+
+// =========================================================================
+// N. Comprehensive IPv4 Address Policy Boundary Tests
+// =========================================================================
+
+#[tokio::test]
+async fn n1_blocked_ipv4_exact_boundaries() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let blocked = [
+        "http://0.0.0.0/",
+        "http://0.255.255.255/",
+        "http://10.0.0.1/",
+        "http://100.64.0.1/",
+        "http://100.127.255.255/",
+        "http://127.0.0.1/",
+        "http://169.254.169.254/",
+        "http://172.16.0.1/",
+        "http://172.31.255.255/",
+        "http://192.0.0.1/",
+        "http://192.0.2.1/",
+        "http://192.88.99.1/",
+        "http://192.168.0.1/",
+        "http://198.18.0.1/",
+        "http://198.19.255.255/",
+        "http://198.51.100.1/",
+        "http://203.0.113.1/",
+        "http://224.0.0.1/",
+        "http://239.255.255.255/",
+        "http://240.0.0.1/",
+        "http://255.255.255.255/",
+    ];
+    for url in blocked {
+        let req_url = url::Url::parse(url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(
+            matches!(
+                result,
+                Err(eggsearch::fetch::FetchError::PrivateNetworkBlocked(_))
+            ),
+            "Expected PrivateNetworkBlocked for {url}, got {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn n2_allowed_public_ipv4_exact_boundaries() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let allowed = [
+        "http://1.1.1.1/",
+        "http://8.8.8.8/",
+        "http://100.128.0.1/",
+        "http://172.32.0.1/",
+        "http://192.0.3.1/",
+        "http://198.20.0.1/",
+        "http://223.255.255.255/",
+    ];
+    for url in allowed {
+        let req_url = url::Url::parse(url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(result.is_ok(), "Expected Ok for {url}, got {result:?}");
+    }
+}
+
+#[tokio::test]
+async fn n3_ipv4_192_0_0_24_is_blocked_but_not_192_0_0_16() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+
+    for url in ["http://192.0.0.1/", "http://192.0.2.1/"] {
+        let req_url = url::Url::parse(url).unwrap();
+        assert!(
+            matches!(
+                validate_fetch_target(&req_url, &limits).await,
+                Err(eggsearch::fetch::FetchError::PrivateNetworkBlocked(_))
+            ),
+            "Expected blocked for {url}"
+        );
+    }
+
+    let req_url = url::Url::parse("http://192.0.3.1/").unwrap();
+    assert!(
+        validate_fetch_target(&req_url, &limits).await.is_ok(),
+        "192.0.3.1 should be allowed"
+    );
+}
+
+// =========================================================================
+// O. Comprehensive IPv6 Address Policy Boundary Tests
+// =========================================================================
+
+#[tokio::test]
+async fn o1_blocked_ipv6_exact_categories() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let blocked = [
+        "http://[::]/",
+        "http://[::1]/",
+        "http://[fc00::1]/",
+        "http://[fd00::1]/",
+        "http://[fe80::1]/",
+        "http://[ff00::1]/",
+        "http://[2001:db8::1]/",
+        "http://[2001:2::1]/",
+        "http://[2001::1]/",
+        "http://[2002::1]/",
+        "http://[::ffff:10.0.0.1]/",
+        "http://[::ffff:100.64.0.1]/",
+        "http://[::ffff:192.0.2.1]/",
+        "http://[::ffff:198.18.0.1]/",
+    ];
+    for url in blocked {
+        let req_url = url::Url::parse(url).unwrap();
+        let result = validate_fetch_target(&req_url, &limits).await;
+        assert!(
+            matches!(
+                result,
+                Err(eggsearch::fetch::FetchError::PrivateNetworkBlocked(_))
+            ),
+            "Expected PrivateNetworkBlocked for {url}, got {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn o2_allowed_public_ipv6() {
+    let limits = FetchLimits {
+        allow_private_network: false,
+        allow_localhost: false,
+        ..Default::default()
+    };
+    let req_url = url::Url::parse("http://[2606:4700:4700::1111]/").unwrap();
+    let result = validate_fetch_target(&req_url, &limits).await;
+    assert!(
+        result.is_ok(),
+        "Expected Ok for public IPv6, got {result:?}"
+    );
+}

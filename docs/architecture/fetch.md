@@ -26,7 +26,7 @@ The fetch module handles all outbound HTTP requests for `web_fetch`, `repo_fetch
 
 The fetch client enforces strict network boundaries:
 
-1. **DNS resolution** — Resolves hostname, rejects private IPs (10.x, 172.16-31.x, 192.168.x, localhost, IPv6 loopback)
+1. **DNS resolution** — Resolves hostname, rejects private/reserved IPs (RFC 1918, RFC 6890, loopback, link-local, multicast, documentation ranges, and IPv6 equivalents; full list in [safety.md](../safety.md))
 2. **Redirect revalidation** — Each redirect is re-validated against SSRF rules
 3. **Code-host rewriting** — GitHub/GitLab/Codeberg URLs are rewritten to raw content endpoints before fetching
 4. **Size limits** — `max_bytes` caps response body size
