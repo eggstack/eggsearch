@@ -72,6 +72,18 @@ That means:
 
 Setting `sanitize_output = false` disables framing and marker scanning, but control-character stripping and length bounding still happen.
 
+### What gets sanitized
+
+- **Title and description fields** — Tier 1 (strip + bound at 200/500 chars respectively), plus Tier 2/3 when sanitization is enabled.
+- **Body text** — Tier 1 (strip + bound at `max_chars`), plus Tier 2/3 when sanitization is enabled.
+- **Document block text** — Tier 1 only (strip + bound per block).
+- **Document outline titles** — Tier 1 (strip + bound at 500 chars) applied to all outline entries from HTML, Markdown, and notebook renderers.
+- **Outline anchors** — HTML `id` attributes passed through as-is; `make_slug()`-generated anchors are filtered to alphanumeric/hyphen/underscore.
+
+### raw_text (internal)
+
+`raw_text` is an internal field on `WebFetchResponse`, bounded by `max_chars_cap` (default 50k). It is **not** serialized in MCP tool output. It provides Tier-1-only text for internal consumers like `repo_fetch` line/span selection. Related metadata fields (`raw_text_chars_returned`, `raw_text_truncated`, `raw_text_cap`) are also internal-only.
+
 ## `metadata_only`
 
 `web_fetch` supports `extract_mode = "metadata_only"`.

@@ -1916,6 +1916,54 @@ async fn web_fetch_mcp_level_full_response_shape() {
 }
 
 #[tokio::test]
+async fn web_fetch_mcp_level_omits_raw_text_from_output() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(b"<!DOCTYPE html><html><head><title>T</title></head><body><p>content</p></body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/page"),
+            max_chars: Some(5000),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await
+    .expect("web_fetch should succeed");
+
+    assert!(
+        !v.as_object().unwrap().contains_key("raw_text"),
+        "MCP output must not include raw_text: {v:?}"
+    );
+    assert!(
+        !v.as_object().unwrap().contains_key("raw_text_chars_returned"),
+        "MCP output must not include raw_text_chars_returned: {v:?}"
+    );
+    assert!(
+        !v.as_object().unwrap().contains_key("raw_text_truncated"),
+        "MCP output must not include raw_text_truncated: {v:?}"
+    );
+    assert!(
+        !v.as_object().unwrap().contains_key("raw_text_cap"),
+        "MCP output must not include raw_text_cap: {v:?}"
+    );
+}
+
+#[tokio::test]
 async fn web_fetch_mcp_level_metadata_only_mode() {
     use eggsearch::core::sanitize::{SNIPPET_MAX_CHARS, TITLE_MAX_CHARS};
     use httpmock::prelude::*;
@@ -4962,6 +5010,9 @@ fn web_fetch_response_includes_fetch_transform_field() {
         trust: eggsearch::core::FetchTrust::ExternalUntrusted,
         text: Some("fn main() {}".to_string()),
         raw_text: None,
+        raw_text_chars_returned: None,
+        raw_text_truncated: false,
+        raw_text_cap: None,
         links: vec![],
         links_seen: None,
         links_truncated: false,
@@ -5003,6 +5054,9 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         trust: eggsearch::core::FetchTrust::ExternalUntrusted,
         text: Some("hello".to_string()),
         raw_text: None,
+        raw_text_chars_returned: None,
+        raw_text_truncated: false,
+        raw_text_cap: None,
         links: vec![],
         links_seen: None,
         links_truncated: false,

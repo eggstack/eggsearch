@@ -440,6 +440,9 @@ impl FetchClient {
                     trust: FetchTrust::ExternalUntrusted,
                     text: None,
                     raw_text: None,
+                    raw_text_chars_returned: None,
+                    raw_text_truncated: false,
+                    raw_text_cap: None,
                     links: Vec::new(),
                     links_seen: None,
                     links_truncated: false,
@@ -544,6 +547,9 @@ impl FetchClient {
                 trust: FetchTrust::ExternalUntrusted,
                 text: Some(text),
                 raw_text: None,
+                raw_text_chars_returned: None,
+                raw_text_truncated: false,
+                raw_text_cap: None,
                 links: Vec::new(),
                 links_seen: None,
                 links_truncated: false,
@@ -778,6 +784,11 @@ impl FetchClient {
 
                 // If no headings found, populate outline from page title
                 let mut outline = rendered.outline;
+                for entry in &mut outline {
+                    let (stripped, _) = strip_control_chars(&entry.title);
+                    let (bounded, _) = bound_text(&stripped, 500);
+                    entry.title = bounded;
+                }
                 if outline.is_empty() {
                     if let Some(ref title_text) = raw_title {
                         let (stripped_title, _) = strip_control_chars(title_text);
@@ -834,7 +845,12 @@ impl FetchClient {
                     block.text = bounded;
                 }
 
-                let outline = rendered.outline;
+                let mut outline = rendered.outline;
+                for entry in &mut outline {
+                    let (stripped, _) = strip_control_chars(&entry.title);
+                    let (bounded, _) = bound_text(&stripped, 500);
+                    entry.title = bounded;
+                }
                 let block_truncated = rendered.block_truncated;
                 let _text_truncated = rendered.text_truncated;
 
@@ -878,6 +894,8 @@ impl FetchClient {
             None
         };
 
+        let raw_text_chars_returned = raw_text.as_ref().map(|t| t.chars().count());
+
         Ok(WebFetchResponse {
             url: url_str.to_string(),
             final_url,
@@ -898,6 +916,9 @@ impl FetchClient {
             trust: FetchTrust::ExternalUntrusted,
             text,
             raw_text,
+            raw_text_chars_returned,
+            raw_text_truncated: raw_capped,
+            raw_text_cap: Some(max_chars_raw),
             links,
             links_seen: if links_seen > 0 {
                 Some(links_seen)

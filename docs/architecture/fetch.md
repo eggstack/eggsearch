@@ -123,14 +123,32 @@ GitHub/GitLab/Codeberg browser URLs are rewritten to raw content URLs:
 
 ```rust
 struct FetchLimits {
-    max_bytes: usize,      // response body size cap
-    max_timeout: Duration, // request timeout
-    max_redirects: usize,  // redirect chain limit
-    max_links: usize,      // extracted link count cap
+    max_bytes: usize,       // response body size cap (default 2MB)
+    max_chars_default: usize, // fallback char bound (default 12000)
+    max_chars_cap: usize,   // hard upper bound on max_chars (default 50000)
+    timeout_ms: u64,        // request timeout
+    redirect_limit: usize,  // redirect chain limit
+    pdf_enabled: bool,      // PDF extraction toggle
+    pdf_max_pages: usize,   // max PDF pages (default 25)
+    pdf_max_chars_per_page: usize, // per-page char cap (default 12000)
+    pdf_max_total_chars: usize,    // total PDF char cap (default 50000)
 }
 ```
 
 All limits are bounded and configurable via `FetchSection` in config.
+
+### text vs raw_text
+
+- **`text`** — Framed (Tier 2), sanitized (Tier 3), bounded by `max_chars` (request clamped to `max_chars_cap`). This is the public field serialized in MCP output.
+- **`raw_text`** — Tier-1 only (strip + bound at `max_chars_cap`). Internal use only (e.g., `repo_fetch` line/span selection). Not serialized in MCP output. Metadata fields `raw_text_chars_returned`, `raw_text_truncated`, and `raw_text_cap` track its bounds internally.
+
+### Sanitization tiers
+
+| Tier | What | When | Scope |
+|------|------|------|-------|
+| Tier 1 | Strip control chars + bound text | Always | title, description, body text, all blocks, outline titles |
+| Tier 2 | `<<<EXTERNAL_UNTRUSTED>>>` framing | `sanitize_output = true` | title, description, body text |
+| Tier 3 | Injection marker scan (7 patterns) | `sanitize_output = true` | title, description, body text |
 
 ---
 

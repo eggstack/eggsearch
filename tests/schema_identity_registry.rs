@@ -1809,3 +1809,167 @@ fn provider_skip_code_no_duplicate_serialized_names() {
     let names = collect_enum_serialized_names(&variants);
     assert_no_duplicates(&names, "ProviderSkipCode");
 }
+
+// ===========================================================================
+// Workstream 1 (extended): raw_text metadata contract tests
+// ===========================================================================
+
+#[test]
+fn web_fetch_response_raw_text_metadata_present_when_raw_text_present() {
+    let resp = eggsearch::core::WebFetchResponse {
+        url: "https://example.com".to_string(),
+        final_url: "https://example.com".to_string(),
+        stable_id: None,
+        source_id: None,
+        title: None,
+        description: None,
+        content_type: None,
+        status: 200,
+        fetched: true,
+        truncated: false,
+        trust: eggsearch::core::FetchTrust::ExternalUntrusted,
+        text: Some("hello".to_string()),
+        raw_text: Some("hello raw".to_string()),
+        raw_text_chars_returned: Some(9),
+        raw_text_truncated: false,
+        raw_text_cap: Some(50000),
+        links: vec![],
+        links_seen: None,
+        links_truncated: false,
+        warnings: vec![],
+        trust_markers: eggsearch::core::TrustMarkers::default(),
+        document: None,
+        fetch_transform: None,
+        structured_warnings: vec![],
+    };
+    let json = serde_json::to_value(&resp).unwrap();
+    assert_eq!(json["raw_text"], "hello raw");
+    assert_eq!(json["raw_text_chars_returned"], 9);
+    assert!(
+        !json
+            .as_object()
+            .unwrap()
+            .contains_key("raw_text_truncated"),
+        "raw_text_truncated should be omitted when false (skip_serializing_if)"
+    );
+    assert_eq!(json["raw_text_cap"], 50000);
+}
+
+#[test]
+fn web_fetch_response_raw_text_metadata_absent_when_raw_text_none() {
+    let resp = eggsearch::core::WebFetchResponse {
+        url: "https://example.com".to_string(),
+        final_url: "https://example.com".to_string(),
+        stable_id: None,
+        source_id: None,
+        title: None,
+        description: None,
+        content_type: None,
+        status: 200,
+        fetched: true,
+        truncated: false,
+        trust: eggsearch::core::FetchTrust::ExternalUntrusted,
+        text: Some("hello".to_string()),
+        raw_text: None,
+        raw_text_chars_returned: None,
+        raw_text_truncated: false,
+        raw_text_cap: None,
+        links: vec![],
+        links_seen: None,
+        links_truncated: false,
+        warnings: vec![],
+        trust_markers: eggsearch::core::TrustMarkers::default(),
+        document: None,
+        fetch_transform: None,
+        structured_warnings: vec![],
+    };
+    let json = serde_json::to_value(&resp).unwrap();
+    assert!(
+        !json.as_object().unwrap().contains_key("raw_text"),
+        "raw_text should be absent when None"
+    );
+    assert!(
+        !json
+            .as_object()
+            .unwrap()
+            .contains_key("raw_text_chars_returned"),
+        "raw_text_chars_returned should be absent when None"
+    );
+    assert!(
+        !json
+            .as_object()
+            .unwrap()
+            .contains_key("raw_text_cap"),
+        "raw_text_cap should be absent when None"
+    );
+}
+
+#[test]
+fn web_fetch_response_raw_text_truncated_omitted_when_false() {
+    let resp = eggsearch::core::WebFetchResponse {
+        url: "https://example.com".to_string(),
+        final_url: "https://example.com".to_string(),
+        stable_id: None,
+        source_id: None,
+        title: None,
+        description: None,
+        content_type: None,
+        status: 200,
+        fetched: true,
+        truncated: false,
+        trust: eggsearch::core::FetchTrust::ExternalUntrusted,
+        text: Some("hello".to_string()),
+        raw_text: Some("hello raw".to_string()),
+        raw_text_chars_returned: Some(9),
+        raw_text_truncated: false,
+        raw_text_cap: Some(50000),
+        links: vec![],
+        links_seen: None,
+        links_truncated: false,
+        warnings: vec![],
+        trust_markers: eggsearch::core::TrustMarkers::default(),
+        document: None,
+        fetch_transform: None,
+        structured_warnings: vec![],
+    };
+    let json = serde_json::to_value(&resp).unwrap();
+    assert!(
+        !json
+            .as_object()
+            .unwrap()
+            .contains_key("raw_text_truncated"),
+        "raw_text_truncated should be omitted when false"
+    );
+}
+
+#[test]
+fn web_fetch_response_raw_text_truncated_present_when_true() {
+    let resp = eggsearch::core::WebFetchResponse {
+        url: "https://example.com".to_string(),
+        final_url: "https://example.com".to_string(),
+        stable_id: None,
+        source_id: None,
+        title: None,
+        description: None,
+        content_type: None,
+        status: 200,
+        fetched: true,
+        truncated: false,
+        trust: eggsearch::core::FetchTrust::ExternalUntrusted,
+        text: Some("hello".to_string()),
+        raw_text: Some("hello raw".to_string()),
+        raw_text_chars_returned: Some(9),
+        raw_text_truncated: true,
+        raw_text_cap: Some(50000),
+        links: vec![],
+        links_seen: None,
+        links_truncated: false,
+        warnings: vec![],
+        trust_markers: eggsearch::core::TrustMarkers::default(),
+        document: None,
+        fetch_transform: None,
+        structured_warnings: vec![],
+    };
+    let json = serde_json::to_value(&resp).unwrap();
+    assert_eq!(json["raw_text_truncated"], true);
+}

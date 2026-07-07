@@ -187,6 +187,21 @@ pub struct WebFetchResponse {
     /// output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_text: Option<String>,
+    /// Character count of `raw_text` when present. Tracks the
+    /// actual char length after Tier 1 bounding so callers can
+    /// verify the budget that was applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_text_chars_returned: Option<usize>,
+    /// Whether `raw_text` was truncated at the `max_chars_cap`
+    /// character limit. Mirrors the byte-level `truncated` flag
+    /// but for the unframed Tier-1 text path.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub raw_text_truncated: bool,
+    /// The `max_chars_cap` value that bounded `raw_text`. Records
+    /// the configured cap so callers can verify the budget without
+    /// inspecting config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_text_cap: Option<usize>,
     /// Extracted links (if include_links = true).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<ExtractedLink>,

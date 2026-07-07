@@ -2285,3 +2285,31 @@ fn m22_non_utf8_bytes_do_not_crash_render_blocks() {
         .join(" ");
     assert!(text.contains("Valid content"));
 }
+
+#[test]
+fn outline_titles_contain_heading_text() {
+    let html = br#"<!DOCTYPE html>
+<html><body>
+<h1>Red Heading</h1>
+<p>Content under heading.</h2>
+<h2>Second Level</h2>
+<p>More content.</p>
+</body></html>"#;
+    let (_, _, rendered, _, _) =
+        render_blocks(html, "https://example.com/", 10000, false);
+    assert!(
+        !rendered.outline.is_empty(),
+        "should have outline entries from headings"
+    );
+    let titles: Vec<&str> = rendered.outline.iter().map(|e| e.title.as_str()).collect();
+    assert!(
+        titles.iter().any(|t| t.contains("Red Heading")),
+        "should contain heading text: {:?}",
+        titles
+    );
+    assert!(
+        titles.iter().any(|t| t.contains("Second Level")),
+        "should contain second heading: {:?}",
+        titles
+    );
+}
