@@ -83,6 +83,44 @@ fn parse_symbol_kind_arg(
     }
 }
 
+/// Strictly parse a single string argument into an enum-like value.
+/// Returns `Ok(Some(value))` when `raw` is `Some` and parses
+/// successfully, `Ok(None)` when `raw` is `None`, and `Err` when
+/// `raw` is `Some` but does not match a known value. The `accepted`
+/// list is shown in the error message.
+fn parse_strict_enum_arg<T, F>(
+    field: &str,
+    raw: Option<&str>,
+    parse: F,
+    accepted: &[&str],
+) -> Result<Option<T>, ToolError>
+where
+    F: FnOnce(&str) -> Option<T>,
+{
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    match parse(raw) {
+        Some(value) => Ok(Some(value)),
+        None => Err(ToolError::Validation(format!(
+            "invalid {field} '{raw}'; accepted values: {}",
+            accepted.join(", ")
+        ))),
+    }
+}
+
+fn parse_strict_freshness(
+    raw: Option<&str>,
+) -> Result<Option<crate::core::query::Freshness>, ToolError> {
+    use crate::core::query::Freshness;
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    serde_json::from_value::<Freshness>(serde_json::Value::String(raw.to_string()))
+        .map(Some)
+        .map_err(|e| ToolError::Validation(format!("invalid freshness '{raw}': {e}")))
+}
+
 fn workspace_relative_path_arg(args: &RepoFetchArgs) -> Result<String, ToolError> {
     let path = args.path.trim();
     let legacy_repo_path = args.repo.trim();
@@ -797,21 +835,27 @@ pub async fn run_repo_search(
 
     let host = parse_code_host_arg(args.host.as_deref())?;
 
-    let freshness = args
-        .freshness
-        .as_deref()
-        .and_then(|f| serde_json::from_value(serde_json::Value::String(f.to_string())).ok())
-        .unwrap_or_default();
+    let freshness = parse_strict_freshness(args.freshness.as_deref())?.unwrap_or_default();
 
-    let profile = args
-        .profile
-        .as_deref()
-        .and_then(crate::core::repo_search::SearchProfile::parse);
+    let profile = parse_strict_enum_arg(
+        "profile",
+        args.profile.as_deref(),
+        crate::core::repo_search::SearchProfile::parse,
+        &[
+            "generic",
+            "coding",
+            "security",
+            "research",
+            "(aliases: default/web, code/repo, vuln/advisory, deep/thorough)",
+        ],
+    )?;
 
-    let mode = args
-        .mode
-        .as_deref()
-        .and_then(crate::core::repo_search::RepoSearchMode::parse);
+    let mode = parse_strict_enum_arg(
+        "mode",
+        args.mode.as_deref(),
+        crate::core::repo_search::RepoSearchMode::parse,
+        &["normal", "exact_error", "(aliases: default, error)"],
+    )?;
 
     let (owner, repo) = if let Some(r) = &args.repo {
         if r.contains('/') && args.owner.is_none() {
@@ -854,10 +898,24 @@ pub async fn run_repo_search(
         timeout_ms: args.timeout_ms,
         providers: args.providers.clone(),
         profile,
-        ecosystem: args
-            .ecosystem
-            .as_deref()
-            .and_then(crate::core::package::PackageEcosystem::parse),
+        ecosystem: parse_strict_enum_arg(
+            "ecosystem",
+            args.ecosystem.as_deref(),
+            crate::core::package::PackageEcosystem::parse,
+            &[
+                "crates_io",
+                "pypi",
+                "npm",
+                "go",
+                "maven",
+                "nuget",
+                "rubygems",
+                "packagist",
+                "oci",
+                "github_actions",
+                "(aliases: cargo, python, node, gradle, ruby, etc.)",
+            ],
+        )?,
         package: args.package.clone(),
         version: args.version.clone(),
         version_requirement: args.version_requirement.clone(),
@@ -1069,29 +1127,64 @@ pub async fn run_research_search(
         )));
     }
 
-    let research_domain = args
-        .research_domain
-        .as_deref()
-        .and_then(ResearchDomain::parse);
+    let research_domain = parse_strict_enum_arg(
+        "research_domain",
+        args.research_domain.as_deref(),
+        ResearchDomain::parse,
+        &[
+            "general",
+            "software_architecture",
+            "api_design",
+            "distributed_systems",
+            "security",
+            "performance",
+            "language_ecosystem",
+            "machine_learning",
+            "infrastructure",
+            "(aliases: architecture, api, distributed, ml, infra)",
+        ],
+    )?;
 
-    let workflow = args
-        .workflow
-        .as_deref()
-        .and_then(crate::core::research::ResearchWorkflow::parse);
+    let workflow = parse_strict_enum_arg(
+        "workflow",
+        args.workflow.as_deref(),
+        crate::core::research::ResearchWorkflow::parse,
+        &[
+            "general",
+            "api_evaluation",
+            "library_comparison",
+            "migration_planning",
+            "security_review",
+            "performance_investigation",
+            "ecosystem_survey",
+            "architecture_decision",
+            "(aliases: api, comparison, migration, security, performance, architecture)",
+        ],
+    )?;
 
-    let depth = args.depth.as_deref().and_then(ResearchDepth::parse);
+    let depth = parse_strict_enum_arg(
+        "depth",
+        args.depth.as_deref(),
+        ResearchDepth::parse,
+        &["quick", "standard", "deep"],
+    )?;
 
-    let desired_source_types: Vec<ResearchSourceType> = args
-        .desired_source_types
-        .iter()
-        .filter_map(|s| ResearchSourceType::parse(s))
-        .collect();
+    let mut desired_source_types: Vec<ResearchSourceType> = Vec::new();
+    let mut invalid_source_types: Vec<String> = Vec::new();
+    for s in &args.desired_source_types {
+        match ResearchSourceType::parse(s) {
+            Some(t) => desired_source_types.push(t),
+            None => invalid_source_types.push(s.clone()),
+        }
+    }
+    if !invalid_source_types.is_empty() {
+        return Err(ToolError::Validation(format!(
+            "invalid desired_source_types entries: {}; accepted values: primary_sources, official_docs, specifications, reference_implementations, design_discussions, benchmarks, security_considerations, issue_threads, release_notes, academic_or_formal_sources, recent_news, community_discussion, counterpoints",
+            invalid_source_types.join(", ")
+        )));
+    }
 
-    let freshness = args
-        .freshness
-        .as_deref()
-        .and_then(|f| serde_json::from_value(serde_json::Value::String(f.to_string())).ok())
-        .unwrap_or_default();
+    let freshness = parse_strict_freshness(args.freshness.as_deref())?.unwrap_or_default();
 
     let req = ResearchSearchRequest {
         query: args.query,
@@ -2963,16 +3056,21 @@ pub async fn run_security_search(
 
     let query = args.query.unwrap_or_default();
 
-    let severity_min = args
-        .severity_min
-        .as_deref()
-        .map(crate::core::SeverityLevel::from_str_loose);
+    let severity_min = match args.severity_min.as_deref() {
+        Some(s) => {
+            let parsed = crate::core::SeverityLevel::from_str_loose(s);
+            if parsed == crate::core::SeverityLevel::Unknown {
+                return Err(ToolError::Validation(format!(
+                    "invalid severity_min '{s}'; accepted values: critical, high, medium, low \
+                     (aliases: crit, important, moderate, med, minor)"
+                )));
+            }
+            Some(parsed)
+        }
+        None => None,
+    };
 
-    let freshness = args
-        .freshness
-        .as_deref()
-        .and_then(|f| serde_json::from_value(serde_json::Value::String(f.to_string())).ok())
-        .unwrap_or_default();
+    let freshness = parse_strict_freshness(args.freshness.as_deref())?.unwrap_or_default();
 
     let req = SecuritySearchRequest {
         query: query.clone(),

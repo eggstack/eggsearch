@@ -434,6 +434,119 @@ fn convert(vulns: Vec<OsvVulnerability>, max_results: usize) -> Vec<SearchResult
     out
 }
 
+/// Compute the CVSS 3.x base score from a vector string. Returns
+/// `None` if the string is not a recognizable CVSS 3.x vector or any
+/// required metric is missing/invalid.
+///
+/// Implements the formula documented in
+/// <https://www.first.org/cvss/v3.1/specification-document>.
+fn compute_cvss31_base_score(score: &str) -> Option<f64> {
+    let prefix_end = score.find("CVSS:3.")?;
+    let metrics_str = &score[prefix_end..];
+    if !metrics_str.starts_with("CVSS:3.0") && !metrics_str.starts_with("CVSS:3.1") {
+        return None;
+    }
+
+    let mut av = None;
+    let mut ac = None;
+    let mut pr = None;
+    let mut ui = None;
+    let mut s = None;
+    let mut c = None;
+    let mut i = None;
+    let mut a = None;
+
+    for part in metrics_str.split('/').skip(1) {
+        let (k, v) = part.split_once(':')?;
+        match k {
+            "AV" => av = Some(v),
+            "AC" => ac = Some(v),
+            "PR" => pr = Some(v),
+            "UI" => ui = Some(v),
+            "S" => s = Some(v),
+            "C" => c = Some(v),
+            "I" => i = Some(v),
+            "A" => a = Some(v),
+            _ => {}
+        }
+    }
+
+    let av = av?;
+    let ac = ac?;
+    let pr = pr?;
+    let ui = ui?;
+    let scope = s?;
+    let c = c?;
+    let i = i?;
+    let a = a?;
+
+    let av_val = match av {
+        "N" => 0.85,
+        "A" => 0.62,
+        "L" => 0.55,
+        "P" => 0.20,
+        _ => return None,
+    };
+    let ac_val = match ac {
+        "L" => 0.77,
+        "H" => 0.44,
+        _ => return None,
+    };
+    let ui_val = match ui {
+        "N" => 0.85,
+        "R" => 0.62,
+        _ => return None,
+    };
+    let scope_changed = match scope {
+        "U" => false,
+        "C" => true,
+        _ => return None,
+    };
+    let pr_val = match (pr, scope_changed) {
+        ("N", _) => 0.85,
+        ("L", false) => 0.62,
+        ("L", true) => 0.68,
+        ("H", false) => 0.27,
+        ("H", true) => 0.50,
+        _ => return None,
+    };
+    let metric = |v: &str| match v {
+        "H" => 0.56,
+        "L" => 0.22,
+        "N" => 0.00,
+        _ => f64::NAN,
+    };
+    let c_val = metric(c);
+    let i_val = metric(i);
+    let a_val = metric(a);
+    if c_val.is_nan() || i_val.is_nan() || a_val.is_nan() {
+        return None;
+    }
+
+    let iss = 1.0 - (1.0 - c_val) * (1.0 - i_val) * (1.0 - a_val);
+    let impact = if scope_changed {
+        7.52 * (iss - 0.029) - 3.25 * (iss - 0.02).powi(15)
+    } else {
+        6.42 * iss
+    };
+    let exploitability = 8.22 * av_val * ac_val * pr_val * ui_val;
+
+    let base = if impact <= 0.0 {
+        0.0
+    } else {
+        let raw = if scope_changed {
+            1.08 * (impact + exploitability)
+        } else {
+            impact + exploitability
+        };
+        let capped = raw.min(10.0);
+        // CVSS 3.1 roundUp rounds to one decimal place per the spec.
+        (capped * 10.0).ceil() / 10.0
+    };
+
+    Some(base)
+}
+
 fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
     let cve_ids: Vec<String> = vuln
         .aliases
@@ -459,11 +572,15 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
     });
 
     let cvss_score = first_score.and_then(|score| {
-        score.parse::<f64>().ok().or_else(|| {
-            score
-                .split_whitespace()
-                .find_map(|part| part.parse::<f64>().ok())
-        })
+        score
+            .parse::<f64>()
+            .ok()
+            .or_else(|| {
+                score
+                    .split_whitespace()
+                    .find_map(|part| part.parse::<f64>().ok())
+            })
+            .or_else(|| compute_cvss31_base_score(score))
     });
 
     let severity = first_score
@@ -819,6 +936,32 @@ mod tests {
             m.cvss_vector.as_deref(),
             Some("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")
         );
+        // Plain CVSS vector (no separate numeric score) should still
+        // produce a numeric score via the CVSS 3.x base formula.
+        assert_eq!(m.cvss_score, Some(9.8));
+        assert_eq!(m.severity, Some(SeverityLevel::Critical));
+    }
+
+    #[test]
+    fn test_cvss_vector_only_computes_score() {
+        // Standard low-severity vector: AV:L/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N
+        // Expected base score: 1.8
+        let score = compute_cvss31_base_score("CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N");
+        assert_eq!(score, Some(1.8));
+    }
+
+    #[test]
+    fn test_cvss_vector_with_scope_changed() {
+        // Scope changed, network, low complexity, no priv, no UI
+        // AV:N/AC:L/PR:N/UI:N/S:C/C:L/I:L/A:N -> 7.2 (per CVSS 3.1 formula)
+        let score = compute_cvss31_base_score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:L/I:L/A:N");
+        assert_eq!(score, Some(7.2));
+    }
+
+    #[test]
+    fn test_cvss_non_v3_vector_returns_none() {
+        assert!(compute_cvss31_base_score("CVSS:2.0/AV:N").is_none());
+        assert!(compute_cvss31_base_score("not a vector").is_none());
     }
 
     #[test]

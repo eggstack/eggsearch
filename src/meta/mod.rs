@@ -25,6 +25,8 @@ mod grouping;
 /// Local workspace search backend: bounded file walking, scoring, and
 /// SourceCard conversion.
 pub mod local_backend;
+/// Minimal `.gitignore` matcher used by the local workspace backend.
+pub(crate) mod local_ignore;
 /// Local repository inventory: Git worktree discovery, remote URL
 /// normalization, identity matching, and manifest detection.
 pub mod local_inventory;

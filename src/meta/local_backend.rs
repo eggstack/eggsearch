@@ -24,6 +24,7 @@ use crate::core::quality::compute_card_quality;
 use crate::core::result::TrustLevel;
 use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
+use crate::meta::local_ignore::IgnoreStack;
 
 /// Local workspace search backend.
 ///
@@ -248,6 +249,12 @@ impl LocalWorkspaceBackend {
                 break;
             }
 
+            let ignore_stack = if config.respect_gitignore {
+                IgnoreStack::build(root_path, root_path)
+            } else {
+                IgnoreStack::new()
+            };
+
             Self::walk_root(
                 root_path,
                 root_index,
@@ -258,6 +265,7 @@ impl LocalWorkspaceBackend {
                 lang_hint,
                 file_hint,
                 symbol_hint,
+                &ignore_stack,
                 &mut matches,
                 &mut files_scanned,
                 max_results,
@@ -302,6 +310,7 @@ impl LocalWorkspaceBackend {
         lang_hint: Option<&str>,
         file_hint: Option<&str>,
         symbol_hint: Option<&str>,
+        ignore_stack: &IgnoreStack,
         matches: &mut Vec<LocalMatch>,
         files_scanned: &mut usize,
         max_results: usize,
@@ -341,6 +350,13 @@ impl LocalWorkspaceBackend {
                 }
             }
 
+            if config.respect_gitignore {
+                let is_dir = path.is_dir();
+                if ignore_stack.is_ignored(root_path, &path, is_dir) {
+                    continue;
+                }
+            }
+
             if path.is_dir() {
                 if SKIP_DIRS.contains(&file_name_str.as_ref()) {
                     continue;
@@ -359,6 +375,7 @@ impl LocalWorkspaceBackend {
                     lang_hint,
                     file_hint,
                     symbol_hint,
+                    ignore_stack,
                     matches,
                     files_scanned,
                     max_results,
@@ -367,142 +384,25 @@ impl LocalWorkspaceBackend {
                     timed_out,
                     truncated,
                 );
-            } else if path.is_file() {
-                *files_scanned += 1;
-                if *files_scanned > config.max_indexed_files {
-                    *truncated = true;
-                    return;
-                }
-
-                if is_binary_extension(&file_name_str) {
-                    continue;
-                }
-
-                let metadata = match std::fs::metadata(&path) {
-                    Ok(m) => m,
-                    Err(_) => continue,
-                };
-                if metadata.len() > config.max_file_bytes as u64 {
-                    continue;
-                }
-
-                let relative_path = path
-                    .strip_prefix(root_path)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string();
-
-                let language = language_from_extension(&relative_path);
-
-                let file_entry = LocalFileEntry {
-                    path: path.clone(),
-                    relative_path: relative_path.clone(),
+            } else if path.is_file()
+                && Self::consider_file(
+                    &path,
+                    &file_name_str,
+                    root_path,
                     root_index,
-                    size: metadata.len(),
-                    language: language.map(|s| s.to_string()),
-                };
-
-                if let Some(lang) = lang_hint {
-                    if file_entry.language.as_deref() != Some(lang) {
-                        continue;
-                    }
-                }
-                if let Some(fh) = file_hint {
-                    if !file_name_str.contains(fh) {
-                        continue;
-                    }
-                }
-                if let Some(ph) = path_hint {
-                    if !relative_path.to_lowercase().contains(&ph.to_lowercase()) {
-                        continue;
-                    }
-                }
-
-                // Read file content once for scoring, snippet, and
-                // symbol extraction. Avoids multiple reads per file.
-                let content_text = std::fs::read(&path)
-                    .ok()
-                    .filter(|b| b.len() <= config.max_file_bytes)
-                    .and_then(|bytes| {
-                        let s = String::from_utf8_lossy(&bytes).to_string();
-                        if s.is_empty() {
-                            None
-                        } else {
-                            Some(s)
-                        }
-                    });
-
-                let score = Self::score_file(
-                    &file_entry,
+                    config,
                     query_lower,
                     query_tokens,
+                    path_hint,
+                    lang_hint,
+                    file_hint,
                     symbol_hint,
-                    content_text.as_deref(),
-                );
-
-                if score > 0.0 {
-                    let (snippet, line_start, line_end, matched_symbol, symbol_kind, boosted_score) =
-                        if let Some(sym_hint) = symbol_hint {
-                            if let Some(ref text) = content_text {
-                                if let Some((name, kind, sym_line)) =
-                                    Self::find_symbol_match_in_text(text, sym_hint)
-                                {
-                                    let snippet = Self::find_text_match_in_text(text, &name);
-                                    let boosted = score + 30.0;
-                                    (
-                                        snippet,
-                                        Some(sym_line),
-                                        Some(sym_line),
-                                        Some(name),
-                                        Some(kind),
-                                        boosted,
-                                    )
-                                } else if !query_lower.is_empty() {
-                                    let (s, ls, le) = Self::find_text_match(
-                                        &path,
-                                        query_lower,
-                                        config.max_file_bytes,
-                                    );
-                                    (s, ls, le, None, None, score)
-                                } else {
-                                    (None, None, None, None, None, score)
-                                }
-                            } else if !query_lower.is_empty() {
-                                let (s, ls, le) = Self::find_text_match(
-                                    &path,
-                                    query_lower,
-                                    config.max_file_bytes,
-                                );
-                                (s, ls, le, None, None, score)
-                            } else {
-                                (None, None, None, None, None, score)
-                            }
-                        } else if !query_lower.is_empty() {
-                            if let Some(ref text) = content_text {
-                                let snippet = Self::find_text_match_in_text(text, query_lower);
-                                (snippet, None, None, None, None, score)
-                            } else {
-                                let (s, ls, le) = Self::find_text_match(
-                                    &path,
-                                    query_lower,
-                                    config.max_file_bytes,
-                                );
-                                (s, ls, le, None, None, score)
-                            }
-                        } else {
-                            (None, None, None, None, None, score)
-                        };
-
-                    matches.push(LocalMatch {
-                        file: file_entry,
-                        score: boosted_score,
-                        line_start,
-                        line_end,
-                        snippet,
-                        matched_symbol,
-                        symbol_kind,
-                    });
-                }
+                    matches,
+                    files_scanned,
+                    truncated,
+                )
+            {
+                return;
             }
         }
     }
@@ -519,6 +419,7 @@ impl LocalWorkspaceBackend {
         lang_hint: Option<&str>,
         file_hint: Option<&str>,
         symbol_hint: Option<&str>,
+        ignore_stack: &IgnoreStack,
         matches: &mut Vec<LocalMatch>,
         files_scanned: &mut usize,
         _max_results: usize,
@@ -555,6 +456,13 @@ impl LocalWorkspaceBackend {
                 }
             }
 
+            if config.respect_gitignore {
+                let is_dir = path.is_dir();
+                if ignore_stack.is_ignored(root_path, &path, is_dir) {
+                    continue;
+                }
+            }
+
             if path.is_dir() {
                 if SKIP_DIRS.contains(&file_name_str.as_ref()) {
                     continue;
@@ -573,6 +481,7 @@ impl LocalWorkspaceBackend {
                     lang_hint,
                     file_hint,
                     symbol_hint,
+                    ignore_stack,
                     matches,
                     files_scanned,
                     _max_results,
@@ -581,146 +490,178 @@ impl LocalWorkspaceBackend {
                     timed_out,
                     truncated,
                 );
-            } else if path.is_file() {
-                *files_scanned += 1;
-                if *files_scanned > config.max_indexed_files {
-                    *truncated = true;
-                    return;
-                }
-
-                if is_binary_extension(&file_name_str) {
-                    continue;
-                }
-
-                let metadata = match std::fs::metadata(&path) {
-                    Ok(m) => m,
-                    Err(_) => continue,
-                };
-                if metadata.len() > config.max_file_bytes as u64 {
-                    continue;
-                }
-
-                let relative_path = path
-                    .strip_prefix(root_path)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string();
-
-                let language = language_from_extension(&relative_path);
-
-                let file_entry = LocalFileEntry {
-                    path: path.clone(),
-                    relative_path: relative_path.clone(),
+            } else if path.is_file()
+                && Self::consider_file(
+                    &path,
+                    &file_name_str,
+                    root_path,
                     root_index,
-                    size: metadata.len(),
-                    language: language.map(|s| s.to_string()),
-                };
-
-                if let Some(lang) = lang_hint {
-                    if file_entry.language.as_deref() != Some(lang) {
-                        continue;
-                    }
-                }
-                if let Some(fh) = file_hint {
-                    if !file_name_str.contains(fh) {
-                        continue;
-                    }
-                }
-                if let Some(ph) = path_hint {
-                    if !relative_path.to_lowercase().contains(&ph.to_lowercase()) {
-                        continue;
-                    }
-                }
-
-                // Read file content once for scoring, snippet, and
-                // symbol extraction. Avoids multiple reads per file.
-                let content_text = std::fs::read(&path)
-                    .ok()
-                    .filter(|b| b.len() <= config.max_file_bytes)
-                    .and_then(|bytes| {
-                        let s = String::from_utf8_lossy(&bytes).to_string();
-                        if s.is_empty() {
-                            None
-                        } else {
-                            Some(s)
-                        }
-                    });
-
-                let score = Self::score_file(
-                    &file_entry,
+                    config,
                     query_lower,
                     query_tokens,
+                    path_hint,
+                    lang_hint,
+                    file_hint,
                     symbol_hint,
-                    content_text.as_deref(),
-                );
-
-                if score > 0.0 {
-                    let (snippet, line_start, line_end, matched_symbol, symbol_kind, boosted_score) =
-                        if let Some(sym_hint) = symbol_hint {
-                            // Try symbol match using the already-read content
-                            if let Some(ref text) = content_text {
-                                if let Some((name, kind, sym_line)) =
-                                    Self::find_symbol_match_in_text(text, sym_hint)
-                                {
-                                    let snippet = Self::find_text_match_in_text(text, &name);
-                                    let boosted = score + 30.0;
-                                    (
-                                        snippet,
-                                        Some(sym_line),
-                                        Some(sym_line),
-                                        Some(name),
-                                        Some(kind),
-                                        boosted,
-                                    )
-                                } else if !query_lower.is_empty() {
-                                    let (s, ls, le) = Self::find_text_match(
-                                        &path,
-                                        query_lower,
-                                        config.max_file_bytes,
-                                    );
-                                    (s, ls, le, None, None, score)
-                                } else {
-                                    (None, None, None, None, None, score)
-                                }
-                            } else if !query_lower.is_empty() {
-                                let (s, ls, le) = Self::find_text_match(
-                                    &path,
-                                    query_lower,
-                                    config.max_file_bytes,
-                                );
-                                (s, ls, le, None, None, score)
-                            } else {
-                                (None, None, None, None, None, score)
-                            }
-                        } else if !query_lower.is_empty() {
-                            // Try snippet extraction from already-read content
-                            if let Some(ref text) = content_text {
-                                let snippet = Self::find_text_match_in_text(text, query_lower);
-                                (snippet, None, None, None, None, score)
-                            } else {
-                                let (s, ls, le) = Self::find_text_match(
-                                    &path,
-                                    query_lower,
-                                    config.max_file_bytes,
-                                );
-                                (s, ls, le, None, None, score)
-                            }
-                        } else {
-                            (None, None, None, None, None, score)
-                        };
-
-                    matches.push(LocalMatch {
-                        file: file_entry,
-                        score: boosted_score,
-                        line_start,
-                        line_end,
-                        snippet,
-                        matched_symbol,
-                        symbol_kind,
-                    });
-                }
+                    matches,
+                    files_scanned,
+                    truncated,
+                )
+            {
+                return;
             }
         }
+    }
+
+    /// Score, snippet-extract, and possibly emit a match for a single file.
+    ///
+    /// Returns `true` when the caller should stop iterating (files-scanned
+    /// cap hit and `truncated` was set); returns `false` to continue.
+    #[allow(clippy::too_many_arguments)]
+    fn consider_file(
+        path: &Path,
+        file_name_str: &str,
+        root_path: &Path,
+        root_index: usize,
+        config: &LocalConfig,
+        query_lower: &str,
+        query_tokens: &[&str],
+        path_hint: Option<&str>,
+        lang_hint: Option<&str>,
+        file_hint: Option<&str>,
+        symbol_hint: Option<&str>,
+        matches: &mut Vec<LocalMatch>,
+        files_scanned: &mut usize,
+        truncated: &mut bool,
+    ) -> bool {
+        *files_scanned += 1;
+        if *files_scanned > config.max_indexed_files {
+            *truncated = true;
+            return true;
+        }
+
+        if is_binary_extension(file_name_str) {
+            return false;
+        }
+
+        let metadata = match std::fs::metadata(path) {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        if metadata.len() > config.max_file_bytes as u64 {
+            return false;
+        }
+
+        let relative_path = path
+            .strip_prefix(root_path)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string();
+
+        let language = language_from_extension(&relative_path);
+
+        let file_entry = LocalFileEntry {
+            path: path.to_path_buf(),
+            relative_path: relative_path.clone(),
+            root_index,
+            size: metadata.len(),
+            language: language.map(|s| s.to_string()),
+        };
+
+        if let Some(lang) = lang_hint {
+            if file_entry.language.as_deref() != Some(lang) {
+                return false;
+            }
+        }
+        if let Some(fh) = file_hint {
+            if !file_name_str.contains(fh) {
+                return false;
+            }
+        }
+        if let Some(ph) = path_hint {
+            if !relative_path.to_lowercase().contains(&ph.to_lowercase()) {
+                return false;
+            }
+        }
+
+        let content_text = std::fs::read(path)
+            .ok()
+            .filter(|b| b.len() <= config.max_file_bytes)
+            .and_then(|bytes| {
+                let s = String::from_utf8_lossy(&bytes).to_string();
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            });
+
+        let score = Self::score_file(
+            &file_entry,
+            query_lower,
+            query_tokens,
+            symbol_hint,
+            content_text.as_deref(),
+        );
+
+        if score <= 0.0 {
+            return false;
+        }
+
+        let (snippet, line_start, line_end, matched_symbol, symbol_kind, boosted_score) =
+            if let Some(sym_hint) = symbol_hint {
+                if let Some(ref text) = content_text {
+                    if let Some((name, kind, sym_line)) =
+                        Self::find_symbol_match_in_text(text, sym_hint)
+                    {
+                        let snippet = Self::find_text_match_in_text(text, &name);
+                        let boosted = score + 30.0;
+                        (
+                            snippet,
+                            Some(sym_line),
+                            Some(sym_line),
+                            Some(name),
+                            Some(kind),
+                            boosted,
+                        )
+                    } else if !query_lower.is_empty() {
+                        let (s, ls, le) =
+                            Self::find_text_match(path, query_lower, config.max_file_bytes);
+                        (s, ls, le, None, None, score)
+                    } else {
+                        (None, None, None, None, None, score)
+                    }
+                } else if !query_lower.is_empty() {
+                    let (s, ls, le) =
+                        Self::find_text_match(path, query_lower, config.max_file_bytes);
+                    (s, ls, le, None, None, score)
+                } else {
+                    (None, None, None, None, None, score)
+                }
+            } else if !query_lower.is_empty() {
+                if let Some(ref text) = content_text {
+                    let snippet = Self::find_text_match_in_text(text, query_lower);
+                    (snippet, None, None, None, None, score)
+                } else {
+                    let (s, ls, le) =
+                        Self::find_text_match(path, query_lower, config.max_file_bytes);
+                    (s, ls, le, None, None, score)
+                }
+            } else {
+                (None, None, None, None, None, score)
+            };
+
+        matches.push(LocalMatch {
+            file: file_entry,
+            score: boosted_score,
+            line_start,
+            line_end,
+            snippet,
+            matched_symbol,
+            symbol_kind,
+        });
+
+        false
     }
 
     /// Score a file against the query. Returns 0.0 if no match.

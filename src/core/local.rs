@@ -249,6 +249,16 @@ pub enum LocalFetchPathError {
     /// The resolved path does not exist or is not a file.
     #[error("file not found")]
     NotFound,
+    /// The file exceeds the configured `max_file_bytes` limit.
+    #[error("file size {0} exceeds max_file_bytes ({1})")]
+    FileTooLarge(u64, usize),
+    /// A path component is hidden (starts with `.`) and `include_hidden` is false.
+    #[error("hidden path component '{0}' not allowed (include_hidden = false)")]
+    HiddenPath(String),
+    /// A path component is in the configured skip-dirs list and is not
+    /// allowed under the workspace fetch policy.
+    #[error("path traverses skipped directory '{0}'")]
+    SkippedDirectory(String),
 }
 
 fn has_parent_dir_component(path: &Path) -> bool {
@@ -288,6 +298,25 @@ pub fn validate_local_fetch_path(
     // 3. Path traversal rejection (component-aware: only reject ParentDir)
     if has_parent_dir_component(requested_path) {
         return Err(LocalFetchPathError::PathTraversal);
+    }
+
+    // 3a. Mirror local-search policy: reject hidden components and
+    // SKIP_DIRS components when `include_hidden` is false, so direct
+    // workspace fetch cannot retrieve files that `repo_search`
+    // intentionally hides (.git/config, target/..., node_modules/...).
+    if !cfg.include_hidden {
+        for component in requested_path.components() {
+            if let Component::Normal(os) = component {
+                if let Some(name) = os.to_str() {
+                    if name.starts_with('.') {
+                        return Err(LocalFetchPathError::HiddenPath(name.to_string()));
+                    }
+                    if SKIP_DIRS.contains(&name) {
+                        return Err(LocalFetchPathError::SkippedDirectory(name.to_string()));
+                    }
+                }
+            }
+        }
     }
 
     // 4. Binary extension rejection
@@ -331,6 +360,17 @@ pub fn validate_local_fetch_path(
     // 9. Verify it's a regular file (redundant after exists(), but safe)
     if !canonical.is_file() {
         return Err(LocalFetchPathError::NotFound);
+    }
+
+    // 10. Enforce the configured max_file_bytes bound so callers cannot
+    // bypass the operator-configured local file-size limit via direct fetch.
+    if let Ok(meta) = std::fs::metadata(&canonical) {
+        if meta.len() > cfg.max_file_bytes as u64 {
+            return Err(LocalFetchPathError::FileTooLarge(
+                meta.len(),
+                cfg.max_file_bytes,
+            ));
+        }
     }
 
     Ok(canonical)
@@ -790,5 +830,101 @@ mod tests {
                 "expected EscapesRoot for symlink escaping root, got {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn validate_local_fetch_path_oversized_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("big.txt");
+        let content = vec![b'a'; 2048];
+        std::fs::write(&file, &content).unwrap();
+        let cfg = LocalConfig {
+            max_file_bytes: 1024,
+            ..LocalConfig::default()
+        };
+        let err = validate_local_fetch_path(dir.path(), "big.txt", &cfg).unwrap_err();
+        match err {
+            LocalFetchPathError::FileTooLarge(size, max) => {
+                assert_eq!(size, 2048);
+                assert_eq!(max, 1024);
+            }
+            other => panic!("expected FileTooLarge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_local_fetch_path_at_limit_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("at_limit.txt");
+        let content = vec![b'a'; 1024];
+        std::fs::write(&file, &content).unwrap();
+        let cfg = LocalConfig {
+            max_file_bytes: 1024,
+            ..LocalConfig::default()
+        };
+        let result = validate_local_fetch_path(dir.path(), "at_limit.txt", &cfg);
+        assert!(
+            result.is_ok(),
+            "file at exactly max_file_bytes should be accepted, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_hidden_file_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".git/config"), "[core]\nfoo=bar").unwrap();
+        std::fs::write(dir.path().join(".env"), "SECRET=value").unwrap();
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(dir.path(), ".git/config", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::HiddenPath(_)));
+        let err = validate_local_fetch_path(dir.path(), ".env", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::HiddenPath(_)));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_hidden_allowed_when_include_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".git/config"), "[core]\nfoo=bar").unwrap();
+        let cfg = LocalConfig {
+            include_hidden: true,
+            ..LocalConfig::default()
+        };
+        let result = validate_local_fetch_path(dir.path(), ".git/config", &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for '.git/config' with include_hidden=true, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_skipped_directory_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("target")).unwrap();
+        std::fs::write(dir.path().join("target/generated.rs"), "// generated").unwrap();
+        std::fs::create_dir(dir.path().join("node_modules")).unwrap();
+        std::fs::write(dir.path().join("node_modules/pkg.js"), "// pkg").unwrap();
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(dir.path(), "target/generated.rs", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::SkippedDirectory(_)));
+        let err = validate_local_fetch_path(dir.path(), "node_modules/pkg.js", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::SkippedDirectory(_)));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_skipped_dir_allowed_when_include_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("target")).unwrap();
+        std::fs::write(dir.path().join("target/generated.rs"), "// x").unwrap();
+        let cfg = LocalConfig {
+            include_hidden: true,
+            ..LocalConfig::default()
+        };
+        let result = validate_local_fetch_path(dir.path(), "target/generated.rs", &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for 'target/generated.rs' with include_hidden=true, got {result:?}"
+        );
     }
 }
