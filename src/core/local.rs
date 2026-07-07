@@ -214,8 +214,9 @@ pub fn is_binary_extension(path: &str) -> bool {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or("");
-    BINARY_EXTENSIONS.contains(&ext)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    BINARY_EXTENSIONS.contains(&ext.as_str())
 }
 
 /// Errors that can occur when validating a local fetch path.
@@ -613,9 +614,11 @@ mod tests {
     }
 
     #[test]
-    fn is_binary_extension_case_sensitive() {
-        assert!(!is_binary_extension("image.PNG"));
-        assert!(!is_binary_extension("archive.ZIP"));
+    fn is_binary_extension_case_insensitive() {
+        assert!(is_binary_extension("image.PNG"));
+        assert!(is_binary_extension("archive.ZIP"));
+        assert!(is_binary_extension("image.PnG"));
+        assert!(is_binary_extension("Doc.PDF"));
         assert!(is_binary_extension("image.png"));
         assert!(is_binary_extension("archive.zip"));
     }
@@ -685,6 +688,19 @@ mod tests {
         let root = std::env::temp_dir();
         let cfg = LocalConfig::default();
         let err = validate_local_fetch_path(&root, "image.png", &cfg).unwrap_err();
+        assert!(matches!(err, LocalFetchPathError::BinaryFile(_)));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_uppercase_binary_rejected() {
+        let root = std::env::temp_dir();
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(&root, "report.PDF", &cfg).unwrap_err();
+        assert!(
+            matches!(err, LocalFetchPathError::BinaryFile(_)),
+            "uppercase binary extension should be rejected, got: {err:?}"
+        );
+        let err = validate_local_fetch_path(&root, "image.PNG", &cfg).unwrap_err();
         assert!(matches!(err, LocalFetchPathError::BinaryFile(_)));
     }
 

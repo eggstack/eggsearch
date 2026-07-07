@@ -556,6 +556,7 @@ impl FetchClient {
         }
 
         let mut cached_html_render: Option<render::blocks::RenderedBlocks> = None;
+        let mut raw_capped = false;
 
         let (
             mut title,
@@ -648,7 +649,10 @@ impl FetchClient {
         let raw_text: Option<String> = if extract_mode != ExtractMode::MetadataOnly {
             let decoded = String::from_utf8_lossy(&body);
             let (stripped, _) = strip_control_chars(&decoded);
-            let (bounded, _) = bound_text(&stripped, max_chars_raw);
+            let (bounded, raw_bounded) = bound_text(&stripped, max_chars_raw);
+            if raw_bounded {
+                raw_capped = true;
+            }
             Some(bounded)
         } else {
             None
@@ -661,6 +665,9 @@ impl FetchClient {
         // the per-field `id` in the framing header so the framing
         // identifies which URL the content came from.
         let mut trust_markers = TrustMarkers::default();
+        if raw_capped {
+            trust_markers.text_truncated = true;
+        }
 
         if let Some(t) = title {
             let (s, m) = sanitize_field(

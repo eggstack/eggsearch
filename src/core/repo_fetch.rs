@@ -535,7 +535,7 @@ pub fn apply_line_range(
     }
 
     let total = lines.len() as u32;
-    let start = line_start.unwrap_or(1).max(1);
+    let start = line_start.unwrap_or(1).clamp(1, total);
     let end = line_end.unwrap_or(total).min(total);
 
     let mut warnings = Vec::new();
@@ -1484,12 +1484,57 @@ mod tests {
     #[test]
     fn apply_line_range_line_start_exceeds_file() {
         let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
-        let (_sliced, _start, _end, truncated, warn) =
+        let (sliced, start, end, truncated, warn) =
             apply_line_range(&lines, Some(10), Some(15), 0, 0);
         assert!(truncated);
         let w = warn.unwrap();
         assert!(w.contains("line_start (10)"));
         assert!(w.contains("line_end (15)"));
+        assert_eq!(start, Some(5), "start should clamp to total");
+        assert_eq!(end, Some(5), "end should clamp to total");
+        assert_eq!(sliced.len(), 1, "should return only the last line");
+        assert_eq!(sliced[0].number, 5);
+    }
+
+    #[test]
+    fn apply_line_range_line_start_only_beyond_eof() {
+        let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
+        let (sliced, start, end, truncated, warn) = apply_line_range(&lines, Some(100), None, 0, 0);
+        assert_eq!(start, Some(5));
+        assert_eq!(end, Some(5));
+        assert_eq!(sliced.len(), 1, "should return only the last line");
+        assert_eq!(sliced[0].number, 5);
+        assert!(truncated);
+        assert!(warn.is_some());
+        assert!(warn.unwrap().contains("line_start (100)"));
+    }
+
+    #[test]
+    fn apply_line_range_line_end_only_beyond_eof() {
+        let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
+        let (sliced, start, end, truncated, warn) = apply_line_range(&lines, None, Some(100), 0, 0);
+        assert_eq!(start, Some(1));
+        assert_eq!(end, Some(5));
+        assert_eq!(sliced.len(), 5);
+        assert!(truncated);
+        assert!(warn.is_some());
+        assert!(warn.unwrap().contains("line_end (100)"));
+    }
+
+    #[test]
+    fn apply_line_range_both_line_args_beyond_eof() {
+        let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
+        let (sliced, start, end, truncated, _warn) =
+            apply_line_range(&lines, Some(50), Some(99), 0, 0);
+        assert_eq!(start, Some(5), "start should clamp to total");
+        assert_eq!(end, Some(5), "end should clamp to total");
+        assert_eq!(
+            sliced.len(),
+            1,
+            "should return single clamped line, not empty"
+        );
+        assert_eq!(sliced[0].number, 5);
+        assert!(truncated);
     }
 
     // --- clamp_lines_to_max_chars tests ---

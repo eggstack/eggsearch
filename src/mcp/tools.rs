@@ -1779,7 +1779,7 @@ pub async fn run_repo_fetch(
             };
 
             // Apply line range.
-            let (sliced_lines, _returned_start, _returned_end, _line_truncated, line_warning) =
+            let (sliced_lines, _returned_start, _returned_end, line_truncated, line_warning) =
                 apply_line_range(
                     &all_lines,
                     effective_line_start,
@@ -1794,6 +1794,8 @@ pub async fn run_repo_fetch(
                 (lines, ct)
             };
 
+            let fetch_text_truncated = trust_markers.text_truncated;
+
             // Build text from clamped lines (unframed source, like
             // workspace_fetch).
             let sliced_text = if clamped_lines.is_empty() {
@@ -1807,9 +1809,26 @@ pub async fn run_repo_fetch(
                 Some(t)
             };
 
+            // Detect explicit line-range clamps even when span
+            // selection absorbed them before `apply_line_range` saw
+            // the original out-of-bounds request. This covers both the
+            // `(Some, Some)` and one-sided override cases.
+            let requested_range_clamped = match (req.line_start, req.line_end) {
+                (Some(s), Some(e)) => s > total_lines.unwrap_or(0) || e > total_lines.unwrap_or(0),
+                (Some(s), None) => s > total_lines.unwrap_or(0),
+                (None, Some(e)) => e > total_lines.unwrap_or(0),
+                (None, None) => false,
+            };
+
             let mut warnings = warnings;
+            if fetch_text_truncated {
+                warnings.push("remote_repo_fetch_truncated_by_fetch_cap".to_string());
+            }
             if let Some(w) = line_warning {
                 warnings.push(w);
+            }
+            if requested_range_clamped {
+                warnings.push("remote_repo_fetch_line_range_clamped".to_string());
             }
             if char_truncated {
                 warnings.push("remote_repo_fetch_truncated_by_max_chars".to_string());
@@ -1835,11 +1854,17 @@ pub async fn run_repo_fetch(
             // Propagate text-level extraction truncation (Tier 1
             // length bounding at `fetch_max_chars`) into the boolean
             // `truncated` flag so callers know the file may have been
-            // longer than what was sliced.
+            // longer than what was sliced. Also OR in line-range
+            // clamping so callers who rely on `truncated` to decide
+            // whether the evidence is complete see true when either
+            // the source was capped or the requested line range was
+            // clamped at EOF.
             if char_truncated {
                 truncated = true;
                 trust_markers.text_truncated = true;
             }
+            truncated =
+                truncated || fetch_text_truncated || line_truncated || requested_range_clamped;
 
             // Build deterministic code span evidence when span selection produced a result.
             let locator_str_for_span = format!("{locator:?}");

@@ -9542,6 +9542,207 @@ async fn repo_fetch_line_range_with_context_via_mock() {
 }
 
 #[tokio::test]
+async fn repo_fetch_line_start_beyond_eof_marks_truncated_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("line 1\nline 2\nline 3\nline 4\nline 5\n");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: Some(50),
+            line_end: Some(60),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    assert_eq!(
+        v["truncated"], true,
+        "line range clamped beyond EOF should mark truncated=true"
+    );
+    let lines = v["lines"].as_array().expect("lines should be an array");
+    assert!(
+        !lines.is_empty(),
+        "clamped line range should still return at least one line, got: {lines:?}"
+    );
+    assert_eq!(
+        lines.last().unwrap()["number"].as_u64().unwrap(),
+        5,
+        "clamped range should end at the last line"
+    );
+}
+
+#[tokio::test]
+async fn repo_fetch_line_end_beyond_eof_marks_truncated_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("line 1\nline 2\nline 3\nline 4\nline 5\n");
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: Some(2),
+            line_end: Some(100),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    assert_eq!(
+        v["truncated"], true,
+        "line_end beyond EOF should mark truncated=true"
+    );
+    let lines = v["lines"].as_array().expect("lines should be an array");
+    assert_eq!(lines.len(), 4, "should return lines 2..=5 (4 lines)");
+    assert_eq!(lines.last().unwrap()["number"].as_u64().unwrap(), 5);
+}
+
+#[tokio::test]
+async fn repo_fetch_remote_capped_by_max_chars_cap_marks_truncated_via_mock() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let body = (1..=200)
+        .map(|n| format!("line {n}: payload"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    server.mock(|when, then| {
+        when.method(GET).path("/src/main.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(body);
+    });
+
+    let state = Arc::new(
+        ServerState::build({
+            let mut cfg = AppConfig::default();
+            cfg.fetch.allow_localhost = true;
+            cfg.fetch.allow_private_network = true;
+            cfg.fetch.sanitize_output = false;
+            cfg.fetch.max_chars_default = 200;
+            cfg.fetch.max_chars_cap = 200;
+            cfg
+        })
+        .expect("state"),
+    );
+
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/main.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should succeed");
+
+    assert_eq!(
+        v["truncated"], true,
+        "remote fetch should mark truncated=true when capped by max_chars_cap"
+    );
+    let markers = v["trust_markers"]
+        .as_object()
+        .expect("trust_markers should be an object");
+    assert_eq!(
+        markers["text_truncated"], true,
+        "trust_markers.text_truncated should be true when capped by max_chars_cap"
+    );
+    let warnings = v["warnings"].as_array().expect("warnings should be array");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str() == Some("remote_repo_fetch_truncated_by_fetch_cap")),
+        "should warn remote_repo_fetch_truncated_by_fetch_cap, got: {warnings:?}"
+    );
+}
+
+#[tokio::test]
 async fn repo_fetch_code_context_present_for_rust_file() {
     use httpmock::prelude::*;
 
