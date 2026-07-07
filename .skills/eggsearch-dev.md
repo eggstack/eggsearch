@@ -8,7 +8,7 @@ make check
 
 # Individual targets
 cargo fmt --check
-cargo clippy --all-features -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 cargo test --no-default-features
 cargo build --release
@@ -46,13 +46,13 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - **Extend `integration.rs`** for MCP tool input validation, provider failures, tool response shape
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
-- Always run `cargo clippy --all-features -- -D warnings` after adding
+- Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
 
 ## Key Conventions
 
 - No comments unless explicitly requested
 - Formatter: `cargo fmt` (standard rustfmt)
-- Linter: `cargo clippy --all-features -- -D warnings` — zero warnings
+- Linter: `cargo clippy --all-targets --all-features -- -D warnings` — zero warnings
 - Error handling: `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`.
 - Deterministic IDs: SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
 - Sanitization: All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.

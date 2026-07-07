@@ -10473,6 +10473,360 @@ async fn workspace_fetch_rejects_path_traversal() {
     );
 }
 
+#[tokio::test]
+async fn workspace_fetch_rejects_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "nonexistent.rs".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "nonexistent.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "missing file should fail");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("not found"),
+        "error should mention not found: {err}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_fetch_rejects_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir(root.join("subdir")).unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "subdir".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "subdir".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "directory path should fail");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("not found"),
+        "error should mention not found for directory: {err}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_fetch_path_with_spaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir(root.join("my folder")).unwrap();
+    std::fs::write(root.join("my folder").join("file.rs"), "fn hello() {}").unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "my folder/file.rs".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "my folder/file.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("workspace fetch with spaces should succeed");
+    assert_eq!(v["trust"], "local_trusted");
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("fn hello()"),
+        "fetched text should contain the function: {text}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_fetch_double_slash_normalized() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir(root.join("src")).unwrap();
+    std::fs::write(root.join("src").join("main.rs"), "fn main() {}").unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "src//main.rs".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "src//main.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+
+    let v = run_repo_fetch(state, args)
+        .await
+        .expect("workspace fetch with double slashes should succeed");
+    assert_eq!(v["trust"], "local_trusted");
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("fn main()"),
+        "fetched text should contain the function: {text}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_fetch_hidden_file_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join(".env"), "SECRET=abc").unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: ".env".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: ".env".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "hidden file should be rejected");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("hidden"),
+        "error should mention hidden: {err}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_fetch_skipped_directory_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir(root.join("node_modules")).unwrap();
+    std::fs::write(root.join("node_modules").join("pkg.js"), "// pkg").unwrap();
+
+    let backend = {
+        let cfg = eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        };
+        Arc::new(
+            eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg)
+                .expect("backend builds"),
+        )
+    };
+
+    let adapter =
+        eggsearch::meta::MetadataSearchAdapter::from_engines(vec![], Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(backend);
+    let state = Arc::new(state);
+
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.to_string(),
+        repo: "node_modules/pkg.js".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "node_modules/pkg.js".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+
+    let result = run_repo_fetch(state, args).await;
+    assert!(result.is_err(), "skipped directory path should be rejected");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("skipped") || err.to_string().contains("node_modules"),
+        "error should mention skipped directory: {err}"
+    );
+}
+
 #[test]
 fn provider_status_local_workspace_not_enabled_by_default() {
     let state = state_with_default();
@@ -17352,4 +17706,820 @@ fn provider_status_recipe_next_action_rules_are_valid() {
             }
         }
     }
+}
+
+// =========================================================================
+// Phase 6: Agent-facing response contracts and evidence quality
+// =========================================================================
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_response_contract_nonempty_results_array() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new("Result A", "https://example.com/a", "mock_a")
+                .with_snippet("Snippet A"),
+            MockResult::new("Result B", "https://example.com/b", "mock_a")
+                .with_snippet("Snippet B"),
+        ],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a"], "contract test"))
+        .await
+        .expect("ok");
+
+    let results = v["results"].as_array().expect("results should be array");
+    assert!(!results.is_empty(), "results array must be non-empty");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_result_card_has_required_fields() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new("Test Title", "https://example.com/page", "mock_a")
+                .with_snippet("Test snippet text"),
+        ],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a"], "test"))
+        .await
+        .expect("ok");
+
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(results.len(), 1, "expected exactly 1 result");
+    let card = &results[0];
+
+    let title = card["title"].as_str().expect("title should be a string");
+    assert!(!title.is_empty(), "title must not be empty");
+
+    let url = card["url"].as_str().expect("url should be a string");
+    assert!(!url.is_empty(), "url must not be empty");
+    assert!(
+        url.starts_with("https://") || url.starts_with("http://"),
+        "url must be a valid URL: {url}"
+    );
+
+    let snippet = card["snippet"]
+        .as_str()
+        .expect("snippet should be a string");
+    assert!(!snippet.is_empty(), "snippet must not be empty");
+
+    assert!(
+        card["id"].as_str().is_some(),
+        "source card must have an id field"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn source_card_ids_are_stable_across_identical_inputs() {
+    let make_engines = || {
+        vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new("Stable Title", "https://example.com/stable", "mock_a")
+                    .with_snippet("Stable snippet"),
+            ],
+        )]
+    };
+
+    let state1 = state_with_engines(test_cfg(), make_engines(), Duration::from_secs(5));
+    let v1 = run_web_search(state1, args_for(&["mock_a"], "stable"))
+        .await
+        .expect("ok");
+    let id1 = v1["results"].as_array().unwrap()[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let state2 = state_with_engines(test_cfg(), make_engines(), Duration::from_secs(5));
+    let v2 = run_web_search(state2, args_for(&["mock_a"], "stable"))
+        .await
+        .expect("ok");
+    let id2 = v2["results"].as_array().unwrap()[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(
+        id1, id2,
+        "source card IDs must be deterministic for identical inputs"
+    );
+    assert!(id1.starts_with("src_"), "ID must use src_ prefix: {id1}");
+    assert_eq!(
+        id1.len(),
+        "src_".len() + 16,
+        "ID must be src_ + 16 hex chars: {id1}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_deduped_cards_have_stable_id() {
+    let engines = vec![
+        MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Deduped",
+                "https://example.com/shared",
+                "mock_a",
+            )],
+        ),
+        MockEngine::success(
+            "mock_b",
+            vec![MockResult::new(
+                "Deduped",
+                "https://example.com/shared",
+                "mock_b",
+            )],
+        ),
+    ];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a", "mock_b"], "dedup"))
+        .await
+        .expect("ok");
+
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(results.len(), 1, "duplicate URLs must be deduped");
+    let id = results[0]["id"].as_str().unwrap();
+    assert!(id.starts_with("src_"), "deduped card ID: {id}");
+
+    let providers = results[0]["providers"]
+        .as_array()
+        .expect("providers is array");
+    assert_eq!(
+        providers.len(),
+        2,
+        "deduped card should list both providers"
+    );
+}
+
+#[tokio::test]
+async fn batch_fetch_returns_results_with_same_length_as_input() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    for i in 0..3 {
+        server.mock(move |when, then| {
+            when.method(GET).path(format!("/p{i}"));
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(format!(
+                    "<!DOCTYPE html><html><body><p>Page {i}</p></body></html>"
+                ));
+        });
+    }
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..3)
+        .map(|i| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(format!("/p{i}")),
+            extract_mode: None,
+            include_links: None,
+            max_chars: None,
+        })
+        .collect();
+
+    let v = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("batch_fetch should succeed");
+
+    let results = v["results"].as_array().expect("results is array");
+    assert_eq!(
+        results.len(),
+        3,
+        "results length must match input URL count"
+    );
+    assert_eq!(v["fetched"], 3);
+    assert_eq!(v["failed"], 0);
+}
+
+#[tokio::test]
+async fn batch_fetch_empty_items_returns_validation_not_empty_array() {
+    let state = state_with_default();
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("empty items should be a validation error");
+    assert!(
+        err.to_string().contains("must not be empty"),
+        "error should say 'must not be empty': {err}"
+    );
+}
+
+#[test]
+fn build_evidence_bundle_returns_expected_structure() {
+    use eggsearch::mcp::tools::{run_build_evidence_bundle, EvidenceBundleArgs};
+
+    let args = EvidenceBundleArgs {
+        goal: Some("test evidence bundle".to_string()),
+        sources: vec![eggsearch::core::evidence_bundle::EvidenceSourceInput {
+            id: Some("src_test123".to_string()),
+            url: Some("https://example.com/source".to_string()),
+            title: Some("Test Source".to_string()),
+            snippet: Some("A test snippet".to_string()),
+            providers: vec!["mock".to_string()],
+            score: Some(0.95),
+            trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
+            trust_markers: None,
+            metadata: None,
+            quality: None,
+        }],
+        fetches: vec![],
+        include_unfetched_sources: None,
+        max_sources: None,
+        max_fetched_items: None,
+        max_total_chars: None,
+    };
+
+    let v = run_build_evidence_bundle(args).expect("bundle should succeed");
+
+    assert!(
+        v["bundle_id"].as_str().is_some(),
+        "bundle must have bundle_id"
+    );
+    assert!(
+        v["bundle_id"].as_str().unwrap().starts_with("bundle_"),
+        "bundle_id must use bundle_ prefix"
+    );
+    assert!(
+        v["created_at"].as_str().is_some(),
+        "bundle must have created_at"
+    );
+
+    let sources = v["sources"].as_array().expect("sources is array");
+    assert_eq!(sources.len(), 1, "should have 1 source");
+    assert_eq!(sources[0]["title"], "Test Source");
+    assert_eq!(
+        sources[0]["trust"], "external_untrusted",
+        "trust label on source"
+    );
+
+    let trust_summary = v["trust_summary"]
+        .as_object()
+        .expect("trust_summary is object");
+    assert!(
+        trust_summary.get("external_untrusted_count").is_some(),
+        "trust_summary must have external_untrusted_count"
+    );
+
+    let provider_summary = v["provider_summary"]
+        .as_object()
+        .expect("provider_summary is object");
+    assert!(
+        provider_summary.get("providers_used").is_some(),
+        "provider_summary must have providers_used"
+    );
+    assert!(
+        provider_summary.get("per_provider_counts").is_some(),
+        "provider_summary must have per_provider_counts"
+    );
+
+    let limits = v["limits"].as_object().expect("limits is object");
+    assert!(
+        limits.get("max_sources").is_some(),
+        "limits must have max_sources"
+    );
+}
+
+#[test]
+fn build_evidence_bundle_empty_sources_and_fetches_errors() {
+    use eggsearch::mcp::tools::{run_build_evidence_bundle, EvidenceBundleArgs};
+
+    let args = EvidenceBundleArgs {
+        goal: None,
+        sources: vec![],
+        fetches: vec![],
+        include_unfetched_sources: None,
+        max_sources: None,
+        max_fetched_items: None,
+        max_total_chars: None,
+    };
+
+    let err = run_build_evidence_bundle(args).expect_err("empty bundle should error");
+    assert!(
+        err.to_string().contains("at least one"),
+        "error should mention at least one source/fetch: {err}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_snippet_no_markdown_artifacts_in_plain_text() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new("Clean Title", "https://example.com/clean", "mock_a")
+                .with_snippet("Just a normal snippet with **bold** and *italic* markers"),
+        ],
+    )];
+    let state = state_with_engines_sanitize(test_cfg(), engines, Duration::from_secs(5), false);
+    let v = run_web_search(state, args_for(&["mock_a"], "clean"))
+        .await
+        .expect("ok");
+
+    let results = v["results"].as_array().expect("results is array");
+    let card = &results[0];
+
+    let snippet = card["snippet"].as_str().expect("snippet is string");
+    assert_eq!(
+        snippet, "Just a normal snippet with **bold** and *italic* markers",
+        "plain-text snippet must not be sanitized (markdown preserved as-is)"
+    );
+
+    let title = card["title"].as_str().expect("title is string");
+    assert_eq!(title, "Clean Title");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_sanitize_removes_control_chars_from_snippet() {
+    let poisoned = "Good text\x00with\x07control\x0Bchars";
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new("Poisoned", "https://example.com/poisoned", "mock_a")
+                .with_snippet(poisoned),
+        ],
+    )];
+    let state = state_with_engines_sanitize(test_cfg(), engines, Duration::from_secs(5), true);
+    let v = run_web_search(state, args_for(&["mock_a"], "poisoned"))
+        .await
+        .expect("ok");
+
+    let results = v["results"].as_array().expect("results is array");
+    let snippet = results[0]["snippet"].as_str().expect("snippet is string");
+    assert!(
+        !snippet.contains('\x00'),
+        "sanitized snippet must not contain NUL"
+    );
+    assert!(
+        !snippet.contains('\x07'),
+        "sanitized snippet must not contain BEL"
+    );
+    assert!(
+        !snippet.contains('\x0B'),
+        "sanitized snippet must not contain VT"
+    );
+    assert!(
+        snippet.contains("Good text"),
+        "sanitized snippet must preserve readable text"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_trust_markers_present_in_response() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![
+            MockResult::new("Trust", "https://example.com/trust", "mock_a").with_snippet("snippet"),
+        ],
+    )];
+    let state = state_with_engines_sanitize(test_cfg(), engines, Duration::from_secs(5), true);
+    let v = run_web_search(state, args_for(&["mock_a"], "trust"))
+        .await
+        .expect("ok");
+
+    let markers = v["trust_markers"]
+        .as_object()
+        .expect("trust_markers should be an object");
+    assert!(
+        markers.get("text_sanitized").is_some(),
+        "trust_markers must have text_sanitized"
+    );
+    assert!(
+        markers.get("text_truncated").is_some(),
+        "trust_markers must have text_truncated"
+    );
+    assert!(
+        markers.get("control_chars_removed").is_some(),
+        "trust_markers must have control_chars_removed"
+    );
+    assert!(
+        markers.get("injection_hits").is_some(),
+        "trust_markers must have injection_hits"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn batch_fetch_result_stable_ids_are_deterministic() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<!DOCTYPE html><html><body><p>OK</p></body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v1 = run_batch_fetch(
+        state.clone(),
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: server.url("/page"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("ok");
+    let id1 = v1["results"].as_array().unwrap()[0]["stable_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let v2 = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: server.url("/page"),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await
+    .expect("ok");
+    let id2 = v2["results"].as_array().unwrap()[0]["stable_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(
+        id1, id2,
+        "batch_fetch stable_id must be deterministic across calls"
+    );
+    assert!(
+        id1.starts_with("batch_"),
+        "stable_id must use batch_ prefix: {id1}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn build_evidence_bundle_with_sources_and_fetches() {
+    use eggsearch::mcp::tools::{run_build_evidence_bundle, EvidenceBundleArgs};
+
+    let args = EvidenceBundleArgs {
+        goal: Some("comprehensive evidence".to_string()),
+        sources: vec![
+            eggsearch::core::evidence_bundle::EvidenceSourceInput {
+                id: Some("src_abc".to_string()),
+                url: Some("https://example.com/doc1".to_string()),
+                title: Some("Documentation".to_string()),
+                snippet: Some("Official docs".to_string()),
+                providers: vec!["mock".to_string()],
+                score: Some(0.9),
+                trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
+                trust_markers: None,
+                metadata: None,
+                quality: None,
+            },
+            eggsearch::core::evidence_bundle::EvidenceSourceInput {
+                id: Some("src_def".to_string()),
+                url: Some("https://example.com/doc2".to_string()),
+                title: Some("Blog Post".to_string()),
+                snippet: Some("Community discussion".to_string()),
+                providers: vec!["mock".to_string()],
+                score: Some(0.7),
+                trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
+                trust_markers: None,
+                metadata: None,
+                quality: None,
+            },
+        ],
+        fetches: vec![eggsearch::core::evidence_bundle::EvidenceFetchInput {
+            source_id: Some("src_abc".to_string()),
+            url: Some("https://example.com/doc1".to_string()),
+            locator: None,
+            fetched: true,
+            content_type: Some("text/html".to_string()),
+            language: None,
+            selected_span: None,
+            code_span_id: None,
+            line_start: None,
+            line_end: None,
+            text: Some("Full fetched content here".to_string()),
+            truncated: false,
+            trust: Some(eggsearch::core::FetchTrust::ExternalUntrusted),
+            trust_markers: None,
+            warnings: vec![],
+        }],
+        include_unfetched_sources: None,
+        max_sources: None,
+        max_fetched_items: None,
+        max_total_chars: None,
+    };
+
+    let v = run_build_evidence_bundle(args).expect("bundle should succeed");
+
+    let sources = v["sources"].as_array().expect("sources is array");
+    assert_eq!(sources.len(), 2, "should have 2 sources");
+
+    let fetched = v["fetched_items"]
+        .as_array()
+        .expect("fetched_items is array");
+    assert_eq!(fetched.len(), 1, "should have 1 fetched item");
+    assert_eq!(fetched[0]["fetched"], true);
+
+    let links = v["source_links"].as_array().expect("source_links is array");
+    assert!(
+        !links.is_empty(),
+        "should have links between sources and fetches"
+    );
+
+    let ts = v["trust_summary"].as_object().expect("trust_summary");
+    let total_trust: i64 = ["external_untrusted_count", "local_trusted_count"]
+        .iter()
+        .filter_map(|k| ts.get(*k).and_then(|v| v.as_i64()))
+        .sum();
+    assert!(
+        total_trust >= 2,
+        "trust_summary total should be >= number of sources: {ts:?}"
+    );
+
+    assert_eq!(v["goal"], "comprehensive evidence");
+}
+
+#[tokio::test]
+async fn batch_fetch_with_single_empty_url_returns_validation_error() {
+    let state = state_with_default();
+    let res = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: "   ".to_string(),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+        },
+    )
+    .await;
+    let err = res.expect_err("blank URL should error");
+    assert!(
+        err.to_string().contains("url must not be empty"),
+        "error should mention empty URL: {err}"
+    );
+}
+
+#[test]
+fn build_evidence_bundle_deterministic_bundle_id() {
+    use eggsearch::mcp::tools::{run_build_evidence_bundle, EvidenceBundleArgs};
+
+    let make_args = || EvidenceBundleArgs {
+        goal: Some("determinism test".to_string()),
+        sources: vec![eggsearch::core::evidence_bundle::EvidenceSourceInput {
+            id: Some("src_det".to_string()),
+            url: Some("https://example.com/det".to_string()),
+            title: Some("Det Source".to_string()),
+            snippet: Some("snippet".to_string()),
+            providers: vec!["mock".to_string()],
+            score: Some(1.0),
+            trust: Some(eggsearch::core::result::TrustLevel::ExternalUntrusted),
+            trust_markers: None,
+            metadata: None,
+            quality: None,
+        }],
+        fetches: vec![],
+        include_unfetched_sources: None,
+        max_sources: None,
+        max_fetched_items: None,
+        max_total_chars: None,
+    };
+
+    let v1 = run_build_evidence_bundle(make_args()).expect("ok");
+    let v2 = run_build_evidence_bundle(make_args()).expect("ok");
+
+    let id1 = v1["bundle_id"].as_str().unwrap();
+    let id2 = v2["bundle_id"].as_str().unwrap();
+
+    assert_eq!(
+        id1, id2,
+        "bundle_id must be deterministic for identical inputs"
+    );
+    assert!(
+        id1.starts_with("bundle_"),
+        "bundle_id must use bundle_ prefix: {id1}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_response_has_structured_warnings_array() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("SW", "https://example.com/sw", "mock_a")],
+    )];
+    let state = state_with_engines_sanitize(test_cfg(), engines, Duration::from_secs(5), true);
+    let v = run_web_search(state, args_for(&["mock_a"], "test"))
+        .await
+        .expect("ok");
+
+    assert!(
+        v["structured_warnings"].is_array(),
+        "structured_warnings must be present and be an array"
+    );
+    let warnings = v["structured_warnings"].as_array().unwrap();
+    assert!(
+        !warnings.is_empty(),
+        "structured_warnings should have at least one entry (untrusted context)"
+    );
+
+    let has_untrusted = warnings.iter().any(|w| {
+        w.get("code")
+            .and_then(|c| c.as_str())
+            .map(|c| c == "generic_context_untrusted")
+            .unwrap_or(false)
+    });
+    assert!(
+        has_untrusted,
+        "should have generic_context_untrusted warning: {warnings:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_next_actions_array_present() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("NA", "https://example.com/na", "mock_a").with_snippet("snippet")],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a"], "test"))
+        .await
+        .expect("ok");
+
+    assert!(
+        v["next_actions"].is_array(),
+        "next_actions must be an array in response"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_response_has_routing_decision() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("RD", "https://example.com/rd", "mock_a")],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a"], "test"))
+        .await
+        .expect("ok");
+
+    let rd = v["routing_decision"]
+        .as_object()
+        .expect("routing_decision must be present");
+    assert!(
+        rd.get("selected_providers").is_some(),
+        "routing_decision must have selected_providers"
+    );
+    assert!(
+        rd["selected_providers"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("mock_a")),
+        "selected_providers should include mock_a"
+    );
+}
+
+#[test]
+fn build_evidence_bundle_with_fetches_populates_limits() {
+    use eggsearch::mcp::tools::{run_build_evidence_bundle, EvidenceBundleArgs};
+
+    let args = EvidenceBundleArgs {
+        goal: None,
+        sources: vec![],
+        fetches: vec![eggsearch::core::evidence_bundle::EvidenceFetchInput {
+            source_id: None,
+            url: Some("https://example.com".to_string()),
+            locator: None,
+            fetched: true,
+            content_type: None,
+            language: None,
+            selected_span: None,
+            code_span_id: None,
+            line_start: None,
+            line_end: None,
+            text: Some("hello".to_string()),
+            truncated: false,
+            trust: Some(eggsearch::core::FetchTrust::ExternalUntrusted),
+            trust_markers: None,
+            warnings: vec![],
+        }],
+        include_unfetched_sources: None,
+        max_sources: None,
+        max_fetched_items: None,
+        max_total_chars: None,
+    };
+
+    let v = run_build_evidence_bundle(args).expect("ok");
+
+    let limits = v["limits"].as_object().expect("limits is object");
+    assert!(
+        limits.get("max_sources").is_some(),
+        "limits must have max_sources"
+    );
+    assert!(
+        limits.get("max_fetched_items").is_some(),
+        "limits must have max_fetched_items"
+    );
+    assert!(
+        limits.get("max_total_chars").is_some(),
+        "limits must have max_total_chars"
+    );
+    assert!(
+        limits.get("sources_truncated").is_some(),
+        "limits must have sources_truncated"
+    );
+    assert!(
+        limits.get("fetched_items_truncated").is_some(),
+        "limits must have fetched_items_truncated"
+    );
+    assert!(
+        limits.get("total_chars_exceeded").is_some(),
+        "limits must have total_chars_exceeded"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_response_has_query_and_mode() {
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("Q", "https://example.com/q", "mock_a")],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a"], "test query"))
+        .await
+        .expect("ok");
+
+    assert_eq!(v["query"], "test query", "response must echo the query");
+    assert!(
+        v["mode"].as_str().is_some(),
+        "response must have mode field"
+    );
+    assert!(
+        v["providers_queried"].as_array().is_some(),
+        "response must have providers_queried array"
+    );
+    assert!(
+        v["warnings"].as_array().is_some(),
+        "response must have warnings array"
+    );
+    assert!(
+        v["providers_failed"].as_array().is_some(),
+        "response must have providers_failed array"
+    );
 }

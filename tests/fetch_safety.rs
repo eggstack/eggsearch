@@ -12,12 +12,14 @@ use eggsearch::core::sanitize::{
 use eggsearch::core::SymbolKind;
 use eggsearch::core::{code_host_fetch::resolve_code_host_fetch_target, fetch::FetchTransformKind};
 use eggsearch::fetch::detect::classify;
+use eggsearch::fetch::extract::extract_links_from_html;
 use eggsearch::fetch::limits::{validate_fetch_target, validate_url, FetchLimits};
 use eggsearch::fetch::render::code::{render_code, render_diff, render_plaintext};
 use eggsearch::fetch::render::csv::render_csv;
 use eggsearch::fetch::render::markdown_source::render_markdown_source;
 use eggsearch::fetch::render::notebook::render_notebook;
 use eggsearch::fetch::render::render_blocks;
+use eggsearch::fetch::render::text::render_blocks_text;
 use eggsearch::fetch::span::{select_span, SpanConfidence, SpanSelectionKind};
 
 // =========================================================================
@@ -742,6 +744,116 @@ fn f8_symlink_rejected_when_follow_symlinks_false() {
     let _ = std::fs::remove_file(&outside);
 }
 
+#[test]
+fn f9_double_slashes_normalized() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src").join("main.rs"), "fn main() {}").unwrap();
+    let cfg = default_local_config();
+    let result = validate_local_fetch_path(dir.path(), "src//main.rs", &cfg);
+    assert!(
+        result.is_ok(),
+        "expected Ok for 'src//main.rs' (double slashes normalized), got {result:?}"
+    );
+}
+
+#[test]
+fn f10_double_slash_traversal_rejected() {
+    let root = Path::new("/tmp/test_root");
+    let cfg = default_local_config();
+    let err = validate_local_fetch_path(root, "src//../../secret.txt", &cfg).unwrap_err();
+    assert!(
+        matches!(err, LocalFetchPathError::PathTraversal),
+        "expected PathTraversal for 'src//../../secret.txt', got: {err:?}"
+    );
+}
+
+#[test]
+fn f11_trailing_slash_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file.rs"), "content").unwrap();
+    let cfg = default_local_config();
+    let result = validate_local_fetch_path(dir.path(), "file.rs/", &cfg);
+    assert!(
+        matches!(result, Err(LocalFetchPathError::NotFound)),
+        "expected NotFound for trailing slash, got: {result:?}"
+    );
+}
+
+#[test]
+fn f12_path_with_spaces_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("my folder")).unwrap();
+    std::fs::write(dir.path().join("my folder").join("file.rs"), "content").unwrap();
+    let cfg = default_local_config();
+    let result = validate_local_fetch_path(dir.path(), "my folder/file.rs", &cfg);
+    assert!(
+        result.is_ok(),
+        "expected Ok for path with spaces, got {result:?}"
+    );
+}
+
+#[test]
+fn f13_very_long_filename_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let long_name = "a".repeat(200);
+    std::fs::write(dir.path().join(format!("{long_name}.rs")), "content").unwrap();
+    let cfg = default_local_config();
+    let result = validate_local_fetch_path(dir.path(), &format!("{long_name}.rs"), &cfg);
+    assert!(
+        result.is_ok(),
+        "expected Ok for very long filename (within OS limits), got {result:?}"
+    );
+}
+
+#[test]
+fn f14_very_long_component_exceeding_os_limit_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let long_name = "a".repeat(300);
+    let result = validate_local_fetch_path(
+        dir.path(),
+        &format!("{long_name}.rs"),
+        &default_local_config(),
+    );
+    assert!(
+        matches!(result, Err(LocalFetchPathError::NotFound)),
+        "expected NotFound for path exceeding OS limits, got: {result:?}"
+    );
+}
+
+#[test]
+fn f15_directory_path_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("subdir")).unwrap();
+    let cfg = default_local_config();
+    let result = validate_local_fetch_path(dir.path(), "subdir", &cfg);
+    assert!(
+        matches!(result, Err(LocalFetchPathError::NotFound)),
+        "expected NotFound for directory path, got: {result:?}"
+    );
+}
+
+#[test]
+fn f16_symlink_followed_when_enabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target.txt");
+    std::fs::write(&target, "secret content").unwrap();
+    #[cfg(unix)]
+    {
+        let link = dir.path().join("link.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let cfg = LocalConfig {
+            follow_symlinks: true,
+            ..LocalConfig::default()
+        };
+        let result = validate_local_fetch_path(dir.path(), "link.txt", &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for symlink with follow_symlinks=true, got {result:?}"
+        );
+    }
+}
+
 // =========================================================================
 // G. Fetch Target Validation Tests
 // =========================================================================
@@ -1029,4 +1141,932 @@ fn j9_detect_rss_xml_from_content_type() {
         b"<rss><channel/></rss>",
     );
     assert_eq!(detected.kind, eggsearch::core::DocumentKind::Xml);
+}
+
+// =========================================================================
+// K. Document-Rendering Golden Snapshot Tests
+// =========================================================================
+
+const MINIMAL_BODY_HTML: &[u8] = b"<html><body><h1>Hello</h1><p>World</p></body></html>";
+
+#[test]
+fn k1_minimal_body_html_extracts_heading_and_paragraph() {
+    let (_, _, rendered, _, _) =
+        render_blocks(MINIMAL_BODY_HTML, "https://example.com/", 10000, false);
+    assert!(!rendered.blocks.is_empty());
+
+    let kinds: Vec<_> = rendered.blocks.iter().map(|b| b.kind).collect();
+    assert!(kinds.contains(&eggsearch::core::BlockKind::Heading));
+    assert!(kinds.contains(&eggsearch::core::BlockKind::Paragraph));
+
+    let h1 = rendered
+        .blocks
+        .iter()
+        .find(|b| b.kind == eggsearch::core::BlockKind::Heading)
+        .unwrap();
+    assert_eq!(h1.text, "Hello");
+    assert_eq!(h1.level, Some(1));
+
+    let p = rendered
+        .blocks
+        .iter()
+        .find(|b| b.kind == eggsearch::core::BlockKind::Paragraph)
+        .unwrap();
+    assert_eq!(p.text, "World");
+}
+
+const MIXED_BLOCKS_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <div class=\"intro\">
+    <p>Introduction paragraph text.</p>
+  </div>
+  <pre>
+fn preformatted() {
+    let x = 1;
+}
+  </pre>
+  <p>Regular paragraph after pre.</p>
+  <div>
+    <p>Nested paragraph inside div.</p>
+  </div>
+</body>
+</html>";
+
+#[test]
+fn k2_mixed_pre_p_div_blocks_produce_correct_kinds() {
+    let (_, _, rendered, _, _) =
+        render_blocks(MIXED_BLOCKS_HTML, "https://example.com/", 10000, false);
+    let text = render_blocks_text(&rendered.blocks);
+    assert!(text.contains("Introduction paragraph text."));
+    assert!(text.contains("fn preformatted()"));
+    assert!(text.contains("Regular paragraph after pre."));
+    assert!(text.contains("Nested paragraph inside div."));
+
+    let kinds: Vec<_> = rendered.blocks.iter().map(|b| b.kind).collect();
+    assert!(kinds.contains(&eggsearch::core::BlockKind::Paragraph));
+    assert!(kinds.contains(&eggsearch::core::BlockKind::Code));
+}
+
+const NOTEBOOK_GOLDEN: &str = "{\n  \"cells\": [\n    {\n      \"cell_type\": \"markdown\",\n      \"source\": [\"# Analysis\\n\", \"Data exploration notebook.\"]\n    },\n    {\n      \"cell_type\": \"code\",\n      \"source\": [\"import pandas as pd\\n\", \"df = pd.read_csv('data.csv')\"]\n    },\n    {\n      \"cell_type\": \"markdown\",\n      \"source\": [\"## Results\\n\", \"See chart below.\"]\n    },\n    {\n      \"cell_type\": \"code\",\n      \"source\": [\"df.plot()\"]\n    }\n  ],\n  \"metadata\": {\n    \"kernelspec\": {\n      \"display_name\": \"Python 3 (ipykernel)\"\n    }\n  }\n}";
+
+#[test]
+fn k3_notebook_golden_snapshot_full_output() {
+    let rendered = render_notebook(NOTEBOOK_GOLDEN, 10000);
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n---\n");
+
+    assert!(text.contains("# Analysis"));
+    assert!(text.contains("Data exploration notebook."));
+    assert!(text.contains("[cell 1 (markdown)]"));
+    assert!(text.contains("import pandas as pd"));
+    assert!(text.contains("[cell 2 (code)]"));
+    assert!(text.contains("df = pd.read_csv"));
+    assert!(text.contains("## Results"));
+    assert!(text.contains("[cell 3 (markdown)]"));
+    assert!(text.contains("df.plot()"));
+    assert!(text.contains("[cell 4 (code)]"));
+
+    assert_eq!(rendered.blocks.len(), 4);
+    assert_eq!(rendered.outline.len(), 1);
+    assert_eq!(rendered.outline[0].title, "Python 3 (ipykernel)");
+    assert!(!rendered.text_truncated);
+}
+
+const CSV_QUOTED_COMMAS: &str =
+    "name,description,city\nAlice,\"Likes cats, dogs, and birds\",NYC\nBob,\"Works at Acme, Inc.\",LA\n";
+
+#[test]
+fn k4_csv_quoted_commas_golden_snapshot() {
+    let rendered = render_csv(CSV_QUOTED_COMMAS, 10000);
+    let meta = &rendered.blocks[0];
+    assert!(meta.text.contains("3 columns, 3 rows"));
+    assert_eq!(meta.language, Some("csv".to_string()));
+
+    let all_text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(all_text.contains("name,description,city"));
+    assert!(all_text.contains("Alice,\"Likes cats, dogs, and birds\",NYC"));
+    assert!(all_text.contains("Bob,\"Works at Acme, Inc.\",LA"));
+    assert!(!rendered.text_truncated);
+    assert!(!rendered.block_truncated);
+}
+
+const TSV_MIXED: &str =
+    "name,age,city,bio\nAlice,30,NYC,\"Likes cats, dogs\"\nBob,25,LA,\"Plain text\"\n";
+
+#[test]
+fn k5_tsv_mixed_quoting_golden_snapshot() {
+    let rendered = render_csv(TSV_MIXED, 10000);
+    let meta = &rendered.blocks[0];
+    assert!(meta.text.contains("columns, 3 rows"));
+
+    let all_text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(all_text.contains("Alice,30,NYC,\"Likes cats, dogs\""));
+    assert!(all_text.contains("Bob,25,LA,\"Plain text\""));
+}
+
+fn make_large_html_paragraphs(n: usize) -> Vec<u8> {
+    let mut html = b"<html><body>".to_vec();
+    for i in 0..n {
+        html.extend_from_slice(
+            format!(
+                "<p>Paragraph number {} with some filler text to increase size.</p>",
+                i
+            )
+            .as_bytes(),
+        );
+    }
+    html.extend_from_slice(b"</body></html>");
+    html
+}
+
+#[test]
+fn k6_large_html_exercises_truncation() {
+    let html = make_large_html_paragraphs(500);
+    assert!(html.len() > 10_000);
+    let (_, _, rendered, _, _) = render_blocks(&html, "https://example.com/", 2000, false);
+    assert!(rendered.text_truncated || rendered.block_truncated);
+    let total_chars: usize = rendered.blocks.iter().map(|b| b.text.len()).sum();
+    assert!(
+        total_chars <= 2200,
+        "total chars {total_chars} should be near budget"
+    );
+}
+
+#[test]
+fn k7_minimal_html_golden_exact() {
+    let html: &[u8] = b"<html><body><p>Hello World</p></body></html>";
+    let (title, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+    assert!(title.is_none());
+    assert_eq!(rendered.blocks.len(), 1);
+    assert_eq!(
+        rendered.blocks[0].kind,
+        eggsearch::core::BlockKind::Paragraph
+    );
+    assert_eq!(rendered.blocks[0].text, "Hello World");
+    assert!(!rendered.text_truncated);
+    assert!(!rendered.block_truncated);
+}
+
+const TABLE_HTML: &[u8] = b"<html><body>
+<table>
+<tr><th>Name</th><th>Score</th></tr>
+<tr><td>Alice</td><td>95</td></tr>
+<tr><td>Bob</td><td>87</td></tr>
+</table>
+</body></html>";
+
+#[test]
+fn k8_table_html_golden_snapshot() {
+    let (_, _, rendered, _, _) = render_blocks(TABLE_HTML, "https://example.com/", 10000, false);
+    let text = render_blocks_text(&rendered.blocks);
+    assert!(text.contains("Name"));
+    assert!(text.contains("Score"));
+    assert!(text.contains("Alice"));
+    assert!(text.contains("95"));
+    assert!(text.contains("Bob"));
+    assert!(text.contains("87"));
+    assert!(rendered
+        .blocks
+        .iter()
+        .any(|b| b.kind == eggsearch::core::BlockKind::Table));
+}
+
+const CODE_BLOCK_HTML: &[u8] = b"<html><body>
+<pre><code class=\"language-python\">
+def greet(name):
+    return f\"Hello, {name}\"
+</code></pre>
+</body></html>";
+
+#[test]
+fn k9_code_block_html_golden_snapshot() {
+    let (_, _, rendered, _, _) =
+        render_blocks(CODE_BLOCK_HTML, "https://example.com/", 10000, false);
+    let text = render_blocks_text(&rendered.blocks);
+    assert!(text.contains("```python"));
+    assert!(text.contains("def greet(name):"));
+    assert!(text.contains("```"));
+
+    let code_block = rendered
+        .blocks
+        .iter()
+        .find(|b| b.kind == eggsearch::core::BlockKind::Code)
+        .unwrap();
+    assert_eq!(code_block.language, Some("python".to_string()));
+}
+
+// =========================================================================
+// L. Adversarial HTML Rendering Tests
+// =========================================================================
+
+const NOSCRIPT_RENDER_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before noscript.</p>
+  <noscript><p>Hidden noscript content.</p></noscript>
+  <p>After noscript.</p>
+</body>
+</html>";
+
+#[test]
+fn l1_noscript_stripped_from_render_blocks() {
+    let (_, _, rendered, _, _) =
+        render_blocks(NOSCRIPT_RENDER_HTML, "https://example.com/", 10000, false);
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Before noscript"));
+    assert!(text.contains("After noscript"));
+    assert!(
+        !text.contains("Hidden noscript"),
+        "noscript content should be stripped"
+    );
+}
+
+const XMP_TAG_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before xmp.</p>
+  <xmp>preformatted <b>bold</b> &amp; stuff</xmp>
+  <p>After xmp.</p>
+</body>
+</html>";
+
+#[test]
+fn l2_xmp_tag_does_not_crash_render_blocks() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(XMP_TAG_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on <xmp> tag"
+    );
+}
+
+#[test]
+fn l3_xmp_content_not_rendered_as_structured_blocks() {
+    let (_, _, rendered, _, _) = render_blocks(XMP_TAG_HTML, "https://example.com/", 10000, false);
+    let all_text = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(all_text.contains("Before xmp"));
+    assert!(all_text.contains("After xmp"));
+    assert!(
+        !all_text.contains("preformatted"),
+        "xmp content should not appear in rendered blocks"
+    );
+}
+
+const DEEPLY_NESTED_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <div><div><div><div><div><div><div><div><div><div>
+    <p>Deeply nested content that should not crash.</p>
+  </div></div></div></div></div></div></div></div></div></div>
+</body>
+</html>";
+
+#[test]
+fn l4_deeply_nested_tags_do_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(DEEPLY_NESTED_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on deeply nested tags"
+    );
+    let (_, _, rendered, _, _) = result.unwrap();
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Deeply nested content"));
+}
+
+const EMPTY_ATTR_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <a href=\"\">Empty href link</a>
+  <a href>Attribute-only link</a>
+  <a href=\"  \">Whitespace href</a>
+  <a href=\"https://valid.com/\">Valid link</a>
+  <p>Content after links.</p>
+</body>
+</html>";
+
+#[test]
+fn l5_empty_attribute_values_do_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(EMPTY_ATTR_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on empty attributes"
+    );
+    let (_, _, rendered, _, _) = result.unwrap();
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Content after links"));
+}
+
+#[test]
+fn l6_empty_href_link_extracted_without_crash() {
+    let result = std::panic::catch_unwind(|| {
+        extract_links_from_html(EMPTY_ATTR_HTML, "https://example.com/")
+    });
+    assert!(
+        result.is_ok(),
+        "extract_links should not panic on empty href attributes"
+    );
+}
+
+const UNICODE_TAG_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before unicode tags.</p>
+  \xe2\x80\xaa\xe2\x80\x89script\xe2\x80\xaa\xe2\x80\x89alert(1)\xe2\x80\xaa\xe2\x80\x89/script\xe2\x80\xaa\xe2\x80\x89
+  <p>After unicode tags.</p>
+</body>
+</html>";
+
+#[test]
+fn l7_unicode_like_tag_names_do_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(UNICODE_TAG_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on unicode-like tag names"
+    );
+    let (_, _, rendered, _, _) = result.unwrap();
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Before unicode tags"));
+    assert!(text.contains("After unicode tags"));
+}
+
+const CDATA_IN_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before CDATA.</p>
+  <![CDATA[This is CDATA content that should not be rendered.]]>
+  <p>After CDATA.</p>
+</body>
+</html>";
+
+#[test]
+fn l8_cdata_section_does_not_crash_render_blocks() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(CDATA_IN_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on CDATA sections"
+    );
+    let (_, _, rendered, _, _) = result.unwrap();
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Before CDATA"));
+    assert!(text.contains("After CDATA"));
+}
+
+const BROKEN_COMMENT_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before comment.</p>
+  <!-- This is a comment that ends abruptl
+  <p>After broken comment.</p>
+</body>
+</html>";
+
+#[test]
+fn l9_broken_comment_does_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(BROKEN_COMMENT_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on broken comments"
+    );
+}
+
+const MID_WORD_CLOSE_COMMENT_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Text <!-- comment --> more text.</p>
+  <p><!-- open comment start
+  <p>After unclosed comment.</p>
+</body>
+</html>";
+
+#[test]
+fn l10_mid_word_comment_close_does_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(
+            MID_WORD_CLOSE_COMMENT_HTML,
+            "https://example.com/",
+            10000,
+            false,
+        )
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on mid-word comment boundaries"
+    );
+}
+
+// =========================================================================
+// M. Fetch Sanitization Tests
+// =========================================================================
+
+const SVG_WITH_SCRIPT_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before SVG.</p>
+  <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\">
+    <circle cx=\"50\" cy=\"50\" r=\"40\" />
+    <script>alert('xss in svg')</script>
+  </svg>
+  <p>After SVG.</p>
+</body>
+</html>";
+
+#[test]
+fn m1_svg_with_script_stripped_from_render_blocks() {
+    let (_, _, rendered, _, _) =
+        render_blocks(SVG_WITH_SCRIPT_HTML, "https://example.com/", 10000, false);
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Before SVG"));
+    assert!(text.contains("After SVG"));
+    assert!(
+        !text.contains("alert"),
+        "script inside SVG should be stripped"
+    );
+}
+
+#[test]
+fn m2_svg_with_script_stripped_from_extract_content() {
+    let result = extract_links_from_html(SVG_WITH_SCRIPT_HTML, "https://example.com/");
+    let html_str = std::str::from_utf8(SVG_WITH_SCRIPT_HTML).unwrap();
+    assert!(html_str.contains("alert('xss in svg')"));
+    assert!(!result.links.iter().any(|l| l.text.contains("alert")));
+}
+
+const MATHML_WITH_FOREIGN_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before MathML.</p>
+  <math xmlns=\"http://www.w3.org/1998/Math/MathML\">
+    <mrow>
+      <mi>x</mi>
+      <mo>=</mo>
+      <mn>1</mn>
+    </mrow>
+    <foreignObject>
+      <p xmlns=\"http://www.w3.org/1999/xhtml\">Embedded HTML in MathML foreignObject.</p>
+    </foreignObject>
+  </math>
+  <p>After MathML.</p>
+</body>
+</html>";
+
+#[test]
+fn m3_mathml_with_foreign_object_does_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(
+            MATHML_WITH_FOREIGN_HTML,
+            "https://example.com/",
+            10000,
+            false,
+        )
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on MathML with foreignObject"
+    );
+}
+
+#[test]
+fn m4_mathml_foreign_object_content_handled() {
+    let (_, _, rendered, _, _) = render_blocks(
+        MATHML_WITH_FOREIGN_HTML,
+        "https://example.com/",
+        10000,
+        false,
+    );
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Before MathML"));
+    assert!(text.contains("After MathML"));
+}
+
+const DATA_URL_HREF_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <a href=\"data:text/html,<script>alert('xss')</script>\">Data URL link</a>
+  <a href=\"data:text/plain,Hello\">Plain data link</a>
+  <a href=\"https://valid.com/\">Valid link</a>
+  <p>Content.</p>
+</body>
+</html>";
+
+#[test]
+fn m5_data_url_hrefs_do_not_crash_render_blocks() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(DATA_URL_HREF_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on data: URLs in href"
+    );
+}
+
+#[test]
+fn m6_data_url_hrefs_do_not_crash_link_extraction() {
+    let result = std::panic::catch_unwind(|| {
+        extract_links_from_html(DATA_URL_HREF_HTML, "https://example.com/")
+    });
+    assert!(
+        result.is_ok(),
+        "extract_links should not panic on data: URLs in href"
+    );
+}
+
+#[test]
+fn m7_data_url_links_extracted_as_absolute_urls() {
+    let result = extract_links_from_html(DATA_URL_HREF_HTML, "https://example.com/");
+    let data_links: Vec<_> = result
+        .links
+        .iter()
+        .filter(|l| l.url.starts_with("data:"))
+        .collect();
+    assert!(
+        !data_links.is_empty(),
+        "data: URL links should be extracted"
+    );
+}
+
+const JAVASCRIPT_PROTOCOL_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <a href=\"javascript:alert('xss')\">JS protocol link</a>
+  <a href=\"JAVASCRIPT:void(0)\">JS uppercase link</a>
+  <a href=\"  javascript:alert(1)  \">JS with spaces</a>
+  <a href=\"https://valid.com/\">Valid link</a>
+  <p>Content.</p>
+</body>
+</html>";
+
+#[test]
+fn m8_javascript_protocol_hrefs_do_not_crash_render_blocks() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(
+            JAVASCRIPT_PROTOCOL_HTML,
+            "https://example.com/",
+            10000,
+            false,
+        )
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on javascript: protocol hrefs"
+    );
+}
+
+#[test]
+fn m9_javascript_protocol_hrefs_do_not_crash_link_extraction() {
+    let result = std::panic::catch_unwind(|| {
+        extract_links_from_html(JAVASCRIPT_PROTOCOL_HTML, "https://example.com/")
+    });
+    assert!(
+        result.is_ok(),
+        "extract_links should not panic on javascript: protocol hrefs"
+    );
+}
+
+#[test]
+fn m10_javascript_protocol_links_extracted_as_absolute_urls() {
+    let result = extract_links_from_html(JAVASCRIPT_PROTOCOL_HTML, "https://example.com/");
+    let js_links: Vec<_> = result
+        .links
+        .iter()
+        .filter(|l| l.url.to_lowercase().starts_with("javascript:"))
+        .collect();
+    assert!(
+        !js_links.is_empty(),
+        "javascript: protocol links should be extracted"
+    );
+}
+
+const FILE_UPLOAD_FORM_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <p>Before form.</p>
+  <form action=\"/upload\" method=\"post\" enctype=\"multipart/form-data\">
+    <input type=\"file\" name=\"document\" accept=\".pdf,.docx\">
+    <input type=\"text\" name=\"description\" placeholder=\"Description\">
+    <button type=\"submit\">Upload</button>
+  </form>
+  <p>After form.</p>
+</body>
+</html>";
+
+#[test]
+fn m11_file_upload_form_stripped_from_render_blocks() {
+    let (_, _, rendered, _, _) =
+        render_blocks(FILE_UPLOAD_FORM_HTML, "https://example.com/", 10000, false);
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Before form"));
+    assert!(text.contains("After form"));
+    assert!(!text.contains("Upload"), "form content should be stripped");
+    assert!(
+        !text.contains("Description"),
+        "form input content should be stripped"
+    );
+}
+
+#[test]
+fn m12_file_upload_form_stripped_from_extract_content() {
+    let result = extract_links_from_html(FILE_UPLOAD_FORM_HTML, "https://example.com/");
+    let html_str = std::str::from_utf8(FILE_UPLOAD_FORM_HTML).unwrap();
+    assert!(html_str.contains("multipart/form-data"));
+    assert!(!result.links.iter().any(|l| l.text.contains("Upload")));
+}
+
+const EMPTY_HREF_FULL_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <a href=\"\">Empty href</a>
+  <a href=\"  \">Space href</a>
+  <a href=\"#\">Fragment only</a>
+  <a href=\"/valid\">Valid link</a>
+  <p>Content.</p>
+</body>
+</html>";
+
+#[test]
+fn m13_empty_and_whitespace_hrefs_handled_in_link_extraction() {
+    let result = extract_links_from_html(EMPTY_HREF_FULL_HTML, "https://example.com/");
+    let empty_or_space: Vec<_> = result
+        .links
+        .iter()
+        .filter(|l| l.text == "Empty href" || l.text == "Space href")
+        .collect();
+    assert!(
+        !empty_or_space.is_empty(),
+        "empty/space href links should be handled"
+    );
+}
+
+#[test]
+fn m14_fragment_only_href_extracted() {
+    let result = extract_links_from_html(EMPTY_HREF_FULL_HTML, "https://example.com/");
+    let fragment_links: Vec<_> = result
+        .links
+        .iter()
+        .filter(|l| l.text == "Fragment only")
+        .collect();
+    assert_eq!(fragment_links.len(), 1);
+    assert!(fragment_links[0].url.contains('#'));
+}
+
+const ENTITIES_IN_ATTR_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <a href=\"https://example.com/path?a=1&amp;b=2\">Link with entities</a>
+  <a href=\"/path?q=hello%20world\">Link with encoded space</a>
+  <p>Content.</p>
+</body>
+</html>";
+
+#[test]
+fn m15_html_entities_in_href_attributes_decoded_correctly() {
+    let result = extract_links_from_html(ENTITIES_IN_ATTR_HTML, "https://example.com/");
+    assert!(result.links.len() >= 2);
+    let entity_link = result
+        .links
+        .iter()
+        .find(|l| l.text == "Link with entities")
+        .unwrap();
+    assert!(
+        entity_link.url.contains("a=1") && entity_link.url.contains("b=2"),
+        "HTML entities should be decoded in href: {}",
+        entity_link.url
+    );
+    let encoded_link = result
+        .links
+        .iter()
+        .find(|l| l.text == "Link with encoded space")
+        .unwrap();
+    assert!(
+        encoded_link.url.contains("hello%20world") || encoded_link.url.contains("hello world"),
+        "URL-encoded space should be handled: {}",
+        encoded_link.url
+    );
+}
+
+const MIXED_DANGEROUS_HREF_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <a href=\"javascript:alert(1)\">XSS</a>
+  <a href=\"data:text/html,<h1>hi</h1>\">Data</a>
+  <a href=\"file:///etc/passwd\">File</a>
+  <a href=\"vbscript:MsgBox(1)\">VBScript</a>
+  <a href=\"https://safe.com/\">Safe</a>
+  <p>Content.</p>
+</body>
+</html>";
+
+#[test]
+fn m16_mixed_dangerous_protocols_do_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        extract_links_from_html(MIXED_DANGEROUS_HREF_HTML, "https://example.com/")
+    });
+    assert!(
+        result.is_ok(),
+        "extract_links should not panic on mixed dangerous protocols"
+    );
+}
+
+#[test]
+fn m17_mixed_dangerous_protocols_render_blocks_does_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(
+            MIXED_DANGEROUS_HREF_HTML,
+            "https://example.com/",
+            10000,
+            false,
+        )
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on mixed dangerous protocols"
+    );
+}
+
+#[test]
+fn m18_safe_link_extracted_from_mixed_dangerous() {
+    let result = extract_links_from_html(MIXED_DANGEROUS_HREF_HTML, "https://example.com/");
+    let safe_links: Vec<_> = result
+        .links
+        .iter()
+        .filter(|l| l.url.starts_with("https://safe.com"))
+        .collect();
+    assert_eq!(safe_links.len(), 1, "safe link should be extracted");
+}
+
+const NESTED_MALICIOUS_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<body>
+  <div>
+    <noscript>
+      <svg onload=alert(1)>
+        <script>document.write('evil')</script>
+      </svg>
+    </noscript>
+    <form action=\"javascript:steal()\">
+      <input type=\"image\" src=\"data:image/gif;base64,R0lGODlh\" alt=\"xss\">
+    </form>
+    <math>
+      <mi><script>alert(2)</script></mi>
+    </math>
+    <p>Legitimate content that should survive.</p>
+  </div>
+</body>
+</html>";
+
+#[test]
+fn m19_nested_malicious_content_does_not_crash() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(NESTED_MALICIOUS_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on nested malicious content"
+    );
+}
+
+#[test]
+fn m20_nested_malicious_content_stripped_from_output() {
+    let (_, _, rendered, _, _) =
+        render_blocks(NESTED_MALICIOUS_HTML, "https://example.com/", 10000, false);
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        text.contains("Legitimate content"),
+        "legitimate content should survive: {text}"
+    );
+    assert!(
+        !text.contains("alert"),
+        "script content should be stripped: {text}"
+    );
+    assert!(
+        !text.contains("document.write"),
+        "nested script should be stripped: {text}"
+    );
+}
+
+const ENCODING_ATTACK_HTML: &[u8] = b"<!DOCTYPE html>
+<html>
+<head><meta charset=\"utf-8\"></head>
+<body>
+  <p>\xc3\xa9\xc3\xa0\xc3\xbc</p>
+  <p>\xe4\xb8\xad\xe6\x96\x87</p>
+  <p>\xf0\x9f\x98\x80</p>
+  <p>After unicode content.</p>
+</body>
+</html>";
+
+#[test]
+fn m21_unicode_encoding_does_not_crash_render_blocks() {
+    let result = std::panic::catch_unwind(|| {
+        render_blocks(ENCODING_ATTACK_HTML, "https://example.com/", 10000, false)
+    });
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on unicode content"
+    );
+    let (_, _, rendered, _, _) = result.unwrap();
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("After unicode content"));
+}
+
+#[test]
+fn m22_non_utf8_bytes_do_not_crash_render_blocks() {
+    let mut html = Vec::new();
+    html.extend_from_slice(b"<html><body><p>");
+    html.extend_from_slice(&[0xC0, 0xAF]);
+    html.extend_from_slice(b"<p>Valid content.</p></body></html>");
+    let result =
+        std::panic::catch_unwind(|| render_blocks(&html, "https://example.com/", 10000, false));
+    assert!(
+        result.is_ok(),
+        "render_blocks should not panic on non-UTF-8 bytes"
+    );
+    let (_, _, rendered, _, _) = result.unwrap();
+    let text: String = rendered
+        .blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Valid content"));
 }

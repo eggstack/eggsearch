@@ -927,4 +927,114 @@ mod tests {
             "expected Ok for 'target/generated.rs' with include_hidden=true, got {result:?}"
         );
     }
+
+    #[test]
+    fn validate_local_fetch_path_double_slashes_normalized() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src").join("main.rs"), "fn main() {}").unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), "src//main.rs", &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for 'src//main.rs' (double slashes normalized), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_double_slash_traversal_rejected() {
+        let root = Path::new("/tmp/test_root");
+        let cfg = LocalConfig::default();
+        let err = validate_local_fetch_path(root, "src//../../secret.txt", &cfg).unwrap_err();
+        assert!(
+            matches!(err, LocalFetchPathError::PathTraversal),
+            "expected PathTraversal for 'src//../../secret.txt', got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_trailing_slash_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("file.rs"), "content").unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), "file.rs/", &cfg);
+        assert!(
+            matches!(result, Err(LocalFetchPathError::NotFound)),
+            "expected NotFound for trailing slash, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_with_spaces_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("my folder")).unwrap();
+        std::fs::write(dir.path().join("my folder").join("file.rs"), "content").unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), "my folder/file.rs", &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for path with spaces, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_very_long_name_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let long_name = "a".repeat(200);
+        std::fs::write(dir.path().join(format!("{long_name}.rs")), "content").unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), &format!("{long_name}.rs"), &cfg);
+        assert!(
+            result.is_ok(),
+            "expected Ok for very long filename (within OS limits), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_very_long_component_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let long_name = "a".repeat(300);
+        let result = validate_local_fetch_path(
+            dir.path(),
+            &format!("{long_name}.rs"),
+            &LocalConfig::default(),
+        );
+        assert!(
+            matches!(result, Err(LocalFetchPathError::NotFound)),
+            "expected NotFound for path exceeding OS limits, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_symlink_followed_when_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, "secret content").unwrap();
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("link.txt");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            let cfg = LocalConfig {
+                follow_symlinks: true,
+                ..Default::default()
+            };
+            let result = validate_local_fetch_path(dir.path(), "link.txt", &cfg);
+            assert!(
+                result.is_ok(),
+                "expected Ok for symlink with follow_symlinks=true, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_local_fetch_path_directory_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+        let cfg = LocalConfig::default();
+        let result = validate_local_fetch_path(dir.path(), "subdir", &cfg);
+        assert!(
+            matches!(result, Err(LocalFetchPathError::NotFound)),
+            "expected NotFound for directory path, got: {result:?}"
+        );
+    }
 }

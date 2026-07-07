@@ -94,6 +94,7 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/docs_config_snippets.rs` | None | TOML snippet validation against AppConfig |
 | `tests/docs_provider_inventory.rs` | None | Provider ID validation against KNOWN_PROVIDER_IDS |
 | `tests/docs_tool_names.rs` | None | Tool name validation against MCP tools |
+| `tests/config_validation.rs` | None | Config deserialization, validation, and provider resolution |
 
 ### Running specific suites
 
