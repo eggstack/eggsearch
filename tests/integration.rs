@@ -825,8 +825,7 @@ async fn web_fetch_tool_listed() {
     let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     assert!(
         tool_names.contains(&"web_fetch".to_string()),
-        "web_fetch should be in tools list: {:?}",
-        tool_names
+        "web_fetch should be in tools list: {tool_names:?}"
     );
 }
 
@@ -9952,9 +9951,9 @@ async fn repo_fetch_returns_target_line_past_default_text_cap() {
     let mut body = String::new();
     let target_line: usize = 800;
     for i in 1..=1000 {
-        body.push_str(&format!("line {:04} filler content\n", i));
+        body.push_str(&format!("line {i:04} filler content\n"));
     }
-    let expected = format!("line {:04} filler content", target_line);
+    let expected = format!("line {target_line:04} filler content");
     server.mock(|when, then| {
         when.method(GET).path("/src/large.txt");
         then.status(200)
@@ -13990,8 +13989,7 @@ async fn batch_fetch_concurrent_total_budget_not_exceeded() {
     let total = v["total_chars_returned"].as_u64().unwrap_or(0);
     assert!(
         total <= 1,
-        "aggregate chars_returned {} must not exceed max_total_chars=1: {v:?}",
-        total
+        "aggregate chars_returned {total} must not exceed max_total_chars=1: {v:?}"
     );
 }
 
@@ -14047,8 +14045,7 @@ async fn batch_fetch_metadata_overhead_cannot_exceed_total_budget() {
     let total = v["total_chars_returned"].as_u64().unwrap_or(0);
     assert!(
         total <= 10,
-        "aggregate chars_returned {} must not exceed max_total_chars=10 even with metadata overhead: {v:?}",
-        total
+        "aggregate chars_returned {total} must not exceed max_total_chars=10 even with metadata overhead: {v:?}"
     );
 }
 

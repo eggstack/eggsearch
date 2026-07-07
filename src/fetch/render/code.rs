@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn render_code_splits_large_file() {
-        let lines: Vec<String> = (0..500).map(|i| format!("line {}", i)).collect();
+        let lines: Vec<String> = (0..500).map(|i| format!("line {i}")).collect();
         let code = lines.join("\n");
         let result = render_code(code.as_str(), Some("text"), 100000);
         assert!(result.blocks.len() > 1, "should split into multiple blocks");
@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn render_diff_truncates() {
         let diff: String = (0..100)
-            .map(|i| format!("line {}", i))
+            .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
             .join("\n");
         let result = render_diff(&diff, 100);

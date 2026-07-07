@@ -568,7 +568,7 @@ mod tests {
     fn classify_image_extensions() {
         let page = url::Url::parse("https://example.com/").unwrap();
         for ext in &[".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico"] {
-            let url = format!("https://example.com/photo{}", ext);
+            let url = format!("https://example.com/photo{ext}");
             let link = url::Url::parse(&url).unwrap();
             assert_eq!(classify_link(&page, &link), LinkKind::Image);
         }
@@ -580,7 +580,7 @@ mod tests {
         for ext in &[
             ".rs", ".py", ".js", ".ts", ".go", ".c", ".json", ".toml", ".yaml",
         ] {
-            let url = format!("https://example.com/file{}", ext);
+            let url = format!("https://example.com/file{ext}");
             let link = url::Url::parse(&url).unwrap();
             assert_eq!(classify_link(&page, &link), LinkKind::SourceCode);
         }
@@ -590,7 +590,7 @@ mod tests {
     fn classify_download_extensions() {
         let page = url::Url::parse("https://example.com/").unwrap();
         for ext in &[".zip", ".tar", ".gz", ".exe", ".dmg", ".deb", ".rpm"] {
-            let url = format!("https://example.com/archive{}", ext);
+            let url = format!("https://example.com/archive{ext}");
             let link = url::Url::parse(&url).unwrap();
             assert_eq!(classify_link(&page, &link), LinkKind::Download);
         }

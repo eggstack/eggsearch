@@ -591,9 +591,7 @@ fn remediation_category_as_str_coverage() {
         assert_eq!(
             category.as_str(),
             expected_str,
-            "RemediationCategory::{:?} must serialize to '{}'",
-            category,
-            expected_str
+            "RemediationCategory::{category:?} must serialize to '{expected_str}'"
         );
     }
 }
@@ -622,7 +620,7 @@ fn all_categories_pass_safe_text_validation() {
     for category in categories {
         let remediation = SecurityRemediation {
             category,
-            description: format!("Remediation for category {:?}", category),
+            description: format!("Remediation for category {category:?}"),
             rationale: "Safe rationale text".to_string(),
             evidence_urls: Vec::new(),
             fixed_versions: Vec::new(),
@@ -632,8 +630,7 @@ fn all_categories_pass_safe_text_validation() {
         };
         assert!(
             remediation.validate_text_safety().is_ok(),
-            "safe remediation for category {:?} must pass validation",
-            category
+            "safe remediation for category {category:?} must pass validation"
         );
     }
 }
@@ -758,11 +755,7 @@ fn security_source_tier_classifications() {
 
     for (url, expected_tier) in cases {
         let tier = eggsearch::core::security::classify_source_tier(url);
-        assert_eq!(
-            tier, expected_tier,
-            "URL {} should be {:?}",
-            url, expected_tier
-        );
+        assert_eq!(tier, expected_tier, "URL {url} should be {expected_tier:?}");
     }
 }
 

@@ -599,8 +599,7 @@ mod tests {
         let result = extract_pdf_text(&pdf, 12000, &limits);
         assert!(
             matches!(result, Err(FetchError::PdfNoExtractableText)),
-            "expected PdfNoExtractableText for blank PDF, got: {:?}",
-            result
+            "expected PdfNoExtractableText for blank PDF, got: {result:?}"
         );
     }
 

@@ -4058,8 +4058,7 @@ mod tests {
             .collect();
         assert!(
             cap_warnings.is_empty(),
-            "should not emit safe_search warning when not requested: {:?}",
-            cap_warnings
+            "should not emit safe_search warning when not requested: {cap_warnings:?}"
         );
     }
 
@@ -4125,8 +4124,7 @@ mod tests {
             .collect();
         assert!(
             cap_warnings.is_empty(),
-            "should not emit code intent warning when github_code is available: {:?}",
-            cap_warnings
+            "should not emit code intent warning when github_code is available: {cap_warnings:?}"
         );
     }
 
@@ -4189,8 +4187,7 @@ mod tests {
             .collect();
         assert!(
             cap_warnings.is_empty(),
-            "should not emit freshness warning when supports_result_timestamps is true: {:?}",
-            cap_warnings
+            "should not emit freshness warning when supports_result_timestamps is true: {cap_warnings:?}"
         );
     }
 
@@ -4315,8 +4312,7 @@ mod tests {
             .collect();
         assert!(
             cap_warnings.is_empty(),
-            "Web intent should not produce capability warnings: {:?}",
-            cap_warnings
+            "Web intent should not produce capability warnings: {cap_warnings:?}"
         );
     }
 
@@ -4463,8 +4459,7 @@ mod tests {
             .collect();
         assert!(
             deadline_warnings.is_empty(),
-            "should not emit deadline warning when all subqueries complete: {:?}",
-            deadline_warnings
+            "should not emit deadline warning when all subqueries complete: {deadline_warnings:?}"
         );
     }
 
@@ -4488,8 +4483,7 @@ mod tests {
             .collect();
         assert!(
             deadline_warnings.is_empty(),
-            "should not emit deadline warning when all subqueries complete: {:?}",
-            deadline_warnings
+            "should not emit deadline warning when all subqueries complete: {deadline_warnings:?}"
         );
     }
 
@@ -4653,8 +4647,7 @@ mod tests {
         // p1 should NOT be in failures because it had a success
         assert!(
             failures.iter().all(|f| f.id != "p1"),
-            "p1 had a success so should not be in providers_failed: {:?}",
-            failures
+            "p1 had a success so should not be in providers_failed: {failures:?}"
         );
     }
 

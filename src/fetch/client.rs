@@ -1090,7 +1090,7 @@ mod tests {
         for i in 0..10 {
             let next = format!("/r/{}", i + 1);
             server.mock(|when, then| {
-                let path = format!("/r/{}", i);
+                let path = format!("/r/{i}");
                 when.method(GET).path(path);
                 then.status(302).header("location", next);
             });
@@ -1444,7 +1444,7 @@ mod tests {
         for i in 0..6 {
             let next = format!("/chain/{}", i + 1);
             server.mock(|when, then| {
-                let path = format!("/chain/{}", i);
+                let path = format!("/chain/{i}");
                 when.method(GET).path(path);
                 then.status(302).header("location", next);
             });

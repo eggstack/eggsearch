@@ -551,8 +551,7 @@ mod tests {
         // Should complete in ~100ms (concurrent), not ~200ms (sequential)
         assert!(
             elapsed < Duration::from_millis(200),
-            "jobs should run concurrently, took {:?}",
-            elapsed
+            "jobs should run concurrently, took {elapsed:?}"
         );
         assert!(!output.deadline.exceeded);
         assert_eq!(output.raw_results.len(), 2);
@@ -593,8 +592,7 @@ mod tests {
         // If unlimited it would be ~50ms
         assert!(
             elapsed >= Duration::from_millis(80),
-            "per-provider concurrency should serialize: took {:?}",
-            elapsed
+            "per-provider concurrency should serialize: took {elapsed:?}"
         );
     }
 
@@ -842,13 +840,11 @@ mod tests {
         // Timeout should be close to 200ms, definitely not 30s
         assert!(
             timeout <= Duration::from_millis(250),
-            "provider timeout should be derived from request budget, got {:?}",
-            timeout
+            "provider timeout should be derived from request budget, got {timeout:?}"
         );
         assert!(
             timeout > Duration::from_millis(50),
-            "provider timeout should reflect real remaining budget, got {:?}",
-            timeout
+            "provider timeout should reflect real remaining budget, got {timeout:?}"
         );
     }
 
@@ -1005,8 +1001,7 @@ mod tests {
         let peak_val = peak.load(Ordering::SeqCst);
         assert!(
             peak_val <= 3,
-            "global concurrency exceeded: peak was {}",
-            peak_val
+            "global concurrency exceeded: peak was {peak_val}"
         );
     }
 
@@ -1055,8 +1050,8 @@ mod tests {
         assert_eq!(output.raw_results.len(), 8);
         let peak_a_val = peak_a.load(Ordering::SeqCst);
         let peak_b_val = peak_b.load(Ordering::SeqCst);
-        assert!(peak_a_val <= 2, "provider a peak was {}", peak_a_val);
-        assert!(peak_b_val <= 2, "provider b peak was {}", peak_b_val);
+        assert!(peak_a_val <= 2, "provider a peak was {peak_a_val}");
+        assert!(peak_b_val <= 2, "provider b peak was {peak_b_val}");
     }
 
     #[tokio::test]
@@ -1142,8 +1137,7 @@ mod tests {
         // So 4 at a time, 20/4 = 5 waves × 20ms = ~100ms
         assert!(
             elapsed < Duration::from_secs(3),
-            "stress test took too long: {:?}",
-            elapsed
+            "stress test took too long: {elapsed:?}"
         );
     }
 

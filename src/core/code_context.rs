@@ -700,7 +700,7 @@ use actual_module;
     #[test]
     fn extract_imports_truncates_non_ascii_safely() {
         let padding = "é".repeat(250);
-        let text = format!("use crate::{};", padding);
+        let text = format!("use crate::{padding};");
         let imports = extract_imports(&text, ExtractionLanguage::Rust);
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].chars().count(), MAX_IMPORT_LINE_CHARS);

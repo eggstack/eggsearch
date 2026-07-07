@@ -27,8 +27,8 @@ pub fn render_csv(text: &str, max_chars: usize) -> RenderedContent {
     if let Some(header) = lines.first() {
         let col_count = count_csv_columns(header);
         let meta = match row_count {
-            Some(r) => format!("{} columns, {} rows", col_count, r),
-            None => format!("{} columns, 100+ rows", col_count),
+            Some(r) => format!("{col_count} columns, {r} rows"),
+            None => format!("{col_count} columns, 100+ rows"),
         };
         let (truncated, did_truncate) = truncate_to_budget(&meta, char_budget);
         if let Some(t) = truncated {
@@ -56,9 +56,9 @@ pub fn render_csv(text: &str, max_chars: usize) -> RenderedContent {
             break;
         }
         let formatted = if i == 0 {
-            format!("  1 | {}", line)
+            format!("  1 | {line}")
         } else {
-            format!(" {:>3} | {}", line_num, line)
+            format!(" {line_num:>3} | {line}")
         };
         let (truncated, did_truncate) = truncate_to_budget(&formatted, char_budget);
         if let Some(t) = truncated {

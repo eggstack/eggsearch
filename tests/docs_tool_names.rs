@@ -45,9 +45,6 @@ fn tool_names_in_docs() {
     }
 
     if !missing.is_empty() {
-        panic!(
-            "the following MCP tools are not mentioned in any scanned docs: {:?}",
-            missing
-        );
+        panic!("the following MCP tools are not mentioned in any scanned docs: {missing:?}");
     }
 }

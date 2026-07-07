@@ -417,8 +417,7 @@ fn suggested_fetch_has_stable_id_and_source_id() {
     let stable_id = fetch.stable_id.as_ref().expect("stable_id must be present");
     assert!(
         stable_id.starts_with("suggested_"),
-        "stable_id must start with 'suggested_' prefix, got: {}",
-        stable_id
+        "stable_id must start with 'suggested_' prefix, got: {stable_id}"
     );
     assert_eq!(
         stable_id.len(),
@@ -429,8 +428,7 @@ fn suggested_fetch_has_stable_id_and_source_id() {
     let source_id = fetch.source_id.as_ref().expect("source_id must be present");
     assert!(
         source_id.starts_with("src_"),
-        "source_id must start with 'src_' prefix, got: {}",
-        source_id
+        "source_id must start with 'src_' prefix, got: {source_id}"
     );
 }
 
@@ -812,9 +810,7 @@ fn remediation_category_as_str_coverage() {
         assert_eq!(
             category.as_str(),
             expected_str,
-            "RemediationCategory::{:?} must serialize to '{}'",
-            category,
-            expected_str
+            "RemediationCategory::{category:?} must serialize to '{expected_str}'"
         );
     }
 }
@@ -1076,7 +1072,7 @@ fn all_remediation_categories_can_be_validated() {
     for category in categories {
         let remediation = SecurityRemediation {
             category,
-            description: format!("Remediation for category {:?}", category),
+            description: format!("Remediation for category {category:?}"),
             rationale: "Safe rationale text".to_string(),
             evidence_urls: Vec::new(),
             fixed_versions: Vec::new(),
@@ -1086,8 +1082,7 @@ fn all_remediation_categories_can_be_validated() {
         };
         assert!(
             remediation.validate_text_safety().is_ok(),
-            "safe remediation for category {:?} must pass validation",
-            category
+            "safe remediation for category {category:?} must pass validation"
         );
     }
 }

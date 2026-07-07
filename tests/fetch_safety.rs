@@ -951,7 +951,7 @@ fn h1_csv_basic_header_and_rows() {
 fn h2_csv_row_limit_truncates_at_100() {
     let mut csv = String::from("id,value\n");
     for i in 0..150 {
-        csv.push_str(&format!("{},x\n", i));
+        csv.push_str(&format!("{i},x\n"));
     }
     let rendered = render_csv(&csv, 100000);
     assert!(rendered.text_truncated);
@@ -1062,8 +1062,7 @@ fn i6_notebook_cell_limit_truncates_at_200() {
     let mut cells = Vec::new();
     for i in 0..250 {
         cells.push(format!(
-            r#"{{"cell_type": "code", "source": ["line {}"]}}"#,
-            i
+            r#"{{"cell_type": "code", "source": ["line {i}"]}}"#
         ));
     }
     let nb = format!(r#"{{"cells": [{}]}}"#, cells.join(","));
@@ -1283,11 +1282,8 @@ fn make_large_html_paragraphs(n: usize) -> Vec<u8> {
     let mut html = b"<html><body>".to_vec();
     for i in 0..n {
         html.extend_from_slice(
-            format!(
-                "<p>Paragraph number {} with some filler text to increase size.</p>",
-                i
-            )
-            .as_bytes(),
+            format!("<p>Paragraph number {i} with some filler text to increase size.</p>")
+                .as_bytes(),
         );
     }
     html.extend_from_slice(b"</body></html>");
