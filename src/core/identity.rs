@@ -411,12 +411,8 @@ pub fn compute_fetch_id(key: &FetchKey<'_>) -> String {
     write_opt_u32(&mut hasher, key.line_start);
     write_opt_u32(&mut hasher, key.line_end);
     let prefix = key.text_prefix.unwrap_or("");
-    let prefix = if prefix.len() > 64 {
-        &prefix[..64]
-    } else {
-        prefix
-    };
-    write_str(&mut hasher, prefix);
+    let prefix: String = prefix.chars().take(64).collect();
+    write_str(&mut hasher, &prefix);
     format!("fetch_{:016x}", hasher.finish())
 }
 
@@ -786,6 +782,18 @@ mod tests {
         let a = fetch_id(Some("https://a.com"), None, Some(1), Some(10), None);
         let b = fetch_id(Some("https://a.com"), None, Some(5), Some(15), None);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn fetch_id_non_ascii_prefix_does_not_panic() {
+        let multibyte = "日本語テキストです漢字も含むテストデータです。これが長すぎる場合にどうなりますか確認します。".repeat(4);
+        let _ = fetch_id(
+            Some("https://a.com"),
+            None,
+            Some(1),
+            Some(10),
+            Some(&multibyte),
+        );
     }
 
     #[test]

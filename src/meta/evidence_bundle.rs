@@ -185,10 +185,8 @@ fn source_input_to_bundle(input: &EvidenceSourceInput) -> EvidenceBundleSource {
 
 /// Convert a fetch input to a bundle fetched item with a deterministic ID.
 fn fetch_input_to_bundle(input: &EvidenceFetchInput) -> EvidenceBundleFetchedItem {
-    let text_prefix = input
-        .text
-        .as_deref()
-        .map(|t| if t.len() > 64 { &t[..64] } else { t });
+    let text_prefix: Option<String> = input.text.as_deref().map(|t| t.chars().take(64).collect());
+    let text_prefix = text_prefix.as_deref();
 
     let fetch_id = compute_fetch_id(
         input.url.as_deref(),

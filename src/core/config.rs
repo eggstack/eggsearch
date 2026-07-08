@@ -545,6 +545,21 @@ impl AppConfig {
                 .get(id)
                 .is_some_and(|cfg| api_provider_is_configured(id, cfg));
         }
+        if id == "searxng" {
+            return self
+                .search
+                .providers
+                .get("searxng")
+                .copied()
+                .unwrap_or(false)
+                && self.search.searxng.enabled
+                && self
+                    .search
+                    .searxng
+                    .base_url
+                    .as_deref()
+                    .is_some_and(|u| !u.is_empty());
+        }
         self.search.providers.get(id).copied().unwrap_or(false)
     }
 
@@ -1038,6 +1053,22 @@ mod tests {
         assert!(!c.search.searxng.enabled);
         assert!(c.search.searxng.base_url.is_none());
         assert_eq!(c.search.providers.get("searxng"), Some(&false));
+    }
+
+    #[test]
+    fn searxng_provider_is_available_requires_enabled_and_base_url() {
+        let mut c = AppConfig::default();
+        c.search.providers.insert("searxng".to_string(), true);
+        assert!(!c.provider_is_available("searxng"));
+
+        c.search.searxng.enabled = true;
+        assert!(!c.provider_is_available("searxng"));
+
+        c.search.searxng.base_url = Some(String::new());
+        assert!(!c.provider_is_available("searxng"));
+
+        c.search.searxng.base_url = Some("https://searx.example.org".to_string());
+        assert!(c.provider_is_available("searxng"));
     }
 
     #[test]

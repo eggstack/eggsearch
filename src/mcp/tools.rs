@@ -2977,10 +2977,32 @@ async fn run_workspace_fetch(
 
     // Validate line range
     if let (Some(start), Some(end)) = (args.line_start, args.line_end) {
+        if start == 0 {
+            return Err(ToolError::Validation(
+                "line_start must be >= 1 (1-indexed)".to_string(),
+            ));
+        }
+        if end == 0 {
+            return Err(ToolError::Validation(
+                "line_end must be >= 1 (1-indexed)".to_string(),
+            ));
+        }
         if start > end {
             return Err(ToolError::Validation(format!(
                 "line_start ({start}) must be <= line_end ({end})"
             )));
+        }
+    } else if let Some(start) = args.line_start {
+        if start == 0 {
+            return Err(ToolError::Validation(
+                "line_start must be >= 1 (1-indexed)".to_string(),
+            ));
+        }
+    } else if let Some(end) = args.line_end {
+        if end == 0 {
+            return Err(ToolError::Validation(
+                "line_end must be >= 1 (1-indexed)".to_string(),
+            ));
         }
     }
 
@@ -3259,6 +3281,72 @@ pub async fn run_security_search(
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
         return Err(ToolError::Validation(format!("invalid request: {e}")));
+    }
+
+    // Validate dependency_files against the configured local workspace
+    // roots. Without this, an MCP caller could supply arbitrary
+    // server-side paths to be read by the applicability pipeline,
+    // bypassing the documented local workspace safety model.
+    if !args.dependency_files.is_empty() {
+        let backend = state.local_backend.as_deref().ok_or_else(|| {
+            ToolError::Validation(
+                "dependency_files requires local workspace to be enabled".to_string(),
+            )
+        })?;
+        if !backend.is_enabled() {
+            return Err(ToolError::Validation(
+                "dependency_files requires local workspace to be enabled".to_string(),
+            ));
+        }
+        let roots = backend.roots();
+        let root_canonicals: Vec<std::path::PathBuf> = roots
+            .iter()
+            .filter_map(|(_, p)| std::fs::canonicalize(p).ok())
+            .collect();
+        if root_canonicals.is_empty() {
+            return Err(ToolError::Validation(
+                "dependency_files requires at least one configured local workspace root"
+                    .to_string(),
+            ));
+        }
+        for file_path in &args.dependency_files {
+            let path = Path::new(file_path);
+            if path.as_os_str().is_empty() {
+                return Err(ToolError::Validation(
+                    "dependency_files path must not be empty".to_string(),
+                ));
+            }
+            let canonical_input = std::fs::canonicalize(path).map_err(|e| {
+                ToolError::Validation(format!(
+                    "dependency_files path '{file_path}' cannot be resolved: {e}"
+                ))
+            })?;
+            if !canonical_input.is_file() {
+                return Err(ToolError::Validation(format!(
+                    "dependency_files path '{file_path}' is not a regular file"
+                )));
+            }
+            if let Ok(meta) = std::fs::metadata(&canonical_input) {
+                if meta.len() > backend.config().max_file_bytes as u64 {
+                    return Err(ToolError::Validation(format!(
+                        "dependency_files path '{file_path}' exceeds max_file_bytes ({})",
+                        backend.config().max_file_bytes
+                    )));
+                }
+            }
+            let mut inside_root = false;
+            for root_canon in &root_canonicals {
+                if canonical_input.starts_with(root_canon) {
+                    inside_root = true;
+                    break;
+                }
+            }
+            if !inside_root {
+                return Err(ToolError::Validation(format!(
+                    "dependency_files path '{file_path}' is not within any configured local workspace root"
+                )));
+            }
+        }
     }
 
     let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
