@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fetch SSRF: `192.0.0.0/24` overblocking corrected.** The `is_blocked_v4` predicate previously blocked all of `192.0.0.0/16` instead of only the documented `192.0.0.0/24` IETF protocol assignment range. The fix adds an `o[2] == 0` check so only `192.0.0.0/24` and `192.0.2.0/24` (TEST-NET-1) are blocked; `192.0.3.1` and other routable addresses in the range are now correctly allowed. (`src/fetch/limits.rs`)
+- **Fetch SSRF: removed dead `ipv4_to_u32` and `ipv4_in_cidr` helpers.** These unused private functions were marked `#[allow(dead_code)]` in the address-blocking predicate. Removed for clarity in a security-sensitive code path. (`src/fetch/limits.rs`)
+- **Fetch SSRF: exact IPv4 and IPv6 boundary tests.** Added 3 new test sections (n1-n3 for IPv4, o1-o2 for IPv6) covering blocked and allowed addresses at every range boundary. Tests are offline and deterministic. (`tests/fetch_safety.rs`)
+- **Rustdoc: fixed private-item link in `provider_diagnostics`.** Replaced a doc link to private `MAX_ERROR_MESSAGE_LEN` with its literal value (`512 chars`) to pass `rustdoc` warnings-as-errors. (`src/meta/provider_diagnostics.rs`)
+
+### Changed
+
+- **Architecture docs: SSRF description updated.** `docs/architecture/fetch.md` now references RFC 1918/6890, loopback, link-local, multicast, documentation ranges, and IPv6 equivalents with a cross-link to `docs/safety.md`, replacing the older narrower shorthand. (`docs/architecture/fetch.md`)
+
 ## [0.3.4] - 2026-07-03
 
 ### Fixed
