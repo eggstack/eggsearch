@@ -2303,13 +2303,11 @@ fn outline_titles_contain_heading_text() {
     let titles: Vec<&str> = rendered.outline.iter().map(|e| e.title.as_str()).collect();
     assert!(
         titles.iter().any(|t| t.contains("Red Heading")),
-        "should contain heading text: {:?}",
-        titles
+        "should contain heading text: {titles:?}",
     );
     assert!(
         titles.iter().any(|t| t.contains("Second Level")),
-        "should contain second heading: {:?}",
-        titles
+        "should contain second heading: {titles:?}",
     );
 }
 

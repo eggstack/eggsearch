@@ -84,6 +84,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88"
       - run: cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
 
   fmt:
