@@ -68,6 +68,7 @@ Documentation contract tests verify that code snippets in docs stay in sync with
 
 ## Docs
 
+- [Provider setup](docs/provider-setup.md)
 - [Configuration](docs/config.md)
 - [Safety and fetch behavior](docs/safety.md)
 - [Threat model](docs/threat-model.md)

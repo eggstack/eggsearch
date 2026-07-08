@@ -365,15 +365,82 @@ Search profiles (`generic`, `coding`, `security`, `research`) have their own pro
 
 If a provider listed in `default_providers` is disabled or lacks a valid API key, eggsearch emits a startup warning. Run `eggsearch doctor` to diagnose configuration issues. Each skipped provider includes a `skip_code` (e.g. `missing_api_key`, `disabled_by_user`, `missing_searxng_config`) for machine-readable diagnostics alongside the human-readable `skip_reason`.
 
+## Skip Codes
+
+`provider_status` returns a `skip_code` for every non-routable provider. These are stable snake_case strings for machine-readable diagnostics.
+
+| Code | Display Name | Meaning | Cause | Fix | Retry? |
+|------|-------------|---------|-------|-----|--------|
+| `unknown_provider` | Unknown provider | Provider ID not in the built-in inventory | Typo in config or referencing a removed provider | Correct the provider ID in config | No |
+| `disabled_by_user` | Disabled by user | Provider is explicitly disabled in config | `provider = false` in `[search.providers]` | Set to `true` or remove from config | No |
+| `missing_api_key` | Missing API key | API-key provider has no key configured | Missing `[search.api.<id>]` section or env var not set | Add `[search.api.<id>]` with `enabled = true` and `api_key_env`, then set the env var | No |
+| `missing_searxng_config` | SearXNG not configured | SearXNG provider missing `base_url` or not enabled | Missing `[search.searxng]` or `searxng = false` in `[search.providers]` | Enable in both `[search.providers]` and `[search.searxng]` with `base_url` | No |
+| `missing_base_url` | Missing base URL | Provider requires a base URL that is not set | Missing `base_url` in `[search.api.<id>]` (Gitea, GitLab self-hosted) | Add `base_url` to the provider's API config section | No |
+| `invalid_base_url` | Invalid base URL | Base URL is malformed or unreachable | Typo or incorrect URL in `base_url` | Correct the URL; must be valid HTTP(S) | No |
+| `missing_local_backend` | Local backend not available | `local_workspace` provider has no backend | `[local]` section missing or `enabled = false` | Add `[local]` with `enabled = true` and `roots` | No |
+| `credential_not_configured` | Credential not configured | Credential entry exists but is not fully configured | Incomplete `[search.api.<id>]` section | Complete the API config section | No |
+| `credential_env_missing` | Credential environment variable not set | `api_key_env` is set but the env var is not present at runtime | Environment variable not exported in the shell | Export the env var or add it to your shell profile | No |
+| `credential_invalid` | Credential invalid (empty) | Environment variable is set but empty | Env var exported with empty value | Set the env var to a valid value | No |
+| `cooldown_active` | Cooldown active | Provider is temporarily suppressed after repeated failures | 3+ consecutive failures (rate limit, timeout, network error) | Wait for cooldown to expire (15–60s depending on failure class) | **Yes** — auto-recovers |
+| `not_built` | Not built | Provider was excluded at compile time | Feature-gated or compiled out of the binary | Rebuild with the required feature flag | No |
+| `unknown` | Unknown | Catch-all for unrecognized skip conditions | Edge case or internal error | Run `eggsearch doctor` for details | No |
+
+## Provider Health
+
+eggsearch tracks per-provider health state using a built-in health registry. Health state is exposed in `provider_status` output via `health_views` (per-provider compact view) and `health` (full snapshots).
+
+### Health States
+
+| State | Meaning |
+|-------|---------|
+| `Healthy` | Provider has recorded at least one success, no active failures |
+| `Degraded` | Provider has consecutive failures but is not yet in cooldown |
+| `Cooldown` | Provider is temporarily suppressed; will auto-recover |
+| `Unknown` | No health data recorded yet (fresh start or provider never queried) |
+
+### Cooldown Behavior
+
+After 3 consecutive failures (`COOLDOWN_THRESHOLD = 3`), a provider enters cooldown:
+
+| Failure Class | Cooldown Duration | Recovery Trigger |
+|---------------|-------------------|------------------|
+| Rate limited | 60 seconds | Single successful query |
+| Timeout | 15 seconds | Single successful query |
+| Transport / HTTP error | 30 seconds | Single successful query |
+| Other | 30 seconds | Single successful query |
+
+A single successful query immediately clears cooldown, resets the failure counter, and restores the provider to `Healthy`.
+
+### Health in `provider_status`
+
+Each provider in `provider_status` includes a `health_view` with:
+
+- `status` — current health state (`Healthy`, `Degraded`, `Cooldown`, `Unknown`)
+- `consecutive_failures` — current failure streak
+- `last_error_class` — most recent failure class (e.g. `RateLimited`, `Timeout`, `NetworkError`)
+- `last_error_message` — human-readable error from the last failure
+- `cooldown_until` — remaining cooldown time (e.g. `"42s"`)
+- `cooldown_reason` — why cooldown was triggered (e.g. `"rate limited"`, `"repeated timeouts"`)
+- `last_latency_ms` — latency of the most recent query
+- `last_success_at` — time since last success (e.g. `"15s ago"`)
+- `last_failure_at` — time since last failure
+
+### Routing Integration
+
+When resolving which providers to query, eggsearch checks `is_in_cooldown()` for each candidate. Cooled-down providers are skipped with `skip_code: CooldownActive`. If all profile providers are unavailable, routing falls back to `default_providers`. If defaults are also unavailable, a `profile_degraded` warning is emitted.
+
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| Provider not returning results | Disabled in `[search.providers]` | Set the provider to `true` |
-| API provider skipped | `api_key_env` not set or env var missing | Set the env var or disable the provider |
-| SearXNG unavailable | Missing `base_url` or both flags not set | Set `base_url` in `[search.searxng]` and enable in `[search.providers]` |
-| Gitea provider fails | Missing `base_url` | Set `base_url` in the `[search.api.<provider>]` section |
-| Profile degraded warning | A profile provider is unavailable | Configure the missing provider or accept fallback to defaults |
-| All providers fail | Network issue or all providers in cooldown | Check network connectivity; wait for cooldown expiry |
+| Symptom | Cause | Fix | Diagnostic |
+|---------|-------|-----|------------|
+| Provider not returning results | Disabled in `[search.providers]` | Set the provider to `true` | `provider_status` → check `enabled` field |
+| API provider skipped | `api_key_env` not set or env var missing | Set the env var or disable the provider | `provider_status` → check `skip_code: missing_api_key` |
+| SearXNG unavailable | Missing `base_url` or both flags not set | Set `base_url` in `[search.searxng]` and enable in `[search.providers]` | `provider_status` → check `skip_code: missing_searxng_config` |
+| Gitea/GitLab provider fails | Missing `base_url` | Set `base_url` in the `[search.api.<provider>]` section | `provider_status` → check `skip_code: missing_base_url` |
+| Profile degraded warning | A profile provider is unavailable | Configure the missing provider or accept fallback to defaults | `provider_status` → check `skip_code` and `health_view` |
+| Provider in cooldown | 3+ consecutive failures | Wait for cooldown to expire (15–60s) or fix the underlying issue | `provider_status` → check `skip_code: cooldown_active` and `health_view.status` |
+| Credential env var missing | Env var not exported in shell | Export the env var or add to shell profile | `provider_status` → check `skip_code: credential_env_missing` |
+| All providers fail | Network issue or all providers in cooldown | Check network connectivity; wait for cooldown expiry | `provider_status` → check `health` for all providers |
+| Provider built with wrong features | `skip_code: not_built` | Rebuild with the required feature flag | `cargo build --features <feature>` |
 
 Run `eggsearch doctor` for a diagnostic summary of all configured providers, their enabled state, API key availability, and any misconfigurations.

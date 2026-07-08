@@ -6,6 +6,7 @@ const FILES: &[&str] = &[
     "README.md",
     "docs/config.md",
     "docs/codegg-integration.md",
+    "docs/provider-setup.md",
     "docs/tool-matrix.md",
     "docs/agent-workflows.md",
     "docs/safety.md",
