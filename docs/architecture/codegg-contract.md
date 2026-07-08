@@ -573,7 +573,7 @@ Per-tool feature details:
     "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
     "local_workspace": true,
     "subquery_telemetry": true,
-    "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"]
+    "supported_hosts": ["github", "gitlab", "gitea", "forgejo"]
   }
 }
 ```

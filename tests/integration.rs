@@ -19105,3 +19105,156 @@ fn provider_status_routable_provider_has_null_skip_code() {
     assert_eq!(ddg["skip_code"], serde_json::Value::Null);
     assert_eq!(ddg["routable"], true);
 }
+
+// =========================================================================
+// Bug fix regression tests
+// =========================================================================
+
+#[test]
+fn provider_status_caps_reflect_search_mode_off() {
+    let state = state_with_mode_off();
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let caps = v["server_capabilities"]
+        .as_object()
+        .expect("server_capabilities");
+    assert_eq!(caps["generic_search"], serde_json::json!(false));
+    assert_eq!(caps["repo_search"], serde_json::json!(false));
+    assert_eq!(caps["repo_map"], serde_json::json!(false));
+    assert_eq!(caps["security_search"], serde_json::json!(false));
+    assert_eq!(caps["research_search"], serde_json::json!(false));
+}
+
+#[test]
+fn provider_status_caps_reflect_fetch_disabled() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state"));
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let caps = v["server_capabilities"]
+        .as_object()
+        .expect("server_capabilities");
+    assert_eq!(caps["explicit_fetch"], serde_json::json!(false));
+    assert_eq!(caps["batch_fetch"], serde_json::json!(false));
+    assert_eq!(caps["document_fetch"], serde_json::json!(false));
+}
+
+#[test]
+fn provider_status_tool_caps_repo_search_excludes_codeberg() {
+    let state = state_with_default();
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let tcaps = v["tool_capabilities"]
+        .as_object()
+        .expect("tool_capabilities");
+    let rs_hosts = tcaps["repo_search"]["supported_hosts"]
+        .as_array()
+        .expect("repo_search.supported_hosts");
+    assert!(
+        !rs_hosts.iter().any(|h| h.as_str() == Some("codeberg")),
+        "repo_search.supported_hosts must not advertise codeberg (no provider): {rs_hosts:?}"
+    );
+    let rm_hosts = tcaps["repo_map"]["supported_hosts"]
+        .as_array()
+        .expect("repo_map.supported_hosts");
+    assert!(
+        !rm_hosts.iter().any(|h| h.as_str() == Some("codeberg")),
+        "repo_map.supported_hosts must not advertise codeberg (no provider): {rm_hosts:?}"
+    );
+    let rf_hosts = tcaps["repo_fetch"]["remote_hosts"]
+        .as_array()
+        .expect("repo_fetch.remote_hosts");
+    assert!(
+        rf_hosts.iter().any(|h| h.as_str() == Some("codeberg")),
+        "repo_fetch.remote_hosts should keep codeberg (raw fetch is supported): {rf_hosts:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("lib.rs"), "pub fn add() {}").unwrap();
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    fs::write(
+        root.join(".git").join("config"),
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("-c")
+        .arg("user.name=ci")
+        .arg("-c")
+        .arg("user.email=ci@test.com")
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .arg("--allow-empty")
+        .output()
+        .ok();
+
+    let state = state_with_local_backend(root);
+    let args = RepoFetchArgs {
+        host: Some("not-a-host".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: Some(true),
+    };
+
+    let err = run_repo_fetch(state, args)
+        .await
+        .expect_err("invalid host with prefer_local should error");
+    assert!(
+        err.to_string().contains("unknown host"),
+        "error should mention unknown host: {err}"
+    );
+}

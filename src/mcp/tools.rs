@@ -1348,16 +1348,17 @@ pub fn run_provider_status(
         },
         "mode": mode_str(state.config.search.mode),
         "server_capabilities": {
-            "generic_search": true,
-            "explicit_fetch": true,
-            "repo_search": true,
-            "repo_fetch": true,
-            "repo_map": true,
-            "security_search": true,
-            "research_search": true,
-            "batch_fetch": true,
+            "generic_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+            "explicit_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
+            "repo_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+            "repo_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow)
+                || local_enabled,
+            "repo_map": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+            "security_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+            "research_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+            "batch_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
             "evidence_bundle": true,
-            "document_fetch": true,
+            "document_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
             "pdf_fetch": cfg!(feature = "pdf"),
             "local_workspace": local_enabled,
         },
@@ -1383,10 +1384,10 @@ pub fn run_provider_status(
                 "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
                 "local_workspace": local_enabled,
                 "subquery_telemetry": true,
-                "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
+                "supported_hosts": ["github", "gitlab", "gitea", "forgejo"],
             },
             "repo_map": {
-                "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
+                "supported_hosts": ["github", "gitlab", "gitea", "forgejo"],
                 "local_checkout": local_enabled,
             },
             "local_workspace": {
@@ -1449,7 +1450,6 @@ fn build_code_hosts_summary(descriptors: &[ProviderDescriptor]) -> Vec<serde_jso
         let kind = match desc.id.as_str() {
             "github_code" | "github_issues" | "github_releases" => "github",
             "gitlab_code" | "gitlab_issues" | "gitlab_releases" => "gitlab",
-            "codeberg_code" | "codeberg_issues" | "codeberg_releases" => "codeberg",
             "gitea_code" | "gitea_issues" | "gitea_releases" => "gitea",
             _ => continue,
         };
@@ -1618,12 +1618,10 @@ pub async fn run_repo_fetch(
         if let Some(backend) = state.local_backend.as_deref() {
             if backend.is_enabled() {
                 let inventory = state.local_inventory();
+                let parsed_host = parse_code_host_arg(args.host.as_deref())?;
                 let matched = crate::meta::local_inventory::match_local_repo(
                     &inventory,
-                    args.host
-                        .as_ref()
-                        .and_then(|h| crate::core::code_metadata::CodeHost::parse_alias(h))
-                        .as_ref(),
+                    parsed_host.as_ref(),
                     &args.owner,
                     &args.repo,
                 );

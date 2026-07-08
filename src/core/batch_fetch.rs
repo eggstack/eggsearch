@@ -33,7 +33,7 @@ pub enum BatchFetchItem {
         host: Option<String>,
         /// Repository owner (or workspace root name for workspace locators).
         owner: String,
-        /// Repository name (or root-relative file path for workspace locators).
+        /// Repository name.
         repo: String,
         /// Branch, tag, or commit ref.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -41,7 +41,7 @@ pub enum BatchFetchItem {
         /// Full commit SHA for stable permalink construction.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         commit_sha: Option<String>,
-        /// File path relative to repository root.
+        /// File path relative to repository root (or workspace root for workspace locators).
         path: String,
         /// First line to return (1-indexed, inclusive).
         #[serde(default, skip_serializing_if = "Option::is_none")]
