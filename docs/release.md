@@ -16,24 +16,25 @@ issue and re-run the full sequence from the top.
 ```bash
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-cargo test --no-default-features
-cargo test --features mock
-cargo test --features pdf
-cargo test --features mock --test schema_identity_registry
-cargo test --features mock --test fetch_safety
-cargo test --features mock --test security_applicability_corpus
-cargo test --features mock --test research_evidence_corpus
-cargo test --features mock --test recipes_next_actions
-cargo test --features mock --test evidence_bundle_handoff
-cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo test --locked --all-features
+cargo test --locked --no-default-features
+cargo test --locked --features mock
+cargo test --locked --features pdf
+cargo test --locked --features mock --test schema_identity_registry
+cargo test --locked --features mock --test fetch_safety
+cargo test --locked --features mock --test security_applicability_corpus
+cargo test --locked --features mock --test research_evidence_corpus
+cargo test --locked --features mock --test recipes_next_actions
+cargo test --locked --features mock --test evidence_bundle_handoff
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo build --release
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 cargo publish --dry-run --locked
 ```
 
-The `make check` target runs the same offline gate (fmt, clippy, all feature
-matrix tests, schema-corpus, and docs-tests) in a single command and is the
-recommended entry point:
+The `make check` target runs the full offline gate — fmt, clippy, all feature
+matrix tests, schema-corpus, docs-tests, release build, docs build, and
+publish dry-run — in a single command and is the recommended entry point:
 
 ```bash
 make check

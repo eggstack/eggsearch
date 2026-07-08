@@ -60,7 +60,7 @@ The binary is written to `target/release/eggsearch`.
 make check
 ```
 
-That runs the full local CI gate: formatting, clippy, tests, schema-corpus checks, and documentation contract tests.
+That runs the full local CI gate: formatting, clippy, all feature matrix tests, schema-corpus checks, documentation contract tests, release build, docs build, and publish dry-run.
 
 Documentation contract tests verify that code snippets in docs stay in sync with the codebase.
 

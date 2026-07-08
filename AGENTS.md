@@ -9,16 +9,18 @@ eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for 
 All commands from project root. **Run `make check` to replicate the full CI suite locally.**
 
 ```bash
-# Full CI gate (fmt + clippy + tests + schema-corpus)
+# Full CI gate (fmt + clippy + all tests + schema-corpus + docs + publish-check)
 make check
 
 # Individual targets
 cargo fmt --check            # format check (CI fails on this)
 cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required
-cargo test --all-features    # all tests
-cargo test --no-default-features  # no-default compilation + tests
+cargo test --locked --all-features    # all tests
+cargo test --locked --no-default-features  # no-default compilation + tests
+cargo test --locked --features mock  # mock feature tests (all)
+cargo test --locked --features pdf   # pdf feature tests (all)
 cargo build --release        # release build
-cargo publish --dry-run      # pre-publish check
+cargo publish --dry-run --locked  # pre-publish check
 ```
 
 **Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. The CI runs tests across 4 feature combos: `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`.
@@ -57,13 +59,13 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | Job | What it runs |
 |-----|-------------|
 | **check** | `cargo check` × 4 feature combos |
-| **test** | `cargo test` × 4 feature combos |
+| **test** | `cargo test --locked` × 4 feature combos |
 | **clippy** | `cargo clippy --all-targets --all-features -- -D warnings` |
 | **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
 | **docs-contract** | 3 documentation contract tests: `docs_config_snippets`, `docs_provider_inventory`, `docs_tool_names` |
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
-| **publish-check** | `cargo publish --dry-run` |
+| **publish-check** | `cargo publish --dry-run --locked` |
 | **docs** | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
 ## Feature Flags
@@ -101,12 +103,12 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 ### Running specific suites
 
 ```bash
-cargo test --features mock --test integration              # integration only
-cargo test --features mock --test corpus_runner            # corpus regression
-cargo test --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
+cargo test --locked --features mock --test integration              # integration only
+cargo test --locked --features mock --test corpus_runner            # corpus regression
+cargo test --locked --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
 make schema-corpus                                         # all contract tests
 make docs-tests                                            # documentation contract tests
-cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
 ```
 
 ### Adding tests
@@ -144,7 +146,7 @@ Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` crate with `
 ## Publishing
 
 ```bash
-make publish-check  # runs cargo publish --dry-run
+make publish-check  # runs cargo publish --dry-run --locked
 ```
 
 Pre-publish: clippy clean, tests pass, fmt clean, version bumped in Cargo.toml, CHANGELOG.md updated.

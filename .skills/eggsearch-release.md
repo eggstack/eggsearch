@@ -2,7 +2,7 @@
 
 ## Pre-Release Checklist
 
-1. `make check` passes (fmt + clippy + tests + schema-corpus + docs-tests)
+1. `make check` passes (fmt + clippy + tests + schema-corpus + docs-tests + release-build + docs + publish-check)
 2. Version bumped in `Cargo.toml`
 3. `CHANGELOG.md` updated with new version entry
 4. `cargo publish --dry-run --locked` succeeds

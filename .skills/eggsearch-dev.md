@@ -3,14 +3,16 @@
 ## Build & Verify
 
 ```bash
-# Full CI gate (fmt + clippy + tests + schema-corpus)
+# Full CI gate (fmt + clippy + all tests + schema-corpus + docs + publish-check)
 make check
 
 # Individual targets
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-cargo test --no-default-features
+cargo test --locked --all-features
+cargo test --locked --no-default-features
+cargo test --locked --features mock
+cargo test --locked --features pdf
 cargo build --release
 cargo publish --dry-run --locked
 ```

@@ -92,13 +92,13 @@ The CI runs tests across 4 feature combos:
 | Job | What it runs |
 |-----|-------------|
 | check | `cargo check` × 4 feature combos |
-| test | `cargo test` × 4 feature combos |
+| test | `cargo test --locked` × 4 feature combos |
 | clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
 | schema-corpus | 6 regression test binaries |
 | docs-contract | 3 documentation contract tests |
 | fmt | `cargo fmt --check` |
 | release-build | `cargo build --release` |
-| publish-check | `cargo publish --dry-run` |
+| publish-check | `cargo publish --dry-run --locked` |
 | docs | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
 ---
@@ -106,12 +106,12 @@ The CI runs tests across 4 feature combos:
 ## Running Specific Suites
 
 ```bash
-cargo test --features mock --test integration              # integration only
-cargo test --features mock --test corpus_runner            # corpus regression
-cargo test --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
+cargo test --locked --features mock --test integration              # integration only
+cargo test --locked --features mock --test corpus_runner            # corpus regression
+cargo test --locked --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
 make schema-corpus                                         # all contract tests
 make docs-tests                                            # documentation contract tests
-cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
 ```
 
 ---
@@ -138,12 +138,15 @@ make check
 This runs the complete CI suite locally:
 1. `cargo fmt --check`
 2. `cargo clippy --all-targets --all-features -- -D warnings`
-3. `cargo test --all-features`
-4. `cargo test --no-default-features`
-5. `cargo test --features mock`
-6. `cargo test --features pdf`
+3. `cargo test --locked --all-features`
+4. `cargo test --locked --no-default-features`
+5. `cargo test --locked --features mock`
+6. `cargo test --locked --features pdf`
 7. Schema-corpus tests
 8. Documentation contract tests
+9. `cargo build --release`
+10. `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps`
+11. `cargo publish --dry-run --locked`
 
 ---
 
