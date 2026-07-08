@@ -137,7 +137,7 @@ Call `provider_status` to get the recipe catalog in the `workflow_recipes` respo
 
 ### Next-Action Hints
 
-Tool responses from `web_search`, `repo_search`, `security_search`, and `research_search` include an `next_actions` field with up to 5 `AgentNextAction` entries. Each entry has:
+Tool responses from `web_search`, `repo_search`, `security_search`, and `research_search` include a `next_actions` field with up to 5 `AgentNextAction` entries. Each entry has:
 
 - **`tool`**: target tool name for the follow-up call
 - **`reason_code`**: machine-readable reason (e.g. `inspect_top_source`, `fetch_primary_advisory`, `bundle_evidence`)

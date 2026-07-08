@@ -1,7 +1,7 @@
 # meta Module Deep Dive
 
 **Path:** `src/meta/`
-**Purpose:** Metasearch adapter + 38 vendored search engines. Handles engine dispatch, RRF aggregation, query planning, provider health tracking, and result grouping.
+**Purpose:** Metasearch adapter + 35 vendored search engines. Handles engine dispatch, RRF aggregation, query planning, provider health tracking, and result grouping.
 
 ---
 
@@ -69,7 +69,7 @@ MCP Tool → MetadataSearchAdapter
 
 ---
 
-## Engine Inventory (38 engines)
+## Engine Inventory (35 engines)
 
 ### HTML Scrapers
 

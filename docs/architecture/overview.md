@@ -1,6 +1,6 @@
 # eggsearch Architecture Overview
 
-**Version:** 0.3.4 · **Rust edition:** 2021 · **MSRV:** 1.88
+**Version:** 0.3.5 · **Rust edition:** 2021 · **MSRV:** 1.88
 **Crate type:** Single library + binary (no workspace)
 
 eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches explicit HTTP(S) URLs on demand with bounded text extraction.

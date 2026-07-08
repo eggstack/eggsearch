@@ -303,7 +303,7 @@ When enabled, local results use `local_trusted` trust labels and can be surfaced
 
 ## Provider Status
 
-`provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, and workflow recipes. The `probe` field is reserved and currently has no effect.
+`provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, quality metadata, and workflow recipes. The `probe` field is reserved and currently has no effect.
 
 Each provider descriptor includes:
 

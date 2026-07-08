@@ -413,7 +413,7 @@ A single successful query immediately clears cooldown, resets the failure counte
 
 ### Health in `provider_status`
 
-Each provider in `provider_status` includes a `health_view` with:
+The `health_views` field in `provider_status` provides per-provider health views with:
 
 - `status` — current health state (`Healthy`, `Degraded`, `Cooldown`, `Unknown`)
 - `consecutive_failures` — current failure streak
@@ -427,7 +427,7 @@ Each provider in `provider_status` includes a `health_view` with:
 
 ### Routing Integration
 
-When resolving which providers to query, eggsearch checks `is_in_cooldown()` for each candidate. Cooled-down providers are skipped with `skip_code: CooldownActive`. If all profile providers are unavailable, routing falls back to `default_providers`. If defaults are also unavailable, a `profile_degraded` warning is emitted.
+When resolving which providers to query, eggsearch checks `is_in_cooldown()` for each candidate. Cooled-down providers are skipped with `skip_code: cooldown_active`. If all profile providers are unavailable, routing falls back to `default_providers`. If defaults are also unavailable, a `profile_degraded` warning is emitted.
 
 ## Troubleshooting
 
