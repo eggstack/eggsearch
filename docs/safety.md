@@ -2,6 +2,8 @@
 
 eggsearch treats all retrieved content as evidence, not instructions.
 
+For the full operator threat model — including trust boundaries, configuration escape hatches, prompt-injection handling, local workspace caveats, provider disclosure notes, and recommended host-agent policy — see [threat-model.md](threat-model.md).
+
 ## Trust Labels
 
 - `external_untrusted` for web and remote content

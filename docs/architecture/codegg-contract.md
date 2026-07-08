@@ -132,6 +132,8 @@ is global to the response.
 | `local_trusted` | Local workspace file content | Provenance-trusted, not instruction-trusted |
 | `unknown` | Trust cannot be determined | Default to `external_untrusted` behavior |
 
+> For the full operator-facing threat model — including fetch network boundaries, configuration escape hatches, prompt-injection handling, and recommended host-agent policy — see [threat-model.md](../threat-model.md).
+
 ```rust
 fn apply_trust_policy(source: &SourceCard, content: &str) {
     match source.trust {

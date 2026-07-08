@@ -34,6 +34,8 @@ Search tools return machine-readable `next_actions` hints. `web_fetch` supports 
 - Fetch targets are validated against blocked address ranges (private networks, loopback, link-local, multicast, reserved, and documentation addresses). Redirect targets are revalidated before being followed.
 - `provider_status` is diagnostic only; it reports configured providers, routability, skip reasons and codes, capabilities, cached health, and workflow recipes.
 
+For the full operator threat model, including fetch network boundaries, trust classes, prompt-injection handling, local workspace caveats, provider disclosure notes, and escape-hatch risks, see [`docs/threat-model.md`](docs/threat-model.md).
+
 ## Install
 
 ```bash
@@ -68,6 +70,7 @@ Documentation contract tests verify that code snippets in docs stay in sync with
 
 - [Configuration](docs/config.md)
 - [Safety and fetch behavior](docs/safety.md)
+- [Threat model](docs/threat-model.md)
 - [Tool matrix](docs/tool-matrix.md)
 - [Agent workflows](docs/agent-workflows.md)
 - [Architecture contract](docs/architecture/codegg-contract.md)
