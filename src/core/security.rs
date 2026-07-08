@@ -50,6 +50,25 @@ impl SeverityLevel {
             _ => Self::Unknown,
         }
     }
+
+    /// Ordinal rank for severity comparison. Higher = more severe.
+    /// `Unknown` maps to 0 so unknown severities never meet any
+    /// `severity_min` threshold.
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Critical => 4,
+            Self::High => 3,
+            Self::Medium => 2,
+            Self::Low => 1,
+            Self::Unknown => 0,
+        }
+    }
+
+    /// Returns true when this severity is at least as severe as
+    /// `min`. `Unknown` is never considered severe enough.
+    pub fn meets_minimum(self, min: SeverityLevel) -> bool {
+        self.rank() >= min.rank() && self != SeverityLevel::Unknown
+    }
 }
 
 /// Reference to an external vulnerability resource.
@@ -1594,6 +1613,17 @@ mod tests {
         assert_eq!(SeverityLevel::Medium.as_str(), "medium");
         assert_eq!(SeverityLevel::Low.as_str(), "low");
         assert_eq!(SeverityLevel::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn severity_level_meets_minimum() {
+        assert!(SeverityLevel::Critical.meets_minimum(SeverityLevel::High));
+        assert!(SeverityLevel::High.meets_minimum(SeverityLevel::High));
+        assert!(SeverityLevel::Medium.meets_minimum(SeverityLevel::Low));
+        assert!(!SeverityLevel::Low.meets_minimum(SeverityLevel::Medium));
+        assert!(!SeverityLevel::Unknown.meets_minimum(SeverityLevel::Low));
+        assert!(!SeverityLevel::Unknown.meets_minimum(SeverityLevel::Critical));
+        assert!(SeverityLevel::Critical.meets_minimum(SeverityLevel::Critical));
     }
 
     #[test]

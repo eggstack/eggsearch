@@ -1395,6 +1395,7 @@ impl MetadataSearchAdapter {
     /// security-specific subqueries, fans out to enabled providers via
     /// the bounded parallel dispatcher, aggregates results, and returns
     /// SourceCards for downstream grouping and advisory enrichment.
+    /// Returns `(cards, warnings, providers_failed, trust_markers)`.
     pub async fn security_search_subqueries(
         &self,
         query: &str,
@@ -1402,7 +1403,12 @@ impl MetadataSearchAdapter {
         effective_max: usize,
         max_results_cap: usize,
         timeout_ms: Option<u64>,
-    ) -> (Vec<SourceCard>, Vec<SearchWarning>, TrustMarkers) {
+    ) -> (
+        Vec<SourceCard>,
+        Vec<SearchWarning>,
+        Vec<ProviderFailure>,
+        TrustMarkers,
+    ) {
         use crate::core::query::SearchIntent;
         use crate::core::WebSearchRequest;
 
@@ -1449,6 +1455,9 @@ impl MetadataSearchAdapter {
         // Record provider health from raw results and failures
         self.record_provider_health(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
 
+        let providers_failed =
+            provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+
         let mut warnings: Vec<SearchWarning> = Vec::new();
         push_deadline_warning(&mut warnings, "security_search", &dispatch.deadline);
         push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
@@ -1461,7 +1470,7 @@ impl MetadataSearchAdapter {
             trust_markers.merge(&card.trust_markers);
         }
 
-        (cards, warnings, trust_markers)
+        (cards, warnings, providers_failed, trust_markers)
     }
 
     /// Run a research-oriented multi-source evidence search. This generates bounded subqueries

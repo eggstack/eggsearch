@@ -15,12 +15,25 @@ use crate::meta::fetch_ranking::{extract_domain, FetchCandidate, FetchRankMode, 
 /// and dependency file locators when findings are available.
 /// All candidates are scored and ranked via the fetch ranking pipeline
 /// in `FetchRankMode::Security` before being returned.
+///
+/// `include_exploit_context`, `include_defensive_guidance`, and
+/// `include_vendor_advisories` control which group kinds contribute
+/// top-result fetch candidates. When a flag is `Some(false)`, the
+/// corresponding group kind is filtered out of the candidate pool.
+/// When `None` (caller did not set the flag), default-on behavior is
+/// applied: all three group kinds are included. The authoritative
+/// advisory group and KEV entry group are always included because
+/// they represent primary evidence.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_security_suggested_fetches(
     groups: &[SecurityResultGroup],
     resolved_ids: &SecurityIdentifiers,
     ecosystem: Option<&str>,
     package: Option<&str>,
     dependency_findings: &[DependencyFinding],
+    include_exploit_context: Option<bool>,
+    include_defensive_guidance: Option<bool>,
+    include_vendor_advisories: Option<bool>,
 ) -> Vec<SecuritySuggestedFetch> {
     let mut candidates = Vec::new();
 
@@ -186,6 +199,14 @@ pub fn generate_security_suggested_fetches(
     // ── Tier 3: Top results from each group ──
 
     for group in groups {
+        if !group_kind_included(
+            group.kind,
+            include_exploit_context,
+            include_defensive_guidance,
+            include_vendor_advisories,
+        ) {
+            continue;
+        }
         for card in group.results.iter().take(2) {
             let source_kind = source_kind_for_group(group.kind);
             let (source_role, evidence_confidence) = card
@@ -371,6 +392,31 @@ fn source_kind_for_group(kind: SecurityResultGroupKind) -> SourceKind {
     }
 }
 
+/// Returns true when the given group kind should contribute top-result
+/// fetch candidates under the supplied include_* flags. Authoritative
+/// advisory and KEV entry groups are always included because they
+/// represent primary evidence regardless of caller preferences. Other
+/// group kinds honor the supplied flags; when a flag is `None`, the
+/// default-on behavior is applied.
+fn group_kind_included(
+    kind: SecurityResultGroupKind,
+    include_exploit_context: Option<bool>,
+    include_defensive_guidance: Option<bool>,
+    include_vendor_advisories: Option<bool>,
+) -> bool {
+    match kind {
+        SecurityResultGroupKind::AuthoritativeAdvisories
+        | SecurityResultGroupKind::KevEntries
+        | SecurityResultGroupKind::PackageAdvisories
+        | SecurityResultGroupKind::PatchCommitsOrReleases
+        | SecurityResultGroupKind::GeneralContext
+        | SecurityResultGroupKind::Other => true,
+        SecurityResultGroupKind::VendorAdvisories => include_vendor_advisories.unwrap_or(true),
+        SecurityResultGroupKind::ExploitDiscussion => include_exploit_context.unwrap_or(true),
+        SecurityResultGroupKind::DefensiveGuidance => include_defensive_guidance.unwrap_or(true),
+    }
+}
+
 fn group_label(kind: SecurityResultGroupKind) -> String {
     match kind {
         SecurityResultGroupKind::AuthoritativeAdvisories => "AuthoritativeAdvisories".to_string(),
@@ -445,7 +491,8 @@ mod tests {
             cve_ids: vec!["CVE-2024-0001".to_string()],
             ..Default::default()
         };
-        let fetches = generate_security_suggested_fetches(&[], &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&[], &ids, None, None, &[], None, None, None);
         assert!(fetches.iter().any(|f| f.url.contains("CVE-2024-0001")));
     }
 
@@ -455,7 +502,8 @@ mod tests {
             ghsa_ids: vec!["GHSA-test-1234-abcd".to_string()],
             ..Default::default()
         };
-        let fetches = generate_security_suggested_fetches(&[], &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&[], &ids, None, None, &[], None, None, None);
         assert!(fetches
             .iter()
             .any(|f| f.url.contains("GHSA-test-1234-abcd")));
@@ -464,8 +512,16 @@ mod tests {
     #[test]
     fn suggests_crates_io_for_package() {
         let ids = SecurityIdentifiers::default();
-        let fetches =
-            generate_security_suggested_fetches(&[], &ids, Some("crates.io"), Some("serde"), &[]);
+        let fetches = generate_security_suggested_fetches(
+            &[],
+            &ids,
+            Some("crates.io"),
+            Some("serde"),
+            &[],
+            None,
+            None,
+            None,
+        );
         assert!(fetches
             .iter()
             .any(|f| f.url.contains("crates.io/crates/serde")));
@@ -474,8 +530,16 @@ mod tests {
     #[test]
     fn suggests_npm_for_package() {
         let ids = SecurityIdentifiers::default();
-        let fetches =
-            generate_security_suggested_fetches(&[], &ids, Some("npm"), Some("lodash"), &[]);
+        let fetches = generate_security_suggested_fetches(
+            &[],
+            &ids,
+            Some("npm"),
+            Some("lodash"),
+            &[],
+            None,
+            None,
+            None,
+        );
         assert!(fetches
             .iter()
             .any(|f| f.url.contains("npmjs.com/package/lodash")));
@@ -492,7 +556,8 @@ mod tests {
             ],
         );
         let ids = SecurityIdentifiers::default();
-        let fetches = generate_security_suggested_fetches(&[group], &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&[group], &ids, None, None, &[], None, None, None);
         // Should have 2 results (capped at 2 per group) after ranking
         let group_fetches: Vec<_> = fetches
             .iter()
@@ -526,6 +591,9 @@ mod tests {
             None,
             None,
             &[],
+            None,
+            None,
+            None,
         );
 
         // The authoritative advisory should rank higher than the blog post
@@ -549,7 +617,8 @@ mod tests {
             cve_ids: vec!["CVE-2024-0001".to_string()],
             ..Default::default()
         };
-        let fetches = generate_security_suggested_fetches(&[], &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&[], &ids, None, None, &[], None, None, None);
         assert!(!fetches.is_empty());
         let fetch = &fetches[0];
         assert!(fetch.score.is_some(), "score should be populated");
@@ -624,7 +693,8 @@ mod tests {
             cve_ids: vec!["CVE-2024-0001".to_string()],
             ..Default::default()
         };
-        let fetches = generate_security_suggested_fetches(&groups, &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&groups, &ids, None, None, &[], None, None, None);
 
         for fetch in &fetches {
             let expected = match fetch.group {
@@ -662,7 +732,16 @@ mod tests {
             relation: Some(crate::core::security_applicability::DependencyRelation::Transitive),
         };
         let ids = SecurityIdentifiers::default();
-        let fetches = generate_security_suggested_fetches(&[], &ids, None, None, &[finding]);
+        let fetches = generate_security_suggested_fetches(
+            &[],
+            &ids,
+            None,
+            None,
+            &[finding],
+            None,
+            None,
+            None,
+        );
 
         let dep_fetch = fetches
             .iter()
@@ -690,7 +769,8 @@ mod tests {
             })
             .collect();
         let ids = SecurityIdentifiers::default();
-        let fetches = generate_security_suggested_fetches(&groups, &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&groups, &ids, None, None, &[], None, None, None);
         // Total cap should limit results
         assert!(
             fetches.len() <= 8,
@@ -718,7 +798,8 @@ mod tests {
             )],
         )];
         let ids = SecurityIdentifiers::default();
-        let fetches = generate_security_suggested_fetches(&groups, &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&groups, &ids, None, None, &[], None, None, None);
         assert!(!fetches.is_empty());
         for fetch in &fetches {
             assert!(
@@ -739,7 +820,8 @@ mod tests {
         });
         let group = make_group(SecurityResultGroupKind::AuthoritativeAdvisories, vec![card]);
         let ids = SecurityIdentifiers::default();
-        let fetches = generate_security_suggested_fetches(&[group], &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&[group], &ids, None, None, &[], None, None, None);
         // The advisory should be scored and ranked
         let advisory = fetches
             .iter()
@@ -759,7 +841,8 @@ mod tests {
             osv_ids: vec!["GHSA-osv-5678-efgh".to_string()],
             ..Default::default()
         };
-        let fetches = generate_security_suggested_fetches(&[], &ids, None, None, &[]);
+        let fetches =
+            generate_security_suggested_fetches(&[], &ids, None, None, &[], None, None, None);
         // All 3 are AuthoritativeAdvisories; diversity group cap limits to 2
         assert_eq!(fetches.len(), 2);
         assert!(fetches

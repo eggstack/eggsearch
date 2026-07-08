@@ -52,7 +52,7 @@ pub async fn run_security_search_plan(
         req.providers.clone()
     };
 
-    let (results, dispatch_warnings, trust_markers) = adapter
+    let (results, dispatch_warnings, providers_failed, trust_markers) = adapter
         .security_search_subqueries(
             &req.query,
             &effective_providers,
@@ -68,7 +68,7 @@ pub async fn run_security_search_plan(
         mode: "security_metasearch",
         results,
         providers_queried: effective_providers.clone(),
-        providers_failed: Vec::new(),
+        providers_failed: providers_failed.clone(),
         warnings: dispatch_warnings,
         trust_markers,
     };
@@ -434,13 +434,69 @@ pub async fn run_security_search_plan(
     }
 
     // 8. Group results and generate suggested fetches
-    let groups = group_security_results(&web_resp.results, req.max_per_group);
+    let mut groups = group_security_results(&web_resp.results, req.max_per_group);
+
+    // Apply severity_min filtering to vulnerability records and grouped
+    // source cards when severity metadata is available. When no
+    // severity data is available (generic web search without native
+    // advisory providers), emit a structured warning so callers know
+    // the filter could not be enforced.
+    if let Some(min_sev) = req.severity_min {
+        let total_vulns_before = vulnerabilities.len();
+        vulnerabilities.retain(|v| {
+            v.severity
+                .map(|s| s.meets_minimum(min_sev))
+                .unwrap_or(false)
+        });
+        let dropped_vulns = total_vulns_before - vulnerabilities.len();
+
+        let total_groups_before: usize = groups.iter().map(|g| g.results.len()).sum::<usize>();
+        for group in &mut groups {
+            group.results.retain(|card| {
+                card.metadata
+                    .vulnerability
+                    .as_ref()
+                    .and_then(|v| v.severity)
+                    .map(|s| s.meets_minimum(min_sev))
+                    .unwrap_or(true)
+            });
+        }
+        groups.retain(|g| {
+            !g.results.is_empty() || g.kind == crate::core::security::SecurityResultGroupKind::Other
+        });
+        let dropped_cards: usize =
+            total_groups_before - groups.iter().map(|g| g.results.len()).sum::<usize>();
+
+        if dropped_vulns == 0 && dropped_cards == 0 {
+            warnings.push(SearchWarning::new(
+                "_system",
+                format!(
+                    "severity_min_unenforced: severity_min={} requested but no source \
+                     cards or vulnerabilities carry severity metadata; filter was not applied",
+                    min_sev.as_str()
+                ),
+            ));
+        } else {
+            warnings.push(SearchWarning::new(
+                "_system",
+                format!(
+                    "severity_min_applied: dropped {dropped_vulns} vulnerabilities and \
+                     {dropped_cards} source cards below severity_min={}",
+                    min_sev.as_str()
+                ),
+            ));
+        }
+    }
+
     let suggested_fetches = generate_security_suggested_fetches(
         &groups,
         &resolved_ids,
         req.ecosystem.as_deref(),
         req.package.as_deref(),
         &dependency_findings,
+        req.include_exploit_context,
+        req.include_defensive_guidance,
+        req.include_vendor_advisories,
     );
 
     // 9. Build security context
@@ -704,7 +760,7 @@ pub async fn run_security_search_plan(
         groups,
         suggested_fetches,
         providers_queried: web_resp.providers_queried,
-        providers_failed: web_resp.providers_failed,
+        providers_failed,
         warnings,
         trust_markers: web_resp.trust_markers,
         capability_enforcement: Some(

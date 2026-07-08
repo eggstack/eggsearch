@@ -64,10 +64,33 @@ fn parse_code_host_arg(
 
 fn parse_symbol_kind_arg(
     symbol_kind: Option<&str>,
-) -> Option<crate::core::code_evidence::SymbolKind> {
+) -> Result<Option<crate::core::code_evidence::SymbolKind>, ToolError> {
     use crate::core::code_evidence::SymbolKind;
 
-    match symbol_kind?.to_lowercase().as_str() {
+    let Some(raw) = symbol_kind else {
+        return Ok(None);
+    };
+
+    let accepted: &[&str] = &[
+        "function",
+        "fn",
+        "method",
+        "struct",
+        "enum",
+        "trait",
+        "class",
+        "interface",
+        "module",
+        "mod",
+        "constant",
+        "const",
+        "static",
+        "type",
+        "typealias",
+        "macro",
+    ];
+
+    let parsed = match raw.to_ascii_lowercase().as_str() {
         "function" | "fn" => Some(SymbolKind::Function),
         "method" => Some(SymbolKind::Method),
         "struct" => Some(SymbolKind::Struct),
@@ -80,7 +103,14 @@ fn parse_symbol_kind_arg(
         "type" | "typealias" => Some(SymbolKind::TypeAlias),
         "macro" => Some(SymbolKind::Macro),
         _ => None,
-    }
+    };
+
+    parsed.map(Some).ok_or_else(|| {
+        ToolError::Validation(format!(
+            "invalid symbol_kind '{raw}'; accepted values: {}",
+            accepted.join(", ")
+        ))
+    })
 }
 
 /// Strictly parse a single string argument into an enum-like value.
@@ -1587,15 +1617,7 @@ pub async fn run_repo_fetch(
     if args.prefer_local.unwrap_or(false) {
         if let Some(backend) = state.local_backend.as_deref() {
             if backend.is_enabled() {
-                let roots = backend.roots();
-                let inventory = crate::meta::local_inventory::discover_local_repos(
-                    &crate::core::local::LocalConfig {
-                        enabled: true,
-                        roots: roots.iter().map(|(_, p)| p.clone()).collect(),
-                        ..Default::default()
-                    },
-                    2,
-                );
+                let inventory = state.local_inventory();
                 let matched = crate::meta::local_inventory::match_local_repo(
                     &inventory,
                     args.host
@@ -1647,7 +1669,7 @@ pub async fn run_repo_fetch(
 
     let ref_name = args.ref_name.unwrap_or_else(|| "main".to_string());
 
-    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref());
+    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
 
     let req = RepoFetchRequest {
         host: Some(effective_host),
@@ -2104,15 +2126,7 @@ pub async fn run_repo_map(
     // Discover local checkout for the requested repo
     if let Some(backend) = state.local_backend.as_deref() {
         if backend.is_enabled() {
-            let roots = backend.roots();
-            let inventory = crate::meta::local_inventory::discover_local_repos(
-                &crate::core::local::LocalConfig {
-                    enabled: true,
-                    roots: roots.iter().map(|(_, p)| p.clone()).collect(),
-                    ..Default::default()
-                },
-                2,
-            );
+            let inventory = state.local_inventory();
             let matched = crate::meta::local_inventory::match_local_repo(
                 &inventory,
                 req.host.as_ref(),
@@ -2510,8 +2524,8 @@ pub async fn run_batch_fetch(
                     // max_total_chars even though the per-item cap was respected.
                     let remaining = total_cap.saturating_sub(total_chars);
                     if batch_result.chars_returned > remaining {
-                        batch_result.chars_returned = remaining;
-                        batch_result.truncated = true;
+                        batch_result =
+                            truncate_batch_result_to_budget(batch_result, remaining, total_cap);
                     }
                     total_chars += batch_result.chars_returned;
                     // The result's index is already correct from the future.
@@ -2573,6 +2587,128 @@ pub async fn run_batch_fetch(
     Ok(value)
 }
 
+/// Trim a `BatchFetchResult`'s embedded `response` payload so that
+/// `chars_returned` does not exceed `remaining` and the aggregate
+/// total stays within `total_cap`. Text is truncated first (cheapest
+/// and typically the largest field), then metadata fields are dropped
+/// in priority order until the budget is satisfied. When the payload
+/// cannot be trimmed (e.g. zero remaining budget), the embedded
+/// response is replaced with `null` and `truncated` is set so callers
+/// can see the item was omitted from the aggregate budget.
+fn truncate_batch_result_to_budget(
+    mut result: crate::core::batch_fetch::BatchFetchResult,
+    remaining: usize,
+    total_cap: usize,
+) -> crate::core::batch_fetch::BatchFetchResult {
+    if remaining == 0 {
+        result.response = None;
+        result.error = Some(format!(
+            "batch_total_budget_exhausted: item truncated to fit remaining budget of 0 of max_total_chars={total_cap}"
+        ));
+        result.chars_returned = 0;
+        result.truncated = true;
+        return result;
+    }
+
+    let Some(mut payload) = result.response.take() else {
+        result.chars_returned = 0;
+        return result;
+    };
+
+    let budget = remaining;
+
+    if let Some(text) = payload
+        .get_mut("text")
+        .and_then(|v| v.as_str().map(String::from))
+    {
+        let len = text.chars().count();
+        if len > budget {
+            let trimmed: String = text.chars().take(budget).collect();
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("text".to_string(), serde_json::Value::String(trimmed));
+            }
+        }
+    }
+
+    let meta_chars = |obj: &serde_json::Map<String, serde_json::Value>| -> usize {
+        obj.get("title")
+            .and_then(|v| v.as_str())
+            .map(|s| s.chars().count())
+            .unwrap_or(0)
+            + obj
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.chars().count())
+                .unwrap_or(0)
+            + obj
+                .get("links")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|l| {
+                            l.get("url")
+                                .and_then(|u| u.as_str())
+                                .map(|s| s.chars().count())
+                                .unwrap_or(0)
+                                + l.get("text")
+                                    .and_then(|t| t.as_str())
+                                    .map(|s| s.chars().count())
+                                    .unwrap_or(0)
+                        })
+                        .sum::<usize>()
+                })
+                .unwrap_or(0)
+    };
+
+    let text_chars = |obj: &serde_json::Map<String, serde_json::Value>| -> usize {
+        obj.get("text")
+            .and_then(|v| v.as_str())
+            .map(|s| s.chars().count())
+            .unwrap_or(0)
+    };
+
+    if let Some(obj) = payload.as_object_mut() {
+        let mut current = text_chars(obj) + meta_chars(obj);
+        if current > budget {
+            loop {
+                let popped = obj
+                    .get_mut("links")
+                    .and_then(|v| v.as_array_mut())
+                    .and_then(|arr| {
+                        if arr.is_empty() {
+                            None
+                        } else {
+                            arr.pop();
+                            Some(())
+                        }
+                    });
+                if popped.is_none() {
+                    break;
+                }
+                current = text_chars(obj) + meta_chars(obj);
+                if current <= budget {
+                    break;
+                }
+            }
+        }
+        if current > budget {
+            obj.remove("description");
+            current = text_chars(obj) + meta_chars(obj);
+        }
+        if current > budget {
+            obj.remove("title");
+            current = text_chars(obj) + meta_chars(obj);
+        }
+        result.chars_returned = current;
+    } else {
+        result.chars_returned = 0;
+    }
+
+    result.response = Some(payload);
+    result.truncated = true;
+    result
+}
+
 /// Build a boxed future that fetches a single batch item.
 ///
 /// The future acquires a semaphore permit, executes the fetch, and
@@ -2629,9 +2765,13 @@ fn make_batch_fetch_future(
                 match response {
                     Ok(resp) => {
                         let truncated = resp.truncated;
+                        let structured =
+                            crate::core::warning::convert_fetch_warnings(&resp.warnings);
                         let payload = serde_json::json!({
                             "url": resp.url,
                             "final_url": resp.final_url,
+                            "stable_id": resp.stable_id,
+                            "source_id": resp.source_id,
                             "title": resp.title,
                             "description": resp.description,
                             "content_type": resp.content_type,
@@ -2648,6 +2788,7 @@ fn make_batch_fetch_future(
                                 .unwrap_or(serde_json::json!({})),
                             "document": resp.document,
                             "fetch_transform": resp.fetch_transform,
+                            "structured_warnings": structured,
                         });
                         // Account for body text plus metadata-only fields
                         // (title/description/links) so metadata-only responses
@@ -2863,7 +3004,7 @@ async fn run_workspace_fetch(
 
     // Apply span selection: resolve symbol/match_text/explicit range
     // to a concrete line span before slicing.
-    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref());
+    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
 
     let selected_span = crate::fetch::span::select_span(
         &all_lines,

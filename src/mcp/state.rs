@@ -1,7 +1,7 @@
 //! Server state: shared state passed to every tool call.
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tracing;
 
@@ -9,7 +9,20 @@ use crate::core::config::AppConfig;
 use crate::fetch::FetchClient;
 use crate::meta::engines::kev::KevClient;
 use crate::meta::local_backend::LocalWorkspaceBackend;
+use crate::meta::local_inventory::{discover_local_repos, LocalRepoIdentity};
 use crate::meta::MetadataSearchAdapter;
+
+/// TTL for the cached local workspace inventory. The cache is
+/// intentionally short because workspace roots can change frequently
+/// during agent sessions, and the discovery cost is mostly bounded by
+/// filesystem scans of configured roots.
+const LOCAL_INVENTORY_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// Cached snapshot of local workspace repository discovery.
+pub struct LocalInventoryCache {
+    pub inventory: Vec<LocalRepoIdentity>,
+    pub fetched_at: Instant,
+}
 
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
 #[derive(Clone)]
@@ -26,6 +39,11 @@ pub struct ServerState {
     pub kev_client: Arc<KevClient>,
     /// Local workspace search backend. `None` when `[local].enabled = false`.
     pub local_backend: Option<Arc<LocalWorkspaceBackend>>,
+    /// TTL-cached snapshot of local repository discovery. Avoids
+    /// re-walking configured roots on every `repo_fetch` / `repo_map`
+    /// call. Public so tests can construct `ServerState` instances
+    /// with custom local-backend configurations.
+    pub local_inventory_cache: Arc<Mutex<Option<LocalInventoryCache>>>,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -155,6 +173,7 @@ impl ServerState {
             fetch_client,
             kev_client,
             local_backend,
+            local_inventory_cache: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -184,6 +203,7 @@ impl ServerState {
             fetch_client,
             kev_client,
             local_backend: None,
+            local_inventory_cache: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -193,6 +213,54 @@ impl ServerState {
     /// unexpectedly absent.
     pub fn fetch_client(&self) -> Option<Arc<FetchClient>> {
         self.fetch_client.clone()
+    }
+
+    /// Returns the cached local repository inventory, re-running the
+    /// discovery walk when the cached snapshot is older than
+    /// `LOCAL_INVENTORY_CACHE_TTL`. Returns an empty vector when no
+    /// local backend is configured. Discovery is intentionally
+    /// performed synchronously inside this call so it can be wrapped
+    /// in `spawn_blocking` by callers that need to keep the async
+    /// runtime responsive; the cache keeps the cost bounded across
+    /// repeated tool calls.
+    pub fn local_inventory(&self) -> Vec<LocalRepoIdentity> {
+        let backend = match self.local_backend.as_deref() {
+            Some(b) if b.is_enabled() => b,
+            _ => return Vec::new(),
+        };
+
+        if let Ok(cache) = self.local_inventory_cache.lock() {
+            if let Some(snapshot) = cache.as_ref() {
+                if snapshot.fetched_at.elapsed() < LOCAL_INVENTORY_CACHE_TTL {
+                    return snapshot.inventory.clone();
+                }
+            }
+        }
+
+        let roots = backend.roots();
+        let local_config = crate::core::local::LocalConfig {
+            enabled: true,
+            roots: roots.iter().map(|(_, p)| p.clone()).collect(),
+            ..Default::default()
+        };
+        let inventory = discover_local_repos(&local_config, 2);
+
+        if let Ok(mut cache) = self.local_inventory_cache.lock() {
+            *cache = Some(LocalInventoryCache {
+                inventory: inventory.clone(),
+                fetched_at: Instant::now(),
+            });
+        }
+
+        inventory
+    }
+
+    /// Invalidate the cached local inventory. Useful for tests and for
+    /// future endpoints that mutate workspace roots.
+    pub fn invalidate_local_inventory_cache(&self) {
+        if let Ok(mut cache) = self.local_inventory_cache.lock() {
+            *cache = None;
+        }
     }
 }
 

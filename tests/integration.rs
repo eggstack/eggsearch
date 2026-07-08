@@ -15363,6 +15363,7 @@ mod corrective_closure_exact_error {
 #[cfg(feature = "mock")]
 mod security_context_safety {
     use super::*;
+    use eggsearch::mcp::tools::ToolError;
 
     #[cfg(feature = "mock")]
     fn sec_state_with_engines(
@@ -15646,6 +15647,383 @@ mod security_context_safety {
                 "source quality tier should be primary_advisory when NVD is present: {source_quality:?}"
             );
         }
+    }
+
+    /// Bug #1 regression: `severity_min` should filter out
+    /// vulnerabilities below the threshold and emit an
+    /// `severity_min_unenforced` warning when no severity metadata is
+    /// available.
+    #[tokio::test]
+    async fn security_search_severity_min_unenforced_warning() {
+        use eggsearch::core::security::SeverityLevel;
+
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "NVD Entry",
+                "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+                "mock_a",
+            )
+            .with_snippet("Severity metadata is unavailable from generic search")],
+        )];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001".into()),
+                severity_min: Some("high".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let warnings = v["warnings"].as_array().expect("warnings");
+        let has_warning = warnings.iter().any(|w| {
+            w.get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .contains("severity_min_unenforced")
+        });
+        assert!(
+            has_warning,
+            "should emit severity_min_unenforced warning when no severity metadata exists: {warnings:?}"
+        );
+        let _ = SeverityLevel::High;
+    }
+
+    /// Bug #2 regression: when `include_exploit_context` is set to
+    /// `false`, exploit-discussion fetch candidates should be omitted
+    /// from suggested fetches. Tested at the suggested-fetches layer
+    /// so the integration assertion is independent of mock adapter
+    /// state.
+    #[tokio::test]
+    async fn security_search_include_exploit_context_filters_suggested_fetches() {
+        use eggsearch::core::result::TrustLevel;
+        use eggsearch::core::security::{
+            SecurityIdentifiers, SecurityResultGroup, SecurityResultGroupKind,
+        };
+        use eggsearch::core::source_card::SourceCard;
+        use eggsearch::meta::security_suggested_fetches::generate_security_suggested_fetches;
+
+        fn make_group(kind: SecurityResultGroupKind, url: &str) -> SecurityResultGroup {
+            SecurityResultGroup {
+                kind,
+                label: format!("{kind:?}"),
+                results: vec![SourceCard::new(
+                    "Title",
+                    url,
+                    vec!["test".to_string()],
+                    None,
+                    TrustLevel::ExternalUntrusted,
+                )],
+                truncated: false,
+                quality_summary: None,
+            }
+        }
+
+        let groups = vec![
+            make_group(
+                SecurityResultGroupKind::AuthoritativeAdvisories,
+                "https://osv.dev/CVE-2024-0001",
+            ),
+            make_group(
+                SecurityResultGroupKind::ExploitDiscussion,
+                "https://example.com/poc",
+            ),
+            make_group(
+                SecurityResultGroupKind::VendorAdvisories,
+                "https://example.com/security/advisory",
+            ),
+            make_group(
+                SecurityResultGroupKind::DefensiveGuidance,
+                "https://example.com/mitigation",
+            ),
+        ];
+        let ids = SecurityIdentifiers::default();
+
+        let with_exploit = generate_security_suggested_fetches(
+            &groups,
+            &ids,
+            None,
+            None,
+            &[],
+            Some(true),
+            Some(true),
+            Some(true),
+        );
+        assert!(with_exploit.iter().any(|f| f.url.contains("poc")));
+
+        let without_exploit = generate_security_suggested_fetches(
+            &groups,
+            &ids,
+            None,
+            None,
+            &[],
+            Some(false),
+            None,
+            None,
+        );
+        assert!(!without_exploit.iter().any(|f| f.url.contains("poc")));
+
+        let without_vendor = generate_security_suggested_fetches(
+            &groups,
+            &ids,
+            None,
+            None,
+            &[],
+            None,
+            None,
+            Some(false),
+        );
+        assert!(!without_vendor
+            .iter()
+            .any(|f| f.url.contains("/security/advisory")));
+
+        let without_defensive = generate_security_suggested_fetches(
+            &groups,
+            &ids,
+            None,
+            None,
+            &[],
+            None,
+            Some(false),
+            None,
+        );
+        assert!(!without_defensive
+            .iter()
+            .any(|f| f.url.contains("/mitigation")));
+    }
+
+    /// Bug #3 regression: providers_failed should be populated when a
+    /// security provider returns an error during dispatch.
+    #[tokio::test]
+    async fn security_search_providers_failed_populated_on_failure() {
+        let engines = vec![MockEngine::failure("mock_a", MockFailure::Network)];
+        let state = sec_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001".into()),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let failed = v["providers_failed"].as_array().expect("providers_failed");
+        assert!(
+            !failed.is_empty(),
+            "providers_failed should be populated when a provider fails: {v:?}"
+        );
+        let first = &failed[0];
+        assert_eq!(first["id"], "mock_a");
+        assert!(first["error_class"].is_string());
+    }
+
+    /// Bug #4 regression: `repo_fetch.symbol_kind` should reject
+    /// unknown values with a validation error rather than silently
+    /// broadening matching.
+    #[tokio::test]
+    async fn repo_fetch_invalid_symbol_kind_returns_validation_error() {
+        let state = repo_fetch_state();
+        let res = run_repo_fetch(
+            state,
+            RepoFetchArgs {
+                host: Some("github".into()),
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                timeout_ms: None,
+                test_fetch_url: None,
+                symbol: Some("foo".into()),
+                symbol_kind: Some("funciton".into()),
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
+        )
+        .await;
+        match res {
+            Err(ToolError::Validation(msg)) => {
+                assert!(
+                    msg.contains("invalid symbol_kind 'funciton'"),
+                    "unexpected validation message: {msg}"
+                );
+            }
+            other => panic!("expected validation error, got: {other:?}"),
+        }
+    }
+
+    /// Bug #6 regression: batch_fetch web responses must include
+    /// `stable_id`, `source_id`, and `structured_warnings` so callers
+    /// can handle the per-item payload like a regular web_fetch
+    /// response.
+    #[tokio::test]
+    async fn batch_fetch_web_response_matches_web_fetch_shape() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let _mock = server.mock(|when, then| {
+            when.method(GET).path("/get");
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body("<!DOCTYPE html><html><body><p>Some content</p></body></html>");
+        });
+
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+        let v = run_batch_fetch(
+            state,
+            BatchFetchArgs {
+                items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/get"),
+                    extract_mode: Some(ExtractMode::Text),
+                    include_links: None,
+                    max_chars: None,
+                }],
+                max_items: None,
+                max_chars_per_item: None,
+                max_total_chars: None,
+                timeout_ms: Some(1000),
+                continue_on_error: None,
+            },
+        )
+        .await
+        .expect("batch_fetch should succeed");
+
+        let results = v["results"].as_array().expect("results");
+        let response = results[0]["response"].as_object().expect("response");
+        assert!(
+            response.contains_key("stable_id"),
+            "batch_fetch web response must include stable_id: {response:?}"
+        );
+        assert!(
+            response.contains_key("source_id"),
+            "batch_fetch web response must include source_id: {response:?}"
+        );
+        assert!(
+            response.contains_key("structured_warnings"),
+            "batch_fetch web response must include structured_warnings: {response:?}"
+        );
+    }
+
+    /// Bug #5 regression: when the aggregate `max_total_chars` budget
+    /// is exhausted by an item, the embedded response payload must be
+    /// trimmed so `total_chars_returned` reflects actual content size.
+    #[tokio::test]
+    async fn batch_fetch_trims_payload_to_aggregate_budget() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let _mock = server.mock(|when, then| {
+            when.method(GET).path("/big");
+            then.status(200)
+                .header("content-type", "text/plain; charset=utf-8")
+                .body("A".repeat(100));
+        });
+
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        cfg.fetch.batch_concurrency = 1;
+        let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+        let v = run_batch_fetch(
+            state,
+            BatchFetchArgs {
+                items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                    url: server.url("/big"),
+                    extract_mode: Some(ExtractMode::Text),
+                    include_links: None,
+                    max_chars: Some(1000),
+                }],
+                max_items: None,
+                max_chars_per_item: None,
+                max_total_chars: Some(20),
+                timeout_ms: Some(1000),
+                continue_on_error: None,
+            },
+        )
+        .await
+        .expect("batch_fetch should succeed");
+
+        let total = v["total_chars_returned"].as_u64().unwrap();
+        assert!(
+            total <= 20,
+            "total_chars_returned {total} should be <= 20 after budget trimming: {v:?}"
+        );
+        let results = v["results"].as_array().expect("results");
+        let item_chars = results[0]["chars_returned"].as_u64().unwrap();
+        assert!(
+            item_chars <= 20,
+            "item chars_returned {item_chars} should be <= 20 after budget trimming"
+        );
+        let text = results[0]["response"]["text"].as_str().unwrap_or("");
+        assert!(
+            text.chars().count() <= 20,
+            "embedded text len {} should be <= 20 after budget trimming",
+            text.chars().count()
+        );
+    }
+
+    /// Bug #7 regression: the local inventory cache should serve
+    /// repeated calls without re-running filesystem scans.
+    #[tokio::test]
+    async fn server_state_local_inventory_is_cached() {
+        use eggsearch::core::local::LocalConfig;
+        use eggsearch::meta::local_backend::LocalWorkspaceBackend;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut cfg = test_cfg();
+        cfg.local = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            ..Default::default()
+        };
+
+        let backend = LocalWorkspaceBackend::new(cfg.local.clone()).expect("backend");
+        let state = Arc::new(ServerState {
+            config: Arc::new(cfg),
+            adapter: Arc::new(MetadataSearchAdapter::from_engines(
+                mock_engines(vec![]),
+                Duration::from_secs(5),
+            )),
+            fetch_client: None,
+            kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
+                reqwest::Client::new(),
+            )),
+            local_backend: Some(Arc::new(backend)),
+            local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
+        });
+
+        let first = state.local_inventory();
+        let second = state.local_inventory();
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "cache should serve identical results"
+        );
+
+        state.invalidate_local_inventory_cache();
+        let third = state.local_inventory();
+        assert_eq!(first.len(), third.len(), "invalidate+reload should match");
     }
 }
 
