@@ -3,11 +3,14 @@
 //! Provides deterministic classification of repository structure
 //! entries and suggested-fetch generation for the `repo_map` MCP tool.
 
+use std::path::Path;
+
 use crate::core::code_metadata::CodeHost;
 use crate::core::repo_fetch::RepoFetchRequest;
 use crate::core::repo_map::{
-    ImportantFileKind, RepoMapEntry, RepoMapEntryKind, RepoMapMode, RepoMapRequest,
-    RepoMapResponse, RepoMapSuggestedFetch,
+    classify_important_directory, classify_important_file, ImportantDirKind, ImportantFileKind,
+    RepoImportantDirectory, RepoImportantFile, RepoMapEntry, RepoMapEntryKind, RepoMapMode,
+    RepoMapRequest, RepoMapResponse, RepoMapSuggestedFetch, RepoPathSummary,
 };
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
@@ -246,6 +249,176 @@ pub struct ClassifiedEntries<'a> {
     pub submodules: Vec<&'a RepoMapEntry>,
     /// Other or unrecognized entries.
     pub other: Vec<&'a RepoMapEntry>,
+}
+
+/// Populate a `RepoMapResponse` from a local checkout directory.
+///
+/// Walks the top level of `root_path`, classifies entries using
+/// `classify_important_file` and `classify_important_directory`, and
+/// fills in `root_entries`, `important_files`, `important_directories`,
+/// `source_roots`, `docs`, `examples`, `tests`, `ci`, `security`, and
+/// `suggested_fetches`. Skips dotfiles and well-known generated directories
+/// to keep the response bounded. Honors the `include_*` flags from the
+/// request when supplied.
+pub fn populate_from_local_checkout(
+    response: &mut RepoMapResponse,
+    request: &RepoMapRequest,
+    root_path: &Path,
+) {
+    let walk_dir = match std::fs::read_dir(root_path) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(root = %root_path.display(), error = %e, "failed to read local checkout for repo_map");
+            return;
+        }
+    };
+
+    let include_files = request.include_files.unwrap_or(true);
+    let include_directories = request.include_directories.unwrap_or(true);
+    let include_ci = request.include_ci.unwrap_or(true);
+    let include_security = request.include_security.unwrap_or(true);
+
+    let mut entries: Vec<RepoMapEntry> = Vec::new();
+    let mut important_files: Vec<RepoImportantFile> = Vec::new();
+    let mut important_directories: Vec<RepoImportantDirectory> = Vec::new();
+    let mut source_roots: Vec<RepoPathSummary> = Vec::new();
+    let mut docs: Vec<RepoPathSummary> = Vec::new();
+    let mut examples: Vec<RepoPathSummary> = Vec::new();
+    let mut tests: Vec<RepoPathSummary> = Vec::new();
+    let mut ci: Vec<RepoPathSummary> = Vec::new();
+    let mut security: Option<RepoPathSummary> = None;
+
+    for entry in walk_dir.flatten() {
+        let file_name = entry.file_name();
+        let file_name_str = file_name.to_string_lossy();
+        if file_name_str.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        let rel = file_name_str.to_string();
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let ft = metadata.file_type();
+        let kind = if ft.is_dir() {
+            RepoMapEntryKind::Directory
+        } else if ft.is_symlink() {
+            RepoMapEntryKind::Symlink
+        } else if ft.is_file() {
+            RepoMapEntryKind::File
+        } else {
+            RepoMapEntryKind::Unknown
+        };
+        let size = if ft.is_file() {
+            Some(metadata.len())
+        } else {
+            None
+        };
+        let include_in_root = (kind == RepoMapEntryKind::File && include_files)
+            || (kind == RepoMapEntryKind::Directory && include_directories)
+            || (kind == RepoMapEntryKind::Symlink && include_files)
+            || (kind == RepoMapEntryKind::Submodule && include_directories);
+        if include_in_root {
+            entries.push(RepoMapEntry {
+                path: rel.clone(),
+                kind,
+                size,
+                language: None,
+            });
+        }
+
+        if kind == RepoMapEntryKind::File && include_files {
+            let (file_kind, reasons) = classify_important_file(&rel);
+            if file_kind != ImportantFileKind::Unknown && file_kind != ImportantFileKind::Ignored {
+                important_files.push(RepoImportantFile {
+                    path: rel.clone(),
+                    kind: file_kind,
+                    reasons,
+                    size,
+                });
+            }
+        } else if kind == RepoMapEntryKind::Directory && include_directories {
+            let (dir_kind, reasons) = classify_important_directory(&rel);
+            if dir_kind != ImportantDirKind::Unknown {
+                important_directories.push(RepoImportantDirectory {
+                    path: rel.clone(),
+                    kind: dir_kind,
+                    reasons,
+                    estimated_entry_count: None,
+                });
+                let summary = RepoPathSummary {
+                    path: rel.clone(),
+                    label: format!("{:?}", dir_kind),
+                    entry_count: None,
+                };
+                let suppressed_ci = matches!(dir_kind, ImportantDirKind::CiConfig) && !include_ci;
+                let suppressed_security =
+                    matches!(dir_kind, ImportantDirKind::Security) && !include_security;
+                if suppressed_ci || suppressed_security {
+                    // skip emitting the categorized summary
+                } else {
+                    match dir_kind {
+                        ImportantDirKind::SourceRoot => source_roots.push(summary),
+                        ImportantDirKind::Docs => docs.push(summary),
+                        ImportantDirKind::Examples => examples.push(summary),
+                        ImportantDirKind::Tests => tests.push(summary),
+                        ImportantDirKind::CiConfig => ci.push(summary),
+                        ImportantDirKind::Security => security = Some(summary),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    important_files.sort_by(|a, b| a.path.cmp(&b.path));
+    important_directories.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let host = response.host;
+    let owner = response.owner.clone();
+    let repo = response.repo.clone();
+    let ref_name = response
+        .ref_name
+        .clone()
+        .unwrap_or_else(|| "HEAD".to_string());
+
+    let mut suggested_fetches: Vec<RepoMapSuggestedFetch> = Vec::new();
+    for file in &important_files {
+        if suggested_fetches.len() >= MAX_SUGGESTED_FETCHES {
+            break;
+        }
+        let url = build_raw_url(host, &owner, &repo, &ref_name, &file.path);
+        let structured = build_structured_fetch(host, &owner, &repo, &ref_name, &file.path);
+        let reason = match file.kind {
+            ImportantFileKind::Readme => format!("README documentation for {owner}/{repo}"),
+            ImportantFileKind::Manifest => format!("Package manifest for {owner}/{repo}"),
+            ImportantFileKind::Changelog => format!("Changelog for {owner}/{repo}"),
+            ImportantFileKind::Security => format!("Security policy for {owner}/{repo}"),
+            _ => format!("Important file in {owner}/{repo}"),
+        };
+        suggested_fetches.push(RepoMapSuggestedFetch {
+            url,
+            reason,
+            priority: Some(suggested_fetches.len() + 1),
+            structured_repo_fetch: structured,
+        });
+    }
+
+    response.root_entries = entries;
+    response.important_files = important_files;
+    response.important_directories = important_directories;
+    response.source_roots = source_roots;
+    response.docs = docs;
+    response.examples = examples;
+    response.tests = tests;
+    response.ci = ci;
+    response.security = security;
+    response.suggested_fetches = suggested_fetches;
+    response
+        .providers_queried
+        .push("local_workspace".to_string());
 }
 
 /// Create a `RepoMapResponse` with fallback search mode when no native

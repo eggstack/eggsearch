@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 
+use eggsearch::core::batch_fetch::BatchFetchItem;
 use eggsearch::core::evidence_bundle::{compute_bundle_id, EvidenceGapKind};
 use eggsearch::core::identity::{
     batch_fetch_id, canonicalize_url, chunk_id, code_span_id, doc_id, fetch_id, locator_id,
@@ -121,6 +122,49 @@ fn batch_fetch_args_deserialize_from_valid_json() {
     let json = r#"{"items": [{"type": "web", "url": "https://example.com"}]}"#;
     let args: BatchFetchArgs = serde_json::from_str(json).unwrap();
     assert!(!args.items.is_empty());
+}
+
+#[test]
+fn batch_fetch_repo_host_description_lists_all_aliases() {
+    let schema = schemars::schema_for!(BatchFetchItem);
+    let json = serde_json::to_value(&schema).unwrap();
+    let repo_schema = json
+        .get("oneOf")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            arr.iter().find(|entry| {
+                entry
+                    .get("properties")
+                    .and_then(|p| p.get("host"))
+                    .is_some()
+                    && entry
+                        .get("properties")
+                        .and_then(|p| p.get("owner"))
+                        .is_some()
+                    && entry
+                        .get("properties")
+                        .and_then(|p| p.get("path"))
+                        .is_some()
+            })
+        })
+        .expect("Repo variant schema must include host/owner/path properties");
+    let host_desc = repo_schema["properties"]["host"]["description"]
+        .as_str()
+        .expect("host description must be a string");
+    let aliases = eggsearch::core::code_metadata::CodeHost::accepted_aliases();
+    for token in [
+        "github",
+        "gitlab",
+        "codeberg",
+        "gitea",
+        "forgejo",
+        "workspace",
+    ] {
+        assert!(
+            host_desc.contains(token),
+            "BatchFetchItem::Repo host description must mention `{token}` (CodeHost aliases: {aliases}); got: {host_desc}"
+        );
+    }
 }
 
 #[test]

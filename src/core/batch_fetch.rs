@@ -28,7 +28,8 @@ pub enum BatchFetchItem {
     },
     /// Fetch a repository file by structured locator.
     Repo {
-        /// Code host. Accepted values: `github`, `gitlab`, `workspace`.
+        /// Code host. Accepted values: `github` (alias `gh`), `gitlab` (alias `gl`),
+        /// `codeberg` (alias `cb`), `gitea`, `forgejo`, or `workspace`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         host: Option<String>,
         /// Repository owner (or workspace root name for workspace locators).

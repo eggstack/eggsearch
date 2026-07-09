@@ -105,14 +105,13 @@ The `Policy` enum gates tool execution:
 ```rust
 enum Policy {
     Allow,
-    Deny { reason: String },
+    Deny,
 }
 ```
 
-Mode-based rules:
-- `Mode::Live` — All tools allowed
-- `Mode::DryRun` — Search tools allowed, fetch tools denied
-- `Mode::Disabled` — All tools denied
+Mode-based rules (`src/core/config.rs`):
+- `Mode::Live` — Live metasearch tools allowed; fetch tools follow `[fetch].enabled`.
+- `Mode::Off` — All live-search tools denied; fetch and local-workspace paths still follow their own gates.
 
 Policy is checked before any adapter or fetch client call.
 

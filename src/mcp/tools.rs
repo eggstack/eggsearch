@@ -860,7 +860,15 @@ pub async fn run_repo_search(
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::repo_search::RepoSearchRequest;
 
-    if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
+    // Permit a local-only path when the local backend is enabled and the
+    // caller has not explicitly opted out of local results. The remote
+    // provider dispatch is then suppressed below by routing with an empty
+    // provider list.
+    let local_only_path = matches!(live_allowed(state.config.search.mode), Policy::Deny)
+        && state.local_backend.is_some()
+        && args.include_local != Some(false);
+
+    if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
         return Err(ToolError::Internal(live_search_denied_message(
             "repo_search",
         )));
@@ -929,7 +937,11 @@ pub async fn run_repo_search(
         max_per_group: args.max_per_group,
         freshness,
         timeout_ms: args.timeout_ms,
-        providers: args.providers.clone(),
+        providers: if local_only_path {
+            Vec::new()
+        } else {
+            args.providers.clone()
+        },
         profile,
         ecosystem: parse_strict_enum_arg(
             "ecosystem",
@@ -966,25 +978,37 @@ pub async fn run_repo_search(
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
-    let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
-        &req.providers,
-        req.profile,
-        state.adapter.provider_ids(),
-        &state.config,
-        state.adapter.health(),
-        true,
-    )
-    .map_err(|e| match e {
-        crate::meta::provider_diagnostics::ProviderRoutingError::UnknownProvider(id) => {
-            ToolError::Validation(format!("unknown provider id: {id}"))
+    let routing_decision = if local_only_path {
+        crate::meta::provider_diagnostics::ProviderRoutingDecision {
+            requested_profile: None,
+            requested_providers: Vec::new(),
+            selected_providers: Vec::new(),
+            skipped_providers: Vec::new(),
+            degraded: false,
+            partial: false,
+            reason: Some("local-only path: remote provider dispatch suppressed".to_string()),
         }
-        crate::meta::provider_diagnostics::ProviderRoutingError::DisabledProvider(id) => {
-            ToolError::Validation(format!("provider is disabled: {id}"))
-        }
-        crate::meta::provider_diagnostics::ProviderRoutingError::NoDefaultProviders(msg) => {
-            ToolError::Internal(format!("no default providers: {msg}"))
-        }
-    })?;
+    } else {
+        crate::meta::provider_diagnostics::resolve_provider_routing(
+            &req.providers,
+            req.profile,
+            state.adapter.provider_ids(),
+            &state.config,
+            state.adapter.health(),
+            true,
+        )
+        .map_err(|e| match e {
+            crate::meta::provider_diagnostics::ProviderRoutingError::UnknownProvider(id) => {
+                ToolError::Validation(format!("unknown provider id: {id}"))
+            }
+            crate::meta::provider_diagnostics::ProviderRoutingError::DisabledProvider(id) => {
+                ToolError::Validation(format!("provider is disabled: {id}"))
+            }
+            crate::meta::provider_diagnostics::ProviderRoutingError::NoDefaultProviders(msg) => {
+                ToolError::Internal(format!("no default providers: {msg}"))
+            }
+        })?
+    };
 
     // Convert routing decision skipped_providers into SearchWarnings
     let mut profile_warnings: Vec<crate::core::result::SearchWarning> = Vec::new();
@@ -1329,7 +1353,7 @@ pub fn run_provider_status(
         .map(|d| (d.id.clone(), health_registry.health_view(&d.id)))
         .collect();
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "providers": descriptors,
         "code_hosts": code_hosts,
         "health": health_snapshots,
@@ -1426,6 +1450,14 @@ pub fn run_provider_status(
             }
         },
     });
+    if let serde_json::Value::Object(map) = &mut payload {
+        if matches!(
+            args.recipe_detail.unwrap_or_default(),
+            crate::core::workflow::RecipeDetail::None
+        ) {
+            map.remove("workflow_recipes");
+        }
+    }
     Ok(payload)
 }
 
@@ -2091,7 +2123,13 @@ pub async fn run_repo_map(
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::repo_map::RepoMapRequest;
 
-    if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
+    // Permit a local-only path when the local backend is enabled, even in
+    // off mode, so air-gapped operators can inspect a configured local
+    // checkout without enabling live metasearch.
+    let local_only_path = matches!(live_allowed(state.config.search.mode), Policy::Deny)
+        && state.local_backend.is_some();
+
+    if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
         return Err(ToolError::Internal(live_search_denied_message("repo_map")));
     }
 
@@ -2122,6 +2160,7 @@ pub async fn run_repo_map(
     let mut response = crate::meta::repo_mapper::build_fallback_response(&req);
 
     // Discover local checkout for the requested repo
+    let mut local_checkout_root: Option<std::path::PathBuf> = None;
     if let Some(backend) = state.local_backend.as_deref() {
         if backend.is_enabled() {
             let inventory = state.local_inventory();
@@ -2132,6 +2171,7 @@ pub async fn run_repo_map(
                 &req.repo,
             );
             if let Some(rid) = matched {
+                local_checkout_root = Some(rid.root_path.clone());
                 response.local_checkout = Some(crate::core::repo_map::RepoMapLocalCheckout {
                     root_name: rid.root_name.clone(),
                     root_path: rid.root_path.display().to_string(),
@@ -2175,6 +2215,11 @@ pub async fn run_repo_map(
                 }
             }
         }
+    }
+
+    // Populate repo-map structure from the local checkout when available.
+    if let Some(root) = local_checkout_root.as_deref() {
+        crate::meta::repo_mapper::populate_from_local_checkout(&mut response, &req, root);
     }
 
     // Add fallback subqueries as informational context

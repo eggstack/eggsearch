@@ -17919,6 +17919,24 @@ fn provider_status_includes_workflow_recipes() {
 }
 
 #[test]
+fn provider_status_recipe_detail_none_omits_workflow_recipes() {
+    let state = state_with_default();
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: Some(RecipeDetail::None),
+        },
+    )
+    .expect("ok");
+    assert!(
+        v.get("workflow_recipes").is_none(),
+        "workflow_recipes should be omitted for RecipeDetail::None, got: {}",
+        v["workflow_recipes"]
+    );
+}
+
+#[test]
 fn provider_status_recipe_shape_is_stable() {
     let state = state_with_default();
     let v = run_provider_status(
@@ -19256,5 +19274,236 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
     assert!(
         err.to_string().contains("unknown host"),
         "error should mention unknown host: {err}"
+    );
+}
+
+#[cfg(feature = "mock")]
+fn state_with_local_backend_mode_off(temp_dir: &std::path::Path) -> Arc<ServerState> {
+    let engines = vec![MockEngine::success("mock_a", vec![])];
+    let adapter = MetadataSearchAdapter::from_engines(
+        eggsearch::meta::mock::mock_engines(engines),
+        Duration::from_secs(5),
+    );
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Off;
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![temp_dir.to_path_buf()];
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
+        .expect("backend builds");
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(Arc::new(backend));
+    Arc::new(state)
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_off_mode_with_local_backend_returns_local_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("main.rs"), "fn main() { println!(\"hi\"); }").unwrap();
+    fs::write(root.join("README.md"), "# My Project").unwrap();
+
+    let state = state_with_local_backend_mode_off(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: Vec::new(),
+        include_local: Some(true),
+        ..Default::default()
+    };
+
+    let v = run_repo_search(state.clone(), args)
+        .await
+        .expect("repo_search should succeed in local-only off-mode path");
+
+    let groups = v["groups"].as_array().expect("groups array");
+    let local_results: Vec<&serde_json::Value> = groups
+        .iter()
+        .flat_map(|g| g["results"].as_array().into_iter().flatten())
+        .filter(|r| r["url"].as_str().unwrap_or("").starts_with("workspace://"))
+        .collect();
+    assert!(
+        !local_results.is_empty(),
+        "local-only repo_search in off mode should return local_trusted results: {v:?}"
+    );
+    for r in &local_results {
+        assert_eq!(
+            r["trust"], "local_trusted",
+            "local result should have local_trusted trust: {r:?}"
+        );
+    }
+    let queried = v["providers_queried"]
+        .as_array()
+        .expect("providers_queried array");
+    let queried_ids: Vec<&str> = queried.iter().filter_map(|q| q.as_str()).collect();
+    assert!(
+        queried_ids.contains(&"local_workspace"),
+        "providers_queried must include local_workspace: {queried_ids:?}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_off_mode_without_local_backend_is_denied() {
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Off;
+    cfg.local.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state"));
+    let args = RepoSearchArgs {
+        query: "anything".to_string(),
+        providers: Vec::new(),
+        include_local: Some(true),
+        ..Default::default()
+    };
+    let err = run_repo_search(state, args)
+        .await
+        .expect_err("off mode without local backend should be denied");
+    assert!(
+        err.to_string().contains("disabled by policy"),
+        "expected policy denial, got: {err}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_off_mode_include_local_false_is_denied() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    let state = state_with_local_backend_mode_off(root);
+    let args = RepoSearchArgs {
+        query: "main.rs".to_string(),
+        providers: Vec::new(),
+        include_local: Some(false),
+        ..Default::default()
+    };
+    let err = run_repo_search(state, args)
+        .await
+        .expect_err("include_local=false in off mode must deny (no remote allowed)");
+    assert!(
+        err.to_string().contains("disabled by policy"),
+        "expected policy denial, got: {err}"
+    );
+}
+
+#[cfg(feature = "mock")]
+fn state_with_local_backend_mode_off_for_repo_map(temp_dir: &std::path::Path) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Off;
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![temp_dir.to_path_buf()];
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
+        .expect("backend builds");
+    let state = ServerState::build(cfg).expect("state");
+    let mut state = state;
+    state.local_backend = Some(Arc::new(backend));
+    Arc::new(state)
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_map_off_mode_with_matching_local_checkout_returns_structure() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    fs::write(root.join("README.md"), "# My Project").unwrap();
+    fs::write(root.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+    fs::write(root.join("lib.rs"), "pub fn add() {}").unwrap();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(root.join("src").join("lib.rs"), "// src/lib").unwrap();
+
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(root)
+        .output()
+        .ok();
+    fs::write(
+        root.join(".git").join("config"),
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .ok();
+
+    let state = state_with_local_backend_mode_off_for_repo_map(root);
+    let args = RepoMapArgs {
+        host: Some("github".to_string()),
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: Vec::new(),
+    };
+    let v = run_repo_map(state, args)
+        .await
+        .expect("repo_map should succeed in off mode with matching local checkout");
+
+    let important_files = v["important_files"].as_array().expect("important_files");
+    assert!(
+        important_files
+            .iter()
+            .any(|f| f["path"] == "README.md" && f["kind"] == "readme"),
+        "README.md must be classified as readme: {important_files:?}"
+    );
+    assert!(
+        important_files
+            .iter()
+            .any(|f| f["path"] == "Cargo.toml" && f["kind"] == "manifest"),
+        "Cargo.toml must be classified as manifest: {important_files:?}"
+    );
+    let source_roots = v["source_roots"].as_array().expect("source_roots");
+    assert!(
+        source_roots.iter().any(|s| s["path"] == "src"),
+        "src must be a source_root: {source_roots:?}"
+    );
+    let suggested_fetches = v["suggested_fetches"]
+        .as_array()
+        .expect("suggested_fetches");
+    assert!(
+        suggested_fetches
+            .iter()
+            .any(|f| f["url"].as_str().unwrap_or("").contains("README.md")),
+        "suggested_fetches must include README: {suggested_fetches:?}"
+    );
+    let local_checkout = v["local_checkout"].as_object().expect("local_checkout");
+    assert_eq!(local_checkout["remote_owner"], "test-owner");
+    assert_eq!(local_checkout["remote_repo"], "test-repo");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_map_off_mode_without_local_backend_is_denied() {
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Off;
+    cfg.local.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state"));
+    let args = RepoMapArgs {
+        host: None,
+        owner: "test-owner".to_string(),
+        repo: "test-repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: Vec::new(),
+    };
+    let err = run_repo_map(state, args)
+        .await
+        .expect_err("off mode without local backend should deny repo_map");
+    assert!(
+        err.to_string().contains("disabled by policy"),
+        "expected policy denial, got: {err}"
     );
 }
