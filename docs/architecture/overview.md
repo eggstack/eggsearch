@@ -3,7 +3,7 @@
 **Version:** 0.3.5 · **Rust edition:** 2021 · **MSRV:** 1.88
 **Crate type:** Single library + binary (no workspace)
 
-eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches explicit HTTP(S) URLs on demand with bounded text extraction.
+eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches explicit HTTP(S) URLs on demand with bounded text extraction. Transport is MCP over stdio only.
 
 ---
 
@@ -59,35 +59,47 @@ eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for 
               └───────────────────────┘
 ```
 
+The four top-level library modules (`core`, `meta`, `fetch`, `mcp`) plus the `commands` binary module form the entire codebase. `core` has zero external dependencies beyond serialization — it defines the canonical data model. `meta` wraps all search engines behind the adapter boundary. `fetch` handles outbound HTTP. `mcp` exposes everything through 10 stable MCP tools.
+
 ---
 
 ## Module Map
 
 | Module | Path | Responsibility | Deep Dive |
 |--------|------|----------------|-----------|
-| **core** | `src/core/` | Pure domain types, config model, error types, identity system, sanitization, warnings, source cards, quality heuristics, security/research/repo types | [core.md](core.md) |
-| **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping | [meta.md](meta.md) |
-| **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection | [fetch.md](fetch.md) |
+| **core** | `src/core/` | Pure domain types, config model, error types, identity system, sanitization, warnings, source cards, quality heuristics, security/research/repo/local/package/evidence types | [core.md](core.md) |
+| **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
+| **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection, code-host URL rewriting | [fetch.md](fetch.md) |
 | **mcp** | `src/mcp/` | MCP server over stdio (rmcp), 10 tool definitions, shared server state, policy enforcement | [mcp.md](mcp.md) |
 | **commands** | `src/commands/` | CLI subcommands: doctor, search, mcp, fetch, providers | [commands.md](commands.md) |
 | **testing** | `tests/` | Integration, corpus, schema/contract, and documentation contract tests | [testing.md](testing.md) |
+
+### Supporting Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [codegg-contract.md](codegg-contract.md) | Stable MCP response contract for harness developers (deterministic IDs, warnings, trust model, next actions, security applicability, research evidence) |
+| [../../docs/threat-model.md](../../docs/threat-model.md) | Operator threat model, trust boundaries, prompt-injection handling, configuration escape hatches |
+| [../../docs/safety.md](../../docs/safety.md) | Fetch safety, blocked address ranges, sanitization tiers, trust markers |
+| [../../docs/config.md](../../docs/config.md) | Config defaults, provider requirements, profile examples |
+| [../../docs/tool-matrix.md](../../docs/tool-matrix.md) | Compact tool reference with trust semantics |
 
 ---
 
 ## MCP Tools (10)
 
-| Tool | Purpose |
-|------|---------|
-| `web_search` | Live metasearch over configured providers |
-| `web_fetch` | Bounded extraction of one HTTP(S) URL |
-| `batch_fetch` | Batch fetch over URLs or repo locators |
-| `provider_status` | Diagnostic provider configuration report |
-| `repo_search` | Structured repository evidence discovery |
-| `repo_fetch` | Structured repository file fetch by locator |
-| `repo_map` | Repository structure discovery |
-| `security_search` | Security vulnerability and advisory search |
-| `research_search` | Research-oriented multi-source evidence discovery |
-| `build_evidence_bundle` | Package selected evidence into a portable container |
+| Tool | Category | Purpose |
+|------|----------|---------|
+| `web_search` | Search | Live metasearch over configured upstream providers |
+| `web_fetch` | Fetch | Bounded extraction of one explicit HTTP(S) URL |
+| `batch_fetch` | Fetch | Bounded batch fetch over URLs or repo locators |
+| `provider_status` | Utility | Diagnostic report of provider config, health, capabilities, recipes |
+| `repo_search` | Search | Structured repository evidence discovery with grouped bundles |
+| `repo_fetch` | Fetch | Structured repository file fetch by locator with line ranges and symbols |
+| `repo_map` | Fetch | Repository structure discovery (important files and directories) |
+| `security_search` | Search | Security vulnerability and advisory search with normalized metadata |
+| `research_search` | Search | Research-oriented multi-source evidence discovery with claims and conflicts |
+| `build_evidence_bundle` | Utility | Package selected evidence into a portable container for multi-agent handoff |
 
 Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` with `tool_router` proc macros.
 
@@ -99,18 +111,20 @@ Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` with `tool_r
 
 | Kind | Examples | Capability |
 |------|----------|------------|
-| `HtmlScrape` | DuckDuckGo, Startpage, Yahoo, Mojeek | Generic web search |
-| `JsonApi` | SearXNG, OSV, NVD, CISA KEV, RustSec | Structured APIs |
-| `ApiKey` | Brave API, GitHub/GitLab/Gitea code/issues/releases, Semantic Scholar, Sourcegraph | Richer results, requires config |
-| `Local` | Local workspace search | Filesystem search |
+| `HtmlScrape` | DuckDuckGo, Startpage, Yahoo, Mojeek | Generic web search (conservative capabilities) |
+| `JsonApi` | SearXNG, OSV, NVD, CISA KEV, RustSec, package registries, scholarly | Structured APIs, richer results |
+| `ApiKey` | Brave API, GitHub/GitLab/Gitea code/issues/releases, Semantic Scholar, Sourcegraph | Requires authentication, richest results |
+| `Local` | local_workspace | Filesystem-based workspace search |
 
-**Capability flags** (25+): `code_search`, `issue_search`, `release_search`, `security_search`, `scholarly_search`, `package_search`, `repo_structure`, `advisory_search`, and more.
+**Capability flags** (25+): `code_search`, `issue_search`, `release_search`, `security_search`, `scholarly_search`, `package_search`, `repo_structure`, `advisory_search`, `freshness`, and more. Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
 
 **4 search profiles** influence provider selection:
 - `generic` — broad web search (DuckDuckGo, Startpage, Yahoo)
 - `coding` — code-focused (adds GitHub, GitLab, Gitea, Sourcegraph)
 - `security` — vulnerability-focused (adds OSV, NVD, CISA KEV, RustSec)
 - `research` — scholarly (adds OpenAlex, Crossref, Semantic Scholar)
+
+Profiles are advisory; unavailable providers are skipped with warnings, never errors. Non-routable providers include a machine-readable `skip_code` (13 variants: `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, `unknown`).
 
 ---
 
@@ -122,16 +136,17 @@ Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` with `tool_r
 1. Policy check (mode == Live?)
 2. Query validation
 3. Provider resolution (resolve_providers / resolve_profile_providers)
-4. SearchPlan construction (planner.rs / repo_planner.rs / research_planner.rs)
-5. Parallel dispatch across engines (dispatch.rs)
+4. SearchPlan construction (planner.rs / repo_planner.rs / research_planner.rs / error_planner.rs)
+5. Bounded parallel dispatch across engines (dispatch.rs)
 6. RRF aggregation (adapter.rs)
-7. SourceCard construction with deterministic IDs (identity.rs)
-8. Sanitization (sanitize.rs) — control chars, framing, injection scan
-9. Quality metadata (quality.rs)
-10. Result grouping (grouping.rs / repo_grouping.rs / etc.)
-11. Suggested fetches (suggested_fetches.rs / fetch_ranking.rs)
-12. Next-action hints (recipe_catalog.rs)
-13. Structured warnings (warning.rs)
+7. SourceCard construction with deterministic FNV-1a IDs (identity.rs)
+8. Sanitization (sanitize.rs) — 3 tiers: control chars, framing, injection scan
+9. Quality metadata (quality.rs) — confidence, relevance, authority, freshness, evidence strength
+10. Result grouping (grouping.rs / repo_grouping.rs / research_grouping.rs / security_grouping.rs)
+11. Suggested fetches (suggested_fetches.rs / research_suggested_fetches.rs / security_suggested_fetches.rs)
+12. Fetch ranking (fetch_ranking.rs) — deterministic scoring pipeline
+13. Next-action hints (recipe_catalog.rs) — up to 5 hints per response
+14. Structured warnings (warning.rs) — 50+ machine-readable codes
 ```
 
 ### Fetch Flow (web_fetch / repo_fetch / batch_fetch)
@@ -140,40 +155,140 @@ Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` with `tool_r
 1. Policy check (fetch_enabled?)
 2. URL validation (limits.rs) — SSRF, localhost, private-network
 3. Code-host URL rewriting (code_host_fetch.rs) — GitHub/GitLab/Codeberg → raw
-4. HTTP request (reqwest)
-5. Redirect revalidation
+4. HTTP request (reqwest, FetchClient)
+5. Redirect revalidation (each redirect re-checked against SSRF rules)
 6. Content detection (detect.rs) — HTML, markdown, code, PDF, plain text
-7. Extraction (extract.rs) — text, links, metadata
+7. Extraction (extract.rs) — text, links (15+ kinds), metadata
 8. HTML rendering (render/) — blocks, outline, chunks
-9. Span selection (span.rs) — symbol/line-range expansion
-10. Sanitization (sanitize.rs)
-11. Document construction (document.rs)
+9. Span selection (span.rs) — symbol/line-range expansion for repo_fetch
+10. Sanitization (sanitize.rs) — 3 tiers
+11. Document construction (document.rs) — 16 document kinds
 12. Response with trust markers
+```
+
+### Local Workspace Flow
+
+```
+1. Git worktree discovery (local_inventory.rs)
+2. Remote URL normalization + identity matching
+3. Bounded file walking with .gitignore matching (local_ignore.rs)
+4. File scoring + SourceCard conversion (local_backend.rs)
+5. Results carry trust = local_trusted with match_confidence and reasons
+6. File classification: is_generated, is_vendor, is_test, is_example, is_config, is_lockfile
 ```
 
 ---
 
-## Key Architectural Patterns
+## Cross-Cutting Concerns
 
-- **Adapter pattern** — `MetadataSearchAdapter` wraps all engines. MCP tools never call engines directly.
-- **Deterministic IDs** — FNV-1a 64-bit hashes with versioned prefix (`eggsearch-id-v1\0`). URL canonicalization prevents spurious ID changes.
-- **Soft failures** — Adapter returns `WebSearchResponse` with warnings, never errors. Partial provider failures are surfaced as warnings. Non-routable providers include a machine-readable `skip_code` for programmatic diagnostics.
-- **Trust model** — All web content is `external_untrusted`. Local content is `local_trusted` (provenance only, not instruction trust). Three sanitization tiers. See [threat-model.md](../threat-model.md) for the full operator threat model.
-- **Profile-based routing** — 4 profiles influence provider selection. Degraded profiles fall back to defaults with warnings.
-- **Bounded everything** — Timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits.
-- **No comments** in code (enforced by convention).
-- **Feature flags** — `mock` (test engines), `pdf` (PDF extraction), `live-smoke` (network tests).
+### Deterministic Identity System
+
+All stable output types use FNV-1a 64-bit content-derived hashes, never random UUIDs. This enables cross-tool deduplication and regression testing.
+
+| Entity | Prefix | Key Fields |
+|--------|--------|------------|
+| Source card | `src_` | provider_id + url + title + source_kind |
+| Suggested fetch | `suggested_` | url + group + priority |
+| Fetch result | `fetch_` | url + text_prefix |
+| Code span | `span_` | url + language + line_start + line_end + symbol |
+| Evidence bundle | `bundle_` | goal + source_ids + fetch_ids |
+| Locator | `loc_` | host + owner + repo + ref_name + path |
+| Document | `doc_` | url + title + kind |
+| Document chunk | `chunk_` | doc_id + chunk_index |
+
+URLs are canonicalized before hashing (lowercase scheme/host, strip `www.`, default ports, fragments, normalize percent-encoding). Versioned input prefix: `eggsearch-id-v1\0`.
+
+See [core.md](core.md#identity-system) for details.
+
+### Three-Tier Sanitization
+
+All untrusted text flows through sanitization before reaching agents:
+
+| Tier | When Active | What It Does |
+|------|-------------|--------------|
+| Tier 1 | Always | Strip control chars (NUL, CR, ASCII controls, bidi, zero-width) + length bound |
+| Tier 2 | `sanitize_output = true` | Frame text in `<<<EXTERNAL_UNTRUSTED>>>` delimiters |
+| Tier 3 | `sanitize_output = true` | Scan for 7 prompt-injection marker patterns |
+
+See [../../docs/safety.md](../../docs/safety.md) and [core.md](core.md#sanitization) for details.
+
+### Warning System
+
+50+ machine-readable `WarningCode` variants with stable `snake_case` strings, 4 severity levels (info/notice/warning/error), and recommended actions. `WarningAccumulator` deduplicates by `(code, provider_ids, result_ids, source_ids)`.
+
+See [core.md](core.md#warnings) for details.
+
+### Quality Heuristics
+
+Deterministic per-result quality metadata computed from URL/domain heuristics and structured result metadata:
+- **Confidence**: High/Medium/Low/Unknown
+- **Relevance**: Exact/Strong/Partial/Weak/Unknown
+- **Authority**: Primary/Official/Maintainer/PackageRegistry/Community/NewsOrBlog/Unknown
+- **Freshness**: Current/Recent/Historical/Stale/Undated/Unknown
+- **EvidenceStrength**: ExactCodeSpan/ExactIdentifier/StructuredMetadata/SnippetOnly/UrlOnly/Unknown
+
+See [core.md](core.md#quality-heuristics) for details.
+
+### Trust Model
+
+- `external_untrusted` — All web/remote content. Treat as data, never instructions.
+- `local_trusted` — Local workspace content. Provenance-trusted, not instruction-trusted.
+- `unknown` — Default to `external_untrusted` behavior.
+
+Three sanitization tiers + trust markers in every response. See [../../docs/threat-model.md](../../docs/threat-model.md) for the full operator threat model.
+
+### Provider Health Tracking
+
+Per-provider health via `ProviderHealthRegistry` (process-local, `Mutex<BTreeMap>`):
+- Success resets failures, clears cooldown, records latency
+- 3 consecutive failures → cooldown (rate-limited: 60s, timeout: 15s, transport: 30s, panic: 30s)
+- Cooldown cleared immediately on success
+- Cooled-down providers skipped for routing but never skipped when explicitly requested
+
+See [meta.md](meta.md#provider-health) for details.
+
+### Bounded Everything
+
+Every resource is bounded: timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits, batch sizes, PDF pages, concurrency. Defaults are safe for general MCP exposure.
+
+---
+
+## Key Architectural Decisions
+
+1. **Adapter pattern** — `MetadataSearchAdapter` is the single boundary between MCP tools and search engines. Engine types never leak past this module. This enables testing, swapping engines, and adding new providers without changing tool implementations.
+
+2. **Deterministic IDs** — All stable output types use FNV-1a 64-bit hashes with versioned prefix (`eggsearch-id-v1\0`). URL canonicalization prevents trivial differences from producing different IDs. This enables cross-tool deduplication and regression testing.
+
+3. **Soft failures** — Adapter returns `WebSearchResponse` with warnings, never errors. Partial provider failures are surfaced as warnings. This matches the agent-oriented use case where partial results are better than none.
+
+4. **No persistent state** — Server starts and runs without any index, database, or filesystem state (except config). All state is process-local.
+
+5. **RRF aggregation** — Reciprocal Rank Fusion merges results from multiple providers. `score(d) = Σ 1/(k + rank_i(d))` where k=60.
+
+6. **Profile-based routing** — 4 profiles influence provider selection. Degraded profiles fall back to defaults with warnings.
+
+7. **Three-tier sanitization** — Untrusted text is always stripped/bounded (Tier 1), optionally framed (Tier 2), and optionally scanned for injection markers (Tier 3).
+
+---
+
+## Feature Flags
+
+| Flag | Purpose |
+|------|---------|
+| `mock` | Test-only mock engine harness (`src/meta/mock.rs`) — **required for integration/corpus tests** |
+| `pdf` | PDF text extraction via `lopdf` |
+| `live-smoke` | Live network smoke tests (implies `mock`); ignored by default |
 
 ---
 
 ## Build & Verification
 
 ```bash
-make check            # full CI gate (fmt + clippy + tests + schema-corpus)
+make check            # full CI gate (fmt + clippy + tests + schema-corpus + docs + publish-check)
 cargo fmt --check     # format check
-cargo clippy --all-targets --all-features -- -D warnings  # zero warnings
+cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required
 cargo test --all-features  # all tests
-cargo test --no-default-features  # no-default compilation
+cargo test --features mock  # mock feature tests (integration + corpus)
 cargo build --release  # release build
 cargo publish --dry-run  # pre-publish check
 ```
@@ -184,11 +299,19 @@ cargo publish --dry-run  # pre-publish check
 
 For detailed analysis of each component:
 
-1. [core.md](core.md) — Domain types, config, identity, sanitization, warnings
-2. [meta.md](meta.md) — Metasearch adapter, engines, RRF, query planning
-3. [fetch.md](fetch.md) — HTTP client, content extraction, SSRF protection
-4. [mcp.md](mcp.md) — MCP server, tool definitions, state management
-5. [commands.md](commands.md) — CLI subcommands and their implementations
-6. [testing.md](testing.md) — Test strategy, CI pipeline, feature flags
-7. [codegg-contract.md](codegg-contract.md) — Stable MCP response contract for harness developers
-8. [../threat-model.md](../threat-model.md) — Operator threat model, trust boundaries, and safety documentation
+1. [core.md](core.md) — Domain types, config, identity, sanitization, warnings, source cards, quality, security/research/repo/local/evidence types
+2. [meta.md](meta.md) — Metasearch adapter, 34 engines, RRF aggregation, query planning, provider health, local workspace
+3. [fetch.md](fetch.md) — HTTP client, content extraction, SSRF protection, code-host rewriting, span selection, PDF
+4. [mcp.md](mcp.md) — MCP server, 10 tool definitions, state management, policy enforcement
+5. [commands.md](commands.md) — CLI subcommands (doctor, search, mcp, fetch, providers)
+6. [testing.md](testing.md) — Test strategy, CI pipeline, feature flags, mock engine
+7. [codegg-contract.md](codegg-contract.md) — Stable MCP response contract (deterministic IDs, warnings, trust model, next actions, security applicability, research evidence, local workspace metadata)
+
+### External References
+
+8. [../../docs/threat-model.md](../../docs/threat-model.md) — Operator threat model, trust boundaries, prompt-injection handling, configuration escape hatches, recommended host-agent policy
+9. [../../docs/safety.md](../../docs/safety.md) — Fetch safety, blocked address ranges, sanitization tiers, trust markers
+10. [../../docs/config.md](../../docs/config.md) — Config defaults, provider requirements, profile examples
+11. [../../docs/tool-matrix.md](../../docs/tool-matrix.md) — Compact tool reference with trust semantics
+12. [../../docs/agent-workflows.md](../../docs/agent-workflows.md) — Recommended tool call sequences and recipe catalog
+13. [../../docs/provider-setup.md](../../docs/provider-setup.md) — Provider configuration guide
