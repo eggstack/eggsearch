@@ -9,10 +9,10 @@
 
 | File | Responsibility |
 |------|----------------|
-| `server.rs` | `EggsearchServer` — `rmcp` server with `tool_router` proc macros. 10 `#[tool]` handlers |
-| `state.rs` | `ServerState` — shared state (config, adapter, fetch_client, kev_client, local_backend). All `Arc`-wrapped |
+| `server.rs` | `EggsearchServer` — `rmcp` server with `tool_router` proc macros. 10 `#[tool]` handlers. Exposes `tool_definitions()` for capability discovery |
+| `state.rs` | `ServerState` — shared state (config, adapter, optional fetch_client, kev_client, local_backend, local_inventory_cache) |
 | `tools.rs` | Tool argument structs and `run_*` implementations (~3700 lines). All 10 tools |
-| `policy.rs` | `Policy` enum (Allow/Deny), mode-based gating for search/fetch |
+| `policy.rs` | `Policy` enum (Allow/Deny), mode-based gating. Helper functions: `live_allowed()`, `fetch_allowed()`, `policy_message()`, `live_search_denied_message()`, `web_fetch_denied_message()` |
 
 ---
 
@@ -20,12 +20,13 @@
 
 ```
 EggsearchServer
-  ├── ServerState (Arc-wrapped)
-  │   ├── AppConfig
-  │   ├── MetadataSearchAdapter
-  │   ├── FetchClient
-  │   ├── KevClient (CISA KEV catalog)
-  │   └── LocalWorkspaceBackend (optional)
+  ├── Arc<ServerState>
+  │   ├── Arc<AppConfig>
+  │   ├── Arc<MetadataSearchAdapter>
+  │   ├── Option<Arc<FetchClient>>  (None when [fetch].enabled = false)
+  │   ├── Arc<KevClient> (CISA KEV catalog)
+  │   ├── Option<Arc<LocalWorkspaceBackend>>
+  │   └── Arc<Mutex<Option<LocalInventoryCache>>>  (30s TTL)
   ├── tool_router (rmcp proc macros)
   └── 10 #[tool] handlers
 ```
@@ -109,9 +110,18 @@ enum Policy {
 }
 ```
 
-Mode-based rules (`src/core/config.rs`):
+Mode-based rules (implemented in `src/mcp/policy.rs`):
 - `Mode::Live` — Live metasearch tools allowed; fetch tools follow `[fetch].enabled`.
 - `Mode::Off` — All live-search tools denied; fetch and local-workspace paths still follow their own gates.
+
+### Per-Tool Policy Checks
+
+| Tool | Policy Check |
+|------|-------------|
+| `web_search`, `repo_search`, `security_search`, `research_search` | `live_allowed()` |
+| `web_fetch`, `repo_fetch`, `batch_fetch` | `fetch_allowed()` |
+| `repo_map` | `live_allowed()` (with local-only path bypass) |
+| `provider_status`, `build_evidence_bundle` | No policy check — always allowed |
 
 Policy is checked before any adapter or fetch client call.
 
@@ -125,13 +135,14 @@ Policy is checked before any adapter or fetch client call.
 struct ServerState {
     config: Arc<AppConfig>,
     adapter: Arc<MetadataSearchAdapter>,
-    fetch_client: Arc<FetchClient>,
+    fetch_client: Option<Arc<FetchClient>>,  // None when [fetch].enabled = false
     kev_client: Arc<KevClient>,
     local_backend: Option<Arc<LocalWorkspaceBackend>>,
+    local_inventory_cache: Arc<Mutex<Option<LocalInventoryCache>>>,  // 30s TTL
 }
 ```
 
-All fields are `Arc`-wrapped for safe sharing across async tool handlers.
+Shared resource fields are `Arc`-wrapped (some optionally). `ServerState` is constructed via `ServerState::build()` (production, validates config) or `ServerState::with_adapter()` (tests/custom adapters). Helper methods: `fetch_client()`, `local_inventory()`, `invalidate_local_inventory_cache()`.
 
 ---
 
@@ -155,13 +166,12 @@ Tool errors use `ToolError`:
 
 ```rust
 enum ToolError {
-    InvalidInput(String),
-    PolicyDenied(String),
+    Validation(String),
     Internal(String),
 }
 ```
 
-Tools never panic. All errors are structured and machine-readable.
+Tools never panic. All errors are structured and machine-readable. Note: `build_evidence_bundle` is the only sync tool (no `state` parameter, pure logic).
 
 ---
 

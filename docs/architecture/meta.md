@@ -1,7 +1,7 @@
 # meta Module Deep Dive
 
 **Path:** `src/meta/`
-**Purpose:** Metasearch adapter + 34 vendored search engines. Handles engine dispatch, RRF aggregation, query planning, provider health tracking, and result grouping.
+**Purpose:** Metasearch adapter + 33 vendored search engines. Handles engine dispatch, RRF aggregation, query planning, provider health tracking, and result grouping.
 
 ---
 
@@ -27,7 +27,7 @@ MCP Tool → MetadataSearchAdapter
 
 | File | Responsibility |
 |------|----------------|
-| `adapter.rs` | `MetadataSearchAdapter` — core orchestrator (~4700 lines). Engine construction, search dispatch, RRF aggregation, sanitization, provider health |
+| `adapter.rs` | `MetadataSearchAdapter` — core orchestrator (~4758 lines). Engine construction, search dispatch, RRF aggregation, sanitization, provider health |
 | `planner.rs` | `build_search_plan()` — intent-aware query rewriting with repo-hint parsing |
 | `repo_planner.rs` | `build_repo_search_plan()` — multi-subquery planner for repo_search |
 | `research_planner.rs` | `build_research_search_plan()` — research-oriented multi-subquery planner |
@@ -41,6 +41,12 @@ MCP Tool → MetadataSearchAdapter
 | `version_compare.rs` | Version comparison utilities |
 | `advisory_range.rs` | Advisory range extraction |
 | `dependency_parse.rs` | Dependency/lock file parser |
+| `repo_mapper.rs` | Repository map planning and classification for the `repo_map` MCP tool |
+| `security_search.rs` | Security search orchestration: coordinates web search, native advisory lookups, KEV enrichment, grouping |
+| `security_suggested_fetches.rs` | Suggested fetch generation for security search result groups |
+| `research_evidence_analysis.rs` | Deterministic research evidence analysis: claim extraction, conflict detection, quality classification, gap identification |
+| `research_suggested_fetches.rs` | Suggested fetch generation for research search results |
+| `research_workflow.rs` | Workflow-aware research scaffolding: dimensions, coverage computation, gap detection, diversity caps |
 
 ### Grouping & Suggested Fetches
 
@@ -69,7 +75,7 @@ MCP Tool → MetadataSearchAdapter
 
 ---
 
-## Engine Inventory (34 engines)
+## Engine Inventory (33 engines)
 
 ### HTML Scrapers
 
@@ -129,12 +135,6 @@ MCP Tool → MetadataSearchAdapter
 | OpenAlex | `engines/openalex.rs` | Academic metadata |
 | Crossref | `engines/crossref.rs` | DOI-based scholarly search |
 
-### Other
-
-| Engine | File | Purpose |
-|--------|------|---------|
-| KEV | `engines/kev.rs` | CISA KEV catalog client with TTL cache |
-
 ### Shared Engine Infrastructure
 
 | File | Purpose |
@@ -142,6 +142,7 @@ MCP Tool → MetadataSearchAdapter
 | `engines/models.rs` | `SearchResult`, `ResultMetadata` — shared engine output types |
 | `engines/error.rs` | `EngineError` — engine-level error type |
 | `engines/normalizer.rs` | Result normalization utilities |
+| `engines/kev.rs` | `KevClient` — CISA KEV catalog client with TTL cache (infrastructure used by `CisaKevEngine`, not a `SearchEngine` impl) |
 
 ---
 
@@ -150,11 +151,21 @@ MCP Tool → MetadataSearchAdapter
 All engines implement the `SearchEngine` trait:
 
 ```rust
-trait SearchEngine {
-    fn search(&self, query: &WebSearchRequest) -> EngineResult<Vec<SearchResult>>;
+trait SearchEngine: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn search<'a>(
+        &'a self,
+        query: &str,
+        max_results: usize,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
     // Optional:
-    fn lookup_advisory(&self, id: &str) -> EngineResult<Option<SecurityIdentifier>>;
-    fn query_advisories_by_package(&self, coord: &PackageCoordinate) -> EngineResult<Vec<SecurityIdentifier>>;
+    fn lookup_advisory(&self, vuln_id: &str, timeout: Duration)
+        -> BoxFuture<'_, Result<Option<VulnerabilityMetadata>, EngineError>>;
+    fn query_advisories_by_package(
+        &self, ecosystem: &str, package: &str, version: Option<&str>,
+        max_results: usize, timeout: Duration,
+    ) -> BoxFuture<'_, Result<Vec<VulnerabilityMetadata>, EngineError>>;
 }
 ```
 
@@ -205,8 +216,8 @@ After every search call (`web_search`, `repo_search`, `security_search`, `resear
 After 3 consecutive failures (`COOLDOWN_THRESHOLD`), a provider enters cooldown:
 - **Rate-limited**: 60s cooldown
 - **Timeout**: 15s cooldown
-- **Transport/NetworkError**: 30s cooldown
-- **Panic**: 30s cooldown (mapped from dispatch panics)
+- **NetworkError / HttpStatus**: 30s cooldown
+- **Panic / ParseError / Unknown**: 30s cooldown (fallback)
 
 Cooldown is cleared immediately on any success. Cooled-down providers are skipped for profile/default routing but **never** skipped for explicitly requested providers.
 

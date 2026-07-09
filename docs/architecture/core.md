@@ -14,7 +14,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
 | `config.rs` | `AppConfig`, `SearchSection`, `FetchSection`, `Mode`, `ProfileConfig`, `ApiProviderConfig`, `SearxngConfig`, `LiveConfig` | TOML config model. Path defaults to `$XDG_CONFIG_HOME/eggsearch/config.toml`. Provider resolution with enabled/known validation. |
-| `provider.rs` | `ProviderDescriptor`, `ProviderSkipCode`, `ProviderKind`, `ProviderCapabilities` | Provider identity, diagnostics, and capability flags. `ProviderSkipCode` is a stable snake_case enum for machine-readable skip reasons (13 variants). `ProviderDescriptor` includes `routable`, `skip_reason`, and `skip_code` fields. |
+| `provider.rs` | `ProviderDescriptor`, `ProviderSkipCode`, `ProviderKind`, `ProviderCapabilities`, `CapabilityOption` | Provider identity, diagnostics, and capability flags. `ProviderSkipCode` is a stable snake_case enum for machine-readable skip reasons (13 variants). `ProviderDescriptor` includes `routable`, `skip_reason`, and `skip_code` fields. `CapabilityOption` is a 24-variant enum for querying specific provider capabilities. |
 
 ### Error Handling
 
@@ -27,7 +27,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
 | `query.rs` | `WebSearchRequest`, `SafeSearch`, `SearchIntent`, `Freshness`, `MaxResultsResolution` | Input shape for `web_search`. Supports intent hints (web/docs/code/issues/releases/security/news) and freshness hints (any/day/week/month/year). Both have alias parsing for weaker models |
-| `repo_query.rs` | `RepoQueryHints` | Parses `repo:owner/name`, `path:src/`, `file:lib.rs`, `lang:rust`, `symbol:Router` from query text |
+| `repo_query.rs` | `RepoQueryHints` | Parses `repo:owner/name`, `path:src/`, `file:lib.rs`, `lang:rust`, `symbol:Router`, `host:github`, `org:`/`owner:` hints, and bare `owner/repo` patterns from query text |
 | `error_query.rs` | `ExactErrorConfig`, `ErrorSubquery`, `ErrorCode`, `StackFrameHint` | Deterministic error-message parser for exact-error search mode |
 
 ### Source Cards (Core Output Model)
@@ -36,17 +36,23 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 |------|-----------|----------------|
 | `source_card.rs` | `SourceCard`, `SourceKind`, `SourceMetadata`, `RankReason`, `IssueMetadata`, `ReleaseMetadata`, `LocalRepoMatch` | Canonical provider-agnostic output model. Deterministic `source_kind` classification from URL heuristics. 30+ `RankReason` variants. Code-host URLs delegate to `code_metadata::classify_and_extract` |
 
+### Trust and Warnings
+
+| File | Key Types | Responsibility |
+|------|-----------|----------------|
+| `result.rs` | `TrustLevel`, `SearchWarning` | Trust labels (`ExternalUntrusted`, `LocalTrusted`, `Unknown`) and per-provider warning struct. Used by `SourceCard.trust`, `WebFetchResponse.trust`, and `evidence_bundle` warnings |
+
 ### Identity System
 
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
-| `identity.rs` | `FnvHasher`, `SourceKey`, `FetchKey`, `SuggestedFetchKey`, `BatchFetchKey`, `CodeSpanKey`, `RepoLocatorKey`, `DocKey`, `DocChunkKey` | FNV-1a 64-bit deterministic IDs. Versioned prefix (`eggsearch-id-v1\0`) + entity namespace. URL canonicalization (strip `www.`, default ports, fragments, normalize percent-encoding). ID prefixes: `src_`, `fetch_`, `suggested_`, `batch_`, `span_`, `loc_`, `doc_`, `chunk_` |
+| `identity.rs` | `FnvHasher`, `SourceKey`, `FetchKey`, `SuggestedFetchKey`, `BatchFetchKey`, `CodeSpanKey`, `RepoLocatorKey`, `DocKey`, `DocChunkKey` | FNV-1a 64-bit deterministic IDs. Versioned prefix (`eggsearch-id-v1\0`) + entity namespace. URL canonicalization (strip `www.`, default ports, fragments, normalize percent-encoding). ID prefixes: `src_`, `fetch_`, `suggested_`, `batch_`, `span_`, `loc_`, `doc_`, `chunk_`, `bundle_` |
 
 ### Sanitization
 
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
-| `sanitize.rs` | `TrustMarkers`, `MarkerHit` | 3-tier sanitization: Tier 1 (control-char strip + length bound, always on), Tier 2 (`<<<EXTERNAL_UNTRUSTED>>>` framing), Tier 3 (prompt-injection marker scanning). 7 regex patterns for injection detection |
+| `sanitize.rs` | `TrustMarkers`, `MarkerHit`, `strip_control_chars`, `bound_text`, `scan_injection_markers`, `frame`, `SNIPPET_MAX_CHARS`, `TITLE_MAX_CHARS` | 3-tier sanitization: Tier 1 (control-char strip + length bound, always on), Tier 2 (`<<<EXTERNAL_UNTRUSTED>>>` framing), Tier 3 (prompt-injection marker scanning). 7 regex patterns for injection detection. Public functions: `strip_control_chars`, `bound_text`, `scan_injection_markers`, `frame` |
 
 ### Warnings
 
@@ -82,7 +88,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
-| `fetch.rs` | `WebFetchRequest`, `WebFetchResponse`, `ExtractMode`, `ExtractedLink`, `LinkKind`, `FetchTransform`, `FetchTrust` | Fetch request/response types. 3 extraction modes (Text, Markdown, MetadataOnly). 15 link kinds. Code-host URL transforms |
+| `fetch.rs` | `WebFetchRequest`, `WebFetchResponse`, `ExtractMode`, `ExtractedLink`, `LinkKind`, `FetchTransform`, `FetchTransformKind`, `FetchTrust` | Fetch request/response types. 3 extraction modes (Text, Markdown, MetadataOnly). 15 link kinds. Code-host URL transforms (4 kinds: GithubRawFile, GitlabRawFile, CodebergRawFile, GiteaRawFile) |
 | `batch_fetch.rs` | `BatchFetchItem`, `BatchFetchResult`, `BatchFetchResponse` | Tagged enum items (Web or Repo). Per-item results with stable IDs |
 
 ### Code Metadata
@@ -90,17 +96,17 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
 | `code_metadata.rs` | `CodeHost`, `CodeMetadata` | Deterministic URL parsing for GitHub/GitLab/Codeberg. Extracts owner, repo, ref, path, language, line ranges from URL structure |
-| `code_evidence.rs` | `CodeEvidence`, `SourceRole`, `SymbolKind`, `EvidenceConfidence`, `CodeEvidenceReason` | Enriched code-match evidence: raw URLs, browser URLs, source roles (18 kinds), symbol kinds (12 kinds), confidence levels |
-| `code_context.rs` | `CodeContext`, `ExtractionLanguage` | Lightweight line-oriented code context extraction: imports, enclosing symbol. Supports Rust, Python, TypeScript, JavaScript, Go |
+| `code_evidence.rs` | `CodeEvidence`, `SourceRole`, `SymbolKind`, `EvidenceConfidence`, `CodeEvidenceReason` | Enriched code-match evidence: raw URLs, browser URLs, source roles (17 kinds), symbol kinds, confidence levels |
+| `code_context.rs` | `CodeContext`, `ExtractionLanguage`, `detect_language`, `detect_language_str`, `extract_code_context`, `extract_imports`, `find_enclosing_symbol` | Lightweight line-oriented code context extraction: imports, enclosing symbol. Supports Rust, Python, TypeScript, JavaScript, Go |
 | `code_host_fetch.rs` | `CodeHostFetchTarget` | Rewrites GitHub/GitLab/Codeberg source-file browser URLs to raw content URLs for fetching |
 
 ### Repository Types
 
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
-| `repo_fetch.rs` | `RepoFetchRequest`, `RepoFetchResponse`, `RepoLocator`, `RepoLocatorKind`, `CodeSpanEvidence` | Structured repository fetch by locator (host/owner/repo/path/ref). Line ranges, context lines, symbol expansion |
-| `repo_search.rs` | `RepoSearchRequest`, `RepoSearchResponse`, `RepoResultGroup`, `RepoSearchMode`, `SearchProfile`, `RepoSuggestedFetch`, `ResolvedRepoIdentity`, `ProviderSelectionTelemetry` | Structured repo evidence discovery. 4 profiles (generic/coding/security/research). `exact_error` mode for compiler errors |
-| `repo_map.rs` | `RepoMapRequest`, `RepoMapResponse`, `RepoMapEntry`, `ImportantFileKind`, `ImportantDirKind` | Repository structure discovery: important files (README, manifest, CI, security) and directories |
+| `repo_fetch.rs` | `RepoFetchRequest`, `RepoFetchResponse`, `RepoLocator`, `RepoLocatorKind`, `CodeSpanEvidence`, `RepoFetchedLine`, `apply_line_range`, `github_browser_url`, `github_permalink_url`, `github_raw_url`, `gitlab_browser_url`, `gitlab_raw_url` | Structured repository fetch by locator (host/owner/repo/path/ref). Line ranges, context lines, symbol expansion. URL helper functions for GitHub/GitLab browser/permalink/raw URLs |
+| `repo_search.rs` | `RepoSearchRequest`, `RepoSearchResponse`, `RepoResultGroup`, `RepoResultGroupKind`, `RepoSearchMode`, `SearchProfile`, `RepoSuggestedFetch`, `ResolvedRepoIdentity`, `RepoIdentitySource`, `ProviderSelectionTelemetry`, `RepoSearchSubqueryTelemetry`, `RepoSearchTelemetry` | Structured repo evidence discovery. 4 profiles (generic/coding/security/research). `exact_error` mode for compiler errors |
+| `repo_map.rs` | `RepoMapRequest`, `RepoMapResponse`, `RepoMapEntry`, `RepoMapEntryKind`, `RepoMapMode`, `RepoMapSuggestedFetch`, `RepoImportantFile`, `RepoImportantDirectory`, `RepoPathSummary`, `ImportantFileKind`, `ImportantDirKind`, `classify_important_file`, `classify_important_directory` | Repository structure discovery: important files (README, manifest, CI, security) and directories |
 
 ### Security Types
 

@@ -26,11 +26,13 @@ evidence tracking.
 |--------|--------|------------|---------|
 | Source card | `src_` | provider_id + url + title + source_kind | `src_a1b2c3d4e5f6a7b8` |
 | Suggested fetch | `suggested_` | url + group + priority | `suggested_1a2b3c4d5e6f7890` |
-| Fetch result | `fetch_` | url + text_prefix | `fetch_2b3c4d5e6f789012` |
-| Code span | `span_` | url + language + line_start + line_end + symbol | `span_3c4d5e6f78901234` |
+| Fetch result | `fetch_` | url (or locator) + line_start + line_end + text_prefix | `fetch_2b3c4d5e6f789012` |
+| Code span | `span_` | locator + line_start + line_end + symbol | `span_3c4d5e6f78901234` |
+| Batch fetch item | `batch_` | label + index | `batch_5e6f789012345678` |
 | Evidence bundle | `bundle_` | goal + source_ids + fetch_ids | `bundle_4d5e6f7890123456` |
 | Locator | `loc_` | host + owner + repo + ref_name + path | `loc_5e6f789012345678` |
 | Document | `doc_` | url + title + kind | `doc_6f78901234567890` |
+| Document chunk | `chunk_` | doc_id + chunk_index + heading_path | `chunk_7890123456789012` |
 
 ### 1.2 Linking Rules
 
@@ -96,7 +98,7 @@ fn handle_warning(warning: &AgentWarning) {
 |------|----------|---------|
 | `safe_search_unenforced` | Warning | safe_search requested but no provider enforces it |
 | `freshness_unenforced` | Warning | freshness hint requested but no provider enforces it |
-| `native_code_search_unavailable` | Notice | intent=code but no code search provider |
+| `native_code_search_unavailable` | Warning | intent=code but no code search provider |
 | `profile_degraded` | Warning | profile fell back to default providers |
 | `profile_provider_not_built` | Warning | provider in profile has no constructed engine |
 | `local_repo_match` | Info | local checkout found matching requested repo |
@@ -109,6 +111,9 @@ fn handle_warning(warning: &AgentWarning) {
 | `prompt_injection_marker_detected` | Error | injection markers detected in content |
 | `coding_profile_degraded` | Warning | coding profile fell back to default |
 | `package_resolution_fallback` | Warning | registry API failed, using fallback metadata |
+| `local_repo_state_unknown` | Warning | local workspace dirty state could not be determined |
+| `local_search_timeout` | Warning | local workspace search exceeded time limit |
+| `local_search_truncated` | Warning | local workspace results were truncated |
 
 ### 2.3 Warning Entity Scope
 
@@ -253,7 +258,7 @@ Suggested fetches on `repo_search`, `security_search`, and
 
 **Provenance stability:**
 - `pinned_raw_permalink` — commit-pinned raw content URL (most stable)
-- `pinned_browser_permalinks` — commit-stable browser URL
+- `pinned_browser_permalink` — commit-stable browser URL
 - `mutable_raw_url` — mutable raw content
 - `mutable_browser_url` — mutable browser URL
 - `generic_web_url` — generic web page
@@ -273,6 +278,7 @@ Suggested fetches on `repo_search`, `security_search`, and
 - `source_role_changelog` — changelog
 - `source_role_migration` — migration guide
 - `source_role_benchmark` — benchmark
+- `source_role_configuration` — configuration file
 
 **Source kind:**
 - `kind_official_docs` — official documentation
@@ -281,6 +287,20 @@ Suggested fetches on `repo_search`, `security_search`, and
 - `kind_issue_thread` — issue discussion
 - `kind_pull_request` — pull request
 - `kind_security_advisory` — security advisory
+- `kind_source_file` — source code file
+
+**Evidence strength:**
+- `sparse_code_evidence` — limited code-level evidence
+
+**Security:**
+- `authoritative_advisory` — authoritative security advisory
+- `vendor_advisory` — vendor-provided security advisory
+- `security_consideration` — security-related evidence
+
+**Research:**
+- `primary_research_source` — primary research source
+- `reference_implementation` — reference implementation
+- `benchmark_source` — benchmark data source
 
 **Query context:**
 - `symbol_hint_match` — symbol name matched
@@ -290,6 +310,7 @@ Suggested fetches on `repo_search`, `security_search`, and
 - `error_context_match` — error text matched (exact-error mode)
 - `version_migration_context` — version/migration context present
 - `package_name_match` — package name matched
+- `source_type_match` — source type matched query intent
 
 ### 5.2 Harness Selection Logic
 
@@ -423,7 +444,6 @@ Harnesses should present both sides and let the user decide.
 | `no_migration_changelog` | No changelogs/migration guides | Fetch changelog |
 | `only_secondary_sources` | Only blog/news sources found | Fetch primary sources |
 | `conflicting_evidence_unresolved` | Conflicting claims remain unresolved | Fetch counterpoints |
-| `source_needs_fetch` | Source card has no fetch yet | Fetch source URL |
 | `version_context_missing` | No version context provided | Request version info |
 
 ### 7.4 Source Quality Signals
@@ -453,16 +473,13 @@ additional identity and state metadata.
 ```json
 {
   "local_repo_match": {
-    "root": "/Users/dev/projects/myrepo",
-    "remote_identity": {
-      "host": "github",
-      "owner": "myorg",
-      "repo": "myrepo"
-    },
+    "root_path": "/Users/dev/projects/myrepo",
+    "remote_host": "github",
+    "remote_owner": "myorg",
+    "remote_repo": "myrepo",
     "branch": "main",
     "commit": "a1b2c3d",
     "dirty_state": "clean",
-    "workspace_id": "ws_abc123def456",
     "match_confidence": "exact",
     "reasons": ["remote URL matches requested owner/repo"]
   }
@@ -471,11 +488,11 @@ additional identity and state metadata.
 
 ### 8.2 Match Confidence
 
-| Level | Meaning | Score Boost |
-|-------|---------|-------------|
-| `exact` | Remote URL matches requested host/owner/repo exactly | +50 |
-| `strong` | Owner/repo matches but host differs (alias resolution) | +50 |
-| `weak` | Partial match (name similarity only) | +50 |
+| Level | Meaning |
+|-------|---------|
+| `exact` | Remote URL matches requested host/owner/repo exactly |
+| `strong` | Owner/repo matches but host differs (alias resolution) |
+| `weak` | Partial match (name similarity only) |
 
 ### 8.3 Dirty State
 
@@ -573,7 +590,7 @@ Per-tool feature details:
     "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
     "local_workspace": true,
     "subquery_telemetry": true,
-    "supported_hosts": ["github", "gitlab", "gitea", "forgejo"]
+    "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"]
   }
 }
 ```

@@ -43,11 +43,11 @@
 
 ### Documentation Contract Tests
 
-**Location:** `tests/docs_config_snippets.rs`, `tests/docs_provider_inventory.rs`, `tests/docs_tool_names.rs`
+**Location:** `tests/docs_config_snippets.rs`, `tests/docs_provider_inventory.rs`, `tests/docs_tool_names.rs`, `tests/docs_safety_vocabulary.rs`
 
 - Validate docs snippets against actual types
-- Ensure config examples, provider lists, tool names match code
-- Run with: `cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names`
+- Ensure config examples, provider lists, tool names, safety vocabulary match code
+- Run with: `cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary`
 
 ### Config Validation Tests
 
@@ -72,7 +72,7 @@
 |------|---------|-------------|
 | `mock` | Test-only mock engine harness (`src/meta/mock.rs`) | Integration/corpus tests |
 | `pdf` | PDF text extraction via `lopdf` | PDF-specific tests |
-| `live-smoke` | Live network smoke tests | Manual live tests only |
+| `live-smoke` | Live network smoke tests (implies `mock`) | Manual live tests only |
 
 **Critical:** Integration/corpus tests require `--features mock`. Running `cargo test` without features misses most integration tests.
 
@@ -94,8 +94,8 @@ The CI runs tests across 4 feature combos:
 | check | `cargo check` × 4 feature combos |
 | test | `cargo test --locked` × 4 feature combos |
 | clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
-| schema-corpus | 6 regression test binaries |
-| docs-contract | 3 documentation contract tests |
+| schema-corpus | 6 regression test binaries (Makefile uses `--locked`, CI does not) |
+| docs-contract | 4 documentation contract tests (Makefile uses `--locked`, CI does not) |
 | fmt | `cargo fmt --check` |
 | release-build | `cargo build --release` |
 | publish-check | `cargo publish --dry-run --locked` |
@@ -111,7 +111,7 @@ cargo test --locked --features mock --test corpus_runner            # corpus reg
 cargo test --locked --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
 make schema-corpus                                         # all contract tests
 make docs-tests                                            # documentation contract tests
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
 ```
 
 ---

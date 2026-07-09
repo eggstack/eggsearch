@@ -15,7 +15,7 @@ The fetch module handles all outbound HTTP requests for `web_fetch`, `repo_fetch
 | `extract.rs` | `HtmlExtractor` — HTML content extraction via `scraper` crate. Link extraction with 15+ link kinds, bounded to `MAX_LINKS = 100` |
 | `detect.rs` | Content-type detection, markdown/code/plain-text detection |
 | `limits.rs` | `FetchLimits` struct, URL validation, DNS validation, private-network checks |
-| `render/` | HTML structural rendering (blocks, text, markdown). Converts HTML to `RenderedBlock` list |
+| `render/` | HTML structural rendering (7 submodules: blocks, code, csv, markdown, markdown_source, notebook, text). Converts HTML/code/diff/CSV/notebook content to `RenderedBlock` list |
 | `span.rs` | `SelectedSpan` — symbol/span-aware block expansion for `repo_fetch` |
 | `types.rs` | `FetchError`, `FetchErrorKind` — error types |
 | `pdf.rs` | PDF text extraction (feature-gated: `pdf`), uses `lopdf` |
@@ -28,10 +28,10 @@ The fetch client enforces strict network boundaries:
 
 1. **DNS resolution** — Resolves hostname, rejects private/reserved IPs (RFC 1918, RFC 6890, loopback, link-local, multicast, documentation ranges, and IPv6 equivalents; full list in [safety.md](../safety.md))
 2. **Redirect revalidation** — Each redirect is re-validated against SSRF rules
-3. **Code-host rewriting** — GitHub/GitLab/Codeberg URLs are rewritten to raw content endpoints before fetching
-4. **Size limits** — `max_bytes` caps response body size
-5. **Timeout limits** — `max_timeout` caps request duration
-6. **Link count limits** — Extraction caps at `MAX_LINKS = 100` per page
+3. **Code-host rewriting** — GitHub/GitLab/Codeberg/Gitea/Forgejo URLs are rewritten to raw content endpoints before fetching
+4. **Embedded credentials** — URLs with `user:pass@` are rejected
+5. **Size limits** — `max_bytes` caps response body size
+6. **Timeout limits** — `max_timeout` caps request duration
 
 ---
 
@@ -53,11 +53,10 @@ HTTP Response
 ### Document Kinds (16)
 
 `FetchDocument` supports these document kinds:
-- HTML, PlainText, Markdown, Code, JSON, TOML, YAML
-- PDF (feature-gated), CSV, XML
-- Image (metadata only), Binary (rejected)
-- RepositoryFile, RepositoryDirectory
-- LocalFile, LocalDirectory
+- Html, PlainText, Markdown, Code, Json, Toml, Yaml
+- Diff, Patch, Pdf (feature-gated), Notebook
+- Csv, Xml, Rst, AsciiDoc
+- Unknown
 
 ---
 
@@ -66,19 +65,19 @@ HTTP Response
 `HtmlExtractor` uses the `scraper` crate to parse HTML and extract:
 
 1. **Text content** — Visible text, stripped of scripts/styles
-2. **Links** — Classified into 15+ kinds:
-   - `Navigation`, `Reference`, `Anchor`, `Image`
-   - `CodeHost` (GitHub/GitLab/Codeberg)
-   - `Package` (npm, PyPI, crates.io)
-   - `Documentation`, `Download`
-   - And more
+2. **Links** — Classified into 15 kinds:
+   - `SamePageAnchor`, `SameDomain`, `External`, `Download`
+   - `SourceCode` (GitHub/GitLab/Codeberg/Gitea)
+   - `Documentation`, `ApiReference`, `Issue`, `PullRequest`
+   - `Release`, `SecurityAdvisory`, `Pdf`, `Image`
+   - `Feed`, `Other`
 3. **Metadata** — Title, description, language
 4. **Structure** — Block-based rendering with outline/chunks
 
 ### Block Rendering
 
 HTML is converted to `RenderedBlock` list:
-- Each block has a `BlockKind` (Paragraph, Heading, List, Code, Table, etc.)
+- Each block has a `BlockKind` (Paragraph, Heading, ListItem, Code, Table, etc.)
 - Blocks are chunked for bounded output
 - Outline entries provide navigation structure
 
@@ -100,22 +99,23 @@ For `repo_fetch`, the fetch module supports **span-aware extraction**:
 
 The fetch client handles redirects specially:
 
-1. Follow redirect chain (up to limit)
-2. **Revalidate each redirect** against SSRF rules
-3. Track redirect chain for trust metadata
-4. Rewrite code-host URLs at each step
+1. Code-host URL rewriting is applied once before the redirect loop
+2. Follow redirect chain (up to limit)
+3. **Revalidate each redirect** against SSRF rules
+4. Track redirect chain for trust metadata
 
 ---
 
 ## Code-Host URL Rewriting
 
-GitHub/GitLab/Codeberg browser URLs are rewritten to raw content URLs:
+GitHub/GitLab/Codeberg/Gitea/Forgejo browser URLs are rewritten to raw content URLs:
 
 | Source | Rewritten To |
 |--------|-------------|
 | `github.com/owner/repo/blob/...` | `raw.githubusercontent.com/owner/repo/...` |
 | `gitlab.com/owner/repo/-/blob/...` | `gitlab.com/owner/repo/-/raw/...` |
-| `codeberg.org/owner/repo/src/...` | `codeberg.org/owner/repo/raw/...` |
+| `codeberg.org/owner/repo/src/...` | `codeberg.org/owner/repo/raw/branch/...` |
+| Gitea/Forgejo `/src/...` | Rewritten to raw endpoint (requires configured base URL) |
 
 ---
 
@@ -126,8 +126,11 @@ struct FetchLimits {
     max_bytes: usize,       // response body size cap (default 2MB)
     max_chars_default: usize, // fallback char bound (default 12000)
     max_chars_cap: usize,   // hard upper bound on max_chars (default 50000)
-    timeout_ms: u64,        // request timeout
-    redirect_limit: usize,  // redirect chain limit
+    max_url_len: usize,     // URL length cap (default 8192)
+    timeout_ms: u64,        // request timeout (default 8000ms)
+    redirect_limit: usize,  // redirect chain limit (default 5)
+    allow_private_network: bool, // allow RFC 1918 etc. (default false)
+    allow_localhost: bool,  // allow loopback addresses (default false)
     pdf_enabled: bool,      // PDF extraction toggle
     pdf_max_pages: usize,   // max PDF pages (default 25)
     pdf_max_chars_per_page: usize, // per-page char cap (default 12000)
