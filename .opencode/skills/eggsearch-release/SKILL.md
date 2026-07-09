@@ -1,3 +1,8 @@
+---
+name: eggsearch-release
+description: Use when preparing or cutting an eggsearch release. Covers pre-release checks, versioning rules, CI pipeline, and publishing steps.
+---
+
 # eggsearch Release Skill
 
 ## Pre-Release Checklist

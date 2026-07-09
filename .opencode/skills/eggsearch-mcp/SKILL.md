@@ -1,3 +1,8 @@
+---
+name: eggsearch-mcp
+description: Use when integrating with eggsearch MCP tools, selecting the right tool for a task, understanding workflows, trust model, or evidence bundles.
+---
+
 # eggsearch MCP Integration Skill
 
 ## 10 Stable MCP Tools

@@ -1,3 +1,8 @@
+---
+name: eggsearch-architecture
+description: Use when working with eggsearch internals, understanding crate layout, provider model, adapter pattern, deterministic IDs, sanitization tiers, or config structure.
+---
+
 # eggsearch Architecture Skill
 
 ## Crate Layout
