@@ -19171,7 +19171,7 @@ fn provider_status_caps_reflect_fetch_disabled() {
 }
 
 #[test]
-fn provider_status_tool_caps_repo_search_excludes_codeberg() {
+fn provider_status_tool_caps_supported_hosts_match_code_host_aliases() {
     let state = state_with_default();
     let v = run_provider_status(
         state,
@@ -19187,24 +19187,27 @@ fn provider_status_tool_caps_repo_search_excludes_codeberg() {
     let rs_hosts = tcaps["repo_search"]["supported_hosts"]
         .as_array()
         .expect("repo_search.supported_hosts");
-    assert!(
-        !rs_hosts.iter().any(|h| h.as_str() == Some("codeberg")),
-        "repo_search.supported_hosts must not advertise codeberg (no provider): {rs_hosts:?}"
-    );
     let rm_hosts = tcaps["repo_map"]["supported_hosts"]
         .as_array()
         .expect("repo_map.supported_hosts");
-    assert!(
-        !rm_hosts.iter().any(|h| h.as_str() == Some("codeberg")),
-        "repo_map.supported_hosts must not advertise codeberg (no provider): {rm_hosts:?}"
-    );
     let rf_hosts = tcaps["repo_fetch"]["remote_hosts"]
         .as_array()
         .expect("repo_fetch.remote_hosts");
-    assert!(
-        rf_hosts.iter().any(|h| h.as_str() == Some("codeberg")),
-        "repo_fetch.remote_hosts should keep codeberg (raw fetch is supported): {rf_hosts:?}"
-    );
+
+    for expected in ["github", "gitlab", "codeberg", "gitea", "forgejo"] {
+        assert!(
+            rs_hosts.iter().any(|h| h.as_str() == Some(expected)),
+            "repo_search.supported_hosts should include {expected} (cross-checked against CodeHost::accepted_aliases): {rs_hosts:?}"
+        );
+        assert!(
+            rm_hosts.iter().any(|h| h.as_str() == Some(expected)),
+            "repo_map.supported_hosts should include {expected} (cross-checked against CodeHost::accepted_aliases): {rm_hosts:?}"
+        );
+        assert!(
+            rf_hosts.iter().any(|h| h.as_str() == Some(expected)),
+            "repo_fetch.remote_hosts should include {expected} (cross-checked against CodeHost::accepted_aliases): {rf_hosts:?}"
+        );
+    }
 }
 
 #[cfg(feature = "mock")]

@@ -188,7 +188,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "repo_map",
-        description = "Repository structure discovery. Returns the root-level layout, important files, and important directories for a repository without fetching file contents. Use this to understand what a repository contains before searching or fetching. When no native tree API is available, falls back to search-based discovery. Returns suggested fetches prioritized by importance."
+        description = "Repository structure discovery. Returns the root-level layout, important files, and important directories for a repository without fetching file contents. Use this to understand what a repository contains before searching or fetching. When no native tree API is available and no matching local checkout is configured, the response is metadata-only: structure arrays are empty and a `no_native_tree_provider` warning is emitted. To get useful remote structure, either configure a local checkout via the local workspace backend or enable a native tree provider."
     )]
     async fn repo_map(
         &self,
@@ -256,7 +256,7 @@ Tools:
 - provider_status: diagnostic provider report; not needed for normal research.
 - repo_search: structured repository evidence discovery. Returns grouped source-card bundles (official docs, package registry, README, source files, issues, releases, etc.) with suggested fetches. Use this when you need organized context for a specific codebase. A query is not required when a repo locator is provided.
 - repo_fetch: fetch a specific file or line range from a repository by structured locator (owner, repo, path, ref). Returns source text with stable line numbers. Use after repo_search to inspect a known file/span.
-- repo_map: repository structure discovery. Returns root-level layout, important files, and important directories without fetching file contents. Use this to understand what a repository contains before searching or fetching.
+- repo_map: repository structure discovery. Returns root-level layout, important files, and important directories without fetching file contents. Use this to understand what a repository contains before searching or fetching. Without a native tree API provider or a matching local checkout, the response is metadata-only (empty structure arrays plus a `no_native_tree_provider` warning).
 - security_search: security vulnerability and advisory search. Returns grouped source-card bundles for vulnerabilities, advisories, exploits, and defensive guidance. Supports CVE, GHSA, RustSec, and OSV identifiers.
 - research_search: research-oriented multi-source evidence discovery. Returns grouped source-card bundles with subquery transparency, evidence-quality classification, and suggested fetches. Use for complex architectural questions.
 - build_evidence_bundle: package already-selected evidence from search and fetch responses into a deterministic, non-summarizing bundle for multi-agent handoff. Does NOT search, fetch, or summarize. Preserves source IDs, trust markers, quality signals, gaps, and provider diagnostics.

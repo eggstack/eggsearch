@@ -1412,12 +1412,12 @@ pub fn run_provider_status(
                 "repo_search_remote": matches!(live_allowed(state.config.search.mode), Policy::Allow),
                 "repo_search_local": local_enabled,
                 "subquery_telemetry": true,
-                "supported_hosts": ["github", "gitlab", "gitea", "forgejo"],
+                "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
             },
             "repo_map": {
-                "supported_hosts": ["github", "gitlab", "gitea", "forgejo"],
+                "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
                 "local_checkout": local_enabled,
-                "repo_map_remote": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+                "repo_map_remote": "metadata_only",
                 "repo_map_local": local_enabled,
             },
             "local_workspace": {
@@ -1705,6 +1705,34 @@ pub async fn run_repo_fetch(
 
     let ref_name = args.ref_name.unwrap_or_else(|| "main".to_string());
 
+    // Resolve a Gitea/Forgejo base URL from configured API providers.
+    // Reused for normal URLs, browser permalinks, and raw permalinks so
+    // a self-hosted instance configured as e.g. `gitea_code` produces
+    // matching URLs across all three call sites.
+    let gitea_or_forgejo_base_url = |host: CodeHost| -> Option<String> {
+        let provider_id = match host {
+            CodeHost::Gitea => "gitea",
+            CodeHost::Forgejo => "forgejo",
+            _ => return None,
+        };
+        state
+            .config
+            .search
+            .api
+            .get(provider_id)
+            .and_then(|c| c.base_url.clone())
+            .or_else(|| {
+                // Fallback: try any gitea/forgejo provider with a base_url.
+                state
+                    .config
+                    .search
+                    .api
+                    .iter()
+                    .find(|(k, _)| k.starts_with("gitea_") || k.starts_with("forgejo_"))
+                    .and_then(|(_, c)| c.base_url.clone())
+            })
+    };
+
     let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
 
     let req = RepoFetchRequest {
@@ -1754,34 +1782,16 @@ pub async fn run_repo_fetch(
             (browser, raw)
         }
         CodeHost::Gitea | CodeHost::Forgejo => {
-            // Look up base URL from API provider config.
-            let provider_id = match effective_host {
-                CodeHost::Gitea => "gitea",
-                CodeHost::Forgejo => "forgejo",
-                _ => unreachable!(),
-            };
-            let base_url = state
-                .config
-                .search
-                .api
-                .get(provider_id)
-                .and_then(|c| c.base_url.clone())
-                .unwrap_or_else(|| {
-                    // Fallback: try any gitea/forgejo provider with a base_url
-                    state
-                        .config
-                        .search
-                        .api
-                        .iter()
-                        .find(|(k, _)| k.starts_with("gitea_") || k.starts_with("forgejo_"))
-                        .and_then(|(_, c)| c.base_url.clone())
-                        .unwrap_or_default()
-                });
-            if base_url.is_empty() {
-                return Err(ToolError::Validation(format!(
+            let base_url = gitea_or_forgejo_base_url(effective_host).ok_or_else(|| {
+                let provider_id = match effective_host {
+                    CodeHost::Gitea => "gitea",
+                    CodeHost::Forgejo => "forgejo",
+                    _ => "gitea",
+                };
+                ToolError::Validation(format!(
                     "host '{effective_host:?}' requires a configured base_url in [search.api.{provider_id}] or [search.api.<id>] with a base_url"
-                )));
-            }
+                ))
+            })?;
             let browser = gitea_browser_url(&base_url, owner, repo, rn, path);
             let raw = gitea_raw_url(&base_url, owner, repo, rn, path);
             (browser, raw)
@@ -1806,19 +1816,10 @@ pub async fn run_repo_fetch(
             }
             CodeHost::Gitea | CodeHost::Forgejo => {
                 // Gitea/Forgejo permalink uses the browser URL pattern with commit SHA.
-                let provider_id = match effective_host {
-                    CodeHost::Gitea => "gitea",
-                    CodeHost::Forgejo => "forgejo",
-                    _ => unreachable!(),
-                };
-                let base_url = state
-                    .config
-                    .search
-                    .api
-                    .get(provider_id)
-                    .and_then(|c| c.base_url.clone())
-                    .unwrap_or_default();
-                let base = base_url.trim_end_matches('/');
+                let base = gitea_or_forgejo_base_url(effective_host)
+                    .unwrap_or_default()
+                    .trim_end_matches('/')
+                    .to_string();
                 format!("{base}/{owner}/{repo}/src/commit/{sha}/{path}")
             }
             _ => raw_url.clone(),
@@ -1838,19 +1839,10 @@ pub async fn run_repo_fetch(
             }
             CodeHost::Gitea | CodeHost::Forgejo => {
                 // Gitea/Forgejo raw permalink uses the raw URL pattern with commit SHA.
-                let provider_id = match effective_host {
-                    CodeHost::Gitea => "gitea",
-                    CodeHost::Forgejo => "forgejo",
-                    _ => unreachable!(),
-                };
-                let base_url = state
-                    .config
-                    .search
-                    .api
-                    .get(provider_id)
-                    .and_then(|c| c.base_url.clone())
-                    .unwrap_or_default();
-                let base = base_url.trim_end_matches('/');
+                let base = gitea_or_forgejo_base_url(effective_host)
+                    .unwrap_or_default()
+                    .trim_end_matches('/')
+                    .to_string();
                 format!("{base}/{owner}/{repo}/raw/commit/{sha}/{path}")
             }
             _ => raw_url.clone(),
@@ -1963,8 +1955,12 @@ pub async fn run_repo_fetch(
                 );
 
             // Clamp sliced lines to user-requested `max_chars` budget.
+            // When omitted, fall back to the configured `fetch.max_chars_default`
+            // so callers cannot bypass the documented output budget by
+            // omitting the field.
+            let output_max_chars = req.max_chars.or(Some(state.config.fetch.max_chars_default));
             let (clamped_lines, char_truncated) = {
-                let (lines, _txt, ct) = clamp_lines_to_max_chars(&sliced_lines, req.max_chars);
+                let (lines, _txt, ct) = clamp_lines_to_max_chars(&sliced_lines, output_max_chars);
                 (lines, ct)
             };
 
@@ -3095,9 +3091,15 @@ async fn run_workspace_fetch(
             args.context_after.unwrap_or(0),
         );
 
-    // Build text from sliced lines, enforcing max_chars budget
+    // Build text from sliced lines, enforcing max_chars budget.
+    // When omitted, fall back to the configured `fetch.max_chars_default`
+    // so callers cannot bypass the documented output budget by
+    // omitting the field.
+    let output_max_chars = args
+        .max_chars
+        .or(Some(state.config.fetch.max_chars_default));
     let (mut clamped_lines, _initial_text, char_truncated) =
-        clamp_lines_to_max_chars(&sliced_lines, args.max_chars);
+        clamp_lines_to_max_chars(&sliced_lines, output_max_chars);
 
     let mut warnings: Vec<String> = Vec::new();
     if let Some(w) = line_warning {
