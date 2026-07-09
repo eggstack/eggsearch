@@ -1374,10 +1374,12 @@ pub fn run_provider_status(
         "server_capabilities": {
             "generic_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
             "explicit_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
-            "repo_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+            "repo_search": matches!(live_allowed(state.config.search.mode), Policy::Allow)
+                || local_enabled,
             "repo_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow)
                 || local_enabled,
-            "repo_map": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+            "repo_map": matches!(live_allowed(state.config.search.mode), Policy::Allow)
+                || local_enabled,
             "security_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
             "research_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
             "batch_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
@@ -1407,12 +1409,16 @@ pub fn run_provider_status(
                 "profiles": ["generic", "coding", "security", "research"],
                 "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
                 "local_workspace": local_enabled,
+                "repo_search_remote": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+                "repo_search_local": local_enabled,
                 "subquery_telemetry": true,
                 "supported_hosts": ["github", "gitlab", "gitea", "forgejo"],
             },
             "repo_map": {
                 "supported_hosts": ["github", "gitlab", "gitea", "forgejo"],
                 "local_checkout": local_enabled,
+                "repo_map_remote": matches!(live_allowed(state.config.search.mode), Policy::Allow),
+                "repo_map_local": local_enabled,
             },
             "local_workspace": {
                 "enabled": local_enabled,
@@ -2222,19 +2228,11 @@ pub async fn run_repo_map(
         crate::meta::repo_mapper::populate_from_local_checkout(&mut response, &req, root);
     }
 
-    // Add fallback subqueries as informational context
-    let subqueries = crate::meta::repo_mapper::generate_fallback_subqueries(&req.owner, &req.repo);
-    if !subqueries.is_empty() {
-        response
-            .warnings
-            .push(crate::core::result::SearchWarning::new(
-                "_system",
-                format!(
-                    "fallback_subqueries: {} search-based discovery subqueries generated",
-                    subqueries.len()
-                ),
-            ));
-    }
+    // Fallback subqueries are intentionally not generated because no
+    // fallback discovery is performed without a native tree provider
+    // or a matching local checkout. The single `no_native_tree_provider`
+    // warning added by `build_fallback_response` is the authoritative
+    // signal for this degraded mode.
 
     // Populate structured warnings from accumulated string warnings
     response.structured_warnings = crate::core::warning::convert_warnings(&response.warnings);
@@ -2979,7 +2977,7 @@ async fn run_workspace_fetch(
     use crate::core::code_evidence::infer_source_role;
     use crate::core::local::validate_local_fetch_path;
     use crate::core::repo_fetch::{
-        apply_line_range, clamp_lines_to_max_chars, FetchTrust, RepoFetchResponse,
+        apply_line_range, clamp_lines_to_max_chars, FetchTrust, RepoFetchRequest, RepoFetchResponse,
     };
     use crate::core::sanitize::TrustMarkers;
 
@@ -2995,6 +2993,35 @@ async fn run_workspace_fetch(
 
     let root_name = args.owner.clone();
     let relative_path = workspace_relative_path_arg(&args)?;
+
+    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
+
+    // Share budget/span validation with the remote repo_fetch path
+    // so the workspace host enforces identical constraints (line ranges,
+    // context bounds, max_chars cap, max_block_lines, timeout_ms).
+    let ws_req = RepoFetchRequest {
+        host: None,
+        owner: root_name.clone(),
+        repo: relative_path.clone(),
+        ref_name: None,
+        commit_sha: None,
+        path: relative_path.clone(),
+        line_start: args.line_start,
+        line_end: args.line_end,
+        context_before: args.context_before,
+        context_after: args.context_after,
+        max_chars: args.max_chars,
+        timeout_ms: args.timeout_ms,
+        symbol: args.symbol.clone(),
+        symbol_kind: parsed_symbol_kind,
+        match_text: args.match_text.clone(),
+        expand_to_block: args.expand_to_block,
+        max_block_lines: args.max_block_lines,
+        prefer_local: None,
+    };
+    ws_req
+        .validate(state.config.fetch.max_chars_cap)
+        .map_err(ToolError::Validation)?;
 
     // Find the root by name
     let roots = backend.roots();
@@ -3020,37 +3047,6 @@ async fn run_workspace_fetch(
     let canonical = validate_local_fetch_path(root_path, &relative_path, backend.config())
         .map_err(|e| ToolError::Validation(e.to_string()))?;
 
-    // Validate line range
-    if let (Some(start), Some(end)) = (args.line_start, args.line_end) {
-        if start == 0 {
-            return Err(ToolError::Validation(
-                "line_start must be >= 1 (1-indexed)".to_string(),
-            ));
-        }
-        if end == 0 {
-            return Err(ToolError::Validation(
-                "line_end must be >= 1 (1-indexed)".to_string(),
-            ));
-        }
-        if start > end {
-            return Err(ToolError::Validation(format!(
-                "line_start ({start}) must be <= line_end ({end})"
-            )));
-        }
-    } else if let Some(start) = args.line_start {
-        if start == 0 {
-            return Err(ToolError::Validation(
-                "line_start must be >= 1 (1-indexed)".to_string(),
-            ));
-        }
-    } else if let Some(end) = args.line_end {
-        if end == 0 {
-            return Err(ToolError::Validation(
-                "line_end must be >= 1 (1-indexed)".to_string(),
-            ));
-        }
-    }
-
     // Read file content (off the runtime thread)
     let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&canonical))
         .await
@@ -3069,8 +3065,6 @@ async fn run_workspace_fetch(
 
     // Apply span selection: resolve symbol/match_text/explicit range
     // to a concrete line span before slicing.
-    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
-
     let selected_span = crate::fetch::span::select_span(
         &all_lines,
         language.as_deref(),

@@ -448,7 +448,8 @@ pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
         warnings: vec![SearchWarning::new(
             "_system",
             "no_native_tree_provider: no native tree/list API provider is available; \
-             results are from search-based discovery",
+             remote discovery is not performed, provide a local checkout or \
+             configure a native tree provider for repo_map results",
         )],
         structured_warnings: Vec::new(),
         trust_markers: TrustMarkers::default(),
