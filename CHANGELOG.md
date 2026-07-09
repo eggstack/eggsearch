@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docs: fixed `health_view` scope description** in `docs/provider-setup.md` — health data is a top-level `health_views` map, not nested per provider.
 - **Docs: fixed `skip_code` casing** in `docs/provider-setup.md` — `CooldownActive` corrected to `cooldown_active` to match serialized form.
 - **Docs: added `quality_metadata`** to `provider_status` output descriptions in `docs/tool-matrix.md` and `docs/config.md`.
+- **Clippy: fixed uninlined format args** in `src/meta/repo_mapper.rs:352` — `format!("{:?}", dir_kind)` changed to `format!("{dir_kind:?}")`.
 
 ### Changed
 
