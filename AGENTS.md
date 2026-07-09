@@ -41,14 +41,18 @@ src/
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, and contract tests
 docs/
-  architecture/    # codegg-contract.md — stable contract, IDs, warnings, trust model
-  config.md         # config defaults, provider enablement, provider_status semantics
-  safety.md        # trust model, fetch safety, metadata_only behavior
+  architecture/     # deep dives: overview, core, meta, fetch, mcp, commands, testing, codegg-contract
+  quickstart-codegg.md # harness integration quickstart
+  codegg-integration.md # full harness integration guide
+  config.md          # config defaults, provider enablement, provider_status semantics
+  safety.md          # trust model, fetch safety, metadata_only behavior
+  threat-model.md    # operator threat model, trust boundaries
+  provider-setup.md  # provider configuration guide
   agent-workflows.md # recommended tool call sequences and recipe catalog
-  tool-matrix.md   # compact tool reference table
-  release.md       # authoritative release process and pre-release command sequence
+  tool-matrix.md     # compact tool reference table
+  release.md         # authoritative release process and pre-release command sequence
   release-checklist.md # short operational checklist (links to release.md)
-plans/             # roadmap and phase documentation (historical)
+plans/               # historical roadmap and phase documentation (archived, not actively maintained)
 ```
 
 Read `src/lib.rs` for the module map, then explore submodules as needed.
@@ -108,7 +112,7 @@ cargo test --locked --features mock --test corpus_runner            # corpus reg
 cargo test --locked --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
 make schema-corpus                                         # all contract tests
 make docs-tests                                            # documentation contract tests
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
 ```
 
 ### Adding tests

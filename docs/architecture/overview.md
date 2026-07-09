@@ -66,7 +66,7 @@ eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for 
 | Module | Path | Responsibility | Deep Dive |
 |--------|------|----------------|-----------|
 | **core** | `src/core/` | Pure domain types, config model, error types, identity system, sanitization, warnings, source cards, quality heuristics, security/research/repo types | [core.md](core.md) |
-| **meta** | `src/meta/` | Metasearch adapter + 38 vendored search engines. RRF aggregation, query planning, provider health, result grouping | [meta.md](meta.md) |
+| **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping | [meta.md](meta.md) |
 | **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection | [fetch.md](fetch.md) |
 | **mcp** | `src/mcp/` | MCP server over stdio (rmcp), 10 tool definitions, shared server state, policy enforcement | [mcp.md](mcp.md) |
 | **commands** | `src/commands/` | CLI subcommands: doctor, search, mcp, fetch, providers | [commands.md](commands.md) |
