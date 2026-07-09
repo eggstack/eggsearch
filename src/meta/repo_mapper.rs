@@ -349,7 +349,7 @@ pub fn populate_from_local_checkout(
                 });
                 let summary = RepoPathSummary {
                     path: rel.clone(),
-                    label: format!("{:?}", dir_kind),
+                    label: format!("{dir_kind:?}"),
                     entry_count: None,
                 };
                 let suppressed_ci = matches!(dir_kind, ImportantDirKind::CiConfig) && !include_ci;
