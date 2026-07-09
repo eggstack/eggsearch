@@ -20,3 +20,6 @@ Thumbs.db
 # `test_struct` was a Mach-O binary accidentally committed at the
 # repo root. It is not a project fixture; do not re-introduce it.
 /test_struct
+
+# opencode
+.opencode/node_modules/
