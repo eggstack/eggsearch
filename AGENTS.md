@@ -6,7 +6,7 @@ eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for 
 
 ## Build & Verification
 
-All commands from project root. **Run `make check` to replicate the full CI suite locally.**
+All commands from project root. CI pins **Rust 1.88** (`rust-version = "1.88"` in Cargo.toml). **Run `make check` to replicate the full CI suite locally.**
 
 ```bash
 # Full CI gate (fmt + clippy + all tests + schema-corpus + docs + publish-check)
@@ -48,7 +48,6 @@ docs/
   tool-matrix.md   # compact tool reference table
   release.md       # authoritative release process and pre-release command sequence
   release-checklist.md # short operational checklist (links to release.md)
-.skills/           # agent skill files for development, MCP, release, architecture
 plans/             # roadmap and phase documentation (historical)
 ```
 
@@ -98,6 +97,7 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/docs_config_snippets.rs` | None | TOML snippet validation against AppConfig |
 | `tests/docs_provider_inventory.rs` | None | Provider ID validation against KNOWN_PROVIDER_IDS |
 | `tests/docs_tool_names.rs` | None | Tool name validation against MCP tools |
+| `tests/docs_safety_vocabulary.rs` | None | Safety vocabulary validation |
 | `tests/config_validation.rs` | None | Config deserialization, validation, and provider resolution |
 
 ### Running specific suites
