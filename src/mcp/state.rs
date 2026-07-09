@@ -238,11 +238,9 @@ impl ServerState {
         }
 
         let roots = backend.roots();
-        let local_config = crate::core::local::LocalConfig {
-            enabled: true,
-            roots: roots.iter().map(|(_, p)| p.clone()).collect(),
-            ..Default::default()
-        };
+        let mut local_config = backend.config().clone();
+        local_config.enabled = true;
+        local_config.roots = roots.iter().map(|(_, p)| p.clone()).collect();
         let inventory = discover_local_repos(&local_config, 2);
 
         if let Ok(mut cache) = self.local_inventory_cache.lock() {

@@ -1331,6 +1331,11 @@ pub fn run_provider_status(
         let backend_enabled = state.local_backend.is_some();
         desc.enabled = backend_enabled;
         desc.configured = backend_enabled;
+        if backend_enabled {
+            desc.routable = true;
+            desc.skip_reason = None;
+            desc.skip_code = None;
+        }
     }
 
     let local_enabled = state.local_backend.is_some();

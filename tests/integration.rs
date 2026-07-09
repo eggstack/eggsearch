@@ -10998,6 +10998,18 @@ fn provider_status_local_workspace_enabled_when_configured() {
         .expect("local_workspace should be listed");
     assert_eq!(local["enabled"], true);
     assert_eq!(local["configured"], true);
+    assert_eq!(
+        local["routable"], true,
+        "local_workspace should be routable when backend is enabled: {local}"
+    );
+    assert!(
+        local["skip_reason"].is_null(),
+        "skip_reason should be cleared when backend is enabled: {local}"
+    );
+    assert!(
+        local["skip_code"].is_null(),
+        "skip_code should be cleared when backend is enabled: {local}"
+    );
 
     let health = v["health"].as_array().expect("health is array");
     let local_health = health
@@ -16024,6 +16036,55 @@ mod security_context_safety {
         state.invalidate_local_inventory_cache();
         let third = state.local_inventory();
         assert_eq!(first.len(), third.len(), "invalidate+reload should match");
+    }
+
+    /// Bug #2 regression: `local_inventory()` must honor the operator's
+    /// `[local]` config (e.g. `include_hidden`, `follow_symlinks`,
+    /// `respect_gitignore`) when discovering repositories, instead of
+    /// always using the default `LocalConfig`.
+    #[tokio::test]
+    async fn server_state_local_inventory_honors_backend_config() {
+        use eggsearch::core::local::LocalConfig;
+        use eggsearch::meta::local_backend::LocalWorkspaceBackend;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let hidden_repo = dir.path().join(".hidden_repo");
+        std::fs::create_dir_all(&hidden_repo).expect("hidden dir");
+        std::process::Command::new("git")
+            .arg("init")
+            .arg(&hidden_repo)
+            .output()
+            .expect("git init hidden");
+
+        let mut cfg = test_cfg();
+        cfg.local = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            include_hidden: true,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(cfg.local.clone()).expect("backend");
+
+        let state = Arc::new(ServerState {
+            config: Arc::new(cfg),
+            adapter: Arc::new(MetadataSearchAdapter::from_engines(
+                mock_engines(vec![]),
+                Duration::from_secs(5),
+            )),
+            fetch_client: None,
+            kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
+                reqwest::Client::new(),
+            )),
+            local_backend: Some(Arc::new(backend)),
+            local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
+        });
+
+        let inventory = state.local_inventory();
+        let names: Vec<&str> = inventory.iter().map(|r| r.root_name.as_str()).collect();
+        assert!(
+            names.contains(&".hidden_repo"),
+            "include_hidden=true should surface hidden repo, got {names:?}"
+        );
     }
 }
 
