@@ -75,3 +75,14 @@ MCP over stdio only. Server instructions in `EGGSEARCH_INSTRUCTIONS` constant in
 - `docs/architecture/codegg-contract.md` — deterministic IDs, warnings, trust model, schema stability
 - `docs/agent-workflows.md` — tool call sequences and workflow recipes
 - `docs/tool-matrix.md` — compact tool reference table
+
+## Hardening (Phase 2)
+
+Property-based testing and adversarial corpus validation cover the most security- and reliability-sensitive pure functions:
+
+- **Sanitize module** (`tests/property_sanitize.rs`): strip_control_chars safety, idempotency, bound_text invariants, scan_injection_markers stability, frame structure
+- **Identity module** (`tests/property_identity.rs`, `property_identity2.rs`, `property_identity3.rs`): deterministic IDs, correct prefixes/lengths, URL canonicalization idempotency, cross-type prefix uniqueness
+- **Fetch limits** (`tests/property_fetch_limits.rs`): URL scheme/host/policy validation
+- **Adversarial corpus** (`tests/corpus/adversarial/`): malformed HTML, structured text, URL edge cases, sanitize edge cases, identity edge cases
+
+Run all hardening tests with `make hardening`. Property tests use `proptest` (dev-dependency only, not in runtime graph).

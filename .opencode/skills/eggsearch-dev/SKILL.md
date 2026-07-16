@@ -20,6 +20,11 @@ cargo test --locked --features mock
 cargo test --locked --features pdf
 cargo build --release
 cargo publish --dry-run --locked
+
+# Hardening tests (property tests + adversarial corpus)
+make hardening
+cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits
+cargo test --locked --all-features --test adversarial_corpus
 ```
 
 **Critical:** Integration/corpus tests require `--features mock`. Running `cargo test` without features misses most integration tests. CI runs 4 feature combos: `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`.
@@ -56,6 +61,8 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
+- **Property tests** in `tests/property_*.rs` for pure functions using `proptest`
+- **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs
 
 ## Key Conventions
 

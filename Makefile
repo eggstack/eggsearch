@@ -1,7 +1,7 @@
-.PHONY: check test clippy fmt doc schema-corpus docs-tests publish-check live-smoke release-build
+.PHONY: check test clippy fmt doc schema-corpus docs-tests publish-check live-smoke release-build hardening
 
 # Full offline quality gate (all CI checks)
-check: fmt clippy test-all test-no-default test-mock test-pdf schema-corpus docs-tests release-build docs publish-check
+check: fmt clippy test-all test-no-default test-mock test-pdf hardening schema-corpus docs-tests release-build docs publish-check
 
 # Format check
 fmt:
@@ -26,6 +26,10 @@ test-mock:
 # PDF feature tests
 test-pdf:
 	cargo test --locked --features pdf
+
+# Property tests and adversarial corpus validation
+hardening:
+	cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test adversarial_corpus
 
 # Schema/fixture corpus tests (all new contract tests)
 schema-corpus:

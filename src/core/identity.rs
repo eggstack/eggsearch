@@ -174,14 +174,14 @@ pub fn canonicalize_url(url: &str) -> String {
     // re-encode with consistent casing. Query params are left as-is.
     let path_query_frag = normalize_percent_encoding(path_query_frag);
 
-    // Strip trailing slash (but not for bare root)
-    let path_query_frag = if path_query_frag.ends_with('/')
-        && path_query_frag.len() > 1
-        && !path_query_frag.starts_with("/?")
-    {
-        path_query_frag[..path_query_frag.len() - 1].to_string()
-    } else {
-        path_query_frag
+    // Strip trailing slashes (but not for bare root "/")
+    let path_query_frag = {
+        let trimmed = path_query_frag.trim_end_matches('/');
+        if trimmed.is_empty() || trimmed == "?" {
+            "/".to_string()
+        } else {
+            trimmed.to_string()
+        }
     };
 
     format!("{scheme}://{host_part}{path_query_frag}")

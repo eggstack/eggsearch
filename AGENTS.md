@@ -69,6 +69,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
 | **publish-check** | `cargo publish --dry-run --locked` |
+| **hardening** | Property tests (sanitize, identity, fetch limits) and adversarial corpus validation |
 | **docs** | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
 ## Feature Flags
@@ -103,6 +104,13 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/docs_tool_names.rs` | None | Tool name validation against MCP tools |
 | `tests/docs_safety_vocabulary.rs` | None | Safety vocabulary validation |
 | `tests/config_validation.rs` | None | Config deserialization, validation, and provider resolution |
+| `tests/property_sanitize.rs` | None | Property tests for sanitize module |
+| `tests/property_identity.rs` | None | Property tests for identity module (source_id, canonicalize_url) |
+| `tests/property_identity2.rs` | None | Property tests for identity module (fetch, suggested, batch, doc IDs) |
+| `tests/property_identity3.rs` | None | Property tests for identity module (chunk, code_span, locator IDs) |
+| `tests/property_fetch_limits.rs` | None | Property tests for fetch URL validation |
+| `tests/adversarial_corpus.rs` | None | Adversarial corpus structural validation |
+| `tests/corpus/adversarial/*.json` | None | Malformed/edge-case input corpora |
 
 ### Running specific suites
 
@@ -113,6 +121,9 @@ cargo test --locked --all-features --test security_applicability_regression --te
 make schema-corpus                                         # all contract tests
 make docs-tests                                            # documentation contract tests
 cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
+cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits  # property tests
+cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation
+make hardening                                              # all hardening tests
 ```
 
 ### Adding tests
@@ -122,6 +133,8 @@ cargo test --locked --all-features --test docs_config_snippets --test docs_provi
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
+- **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits) using `proptest`
+- **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs; validate structure in `tests/adversarial_corpus.rs`
 
 ## Code Conventions
 
