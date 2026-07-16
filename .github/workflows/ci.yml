@@ -86,7 +86,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
-      - run: cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+      - run: cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
 
   fmt:
     name: fmt

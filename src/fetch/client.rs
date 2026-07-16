@@ -1812,6 +1812,18 @@ mod tests {
     }
 
     #[test]
+    fn append_bounded_honest_content_length_larger_than_cap() {
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, b"1234567890", 3);
+        assert!(truncated);
+        assert_eq!(buf, b"123");
+        assert!(buf.len() <= 3);
+        let truncated2 = append_bounded(&mut buf, b"more data", 3);
+        assert!(truncated2);
+        assert_eq!(buf.len(), 3);
+    }
+
+    #[test]
     fn append_bounded_zero_budget_no_crash() {
         let mut buf = Vec::new();
         let truncated = append_bounded(&mut buf, b"hello", 0);

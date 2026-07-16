@@ -74,7 +74,7 @@ workflow defines; do not weaken or remove them.
 | `clippy` | `cargo clippy --all-targets --all-features -- -D warnings`. |
 | `fmt` | `cargo fmt --check`. |
 | `schema-corpus` | The six regression corpus test binaries. |
-| `docs-contract` | The three documentation contract tests. |
+| `docs-contract` | The four documentation contract tests. |
 | `release-build` | `cargo build --release` to confirm the release artifact compiles. |
 | `publish-check` | `cargo publish --dry-run --locked` to confirm packaging. |
 | `docs` | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps`. |
