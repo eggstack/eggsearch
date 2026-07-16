@@ -7,6 +7,138 @@ use url::Url;
 
 use super::types::FetchError;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AddressClass {
+    Loopback,
+    Private,
+    LinkLocal,
+    CarrierGradeNat,
+    Documentation,
+    Multicast,
+    Reserved,
+    Public,
+}
+
+fn classify_ipv4(v4: Ipv4Addr) -> AddressClass {
+    if v4.is_loopback() {
+        return AddressClass::Loopback;
+    }
+    if v4.is_link_local() {
+        return AddressClass::LinkLocal;
+    }
+    if v4.is_unspecified() {
+        return AddressClass::Reserved;
+    }
+    let o = v4.octets();
+    let octet0 = o[0];
+    if octet0 == 0 {
+        return AddressClass::Reserved;
+    }
+    if octet0 == 10 {
+        return AddressClass::Private;
+    }
+    if octet0 == 100 && (o[1] & 0b1100_0000) == 0b0100_0000 {
+        return AddressClass::CarrierGradeNat;
+    }
+    if octet0 == 127 {
+        return AddressClass::Loopback;
+    }
+    if octet0 == 169 && o[1] == 254 {
+        return AddressClass::LinkLocal;
+    }
+    if octet0 == 172 && (o[1] & 0b1111_0000) == 16 {
+        return AddressClass::Private;
+    }
+    if octet0 == 192 && o[1] == 0 && o[2] == 0 {
+        return AddressClass::Reserved;
+    }
+    if octet0 == 192 && o[1] == 0 && o[2] == 2 {
+        return AddressClass::Documentation;
+    }
+    if octet0 == 192 && o[1] == 88 && o[2] == 99 {
+        return AddressClass::Reserved;
+    }
+    if octet0 == 192 && o[1] == 168 {
+        return AddressClass::Private;
+    }
+    if octet0 == 198 && (o[1] & 0b1111_1110) == 18 {
+        return AddressClass::Reserved;
+    }
+    if octet0 == 198 && o[1] == 51 && o[2] == 100 {
+        return AddressClass::Documentation;
+    }
+    if octet0 == 203 && o[1] == 0 && o[2] == 113 {
+        return AddressClass::Documentation;
+    }
+    if (224..=239).contains(&octet0) {
+        return AddressClass::Multicast;
+    }
+    if octet0 >= 240 {
+        return AddressClass::Reserved;
+    }
+    AddressClass::Public
+}
+
+fn classify_ipv6(v6: Ipv6Addr) -> AddressClass {
+    if v6.is_loopback() {
+        return AddressClass::Loopback;
+    }
+    if v6.is_unspecified() {
+        return AddressClass::Reserved;
+    }
+    if v6.is_multicast() {
+        return AddressClass::Multicast;
+    }
+    let seg0 = v6.segments()[0];
+    if (seg0 & 0xfe00) == 0xfc00 {
+        return AddressClass::Private;
+    }
+    if (seg0 & 0xffc0) == 0xfe80 {
+        return AddressClass::LinkLocal;
+    }
+    if let Some(v4) = ipv4_mapped_from_v6(v6) {
+        return classify_ipv4(v4);
+    }
+    let seg1 = v6.segments()[1];
+    if seg0 == 0x2001 && seg1 == 0x0db8 {
+        return AddressClass::Documentation;
+    }
+    if seg0 == 0x2001 && seg1 == 0x0002 {
+        return AddressClass::Reserved;
+    }
+    if seg0 == 0x2001 && seg1 == 0x0000 {
+        return AddressClass::Reserved;
+    }
+    if seg0 == 0x2002 {
+        return AddressClass::Reserved;
+    }
+    AddressClass::Public
+}
+
+pub(crate) fn classify_ip(ip: IpAddr) -> AddressClass {
+    match ip {
+        IpAddr::V4(v4) => classify_ipv4(v4),
+        IpAddr::V6(v6) => classify_ipv6(v6),
+    }
+}
+
+fn is_allowed_by_policy(
+    class: AddressClass,
+    allow_localhost: bool,
+    allow_private_network: bool,
+) -> bool {
+    match class {
+        AddressClass::Public => true,
+        AddressClass::Loopback => allow_localhost,
+        AddressClass::Private
+        | AddressClass::LinkLocal
+        | AddressClass::CarrierGradeNat
+        | AddressClass::Documentation
+        | AddressClass::Multicast
+        | AddressClass::Reserved => allow_private_network,
+    }
+}
+
 /// Limits for a fetch operation.
 #[derive(Clone, Debug)]
 pub struct FetchLimits {
@@ -87,50 +219,37 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
         return Err(FetchError::UrlTooLong(url_str.len(), limits.max_url_len));
     }
 
-    if !limits.allow_localhost {
-        if let Some(host) = url.host_str() {
-            let host_lower = host.to_lowercase();
-            if host_lower == "localhost"
-                || host_lower == "127.0.0.1"
-                || host_lower == "::1"
-                || host_lower.starts_with("0.0.0.0")
-            {
+    if let Some(host_str) = url.host_str() {
+        let host_lower = host_str.to_lowercase();
+        if host_lower == "localhost" {
+            if !limits.allow_localhost {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "localhost access is disabled: {host}"
+                    "localhost access is disabled: {host_str}"
                 )));
             }
-        }
-    }
-
-    if !limits.allow_private_network {
-        if let Some(host_str) = url.host_str() {
-            if let Ok(ip) = IpAddr::from_str(host_str) {
-                if ip.is_loopback() {
+        } else {
+            let ip_str = host_str
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(host_str);
+            if let Ok(ip) = IpAddr::from_str(ip_str) {
+                let class = classify_ip(ip);
+                if !is_allowed_by_policy(
+                    class,
+                    limits.allow_localhost,
+                    limits.allow_private_network,
+                ) {
                     return Err(FetchError::PrivateNetworkBlocked(format!(
-                        "private IP access is disabled: {ip}"
+                        "address not allowed by policy: {ip}"
                     )));
                 }
-                if let std::net::IpAddr::V4(ipv4) = ip {
-                    if ipv4.is_private() {
-                        return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {ip}"
-                        )));
-                    }
-                }
-                if let std::net::IpAddr::V6(ipv6) = ip {
-                    if is_blocked_v6(ipv6) {
-                        return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {ip}"
-                        )));
-                    }
-                }
-            }
-            if host_str.ends_with(".internal")
-                || host_str.ends_with(".private")
-                || host_str.ends_with(".local")
-                || host_str.contains(".lan.")
-                || host_str.starts_with("192.168.")
-                || host_str.starts_with("10.")
+            } else if (host_lower.ends_with(".internal")
+                || host_lower.ends_with(".private")
+                || host_lower.ends_with(".local")
+                || host_lower.contains(".lan.")
+                || host_lower.starts_with("192.168.")
+                || host_lower.starts_with("10."))
+                && !limits.allow_private_network
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
                     "private network access is disabled: {host_str}"
@@ -185,50 +304,37 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
     }
 
     // 3. Localhost / literal private-IP checks
-    if !limits.allow_localhost {
-        if let Some(host) = url.host_str() {
-            let host_lower = host.to_lowercase();
-            if host_lower == "localhost"
-                || host_lower == "127.0.0.1"
-                || host_lower == "::1"
-                || host_lower.starts_with("0.0.0.0")
-            {
+    if let Some(host_str) = url.host_str() {
+        let host_lower = host_str.to_lowercase();
+        if host_lower == "localhost" {
+            if !limits.allow_localhost {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "localhost access is disabled: {host}"
+                    "localhost access is disabled: {host_str}"
                 )));
             }
-        }
-    }
-
-    if !limits.allow_private_network {
-        if let Some(host_str) = url.host_str() {
-            if let Ok(ip) = IpAddr::from_str(host_str) {
-                if ip.is_loopback() {
+        } else {
+            let ip_str = host_str
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(host_str);
+            if let Ok(ip) = IpAddr::from_str(ip_str) {
+                let class = classify_ip(ip);
+                if !is_allowed_by_policy(
+                    class,
+                    limits.allow_localhost,
+                    limits.allow_private_network,
+                ) {
                     return Err(FetchError::PrivateNetworkBlocked(format!(
-                        "private IP access is disabled: {ip}"
+                        "address not allowed by policy: {ip}"
                     )));
                 }
-                if let std::net::IpAddr::V4(ipv4) = ip {
-                    if ipv4.is_private() {
-                        return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {ip}"
-                        )));
-                    }
-                }
-                if let std::net::IpAddr::V6(ipv6) = ip {
-                    if is_blocked_v6(ipv6) {
-                        return Err(FetchError::PrivateNetworkBlocked(format!(
-                            "private IP access is disabled: {ip}"
-                        )));
-                    }
-                }
-            }
-            if host_str.ends_with(".internal")
-                || host_str.ends_with(".private")
-                || host_str.ends_with(".local")
-                || host_str.contains(".lan.")
-                || host_str.starts_with("192.168.")
-                || host_str.starts_with("10.")
+            } else if (host_lower.ends_with(".internal")
+                || host_lower.ends_with(".private")
+                || host_lower.ends_with(".local")
+                || host_lower.contains(".lan.")
+                || host_lower.starts_with("192.168.")
+                || host_lower.starts_with("10."))
+                && !limits.allow_private_network
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
                     "private network access is disabled: {host_str}"
@@ -238,10 +344,6 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
     }
 
     // 4. DNS resolution + IP-range validation
-    if limits.allow_private_network && limits.allow_localhost {
-        return Ok(None);
-    }
-
     let host = match url.host_str() {
         Some(h) if !h.is_empty() => h.to_string(),
         _ => return Ok(None),
@@ -281,80 +383,9 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
     Ok(Some(addrs))
 }
 
-/// Returns true if the given resolved socket address falls into a
-/// network range that the operator has disabled.
 fn is_blocked_address(addr: SocketAddr, limits: &FetchLimits) -> bool {
-    let ip = addr.ip();
-
-    if !limits.allow_localhost && ip.is_loopback() {
-        return true;
-    }
-
-    if limits.allow_private_network {
-        return false;
-    }
-
-    match ip {
-        IpAddr::V4(v4) => is_blocked_v4(v4),
-        IpAddr::V6(v6) => is_blocked_v6(v6),
-    }
-}
-
-fn is_blocked_v4(v4: Ipv4Addr) -> bool {
-    let o = v4.octets();
-    let octet0 = o[0];
-
-    v4.is_loopback()
-        || v4.is_link_local()
-        || v4.is_unspecified()
-        || octet0 == 0
-        || octet0 == 10
-        || (octet0 == 100 && (o[1] & 0b1100_0000) == 0b0100_0000)
-        || octet0 == 127
-        || (octet0 == 169 && o[1] == 254)
-        || (octet0 == 172 && (o[1] & 0b1111_0000) == 16)
-        || (octet0 == 192 && o[1] == 0 && o[2] == 0)
-        || (octet0 == 192 && o[1] == 0 && o[2] == 2)
-        || (octet0 == 192 && o[1] == 88 && o[2] == 99)
-        || (octet0 == 192 && o[1] == 168)
-        || (octet0 == 198 && (o[1] & 0b1111_1110) == 18)
-        || (octet0 == 198 && o[1] == 51 && o[2] == 100)
-        || (octet0 == 203 && o[1] == 0 && o[2] == 113)
-        || (224..=239).contains(&octet0)
-        || octet0 >= 240
-}
-
-fn is_blocked_v6(v6: Ipv6Addr) -> bool {
-    if v6.is_loopback() || v6.is_unspecified() {
-        return true;
-    }
-    let seg0 = v6.segments()[0];
-    if (seg0 & 0xfe00) == 0xfc00 {
-        return true;
-    }
-    if (seg0 & 0xffc0) == 0xfe80 {
-        return true;
-    }
-    if let Some(v4) = ipv4_mapped_from_v6(v6) {
-        return is_blocked_v4(v4);
-    }
-    if v6.is_multicast() {
-        return true;
-    }
-    let seg1 = v6.segments()[1];
-    if seg0 == 0x2001 && seg1 == 0x0db8 {
-        return true;
-    }
-    if seg0 == 0x2001 && seg1 == 0x0002 {
-        return true;
-    }
-    if seg0 == 0x2001 && seg1 == 0x0000 {
-        return true;
-    }
-    if seg0 == 0x2002 {
-        return true;
-    }
-    false
+    let class = classify_ip(addr.ip());
+    !is_allowed_by_policy(class, limits.allow_localhost, limits.allow_private_network)
 }
 
 fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
@@ -418,10 +449,6 @@ mod tests {
 
     #[tokio::test]
     async fn validate_fetch_target_allows_when_fully_open() {
-        // When both flags grant access, no DNS work is done and any
-        // URL (even an IP literal that would normally be blocked) is
-        // allowed. We use a syntactically-valid IP literal to make
-        // sure the fast path returns Ok without resolving.
         let limits = FetchLimits {
             allow_private_network: true,
             allow_localhost: true,
@@ -433,8 +460,6 @@ mod tests {
 
     #[tokio::test]
     async fn validate_fetch_target_rejects_loopback_literal() {
-        // 127.0.0.1 is a literal; to_socket_addrs should yield a
-        // loopback address that is_blocked_address catches.
         let limits = FetchLimits::default();
         let url = Url::parse("http://127.0.0.1:8080/").unwrap();
         let result = validate_fetch_target(&url, &limits).await;
@@ -469,7 +494,6 @@ mod tests {
     #[tokio::test]
     async fn validate_fetch_target_allows_embedded_credentials_when_no_password() {
         let limits = FetchLimits::default();
-        // username without password is still embedded credentials
         let url = Url::parse("http://user@example.com/").unwrap();
         let result = validate_fetch_target(&url, &limits).await;
         assert!(
@@ -480,7 +504,6 @@ mod tests {
 
     #[tokio::test]
     async fn validate_fetch_target_handles_v6_ula_block() {
-        // Pure unit test: bypass the resolver and check the bit logic.
         let limits = FetchLimits::default();
         let ula: SocketAddr = "[fc00::1]:80".parse().unwrap();
         assert!(is_blocked_address(ula, &limits));
@@ -514,24 +537,570 @@ mod tests {
     }
 
     #[test]
-    fn is_blocked_v4_192_0_0_24_exact() {
-        let blocked = [
-            Ipv4Addr::new(192, 0, 0, 0),
-            Ipv4Addr::new(192, 0, 0, 1),
-            Ipv4Addr::new(192, 0, 0, 255),
-            Ipv4Addr::new(192, 0, 2, 1),
-        ];
-        for addr in blocked {
-            assert!(is_blocked_v4(addr), "{addr} should be blocked");
-        }
+    fn classify_ip_loopback_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            AddressClass::Loopback
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(127, 255, 255, 255))),
+            AddressClass::Loopback
+        );
+    }
 
-        let allowed = [
-            Ipv4Addr::new(192, 0, 3, 0),
-            Ipv4Addr::new(192, 0, 3, 1),
-            Ipv4Addr::new(192, 0, 255, 1),
-        ];
-        for addr in allowed {
-            assert!(!is_blocked_v4(addr), "{addr} should be allowed");
-        }
+    #[test]
+    fn classify_ip_loopback_v6() {
+        assert_eq!(
+            classify_ip(IpAddr::V6("::1".parse().unwrap())),
+            AddressClass::Loopback
+        );
+    }
+
+    #[test]
+    fn classify_ip_private_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
+            AddressClass::Private
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))),
+            AddressClass::Private
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
+            AddressClass::Private
+        );
+    }
+
+    #[test]
+    fn classify_ip_link_local_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(169, 254, 0, 1))),
+            AddressClass::LinkLocal
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))),
+            AddressClass::LinkLocal
+        );
+    }
+
+    #[test]
+    fn classify_ip_cgnat() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))),
+            AddressClass::CarrierGradeNat
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(100, 127, 255, 255))),
+            AddressClass::CarrierGradeNat
+        );
+    }
+
+    #[test]
+    fn classify_ip_documentation_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            AddressClass::Documentation
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))),
+            AddressClass::Documentation
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))),
+            AddressClass::Documentation
+        );
+    }
+
+    #[test]
+    fn classify_ip_public_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
+            AddressClass::Public
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))),
+            AddressClass::Public
+        );
+    }
+
+    #[test]
+    fn classify_ip_multicast_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1))),
+            AddressClass::Multicast
+        );
+    }
+
+    #[test]
+    fn classify_ip_v6_ula() {
+        assert_eq!(
+            classify_ip(IpAddr::V6("fc00::1".parse().unwrap())),
+            AddressClass::Private
+        );
+    }
+
+    #[test]
+    fn classify_ip_v6_link_local() {
+        assert_eq!(
+            classify_ip(IpAddr::V6("fe80::1".parse().unwrap())),
+            AddressClass::LinkLocal
+        );
+    }
+
+    #[test]
+    fn classify_ip_v6_documentation() {
+        assert_eq!(
+            classify_ip(IpAddr::V6("2001:db8::1".parse().unwrap())),
+            AddressClass::Documentation
+        );
+    }
+
+    #[test]
+    fn classify_ip_v6_multicast() {
+        assert_eq!(
+            classify_ip(IpAddr::V6("ff02::1".parse().unwrap())),
+            AddressClass::Multicast
+        );
+    }
+
+    #[test]
+    fn classify_ip_v6_public() {
+        assert_eq!(
+            classify_ip(IpAddr::V6("2607:f8b0:4004:800::200e".parse().unwrap())),
+            AddressClass::Public
+        );
+    }
+
+    #[test]
+    fn classify_ip_v4_mapped_v6() {
+        let v6: Ipv6Addr = "::ffff:10.0.0.1".parse().unwrap();
+        assert_eq!(classify_ip(IpAddr::V6(v6)), AddressClass::Private);
+    }
+
+    #[test]
+    fn classify_ip_reserved_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            AddressClass::Reserved
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))),
+            AddressClass::Reserved
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V4(Ipv4Addr::new(192, 0, 0, 1))),
+            AddressClass::Reserved
+        );
+    }
+
+    #[test]
+    fn is_allowed_by_policy_public_always_allowed() {
+        assert!(is_allowed_by_policy(AddressClass::Public, false, false));
+        assert!(is_allowed_by_policy(AddressClass::Public, true, true));
+    }
+
+    #[test]
+    fn is_allowed_by_policy_loopback_only_by_localhost_flag() {
+        assert!(is_allowed_by_policy(AddressClass::Loopback, true, false));
+        assert!(!is_allowed_by_policy(AddressClass::Loopback, false, false));
+        assert!(is_allowed_by_policy(AddressClass::Loopback, true, true));
+        assert!(!is_allowed_by_policy(AddressClass::Loopback, false, true));
+    }
+
+    #[test]
+    fn is_allowed_by_policy_private_only_by_private_network_flag() {
+        assert!(is_allowed_by_policy(AddressClass::Private, false, true));
+        assert!(!is_allowed_by_policy(AddressClass::Private, false, false));
+        assert!(is_allowed_by_policy(AddressClass::Private, true, true));
+        assert!(!is_allowed_by_policy(AddressClass::Private, true, false));
+    }
+
+    #[test]
+    fn validate_url_loopback_all_four_combinations() {
+        let url = "http://127.0.0.1:8080/";
+
+        let r00 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r00.is_err(),
+            "localhost=false,private=false should block loopback"
+        );
+
+        let r01 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r01.is_err(),
+            "localhost=false,private=true should still block loopback"
+        );
+
+        let r10 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r10.is_ok(),
+            "localhost=true,private=false should allow loopback"
+        );
+
+        let r11 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r11.is_ok(),
+            "localhost=true,private=true should allow loopback"
+        );
+    }
+
+    #[test]
+    fn validate_url_private_all_four_combinations() {
+        let url = "http://10.0.0.1:8080/";
+
+        let r00 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r00.is_err(),
+            "localhost=false,private=false should block private"
+        );
+
+        let r01 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r01.is_ok(),
+            "localhost=false,private=true should allow private"
+        );
+
+        let r10 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r10.is_err(),
+            "localhost=true,private=false should block private"
+        );
+
+        let r11 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            r11.is_ok(),
+            "localhost=true,private=true should allow private"
+        );
+    }
+
+    #[test]
+    fn validate_url_192_168_all_four_combinations() {
+        let url = "http://192.168.1.1:8080/";
+
+        let r00 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(r00.is_err());
+
+        let r01 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(r01.is_ok());
+
+        let r10 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(r10.is_err());
+
+        let r11 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(r11.is_ok());
+    }
+
+    #[test]
+    fn validate_url_link_local_all_four_combinations() {
+        let url = "http://169.254.169.254:80/";
+
+        let r00 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(r00.is_err());
+
+        let r01 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(r01.is_ok());
+
+        let r10 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(r10.is_err());
+
+        let r11 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(r11.is_ok());
+    }
+
+    #[test]
+    fn validate_url_public_always_allowed() {
+        let url = "http://8.8.8.8:80/";
+
+        let r00 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(r00.is_ok(), "public IP should always be allowed");
+
+        let r11 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(r11.is_ok(), "public IP should always be allowed");
+    }
+
+    #[test]
+    fn validate_url_v6_loopback_all_four_combinations() {
+        let url = "http://[::1]:8080/";
+
+        let r00 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(r00.is_err());
+
+        let r01 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: false,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(r01.is_err());
+
+        let r10 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: false,
+                ..Default::default()
+            },
+        );
+        assert!(r10.is_ok());
+
+        let r11 = validate_url(
+            url,
+            &FetchLimits {
+                allow_localhost: true,
+                allow_private_network: true,
+                ..Default::default()
+            },
+        );
+        assert!(r11.is_ok());
+    }
+
+    #[test]
+    fn is_blocked_address_all_four_combinations() {
+        let loopback: SocketAddr = "127.0.0.1:80".parse().unwrap();
+        let private: SocketAddr = "10.0.0.1:80".parse().unwrap();
+        let link_local: SocketAddr = "169.254.169.254:80".parse().unwrap();
+        let public: SocketAddr = "8.8.8.8:80".parse().unwrap();
+
+        let r00 = FetchLimits {
+            allow_localhost: false,
+            allow_private_network: false,
+            ..Default::default()
+        };
+        assert!(is_blocked_address(loopback, &r00));
+        assert!(is_blocked_address(private, &r00));
+        assert!(is_blocked_address(link_local, &r00));
+        assert!(!is_blocked_address(public, &r00));
+
+        let r01 = FetchLimits {
+            allow_localhost: false,
+            allow_private_network: true,
+            ..Default::default()
+        };
+        assert!(is_blocked_address(loopback, &r01));
+        assert!(!is_blocked_address(private, &r01));
+        assert!(!is_blocked_address(link_local, &r01));
+        assert!(!is_blocked_address(public, &r01));
+
+        let r10 = FetchLimits {
+            allow_localhost: true,
+            allow_private_network: false,
+            ..Default::default()
+        };
+        assert!(!is_blocked_address(loopback, &r10));
+        assert!(is_blocked_address(private, &r10));
+        assert!(is_blocked_address(link_local, &r10));
+        assert!(!is_blocked_address(public, &r10));
+
+        let r11 = FetchLimits {
+            allow_localhost: true,
+            allow_private_network: true,
+            ..Default::default()
+        };
+        assert!(!is_blocked_address(loopback, &r11));
+        assert!(!is_blocked_address(private, &r11));
+        assert!(!is_blocked_address(link_local, &r11));
+        assert!(!is_blocked_address(public, &r11));
+    }
+
+    #[test]
+    fn is_blocked_address_v6_all_four_combinations() {
+        let loopback: SocketAddr = "[::1]:80".parse().unwrap();
+        let ula: SocketAddr = "[fc00::1]:80".parse().unwrap();
+        let link_local: SocketAddr = "[fe80::1]:80".parse().unwrap();
+        let public: SocketAddr = "[2607:f8b0:4004:800::200e]:80".parse().unwrap();
+
+        let r00 = FetchLimits {
+            allow_localhost: false,
+            allow_private_network: false,
+            ..Default::default()
+        };
+        assert!(is_blocked_address(loopback, &r00));
+        assert!(is_blocked_address(ula, &r00));
+        assert!(is_blocked_address(link_local, &r00));
+        assert!(!is_blocked_address(public, &r00));
+
+        let r01 = FetchLimits {
+            allow_localhost: false,
+            allow_private_network: true,
+            ..Default::default()
+        };
+        assert!(is_blocked_address(loopback, &r01));
+        assert!(!is_blocked_address(ula, &r01));
+        assert!(!is_blocked_address(link_local, &r01));
+        assert!(!is_blocked_address(public, &r01));
+
+        let r10 = FetchLimits {
+            allow_localhost: true,
+            allow_private_network: false,
+            ..Default::default()
+        };
+        assert!(!is_blocked_address(loopback, &r10));
+        assert!(is_blocked_address(ula, &r10));
+        assert!(is_blocked_address(link_local, &r10));
+        assert!(!is_blocked_address(public, &r10));
+
+        let r11 = FetchLimits {
+            allow_localhost: true,
+            allow_private_network: true,
+            ..Default::default()
+        };
+        assert!(!is_blocked_address(loopback, &r11));
+        assert!(!is_blocked_address(ula, &r11));
+        assert!(!is_blocked_address(link_local, &r11));
+        assert!(!is_blocked_address(public, &r11));
+    }
+
+    #[test]
+    fn is_blocked_address_v4_mapped_v6_private() {
+        let mapped: SocketAddr = "[::ffff:10.0.0.1]:80".parse().unwrap();
+        let r00 = FetchLimits {
+            allow_localhost: false,
+            allow_private_network: false,
+            ..Default::default()
+        };
+        assert!(is_blocked_address(mapped, &r00));
+
+        let r01 = FetchLimits {
+            allow_localhost: false,
+            allow_private_network: true,
+            ..Default::default()
+        };
+        assert!(!is_blocked_address(mapped, &r01));
     }
 }

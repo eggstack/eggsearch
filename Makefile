@@ -38,7 +38,7 @@ schema-corpus:
 
 # Documentation contract tests
 docs-tests:
-	cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+	cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
 
 # Release build
 release-build:

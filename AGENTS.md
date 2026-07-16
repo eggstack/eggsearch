@@ -65,7 +65,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | **test** | `cargo test --locked` × 4 feature combos |
 | **clippy** | `cargo clippy --all-targets --all-features -- -D warnings` |
 | **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
-| **docs-contract** | 3 documentation contract tests: `docs_config_snippets`, `docs_provider_inventory`, `docs_tool_names` |
+| **docs-contract** | 4 documentation contract tests: `docs_config_snippets`, `docs_provider_inventory`, `docs_tool_names`, `docs_safety_vocabulary` |
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
 | **publish-check** | `cargo publish --dry-run --locked` |

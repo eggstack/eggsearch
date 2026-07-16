@@ -358,22 +358,17 @@ impl FetchClient {
         let mut stream = response.bytes_stream();
         let mut truncated = false;
 
-        // If we peeked at the first chunk for magic-byte detection,
-        // include it in the body before reading the rest.
         if let Some(chunk) = pdf_magic_chunk {
-            body.extend_from_slice(&chunk);
+            truncated = append_bounded(&mut body, &chunk, self.limits.max_bytes);
         }
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
-            if body.len() + chunk.len() > self.limits.max_bytes {
-                let remaining = self.limits.max_bytes.saturating_sub(body.len());
-                if remaining > 0 {
-                    body.extend_from_slice(&chunk[..remaining]);
+        if !truncated {
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
+                truncated = append_bounded(&mut body, &chunk, self.limits.max_bytes);
+                if truncated {
+                    break;
                 }
-                truncated = true;
-                break;
             }
-            body.extend_from_slice(&chunk);
         }
 
         // --- PDF extraction path (early return) ---
@@ -987,6 +982,18 @@ fn sanitize_field(
         }
         (bounded, m)
     }
+}
+
+fn append_bounded(buf: &mut Vec<u8>, data: &[u8], max_bytes: usize) -> bool {
+    let remaining = max_bytes.saturating_sub(buf.len());
+    if data.len() > remaining {
+        if remaining > 0 {
+            buf.extend_from_slice(&data[..remaining]);
+        }
+        return true;
+    }
+    buf.extend_from_slice(data);
+    false
 }
 
 #[cfg(test)]
@@ -1763,5 +1770,60 @@ mod tests {
         assert_eq!(resp.status, 200);
         let doc = resp.document.expect("document should be present");
         assert_eq!(doc.kind, crate::core::document::DocumentKind::Markdown);
+    }
+
+    #[test]
+    fn append_bounded_smaller_than_cap() {
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, b"hello", 100);
+        assert!(!truncated);
+        assert_eq!(buf, b"hello");
+        assert!(buf.len() <= 100);
+    }
+
+    #[test]
+    fn append_bounded_exactly_at_cap() {
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, b"12345", 5);
+        assert!(!truncated);
+        assert_eq!(buf, b"12345");
+        assert!(buf.len() <= 5);
+    }
+
+    #[test]
+    fn append_bounded_larger_than_cap() {
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, b"1234567890", 5);
+        assert!(truncated);
+        assert_eq!(buf, b"12345");
+        assert!(buf.len() <= 5);
+    }
+
+    #[test]
+    fn append_bounded_prefetch_plus_stream_crosses_cap() {
+        let mut buf = Vec::new();
+        let t1 = append_bounded(&mut buf, b"abcde", 7);
+        assert!(!t1);
+        assert_eq!(buf, b"abcde");
+        let t2 = append_bounded(&mut buf, b"fghij", 7);
+        assert!(t2);
+        assert_eq!(buf, b"abcdefg");
+        assert!(buf.len() <= 7);
+    }
+
+    #[test]
+    fn append_bounded_zero_budget_no_crash() {
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, b"hello", 0);
+        assert!(truncated);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn append_bounded_zero_budget_existing_data() {
+        let mut buf = vec![b'a'; 10];
+        let truncated = append_bounded(&mut buf, b"b", 10);
+        assert!(truncated);
+        assert_eq!(buf.len(), 10);
     }
 }

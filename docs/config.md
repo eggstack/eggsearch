@@ -279,7 +279,7 @@ The fetch side is bounded by both byte and character caps. The byte cap is a har
 
 `allow_private_network = true` and `allow_localhost = true` are operator escape hatches. Keep them off for general MCP exposure.
 
-When `allow_private_network = false` (the default), eggsearch blocks fetches to all RFC 1918 private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), carrier-grade NAT (`100.64.0.0/10`), link-local (`169.254.0.0/16`), multicast, reserved, and documentation addresses. Redirect targets are validated against these same ranges. See [safety.md](safety.md#blocked-address-ranges) for the full list.
+When `allow_private_network = false` (the default), eggsearch blocks fetches to all RFC 1918 private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), carrier-grade NAT (`100.64.0.0/10`), link-local (`169.254.0.0/16`), multicast, reserved, and documentation addresses. When `allow_localhost = false` (the default), loopback addresses (`127.0.0.0/8`, `::1`) are blocked independently. The two flags are fully independent. Redirect targets are validated against these same ranges. See [safety.md](safety.md#blocked-address-ranges) for the full policy table.
 
 ## Reserved Live Settings
 

@@ -91,6 +91,8 @@ pub(crate) struct RequestDeadlineStats {
     pub exceeded: bool,
     pub subqueries_skipped: usize,
     pub subqueries_interrupted: usize,
+    pub subqueries_completed: usize,
+    pub subqueries_partially_completed: usize,
 }
 
 /// Output of the parallel dispatch.
@@ -159,8 +161,14 @@ pub(crate) async fn dispatch_parallel(
         all_subquery_ids.insert(job.subquery_id.clone());
     }
 
-    // Track which subqueries have completed (succeeded or failed)
-    let mut completed_subquery_ids = std::collections::HashSet::new();
+    let planned_subquery_counts: HashMap<String, usize> = {
+        let mut counts = HashMap::new();
+        for job in &sorted_jobs {
+            *counts.entry(job.subquery_id.clone()).or_insert(0) += 1;
+        }
+        counts
+    };
+    let mut terminal_subquery_counts: HashMap<String, usize> = HashMap::new();
 
     // JoinSet for in-flight tasks
     let mut join_set: JoinSet<TaskResult> = JoinSet::new();
@@ -295,12 +303,28 @@ pub(crate) async fn dispatch_parallel(
         if remaining.is_zero() {
             deadline.exceeded = true;
 
+            let mut completed: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for sid in &all_subquery_ids {
+                let planned = planned_subquery_counts
+                    .get(sid.as_str())
+                    .copied()
+                    .unwrap_or(0);
+                let terminal = terminal_subquery_counts
+                    .get(sid.as_str())
+                    .copied()
+                    .unwrap_or(0);
+                if planned > 0 && terminal >= planned {
+                    completed.insert(sid);
+                }
+            }
+            deadline.subqueries_completed = completed.len();
+
             // Skipped: subquery IDs from pending queue where no jobs are running
             let mut skipped: std::collections::HashSet<&str> = std::collections::HashSet::new();
             for &idx in &pending_queue {
                 let sid = &sorted_jobs[idx].subquery_id;
                 let running = running_subquery_counts.get(sid).copied().unwrap_or(0);
-                if running == 0 && !completed_subquery_ids.contains(sid) {
+                if running == 0 && !completed.contains(sid.as_str()) {
                     skipped.insert(sid);
                 }
             }
@@ -309,11 +333,20 @@ pub(crate) async fn dispatch_parallel(
             // Interrupted: subquery IDs that had running jobs but didn't complete
             let mut interrupted: std::collections::HashSet<&str> = std::collections::HashSet::new();
             for sid in &all_subquery_ids {
-                if !completed_subquery_ids.contains(sid) && !skipped.contains(sid.as_str()) {
+                if !completed.contains(sid.as_str()) && !skipped.contains(sid.as_str()) {
                     interrupted.insert(sid);
                 }
             }
             deadline.subqueries_interrupted = interrupted.len();
+
+            let mut partially_completed = 0usize;
+            for sid in &interrupted {
+                let terminal = terminal_subquery_counts.get(*sid).copied().unwrap_or(0);
+                if terminal > 0 {
+                    partially_completed += 1;
+                }
+            }
+            deadline.subqueries_partially_completed = partially_completed;
 
             warn!(
                 scope = search_scope,
@@ -340,7 +373,9 @@ pub(crate) async fn dispatch_parallel(
 
                         match tr.result {
                             Ok(results) => {
-                                completed_subquery_ids.insert(tr.subquery_id.clone());
+                                *terminal_subquery_counts
+                                    .entry(tr.subquery_id.clone())
+                                    .or_insert(0) += 1;
                                 collected_results.push(DispatchedResult {
                                     subquery_id: tr.subquery_id,
                                     subquery_order: tr.subquery_order,
@@ -350,7 +385,9 @@ pub(crate) async fn dispatch_parallel(
                                 });
                             }
                             Err(err) => {
-                                completed_subquery_ids.insert(tr.subquery_id.clone());
+                                *terminal_subquery_counts
+                                    .entry(tr.subquery_id.clone())
+                                    .or_insert(0) += 1;
                                 collected_failures.push(DispatchedFailure {
                                     subquery_id: tr.subquery_id,
                                     subquery_order: tr.subquery_order,
@@ -375,12 +412,29 @@ pub(crate) async fn dispatch_parallel(
             Err(_) => {
                 deadline.exceeded = true;
 
+                let mut completed: std::collections::HashSet<&str> =
+                    std::collections::HashSet::new();
+                for sid in &all_subquery_ids {
+                    let planned = planned_subquery_counts
+                        .get(sid.as_str())
+                        .copied()
+                        .unwrap_or(0);
+                    let terminal = terminal_subquery_counts
+                        .get(sid.as_str())
+                        .copied()
+                        .unwrap_or(0);
+                    if planned > 0 && terminal >= planned {
+                        completed.insert(sid);
+                    }
+                }
+                deadline.subqueries_completed = completed.len();
+
                 // Skipped: subquery IDs from pending queue where no jobs are running
                 let mut skipped: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for &idx in &pending_queue {
                     let sid = &sorted_jobs[idx].subquery_id;
                     let running = running_subquery_counts.get(sid).copied().unwrap_or(0);
-                    if running == 0 && !completed_subquery_ids.contains(sid) {
+                    if running == 0 && !completed.contains(sid.as_str()) {
                         skipped.insert(sid);
                     }
                 }
@@ -390,11 +444,20 @@ pub(crate) async fn dispatch_parallel(
                 let mut interrupted: std::collections::HashSet<&str> =
                     std::collections::HashSet::new();
                 for sid in &all_subquery_ids {
-                    if !completed_subquery_ids.contains(sid) && !skipped.contains(sid.as_str()) {
+                    if !completed.contains(sid.as_str()) && !skipped.contains(sid.as_str()) {
                         interrupted.insert(sid);
                     }
                 }
                 deadline.subqueries_interrupted = interrupted.len();
+
+                let mut partially_completed = 0usize;
+                for sid in &interrupted {
+                    let terminal = terminal_subquery_counts.get(*sid).copied().unwrap_or(0);
+                    if terminal > 0 {
+                        partially_completed += 1;
+                    }
+                }
+                deadline.subqueries_partially_completed = partially_completed;
 
                 warn!(
                     scope = search_scope,
@@ -405,6 +468,24 @@ pub(crate) async fn dispatch_parallel(
                 break;
             }
         }
+    }
+
+    if !deadline.exceeded {
+        let mut completed_count = 0usize;
+        for sid in &all_subquery_ids {
+            let planned = planned_subquery_counts
+                .get(sid.as_str())
+                .copied()
+                .unwrap_or(0);
+            let terminal = terminal_subquery_counts
+                .get(sid.as_str())
+                .copied()
+                .unwrap_or(0);
+            if planned > 0 && terminal >= planned {
+                completed_count += 1;
+            }
+        }
+        deadline.subqueries_completed = completed_count;
     }
 
     // Sort results deterministically by (subquery_order, provider_order)
@@ -1470,5 +1551,212 @@ mod tests {
             vec!["high", "mid", "low"],
             "jobs must start in priority order (lowest priority value first)"
         );
+    }
+
+    #[tokio::test]
+    async fn subquery_partial_at_deadline_one_fast_one_slow() {
+        let fast: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("fast", Duration::from_millis(5)));
+        let slow: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("slow", Duration::from_secs(10)));
+
+        let jobs = vec![
+            make_job("sq1", "q1", "fast", Arc::clone(&fast), 0, 0, 0),
+            make_job("sq1", "q1", "slow", Arc::clone(&slow), 0, 0, 1),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(50),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(output.deadline.exceeded);
+        assert_eq!(output.deadline.subqueries_completed, 0);
+        assert_eq!(output.deadline.subqueries_interrupted, 1);
+        assert_eq!(output.deadline.subqueries_partially_completed, 1);
+        assert!(output.raw_results.iter().any(|r| r.0 == "fast"));
+    }
+
+    #[tokio::test]
+    async fn subquery_complete_one_success_one_failure_before_deadline() {
+        let good: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("good", Duration::from_millis(5)));
+        let failing: Arc<dyn SearchEngine> = Arc::new(FailingEngine { name: "fail" });
+
+        let jobs = vec![
+            make_job("sq1", "q1", "good", Arc::clone(&good), 0, 0, 0),
+            make_job("sq1", "q1", "fail", Arc::clone(&failing), 0, 0, 1),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.deadline.subqueries_completed, 1);
+        assert_eq!(output.deadline.subqueries_interrupted, 0);
+        assert_eq!(output.deadline.subqueries_partially_completed, 0);
+        assert_eq!(output.raw_results.len(), 1);
+        assert_eq!(output.raw_failures.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn subquery_partial_one_success_one_timeout_at_deadline() {
+        let good: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("good", Duration::from_millis(5)));
+        let slow: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("slow", Duration::from_secs(10)));
+
+        let jobs = vec![
+            make_job("sq1", "q1", "good", Arc::clone(&good), 0, 0, 0),
+            make_job("sq1", "q1", "slow", Arc::clone(&slow), 0, 0, 1),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(50),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(output.deadline.exceeded);
+        assert_eq!(output.deadline.subqueries_completed, 0);
+        assert_eq!(output.deadline.subqueries_interrupted, 1);
+        assert_eq!(output.deadline.subqueries_partially_completed, 1);
+        assert!(output.raw_results.iter().any(|r| r.0 == "good"));
+    }
+
+    #[tokio::test]
+    async fn subquery_entirely_skipped() {
+        let slow: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("slow", Duration::from_secs(10)));
+
+        let jobs = vec![
+            make_job("sq_running", "q1", "slow", Arc::clone(&slow), 0, 0, 0),
+            make_job("sq_skipped", "q2", "slow", Arc::clone(&slow), 1, 1, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(50),
+            max_concurrent_jobs: 1,
+            max_concurrent_per_provider: 1,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(output.deadline.exceeded);
+        assert_eq!(output.deadline.subqueries_skipped, 1);
+        assert_eq!(output.deadline.subqueries_interrupted, 1);
+        assert_eq!(output.deadline.subqueries_completed, 0);
+    }
+
+    #[tokio::test]
+    async fn subquery_panic_does_not_mark_complete() {
+        struct PanickingEngine;
+
+        impl SearchEngine for PanickingEngine {
+            fn name(&self) -> &'static str {
+                "panic"
+            }
+
+            fn search<'a>(
+                &'a self,
+                _query: &'a str,
+                _max_results: usize,
+                _timeout: Duration,
+            ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    panic!("engine panic");
+                })
+            }
+        }
+
+        let panicking: Arc<dyn SearchEngine> = Arc::new(PanickingEngine);
+        let good: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("good", Duration::from_millis(5)));
+
+        let jobs = vec![
+            make_job("sq1", "q1", "panic", Arc::clone(&panicking), 0, 0, 0),
+            make_job("sq1", "q1", "good", Arc::clone(&good), 0, 0, 1),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.deadline.subqueries_completed, 1);
+        assert_eq!(output.raw_results.len(), 1);
+        assert_eq!(output.raw_failures.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn mixed_complete_and_partial_subqueries() {
+        let fast: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("fast", Duration::from_millis(5)));
+        let slow: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("slow", Duration::from_secs(10)));
+        let failing: Arc<dyn SearchEngine> = Arc::new(FailingEngine { name: "fail" });
+
+        let jobs = vec![
+            make_job("sq_complete", "q1", "fast", Arc::clone(&fast), 0, 0, 0),
+            make_job("sq_complete", "q1", "fail", Arc::clone(&failing), 0, 0, 1),
+            make_job("sq_partial", "q2", "fast", Arc::clone(&fast), 0, 1, 0),
+            make_job("sq_partial", "q2", "slow", Arc::clone(&slow), 0, 1, 1),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_millis(50),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(output.deadline.exceeded);
+        assert_eq!(output.deadline.subqueries_completed, 1);
+        assert_eq!(output.deadline.subqueries_interrupted, 1);
+        assert_eq!(output.deadline.subqueries_partially_completed, 1);
+        assert!(output.raw_results.iter().any(|r| r.0 == "fast"));
+        assert!(output.raw_failures.iter().any(|f| f.0 == "fail"));
+    }
+
+    #[tokio::test]
+    async fn all_subqueries_complete_before_deadline() {
+        let fast: Arc<dyn SearchEngine> =
+            Arc::new(SlowEngine::new("fast", Duration::from_millis(5)));
+
+        let jobs = vec![
+            make_job("sq1", "q1", "fast", Arc::clone(&fast), 0, 0, 0),
+            make_job("sq1", "q1", "fast2", Arc::clone(&fast), 0, 0, 1),
+            make_job("sq2", "q2", "fast", Arc::clone(&fast), 0, 1, 0),
+        ];
+
+        let config = DispatchConfig {
+            candidate_limit: 10,
+            global_timeout: Duration::from_secs(5),
+            max_concurrent_jobs: 8,
+            max_concurrent_per_provider: 2,
+        };
+
+        let output = dispatch_parallel(jobs, config, "test").await;
+        assert!(!output.deadline.exceeded);
+        assert_eq!(output.deadline.subqueries_completed, 2);
+        assert_eq!(output.deadline.subqueries_interrupted, 0);
+        assert_eq!(output.deadline.subqueries_skipped, 0);
+        assert_eq!(output.raw_results.len(), 3);
     }
 }

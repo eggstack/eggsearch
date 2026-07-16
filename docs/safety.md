@@ -22,7 +22,18 @@ For DNS-backed hosts, eggsearch validates the resolved address set and reuses th
 
 ## Blocked Address Ranges
 
-When `allow_private_network = false` (the default), eggsearch blocks fetches to the following IPv4 ranges:
+eggsearch classifies every IP address into one of eight categories: Loopback, Private, LinkLocal, CarrierGradeNat, Documentation, Multicast, Reserved, or Public. Two independent boolean operators control access:
+
+| `allow_localhost` | `allow_private_network` | Loopback | Private / LinkLocal / CGNAT / Documentation / Reserved / Multicast | Public |
+|:-:|:-:|:-:|:-:|:-:|
+| false | false | blocked | blocked | allowed |
+| false | true | blocked | allowed | allowed |
+| true | false | allowed | blocked | allowed |
+| true | true | allowed | allowed | allowed |
+
+`allow_localhost` controls only loopback addresses (127.0.0.0/8, ::1). `allow_private_network` controls all other non-public ranges. The two flags are fully independent — setting one does not affect the other.
+
+IPv4 blocked ranges (when the relevant flag is false):
 
 | Range | RFC | Purpose |
 |-------|-----|---------|
@@ -42,9 +53,7 @@ When `allow_private_network = false` (the default), eggsearch blocks fetches to 
 | `224.0.0.0/4` | RFC 5771 | Multicast |
 | `240.0.0.0/4` | RFC 1112 | Reserved |
 
-When `allow_localhost = false` (the default), loopback addresses are blocked regardless of `allow_private_network`.
-
-IPv6 blocked ranges include: loopback (`::1`), unspecified (`::`), unique-local (`fc00::/7`), link-local (`fe80::/10`), multicast (`ff00::/8`), documentation (`2001:db8::/32`), benchmarking (`2001:2::/48`), discard-only (`2001::/32`), deprecated 6to4 (`2002::/16`), and IPv4-mapped addresses targeting any blocked IPv4 range.
+IPv6 blocked ranges (when the relevant flag is false): loopback (`::1`), unspecified (`::`), unique-local (`fc00::/7`), link-local (`fe80::/10`), multicast (`ff00::/8`), documentation (`2001:db8::/32`), benchmarking (`2001:2::/48`), discard-only (`2001::/32`), deprecated 6to4 (`2002::/16`), and IPv4-mapped addresses targeting any blocked IPv4 range.
 
 Redirect targets are revalidated against these same ranges before being followed.
 
@@ -56,7 +65,9 @@ Local repository fetches use separate path validation. The path checks reject:
 - absolute or prefix paths (cross-platform)
 - parent-directory (`..`) traversal components
 - known binary extensions
-- symlinks when `follow_symlinks = false`
+- skipped directories (`.git`, `target`, `node_modules`, etc.) regardless of `include_hidden`
+- hidden path components when `include_hidden = false`
+- symlinks in any path component when `follow_symlinks = false`
 - paths that escape the configured workspace root
 
 Filenames that merely contain two dots (e.g. `foo..bar.rs`) are accepted.

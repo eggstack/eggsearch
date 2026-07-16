@@ -275,7 +275,7 @@ impl LocalWorkspaceBackend {
                 &mut truncated,
             );
 
-            if timed_out {
+            if timed_out || truncated {
                 break;
             }
         }
@@ -327,9 +327,15 @@ impl LocalWorkspaceBackend {
             }
         };
 
-        for entry in walk_dir.flatten() {
+        let mut entries: Vec<_> = walk_dir.flatten().collect();
+        entries.sort_by_key(|a| a.file_name());
+
+        for entry in entries {
             if start.elapsed() > timeout {
                 *timed_out = true;
+                return;
+            }
+            if *truncated {
                 return;
             }
 
@@ -361,9 +367,6 @@ impl LocalWorkspaceBackend {
                 if SKIP_DIRS.contains(&file_name_str.as_ref()) {
                     continue;
                 }
-                if !config.include_hidden && file_name_str.starts_with('.') {
-                    continue;
-                }
                 Self::walk_dir_recursive(
                     &path,
                     root_path,
@@ -384,6 +387,9 @@ impl LocalWorkspaceBackend {
                     timed_out,
                     truncated,
                 );
+                if *truncated {
+                    return;
+                }
             } else if path.is_file()
                 && Self::consider_file(
                     &path,
@@ -433,9 +439,15 @@ impl LocalWorkspaceBackend {
             Err(_) => return,
         };
 
-        for entry in read_dir.flatten() {
+        let mut entries: Vec<_> = read_dir.flatten().collect();
+        entries.sort_by_key(|a| a.file_name());
+
+        for entry in entries {
             if start.elapsed() > timeout {
                 *timed_out = true;
+                return;
+            }
+            if *truncated {
                 return;
             }
 
@@ -467,9 +479,6 @@ impl LocalWorkspaceBackend {
                 if SKIP_DIRS.contains(&file_name_str.as_ref()) {
                     continue;
                 }
-                if !config.include_hidden && file_name_str.starts_with('.') {
-                    continue;
-                }
                 Self::walk_dir_recursive(
                     &path,
                     root_path,
@@ -490,6 +499,9 @@ impl LocalWorkspaceBackend {
                     timed_out,
                     truncated,
                 );
+                if *truncated {
+                    return;
+                }
             } else if path.is_file()
                 && Self::consider_file(
                     &path,
@@ -534,11 +546,11 @@ impl LocalWorkspaceBackend {
         files_scanned: &mut usize,
         truncated: &mut bool,
     ) -> bool {
-        *files_scanned += 1;
-        if *files_scanned > config.max_indexed_files {
+        if *files_scanned >= config.max_indexed_files {
             *truncated = true;
             return true;
         }
+        *files_scanned += 1;
 
         if is_binary_extension(file_name_str) {
             return false;
@@ -1495,5 +1507,156 @@ mod tests {
             cards[0].trust_markers.injection_hits, 0,
             "sanitize_output=false should not scan markers"
         );
+    }
+
+    #[test]
+    fn deep_nested_tree_respects_max_indexed_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for depth in 0..5 {
+            let nested = (0..depth).fold(root.to_path_buf(), |p, i| p.join(format!("d{i}")));
+            fs::create_dir_all(&nested).unwrap();
+            for fi in 0..3 {
+                fs::write(
+                    nested.join(format!("file{fi}.txt")),
+                    format!("content {depth}-{fi}"),
+                )
+                .unwrap();
+            }
+        }
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            max_indexed_files: 5,
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(config).unwrap();
+        let req = LocalSearchRequest {
+            query: "content".to_string(),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(backend.search(&req));
+        assert!(
+            result.files_scanned <= 5,
+            "files_scanned {} should be <= 5",
+            result.files_scanned
+        );
+        assert!(result.truncated);
+    }
+
+    #[test]
+    fn wide_sibling_tree_respects_max_indexed_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for i in 0..20 {
+            fs::write(root.join(format!("file{i}.txt")), format!("text {i}")).unwrap();
+        }
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            max_indexed_files: 7,
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(config).unwrap();
+        let req = LocalSearchRequest {
+            query: "text".to_string(),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(backend.search(&req));
+        assert!(
+            result.files_scanned <= 7,
+            "files_scanned {} should be <= 7",
+            result.files_scanned
+        );
+        assert!(result.truncated);
+    }
+
+    #[test]
+    fn multiple_roots_share_global_cap() {
+        let dir1 = tempfile::tempdir().unwrap();
+        let dir2 = tempfile::tempdir().unwrap();
+        for i in 0..5 {
+            fs::write(dir1.path().join(format!("a{i}.txt")), format!("alpha {i}")).unwrap();
+            fs::write(dir2.path().join(format!("b{i}.txt")), format!("beta {i}")).unwrap();
+        }
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir1.path().to_path_buf(), dir2.path().to_path_buf()],
+            max_indexed_files: 6,
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(config).unwrap();
+        let req = LocalSearchRequest {
+            query: "text".to_string(),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(backend.search(&req));
+        assert!(
+            result.files_scanned <= 6,
+            "files_scanned {} should be <= 6",
+            result.files_scanned
+        );
+        assert!(result.truncated);
+    }
+
+    #[test]
+    fn exact_cap_tree_no_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for i in 0..5 {
+            fs::write(root.join(format!("file{i}.txt")), format!("data {i}")).unwrap();
+        }
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            max_indexed_files: 5,
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(config).unwrap();
+        let req = LocalSearchRequest {
+            query: "data".to_string(),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(backend.search(&req));
+        assert_eq!(result.files_scanned, 5);
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn cap_of_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for i in 0..5 {
+            fs::write(root.join(format!("file{i}.txt")), format!("item {i}")).unwrap();
+        }
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            max_indexed_files: 1,
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(config).unwrap();
+        let req = LocalSearchRequest {
+            query: "item".to_string(),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(backend.search(&req));
+        assert_eq!(result.files_scanned, 1);
+        assert!(result.truncated);
     }
 }

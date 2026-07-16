@@ -300,20 +300,18 @@ pub fn validate_local_fetch_path(
         return Err(LocalFetchPathError::PathTraversal);
     }
 
-    // 3a. Mirror local-search policy: reject hidden components and
-    // SKIP_DIRS components when `include_hidden` is false, so direct
-    // workspace fetch cannot retrieve files that `repo_search`
+    // 3a. Mirror local-search policy: reject hidden components when
+    // `include_hidden` is false, and always reject SKIP_DIRS components,
+    // so direct workspace fetch cannot retrieve files that `repo_search`
     // intentionally hides (.git/config, target/..., node_modules/...).
-    if !cfg.include_hidden {
-        for component in requested_path.components() {
-            if let Component::Normal(os) = component {
-                if let Some(name) = os.to_str() {
-                    if name.starts_with('.') {
-                        return Err(LocalFetchPathError::HiddenPath(name.to_string()));
-                    }
-                    if SKIP_DIRS.contains(&name) {
-                        return Err(LocalFetchPathError::SkippedDirectory(name.to_string()));
-                    }
+    for component in requested_path.components() {
+        if let Component::Normal(os) = component {
+            if let Some(name) = os.to_str() {
+                if SKIP_DIRS.contains(&name) {
+                    return Err(LocalFetchPathError::SkippedDirectory(name.to_string()));
+                }
+                if !cfg.include_hidden && name.starts_with('.') {
+                    return Err(LocalFetchPathError::HiddenPath(name.to_string()));
                 }
             }
         }
@@ -334,11 +332,16 @@ pub fn validate_local_fetch_path(
         return Err(LocalFetchPathError::NotFound);
     }
 
-    // 7. Check symlink semantics (lmetadata does not follow symlinks)
+    // 7. Check symlink semantics: when follow_symlinks is disabled,
+    // reject any component (intermediate or final) that is a symlink.
     if !cfg.follow_symlinks {
-        if let Ok(meta) = std::fs::symlink_metadata(&candidate) {
-            if meta.file_type().is_symlink() {
-                return Err(LocalFetchPathError::SymlinkNotAllowed);
+        let mut accumulated = root.to_path_buf();
+        for component in requested_path.components() {
+            accumulated = accumulated.join(component);
+            if let Ok(meta) = std::fs::symlink_metadata(&accumulated) {
+                if meta.file_type().is_symlink() {
+                    return Err(LocalFetchPathError::SymlinkNotAllowed);
+                }
             }
         }
     }
@@ -877,7 +880,13 @@ mod tests {
         std::fs::write(dir.path().join(".env"), "SECRET=value").unwrap();
         let cfg = LocalConfig::default();
         let err = validate_local_fetch_path(dir.path(), ".git/config", &cfg).unwrap_err();
-        assert!(matches!(err, LocalFetchPathError::HiddenPath(_)));
+        assert!(
+            matches!(
+                err,
+                LocalFetchPathError::SkippedDirectory(_) | LocalFetchPathError::HiddenPath(_)
+            ),
+            "expected SkippedDirectory or HiddenPath for '.git/config', got {err:?}"
+        );
         let err = validate_local_fetch_path(dir.path(), ".env", &cfg).unwrap_err();
         assert!(matches!(err, LocalFetchPathError::HiddenPath(_)));
     }
@@ -885,16 +894,45 @@ mod tests {
     #[test]
     fn validate_local_fetch_path_hidden_allowed_when_include_hidden() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join(".git")).unwrap();
-        std::fs::write(dir.path().join(".git/config"), "[core]\nfoo=bar").unwrap();
+        std::fs::write(dir.path().join(".env"), "SECRET=value").unwrap();
         let cfg = LocalConfig {
             include_hidden: true,
             ..LocalConfig::default()
         };
-        let result = validate_local_fetch_path(dir.path(), ".git/config", &cfg);
+        let result = validate_local_fetch_path(dir.path(), ".env", &cfg);
         assert!(
             result.is_ok(),
-            "expected Ok for '.git/config' with include_hidden=true, got {result:?}"
+            "expected Ok for '.env' with include_hidden=true, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_skip_dirs_always_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".git/config"), "[core]\nfoo=bar").unwrap();
+        std::fs::create_dir(dir.path().join("target")).unwrap();
+        std::fs::write(dir.path().join("target/generated.rs"), "// generated").unwrap();
+        std::fs::create_dir(dir.path().join("node_modules")).unwrap();
+        std::fs::write(dir.path().join("node_modules/pkg.js"), "// pkg").unwrap();
+        let cfg = LocalConfig {
+            include_hidden: true,
+            ..LocalConfig::default()
+        };
+        let err = validate_local_fetch_path(dir.path(), ".git/config", &cfg).unwrap_err();
+        assert!(
+            matches!(err, LocalFetchPathError::SkippedDirectory(_)),
+            "expected SkippedDirectory for '.git/config' with include_hidden=true, got {err:?}"
+        );
+        let err = validate_local_fetch_path(dir.path(), "target/generated.rs", &cfg).unwrap_err();
+        assert!(
+            matches!(err, LocalFetchPathError::SkippedDirectory(_)),
+            "expected SkippedDirectory for 'target/generated.rs' with include_hidden=true, got {err:?}"
+        );
+        let err = validate_local_fetch_path(dir.path(), "node_modules/pkg.js", &cfg).unwrap_err();
+        assert!(
+            matches!(err, LocalFetchPathError::SkippedDirectory(_)),
+            "expected SkippedDirectory for 'node_modules/pkg.js' with include_hidden=true, got {err:?}"
         );
     }
 
@@ -913,7 +951,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_local_fetch_path_skipped_dir_allowed_when_include_hidden() {
+    fn validate_local_fetch_path_skipped_dir_always_rejected() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("target")).unwrap();
         std::fs::write(dir.path().join("target/generated.rs"), "// x").unwrap();
@@ -921,10 +959,10 @@ mod tests {
             include_hidden: true,
             ..LocalConfig::default()
         };
-        let result = validate_local_fetch_path(dir.path(), "target/generated.rs", &cfg);
+        let err = validate_local_fetch_path(dir.path(), "target/generated.rs", &cfg).unwrap_err();
         assert!(
-            result.is_ok(),
-            "expected Ok for 'target/generated.rs' with include_hidden=true, got {result:?}"
+            matches!(err, LocalFetchPathError::SkippedDirectory(_)),
+            "expected SkippedDirectory for 'target/generated.rs' with include_hidden=true, got {err:?}"
         );
     }
 
@@ -1036,5 +1074,69 @@ mod tests {
             matches!(result, Err(LocalFetchPathError::NotFound)),
             "expected NotFound for directory path, got: {result:?}"
         );
+    }
+
+    #[test]
+    fn validate_local_fetch_path_symlink_outside_root_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("escaped.txt"), "pwned").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                outside.path().join("escaped.txt"),
+                dir.path().join("link.txt"),
+            )
+            .unwrap();
+            let cfg_follow = LocalConfig {
+                follow_symlinks: true,
+                ..LocalConfig::default()
+            };
+            let err = validate_local_fetch_path(dir.path(), "link.txt", &cfg_follow).unwrap_err();
+            assert!(
+                matches!(err, LocalFetchPathError::EscapesRoot),
+                "expected EscapesRoot for symlink escaping root with follow_symlinks=true, got {err:?}"
+            );
+            let cfg_no_follow = LocalConfig {
+                follow_symlinks: false,
+                ..LocalConfig::default()
+            };
+            let err =
+                validate_local_fetch_path(dir.path(), "link.txt", &cfg_no_follow).unwrap_err();
+            assert!(
+                matches!(err, LocalFetchPathError::SymlinkNotAllowed),
+                "expected SymlinkNotAllowed for symlink escaping root with follow_symlinks=false, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_local_fetch_path_intermediate_symlink_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dir = dir.path().join("real");
+        std::fs::create_dir(&real_dir).unwrap();
+        std::fs::write(real_dir.join("file.rs"), "fn main() {}").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&real_dir, dir.path().join("linkdir")).unwrap();
+            let cfg = LocalConfig {
+                follow_symlinks: false,
+                ..LocalConfig::default()
+            };
+            let err = validate_local_fetch_path(dir.path(), "linkdir/file.rs", &cfg).unwrap_err();
+            assert!(
+                matches!(err, LocalFetchPathError::SymlinkNotAllowed),
+                "expected SymlinkNotAllowed for intermediate symlink, got {err:?}"
+            );
+            let cfg_follow = LocalConfig {
+                follow_symlinks: true,
+                ..LocalConfig::default()
+            };
+            let result = validate_local_fetch_path(dir.path(), "linkdir/file.rs", &cfg_follow);
+            assert!(
+                result.is_ok(),
+                "expected Ok for intermediate symlink with follow_symlinks=true, got {result:?}"
+            );
+        }
     }
 }
