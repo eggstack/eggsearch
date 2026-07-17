@@ -2123,6 +2123,33 @@ pub async fn run_repo_fetch(
     }
 }
 
+fn build_forge_tree_config(
+    state: &ServerState,
+    host: crate::core::code_metadata::CodeHost,
+) -> crate::meta::forge_adapter::ForgeTreeConfig {
+    let (provider_id, default_base) = match host {
+        crate::core::code_metadata::CodeHost::Github => ("github_code", None),
+        crate::core::code_metadata::CodeHost::Gitlab => ("gitlab_code", None),
+        crate::core::code_metadata::CodeHost::Codeberg => (
+            "gitea_code",
+            Some("https://codeberg.org/api/v1".to_string()),
+        ),
+        crate::core::code_metadata::CodeHost::Gitea => ("gitea_code", None),
+        crate::core::code_metadata::CodeHost::Forgejo => ("gitea_code", None),
+        crate::core::code_metadata::CodeHost::Unknown => ("", None),
+    };
+
+    let api_config = state.config.search.api.get(provider_id);
+    let api_key = api_config
+        .and_then(|c| c.api_key_env.as_deref())
+        .and_then(|env| std::env::var(env).ok())
+        .filter(|k| !k.is_empty());
+
+    let base_url = api_config.and_then(|c| c.base_url.clone()).or(default_base);
+
+    crate::meta::forge_adapter::ForgeTreeConfig { api_key, base_url }
+}
+
 /// Run the `repo_map` tool.
 pub async fn run_repo_map(
     state: Arc<ServerState>,
@@ -2163,8 +2190,41 @@ pub async fn run_repo_map(
         return Err(ToolError::Validation(format!("invalid request: {e}")));
     }
 
-    // Currently always use fallback mode since no native tree API provider exists.
-    let mut response = crate::meta::repo_mapper::build_fallback_response(&req);
+    // Attempt native tree retrieval when a supported host is detected.
+    let mut response = if let Some(host) = req.host {
+        if crate::meta::forge_adapter::is_supported_host(host) {
+            let forge_config = build_forge_tree_config(&state, host);
+            match crate::meta::forge_adapter::fetch_tree(
+                host,
+                &req.owner,
+                &req.repo,
+                &req,
+                &forge_config,
+            )
+            .await
+            {
+                Ok(forge_response) => {
+                    let include_files = req.include_files.unwrap_or(true);
+                    let include_directories = req.include_directories.unwrap_or(true);
+                    let include_ci = req.include_ci.unwrap_or(true);
+                    let include_security = req.include_security.unwrap_or(true);
+                    crate::meta::forge_adapter::build_response(
+                        &req,
+                        forge_response,
+                        include_files,
+                        include_directories,
+                        include_ci,
+                        include_security,
+                    )
+                }
+                Err(_e) => crate::meta::repo_mapper::build_fallback_response(&req),
+            }
+        } else {
+            crate::meta::repo_mapper::build_fallback_response(&req)
+        }
+    } else {
+        crate::meta::repo_mapper::build_fallback_response(&req)
+    };
 
     // Discover local checkout for the requested repo
     let mut local_checkout_root: Option<std::path::PathBuf> = None;

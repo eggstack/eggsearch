@@ -18,7 +18,7 @@ eggsearch exposes ten stable MCP tools:
 - `provider_status` - diagnostic provider/capability report with routability info plus workflow recipes
 - `repo_search` - structured repository evidence discovery with grouped bundles
 - `repo_fetch` - fetch a specific repo file span or symbol
-- `repo_map` - bounded repository structure discovery
+- `repo_map` - bounded repository structure discovery with native remote tree retrieval
 - `security_search` - vulnerability and advisory retrieval
 - `research_search` - multi-source evidence discovery
 - `build_evidence_bundle` - deterministic, non-summarizing evidence packaging

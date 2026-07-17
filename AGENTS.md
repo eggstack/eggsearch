@@ -36,7 +36,7 @@ src/
   config.rs        # CLI config loader
   commands/        # subcommands: doctor, search, providers, mcp, fetch
   core/            # types, config, error, query, sanitize, identity, warning
-  meta/            # MetadataSearchAdapter + vendored engines
+  meta/            # MetadataSearchAdapter + vendored engines + forge tree adapter
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, and contract tests
@@ -69,7 +69,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
 | **publish-check** | `cargo publish --dry-run --locked` |
-| **hardening** | Property tests (sanitize, identity, fetch limits) and adversarial corpus validation |
+| **hardening** | Property tests (sanitize, identity, fetch limits, fetch redirects, fetch URL edges, render safety, render code, local FS), dispatch fault injection, and adversarial corpus validation |
 | **docs** | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
 ## Feature Flags
@@ -109,8 +109,17 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/property_identity2.rs` | None | Property tests for identity module (fetch, suggested, batch, doc IDs) |
 | `tests/property_identity3.rs` | None | Property tests for identity module (chunk, code_span, locator IDs) |
 | `tests/property_fetch_limits.rs` | None | Property tests for fetch URL validation |
+| `tests/property_fetch_redirects.rs` | None | Property tests for fetch redirect/credential/TLD/IP validation |
+| `tests/property_fetch_url_edge.rs` | None | Property tests for URL scheme/path/length edge cases |
+| `tests/property_fetch_response.rs` | None | Property tests for fetch response behavior (metadata-only, byte/char limits, credentials, redirect limit, stream errors) |
+| `tests/property_render_safety.rs` | None | Property tests for sanitize module (strip_control_chars, bound_text, frame) |
+| `tests/property_render_code.rs` | None | Property tests for code/diff/plaintext/CSV renderers |
+| `tests/property_render_metadata.rs` | None | Property tests for TrustMarkers consistency and outline-reference bounds |
+| `tests/property_local_fs.rs` | None | Property tests for filesystem path handling and scoring |
+| `tests/property_local_fs_extended.rs` | None | Property tests for symlinks, path traversal, skip dirs, root containment |
+| `tests/dispatch_fault_injection.rs` | `mock` | Provider failure, timeout, hang, dedup, concurrency, health transitions tests |
 | `tests/adversarial_corpus.rs` | None | Adversarial corpus structural validation |
-| `tests/corpus/adversarial/*.json` | None | Malformed/edge-case input corpora |
+| `tests/corpus/adversarial/*.json` | None | Malformed/edge-case input corpora (271+ cases across 9 files) |
 
 ### Running specific suites
 
@@ -121,8 +130,9 @@ cargo test --locked --all-features --test security_applicability_regression --te
 make schema-corpus                                         # all contract tests
 make docs-tests                                            # documentation contract tests
 cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
-cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits  # property tests
-cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation
+cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended  # property tests
+cargo test --locked --all-features --test dispatch_fault_injection  # dispatch fault injection (requires mock)
+cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation (117+ cases across 9 files)
 make hardening                                              # all hardening tests
 ```
 
@@ -133,8 +143,10 @@ make hardening                                              # all hardening test
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
-- **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits) using `proptest`
+- **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits, render) using `proptest`
 - **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs; validate structure in `tests/adversarial_corpus.rs`
+- **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency, and health transitions
+- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, redirect validation, Content-Type handling, HTML extraction, PDF parsing, sanitization pipeline, document chunking, Content-Length parsing, chunk boundary splitting, mixed UTF-8 extraction, and redirect chain validation (15 targets)
 
 ## Code Conventions
 

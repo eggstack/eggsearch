@@ -21,9 +21,10 @@ cargo test --locked --features pdf
 cargo build --release
 cargo publish --dry-run --locked
 
-# Hardening tests (property tests + adversarial corpus)
+# Hardening tests (property tests + adversarial corpus + fault injection)
 make hardening
-cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits
+cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended
+cargo test --locked --all-features --test dispatch_fault_injection
 cargo test --locked --all-features --test adversarial_corpus
 ```
 
@@ -38,7 +39,7 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - `config.rs` — CLI config loader
 - `commands/` — subcommands: doctor, search, providers, mcp, fetch
 - `core/` — types, config, error, query, sanitize, identity, warning
-- `meta/` — MetadataSearchAdapter + vendored engines
+- `meta/` — MetadataSearchAdapter + vendored engines + forge tree adapter
 - `fetch/` — HTTP fetch client, HTML rendering, extraction, span selection
 - `mcp/` — MCP server (rmcp), tool definitions, server state
 - `tests/` — integration, corpus, and contract tests
@@ -61,8 +62,10 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
-- **Property tests** in `tests/property_*.rs` for pure functions using `proptest`
-- **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs
+- **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits, render, local FS, dispatch) using `proptest`
+- **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs (245+ cases across 9 files)
+- **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency, and health transitions
+- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, HTML extraction, PDF parsing, sanitization, and document chunking
 
 ## Key Conventions
 

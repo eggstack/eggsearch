@@ -16,7 +16,7 @@ src/
   config.rs        → CLI config loader
   commands/        → doctor, search, providers, mcp, fetch
   core/            → types, config, error, query, sanitize, identity, warning
-  meta/            → MetadataSearchAdapter, vendored engines, dispatch, health
+  meta/            → MetadataSearchAdapter, vendored engines, dispatch, health, forge tree adapter
   fetch/           → HTTP client, HTML rendering, extraction, span selection
   mcp/             → MCP server (rmcp), 10 tool definitions, server state
 ```
@@ -68,6 +68,17 @@ Configured via `[search].sanitize_output` and `[fetch].sanitize_output` (both de
 
 MCP over stdio only. Server instructions in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`.
 
+## Forge Tree Adapter (`src/meta/forge_adapter.rs`)
+
+Native remote repository tree retrieval for `repo_map` without cloning. Supports GitHub, GitLab, Gitea, Forgejo, and Codeberg.
+
+- `fetch_tree()` — async entry point that routes to host-specific adapters
+- `build_response()` — converts raw forge entries into provider-neutral `RepoMapResponse`
+- GitHub uses Git Trees API with recursive traversal; GitLab uses Repository tree API with pagination; Gitea/Forgejo/Codeberg share a forge-compatible adapter
+- All adapters enforce entry, depth, page, byte, and timeout limits
+- Authentication via API keys from `[search].api.<provider_id>` config
+- Falls back to unauthenticated requests for public repositories
+
 ## Key Architecture Docs
 
 - `docs/config.md` — config defaults, provider enablement, provider_status semantics
@@ -82,7 +93,11 @@ Property-based testing and adversarial corpus validation cover the most security
 
 - **Sanitize module** (`tests/property_sanitize.rs`): strip_control_chars safety, idempotency, bound_text invariants, scan_injection_markers stability, frame structure
 - **Identity module** (`tests/property_identity.rs`, `property_identity2.rs`, `property_identity3.rs`): deterministic IDs, correct prefixes/lengths, URL canonicalization idempotency, cross-type prefix uniqueness
-- **Fetch limits** (`tests/property_fetch_limits.rs`): URL scheme/host/policy validation
-- **Adversarial corpus** (`tests/corpus/adversarial/`): malformed HTML, structured text, URL edge cases, sanitize edge cases, identity edge cases
+- **Fetch limits** (`tests/property_fetch_limits.rs`, `property_fetch_redirects.rs`, `property_fetch_url_edge.rs`): URL scheme/host/policy validation, IP classification, TLD rejection, URL structure
+- **Render safety** (`tests/property_render_safety.rs`): strip_control_chars, bound_text, frame, scan_injection_markers
+- **Render code** (`tests/property_render_code.rs`): code/diff/plaintext/CSV renderers - bounded output, deterministic, line numbers
+- **Local FS** (`tests/property_local_fs.rs`): path handling, binary detection, skip dirs, file size boundaries
+- **Dispatch fault injection** (`tests/dispatch_fault_injection.rs`): provider failure/timeout/hang/dedup/concurrency (requires `mock` feature)
+- **Adversarial corpus** (`tests/corpus/adversarial/`): 245+ cases across 9 files covering malformed HTML, structured text, URLs, sanitize edge cases, identity edge cases, PDFs, filesystem paths
 
 Run all hardening tests with `make hardening`. Property tests use `proptest` (dev-dependency only, not in runtime graph).

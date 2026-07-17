@@ -42,6 +42,7 @@ MCP Tool → MetadataSearchAdapter
 | `advisory_range.rs` | Advisory range extraction |
 | `dependency_parse.rs` | Dependency/lock file parser |
 | `repo_mapper.rs` | Repository map planning and classification for the `repo_map` MCP tool |
+| `forge_adapter.rs` | Native remote repository tree retrieval for GitHub, GitLab, Gitea, Forgejo, and Codeberg |
 | `security_search.rs` | Security search orchestration: coordinates web search, native advisory lookups, KEV enrichment, grouping |
 | `security_suggested_fetches.rs` | Suggested fetch generation for security search result groups |
 | `research_evidence_analysis.rs` | Deterministic research evidence analysis: claim extraction, conflict detection, quality classification, gap identification |

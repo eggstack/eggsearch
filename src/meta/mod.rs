@@ -21,6 +21,7 @@ pub mod error_planner;
 pub mod evidence_bundle;
 /// Deterministic ranking pipeline for suggested fetch candidates.
 pub mod fetch_ranking;
+pub mod forge_adapter;
 mod grouping;
 /// Local workspace search backend: bounded file walking, scoring, and
 /// SourceCard conversion.
