@@ -1422,7 +1422,11 @@ pub fn run_provider_status(
             "repo_map": {
                 "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
                 "local_checkout": local_enabled,
-                "repo_map_remote": "metadata_only",
+                "repo_map_remote": if matches!(live_allowed(state.config.search.mode), Policy::Allow) {
+                    "native"
+                } else {
+                    "metadata_only"
+                },
                 "repo_map_local": local_enabled,
             },
             "local_workspace": {
@@ -2217,7 +2221,25 @@ pub async fn run_repo_map(
                         include_security,
                     )
                 }
-                Err(_e) => crate::meta::repo_mapper::build_fallback_response(&req),
+                Err(_e) => {
+                    let mut fallback = crate::meta::repo_mapper::build_fallback_response(&req);
+                    let warning_code = if _e.contains("rate_limited") {
+                        crate::core::warning::WarningCode::ForgeRateLimited
+                    } else if _e.contains("authentication_required") {
+                        crate::core::warning::WarningCode::ForgeAuthRequired
+                    } else if _e.contains("repository_not_found") {
+                        crate::core::warning::WarningCode::RepoRefNotFound
+                    } else {
+                        crate::core::warning::WarningCode::NoNativeTreeProvider
+                    };
+                    fallback
+                        .structured_warnings
+                        .push(crate::core::warning::AgentWarning::new(
+                            warning_code,
+                            format!("forge tree adapter failed: {_e}"),
+                        ));
+                    fallback
+                }
             }
         } else {
             crate::meta::repo_mapper::build_fallback_response(&req)

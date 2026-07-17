@@ -10,7 +10,7 @@ use std::time::Duration;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::core::code_metadata::CodeHost;
+use crate::core::code_metadata::{language_from_extension, CodeHost};
 use crate::core::repo_map::{
     classify_important_directory, classify_important_file, ImportantDirKind, ImportantFileKind,
     RepoImportantDirectory, RepoImportantFile, RepoMapEntry, RepoMapEntryKind, RepoMapMode,
@@ -18,6 +18,7 @@ use crate::core::repo_map::{
 };
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
+use crate::core::warning::{AgentWarning, WarningCode};
 use crate::meta::repo_mapper::build_repo_map_suggested_fetches;
 
 const DEFAULT_MAX_ENTRIES: usize = 1000;
@@ -25,6 +26,8 @@ const DEFAULT_MAX_DEPTH: usize = 10;
 const DEFAULT_MAX_PAGES: usize = 10;
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const MAX_IMPORTANT_FILE_PROBES: usize = 50;
+const MAX_IMPORTANT_DIR_PROBES: usize = 50;
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITLAB_API_BASE: &str = "https://gitlab.com/api/v4";
 const CODEBERG_API_BASE: &str = "https://codeberg.org/api/v1";
@@ -120,6 +123,7 @@ pub async fn fetch_tree(
         CodeHost::Github => fetch_github_tree(&client, owner, repo, req, config, timeout).await,
         CodeHost::Gitlab => fetch_gitlab_tree(&client, owner, repo, req, config, timeout).await,
         CodeHost::Codeberg => {
+            let base = config.base_url.as_deref().unwrap_or(CODEBERG_API_BASE);
             fetch_forge_tree(ForgeTreeParams {
                 client: &client,
                 owner,
@@ -127,7 +131,7 @@ pub async fn fetch_tree(
                 req,
                 config,
                 timeout,
-                api_base: CODEBERG_API_BASE,
+                api_base: base,
                 provider_id: "codeberg_tree",
             })
             .await
@@ -219,7 +223,7 @@ async fn fetch_github_tree(
     let resolved_ref = tree.sha.clone();
     let default_branch = resolve_github_default_branch(client, owner, repo, config, timeout).await;
 
-    let entries: Vec<ForgeRawEntry> = tree
+    let mut entries: Vec<ForgeRawEntry> = tree
         .tree
         .into_iter()
         .map(|item| {
@@ -243,6 +247,19 @@ async fn fetch_github_tree(
             }
         })
         .collect();
+
+    if truncated_by_provider {
+        if let Ok(fallback) = fetch_github_contents_root(client, owner, repo, config, timeout).await
+        {
+            let existing_paths: std::collections::HashSet<String> =
+                entries.iter().map(|e| e.path.clone()).collect();
+            for entry in fallback {
+                if !existing_paths.contains(&entry.path) {
+                    entries.push(entry);
+                }
+            }
+        }
+    }
 
     let mut warnings = Vec::new();
     if truncated_by_provider {
@@ -283,6 +300,63 @@ async fn resolve_github_default_branch(
     }
     let repo_info: GitHubRepoInfo = resp.json().await.ok()?;
     Some(repo_info.default_branch)
+}
+
+async fn fetch_github_contents_root(
+    client: &Client,
+    owner: &str,
+    repo: &str,
+    config: &ForgeTreeConfig,
+    timeout: Duration,
+) -> Result<Vec<ForgeRawEntry>, String> {
+    let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
+    let mut builder = client
+        .get(format!("{base}/repos/{owner}/{repo}/contents/"))
+        .timeout(timeout);
+    if let Some(ref key) = config.api_key {
+        builder = builder.header("Authorization", format!("Bearer {key}"));
+    }
+    let resp = builder
+        .send()
+        .await
+        .map_err(|e| format!("GitHub Contents API request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("contents_api_failed: {}", resp.status()));
+    }
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("failed to read Contents API response: {e}"))?;
+    let items: Vec<GitHubContentsEntry> =
+        serde_json::from_str(&body).map_err(|e| format!("malformed Contents response: {e}"))?;
+    let entries = items
+        .into_iter()
+        .map(|item| {
+            let kind = match item.type_field.as_str() {
+                "dir" => EntryKind::Directory,
+                "file" => EntryKind::File,
+                "symlink" => EntryKind::Symlink,
+                "submodule" => EntryKind::Submodule,
+                _ => EntryKind::File,
+            };
+            ForgeRawEntry {
+                path: item.name,
+                kind,
+                size: item.size,
+                sha: item.sha,
+            }
+        })
+        .collect();
+    Ok(entries)
+}
+
+#[derive(Deserialize)]
+struct GitHubContentsEntry {
+    name: String,
+    #[serde(rename = "type")]
+    type_field: String,
+    size: Option<u64>,
+    sha: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -732,7 +806,7 @@ pub fn build_response(
                 path: raw.path.clone(),
                 kind,
                 size: raw.size,
-                language: None,
+                language: language_from_extension(&raw.path).map(String::from),
             });
         }
 
@@ -780,9 +854,25 @@ pub fn build_response(
 
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     important_files.sort_by(|a, b| a.path.cmp(&b.path));
+    important_files.truncate(MAX_IMPORTANT_FILE_PROBES);
     important_directories.sort_by(|a, b| a.path.cmp(&b.path));
+    important_directories.truncate(MAX_IMPORTANT_DIR_PROBES);
+
+    let manifests: Vec<RepoImportantFile> = important_files
+        .iter()
+        .filter(|f| f.kind == ImportantFileKind::Manifest)
+        .cloned()
+        .collect();
 
     let warnings = forge_response.warnings;
+
+    let mut structured_warnings: Vec<AgentWarning> = Vec::new();
+    if forge_response.truncated_by_provider {
+        structured_warnings.push(AgentWarning::new(
+            WarningCode::ForgeTreeTruncated,
+            "forge tree response was truncated by the provider",
+        ));
+    }
 
     let mut response = RepoMapResponse {
         query: request.query.clone(),
@@ -796,6 +886,7 @@ pub fn build_response(
         root_entries: entries,
         important_files,
         important_directories,
+        manifests,
         source_roots,
         docs: docs_dirs,
         examples: examples_dirs,
@@ -806,7 +897,7 @@ pub fn build_response(
         providers_queried: vec![forge_response.provider_id.clone()],
         providers_failed: Vec::new(),
         warnings,
-        structured_warnings: Vec::new(),
+        structured_warnings,
         trust_markers: TrustMarkers::default(),
         local_checkout: None,
         telemetry: Some(RepoMapTelemetry {

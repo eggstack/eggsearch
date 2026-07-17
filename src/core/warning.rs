@@ -147,6 +147,16 @@ pub enum WarningCode {
     // --- Repo Map ---
     /// No native tree/list API; results from search-based discovery.
     NoNativeTreeProvider,
+    /// Requested ref (branch/tag/commit) was not found on the host.
+    RepoRefNotFound,
+    /// Native tree adapter encountered a rate limit.
+    ForgeRateLimited,
+    /// Native tree adapter encountered an authentication error.
+    ForgeAuthRequired,
+    /// Native tree adapter returned a truncated response.
+    ForgeTreeTruncated,
+    /// Native tree adapter was skipped (unsupported host or version).
+    ForgeTreeUnsupportedHost,
 
     // --- Generic ---
     /// Generic context untrusted content advisory.
@@ -219,6 +229,11 @@ impl WarningCode {
             Self::PackageResolution => "package_resolution",
             Self::PackageResolutionFallback => "package_resolution_fallback",
             Self::NoNativeTreeProvider => "no_native_tree_provider",
+            Self::RepoRefNotFound => "repo_ref_not_found",
+            Self::ForgeRateLimited => "forge_rate_limited",
+            Self::ForgeAuthRequired => "forge_auth_required",
+            Self::ForgeTreeTruncated => "forge_tree_truncated",
+            Self::ForgeTreeUnsupportedHost => "forge_tree_unsupported_host",
             Self::GenericContextUntrusted => "generic_context_untrusted",
             Self::ProviderResolutionFailed => "provider_resolution_failed",
             Self::DefaultProviderResolutionFailed => "default_provider_resolution_failed",
@@ -276,6 +291,11 @@ impl WarningCode {
             | Self::PackageSecuritySkipped
             | Self::PackageResolutionFallback
             | Self::NoNativeTreeProvider
+            | Self::RepoRefNotFound
+            | Self::ForgeRateLimited
+            | Self::ForgeAuthRequired
+            | Self::ForgeTreeTruncated
+            | Self::ForgeTreeUnsupportedHost
             | Self::ProviderResolutionFailed
             | Self::DefaultProviderResolutionFailed
             | Self::EmptyResultGroup
@@ -364,6 +384,21 @@ impl WarningCode {
             }
             Self::NoNativeTreeProvider => {
                 Some("No native tree API; results from search-based discovery.")
+            }
+            Self::RepoRefNotFound => {
+                Some("Requested ref was not found; try a different branch, tag, or commit SHA.")
+            }
+            Self::ForgeRateLimited => {
+                Some("Code host API rate limit hit; retry after a delay or configure an API key.")
+            }
+            Self::ForgeAuthRequired => {
+                Some("Authentication required; configure an API key for private repositories.")
+            }
+            Self::ForgeTreeTruncated => {
+                Some("Tree response was truncated by the provider; results may be incomplete.")
+            }
+            Self::ForgeTreeUnsupportedHost => {
+                Some("Host is not supported for native tree retrieval; use a local checkout.")
             }
             Self::FetchWarning => {
                 Some("Fetch-layer warning; review the original message for details.")
@@ -696,6 +731,14 @@ const KNOWN_PREFIXES: &[(&str, WarningCode)] = &[
         WarningCode::PackageResolutionFallback,
     ),
     ("no_native_tree_provider", WarningCode::NoNativeTreeProvider),
+    ("repo_ref_not_found", WarningCode::RepoRefNotFound),
+    ("forge_rate_limited", WarningCode::ForgeRateLimited),
+    ("forge_auth_required", WarningCode::ForgeAuthRequired),
+    ("forge_tree_truncated", WarningCode::ForgeTreeTruncated),
+    (
+        "forge_tree_unsupported_host",
+        WarningCode::ForgeTreeUnsupportedHost,
+    ),
     (
         "provider_resolution_failed",
         WarningCode::ProviderResolutionFailed,

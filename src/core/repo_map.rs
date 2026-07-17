@@ -304,6 +304,9 @@ pub struct RepoMapResponse {
     /// Discovered security-related directory, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub security: Option<RepoPathSummary>,
+    /// Detected package manifest files (Cargo.toml, package.json, etc.).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub manifests: Vec<RepoImportantFile>,
     /// Suggested fetch URLs for further exploration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suggested_fetches: Vec<RepoMapSuggestedFetch>,
@@ -1123,6 +1126,7 @@ mod tests {
             tests: vec![],
             ci: vec![],
             security: None,
+            manifests: vec![],
             suggested_fetches: vec![RepoMapSuggestedFetch {
                 url: "https://example.com".to_string(),
                 reason: "test".to_string(),

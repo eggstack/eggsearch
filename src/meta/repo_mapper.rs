@@ -409,6 +409,12 @@ pub fn populate_from_local_checkout(
     response.root_entries = entries;
     response.important_files = important_files;
     response.important_directories = important_directories;
+    response.manifests = response
+        .important_files
+        .iter()
+        .filter(|f| f.kind == ImportantFileKind::Manifest)
+        .cloned()
+        .collect();
     response.source_roots = source_roots;
     response.docs = docs;
     response.examples = examples;
@@ -436,6 +442,7 @@ pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
         root_entries: Vec::new(),
         important_files: Vec::new(),
         important_directories: Vec::new(),
+        manifests: Vec::new(),
         source_roots: Vec::new(),
         docs: Vec::new(),
         examples: Vec::new(),
