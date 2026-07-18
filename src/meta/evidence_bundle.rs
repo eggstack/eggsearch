@@ -180,6 +180,7 @@ fn source_input_to_bundle(input: &EvidenceSourceInput) -> EvidenceBundleSource {
         stable: None,
         structured_repo_fetch,
         metadata: input.metadata.clone(),
+        evidence_role: None,
     }
 }
 
@@ -452,6 +453,7 @@ fn compute_gaps(
                 source_id: Some(source.source_id.clone()),
                 provider_id: source.provider_id.clone(),
                 affected_source_ids: vec![],
+                evidence_role: None,
             });
         }
     }
@@ -469,6 +471,7 @@ fn compute_gaps(
                 source_id: item.source_id.clone(),
                 provider_id: None,
                 affected_source_ids: vec![],
+                evidence_role: None,
             });
         }
     }
@@ -487,6 +490,7 @@ fn compute_gaps(
                         source_id: Some(source.source_id.clone()),
                         provider_id: source.provider_id.clone(),
                         affected_source_ids: vec![],
+                        evidence_role: None,
                     });
                 }
                 // LocalRemoteMismatch: local_checkout exists but matched is false
@@ -500,6 +504,7 @@ fn compute_gaps(
                         source_id: Some(source.source_id.clone()),
                         provider_id: source.provider_id.clone(),
                         affected_source_ids: vec![],
+                        evidence_role: None,
                     });
                 }
             }
@@ -525,6 +530,7 @@ fn compute_gaps(
             source_id: None,
             provider_id: None,
             affected_source_ids: affected,
+            evidence_role: None,
         });
     }
 
@@ -540,6 +546,7 @@ fn compute_gaps(
                 source_id: Some(source.source_id.clone()),
                 provider_id: source.provider_id.clone(),
                 affected_source_ids: vec![],
+                evidence_role: None,
             });
         }
     }
@@ -589,6 +596,7 @@ fn compute_gaps(
                 source_id: None,
                 provider_id: Some(warning.provider_id.clone()),
                 affected_source_ids: vec![],
+                evidence_role: None,
             });
         }
     }
@@ -605,6 +613,7 @@ fn compute_gaps(
             source_id: None,
             provider_id: None,
             affected_source_ids: vec![],
+            evidence_role: None,
         });
     }
 
@@ -646,6 +655,7 @@ fn detect_missing_complementary_evidence(
                 source_id: None,
                 provider_id: None,
                 affected_source_ids: affected,
+                evidence_role: None,
             });
         }
 
@@ -656,6 +666,7 @@ fn detect_missing_complementary_evidence(
                 source_id: None,
                 provider_id: None,
                 affected_source_ids: vec![],
+                evidence_role: None,
             });
         }
 
@@ -666,6 +677,7 @@ fn detect_missing_complementary_evidence(
                 source_id: None,
                 provider_id: None,
                 affected_source_ids: vec![],
+                evidence_role: None,
             });
         }
     }
@@ -683,6 +695,7 @@ fn detect_missing_complementary_evidence(
             source_id: None,
             provider_id: None,
             affected_source_ids: vec![],
+            evidence_role: None,
         });
     }
 
@@ -696,6 +709,7 @@ fn detect_missing_complementary_evidence(
             source_id: None,
             provider_id: None,
             affected_source_ids: vec![],
+            evidence_role: None,
         });
     }
 }
@@ -1371,6 +1385,7 @@ mod tests {
                 is_example: None,
                 is_config: None,
                 is_lockfile: None,
+                evidence_role: None,
             }),
             quality: None,
         };
@@ -1560,6 +1575,7 @@ mod tests {
                     is_example: None,
                     is_config: None,
                     is_lockfile: None,
+                    evidence_role: None,
                 }),
                 quality: None,
             }],
@@ -1654,6 +1670,7 @@ mod tests {
                 is_example: None,
                 is_config: None,
                 is_lockfile: None,
+                evidence_role: None,
             }),
             quality: None,
         };
@@ -1759,6 +1776,7 @@ mod tests {
                     is_example: None,
                     is_config: None,
                     is_lockfile: None,
+                    evidence_role: None,
                 }),
                 quality: None,
             }],
@@ -1849,6 +1867,7 @@ mod tests {
                     is_example: None,
                     is_config: None,
                     is_lockfile: None,
+                    evidence_role: None,
                 }),
                 quality: None,
             }],

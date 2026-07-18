@@ -10,6 +10,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::core::evidence_role::EvidenceRole;
+
 /// Verbosity level for workflow recipes in `provider_status` responses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -52,6 +54,9 @@ pub struct AgentWorkflowStep {
     pub inspect_fields: Vec<String>,
     /// Optional rule describing when to advance or branch.
     pub next_action_rule: Option<String>,
+    /// Evidence roles this step is expected to produce or consume.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_roles: Vec<EvidenceRole>,
 }
 
 /// A fallback strategy when a recipe's preferred path is unavailable.
@@ -113,6 +118,9 @@ pub struct AgentNextAction {
     pub input_template: serde_json::Value,
     /// Source card IDs this action relates to.
     pub source_ids: Vec<String>,
+    /// The evidence role this action aims to fill, if applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_role: Option<EvidenceRole>,
 }
 
 /// Maximum number of next-action hints per response.
@@ -141,6 +149,7 @@ impl AgentNextAction {
         priority: u8,
         input_template: serde_json::Value,
         source_ids: Vec<String>,
+        evidence_role: Option<EvidenceRole>,
     ) -> Self {
         Self {
             tool: tool.into(),
@@ -148,6 +157,7 @@ impl AgentNextAction {
             priority: priority.clamp(1, 5),
             input_template,
             source_ids,
+            evidence_role,
         }
     }
 }
@@ -173,6 +183,7 @@ mod tests {
                 input_hints: vec!["No arguments needed".into()],
                 inspect_fields: vec!["providers".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             }],
             fallbacks: vec![AgentWorkflowFallback {
                 description: "No providers available".into(),
@@ -198,6 +209,7 @@ mod tests {
             1,
             serde_json::json!({"url": "https://example.com"}),
             vec!["src_abc".into()],
+            None,
         );
         let json = serde_json::to_string(&action).unwrap();
         let parsed: AgentNextAction = serde_json::from_str(&json).unwrap();
@@ -207,9 +219,23 @@ mod tests {
 
     #[test]
     fn next_action_priority_clamped() {
-        let action = AgentNextAction::new("web_fetch", "test", 99, serde_json::json!(null), vec![]);
+        let action = AgentNextAction::new(
+            "web_fetch",
+            "test",
+            99,
+            serde_json::json!(null),
+            vec![],
+            None,
+        );
         assert_eq!(action.priority, 5);
-        let action = AgentNextAction::new("web_fetch", "test", 0, serde_json::json!(null), vec![]);
+        let action = AgentNextAction::new(
+            "web_fetch",
+            "test",
+            0,
+            serde_json::json!(null),
+            vec![],
+            None,
+        );
         assert_eq!(action.priority, 1);
     }
 
@@ -279,6 +305,7 @@ mod tests {
                     input_hints: vec![],
                     inspect_fields: vec![],
                     next_action_rule: None,
+                    evidence_roles: vec![],
                 },
                 AgentWorkflowStep {
                     order: 2,
@@ -287,6 +314,7 @@ mod tests {
                     input_hints: vec![],
                     inspect_fields: vec![],
                     next_action_rule: None,
+                    evidence_roles: vec![],
                 },
             ],
             fallbacks: vec![],

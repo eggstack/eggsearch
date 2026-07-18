@@ -4,15 +4,15 @@ Compact reference for the ten stable MCP tools.
 
 | Tool | Purpose | Key Inputs | Output | Trust | When to Use |
 |------|---------|------------|--------|-------|-------------|
-| `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `max_results`, `providers` | `Vec<SourceCard>` plus `next_actions` | `external_untrusted` | General web research and source discovery |
+| `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `max_results`, `providers` | `Vec<SourceCard>` plus `next_actions` | `external_untrusted` | General web research and source discovery. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
 | `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars`, `include_links` | `WebFetchResponse` with optional `FetchDocument` | `external_untrusted` | Inspect a selected page or document |
 | `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators | `items`, optional `max_chars`, `timeout_ms` | `BatchFetchResponse` with per-item results | `external_untrusted` or `local_trusted` | Fetch several known targets in one call |
 | `provider_status` | Diagnostic report of provider config, health, capabilities, and workflow recipes | none required; optional `recipe_detail` (`none`, `summary`, `full`), reserved `probe` (bool) | Provider list with `routable`, `skip_reason`, and `skip_code` fields, `health_views` (per-provider health), `code_hosts`, `health` (snapshots), `probe` (deferred status), `server_capabilities`, `tool_capabilities`, `quality_metadata`, `workflow_recipes` | `local_trusted` | Discover what is actually available before choosing a path |
-| `repo_search` | Structured repository evidence discovery with grouped bundles | optional repo locator fields, `query`, `profile`, `mode` | `RepoSearchResponse` with grouped `SourceCard` bundles and `next_actions` | `external_untrusted` or `local_trusted` | Find code, issues, releases, docs, and repo metadata |
+| `repo_search` | Structured repository evidence discovery with grouped bundles | optional repo locator fields, `query`, `profile`, `mode` | `RepoSearchResponse` with grouped `SourceCard` bundles and `next_actions` | `external_untrusted` or `local_trusted` | Find code, issues, releases, docs, and repo metadata. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
 | `repo_fetch` | Structured repository file fetch by locator | `host`, `owner`, `repo`, `path`, optional `ref_name`, `commit_sha`, `line_start`, `line_end`, `symbol` | `RepoFetchResponse` with content and trust markers | `external_untrusted` or `local_trusted` | Fetch a specific file or code span |
 | `repo_map` | Bounded repository-structure discovery | `host`, `owner`, `repo`, optional `ref_name`, `max_entries`, `max_depth` | `RepoMapResponse` with important files and directories | `external_untrusted` or `local_trusted` | Understand repo layout before detailed search |
-| `security_search` | Security-oriented retrieval with normalized vulnerability metadata | `query`, optional `ecosystem`, `package`, `version`, `cve_id`, `ghsa_id`, `severity_min`, `assess_applicability` | `SecuritySearchResponse` with advisories, applicability, and `next_actions` | `external_untrusted` | Vulnerability lookup and package security triage |
-| `research_search` | Research-oriented multi-source evidence discovery | `query`, optional `research_domain`, `desired_source_types`, `workflow`, `depth`, `compare_targets` | `ResearchSearchResponse` with grouped evidence, claims, gaps, and `next_actions` | `external_untrusted` | Architectural comparison and multi-source evidence gathering |
+| `security_search` | Security-oriented retrieval with normalized vulnerability metadata | `query`, optional `ecosystem`, `package`, `version`, `cve_id`, `ghsa_id`, `severity_min`, `assess_applicability` | `SecuritySearchResponse` with advisories, applicability, and `next_actions` | `external_untrusted` | Vulnerability lookup and package security triage. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
+| `research_search` | Research-oriented multi-source evidence discovery | `query`, optional `research_domain`, `desired_source_types`, `workflow`, `depth`, `compare_targets` | `ResearchSearchResponse` with grouped evidence, claims, gaps, and `next_actions` | `external_untrusted` | Architectural comparison and multi-source evidence gathering. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
 | `build_evidence_bundle` | Package selected evidence into a deterministic container | `goal`, `sources`, `fetches` | `EvidenceBundle` with deterministic IDs, gap analysis, and trust summary | preserves input trust | Multi-agent handoff of gathered evidence |
 
 ## Recommended Workflow
@@ -44,3 +44,13 @@ See [threat-model.md](threat-model.md) for the full operator threat model, inclu
 `provider_status` returns a `workflow_recipes` field with eight built-in recipes and their current support status: `available`, `partial`, or `unavailable`.
 
 See [Agent workflows](agent-workflows.md) for the recipe catalog and usage guidance.
+
+## Evidence Roles and Coverage
+
+Every `SourceCard` includes an optional `evidence_role` field classifying its role in the workflow. Roles are deterministic and derived from existing metadata — no model inference.
+
+Responses also include `retrieval_summary` when applicable, distinguishing evidence absence (`no_matching_evidence_found`) from retrieval failure (`provider_failed`, `deadline_prevented_completion`). This prevents agents from treating empty results as proof that evidence does not exist.
+
+Conflict metadata (`conflict_metadata`) appears when sources disagree on structured fields, with severity and resolution recommendations.
+
+See [Agent workflows](agent-workflows.md) for the full evidence role taxonomy and workflow coverage models.

@@ -14,6 +14,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::core::evidence_role::EvidenceRole;
 use crate::core::fetch::FetchTrust;
 use crate::core::quality::ResultQuality;
 use crate::core::repo_fetch::RepoLocator;
@@ -98,6 +99,9 @@ pub struct EvidenceGap {
     /// Source IDs affected by this gap.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub affected_source_ids: Vec<String>,
+    /// The evidence role this gap relates to, if applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_role: Option<EvidenceRole>,
 }
 
 /// A source entry in an evidence bundle, derived from a `SourceCard`.
@@ -150,6 +154,9 @@ pub struct EvidenceBundleSource {
     /// Full source metadata from the original card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<SourceMetadata>,
+    /// Unified evidence role for this source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_role: Option<EvidenceRole>,
 }
 
 /// A fetched item in an evidence bundle, derived from a fetch response.
@@ -727,6 +734,7 @@ mod tests {
             stable: None,
             structured_repo_fetch: None,
             metadata: None,
+            evidence_role: None,
         };
         let json = serde_json::to_value(&source).unwrap();
         let restored: EvidenceBundleSource = serde_json::from_value(json).unwrap();
@@ -774,6 +782,7 @@ mod tests {
             source_id: None,
             provider_id: Some("duckduckgo".to_string()),
             affected_source_ids: vec![],
+            evidence_role: None,
         };
         let json = serde_json::to_value(&gap).unwrap();
         assert_eq!(json["kind"], "fetch_failed");

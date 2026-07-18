@@ -1228,6 +1228,7 @@ impl LocalWorkspaceBackend {
                     is_example: Some(is_example),
                     is_config: Some(is_config),
                     is_lockfile: Some(is_lockfile),
+                    evidence_role: None,
                 };
 
                 let raw_snippet = m

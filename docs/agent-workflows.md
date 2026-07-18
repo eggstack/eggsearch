@@ -144,8 +144,87 @@ Tool responses from `web_search`, `repo_search`, `security_search`, and `researc
 - **`priority`**: 1 (highest) through 5 (lowest)
 - **`input_template`**: suggested input for the target tool (replace placeholders)
 - **`source_ids`**: source card IDs this action relates to
+- **`evidence_role`** (optional): the evidence role this action aims to fill, if applicable
 
 Use `next_actions` to chain tools without prompt-level reasoning. Priority 1 actions are the most productive next step.
+
+### Evidence Role Taxonomy
+
+Every search result can be classified into one of 19 deterministic evidence roles. The `EvidenceRole` enum on `SourceCard.metadata.evidence_role` provides workflow-aware grouping:
+
+| Evidence Role | Description |
+|---------------|-------------|
+| `primary_implementation` | Application or library source code |
+| `interface_or_api_definition` | API reference, specification, or type definition |
+| `usage_example` | Example code demonstrating usage |
+| `test_or_behavioral_specification` | Test files and behavioral specs |
+| `configuration_or_feature_gate` | Config files, CI, build scripts |
+| `manifest_or_dependency_metadata` | Package manifests and lockfiles |
+| `official_documentation` | Official docs, READMEs, tutorials |
+| `architecture_or_design_document` | Design docs, ADRs, RFCs |
+| `release_note_or_changelog` | Release notes and changelogs |
+| `migration_guidance` | Migration guides and upgrade notes |
+| `benchmark_or_performance_evidence` | Benchmarks and perf measurements |
+| `issue_or_incident_discussion` | Issues, bug reports, discussions |
+| `pull_request_or_design_review` | PRs and design reviews |
+| `authoritative_security_advisory` | CVEs, GHSA, NVD, OSV advisories |
+| `vendor_security_guidance` | Vendor security pages and guidance |
+| `independent_corroboration` | Papers, third-party analysis |
+| `counterpoint_or_conflicting_evidence` | Conflicting viewpoints or data |
+| `community_discussion` | Forums, Stack Overflow, blogs |
+| `unknown_or_weak_context` | Unclassified or ambiguous sources |
+
+Roles are derived deterministically from existing metadata (source kind, source role, security tier, research source class) — no model inference required.
+
+### Workflow Coverage Model
+
+Each of the 10 core workflows has a deterministic coverage model defining required, recommended, and optional evidence roles:
+
+| Workflow | Required Roles | Recommended Roles |
+|----------|---------------|-------------------|
+| API Comprehension | interface_or_api_definition, primary_implementation | official_documentation, usage_example, test_or_behavioral_specification |
+| Repository Architecture | primary_implementation, architecture_or_design_document | official_documentation, configuration_or_feature_gate, manifest_or_dependency_metadata |
+| Error Investigation | issue_or_incident_discussion, primary_implementation | official_documentation, test_or_behavioral_specification |
+| Version Migration | release_note_or_changelog, migration_guidance | official_documentation, issue_or_incident_discussion |
+| Security Review | authoritative_security_advisory, vendor_security_guidance | primary_implementation, configuration_or_feature_gate, manifest_or_dependency_metadata |
+| Dependency Evaluation | manifest_or_dependency_metadata | official_documentation, release_note_or_changelog, authoritative_security_advisory |
+| Performance Investigation | benchmark_or_performance_evidence | primary_implementation, official_documentation, independent_corroboration |
+| Comparative Research | official_documentation, primary_implementation | benchmark_or_performance_evidence, independent_corroboration, counterpoint_or_conflicting_evidence |
+| Pre-Change Evidence | primary_implementation, test_or_behavioral_specification | official_documentation, configuration_or_feature_gate |
+| Post-Change Review | test_or_behavioral_specification | primary_implementation, official_documentation, configuration_or_feature_gate |
+
+Coverage status is one of: `sufficient`, `usable_with_gaps`, `insufficient`, or `indeterminate_due_to_failures`. Empty evidence groups are never conflated with retrieval failure.
+
+### Conflict and Contradiction Detection
+
+Search responses may include `conflict_metadata` when sources disagree on structured fields. Conflict classes include:
+
+- `differing_version_ranges` — two sources give different affected version ranges
+- `conflicting_release_dates` — sources disagree on release dates
+- `divergent_benchmark_numbers` — conflicting performance measurements
+- `documentation_implementation_mismatch` — docs disagree with code
+- `mutable_vs_commit_pinned_content` — branch URL vs commit-pinned URL
+- `different_provider_metadata` — providers disagree on metadata for same entity
+
+Each conflict has a `severity` (critical/high/medium/low/informational) and a `resolution` recommendation (prefer_commit_pinned, prefer_authoritative_source, manual_review_required, etc.).
+
+### Failure and Absence Semantics
+
+Responses distinguish between evidence absence and retrieval failure:
+
+| Absence Kind | Meaning |
+|--------------|---------|
+| `no_matching_evidence_found` | No evidence matched the query |
+| `provider_capability_unavailable` | No provider supports the needed capability |
+| `provider_skipped_by_policy` | Provider was skipped by configuration |
+| `provider_failed` | Provider returned an error |
+| `deadline_prevented_completion` | Retrieval timed out |
+| `result_truncated_by_cap` | Results were truncated by limit |
+| `evidence_role_not_requested` | Role was not requested in the query |
+| `evidence_role_requested_but_not_found` | Role was requested but no evidence found |
+| `evidence_role_indeterminate_because_retrieval_failed` | Cannot determine if evidence exists |
+
+A host agent must never interpret an empty group as proof of absence when the corresponding retrieval dimension failed.
 
 ### Example Workflow with Recipes
 

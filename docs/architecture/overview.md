@@ -68,6 +68,10 @@ The four top-level library modules (`core`, `meta`, `fetch`, `mcp`) plus the `co
 | Module | Path | Responsibility | Deep Dive |
 |--------|------|----------------|-----------|
 | **core** | `src/core/` | Pure domain types, config model, error types, identity system, sanitization, warnings, source cards, quality heuristics, security/research/repo/local/package/evidence types | [core.md](core.md) |
+| `evidence_role.rs` | `src/core/evidence_role.rs` | Unified evidence role taxonomy mapping across source kinds, roles, classes, and tiers | |
+| `workflow_coverage.rs` | `src/core/workflow_coverage.rs` | Deterministic coverage structures for workflow evidence models | |
+| `conflict.rs` | `src/core/conflict.rs` | Contradiction and conflict metadata for source disagreement detection | |
+| `retrieval_status.rs` | `src/core/retrieval_status.rs` | Failure and absence semantics distinguishing evidence absence from retrieval failure | |
 | **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
 | **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection, code-host URL rewriting | [fetch.md](fetch.md) |
 | **mcp** | `src/mcp/` | MCP server over stdio (rmcp), 10 tool definitions, shared server state, policy enforcement | [mcp.md](mcp.md) |

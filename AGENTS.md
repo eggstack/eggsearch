@@ -36,6 +36,10 @@ src/
   config.rs        # CLI config loader
   commands/        # subcommands: doctor, search, providers, mcp, fetch
   core/            # types, config, error, query, sanitize, identity, warning
+    evidence_role.rs   # unified evidence role taxonomy
+    workflow_coverage.rs # workflow coverage model
+    conflict.rs        # contradiction and conflict metadata
+    retrieval_status.rs # failure and absence semantics
   meta/            # MetadataSearchAdapter + vendored engines + forge tree adapter + local inventory cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection
   mcp/             # MCP server (rmcp), tool definitions, server state
@@ -172,6 +176,8 @@ make hardening                                              # all hardening test
 `web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`.
 
 Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` crate with `tool_router` proc macros.
+
+Search tools return `evidence_role` on source cards and `conflict_metadata` when sources disagree.
 
 ## Publishing
 

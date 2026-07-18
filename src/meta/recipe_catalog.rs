@@ -111,6 +111,7 @@ pub fn web_search_next_actions(
             1,
             serde_json::json!({"url": "<selected_url>"}),
             source_ids.iter().take(1).cloned().collect(),
+            None,
         ));
     }
     if source_ids.len() > 1 {
@@ -120,6 +121,7 @@ pub fn web_search_next_actions(
             5,
             serde_json::json!({"goal": "<research_goal>", "sources": "<source_cards>", "fetches": "<fetched_items>"}),
             source_ids.to_vec(),
+            None,
         ));
     }
     actions
@@ -138,6 +140,7 @@ pub fn repo_search_next_actions(
             1,
             serde_json::json!({"owner": "<owner>", "repo": "<repo>", "path": "<path>", "symbol": "<symbol>"}),
             source_ids.iter().take(1).cloned().collect(),
+            None,
         ));
     }
     if source_ids.len() > 1 {
@@ -147,6 +150,7 @@ pub fn repo_search_next_actions(
             2,
             serde_json::json!({"items": "<selected_urls_or_locators>"}),
             source_ids.to_vec(),
+            None,
         ));
     }
     actions.push(AgentNextAction::new(
@@ -155,6 +159,7 @@ pub fn repo_search_next_actions(
         4,
         serde_json::json!({"goal": "<investigation_goal>", "sources": "<source_cards>", "fetches": "<fetched_items>"}),
         source_ids.to_vec(),
+        None,
     ));
     actions
 }
@@ -172,6 +177,7 @@ pub fn security_search_next_actions(
             1,
             serde_json::json!({"url": "<advisory_url>"}),
             source_ids.iter().take(1).cloned().collect(),
+            None,
         ));
     }
     if has_applicability {
@@ -181,6 +187,7 @@ pub fn security_search_next_actions(
             2,
             serde_json::json!({"query": "<package>", "ecosystem": "<ecosystem>", "version": "<version>", "assess_applicability": true}),
             vec![],
+            None,
         ));
     }
     if source_ids.len() > 1 {
@@ -190,6 +197,7 @@ pub fn security_search_next_actions(
             4,
             serde_json::json!({"goal": "<security_triage>", "sources": "<source_cards>", "fetches": "<fetched_items>"}),
             source_ids.to_vec(),
+            None,
         ));
     }
     actions
@@ -208,6 +216,7 @@ pub fn research_search_next_actions(
             1,
             serde_json::json!({"url": "<primary_source_url>"}),
             source_ids.iter().take(1).cloned().collect(),
+            None,
         ));
     }
     if has_counterpoints {
@@ -217,6 +226,7 @@ pub fn research_search_next_actions(
             2,
             serde_json::json!({"url": "<counterpoint_url>"}),
             vec![],
+            None,
         ));
     }
     actions.push(AgentNextAction::new(
@@ -225,6 +235,7 @@ pub fn research_search_next_actions(
         4,
         serde_json::json!({"goal": "<research_question>", "sources": "<source_cards>", "fetches": "<fetched_items>"}),
         source_ids.to_vec(),
+        None,
     ));
     actions
 }
@@ -257,6 +268,7 @@ fn generic_web_lookup() -> AgentWorkflowRecipe {
                 input_hints: vec!["No arguments needed".into()],
                 inspect_fields: vec!["providers".into(), "server_capabilities".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 2,
@@ -274,6 +286,7 @@ fn generic_web_lookup() -> AgentWorkflowRecipe {
                     "suggested_fetches".into(),
                 ],
                 next_action_rule: Some("prefer high-confidence sources with exact evidence".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -285,6 +298,7 @@ fn generic_web_lookup() -> AgentWorkflowRecipe {
                 ],
                 inspect_fields: vec!["text".into(), "document".into(), "trust_markers".into()],
                 next_action_rule: Some("one URL per call; never batch without batch_fetch".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 4,
@@ -297,6 +311,7 @@ fn generic_web_lookup() -> AgentWorkflowRecipe {
                 ],
                 inspect_fields: vec!["bundle_id".into(), "gaps".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {
@@ -346,6 +361,7 @@ fn documentation_api_lookup() -> AgentWorkflowRecipe {
                 input_hints: vec!["No arguments needed".into()],
                 inspect_fields: vec!["providers".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 2,
@@ -363,6 +379,7 @@ fn documentation_api_lookup() -> AgentWorkflowRecipe {
                 next_action_rule: Some(
                     "prefer official_docs and package_registry source kinds".into(),
                 ),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -377,6 +394,7 @@ fn documentation_api_lookup() -> AgentWorkflowRecipe {
                 next_action_rule: Some(
                     "use when repo locator is available and native providers exist".into(),
                 ),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 4,
@@ -385,6 +403,7 @@ fn documentation_api_lookup() -> AgentWorkflowRecipe {
                 input_hints: vec!["url: documentation URL".into()],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 5,
@@ -393,6 +412,7 @@ fn documentation_api_lookup() -> AgentWorkflowRecipe {
                 input_hints: vec!["goal, sources, fetches".into()],
                 inspect_fields: vec!["bundle_id".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {
@@ -447,6 +467,7 @@ fn repository_investigation() -> AgentWorkflowRecipe {
                     "server_capabilities.local_workspace".into(),
                 ],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 2,
@@ -462,6 +483,7 @@ fn repository_investigation() -> AgentWorkflowRecipe {
                     "suggested_fetches".into(),
                 ],
                 next_action_rule: Some("use when repo locator is available".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -478,6 +500,7 @@ fn repository_investigation() -> AgentWorkflowRecipe {
                     "telemetry".into(),
                 ],
                 next_action_rule: Some("prefer source groups first, then docs, then issues".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 4,
@@ -490,6 +513,7 @@ fn repository_investigation() -> AgentWorkflowRecipe {
                 ],
                 inspect_fields: vec!["text".into(), "code_context".into(), "selected_span".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 5,
@@ -501,6 +525,7 @@ fn repository_investigation() -> AgentWorkflowRecipe {
                 ],
                 inspect_fields: vec!["results".into(), "total_chars_returned".into()],
                 next_action_rule: Some("use when 2+ URLs need fetching".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 6,
@@ -509,6 +534,7 @@ fn repository_investigation() -> AgentWorkflowRecipe {
                 input_hints: vec!["goal, sources, fetches".into()],
                 inspect_fields: vec!["bundle_id".into(), "gaps".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {
@@ -570,6 +596,7 @@ fn exact_error_investigation() -> AgentWorkflowRecipe {
                 next_action_rule: Some(
                     "inspect error_context for parsed error codes and redactions".into(),
                 ),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 2,
@@ -578,6 +605,7 @@ fn exact_error_investigation() -> AgentWorkflowRecipe {
                 input_hints: vec!["url: from suggested_fetches or source cards".into()],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -586,6 +614,7 @@ fn exact_error_investigation() -> AgentWorkflowRecipe {
                 input_hints: vec!["goal, sources, fetches".into()],
                 inspect_fields: vec!["bundle_id".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {
@@ -639,6 +668,7 @@ fn security_package_triage() -> AgentWorkflowRecipe {
                     "applicability".into(),
                     "suggested_fetches".into(),
                 ],
+                evidence_roles: vec![],
                 next_action_rule: Some(
                     "prefer authoritative advisories (Tier 1) over community sources".into(),
                 ),
@@ -650,6 +680,7 @@ fn security_package_triage() -> AgentWorkflowRecipe {
                 input_hints: vec!["url: advisory URL from suggested_fetches".into()],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -658,6 +689,7 @@ fn security_package_triage() -> AgentWorkflowRecipe {
                 input_hints: vec!["goal, sources, fetches".into()],
                 inspect_fields: vec!["bundle_id".into(), "gaps".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {
@@ -718,6 +750,7 @@ fn dependency_upgrade_research() -> AgentWorkflowRecipe {
                     "package_resolution".into(),
                 ],
                 next_action_rule: Some("prefer changelog and migration groups first".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 2,
@@ -729,6 +762,7 @@ fn dependency_upgrade_research() -> AgentWorkflowRecipe {
                 ],
                 inspect_fields: vec!["groups".into(), "suggested_fetches".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -737,6 +771,7 @@ fn dependency_upgrade_research() -> AgentWorkflowRecipe {
                 input_hints: vec!["url: from suggested_fetches".into()],
                 inspect_fields: vec!["text".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 4,
@@ -748,6 +783,7 @@ fn dependency_upgrade_research() -> AgentWorkflowRecipe {
                 ],
                 inspect_fields: vec!["vulnerabilities".into()],
                 next_action_rule: Some("use when upgrade is security-motivated".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 5,
@@ -756,6 +792,7 @@ fn dependency_upgrade_research() -> AgentWorkflowRecipe {
                 input_hints: vec!["goal, sources, fetches".into()],
                 inspect_fields: vec!["bundle_id".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {
@@ -812,6 +849,7 @@ fn architecture_deep_research() -> AgentWorkflowRecipe {
                 next_action_rule: Some(
                     "inspect workflow_context.gaps for missing evidence types".into(),
                 ),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 2,
@@ -820,6 +858,7 @@ fn architecture_deep_research() -> AgentWorkflowRecipe {
                 input_hints: vec!["url: from suggested_fetches".into()],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: Some("fetch both supporting and contradicting sources".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -828,6 +867,7 @@ fn architecture_deep_research() -> AgentWorkflowRecipe {
                 input_hints: vec!["goal, sources, fetches".into()],
                 inspect_fields: vec!["bundle_id".into(), "gaps".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {
@@ -873,6 +913,7 @@ fn local_workspace_investigation() -> AgentWorkflowRecipe {
                 input_hints: vec!["No arguments needed".into()],
                 inspect_fields: vec!["server_capabilities.local_workspace".into()],
                 next_action_rule: Some("abort recipe if local_workspace is false".into()),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 2,
@@ -888,6 +929,7 @@ fn local_workspace_investigation() -> AgentWorkflowRecipe {
                 next_action_rule: Some(
                     "prefer clean local matches for current checkout tasks".into(),
                 ),
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 3,
@@ -902,6 +944,7 @@ fn local_workspace_investigation() -> AgentWorkflowRecipe {
                 ],
                 inspect_fields: vec!["text".into(), "code_context".into(), "trust".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
             AgentWorkflowStep {
                 order: 4,
@@ -910,6 +953,7 @@ fn local_workspace_investigation() -> AgentWorkflowRecipe {
                 input_hints: vec!["goal, sources, fetches".into()],
                 inspect_fields: vec!["bundle_id".into(), "trust_summary".into()],
                 next_action_rule: None,
+                evidence_roles: vec![],
             },
         ],
         fallbacks: vec![AgentWorkflowFallback {

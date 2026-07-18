@@ -630,6 +630,7 @@ pub fn detect_evidence_gaps(
                 3,
                 serde_json::json!({"query": "official documentation", "intent": "docs"}),
                 Vec::new(),
+                None,
             )],
         });
     }
@@ -647,6 +648,7 @@ pub fn detect_evidence_gaps(
                 3,
                 serde_json::json!({"query": "recent news", "intent": "news", "freshness": "month"}),
                 Vec::new(),
+                None,
             )],
         });
     }
@@ -664,6 +666,7 @@ pub fn detect_evidence_gaps(
                 3,
                 serde_json::json!({"query": "benchmarks performance", "intent": "code"}),
                 Vec::new(),
+                None,
             )],
         });
     }
@@ -681,6 +684,7 @@ pub fn detect_evidence_gaps(
                 3,
                 serde_json::json!({"query": "security vulnerabilities", "intent": "security"}),
                 Vec::new(),
+                None,
             )],
         });
     }
@@ -698,6 +702,7 @@ pub fn detect_evidence_gaps(
                 3,
                 serde_json::json!({"query": "changelog release notes", "intent": "releases"}),
                 Vec::new(),
+                None,
             )],
         });
     }
@@ -716,6 +721,7 @@ pub fn detect_evidence_gaps(
                 3,
                 serde_json::json!({"query": "additional sources", "intent": "docs"}),
                 Vec::new(),
+                None,
             )],
         });
     }
@@ -739,6 +745,7 @@ pub fn detect_evidence_gaps(
                 3,
                 serde_json::json!({"query": "authoritative source", "intent": "docs"}),
                 Vec::new(),
+                None,
             )],
         });
     }
@@ -770,6 +777,7 @@ pub fn detect_evidence_gaps(
                     3,
                     serde_json::json!({"query": "release notes changelog", "intent": "releases"}),
                     Vec::new(),
+                    None,
                 )],
             });
         }

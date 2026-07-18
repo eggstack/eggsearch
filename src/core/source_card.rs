@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::evidence_role::EvidenceRole;
 use crate::core::result::TrustLevel;
 use crate::core::sanitize::TrustMarkers;
 
@@ -262,6 +263,9 @@ pub struct SourceMetadata {
     /// Whether this local file is a lockfile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_lockfile: Option<bool>,
+    /// Deterministic evidence role classification for workflow-aware grouping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_role: Option<EvidenceRole>,
 }
 
 /// Metadata for a local repository match, attached to local workspace
@@ -376,6 +380,7 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
         && m.is_example.is_none()
         && m.is_config.is_none()
         && m.is_lockfile.is_none()
+        && m.evidence_role.is_none()
 }
 
 impl SourceCard {

@@ -2455,6 +2455,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
             is_example: None,
             is_config: None,
             is_lockfile: None,
+            evidence_role: None,
         },
         quality: None,
     };
@@ -3066,6 +3067,7 @@ mod tests {
                 is_example: None,
                 is_config: None,
                 is_lockfile: None,
+                evidence_role: None,
             }),
             SourceCard::new(
                 "Docs.rs",
@@ -3090,6 +3092,7 @@ mod tests {
                 is_example: None,
                 is_config: None,
                 is_lockfile: None,
+                evidence_role: None,
             }),
         ];
         apply_intent_reranking(

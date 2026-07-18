@@ -8,12 +8,16 @@ pub mod code_evidence;
 pub mod code_host_fetch;
 pub mod code_metadata;
 pub mod config;
+/// Deterministic conflict detection metadata for contradictory source evidence.
+pub mod conflict;
 pub mod document;
 pub mod error;
 /// Deterministic error-message parser and subquery generator for exact-error search mode.
 pub mod error_query;
 /// Evidence bundle types for multi-agent handoff.
 pub mod evidence_bundle;
+/// Unified evidence role taxonomy mapping across source kinds, roles, classes, and tiers.
+pub mod evidence_role;
 pub mod fetch;
 /// Deterministic cross-tool identity model for stable source/fetch/suggested IDs.
 pub mod identity;
@@ -34,6 +38,8 @@ pub mod repo_query;
 pub mod repo_search;
 pub mod research;
 pub mod result;
+/// Response-level distinctions between evidence absence and retrieval failure.
+pub mod retrieval_status;
 pub mod sanitize;
 pub mod security;
 pub mod security_applicability;
@@ -42,6 +48,8 @@ pub mod source_card;
 pub mod warning;
 /// Agent workflow recipes and next-action hints for tool sequencing guidance.
 pub mod workflow;
+/// Deterministic coverage structures for workflow evidence models.
+pub mod workflow_coverage;
 
 pub use crate::fetch::span::SelectedSpan;
 pub use batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult};
@@ -56,6 +64,11 @@ pub use code_evidence::{
 pub use code_host_fetch::{resolve_code_host_fetch_target, CodeHostFetchTarget};
 pub use code_metadata::{CodeHost, CodeMetadata};
 pub use config::{AppConfig, LiveConfig, Mode, SearchSection};
+pub use conflict::{
+    detect_benchmark_conflicts, detect_date_conflicts, detect_mutable_vs_pinned,
+    detect_provider_metadata_conflicts, detect_version_range_conflicts, ConflictClass,
+    ConflictDetector, ConflictResolution, ConflictSeverity, EvidenceConflict,
+};
 pub use document::{
     BlockKind, DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument,
     FetchRenderMetadata, RenderFormat, RenderedBlock,
@@ -71,6 +84,7 @@ pub use evidence_bundle::{
     EvidenceProviderSummary, EvidenceSourceInput, EvidenceTrustSummary, DEFAULT_MAX_FETCHED_ITEMS,
     DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
 };
+pub use evidence_role::EvidenceRole;
 pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
     WebFetchResponse,
@@ -124,6 +138,11 @@ pub use research::{
     ResearchTelemetry, ResearchWorkflow, ResearchWorkflowContext,
 };
 pub use result::{SearchWarning, TrustLevel};
+pub use retrieval_status::{
+    absent_roles, classify_absence, failed_providers, has_indeterminate, is_absence_only,
+    is_failure_only, summarize_retrieval, EvidenceAbsenceKind, ResponseRetrievalSummary,
+    RetrievalDimensionStatus,
+};
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
@@ -149,4 +168,8 @@ pub use warning::{
 pub use workflow::{
     AgentNextAction, AgentWorkflowFallback, AgentWorkflowRecipe, AgentWorkflowStep, RecipeDetail,
     RecipeSupport, MAX_NEXT_ACTIONS,
+};
+pub use workflow_coverage::{
+    CoverageStatus, RetrievalFailure, RetrievalFailureKind, WorkflowCoverageModel,
+    WorkflowCoverageRequest, WorkflowCoverageResult,
 };
