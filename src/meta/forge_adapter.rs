@@ -5,12 +5,19 @@
 //! operations enforce entry, depth, byte, pagination, concurrency, and
 //! timeout limits.
 
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use reqwest::Client;
 use serde::Deserialize;
+use tokio::sync::Semaphore;
 
 use crate::core::code_metadata::{language_from_extension, CodeHost};
+use crate::core::repo_fetch::{
+    codeberg_browser_url, codeberg_raw_url, gitea_browser_url, gitea_raw_url, github_browser_url,
+    github_permalink_url, github_raw_permalink_url, github_raw_url, gitlab_browser_url,
+    gitlab_raw_url,
+};
 use crate::core::repo_map::{
     classify_important_directory, classify_important_file, ImportantDirKind, ImportantFileKind,
     RepoImportantDirectory, RepoImportantFile, RepoMapEntry, RepoMapEntryKind, RepoMapMode,
@@ -28,9 +35,13 @@ const DEFAULT_MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const MAX_IMPORTANT_FILE_PROBES: usize = 50;
 const MAX_IMPORTANT_DIR_PROBES: usize = 50;
+const MAX_CONCURRENT_FORGE_REQUESTS: usize = 4;
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITLAB_API_BASE: &str = "https://gitlab.com/api/v4";
 const CODEBERG_API_BASE: &str = "https://codeberg.org/api/v1";
+
+static FORGE_SEMAPHORE: LazyLock<Semaphore> =
+    LazyLock::new(|| Semaphore::new(MAX_CONCURRENT_FORGE_REQUESTS));
 
 /// Configuration for connecting to a forge API.
 #[derive(Debug, Clone)]
@@ -116,6 +127,13 @@ pub async fn fetch_tree(
     req: &RepoMapRequest,
     config: &ForgeTreeConfig,
 ) -> Result<ForgeTreeResponse, String> {
+    let _permit = FORGE_SEMAPHORE
+        .acquire()
+        .await
+        .map_err(|_| "concurrency limit exceeded".to_string())?;
+    if let Some(ref base) = config.base_url {
+        validate_base_url(base)?;
+    }
     let client = build_client()?;
     let timeout = timeout_duration(req);
 
@@ -460,6 +478,10 @@ async fn fetch_gitlab_tree(
             .await
             .map_err(|e| format!("failed to read GitLab response: {e}"))?;
 
+        if body.len() > DEFAULT_MAX_RESPONSE_BYTES {
+            return Err("response_too_large".into());
+        }
+
         let items: Vec<GitLabTreeEntry> =
             serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
 
@@ -744,6 +766,114 @@ struct ForgeTreeApiEntry {
     sha: Option<String>,
 }
 
+/// Compute browser and raw URLs for a tree entry based on the host.
+///
+/// For Gitea/Forgejo, `gitea_base_url` should be the instance root URL
+/// (e.g. `https://gitea.example.com`), not the API base.
+fn build_entry_urls(
+    host: CodeHost,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    sha: Option<&str>,
+    path: &str,
+    gitea_base_url: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let (browser, raw) = match host {
+        CodeHost::Github => {
+            if let Some(sha) = sha {
+                (
+                    github_permalink_url(owner, repo, sha, path),
+                    github_raw_permalink_url(owner, repo, sha, path),
+                )
+            } else {
+                (
+                    github_browser_url(owner, repo, ref_name, path),
+                    github_raw_url(owner, repo, ref_name, path),
+                )
+            }
+        }
+        CodeHost::Gitlab => (
+            gitlab_browser_url(owner, repo, ref_name, path),
+            gitlab_raw_url(owner, repo, ref_name, path),
+        ),
+        CodeHost::Codeberg => (
+            codeberg_browser_url(owner, repo, ref_name, path),
+            codeberg_raw_url(owner, repo, ref_name, path),
+        ),
+        CodeHost::Gitea | CodeHost::Forgejo => {
+            if let Some(base) = gitea_base_url {
+                (
+                    gitea_browser_url(base, owner, repo, ref_name, path),
+                    gitea_raw_url(base, owner, repo, ref_name, path),
+                )
+            } else {
+                (String::new(), String::new())
+            }
+        }
+        CodeHost::Unknown => (String::new(), String::new()),
+    };
+    let browser_opt = if browser.is_empty() {
+        None
+    } else {
+        Some(browser)
+    };
+    let raw_opt = if raw.is_empty() { None } else { Some(raw) };
+    (browser_opt, raw_opt)
+}
+
+/// Validate a user-supplied base URL for safety.
+///
+/// Ensures the URL uses HTTPS and does not point to localhost, loopback,
+/// or private IP ranges. Returns `Ok(())` if valid, or an error message.
+pub fn validate_base_url(url: &str) -> Result<(), String> {
+    let parsed = url
+        .parse::<reqwest::Url>()
+        .map_err(|e| format!("invalid base URL: {e}"))?;
+    if parsed.scheme() != "https" && parsed.scheme() != "http" {
+        return Err(format!(
+            "base URL must use http or https, got: {}",
+            parsed.scheme()
+        ));
+    }
+    if parsed.scheme() == "https" {
+        if let Some(host) = parsed.host_str() {
+            if host == "localhost"
+                || host == "127.0.0.1"
+                || host == "::1"
+                || host == "0.0.0.0"
+                || host.starts_with("192.168.")
+                || host.starts_with("10.")
+                || (host.starts_with("172.")
+                    && host
+                        .split('.')
+                        .nth(1)
+                        .and_then(|s| s.parse::<u8>().ok())
+                        .is_some_and(|o| (16..=31).contains(&o)))
+            {
+                return Err(format!(
+                    "HTTPS base URL must not point to localhost or private network: {host}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Derive the Gitea/Forgejo instance root URL from an API base URL.
+///
+/// E.g. `https://gitea.example.com/api/v1` → `https://gitea.example.com`.
+pub fn derive_gitea_instance_root(api_base: &str) -> String {
+    let base = api_base.trim_end_matches('/');
+    if let Some(pos) = base.rfind("/api") {
+        let root = &base[..pos];
+        if root.starts_with("http") {
+            return root.to_string();
+        }
+    }
+    base.to_string()
+}
+
 /// Convert a `ForgeTreeResponse` into a provider-neutral `RepoMapResponse`.
 ///
 /// Applies depth filtering, entry classification, and builds suggested fetches.
@@ -754,6 +884,7 @@ pub fn build_response(
     include_directories: bool,
     include_ci: bool,
     include_security: bool,
+    gitea_base_url: Option<&str>,
 ) -> RepoMapResponse {
     let host = request.host.unwrap_or(CodeHost::Unknown);
     let owner = request.owner.clone();
@@ -802,11 +933,24 @@ pub fn build_response(
             || (kind == RepoMapEntryKind::Submodule && include_directories);
 
         if include {
+            let ref_str = ref_name.as_deref().unwrap_or("HEAD");
+            let sha_str = raw.sha.as_deref();
+            let (url, raw_url) = build_entry_urls(
+                host,
+                &owner,
+                &repo,
+                ref_str,
+                sha_str,
+                &raw.path,
+                gitea_base_url,
+            );
             entries.push(RepoMapEntry {
                 path: raw.path.clone(),
                 kind,
                 size: raw.size,
                 language: language_from_extension(&raw.path).map(String::from),
+                url,
+                raw_url,
             });
         }
 
@@ -1028,7 +1172,7 @@ mod tests {
             warnings: vec![],
             provider_id: "github_tree".into(),
         };
-        let resp = build_response(&req, forge, true, true, true, true);
+        let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(matches!(resp.mode, RepoMapMode::Native));
         assert_eq!(resp.host, CodeHost::Github);
         assert_eq!(resp.root_entries.len(), 1);
@@ -1066,7 +1210,7 @@ mod tests {
             warnings: vec![],
             provider_id: "github_tree".into(),
         };
-        let resp = build_response(&req, forge, true, true, true, true);
+        let resp = build_response(&req, forge, true, true, true, true, None);
         assert_eq!(resp.root_entries.len(), 1);
         assert_eq!(resp.root_entries[0].path, "src");
     }
@@ -1101,7 +1245,7 @@ mod tests {
             warnings: vec![],
             provider_id: "github_tree".into(),
         };
-        let resp = build_response(&req, forge, false, true, true, true);
+        let resp = build_response(&req, forge, false, true, true, true, None);
         let files: Vec<_> = resp
             .root_entries
             .iter()
@@ -1126,7 +1270,7 @@ mod tests {
             warnings: vec![SearchWarning::new("github_tree", "truncated")],
             provider_id: "github_tree".into(),
         };
-        let resp = build_response(&req, forge, true, true, true, true);
+        let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(!resp.warnings.is_empty());
     }
 }

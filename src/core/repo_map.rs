@@ -76,6 +76,8 @@ pub enum ImportantDirKind {
     Config,
     /// Generated or vendored directory (target, node_modules, vendor, etc.).
     Generated,
+    /// Database migration directory (migrations, db/migrate, alembic, etc.).
+    Migrations,
     /// Unrecognized directory.
     Unknown,
 }
@@ -127,6 +129,12 @@ pub struct RepoMapEntry {
     /// Inferred programming language, if applicable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// Browser-viewable URL for this entry on the code host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Raw content URL for this entry (downloadable source).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_url: Option<String>,
 }
 
 /// An important file in the repository with classification metadata.
@@ -750,6 +758,18 @@ pub fn classify_important_directory(path: &str) -> (ImportantDirKind, Vec<String
         return (ImportantDirKind::Generated, reasons);
     }
 
+    // Migration directories
+    if lower == "migrations"
+        || lower == "migrate"
+        || lower == "db/migrate"
+        || lower == "alembic"
+        || lower == "database/migrate"
+        || lower == "prisma/migrations"
+    {
+        reasons.push("migration_directory".to_string());
+        return (ImportantDirKind::Migrations, reasons);
+    }
+
     (ImportantDirKind::Unknown, reasons)
 }
 
@@ -1103,6 +1123,8 @@ mod tests {
                 kind: RepoMapEntryKind::Directory,
                 size: None,
                 language: None,
+                url: None,
+                raw_url: None,
             }],
             important_files: vec![RepoImportantFile {
                 path: "Cargo.toml".to_string(),
@@ -1242,5 +1264,18 @@ mod tests {
     fn classify_important_directory_spec() {
         let (kind, _) = classify_important_directory("spec");
         assert_eq!(kind, ImportantDirKind::Tests);
+    }
+
+    #[test]
+    fn classify_important_directory_migrations() {
+        let (kind, reasons) = classify_important_directory("migrations");
+        assert_eq!(kind, ImportantDirKind::Migrations);
+        assert!(reasons.contains(&"migration_directory".to_string()));
+    }
+
+    #[test]
+    fn classify_important_directory_alembic() {
+        let (kind, _) = classify_important_directory("alembic");
+        assert_eq!(kind, ImportantDirKind::Migrations);
     }
 }

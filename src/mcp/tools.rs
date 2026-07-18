@@ -2159,6 +2159,7 @@ pub async fn run_repo_map(
     state: Arc<ServerState>,
     args: RepoMapArgs,
 ) -> Result<serde_json::Value, ToolError> {
+    use crate::core::code_metadata::CodeHost;
     use crate::core::repo_map::RepoMapRequest;
 
     // Permit a local-only path when the local backend is enabled, even in
@@ -2212,6 +2213,13 @@ pub async fn run_repo_map(
                     let include_directories = req.include_directories.unwrap_or(true);
                     let include_ci = req.include_ci.unwrap_or(true);
                     let include_security = req.include_security.unwrap_or(true);
+                    let gitea_base = if matches!(host, CodeHost::Gitea | CodeHost::Forgejo) {
+                        forge_config.base_url.as_deref().map(|api_base| {
+                            crate::meta::forge_adapter::derive_gitea_instance_root(api_base)
+                        })
+                    } else {
+                        None
+                    };
                     crate::meta::forge_adapter::build_response(
                         &req,
                         forge_response,
@@ -2219,6 +2227,7 @@ pub async fn run_repo_map(
                         include_directories,
                         include_ci,
                         include_security,
+                        gitea_base.as_deref(),
                     )
                 }
                 Err(_e) => {
@@ -2232,17 +2241,36 @@ pub async fn run_repo_map(
                     } else {
                         crate::core::warning::WarningCode::NoNativeTreeProvider
                     };
+                    let deadline_exceeded = _e.contains("timed out")
+                        || _e.contains("timeout")
+                        || _e.contains("deadline");
                     fallback
                         .structured_warnings
                         .push(crate::core::warning::AgentWarning::new(
                             warning_code,
                             format!("forge tree adapter failed: {_e}"),
                         ));
+                    if deadline_exceeded {
+                        fallback.telemetry = Some(crate::core::repo_map::RepoMapTelemetry {
+                            providers_queried: Vec::new(),
+                            deadline_exceeded: true,
+                            mode_reason: Some("forge tree request timed out".to_string()),
+                        });
+                    }
                     fallback
                 }
             }
         } else {
-            crate::meta::repo_mapper::build_fallback_response(&req)
+            let mut fallback = crate::meta::repo_mapper::build_fallback_response(&req);
+            if host == CodeHost::Unknown {
+                fallback
+                    .structured_warnings
+                    .push(crate::core::warning::AgentWarning::new(
+                        crate::core::warning::WarningCode::ForgeTreeUnsupportedHost,
+                        "host is not supported for native tree retrieval",
+                    ));
+            }
+            fallback
         }
     } else {
         crate::meta::repo_mapper::build_fallback_response(&req)

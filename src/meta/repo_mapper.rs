@@ -325,6 +325,8 @@ pub fn populate_from_local_checkout(
                 kind,
                 size,
                 language: None,
+                url: None,
+                raw_url: None,
             });
         }
 
