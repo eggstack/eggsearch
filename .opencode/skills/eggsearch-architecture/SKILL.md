@@ -16,7 +16,7 @@ src/
   config.rs        → CLI config loader
   commands/        → doctor, search, providers, mcp, fetch
   core/            → types, config, error, query, sanitize, identity, warning
-  meta/            → MetadataSearchAdapter, vendored engines, dispatch, health, forge tree adapter
+  meta/            → MetadataSearchAdapter, vendored engines, dispatch, health, forge tree adapter, local inventory cache
   fetch/           → HTTP client, HTML rendering, extraction, span selection
   mcp/             → MCP server (rmcp), 10 tool definitions, server state
 ```
@@ -78,6 +78,23 @@ Native remote repository tree retrieval for `repo_map` without cloning. Supports
 - All adapters enforce entry, depth, page, byte, and timeout limits
 - Authentication via API keys from `[search].api.<provider_id>` config
 - Falls back to unauthenticated requests for public repositories
+
+## Local Workspace Search (Phase 4)
+
+The local workspace backend uses a layered, cacheable inventory architecture:
+
+- **`local_inventory_cache.rs`** — Builds and caches file inventories with XXH3 fingerprinting
+  - Git-aware fast path: `git ls-files` for tracked file enumeration
+  - Native fallback: bounded recursive directory walking
+  - TTL-based invalidation + per-file lazy validation
+- **`local_backend.rs`** — Inventory-first search with `SymbolBackend` trait
+  - Candidate filtering from inventory before content reads
+  - Bounded content reads for filtered candidates
+  - Regex-based symbol matching via `RegexSymbolBackend`
+- **`local_inventory.rs`** — Git worktree discovery and identity matching
+- **`local_ignore.rs`** — Minimal `.gitignore` matcher
+
+Telemetry fields on `LocalSearchResult`: `backend_used`, `inventory_age_ms`, `files_considered`, `files_read`, `bytes_read`, `fallback_reason`.
 
 ## Key Architecture Docs
 

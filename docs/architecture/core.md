@@ -137,7 +137,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
-| `local.rs` | `LocalConfig`, `LocalFileEntry`, `LocalSearchRequest`, `LocalSearchResult`, `LocalMatch`, `LocalFetchPathError` | Local workspace search types, path validation (traversal, binary, symlink, hidden, skip-dirs), language detection |
+| `local.rs` | `LocalConfig`, `LocalFileEntry`, `LocalSearchRequest`, `LocalMatch`, `LocalSearchResult`, `InventoryTelemetry`, `validate_local_fetch_path()` | Local workspace search types. Config: roots, limits, gitignore/symlink policy. `InventoryTelemetry` tracks backend used, inventory age, files considered/read. |
 
 ---
 

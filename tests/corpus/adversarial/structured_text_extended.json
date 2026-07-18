@@ -1,0 +1,239 @@
+{
+  "cases": [
+    {
+      "id": "diff_unified_format",
+      "input": "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,5 +1,5 @@\n fn main() {\n-    println!(\"hello\");\n+    println!(\"world\");\n }",
+      "description": "Standard unified diff format"
+    },
+    {
+      "id": "diff_context_format",
+      "input": "*** src/main.rs\n--- 1,5 ----\n  fn main() {\n!     println!(\"hello\");\n+     println!(\"world\");\n  }",
+      "description": "Context diff format"
+    },
+    {
+      "id": "diff_empty_file",
+      "input": "",
+      "description": "Empty diff input"
+    },
+    {
+      "id": "diff_only_deletions",
+      "input": "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +0 @@\n-line1\n-line2\n-line3",
+      "description": "Diff with only deletions"
+    },
+    {
+      "id": "diff_only_additions",
+      "input": "--- a/file.txt\n+++ b/file.txt\n@@ -0 +1,3 @@\n+line1\n+line2\n+line3",
+      "description": "Diff with only additions"
+    },
+    {
+      "id": "patch_format",
+      "input": "diff --git a/file.txt b/file.txt\nindex abc..def 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new",
+      "description": "Git-style patch with index line"
+    },
+    {
+      "id": "patch_binary",
+      "input": "diff --git a/binary.bin b/binary.bin\nBinary files a/binary.bin and b/binary.bin differ",
+      "description": "Patch with binary file marker"
+    },
+    {
+      "id": "notebook_minimal",
+      "input": "{\"cells\":[],\"metadata\":{},\"nbformat\":4,\"nbformat_minor\":5}",
+      "description": "Minimal empty Jupyter notebook"
+    },
+    {
+      "id": "notebook_code_cells",
+      "input": "{\"cells\":[{\"cell_type\":\"code\",\"execution_count\":1,\"metadata\":{},\"outputs\":[],\"source\":[\"import os\\n\",\"print(os.getcwd())\"]}],\"metadata\":{\"kernelspec\":{\"display_name\":\"Python 3\",\"language\":\"python\",\"name\":\"python3\"}},\"nbformat\":4,\"nbformat_minor\":5}",
+      "description": "Notebook with code cells and execution output"
+    },
+    {
+      "id": "notebook_markdown_cells",
+      "input": "{\"cells\":[{\"cell_type\":\"markdown\",\"metadata\":{},\"source\":[\"# Title\\n\\nThis is **bold** text.\"]},{\"cell_type\":\"code\",\"execution_count\":null,\"metadata\":{},\"outputs\":[],\"source\":[\"x = 42\"]}],\"metadata\":{},\"nbformat\":4,\"nbformat_minor\":5}",
+      "description": "Notebook with markdown and code cells"
+    },
+    {
+      "id": "notebook_nested_outputs",
+      "input": "{\"cells\":[{\"cell_type\":\"code\",\"execution_count\":1,\"metadata\":{},\"outputs\":[{\"output_type\":\"stream\",\"name\":\"stdout\",\"text\":[\"output1\\n\"]},{\"output_type\":\"execute_result\",\"data\":{\"text/plain\":[\"42\"]},\"metadata\":{},\"execution_count\":1}],\"source\":[\"print('output1')\\n\",\"42\"]}],\"metadata\":{},\"nbformat\":4,\"nbformat_minor\":5}",
+      "description": "Notebook with multiple output types"
+    },
+    {
+      "id": "notebook_malformed_json",
+      "input": "{cells: [invalid json",
+      "description": "Malformed notebook JSON"
+    },
+    {
+      "id": "notebook_missing_required",
+      "input": "{\"metadata\":{}}",
+      "description": "Notebook missing cells and nbformat"
+    },
+    {
+      "id": "rst_simple",
+      "input": "=====\nTitle\n=====\n\nSection\n-------\n\nSome text with **bold** and *italic*.\n\n.. code-block:: rust\n\n   fn main() {}\n\n.. list-table::\n   :widths: 20 80\n\n   * - Name\n     - Description\n   * - egg\n     - A search tool",
+      "description": "reStructuredText with sections, code, and table"
+    },
+    {
+      "id": "rst_nested_directives",
+      "input": ".. note::\n\n   This is a note.\n\n   .. warning::\n\n      Nested warning inside note.\n\n.. image:: diagram.png\n   :alt: Diagram\n   :width: 80%",
+      "description": "RST with nested directives"
+    },
+    {
+      "id": "rst_include_directive",
+      "input": "Title\n=====\n\n.. include:: other_file.rst\n\nThis text comes after the include.",
+      "description": "RST with include directive"
+    },
+    {
+      "id": "asciidoc_simple",
+      "input": "= Document Title\n\n== Section 1\n\nSome *bold* and _italic_ text.\n\n=== Subsection\n\nMore content here.\n\n[source,rust]\n----\nfn main() {\n    println!(\"hello\");\n}\n----",
+      "description": "AsciiDoc with sections and code block"
+    },
+    {
+      "id": "asciidoc_table",
+      "input": "= Title\n\n|===\n|Col1 |Col2 |Col3\n\n|A |B |C\n|D |E |F\n|===",
+      "description": "AsciiDoc table format"
+    },
+    {
+      "id": "asciidoc_includes",
+      "input": "= Main Doc\n\ninclude::chapter1.adoc[]\n\ninclude::chapter2.adoc[]",
+      "description": "AsciiDoc with include directives"
+    },
+    {
+      "id": "csv_simple",
+      "input": "name,age,city\nAlice,30,NYC\nBob,25,LA\nCharlie,35,Chicago",
+      "description": "Simple CSV with header"
+    },
+    {
+      "id": "csv_tsv",
+      "input": "name\tage\tcity\nAlice\t30\tNYC\nBob\t25\tLA",
+      "description": "TSV format"
+    },
+    {
+      "id": "csv_no_header",
+      "input": "Alice,30,NYC\nBob,25,LA\nCharlie,35,Chicago",
+      "description": "CSV without header row"
+    },
+    {
+      "id": "csv_quoted_fields",
+      "input": "name,description\n\"Alice, the great\",\"She said \"\"hello\"\"\"\n\"Bob\",\"Line1\nLine2\"",
+      "description": "CSV with quoted fields and escaped quotes"
+    },
+    {
+      "id": "csv_empty",
+      "input": "",
+      "description": "Empty CSV"
+    },
+    {
+      "id": "yaml_simple",
+      "input": "name: eggsearch\nversion: 1.0.0\ndependencies:\n  - serde\n  - tokio",
+      "description": "Simple YAML with nested list"
+    },
+    {
+      "id": "yaml_complex",
+      "input": "---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: test\n  labels:\n    app: test\nspec:\n  containers:\n  - name: main\n    image: nginx:latest\n    ports:\n    - containerPort: 80",
+      "description": "Kubernetes-style YAML"
+    },
+    {
+      "id": "yaml_flow_style",
+      "input": "{name: egg, version: 1.0, tags: [rust, search]}",
+      "description": "YAML flow style"
+    },
+    {
+      "id": "toml_simple",
+      "input": "[package]\nname = \"eggsearch\"\nversion = \"1.0.0\"\n\n[dependencies]\ntokio = { version = \"1\", features = [\"full\"] }\nserde = \"1\"",
+      "description": "TOML with nested tables"
+    },
+    {
+      "id": "toml_arrays",
+      "input": "fruits = [\"apple\", \"banana\", \"cherry\"]\nnumbers = [1, 2, 3, 4, 5]",
+      "description": "TOML arrays"
+    },
+    {
+      "id": "json_array",
+      "input": "[1, 2, 3, \"hello\", null, true, {\"key\": \"value\"}]",
+      "description": "JSON array with mixed types"
+    },
+    {
+      "id": "json_deeply_nested",
+      "input": "{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":\"deep\"}}}}}}",
+      "description": "Deeply nested JSON object"
+    },
+    {
+      "id": "json_unicode_escape",
+      "input": "{\"emoji\":\"\\uD83D\\uDE00\",\"text\":\"\\u0041\\u0042\\u0043\"}",
+      "description": "JSON with Unicode escape sequences"
+    },
+    {
+      "id": "json_huge_number",
+      "input": "{\"big\":99999999999999999999999999999999999999,\"small\":0.000000000000000001}",
+      "description": "JSON with extreme numeric values"
+    },
+    {
+      "id": "xml_simple",
+      "input": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root><item id=\"1\"><name>Test</name><value>42</value></item></root>",
+      "description": "Simple XML document"
+    },
+    {
+      "id": "xml_namespace",
+      "input": "<root xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:item><xs:name>Test</xs:name></xs:item></root>",
+      "description": "XML with namespaces"
+    },
+    {
+      "id": "xml_cdata",
+      "input": "<root><item><![CDATA[<script>alert(1)</script>]]></item></root>",
+      "description": "XML with CDATA section"
+    },
+    {
+      "id": "jsonl_multiple_objects",
+      "input": "{\"line\":1}\n{\"line\":2}\n{\"line\":3}\n",
+      "description": "JSONL with multiple JSON objects"
+    },
+    {
+      "id": "jsonl_mixed_valid_invalid",
+      "input": "{\"valid\":true}\nnot json\n{\"also_valid\":false}\n",
+      "description": "JSONL with mixed valid and invalid lines"
+    },
+    {
+      "id": "jsonl_empty",
+      "input": "",
+      "description": "Empty JSONL"
+    },
+    {
+      "id": "jsonl_single_line",
+      "input": "{\"single\":\"object\"}\n",
+      "description": "JSONL with single object"
+    },
+    {
+      "id": "very_long_line_10k",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "description": "Single line of 10000 characters"
+    },
+    {
+      "id": "mixed_line_endings",
+      "input": "line1\r\nline2\nline3\rline4\n",
+      "description": "Mixed CRLF, LF, and CR line endings"
+    },
+    {
+      "id": "missing_final_newline",
+      "input": "line1\nline2\nline3",
+      "description": "File without trailing newline"
+    },
+    {
+      "id": "only_newlines",
+      "input": "\n\n\n\n\n",
+      "description": "File containing only newlines"
+    },
+    {
+      "id": "null_bytes",
+      "input": "before\u0000after\u0000end",
+      "description": "Null bytes embedded in text"
+    },
+    {
+      "id": "bom_utf8",
+      "input": "﻿Hello UTF-8 with BOM",
+      "description": "UTF-8 BOM at start of file"
+    },
+    {
+      "id": "bom_utf16le",
+      "input": "￾H\u0000e\u0000l\u0000l\u0000o\u0000",
+      "description": "UTF-16 LE BOM with content"
+    }
+  ]
+}

@@ -51,6 +51,7 @@ pub enum MockFailure {
     HttpStatus(u16),
     Parse,
     Network,
+    Panic,
 }
 
 impl MockFailure {
@@ -66,6 +67,7 @@ impl MockFailure {
                 engine,
                 reason: "mock network failure".to_string(),
             },
+            MockFailure::Panic => panic!("mock engine panic"),
         }
     }
 }

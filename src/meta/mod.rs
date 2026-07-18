@@ -31,6 +31,8 @@ pub(crate) mod local_ignore;
 /// Local repository inventory: Git worktree discovery, remote URL
 /// normalization, identity matching, and manifest detection.
 pub mod local_inventory;
+/// Local workspace file inventory cache for fast search.
+pub mod local_inventory_cache;
 #[cfg(feature = "mock")]
 pub mod mock;
 /// Package registry resolver: bounded HTTP lookups for CratesIo, PyPI,

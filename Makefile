@@ -29,7 +29,7 @@ test-pdf:
 
 # Property tests and adversarial corpus validation
 hardening:
-	cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test adversarial_corpus
+	cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended --test dispatch_fault_injection --test adversarial_corpus
 
 # Schema/fixture corpus tests (all new contract tests)
 schema-corpus:

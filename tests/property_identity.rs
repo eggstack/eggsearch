@@ -1,4 +1,7 @@
-use eggsearch::core::identity::{canonicalize_url, source_id};
+use eggsearch::core::identity::{
+    batch_fetch_id, canonicalize_url, chunk_id, code_span_id, doc_id, fetch_id, source_id,
+    suggested_fetch_id,
+};
 use proptest::prelude::*;
 
 fn url_strategy() -> impl Strategy<Value = String> {
@@ -104,5 +107,57 @@ proptest! {
     fn canonicalize_url_preserves_non_default_port(url in "https://example\\.com:8443/path") {
         let result = canonicalize_url(&url);
         prop_assert!(result.contains(":8443"), "non-default port stripped: {}", result);
+    }
+}
+
+proptest! {
+    #[test]
+    fn cross_type_ids_never_collide(
+        url in "https://[a-z]+\\.com/path",
+        title in "[a-zA-Z]{5,20}"
+    ) {
+        let src = source_id(Some("provider"), Some(&url), Some(&title), None);
+        let fid = fetch_id(Some(&url), None, None, None, None);
+        let doc = doc_id(Some(&url), Some(&title), None);
+        let sug = suggested_fetch_id(&url, "code", 1);
+        let bat = batch_fetch_id(&url, 0);
+        let chnk = chunk_id(&doc, 0, "intro");
+        let cspan = code_span_id(&url, Some(1), Some(10), None);
+
+        let ids: Vec<&str> = vec![&src, &fid, &doc, &sug, &bat, &chnk, &cspan];
+        let unique: std::collections::HashSet<&str> = ids.into_iter().collect();
+        prop_assert_eq!(unique.len(), 7, "all entity types must produce distinct IDs, got: src={}, fetch={}, doc={}, suggested={}, batch={}, chunk={}, span={}", src, fid, doc, sug, bat, chnk, cspan);
+    }
+
+    #[test]
+    fn unicode_normalization_fullwidth_vs_ascii(
+        path in "[a-zA-Z0-9]{1,10}"
+    ) {
+        let ascii_url = format!("https://example.com/{}", path);
+        let fullwidth: String = path.chars().map(|c| {
+            if c.is_ascii_alphanumeric() {
+                char::from_u32(0xFF01 + (c as u32 - '!' as u32)).unwrap_or(c)
+            } else {
+                c
+            }
+        }).collect();
+        let fullwidth_url = format!("https://example.com/{}", fullwidth);
+        let ascii_id = source_id(Some("test"), Some(&ascii_url), None, None);
+        let fullwidth_id = source_id(Some("test"), Some(&fullwidth_url), None, None);
+        prop_assert_ne!(
+            ascii_id, fullwidth_id,
+            "fullwidth URL should produce different ID than ASCII: {:?} vs {:?}",
+            fullwidth_url, ascii_url
+        );
+    }
+
+    #[test]
+    fn source_id_field_order_insensitive(
+        url in "https://[a-z]+\\.com/[a-z]{1,10}",
+        title in "[a-zA-Z]{5,20}"
+    ) {
+        let a = source_id(Some("prov"), Some(&url), Some(&title), None);
+        let b = source_id(Some("prov"), Some(&url), Some(&title), None);
+        prop_assert_eq!(a, b, "identical fields must produce identical source_id");
     }
 }

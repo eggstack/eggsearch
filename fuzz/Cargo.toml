@@ -1,0 +1,120 @@
+[package]
+name = "eggsearch-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.eggsearch]
+path = ".."
+features = ["pdf"]
+
+[[bin]]
+name = "validate_url"
+path = "fuzz_targets/validate_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "strip_control_chars"
+path = "fuzz_targets/strip_control_chars.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "scan_injection_markers"
+path = "fuzz_targets/scan_injection_markers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extract_content"
+path = "fuzz_targets/extract_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "build_document_chunks"
+path = "fuzz_targets/build_document_chunks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extract_pdf_text"
+path = "fuzz_targets/extract_pdf_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "validate_redirect_target"
+path = "fuzz_targets/validate_redirect_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "validate_content_type"
+path = "fuzz_targets/validate_content_type.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extract_content_bytes"
+path = "fuzz_targets/extract_content_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "canonicalize_url"
+path = "fuzz_targets/canonicalize_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sanitize_pipeline"
+path = "fuzz_targets/sanitize_pipeline.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "validate_redirect_chain"
+path = "fuzz_targets/validate_redirect_chain.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_content_length"
+path = "fuzz_targets/parse_content_length.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chunk_boundary"
+path = "fuzz_targets/chunk_boundary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mixed_utf8_extract"
+path = "fuzz_targets/mixed_utf8_extract.rs"
+test = false
+doc = false
+bench = false

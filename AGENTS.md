@@ -36,7 +36,7 @@ src/
   config.rs        # CLI config loader
   commands/        # subcommands: doctor, search, providers, mcp, fetch
   core/            # types, config, error, query, sanitize, identity, warning
-  meta/            # MetadataSearchAdapter + vendored engines + forge tree adapter
+  meta/            # MetadataSearchAdapter + vendored engines + forge tree adapter + local inventory cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, and contract tests
@@ -117,6 +117,7 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/property_render_metadata.rs` | None | Property tests for TrustMarkers consistency and outline-reference bounds |
 | `tests/property_local_fs.rs` | None | Property tests for filesystem path handling and scoring |
 | `tests/property_local_fs_extended.rs` | None | Property tests for symlinks, path traversal, skip dirs, root containment |
+| `src/meta/local_inventory_cache.rs` `#[cfg(test)]` | None | Unit tests for inventory building, invalidation, git fast path |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure, timeout, hang, dedup, concurrency, health transitions tests |
 | `tests/adversarial_corpus.rs` | None | Adversarial corpus structural validation |
 | `tests/corpus/adversarial/*.json` | None | Malformed/edge-case input corpora (271+ cases across 9 files) |

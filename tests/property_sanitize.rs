@@ -152,6 +152,36 @@ proptest! {
 
 proptest! {
     #[test]
+    fn bound_text_unicode_boundary_never_panics(s in "\\PC{0,500}", max_chars in 1usize..200) {
+        let (out, _truncated) = bound_text(&s, max_chars);
+        prop_assert!(out.chars().count() <= max_chars);
+    }
+
+    #[test]
+    fn bound_text_framing_overhead_cannot_exceed_cap(
+        s in "[a-zA-Z0-9 ]{10,500}",
+        max_chars in 10usize..200usize,
+        field in "[a-z_]+",
+        id in "[a-zA-Z0-9_-]+"
+    ) {
+        let (bounded, _) = bound_text(&s, max_chars);
+        let framed = frame(&bounded, &field, &id);
+        let inner_chars = framed
+            .lines()
+            .skip(1)
+            .take(framed.lines().count().saturating_sub(2))
+            .collect::<String>()
+            .chars()
+            .count();
+        prop_assert!(
+            inner_chars <= max_chars,
+            "framed inner content {} chars exceeds max_chars {}",
+            inner_chars,
+            max_chars
+        );
+    }
+
+    #[test]
     fn frame_starts_and_ends_correctly(s in "[a-zA-Z0-9 ]*", field in "[a-z_]*", id in "[a-zA-Z0-9_-]*") {
         let out = frame(&s, &field, &id);
         prop_assert!(out.starts_with("<<<EXTERNAL_UNTRUSTED field="),

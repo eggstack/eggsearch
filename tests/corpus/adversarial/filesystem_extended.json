@@ -1,0 +1,184 @@
+{
+  "cases": [
+    {
+      "id": "fs_absolute_path",
+      "input": "/usr/local/bin/program",
+      "category": "path_traversal",
+      "description": "Absolute path outside workspace root"
+    },
+    {
+      "id": "fs_parent_traversal",
+      "input": "../secret.txt",
+      "category": "path_traversal",
+      "description": "Parent directory traversal"
+    },
+    {
+      "id": "fs_deep_traversal",
+      "input": "../../../../etc/passwd",
+      "category": "path_traversal",
+      "description": "Deep parent traversal to system files"
+    },
+    {
+      "id": "fs_dot_components",
+      "input": "./src/./lib/./main.rs",
+      "category": "path_normalization",
+      "description": "Path with dot components"
+    },
+    {
+      "id": "fs_repeated_separators",
+      "input": "src///lib////main.rs",
+      "category": "path_normalization",
+      "description": "Path with repeated separators"
+    },
+    {
+      "id": "fs_hidden_path",
+      "input": ".git/config",
+      "category": "hidden_paths",
+      "description": "Hidden directory (.git)"
+    },
+    {
+      "id": "fs_hidden_file",
+      "input": ".env",
+      "category": "hidden_paths",
+      "description": "Hidden file (.env)"
+    },
+    {
+      "id": "fs_symlink_loop",
+      "input": "link_a -> link_b -> link_a",
+      "category": "symlink",
+      "description": "Symlink cycle (A -> B -> A)"
+    },
+    {
+      "id": "fs_symlink_to_parent",
+      "input": "subdir/parent_link -> ../",
+      "category": "symlink",
+      "description": "Symlink pointing to parent directory"
+    },
+    {
+      "id": "fs_permission_denied",
+      "input": "/root/secret/",
+      "category": "permissions",
+      "description": "Directory with restricted permissions"
+    },
+    {
+      "id": "fs_binary_file",
+      "input": "image.png",
+      "category": "file_type",
+      "description": "Binary file that should be skipped"
+    },
+    {
+      "id": "fs_very_long_filename",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.txt",
+      "category": "filename_edge_cases",
+      "description": "Filename at OS limit (255 chars)"
+    },
+    {
+      "id": "fs_unicode_filename",
+      "input": "éèê.txt",
+      "category": "filename_edge_cases",
+      "description": "Filename with accented characters"
+    },
+    {
+      "id": "fs_cjk_filename",
+      "input": "文件.txt",
+      "category": "filename_edge_cases",
+      "description": "Filename with CJK characters"
+    },
+    {
+      "id": "fs_emoji_filename",
+      "input": "😀.txt",
+      "category": "filename_edge_cases",
+      "description": "Filename with emoji"
+    },
+    {
+      "id": "fs_null_byte_filename",
+      "input": "file\u0000.txt",
+      "category": "filename_edge_cases",
+      "description": "Filename with embedded null byte"
+    },
+    {
+      "id": "fs_reserved_name_windows",
+      "input": "CON.txt",
+      "category": "filename_edge_cases",
+      "description": "Windows reserved filename"
+    },
+    {
+      "id": "fs_sparse_file",
+      "input": "sparse_1gb.bin",
+      "category": "file_size",
+      "description": "Sparse file with large reported size"
+    },
+    {
+      "id": "fs_large_file",
+      "input": "huge_log.log",
+      "category": "file_size",
+      "description": "File exceeding max_file_bytes"
+    },
+    {
+      "id": "fs_empty_file",
+      "input": "empty.txt",
+      "category": "file_size",
+      "description": "Zero-byte file"
+    },
+    {
+      "id": "fs_overlapping_roots",
+      "input": "/workspace and /workspace/sub",
+      "category": "root_config",
+      "description": "Overlapping workspace roots"
+    },
+    {
+      "id": "fs_git_worktree",
+      "input": "/workspace/.git/worktrees/feature",
+      "category": "git",
+      "description": "Git worktree path"
+    },
+    {
+      "id": "fs_git_submodule",
+      "input": "/workspace/vendor/lib",
+      "category": "git",
+      "description": "Git submodule directory"
+    },
+    {
+      "id": "fs_broken_symlink",
+      "input": "dead_link -> /nonexistent",
+      "category": "symlink",
+      "description": "Symlink pointing to nonexistent target"
+    },
+    {
+      "id": "fs_device_file",
+      "input": "/dev/null",
+      "category": "special_files",
+      "description": "Device file (should not be read)"
+    },
+    {
+      "id": "fs_fifo_pipe",
+      "input": "/tmp/my_pipe",
+      "category": "special_files",
+      "description": "Named pipe / FIFO"
+    },
+    {
+      "id": "fs_socket_file",
+      "input": "/tmp/my.sock",
+      "category": "special_files",
+      "description": "Unix domain socket file"
+    },
+    {
+      "id": "fs_special_chars_in_path",
+      "input": "path/with spaces/and-symbols!/file (1).txt",
+      "category": "filename_edge_cases",
+      "description": "Spaces, exclamation, and parentheses in path"
+    },
+    {
+      "id": "fs_trailing_slash",
+      "input": "src/main.rs/",
+      "category": "path_normalization",
+      "description": "Trailing slash on file path"
+    },
+    {
+      "id": "fs_trailing_dot",
+      "input": "file.txt.",
+      "category": "filename_edge_cases",
+      "description": "Trailing dot in filename"
+    }
+  ]
+}

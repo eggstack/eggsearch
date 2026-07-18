@@ -39,7 +39,7 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - `config.rs` — CLI config loader
 - `commands/` — subcommands: doctor, search, providers, mcp, fetch
 - `core/` — types, config, error, query, sanitize, identity, warning
-- `meta/` — MetadataSearchAdapter + vendored engines + forge tree adapter
+- `meta/` — MetadataSearchAdapter + vendored engines + forge tree adapter + local inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, extraction, span selection
 - `mcp/` — MCP server (rmcp), tool definitions, server state
 - `tests/` — integration, corpus, and contract tests
@@ -63,6 +63,7 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - **Unit tests** at bottom of source file for private functions
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
 - **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits, render, local FS, dispatch) using `proptest`
+- **Inventory unit tests** in `src/meta/local_inventory_cache.rs` `#[cfg(test)]` for inventory building, invalidation, git fast path
 - **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs (245+ cases across 9 files)
 - **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency, and health transitions
 - **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, HTML extraction, PDF parsing, sanitization, and document chunking

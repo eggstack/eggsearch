@@ -130,3 +130,34 @@ jobs:
         with:
           toolchain: "1.88"
       - run: cargo doc --all-features --no-deps
+
+  fuzz-smoke:
+    name: fuzz-smoke (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - validate_url
+          - strip_control_chars
+          - scan_injection_markers
+          - extract_content
+          - build_document_chunks
+          - extract_pdf_text
+          - validate_redirect_target
+          - validate_content_type
+          - extract_content_bytes
+          - canonicalize_url
+          - sanitize_pipeline
+          - validate_redirect_chain
+          - parse_content_length
+          - chunk_boundary
+          - mixed_utf8_extract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Fuzz smoke test (15s per target)
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=15
+        working-directory: .

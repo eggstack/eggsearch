@@ -64,9 +64,10 @@ MCP Tool → MetadataSearchAdapter
 
 | File | Responsibility |
 |------|----------------|
-| `local_backend.rs` | Local workspace search backend |
+| `local_backend.rs` | Local workspace search backend with inventory-first query and SymbolBackend trait |
 | `local_ignore.rs` | Minimal `.gitignore` matcher |
 | `local_inventory.rs` | Git worktree discovery, remote URL normalization, identity matching |
+| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path, native walking, XXH3 fingerprinting, invalidation |
 
 ### Test Support
 

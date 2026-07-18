@@ -171,10 +171,15 @@ Profiles are advisory; unavailable providers are skipped with warnings, never er
 ```
 1. Git worktree discovery (local_inventory.rs)
 2. Remote URL normalization + identity matching
-3. Bounded file walking with .gitignore matching (local_ignore.rs)
-4. File scoring + SourceCard conversion (local_backend.rs)
-5. Results carry trust = local_trusted with match_confidence and reasons
-6. File classification: is_generated, is_vendor, is_test, is_example, is_config, is_lockfile
+3. File inventory construction with caching (local_inventory_cache.rs)
+   - Git-aware fast path via `git ls-files` when available
+   - Native directory walking fallback
+   - XXH3 fingerprinting for change detection
+4. Inventory-first search: candidate filtering → bounded content reads → scoring
+5. SymbolBackend trait for regex-based symbol matching
+6. SourceCard conversion with trust = local_trusted
+7. File classification: is_generated, is_vendor, is_test, is_example, is_config, is_lockfile
+8. Telemetry: backend used, inventory age, files considered/read, bytes read
 ```
 
 ---
@@ -268,6 +273,8 @@ Every resource is bounded: timeouts, max_results, max_chars, max_bytes, redirect
 6. **Profile-based routing** — 4 profiles influence provider selection. Degraded profiles fall back to defaults with warnings.
 
 7. **Three-tier sanitization** — Untrusted text is always stripped/bounded (Tier 1), optionally framed (Tier 2), and optionally scanned for injection markers (Tier 3).
+
+8. **Inventory-first search** — Local workspace search uses a cached file inventory to avoid repeated full-tree walks. Git-aware fast path (`git ls-files`) is preferred when available; native directory walking is the fallback. Per-file lazy validation via XXH3 fingerprinting ensures freshness without eager re-reads.
 
 ---
 

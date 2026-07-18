@@ -125,6 +125,23 @@ pub struct LocalMatch {
     pub symbol_kind: Option<SymbolKind>,
 }
 
+/// Inventory build telemetry for a local search.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct InventoryTelemetry {
+    /// Whether the inventory cache was used.
+    pub used_inventory: bool,
+    /// Total entries in the inventory.
+    pub inventory_entries: usize,
+    /// Number of candidates after filtering.
+    pub candidates_filtered: usize,
+    /// Number of files whose content was read.
+    pub content_reads: usize,
+    /// Time spent building the inventory in milliseconds.
+    pub inventory_build_time_ms: u64,
+    /// Whether the cached inventory was still fresh.
+    pub inventory_fresh: bool,
+}
+
 /// Result from a local workspace search.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LocalSearchResult {
@@ -136,6 +153,9 @@ pub struct LocalSearchResult {
     pub truncated: bool,
     /// Whether the scan timed out.
     pub timed_out: bool,
+    /// Inventory telemetry, if inventory path was used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<InventoryTelemetry>,
 }
 
 /// Supported language detection from file extensions.
