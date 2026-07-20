@@ -20,8 +20,7 @@ async fn validate_fetch_target_rejects_credentials_in_username() {
     let result = validate_fetch_target(&url, &limits).await;
     assert!(
         matches!(result, Err(FetchError::EmbeddedCredentialsBlocked(_))),
-        "URL with username should be rejected, got: {:?}",
-        result
+        "URL with username should be rejected, got: {result:?}"
     );
 }
 
@@ -32,8 +31,7 @@ async fn validate_fetch_target_rejects_credentials_in_userinfo() {
     let result = validate_fetch_target(&url, &limits).await;
     assert!(
         matches!(result, Err(FetchError::EmbeddedCredentialsBlocked(_))),
-        "URL with user:pass should be rejected, got: {:?}",
-        result
+        "URL with user:pass should be rejected, got: {result:?}"
     );
 }
 
@@ -44,8 +42,7 @@ async fn validate_fetch_target_rejects_empty_username_with_password() {
     let result = validate_fetch_target(&url, &limits).await;
     assert!(
         matches!(result, Err(FetchError::EmbeddedCredentialsBlocked(_))),
-        "URL with empty username and password should be rejected, got: {:?}",
-        result
+        "URL with empty username and password should be rejected, got: {result:?}"
     );
 }
 
@@ -140,8 +137,7 @@ async fn max_chars_respects_cap() {
     let char_count = text.chars().count();
     assert!(
         char_count <= 100,
-        "text should be bounded by max_chars (100), got {} chars",
-        char_count
+        "text should be bounded by max_chars (100), got {char_count} chars"
     );
     mock.assert();
 }
@@ -169,8 +165,7 @@ async fn content_length_precheck_rejects_oversized() {
 
     assert!(
         matches!(result, Err(FetchError::ContentTooLarge(_, _))),
-        "Content-Length exceeding max_bytes should be rejected, got: {:?}",
-        result
+        "Content-Length exceeding max_bytes should be rejected, got: {result:?}"
     );
     mock.assert();
 }
@@ -197,8 +192,7 @@ async fn timeout_enforced() {
 
     assert!(
         matches!(result, Err(FetchError::Timeout(_))),
-        "slow response should timeout, got: {:?}",
-        result
+        "slow response should timeout, got: {result:?}"
     );
     mock.assert();
 }
@@ -219,8 +213,7 @@ async fn redirect_to_credentials_blocked() {
 
     assert!(
         matches!(result, Err(FetchError::RedirectTargetBlocked(_))),
-        "redirect to credentials should be blocked, got: {:?}",
-        result
+        "redirect to credentials should be blocked, got: {result:?}"
     );
     mock_redirect.assert();
 }
@@ -278,8 +271,7 @@ async fn redirect_count_never_exceeds_limit() {
 
     assert!(
         matches!(result, Err(FetchError::RedirectLimitExceeded(_))),
-        "should hit redirect limit after 2 redirects, got: {:?}",
-        result
+        "should hit redirect limit after 2 redirects, got: {result:?}"
     );
     mock0.assert();
     mock1.assert();
@@ -301,11 +293,7 @@ async fn stream_error_after_partial_body() {
         .fetch(&server.url("/partial"), None, ExtractMode::Text, false)
         .await;
 
-    assert!(
-        resp.is_ok(),
-        "partial body should still succeed: {:?}",
-        resp
-    );
+    assert!(resp.is_ok(), "partial body should still succeed: {resp:?}");
     mock.assert();
 }
 
@@ -396,8 +384,7 @@ async fn max_bytes_body_truncation_when_content_length_honest() {
 
     assert!(
         matches!(result, Err(FetchError::ContentTooLarge(_, _))),
-        "Content-Length 5000 > max_bytes 1000 should be rejected, got: {:?}",
-        result
+        "Content-Length 5000 > max_bytes 1000 should be rejected, got: {result:?}"
     );
     mock.assert();
 }
@@ -428,8 +415,7 @@ async fn max_chars_exact_boundary() {
     let char_count = text.chars().count();
     assert!(
         char_count <= 500,
-        "max_chars=500 should produce bounded output, got {} chars",
-        char_count
+        "max_chars=500 should produce bounded output, got {char_count} chars"
     );
     mock.assert();
 }

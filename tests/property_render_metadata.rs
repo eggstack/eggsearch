@@ -219,8 +219,7 @@ fn outline_references_within_bounds() {
         if let Some(idx) = entry.block_index {
             assert!(
                 idx < blocks.len(),
-                "outline block_index {} out of bounds",
-                idx
+                "outline block_index {idx} out of bounds"
             );
             assert_eq!(
                 blocks[idx].kind,
@@ -282,7 +281,7 @@ fn chunk_ids_unique_within_document() {
             } else {
                 BlockKind::RawText
             },
-            text: format!("Block {}", i),
+            text: format!("Block {i}"),
             level: if i % 5 == 0 { Some(1) } else { None },
             anchor: None,
             language: None,

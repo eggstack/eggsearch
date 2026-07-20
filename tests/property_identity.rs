@@ -133,7 +133,7 @@ proptest! {
     fn unicode_normalization_fullwidth_vs_ascii(
         path in "[a-zA-Z0-9]{1,10}"
     ) {
-        let ascii_url = format!("https://example.com/{}", path);
+        let ascii_url = format!("https://example.com/{path}");
         let fullwidth: String = path.chars().map(|c| {
             if c.is_ascii_alphanumeric() {
                 char::from_u32(0xFF01 + (c as u32 - '!' as u32)).unwrap_or(c)
@@ -141,7 +141,7 @@ proptest! {
                 c
             }
         }).collect();
-        let fullwidth_url = format!("https://example.com/{}", fullwidth);
+        let fullwidth_url = format!("https://example.com/{fullwidth}");
         let ascii_id = source_id(Some("test"), Some(&ascii_url), None, None);
         let fullwidth_id = source_id(Some("test"), Some(&fullwidth_url), None, None);
         prop_assert_ne!(

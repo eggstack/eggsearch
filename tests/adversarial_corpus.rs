@@ -47,13 +47,11 @@ fn adversarial_html_malformed_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("input").is_some(),
-            "Case {} in html_malformed.json missing 'input'",
-            i
+            "Case {i} in html_malformed.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in html_malformed.json missing 'description'",
-            i
+            "Case {i} in html_malformed.json missing 'description'"
         );
     }
     eprintln!("html_malformed.json: {} cases OK", cases.len());
@@ -72,18 +70,15 @@ fn adversarial_structured_text_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("input").is_some(),
-            "Case {} in structured_text.json missing 'input'",
-            i
+            "Case {i} in structured_text.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in structured_text.json missing 'description'",
-            i
+            "Case {i} in structured_text.json missing 'description'"
         );
         assert!(
             case.get("format").is_some(),
-            "Case {} in structured_text.json missing 'format'",
-            i
+            "Case {i} in structured_text.json missing 'format'"
         );
     }
     eprintln!("structured_text.json: {} cases OK", cases.len());
@@ -102,23 +97,19 @@ fn adversarial_url_edge_cases_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("input").is_some(),
-            "Case {} in url_edge_cases.json missing 'input'",
-            i
+            "Case {i} in url_edge_cases.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in url_edge_cases.json missing 'description'",
-            i
+            "Case {i} in url_edge_cases.json missing 'description'"
         );
         let expected = case
             .get("expected")
             .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("Case {} in url_edge_cases.json missing 'expected'", i));
+            .unwrap_or_else(|| panic!("Case {i} in url_edge_cases.json missing 'expected'"));
         assert!(
             expected == "reject" || expected == "allow",
-            "Case {} in url_edge_cases.json has invalid 'expected' value: {}",
-            i,
-            expected
+            "Case {i} in url_edge_cases.json has invalid 'expected' value: {expected}"
         );
     }
     eprintln!("url_edge_cases.json: {} cases OK", cases.len());
@@ -137,18 +128,15 @@ fn adversarial_sanitize_edge_cases_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("input").is_some(),
-            "Case {} in sanitize_edge_cases.json missing 'input'",
-            i
+            "Case {i} in sanitize_edge_cases.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in sanitize_edge_cases.json missing 'description'",
-            i
+            "Case {i} in sanitize_edge_cases.json missing 'description'"
         );
         assert!(
             case.get("category").is_some(),
-            "Case {} in sanitize_edge_cases.json missing 'category'",
-            i
+            "Case {i} in sanitize_edge_cases.json missing 'category'"
         );
     }
     eprintln!("sanitize_edge_cases.json: {} cases OK", cases.len());
@@ -167,18 +155,15 @@ fn adversarial_identity_edge_cases_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("input").is_some(),
-            "Case {} in identity_edge_cases.json missing 'input'",
-            i
+            "Case {i} in identity_edge_cases.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in identity_edge_cases.json missing 'description'",
-            i
+            "Case {i} in identity_edge_cases.json missing 'description'"
         );
         assert!(
             case.get("category").is_some(),
-            "Case {} in identity_edge_cases.json missing 'category'",
-            i
+            "Case {i} in identity_edge_cases.json missing 'category'"
         );
     }
     eprintln!("identity_edge_cases.json: {} cases OK", cases.len());
@@ -197,18 +182,15 @@ fn adversarial_html_extended_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("id").is_some(),
-            "Case {} in html_extended.json missing 'id'",
-            i
+            "Case {i} in html_extended.json missing 'id'"
         );
         assert!(
             case.get("input").is_some(),
-            "Case {} in html_extended.json missing 'input'",
-            i
+            "Case {i} in html_extended.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in html_extended.json missing 'description'",
-            i
+            "Case {i} in html_extended.json missing 'description'"
         );
     }
     eprintln!("html_extended.json: {} cases OK", cases.len());
@@ -227,18 +209,15 @@ fn adversarial_structured_text_extended_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("id").is_some(),
-            "Case {} in structured_text_extended.json missing 'id'",
-            i
+            "Case {i} in structured_text_extended.json missing 'id'"
         );
         assert!(
             case.get("input").is_some(),
-            "Case {} in structured_text_extended.json missing 'input'",
-            i
+            "Case {i} in structured_text_extended.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in structured_text_extended.json missing 'description'",
-            i
+            "Case {i} in structured_text_extended.json missing 'description'"
         );
     }
     eprintln!("structured_text_extended.json: {} cases OK", cases.len());
@@ -257,18 +236,15 @@ fn adversarial_pdf_extended_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("id").is_some(),
-            "Case {} in pdf_extended.json missing 'id'",
-            i
+            "Case {i} in pdf_extended.json missing 'id'"
         );
         assert!(
             case.get("input").is_some(),
-            "Case {} in pdf_extended.json missing 'input'",
-            i
+            "Case {i} in pdf_extended.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in pdf_extended.json missing 'description'",
-            i
+            "Case {i} in pdf_extended.json missing 'description'"
         );
     }
     eprintln!("pdf_extended.json: {} cases OK", cases.len());
@@ -287,23 +263,19 @@ fn adversarial_filesystem_extended_is_valid() {
     for (i, case) in cases.iter().enumerate() {
         assert!(
             case.get("id").is_some(),
-            "Case {} in filesystem_extended.json missing 'id'",
-            i
+            "Case {i} in filesystem_extended.json missing 'id'"
         );
         assert!(
             case.get("input").is_some(),
-            "Case {} in filesystem_extended.json missing 'input'",
-            i
+            "Case {i} in filesystem_extended.json missing 'input'"
         );
         assert!(
             case.get("description").is_some(),
-            "Case {} in filesystem_extended.json missing 'description'",
-            i
+            "Case {i} in filesystem_extended.json missing 'description'"
         );
         assert!(
             case.get("category").is_some(),
-            "Case {} in filesystem_extended.json missing 'category'",
-            i
+            "Case {i} in filesystem_extended.json missing 'category'"
         );
     }
     eprintln!("filesystem_extended.json: {} cases OK", cases.len());
@@ -340,8 +312,7 @@ fn all_corpus_total_case_count() {
     );
     assert!(
         total >= 100,
-        "Total corpus cases should be >= 100, got {}",
-        total
+        "Total corpus cases should be >= 100, got {total}"
     );
 }
 
@@ -387,8 +358,7 @@ fn structured_text_corpus_exercises_render_code() {
         };
         assert!(
             !result.blocks.is_empty() || input.trim().is_empty(),
-            "rendered blocks should not be empty for non-empty input (format={})",
-            format
+            "rendered blocks should not be empty for non-empty input (format={format})"
         );
     }
 }

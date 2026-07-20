@@ -29,8 +29,7 @@ fn chunk_id_starts_with_prefix() {
     let id = chunk_id("doc_0123456789abcdef", 0, "intro");
     assert!(
         id.starts_with("chunk_"),
-        "id doesn't start with chunk_: {}",
-        id
+        "id doesn't start with chunk_: {id}"
     );
 }
 
@@ -57,11 +56,7 @@ fn code_span_id_deterministic() {
 #[test]
 fn code_span_id_starts_with_prefix() {
     let id = code_span_id("https://example.com/f.rs", None, None, None);
-    assert!(
-        id.starts_with("span_"),
-        "id doesn't start with span_: {}",
-        id
-    );
+    assert!(id.starts_with("span_"), "id doesn't start with span_: {id}");
 }
 
 #[test]
@@ -107,7 +102,7 @@ fn locator_id_starts_with_prefix() {
         workspace_root: None,
     };
     let id = locator_id(&loc);
-    assert!(id.starts_with("loc_"), "id doesn't start with loc_: {}", id);
+    assert!(id.starts_with("loc_"), "id doesn't start with loc_: {id}");
 }
 
 #[test]

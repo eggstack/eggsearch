@@ -28,8 +28,7 @@ fn symlink_rejected_when_follow_disabled() {
     let result = validate_local_fetch_path(root, "link.txt", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::SymlinkNotAllowed)),
-        "symlink should be rejected when follow_symlinks=false, got: {:?}",
-        result
+        "symlink should be rejected when follow_symlinks=false, got: {result:?}"
     );
 }
 
@@ -49,8 +48,7 @@ fn symlink_accepted_when_follow_enabled() {
     let result = validate_local_fetch_path(root, "link.txt", &cfg);
     assert!(
         result.is_ok(),
-        "symlink should be accepted when follow_symlinks=true, got: {:?}",
-        result
+        "symlink should be accepted when follow_symlinks=true, got: {result:?}"
     );
 }
 
@@ -68,8 +66,7 @@ fn intermediate_symlink_rejected() {
     let result = validate_local_fetch_path(root, "linkdir/file.txt", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::SymlinkNotAllowed)),
-        "path through intermediate symlink should be rejected, got: {:?}",
-        result
+        "path through intermediate symlink should be rejected, got: {result:?}"
     );
 }
 
@@ -83,8 +80,7 @@ fn path_traversal_rejected() {
     let result = validate_local_fetch_path(root, "../secret.txt", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::PathTraversal)),
-        "path traversal should be rejected, got: {:?}",
-        result
+        "path traversal should be rejected, got: {result:?}"
     );
 }
 
@@ -98,8 +94,7 @@ fn absolute_path_rejected() {
     let result = validate_local_fetch_path(root, "/etc/passwd", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::AbsolutePath)),
-        "absolute path should be rejected, got: {:?}",
-        result
+        "absolute path should be rejected, got: {result:?}"
     );
 }
 
@@ -115,8 +110,7 @@ fn hidden_path_rejected_by_default() {
     let result = validate_local_fetch_path(root, ".hidden/file.txt", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::HiddenPath(_))),
-        "hidden path should be rejected when include_hidden=false, got: {:?}",
-        result
+        "hidden path should be rejected when include_hidden=false, got: {result:?}"
     );
 }
 
@@ -135,8 +129,7 @@ fn hidden_path_accepted_when_enabled() {
     let result = validate_local_fetch_path(root, ".hidden/file.txt", &cfg);
     assert!(
         result.is_ok(),
-        "hidden path should be accepted when include_hidden=true, got: {:?}",
-        result
+        "hidden path should be accepted when include_hidden=true, got: {result:?}"
     );
 }
 
@@ -155,8 +148,7 @@ fn skip_dirs_always_rejected() {
     let result = validate_local_fetch_path(root, "node_modules/pkg.js", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::SkippedDirectory(_))),
-        "skip directory should always be rejected, got: {:?}",
-        result
+        "skip directory should always be rejected, got: {result:?}"
     );
 }
 
@@ -170,8 +162,7 @@ fn binary_extension_rejected() {
     let result = validate_local_fetch_path(root, "image.png", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::BinaryFile(_))),
-        "binary extension should be rejected, got: {:?}",
-        result
+        "binary extension should be rejected, got: {result:?}"
     );
 }
 
@@ -189,8 +180,7 @@ fn file_too_large_rejected() {
     let result = validate_local_fetch_path(root, "big.txt", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::FileTooLarge(_, _))),
-        "large file should be rejected, got: {:?}",
-        result
+        "large file should be rejected, got: {result:?}"
     );
 }
 
@@ -207,8 +197,7 @@ fn file_within_size_limit_accepted() {
     let result = validate_local_fetch_path(root, "small.txt", &cfg);
     assert!(
         result.is_ok(),
-        "small file should be accepted, got: {:?}",
-        result
+        "small file should be accepted, got: {result:?}"
     );
 }
 
@@ -221,8 +210,7 @@ fn not_found_rejected() {
     let result = validate_local_fetch_path(root, "nonexistent.txt", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::NotFound)),
-        "nonexistent file should be rejected, got: {:?}",
-        result
+        "nonexistent file should be rejected, got: {result:?}"
     );
 }
 
@@ -235,8 +223,7 @@ fn empty_path_rejected() {
     let result = validate_local_fetch_path(root, "", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::Empty)),
-        "empty path should be rejected, got: {:?}",
-        result
+        "empty path should be rejected, got: {result:?}"
     );
 }
 
@@ -249,8 +236,7 @@ fn whitespace_only_path_rejected() {
     let result = validate_local_fetch_path(root, "   ", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::Empty)),
-        "whitespace-only path should be rejected, got: {:?}",
-        result
+        "whitespace-only path should be rejected, got: {result:?}"
     );
 }
 
@@ -291,8 +277,7 @@ fn symlink_escape_root_rejected() {
             result,
             Err(LocalFetchPathError::EscapesRoot) | Err(LocalFetchPathError::CanonicalizeFailed(_))
         ),
-        "symlink escaping root should be rejected, got: {:?}",
-        result
+        "symlink escaping root should be rejected, got: {result:?}"
     );
 }
 
@@ -306,8 +291,7 @@ fn directory_rejected_as_not_found() {
     let result = validate_local_fetch_path(root, "mydir", &cfg);
     assert!(
         matches!(result, Err(LocalFetchPathError::NotFound)),
-        "directory should be rejected (not a file), got: {:?}",
-        result
+        "directory should be rejected (not a file), got: {result:?}"
     );
 }
 
@@ -333,8 +317,7 @@ fn symlink_loop_rejected() {
                 | Err(LocalFetchPathError::SymlinkEscapesRoot)
                 | Err(LocalFetchPathError::NotFound)
         ),
-        "symlink loop should be rejected, got: {:?}",
-        result
+        "symlink loop should be rejected, got: {result:?}"
     );
 }
 
@@ -367,8 +350,7 @@ fn sparse_file_within_size_limit_accepted() {
     let result = validate_local_fetch_path(root, "sparse.txt", &cfg);
     assert!(
         result.is_ok(),
-        "sparse file within size limit should be accepted, got: {:?}",
-        result
+        "sparse file within size limit should be accepted, got: {result:?}"
     );
 }
 
@@ -387,20 +369,17 @@ fn overlapping_roots_both_reject_outside() {
     let result_b = validate_local_fetch_path(&root_b, "file_b.txt", &cfg);
     assert!(
         result_a.is_ok(),
-        "root_a file should be found: {:?}",
-        result_a
+        "root_a file should be found: {result_a:?}"
     );
     assert!(
         result_b.is_ok(),
-        "root_b file should be found: {:?}",
-        result_b
+        "root_b file should be found: {result_b:?}"
     );
 
     let outside_a = validate_local_fetch_path(&root_a, "../b/file_b.txt", &cfg);
     assert!(
         matches!(outside_a, Err(LocalFetchPathError::PathTraversal)),
-        "cross-root access from root_a should be rejected, got: {:?}",
-        outside_a
+        "cross-root access from root_a should be rejected, got: {outside_a:?}"
     );
 }
 
@@ -430,8 +409,7 @@ fn concurrent_file_modification_during_validate() {
     let result = validate_local_fetch_path(root, "concurrent.txt", &cfg);
     assert!(
         result.is_ok(),
-        "concurrent validation should succeed: {:?}",
-        result
+        "concurrent validation should succeed: {result:?}"
     );
 
     let _ = fs::read_to_string(&file);
@@ -472,8 +450,7 @@ fn non_utf_filename_rejected() {
             result,
             Err(LocalFetchPathError::NotFound) | Err(LocalFetchPathError::CanonicalizeFailed(_))
         ),
-        "filename with null byte should be rejected or fail canonicalization, got: {:?}",
-        result
+        "filename with null byte should be rejected or fail canonicalization, got: {result:?}"
     );
 }
 
@@ -524,8 +501,7 @@ fn search_and_fetch_use_equivalent_path_policy() {
         if let Some(canonical_path) = canonical {
             assert!(
                 canonical_path.starts_with(root.canonicalize().unwrap()),
-                "accepted path {} must be within root",
-                rel
+                "accepted path {rel} must be within root"
             );
         }
         let _ = accepts;

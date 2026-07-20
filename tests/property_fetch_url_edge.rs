@@ -11,7 +11,7 @@ proptest! {
         host in "[a-z]{3,10}\\.[a-z]{2,3}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("ftp://{}/", host);
+        let url = format!("ftp://{host}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "ftp scheme should be rejected");
     }
@@ -21,7 +21,7 @@ proptest! {
         path in "[a-z]{1,10}/[a-z]{1,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("file:///{}", path);
+        let url = format!("file:///{path}");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "file scheme should be rejected");
     }
@@ -31,7 +31,7 @@ proptest! {
         host in "[a-z]{3,10}\\.[a-z]{2,3}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("ws://{}/", host);
+        let url = format!("ws://{host}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "ws scheme should be rejected");
     }
@@ -41,7 +41,7 @@ proptest! {
         host in "[a-z]{3,10}\\.[a-z]{2,3}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("gopher://{}/", host);
+        let url = format!("gopher://{host}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "gopher scheme should be rejected");
     }
@@ -51,7 +51,7 @@ proptest! {
         addr in "[a-z]{1,10}@[a-z]{3,10}\\.[a-z]{2,3}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("mailto:{}", addr);
+        let url = format!("mailto:{addr}");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "mailto scheme should be rejected");
     }
@@ -61,7 +61,7 @@ proptest! {
         host in "[a-z]{3,10}\\.[a-z]{2,3}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("ssh://{}/", host);
+        let url = format!("ssh://{host}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "ssh scheme should be rejected");
     }
@@ -101,7 +101,7 @@ proptest! {
         scheme in http_scheme()
     ) {
         let limits = FetchLimits::default();
-        let url = format!("{}:///", scheme);
+        let url = format!("{scheme}:///");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "empty host should be rejected");
     }
@@ -112,7 +112,7 @@ proptest! {
     ) {
         let limits = FetchLimits::default();
         let path = "a".repeat(path_len);
-        let url = format!("https://example.com/{}", path);
+        let url = format!("https://example.com/{path}");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "URL exceeding max_url_len should be rejected");
     }
@@ -126,7 +126,7 @@ proptest! {
         if total <= 8192 {
             let limits = FetchLimits::default();
             let path = "a".repeat(path_len);
-            let url = format!("https://example.com/{}", path);
+            let url = format!("https://example.com/{path}");
             let result = validate_url(&url, &limits);
             prop_assert!(result.is_ok(), "URL within max_url_len should be accepted (len={})", url.len());
         }
@@ -144,7 +144,7 @@ proptest! {
         seg in "[a-z]{1,5}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("https://example.com/path%20{}", seg);
+        let url = format!("https://example.com/path%20{seg}");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "percent-encoded path should be accepted");
     }
@@ -159,7 +159,7 @@ proptest! {
             ..Default::default()
         };
         let ipv6 = groups.join(":");
-        let url = format!("http://[{}]/", ipv6);
+        let url = format!("http://[{ipv6}]/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "IPv6 literal should be accepted: {}", url);
     }
@@ -173,7 +173,7 @@ proptest! {
             allow_private_network: true,
             ..Default::default()
         };
-        let url = format!("{}://example.com:0/", scheme);
+        let url = format!("{scheme}://example.com:0/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "port 0 should be accepted");
     }
@@ -183,7 +183,7 @@ proptest! {
         port in 49152u16..65535u16
     ) {
         let limits = FetchLimits::default();
-        let url = format!("https://example.com:{}/", port);
+        let url = format!("https://example.com:{port}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "high port should be accepted");
     }
@@ -193,7 +193,7 @@ proptest! {
         path in "[a-z]{1,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("https://example.com/{}/", path);
+        let url = format!("https://example.com/{path}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "trailing slash should be accepted");
     }
@@ -203,7 +203,7 @@ proptest! {
         path in "[a-z]{1,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("https://example.com/{}", path);
+        let url = format!("https://example.com/{path}");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "no trailing slash should be accepted");
     }
@@ -214,7 +214,7 @@ proptest! {
     ) {
         let limits = FetchLimits::default();
         let path = segments.join("/");
-        let url = format!("https://example.com/{}", path);
+        let url = format!("https://example.com/{path}");
         if url.len() <= 8192 {
             let result = validate_url(&url, &limits);
             prop_assert!(result.is_ok(), "deep path should be accepted");

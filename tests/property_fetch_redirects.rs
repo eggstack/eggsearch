@@ -7,7 +7,7 @@ proptest! {
         name in "[a-z]{2,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://{}.internal/", name);
+        let url = format!("http://{name}.internal/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "host ending in .internal should be rejected");
     }
@@ -17,7 +17,7 @@ proptest! {
         name in "[a-z]{2,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://{}.private/", name);
+        let url = format!("http://{name}.private/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "host ending in .private should be rejected");
     }
@@ -27,7 +27,7 @@ proptest! {
         name in "[a-z]{2,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://{}.local/", name);
+        let url = format!("http://{name}.local/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "host ending in .local should be rejected");
     }
@@ -37,7 +37,7 @@ proptest! {
         name in "[a-z]{2,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://{}.lan.example/", name);
+        let url = format!("http://{name}.lan.example/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "host containing .lan. should be rejected");
     }
@@ -51,7 +51,7 @@ proptest! {
             allow_private_network: true,
             ..Default::default()
         };
-        let url = format!("http://{}.{}/", name, tld);
+        let url = format!("http://{name}.{tld}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "private TLD should be accepted when allowed");
     }
@@ -63,7 +63,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://172.{}.{}.{}/", second, third, fourth);
+        let url = format!("http://172.{second}.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "172.16-31.x.x should be rejected");
     }
@@ -75,7 +75,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://100.{}.{}.{}/", second, third, fourth);
+        let url = format!("http://100.{second}.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "100.64-127.x.x should be rejected as CGNAT/private");
     }
@@ -87,7 +87,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://100.{}.{}.{}/", second, third, fourth);
+        let url = format!("http://100.{second}.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         if result.is_err() {
             let err = result.unwrap_err();
@@ -104,7 +104,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://100.128.{}.{}/", third, fourth);
+        let url = format!("http://100.128.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         if result.is_err() {
             let err = result.unwrap_err();
@@ -121,7 +121,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://169.254.{}.{}/", third, fourth);
+        let url = format!("http://169.254.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "169.254.x.x should be rejected");
     }
@@ -134,7 +134,7 @@ proptest! {
             allow_localhost: true,
             ..Default::default()
         };
-        let url = format!("http://localhost:{}/", port);
+        let url = format!("http://localhost:{port}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "localhost with any port should be accepted when allowed");
     }
@@ -145,8 +145,8 @@ proptest! {
         fragment in "[a-z]{1,10}"
     ) {
         let limits = FetchLimits::default();
-        let url1 = format!("https://example.com/{}#{}", path, fragment);
-        let url2 = format!("https://example.com/{}", path);
+        let url1 = format!("https://example.com/{path}#{fragment}");
+        let url2 = format!("https://example.com/{path}");
         let r1 = validate_url(&url1, &limits);
         let r2 = validate_url(&url2, &limits);
         prop_assert!(r1.is_ok() && r2.is_ok(), "both URLs should be valid");
@@ -159,8 +159,8 @@ proptest! {
         value in "[a-z]{1,5}"
     ) {
         let limits = FetchLimits::default();
-        let url_with = format!("https://example.com/{}?{}={}", path, key, value);
-        let url_without = format!("https://example.com/{}", path);
+        let url_with = format!("https://example.com/{path}?{key}={value}");
+        let url_without = format!("https://example.com/{path}");
         let r1 = validate_url(&url_with, &limits);
         let r2 = validate_url(&url_without, &limits);
         prop_assert_eq!(r1.is_ok(), r2.is_ok(), "query params should not affect acceptance");
@@ -171,7 +171,7 @@ proptest! {
         name in "[a-z]{2,10}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("https://www.{}/", name);
+        let url = format!("https://www.{name}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "www subdomain should be accepted");
     }
@@ -183,7 +183,7 @@ proptest! {
         name in "[a-z]{2,8}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("https://{}.{}.{}/", sub1, sub2, name);
+        let url = format!("https://{sub1}.{sub2}.{name}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "deep subdomain should be accepted");
     }
@@ -193,7 +193,7 @@ proptest! {
         name in "[a-z]{2,8}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("https://123.{}/", name);
+        let url = format!("https://123.{name}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "numeric subdomain should be accepted");
     }
@@ -203,7 +203,7 @@ proptest! {
         scheme in prop_oneof!["ftp", "ssh", "file", "data", "javascript", "mailto", "tel", "ws"]
     ) {
         let limits = FetchLimits::default();
-        let url = format!("{}://example.com/", scheme);
+        let url = format!("{scheme}://example.com/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "non-http scheme '{}' should be rejected", scheme);
     }
@@ -217,7 +217,7 @@ proptest! {
             ..Default::default()
         };
         let path = "a".repeat(path_len);
-        let url = format!("https://example.com/{}", path);
+        let url = format!("https://example.com/{path}");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "URL exceeding max_url_len should be rejected");
     }
@@ -230,7 +230,7 @@ proptest! {
             max_url_len: 200,
             ..Default::default()
         };
-        let url = format!("https://example.com/{}", path);
+        let url = format!("https://example.com/{path}");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "URL within length limit should be accepted");
     }
@@ -241,7 +241,7 @@ proptest! {
         garbage in "[^a-zA-Z0-9]{1,20}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("{}://{} ", prefix, garbage);
+        let url = format!("{prefix}://{garbage} ");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "malformed URL should be rejected");
     }
@@ -254,7 +254,7 @@ proptest! {
             allow_localhost: false,
             ..Default::default()
         };
-        let url = format!("http://localhost:{}/", port);
+        let url = format!("http://localhost:{port}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "localhost should be rejected when disallowed");
     }
@@ -266,7 +266,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://10.{}.{}.{}/", second, third, fourth);
+        let url = format!("http://10.{second}.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "10.x.x.x should be rejected as private");
     }
@@ -277,7 +277,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://192.168.{}.{}/", third, fourth);
+        let url = format!("http://192.168.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "192.168.x.x should be rejected as private");
     }
@@ -290,7 +290,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://{}.{}.{}.{}/", first, second, third, fourth);
+        let url = format!("http://{first}.{second}.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "multicast address should be rejected");
     }
@@ -302,7 +302,7 @@ proptest! {
         fourth in 1u8..254u8
     ) {
         let limits = FetchLimits::default();
-        let url = format!("http://127.{}.{}.{}/", second, third, fourth);
+        let url = format!("http://127.{second}.{third}.{fourth}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "loopback 127.x.x.x should be rejected");
     }

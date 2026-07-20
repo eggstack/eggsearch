@@ -193,8 +193,8 @@ proptest! {
     #[test]
     fn frame_contains_field_and_id(s in "[a-zA-Z0-9 ]*", field in "[a-z_]+", id in "[a-zA-Z0-9_-]+") {
         let out = frame(&s, &field, &id);
-        let expected_field = format!("field={}", field);
-        let expected_id = format!("id={}", id);
+        let expected_field = format!("field={field}");
+        let expected_id = format!("id={id}");
         prop_assert!(out.contains(&expected_field),
             "output missing field marker: {:?}", &out[..60.min(out.len())]);
         prop_assert!(out.contains(&expected_id),

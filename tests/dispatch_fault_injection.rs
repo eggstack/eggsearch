@@ -164,8 +164,7 @@ async fn hang_provider_cancelled_on_timeout() {
     let elapsed = start.elapsed();
     assert!(
         elapsed < Duration::from_secs(5),
-        "should complete well before 5s, took {:?}",
-        elapsed
+        "should complete well before 5s, took {elapsed:?}"
     );
     assert!(!resp.results.is_empty(), "fast provider should return");
 }
@@ -195,7 +194,7 @@ async fn mixed_success_failure_and_hang() {
 #[tokio::test]
 async fn max_results_respected() {
     let results: Vec<MockResult> = (0..20)
-        .map(|i| MockResult::new(format!("T{i}"), format!("http://{}.com/", i), "alpha"))
+        .map(|i| MockResult::new(format!("T{i}"), format!("http://{i}.com/"), "alpha"))
         .collect();
     let adapter = make_adapter(vec![MockEngine::success("alpha", results)], 10);
     let req = make_request("test");
@@ -555,8 +554,7 @@ async fn global_deadline_with_mixed_pending_and_running() {
 
     assert!(
         elapsed < Duration::from_secs(10),
-        "deadline should enforce within timeout, took {:?}",
-        elapsed
+        "deadline should enforce within timeout, took {elapsed:?}"
     );
     assert!(
         !resp.results.is_empty(),
@@ -681,11 +679,7 @@ async fn shared_pool_concurrent_searches_succeed() {
     for i in 0..20 {
         let req = make_request(&format!("query {i}"));
         let resp = adapter.web_search(&req, 3, 3).await;
-        assert!(
-            !resp.results.is_empty(),
-            "search {} should return results",
-            i
-        );
+        assert!(!resp.results.is_empty(), "search {i} should return results");
     }
 }
 
@@ -707,8 +701,7 @@ async fn panic_then_success_repeated_cycle() {
         let resp = adapter.web_search(&req, 5, 5).await;
         assert!(
             !resp.results.is_empty(),
-            "iteration {}: stable should still return after repeated panics",
-            i
+            "iteration {i}: stable should still return after repeated panics"
         );
     }
 }

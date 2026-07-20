@@ -19,7 +19,7 @@ proptest! {
         host in "[a-z]{3,10}\\.[a-z]{2,3}"
     ) {
         let limits = FetchLimits::default();
-        let url = format!("{}://{}/", scheme, host);
+        let url = format!("{scheme}://{host}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "non-http scheme '{}' should be rejected", scheme);
     }
@@ -35,7 +35,7 @@ proptest! {
         let base = "https://example.com/";
         let total_len = base.len() + path.len();
         if total_len > limits.max_url_len {
-            let url = format!("{}{}", base, path);
+            let url = format!("{base}{path}");
             let result = validate_url(&url, &limits);
             prop_assert!(result.is_err(), "URL exceeding max_url_len should be rejected");
         }
@@ -47,7 +47,7 @@ proptest! {
             allow_localhost: false,
             ..Default::default()
         };
-        let url = format!("http://localhost:{}/", port);
+        let url = format!("http://localhost:{port}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "localhost should be rejected when allow_localhost=false");
     }
@@ -62,7 +62,7 @@ proptest! {
             allow_localhost: false,
             ..Default::default()
         };
-        let url = format!("http://127.{}.{}.{}/", a, b, c);
+        let url = format!("http://127.{a}.{b}.{c}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "127.x.x.x should be rejected when allow_localhost=false");
     }
@@ -77,7 +77,7 @@ proptest! {
             allow_private_network: false,
             ..Default::default()
         };
-        let url = format!("http://10.{}.{}.{}/", b, c, d);
+        let url = format!("http://10.{b}.{c}.{d}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "10.x.x.x should be rejected when allow_private_network=false");
     }
@@ -91,7 +91,7 @@ proptest! {
             allow_private_network: false,
             ..Default::default()
         };
-        let url = format!("http://192.168.{}.{}/", c, d);
+        let url = format!("http://192.168.{c}.{d}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_err(), "192.168.x.x should be rejected when allow_private_network=false");
     }
@@ -109,7 +109,7 @@ proptest! {
             allow_localhost: true,
             ..Default::default()
         };
-        let url = format!("http://10.{}.{}.{}/", b, c, d);
+        let url = format!("http://10.{b}.{c}.{d}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "10.x.x.x should be accepted when allow_private_network=true");
     }
@@ -124,7 +124,7 @@ proptest! {
     #[test]
     fn validate_url_accepts_valid_public_http(host in "[a-z][a-z0-9.-]+\\.[a-z]{2,}") {
         let limits = FetchLimits::default();
-        let url = format!("http://{}/", host);
+        let url = format!("http://{host}/");
         let result = validate_url(&url, &limits);
         if result.is_err() {
             let err = result.unwrap_err();
@@ -141,7 +141,7 @@ proptest! {
             allow_localhost: true,
             ..Default::default()
         };
-        let url = format!("http://localhost:{}/", port);
+        let url = format!("http://localhost:{port}/");
         let result = validate_url(&url, &limits);
         prop_assert!(result.is_ok(), "localhost should be accepted when allow_localhost=true");
     }

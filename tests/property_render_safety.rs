@@ -76,8 +76,8 @@ proptest! {
         let framed = frame(&content, &field, &id);
         prop_assert!(framed.starts_with("<<<EXTERNAL_UNTRUSTED"), "should start with delimiter");
         prop_assert!(framed.ends_with("<<<END>>>"), "should end with delimiter");
-        prop_assert!(framed.contains(&format!("field={}", field)), "should contain field name");
-        prop_assert!(framed.contains(&format!("id={}", id)), "should contain id");
+        prop_assert!(framed.contains(&format!("field={field}")), "should contain field name");
+        prop_assert!(framed.contains(&format!("id={id}")), "should contain id");
     }
 
     #[test]
