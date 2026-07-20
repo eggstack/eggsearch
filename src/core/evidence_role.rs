@@ -188,7 +188,7 @@ mod tests {
         ];
         for role in all {
             let label = role.label();
-            assert!(!label.is_empty(), "label empty for {:?}", role);
+            assert!(!label.is_empty(), "label empty for {role:?}");
         }
     }
 
@@ -518,7 +518,7 @@ mod tests {
         for role in roles {
             let json = serde_json::to_string(&role).unwrap();
             let parsed: EvidenceRole = serde_json::from_str(&json).unwrap();
-            assert_eq!(parsed, role, "roundtrip failed for {:?}", role);
+            assert_eq!(parsed, role, "roundtrip failed for {role:?}");
         }
     }
 

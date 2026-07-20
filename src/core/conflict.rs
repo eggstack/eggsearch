@@ -127,10 +127,7 @@ pub fn detect_version_range_conflicts(
         directly_comparable: true,
         severity: ConflictSeverity::Medium,
         resolution: ConflictResolution::PreferHigherVersion,
-        message: format!(
-            "Sources disagree on version range for `{}`: `{}` vs `{}`",
-            field, val_a, val_b,
-        ),
+        message: format!("Sources disagree on version range for `{field}`: `{val_a}` vs `{val_b}`"),
     })
 }
 
@@ -158,10 +155,7 @@ pub fn detect_date_conflicts(
         directly_comparable: true,
         severity: ConflictSeverity::Medium,
         resolution: ConflictResolution::PreferNewerDate,
-        message: format!(
-            "Sources disagree on date for `{}`: `{}` vs `{}`",
-            field, val_a, val_b,
-        ),
+        message: format!("Sources disagree on date for `{field}`: `{val_a}` vs `{val_b}`"),
     })
 }
 
@@ -189,10 +183,7 @@ pub fn detect_provider_metadata_conflicts(
         directly_comparable: true,
         severity: ConflictSeverity::Medium,
         resolution: ConflictResolution::PreferAuthoritativeSource,
-        message: format!(
-            "Providers disagree on metadata for `{}`: `{}` vs `{}`",
-            field, val_a, val_b,
-        ),
+        message: format!("Providers disagree on metadata for `{field}`: `{val_a}` vs `{val_b}`"),
     })
 }
 
@@ -250,8 +241,7 @@ pub fn detect_benchmark_conflicts(
         severity: ConflictSeverity::High,
         resolution: ConflictResolution::ManualReviewRequired,
         message: format!(
-            "Divergent benchmark numbers for `{}`: `{}` vs `{}`",
-            benchmark_name, val_a, val_b,
+            "Divergent benchmark numbers for `{benchmark_name}`: `{val_a}` vs `{val_b}`"
         ),
     })
 }

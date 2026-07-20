@@ -383,13 +383,10 @@ pub fn compute_coverage(
 
     let mut next_actions = Vec::new();
     for role in &missing_required {
-        next_actions.push(format!("Retrieve evidence for required role: {:?}", role));
+        next_actions.push(format!("Retrieve evidence for required role: {role:?}"));
     }
     for role in &missing_recommended {
-        next_actions.push(format!(
-            "Retrieve evidence for recommended role: {:?}",
-            role
-        ));
+        next_actions.push(format!("Retrieve evidence for recommended role: {role:?}"));
     }
     for failure in failures {
         if matches!(

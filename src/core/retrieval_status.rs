@@ -174,7 +174,7 @@ mod tests {
         for v in variants {
             let json = serde_json::to_string(&v).unwrap();
             let parsed: EvidenceAbsenceKind = serde_json::from_str(&json).unwrap();
-            assert_eq!(parsed, v, "roundtrip failed for {:?}", v);
+            assert_eq!(parsed, v, "roundtrip failed for {v:?}");
         }
     }
 
