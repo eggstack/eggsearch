@@ -466,6 +466,7 @@ pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
         trust_markers: TrustMarkers::default(),
         local_checkout: None,
         telemetry: None,
+        freshness_confidence: None,
     }
 }
 

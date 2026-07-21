@@ -1212,6 +1212,7 @@ pub fn build_response(
             deadline_exceeded: false,
             mode_reason: Some(format!("native tree from {}", forge_response.provider_id)),
         }),
+        freshness_confidence: None,
     };
 
     response.suggested_fetches = build_repo_map_suggested_fetches(&response);

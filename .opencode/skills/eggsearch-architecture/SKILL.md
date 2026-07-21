@@ -79,6 +79,37 @@ Native remote repository tree retrieval for `repo_map` without cloning. Supports
 - Authentication via API keys from `[search].api.<provider_id>` config
 - Falls back to unauthenticated requests for public repositories
 
+### Forge Response Safety
+
+- `read_bounded_response()` enforces hard byte cap while streaming (not after full buffering)
+- `validate_base_url()` validates scheme, embedded credentials, host presence, IP classification, DNS-resolved address classification, and normalized API base path
+- HTTPS required for credential-bearing endpoints; loopback/private denied by default
+- All forge API responses are read through bounded reader; no `.text().await` or `.bytes().await` without a prior hard bound
+
+## Agent Workflow Integration (Phase 5)
+
+### Evidence Roles and Postprocessing
+
+`evidence_postprocess.rs` populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths:
+
+- `assign_evidence_role()` maps source kind/role to `EvidenceRole` (19 variants)
+- `compute_evidence_role_summary()` aggregates roles across result sets
+- `compute_coverage()` evaluates workflow models against returned evidence
+- Conflict detection for version ranges, dates, provider metadata, mutable-vs-pinned, benchmarks
+
+### Evidence Gap and Rationale
+
+`AgentNextAction` in `core/workflow.rs` carries optional `evidence_gap` and `rationale` fields. All 8 evidence gap kinds in `research_evidence_analysis.rs` populate both fields:
+
+- `NoPrimarySource` — "No primary or official source found"
+- `NoRecentSource` — "No recent news or discussion found"
+- `NoBenchmarkSource` — "No benchmark or performance data found"
+- `NoSecuritySource` — "No security considerations found"
+- `NoMigrationChangelog` — "No release notes or changelog found"
+- `OnlySecondarySources` — "All groups contain only a single source"
+- `ConflictingEvidenceUnresolved` — "Sources conflict but no high-confidence claim resolves"
+- `VersionContextMissing` — "Query references versions but no release notes found"
+
 ## Local Workspace Search (Phase 4)
 
 The local workspace backend uses a layered, cacheable inventory architecture:
@@ -87,6 +118,8 @@ The local workspace backend uses a layered, cacheable inventory architecture:
   - Git-aware fast path: `git ls-files` for tracked file enumeration
   - Native fallback: bounded recursive directory walking
   - TTL-based invalidation + per-file lazy validation
+  - **Entry revalidation:** `validate_entry()` called before every content read, skipping stale/deleted/oversized entries
+  - **Bounded git execution:** `run_bounded_command()` enforces timeout (5s), stdout cap (16MB), stderr cap (64KB)
 - **`local_backend.rs`** — Inventory-first search with `SymbolBackend` trait
   - Candidate filtering from inventory before content reads
   - Bounded content reads for filtered candidates
@@ -95,6 +128,15 @@ The local workspace backend uses a layered, cacheable inventory architecture:
 - **`local_ignore.rs`** — Minimal `.gitignore` matcher
 
 Telemetry fields on `LocalSearchResult`: `backend_used`, `inventory_age_ms`, `files_considered`, `files_read`, `bytes_read`, `fallback_reason`.
+
+### Freshness Confidence
+
+`FreshnessConfidence` enum (`high`/`medium`/`low`) in `core/local.rs` computed from inventory age:
+- `< 5 minutes` → `High`
+- `< 30 minutes` → `Medium`
+- `>= 30 minutes` → `Low`
+
+Propagated through `InventoryTelemetry`, `RepoMapResponse`, and `LocalRepoMatch`.
 
 ## Key Architecture Docs
 
@@ -116,5 +158,7 @@ Property-based testing and adversarial corpus validation cover the most security
 - **Local FS** (`tests/property_local_fs.rs`): path handling, binary detection, skip dirs, file size boundaries
 - **Dispatch fault injection** (`tests/dispatch_fault_injection.rs`): provider failure/timeout/hang/dedup/concurrency (requires `mock` feature)
 - **Adversarial corpus** (`tests/corpus/adversarial/`): 245+ cases across 9 files covering malformed HTML, structured text, URLs, sanitize edge cases, identity edge cases, PDFs, filesystem paths
+- **Forge adapter** (`tests/forge_adapter.rs`): endpoint validation, nested maps, resolved ref
+- **Bounded response reader** (`fuzz/fuzz_targets/bounded_response_reader.rs`): forge response UTF-8 validation and byte cap enforcement
 
 Run all hardening tests with `make hardening`. Property tests use `proptest` (dev-dependency only, not in runtime graph).

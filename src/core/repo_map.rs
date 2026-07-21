@@ -346,6 +346,9 @@ pub struct RepoMapResponse {
     /// Telemetry for the repo map response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<RepoMapTelemetry>,
+    /// Confidence that the local inventory reflects current filesystem state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness_confidence: Option<crate::core::local::FreshnessConfidence>,
 }
 
 /// Telemetry for a repo map response.
@@ -1170,6 +1173,7 @@ mod tests {
             trust_markers: TrustMarkers::default(),
             local_checkout: None,
             telemetry: None,
+            freshness_confidence: None,
         };
 
         let json = serde_json::to_string(&resp).unwrap();

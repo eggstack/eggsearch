@@ -1,16 +1,16 @@
 # Test Inventory
 
 Auto-generated inventory of all hardening and regression test suites.
-Last updated: Phase 2 completion.
+Last updated: Phase 3-5 production closure.
 
 ## Test Counts
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 3792 | 5 |
-| `--no-default-features` | 3508 | 0 |
-| `--features mock` | 3778 | 0 |
-| `--features pdf` | 3522 | 0 |
+| `--all-features` | 3950 | 9 |
+| `--no-default-features` | 3662 | 0 |
+| `--features mock` | 3935 | 0 |
+| `--features pdf` | 3677 | 0 |
 
 ## Property Tests (15 suites, 243 tests)
 
@@ -32,6 +32,33 @@ Last updated: Phase 2 completion.
 | `dispatch_fault_injection` | `mock` | 29 | Provider failure, timeout, hang, health transitions, concurrency, panic |
 | `adversarial_corpus` | None | 10 | Structural validation of adversarial corpus JSON files |
 
+## Forge Adapter Tests (`tests/forge_adapter.rs`)
+
+| Test | Focus |
+|------|-------|
+| `test_http_loopback_rejected` | HTTP loopback rejected by default |
+| `test_http_private_address_rejected` | HTTP private address rejected by default |
+| `test_https_private_dns_rejected_without_policy` | HTTPS private DNS rejected unless internal-forge enabled |
+| `test_internal_forge_accepted` | Internal forge accepted when explicitly configured |
+| `test_credential_bearing_http_rejected` | Credential-bearing HTTP rejected even with internal policy |
+| `test_cross_origin_redirect_rejected` | Cross-origin redirect rejected |
+| `test_ipv6_loopback_handled` | IPv6 loopback/private/documentation ranges handled |
+| `test_nested_gitlab_namespaces_encoded` | Nested GitLab namespaces with slashes encoded |
+| `test_gitea_without_base_url_reports_failure` | Gitea without base URL reports configuration failure |
+| `test_resolved_ref_used_in_urls` | Resolved ref used correctly in URL construction |
+| `test_nested_entries_preserved` | Nested repository maps preserve all entries within depth |
+
+## Recipe Action Tests (`tests/recipes_next_actions.rs`)
+
+| Test | Focus |
+|------|-------|
+| `next_action_template_keys_are_valid_for_target_tool` | Template keys match actual tool arg schemas |
+| `research_evidence_gap_actions_have_evidence_gap_and_rationale` | All evidence gap actions populate evidence_gap and rationale |
+| `every_recipe_step_tool_is_known_mcp_tool` | Recipe steps reference valid MCP tools |
+| `next_action_tool_names_are_valid` | Next action tool names are in known list |
+| `next_action_priorities_are_bounded` | Priority values within 1..=5 |
+| `next_action_hints_capped_at_max` | Action count respects MAX_NEXT_ACTIONS |
+
 ## Adversarial Corpus (9 files, 271+ cases)
 
 | File | Cases | Focus |
@@ -46,7 +73,7 @@ Last updated: Phase 2 completion.
 | `pdf_extended.json` | 28 | PDF magic bytes, encrypted, malformed xref, cyclic refs |
 | `filesystem_extended.json` | 30 | Symlinks, path traversal, hidden paths, binary files |
 
-## Fuzz Targets (15 targets)
+## Fuzz Targets (16 targets)
 
 | Target | Focus |
 |--------|-------|
@@ -65,6 +92,7 @@ Last updated: Phase 2 completion.
 | `extract_pdf_text` | PDF text extraction |
 | `canonicalize_url` | URL canonicalization via source_id |
 | `sanitize_pipeline` | Full sanitize pipeline: strip → bound → scan |
+| `bounded_response_reader` | Forge response bounded reader (UTF-8 + byte cap) |
 
 ## Schema/Contract Tests (6 suites)
 
@@ -99,5 +127,5 @@ Last updated: Phase 2 completion.
 | `release-build` | ~60s | all-features |
 | `publish-check` | ~30s | all-features |
 | `hardening` | ~15s | all-features (Makefile target, not a CI job) |
-| `fuzz-smoke` | ~45s | all-features (15 targets × 15s) |
+| `fuzz-smoke` | ~50s | all-features (16 targets × 15s) |
 | `docs` | ~30s | all-features |

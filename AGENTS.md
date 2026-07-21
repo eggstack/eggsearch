@@ -157,7 +157,7 @@ make hardening                                              # all hardening test
 - **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits, render) using `proptest`
 - **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs; validate structure in `tests/adversarial_corpus.rs`
 - **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency, and health transitions
-- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, redirect validation, Content-Type handling, HTML extraction, PDF parsing, sanitization pipeline, document chunking, Content-Length parsing, chunk boundary splitting, mixed UTF-8 extraction, and redirect chain validation (15 targets)
+- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, redirect validation, Content-Type handling, HTML extraction, PDF parsing, sanitization pipeline, document chunking, Content-Length parsing, chunk boundary splitting, mixed UTF-8 extraction, redirect chain validation, and bounded response reader (16 targets)
 
 ## Code Conventions
 
@@ -180,6 +180,10 @@ make hardening                                              # all hardening test
 - **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`.
 - **Nested repository maps:** `repo_map` returns both `root_entries` (backward-compatible root-only) and `entries` (all retained entries within max_depth). Depth calculation: root = 1, `src/lib.rs` = 2.
 - **Local auto-build:** Local workspace inventory is built automatically on first search (auto-build on cache miss). `inventory_truncated` is propagated from inventory roots into search results.
+- **Entry revalidation:** `validate_entry()` in `local_inventory_cache.rs` is called before every content read in both inventory and fallback search paths, skipping stale/deleted/oversized entries.
+- **Bounded git execution:** `run_bounded_command()` in `local_inventory_cache.rs` enforces timeout (5s), stdout cap (16MB), and stderr cap (64KB) on all Git subprocess invocations.
+- **Freshness confidence:** `FreshnessConfidence` enum (`high`/`medium`/`low`) in `core/local.rs` is computed from inventory age and propagated through `InventoryTelemetry`, `RepoMapResponse`, and `LocalRepoMatch`.
+- **Evidence gap and rationale:** `AgentNextAction` in `core/workflow.rs` carries optional `evidence_gap` and `rationale` fields, populated on all 8 evidence gap kinds in `research_evidence_analysis.rs`.
 
 ## MCP Tools (10 total)
 

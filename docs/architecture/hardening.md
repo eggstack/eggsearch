@@ -167,6 +167,45 @@ Tests for `src/meta/adapter.rs` provider dispatch (requires `mock` feature):
 - Panic in provider releases counters
 - Output ordering deterministic across runs
 
+### Forge Adapter (`tests/forge_adapter.rs`)
+
+Tests for `src/meta/forge_adapter.rs` endpoint validation and response handling:
+- HTTP loopback rejected by default
+- HTTP private address rejected by default
+- HTTPS private DNS name rejected unless internal-forge policy enabled
+- Internal forge accepted when explicitly configured
+- Credential-bearing HTTP endpoint rejected even with internal policy
+- Cross-origin redirect rejected
+- IPv6 loopback/private/documentation ranges handled correctly
+- Nested GitLab namespaces and refs with slashes encoded correctly
+- Gitea without base URL reports structured configuration failure
+- Resolved ref used correctly in URL construction
+- Nested repository maps preserve all entries within depth bounds
+
+### Local Inventory (`src/meta/local_inventory_cache.rs` unit tests)
+
+Tests for inventory lifecycle and invalidation:
+- First search builds inventory automatically
+- Second search reuses cached inventory without full traversal
+- Concurrent first searches result in one build or bounded duplicate work
+- Build timeout falls back deterministically
+- Cache poisoning through failed partial build is impossible
+- Configuration change invalidates inventory
+- HEAD change triggers rebuild
+- Index mtime change triggers rebuild
+- `validate_entry` rejects deleted, oversized, or symlink entries before content read
+- Stale entries skipped gracefully during search
+
+### Evidence Postprocess (`src/core/evidence_postprocess.rs` unit tests)
+
+Tests for evidence role assignment and workflow coverage:
+- Evidence roles are deterministic under randomized input order
+- Empty optional roles do not degrade required coverage
+- Required role missing after successful retrieval → `insufficient`
+- Required role indeterminate after provider failure → `indeterminate_due_to_failures`
+- Conflict metadata emitted only for directly comparable values
+- Retrieval summary correctly counts success/failure/skipped per provider
+
 ### Render Metadata (`tests/property_render_metadata.rs`)
 
 Tests for `TrustMarkers` and `DocumentOutlineEntry`:
@@ -235,6 +274,7 @@ Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys`:
 | `extract_pdf_text` | PDF text extraction |
 | `canonicalize_url` | URL canonicalization via source_id |
 | `sanitize_pipeline` | Full sanitize pipeline: strip → bound → scan |
+| `bounded_response_reader` | Forge response bounded reader (UTF-8 validation + byte cap) |
 
 ```bash
 # Smoke test (15s per target)
@@ -243,7 +283,7 @@ cargo +nightly fuzz run validate_url -- -max_total_time=15
 # Full campaign (5 minutes)
 cargo +nightly fuzz run validate_url -- -max_total_time=300
 
-# List all targets (15)
+# List all targets (16)
 cargo +nightly fuzz list
 ```
 

@@ -762,7 +762,7 @@ pub fn validate_entries(inventory: &RootInventory, config: &LocalConfig) -> Vec<
         .collect()
 }
 
-fn validate_entry(entry: &InventoryEntry, config: &LocalConfig) -> bool {
+pub(crate) fn validate_entry(entry: &InventoryEntry, config: &LocalConfig) -> bool {
     let metadata = match std::fs::metadata(&entry.absolute_path) {
         Ok(m) => m,
         Err(_) => return false,

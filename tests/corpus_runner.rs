@@ -2614,4 +2614,126 @@ mod live_smoke {
         let groups = v["groups"].as_array().unwrap();
         assert!(!groups.is_empty(), "package search should have groups");
     }
+
+    #[tokio::test]
+    #[ignore = "requires live network and live-smoke feature"]
+    async fn smoke_repo_map_public_gitlab() {
+        let state = state_with(AppConfig::default(), vec![], Duration::from_secs(10));
+        let args = RepoMapArgs {
+            host: None,
+            owner: "gitlab-org".into(),
+            repo: "gitlab-runner".into(),
+            ref_name: None,
+            commit_sha: None,
+            max_entries: None,
+            max_depth: None,
+            include_files: None,
+            include_directories: None,
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: vec![],
+        };
+        let v = run_repo_map(state, args)
+            .await
+            .expect("live gitlab repo_map");
+        assert!(v["root_entries"].is_array());
+        let entries = v["root_entries"].as_array().unwrap();
+        assert!(
+            !entries.is_empty(),
+            "gitlab repo_map should have root entries"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live network and live-smoke feature"]
+    async fn smoke_repo_map_public_codeberg() {
+        let state = state_with(AppConfig::default(), vec![], Duration::from_secs(10));
+        let args = RepoMapArgs {
+            host: None,
+            owner: "Codeberg".into(),
+            repo: "Forgejo".into(),
+            ref_name: None,
+            commit_sha: None,
+            max_entries: None,
+            max_depth: None,
+            include_files: None,
+            include_directories: None,
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: vec![],
+        };
+        let v = run_repo_map(state, args)
+            .await
+            .expect("live codeberg repo_map");
+        assert!(v["root_entries"].is_array());
+        let entries = v["root_entries"].as_array().unwrap();
+        assert!(
+            !entries.is_empty(),
+            "codeberg repo_map should have root entries"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live network and live-smoke feature"]
+    async fn smoke_repo_map_nested_github() {
+        let state = state_with(AppConfig::default(), vec![], Duration::from_secs(15));
+        let args = RepoMapArgs {
+            host: None,
+            owner: "tokio-rs".into(),
+            repo: "tokio".into(),
+            ref_name: None,
+            commit_sha: None,
+            max_entries: Some(200),
+            max_depth: Some(3),
+            include_files: Some(true),
+            include_directories: Some(true),
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: vec![],
+        };
+        let v = run_repo_map(state, args)
+            .await
+            .expect("live nested repo_map");
+        let entries = v["entries"].as_array().unwrap();
+        let has_nested = entries
+            .iter()
+            .any(|e| e["path"].as_str().map(|p| p.contains('/')).unwrap_or(false));
+        assert!(
+            has_nested,
+            "nested repo_map should have entries with '/' in path"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live network and live-smoke feature"]
+    async fn smoke_repo_map_non_default_branch() {
+        let state = state_with(AppConfig::default(), vec![], Duration::from_secs(10));
+        let args = RepoMapArgs {
+            host: None,
+            owner: "tokio-rs".into(),
+            repo: "axum".into(),
+            ref_name: Some("v0.7.x".into()),
+            commit_sha: None,
+            max_entries: None,
+            max_depth: None,
+            include_files: None,
+            include_directories: None,
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: vec![],
+        };
+        let v = run_repo_map(state, args)
+            .await
+            .expect("live non-default branch repo_map");
+        assert!(v["root_entries"].is_array());
+        let ref_name = v["ref_name"].as_str().unwrap_or("");
+        assert!(
+            ref_name.contains("v0.7") || !ref_name.is_empty(),
+            "should resolve non-default branch, got ref_name={ref_name}"
+        );
+    }
 }

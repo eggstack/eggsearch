@@ -328,6 +328,172 @@ fn next_action_source_ids_populated() {
     assert_eq!(actions[0].source_ids, vec!["src_a"]);
 }
 
+use std::collections::HashMap;
+
+const VALID_TEMPLATE_KEYS: &[(&str, &[&str])] = &[
+    (
+        "web_fetch",
+        &[
+            "url",
+            "max_chars",
+            "timeout_ms",
+            "extract_mode",
+            "include_links",
+        ],
+    ),
+    (
+        "repo_fetch",
+        &[
+            "host",
+            "owner",
+            "repo",
+            "ref_name",
+            "commit_sha",
+            "path",
+            "line_start",
+            "line_end",
+            "context_before",
+            "context_after",
+            "max_chars",
+            "timeout_ms",
+        ],
+    ),
+    (
+        "batch_fetch",
+        &[
+            "items",
+            "max_items",
+            "max_chars_per_item",
+            "max_total_chars",
+            "timeout_ms",
+            "continue_on_error",
+        ],
+    ),
+    (
+        "security_search",
+        &[
+            "query",
+            "ecosystem",
+            "package",
+            "version",
+            "cve_id",
+            "ghsa_id",
+            "osv_id",
+            "rustsec_id",
+            "severity_min",
+            "include_kev",
+            "include_exploit_context",
+            "include_defensive_guidance",
+            "include_vendor_advisories",
+            "max_results",
+            "max_per_group",
+            "freshness",
+            "timeout_ms",
+            "providers",
+            "assess_applicability",
+            "dependency_files",
+        ],
+    ),
+    (
+        "build_evidence_bundle",
+        &[
+            "goal",
+            "sources",
+            "fetches",
+            "include_unfetched_sources",
+            "max_sources",
+            "max_fetched_items",
+            "max_total_chars",
+        ],
+    ),
+];
+
+fn template_keys_by_tool() -> HashMap<&'static str, &'static [&'static str]> {
+    VALID_TEMPLATE_KEYS.iter().copied().collect()
+}
+
+#[test]
+fn next_action_template_keys_are_valid_for_target_tool() {
+    let keys_by_tool = template_keys_by_tool();
+    let source_ids = vec!["src_1".to_string(), "src_2".to_string()];
+
+    for actions in [
+        web_search_next_actions(&source_ids, true),
+        repo_search_next_actions(&source_ids, true),
+        security_search_next_actions(&source_ids, true),
+        research_search_next_actions(&source_ids, true),
+    ] {
+        for action in &actions {
+            if let Some(valid_keys) = keys_by_tool.get(action.tool.as_str()) {
+                if let Some(obj) = action.input_template.as_object() {
+                    for key in obj.keys() {
+                        assert!(
+                            valid_keys.contains(&key.as_str()),
+                            "Action '{}' targets tool '{}' but template has unknown key '{}'. Valid keys: {:?}",
+                            action.reason_code,
+                            action.tool,
+                            key,
+                            valid_keys
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn research_evidence_gap_actions_have_evidence_gap_and_rationale() {
+    use eggsearch::core::research::{ResearchResultGroup, ResearchResultGroupKind};
+    use eggsearch::core::result::TrustLevel;
+    use eggsearch::core::source_card::SourceCard;
+    use eggsearch::meta::research_evidence_analysis::detect_evidence_gaps;
+
+    fn make_card(url: &str) -> SourceCard {
+        SourceCard::new(
+            "Test".to_string(),
+            url.to_string(),
+            vec!["test_provider".to_string()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        )
+    }
+
+    fn make_group(kind: ResearchResultGroupKind, cards: Vec<SourceCard>) -> ResearchResultGroup {
+        ResearchResultGroup {
+            kind,
+            label: format!("{kind:?}"),
+            results: cards,
+            truncated: false,
+            quality_summary: None,
+        }
+    }
+
+    let groups = vec![make_group(
+        ResearchResultGroupKind::PrimarySources,
+        vec![make_card("https://example.com/doc1")],
+    )];
+
+    let gaps = detect_evidence_gaps(&groups, &[], &[], Some("test query"));
+
+    for gap in &gaps {
+        for action in &gap.recommended_actions {
+            assert!(
+                action.evidence_gap.is_some(),
+                "Gap kind {:?} action '{}' missing evidence_gap",
+                gap.kind,
+                action.reason_code
+            );
+            assert!(
+                action.rationale.is_some(),
+                "Gap kind {:?} action '{}' missing rationale",
+                gap.kind,
+                action.reason_code
+            );
+        }
+    }
+}
+
 /// Helper: build catalog with a specific RecipeDetail level.
 /// Since build_recipe_catalog always populates full data, we simulate
 /// detail filtering by checking the summarize() output for Summary

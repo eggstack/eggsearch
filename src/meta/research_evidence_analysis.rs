@@ -631,6 +631,10 @@ pub fn detect_evidence_gaps(
                 serde_json::json!({"query": "official documentation", "intent": "docs"}),
                 Vec::new(),
                 None,
+            )
+            .with_evidence_gap("No primary or official source found")
+            .with_rationale(
+                "Official documentation provides authoritative evidence for technical claims",
             )],
         });
     }
@@ -649,7 +653,9 @@ pub fn detect_evidence_gaps(
                 serde_json::json!({"query": "recent news", "intent": "news", "freshness": "month"}),
                 Vec::new(),
                 None,
-            )],
+            )
+            .with_evidence_gap("No recent news or discussion found")
+            .with_rationale("Recent sources provide temporal context and community reaction")],
         });
     }
 
@@ -667,6 +673,10 @@ pub fn detect_evidence_gaps(
                 serde_json::json!({"query": "benchmarks performance", "intent": "code"}),
                 Vec::new(),
                 None,
+            )
+            .with_evidence_gap("No benchmark or performance data found")
+            .with_rationale(
+                "Benchmark evidence grounds quantitative performance claims in measurable data",
             )],
         });
     }
@@ -685,6 +695,10 @@ pub fn detect_evidence_gaps(
                 serde_json::json!({"query": "security vulnerabilities", "intent": "security"}),
                 Vec::new(),
                 None,
+            )
+            .with_evidence_gap("No security considerations found")
+            .with_rationale(
+                "Security evidence identifies known vulnerabilities and hardening guidance",
             )],
         });
     }
@@ -703,6 +717,10 @@ pub fn detect_evidence_gaps(
                 serde_json::json!({"query": "changelog release notes", "intent": "releases"}),
                 Vec::new(),
                 None,
+            )
+            .with_evidence_gap("No release notes or changelog found")
+            .with_rationale(
+                "Release notes document breaking changes, deprecations, and migration paths",
             )],
         });
     }
@@ -722,6 +740,10 @@ pub fn detect_evidence_gaps(
                 serde_json::json!({"query": "additional sources", "intent": "docs"}),
                 Vec::new(),
                 None,
+            )
+            .with_evidence_gap("All groups contain only a single source — evidence is thin")
+            .with_rationale(
+                "Additional independent sources strengthen confidence and reduce single-source bias",
             )],
         });
     }
@@ -746,7 +768,11 @@ pub fn detect_evidence_gaps(
                 serde_json::json!({"query": "authoritative source", "intent": "docs"}),
                 Vec::new(),
                 None,
-            )],
+            )
+            .with_evidence_gap(
+                "Sources conflict but no high-confidence claim resolves the disagreement",
+            )
+            .with_rationale("An authoritative source can break ties between contradictory claims")],
         });
     }
 
@@ -778,6 +804,12 @@ pub fn detect_evidence_gaps(
                     serde_json::json!({"query": "release notes changelog", "intent": "releases"}),
                     Vec::new(),
                     None,
+                )
+                .with_evidence_gap(
+                    "Query references versions or migration but no release notes found",
+                )
+                .with_rationale(
+                    "Release notes contain version-specific migration guidance and breaking changes",
                 )],
             });
         }

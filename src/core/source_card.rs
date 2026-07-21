@@ -305,6 +305,9 @@ pub struct LocalRepoMatch {
     /// Reasons why this match was established.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasons: Vec<String>,
+    /// Confidence that the local inventory reflects current filesystem state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness_confidence: Option<crate::core::local::FreshnessConfidence>,
 }
 
 /// A single normalized result returned to MCP callers.
@@ -755,6 +758,7 @@ mod tests {
             root_path: Some("/workspace/axum".to_string()),
             match_confidence: Some(crate::core::code_evidence::EvidenceConfidence::Exact),
             reasons: vec!["host_owner_repo_match".to_string()],
+            freshness_confidence: None,
         };
         let json = serde_json::to_string(&m).unwrap();
         assert!(json.contains("match_confidence"));

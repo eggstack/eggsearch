@@ -118,3 +118,10 @@ path = "fuzz_targets/mixed_utf8_extract.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bounded_response_reader"
+path = "fuzz_targets/bounded_response_reader.rs"
+test = false
+doc = false
+bench = false

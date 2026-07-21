@@ -121,6 +121,12 @@ pub struct AgentNextAction {
     /// The evidence role this action aims to fill, if applicable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_role: Option<EvidenceRole>,
+    /// The evidence gap this action addresses, if applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_gap: Option<String>,
+    /// Human-readable explanation of why this action is productive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
 }
 
 /// Maximum number of next-action hints per response.
@@ -158,7 +164,21 @@ impl AgentNextAction {
             input_template,
             source_ids,
             evidence_role,
+            evidence_gap: None,
+            rationale: None,
         }
+    }
+
+    /// Set the evidence gap this action addresses.
+    pub fn with_evidence_gap(mut self, gap: impl Into<String>) -> Self {
+        self.evidence_gap = Some(gap.into());
+        self
+    }
+
+    /// Set the human-readable rationale for this action.
+    pub fn with_rationale(mut self, rationale: impl Into<String>) -> Self {
+        self.rationale = Some(rationale.into());
+        self
     }
 }
 
@@ -210,11 +230,21 @@ mod tests {
             serde_json::json!({"url": "https://example.com"}),
             vec!["src_abc".into()],
             None,
-        );
+        )
+        .with_evidence_gap("missing_primary_source")
+        .with_rationale("Fetch the top source to verify the claim");
         let json = serde_json::to_string(&action).unwrap();
         let parsed: AgentNextAction = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.tool, "web_fetch");
         assert_eq!(parsed.priority, 1);
+        assert_eq!(
+            parsed.evidence_gap.as_deref(),
+            Some("missing_primary_source")
+        );
+        assert_eq!(
+            parsed.rationale.as_deref(),
+            Some("Fetch the top source to verify the claim")
+        );
     }
 
     #[test]

@@ -138,7 +138,7 @@ pub fn repo_search_next_actions(
             "repo_fetch",
             "fetch_top_source",
             1,
-            serde_json::json!({"owner": "<owner>", "repo": "<repo>", "path": "<path>", "symbol": "<symbol>"}),
+            serde_json::json!({"owner": "<owner>", "repo": "<repo>", "path": "<path>"}),
             source_ids.iter().take(1).cloned().collect(),
             None,
         ));

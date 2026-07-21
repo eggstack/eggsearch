@@ -75,6 +75,18 @@ Branch protection and required-check settings are managed in the GitHub UI;
 they are not enforceable from repository code alone. See `docs/release.md` for
 the recommended required-check list and the live-smoke policy.
 
+### Live Smoke Tests
+
+Live smoke tests run separately from deterministic CI. Evidence should be captured for:
+- GitHub public repository map
+- GitLab public repository map
+- Codeberg public repository map
+- Non-default branch
+- Nested repository structure
+- Rate-limit/authentication failure behavior
+
+Run via: `cargo test --features live-smoke --test corpus_runner -- --ignored`
+
 ## Feature Flags
 
 | Flag | Purpose |

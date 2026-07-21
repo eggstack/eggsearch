@@ -17,8 +17,8 @@ use crate::core::code_evidence::{
 };
 use crate::core::code_metadata::CodeMetadata;
 use crate::core::local::{
-    is_binary_extension, language_from_extension, InventoryTelemetry, LocalConfig, LocalFileEntry,
-    LocalMatch, LocalSearchRequest, LocalSearchResult, SKIP_DIRS,
+    is_binary_extension, language_from_extension, FreshnessConfidence, InventoryTelemetry,
+    LocalConfig, LocalFileEntry, LocalMatch, LocalSearchRequest, LocalSearchResult, SKIP_DIRS,
 };
 use crate::core::quality::compute_card_quality;
 use crate::core::result::TrustLevel;
@@ -26,8 +26,8 @@ use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
 use crate::meta::local_ignore::IgnoreStack;
 use crate::meta::local_inventory_cache::{
-    build_inventory, find_symbols_in_text, needs_rebuild, score_inventory_entry, InventoryEntry,
-    WorkspaceInventory,
+    build_inventory, find_symbols_in_text, needs_rebuild, score_inventory_entry, validate_entry,
+    InventoryEntry, WorkspaceInventory,
 };
 
 /// Local workspace search backend.
@@ -336,6 +336,7 @@ impl LocalWorkspaceBackend {
             fallback_walk: false,
             uses_git_backend: false,
             untracked_file_count: None,
+            freshness_confidence: None,
         };
 
         let query_lower = query.to_lowercase();
@@ -355,6 +356,15 @@ impl LocalWorkspaceBackend {
             telemetry.used_inventory = true;
             telemetry.inventory_fresh = true;
             telemetry.inventory_entries = inv.roots.iter().map(|r| r.entries.len()).sum();
+
+            let age_secs = inv.built_at.elapsed().as_secs();
+            telemetry.freshness_confidence = if age_secs < 300 {
+                Some(FreshnessConfidence::High)
+            } else if age_secs < 1800 {
+                Some(FreshnessConfidence::Medium)
+            } else {
+                Some(FreshnessConfidence::Low)
+            };
 
             for root_inv in &inv.roots {
                 if start.elapsed() > timeout {
@@ -415,6 +425,10 @@ impl LocalWorkspaceBackend {
 
                     let root_path = &root_inv.root_path;
                     let abs_path = root_path.join(&entry.relative_path);
+
+                    if !validate_entry(entry, config) {
+                        continue;
+                    }
 
                     let content_text = std::fs::read(&abs_path)
                         .ok()
@@ -647,6 +661,10 @@ impl LocalWorkspaceBackend {
 
                         let root_path = &root_inv.root_path;
                         let abs_path = root_path.join(&entry.relative_path);
+
+                        if !validate_entry(entry, config) {
+                            continue;
+                        }
 
                         let content_text = std::fs::read(&abs_path)
                             .ok()
@@ -1420,6 +1438,7 @@ impl LocalWorkspaceBackend {
                         root_path: Some(rid.root_path.display().to_string()),
                         match_confidence: Some(confidence),
                         reasons,
+                        freshness_confidence: None,
                     }
                 });
 

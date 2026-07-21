@@ -155,6 +155,21 @@ pub struct InventoryTelemetry {
     /// Number of untracked files included via git --others flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub untracked_file_count: Option<usize>,
+    /// Confidence that the inventory reflects current filesystem state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness_confidence: Option<FreshnessConfidence>,
+}
+
+/// How confident the system is that the inventory is fresh.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FreshnessConfidence {
+    /// Inventory built within the last 5 minutes and HEAD matches.
+    High,
+    /// Inventory built within the last 30 minutes.
+    Medium,
+    /// Inventory is stale or age is unknown.
+    Low,
 }
 
 /// Result from a local workspace search.
