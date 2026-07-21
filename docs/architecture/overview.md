@@ -180,7 +180,7 @@ Profiles are advisory; unavailable providers are skipped with warnings, never er
 3. File inventory construction with caching (local_inventory_cache.rs)
    - Auto-build on first search (cache miss triggers build)
    - Git-aware fast path via `git ls-files -z --cached --others --exclude-standard`
-   - Bounded command runner: 5s timeout, 16MB stdout cap, early-exit kill thread
+   - Bounded command runner: 5s timeout, 16MB stdout / 64KB stderr caps, sequential pipe reads (stdout then stderr), post-read truncation, kill-on-timeout watchdog thread
    - Native directory walking fallback
    - XXH3 fingerprinting for change detection
 4. Inventory-first search: candidate filtering → bounded content reads → scoring
@@ -263,7 +263,7 @@ See [meta.md](meta.md#provider-health) for details.
 
 ### Bounded Everything
 
-Every resource is bounded: timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits, batch sizes, PDF pages, concurrency, forge response bytes. Defaults are safe for general MCP exposure.
+Most resources are bounded: timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits, batch sizes, PDF pages, concurrency, forge tree/pagination response bytes. Error-body previews and default-branch metadata lookups in the forge adapter use unbounded `.text().await`/`.json().await`. The untracked-file count (`git ls-files --others`) is also unbounded. File opening uses standard `std::fs` without race-resistant (`openat`/`O_NOFOLLOW`) semantics. Defaults are safe for general MCP exposure.
 
 ### Forge Endpoint Safety
 
@@ -287,7 +287,7 @@ Forge API base URLs are validated before use: embedded credentials are rejected,
 
 7. **Three-tier sanitization** — Untrusted text is always stripped/bounded (Tier 1), optionally framed (Tier 2), and optionally scanned for injection markers (Tier 3).
 
-8. **Inventory-first search** — Local workspace search uses a cached file inventory to avoid repeated full-tree walks. Git-aware fast path (`git ls-files -z --cached --others --exclude-standard`) is preferred when available; native directory walking is the fallback. Inventory is auto-built on first search (cache miss). Per-file lazy validation via XXH3 fingerprinting ensures freshness without eager re-reads.
+8. **Inventory-first search** — Local workspace search uses a cached file inventory to avoid repeated full-tree walks. Git-aware fast path (`git ls-files -z --cached --others --exclude-standard`) is preferred when available; native directory walking is the fallback. Inventory is auto-built on first search (cache miss). A separate unbounded `git ls-files --others --exclude-standard` call counts untracked files. Per-file validation via XXH3 fingerprinting (path + size + mtime) detects changes between inventory build and search time. Freshness confidence is age-based only: < 5 min = High, < 30 min = Medium, else Low.
 
 ---
 

@@ -134,4 +134,4 @@ Forge API base URLs (GitHub, GitLab, Gitea, Forgejo, Codeberg) are validated by 
 
 This prevents forge adapters from being redirected to internal services or leaking API keys over plaintext connections.
 
-All forge API responses are read through `read_bounded_response()` with a hard byte cap (default 10MB per response). No forge adapter path uses unbounded `.text().await` or `.bytes().await`.
+Primary forge tree and paginated responses are read through `read_bounded_response()` with a hard byte cap (10MB per response, cumulative aggregate cap). Error-body previews and default-branch metadata responses use `resp.text().await` or `resp.json().await` (not yet bounded through the same reader). Forge API clients do not set an explicit redirect policy (reqwest default applies); the fetch client uses `Policy::none()`.

@@ -1,107 +1,106 @@
----
-name: eggsearch-release
-description: Use when preparing or cutting an eggsearch release. Covers pre-release checks, versioning rules, CI pipeline, and publishing steps.
----
-
 # eggsearch Release Skill
 
-## Pre-Release Checklist
+Use when preparing or cutting an eggsearch release. Covers pre-release checks, versioning rules, CI pipeline, and publishing steps.
 
-1. `make check` passes (fmt + clippy + tests + schema-corpus + docs-tests + release-build + docs + publish-check)
-2. Version bumped in `Cargo.toml`
-3. `CHANGELOG.md` updated with new version entry
-4. `cargo publish --dry-run --locked` succeeds
-5. All required GitHub Actions jobs are green on the exact release commit
-6. README stays concise; release-facing detail belongs in `docs/config.md`, `docs/safety.md`, `docs/tool-matrix.md`, `docs/agent-workflows.md`, `docs/architecture/codegg-contract.md`, and `docs/release.md`
+## Pre-release Command Sequence
 
-The full authoritative pre-release command sequence, required CI checks, and
-live-smoke policy live in `docs/release.md`. Read it before cutting a release;
-this skill is a quick reference and points back to that document.
-
-## Release Steps
+Run from repository root. Every command must pass. Do not skip steps.
 
 ```bash
-# 1. Run full CI gate
-make check
-
-# 2. Dry-run publish check
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
+cargo test --locked --no-default-features
+cargo test --locked --features mock
+cargo test --locked --features pdf
+cargo test --locked --features mock --test schema_identity_registry
+cargo test --locked --features mock --test fetch_safety
+cargo test --locked --features mock --test security_applicability_corpus
+cargo test --locked --features mock --test research_evidence_corpus
+cargo test --locked --features mock --test recipes_next_actions
+cargo test --locked --features mock --test evidence_bundle_handoff
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo build --release
+RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 cargo publish --dry-run --locked
-
-# 3. Tag and push
-git tag v{VERSION}
-git push origin v{VERSION}
-
-# 4. Publish to crates.io
-cargo publish
 ```
 
-## Versioning
+Or use the single-command CI gate:
 
-Follows Semantic Versioning. Breaking changes to MCP tool schemas require a major version bump.
-
-### Breaking Changes (major bump)
-- Removing or renaming enum variants
-- Removing or renaming struct fields
-- Changing serialized enum string values
-- Changing deterministic ID algorithms
-- Removing `WarningCode` or `FetchRankReason` variants
-
-### Non-breaking (minor/patch)
-- New enum variants (appended)
-- New optional struct fields (`skip_serializing_if`)
-- New warning codes, reason codes, tool capabilities
-- New `server_capabilities` flags
+```bash
+make check
+```
 
 ## CI Pipeline
 
-The CI pipeline in `.github/workflows/ci.yml` intentionally mirrors the
-`Makefile` release gate. CI clippy uses the same flags as `make clippy`
-(`--all-targets --all-features -- -D warnings`); if you change one, change the
-other in the same commit.
-
 | Job | What it runs |
 |-----|-------------|
-| check | `cargo check` × 4 feature combos |
-| test | `cargo test --locked` × 4 feature combos |
-| clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
-| schema-corpus | 6 regression test binaries |
-| docs-contract | 3 documentation contract tests |
-| fmt | `cargo fmt --check` |
-| release-build | `cargo build --release` |
-| publish-check | `cargo publish --dry-run --locked` |
-| docs | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
+| `check` | `cargo check` × 4 feature combos |
+| `test` | `cargo test --locked` × 4 feature combos |
+| `clippy` | `cargo clippy --all-targets --all-features -- -D warnings` |
+| `schema-corpus` | 6 regression test binaries |
+| `docs-contract` | 4 documentation contract tests |
+| `fmt` | `cargo fmt --check` |
+| `release-build` | `cargo build --release` |
+| `publish-check` | `cargo publish --dry-run --locked` |
+| `hardening` | Property tests, fault injection, adversarial corpus |
+| `docs` | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
 
-Branch protection and required-check settings are managed in the GitHub UI;
-they are not enforceable from repository code alone. See `docs/release.md` for
-the recommended required-check list and the live-smoke policy.
+## Required CI Checks for Release
 
-### Live Smoke Tests
+Before tagging, these must be green on the exact commit:
 
-Live smoke tests run separately from deterministic CI. Evidence should be captured for:
-- GitHub public repository map
-- GitLab public repository map
-- Codeberg public repository map
-- Non-default branch
-- Nested repository structure
-- Rate-limit/authentication failure behavior
-
-Run via: `cargo test --features live-smoke --test corpus_runner -- --ignored`
+- Formatting (`cargo fmt --check`)
+- Clippy (zero warnings)
+- Default tests, all-features tests, no-default-features tests, mock feature tests, PDF feature tests
+- Schema/corpus tests
+- Documentation contract tests
+- Release build
+- Docs build (no warnings)
+- Publish dry-run
 
 ## Feature Flags
 
-| Flag | Purpose |
-|------|---------|
-| `mock` | Test-only mock engine harness; required for integration/corpus tests |
-| `pdf` | PDF text extraction via `lopdf` |
-| `live-smoke` | Live network smoke tests (requires `mock`); ignored by default |
+| Flag | Purpose | Default? |
+|------|---------|----------|
+| (none) | Minimal build | Yes |
+| `pdf` | PDF extraction | No |
+| `mock` | Test-only mock engine | No |
+| `live-smoke` | Live network tests (opt-in) | No |
 
-## Publishing Metadata
+## Version Rules
 
-```toml
-[package]
-name = "eggsearch"
-keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
-categories = ["command-line-utilities", "web-programming"]
+- Version in `Cargo.toml` must be bumped before tagging
+- `CHANGELOG.md` must be updated
+- `cargo publish --dry-run --locked` must pass
+- The `--locked` flag is mandatory (lockfile must match resolved deps)
+
+## Branch Protection
+
+Recommended required checks for `main`:
+- All CI jobs listed above
+- `check` and `test` matrices must fully succeed (all feature combinations)
+- Configure in GitHub UI; pre-release command sequence substitutes if settings cannot be modified
+
+## Live-smoke Policy
+
+Live smoke tests are opt-in and never part of default CI:
+```bash
+cargo test --features live-smoke --test corpus_runner -- --ignored
 ```
 
-Ensure `README.md`, `LICENSE`, `CHANGELOG.md`, and `docs/**/*.md` are in the `include` list.
+- A release must not be blocked solely because a live smoke test fails against a third-party provider
+- Reproduce locally to distinguish third-party drift from local regression
+
+## Pre-release Checklist
+
+1. All CI checks green
+2. Version bumped in Cargo.toml
+3. CHANGELOG.md updated
+4. `make check` passes locally
+5. Release build compiles
+6. Publish dry-run passes
+7. Documentation is current
+8. No unbounded response bodies in forge paths
+9. No unbounded Git subprocess output
+10. Evidence roles populated on all search result cards

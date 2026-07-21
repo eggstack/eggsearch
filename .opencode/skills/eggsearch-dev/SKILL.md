@@ -1,14 +1,11 @@
----
-name: eggsearch-dev
-description: Use when building, testing, or contributing to eggsearch. Covers cargo commands, project structure, test conventions, code style, and common pitfalls.
----
-
 # eggsearch Development Skill
 
-## Build & Verify
+Use when building, testing, or contributing to eggsearch. Covers cargo commands, project structure, test conventions, code style, and common pitfalls.
+
+## Quick Commands
 
 ```bash
-# Full CI gate (fmt + clippy + all tests + schema-corpus + docs + publish-check)
+# Full CI gate
 make check
 
 # Individual targets
@@ -20,73 +17,78 @@ cargo test --locked --features mock
 cargo test --locked --features pdf
 cargo build --release
 cargo publish --dry-run --locked
-
-# Hardening tests (property tests + adversarial corpus + fault injection)
-make hardening
-cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended
-cargo test --locked --all-features --test dispatch_fault_injection
-cargo test --locked --all-features --test adversarial_corpus
 ```
 
-**Critical:** Integration/corpus tests require `--features mock`. Running `cargo test` without features misses most integration tests. CI runs 4 feature combos: `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`.
+## Critical: Feature Flags
 
-## Project Structure
+| Flag | Purpose | Required For |
+|------|---------|-------------|
+| `mock` | Test-only mock engine (`src/meta/mock.rs`) | Integration/corpus tests |
+| `pdf` | PDF text extraction via `lopdf` | PDF tests |
+| `live-smoke` | Live network smoke tests (implies `mock`) | Manual only |
 
-Single library + binary crate (not a workspace). Submodules under `src/`:
+**Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most tests.
 
-- `main.rs` — binary entry point (clap, tokio main)
-- `lib.rs` — library root, re-exports core/meta/fetch/mcp
-- `config.rs` — CLI config loader
-- `commands/` — subcommands: doctor, search, providers, mcp, fetch
-- `core/` — types, config, error, query, sanitize, identity, warning, evidence roles, workflow coverage, conflict, retrieval status, local path policy
-- `meta/` — MetadataSearchAdapter + vendored engines + forge tree adapter + local inventory cache
-- `fetch/` — HTTP fetch client, HTML rendering, extraction, span selection
-- `mcp/` — MCP server (rmcp), tool definitions, server state
-- `tests/` — integration, corpus, and contract tests
+## Test Locations
 
-## Reference Docs
+| Location | Feature Gate | Purpose |
+|----------|-------------|---------|
+| `src/*/mod.rs` | Varies | Unit tests |
+| `tests/integration.rs` | `mock` | MCP tool contracts |
+| `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
+| `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
+| `tests/forge_adapter.rs` | None | Forge adapter unit tests |
+| `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
+| `tests/adversarial_corpus.rs` | None | Malformed input validation |
+| `tests/docs_*.rs` | None | Documentation contract tests |
+| `tests/schema_identity_registry.rs` | None | Schema + deterministic ID fixtures |
 
-- `README.md` — concise product and surface overview
-- `docs/config.md` — config defaults, provider enablement, provider_status semantics
-- `docs/safety.md` — trust model, fetch safety, `metadata_only`
-- `docs/tool-matrix.md` — stable tool reference
-- `docs/agent-workflows.md` — recipe catalog and chaining guidance
-- `docs/architecture/codegg-contract.md` — stable contract, IDs, warnings, and trust model
-- `docs/release.md` — authoritative release process and pre-release command sequence
-- `docs/release-checklist.md` — short operational checklist (links to release.md)
+## Running Specific Suites
+
+```bash
+cargo test --locked --features mock --test integration
+cargo test --locked --features mock --test corpus_runner
+cargo test --locked --all-features --test forge_adapter
+cargo test --locked --all-features --test dispatch_fault_injection
+cargo test --locked --all-features --test adversarial_corpus
+make schema-corpus
+make docs-tests
+make hardening
+```
+
+## Code Style
+
+- **No comments** unless explicitly requested
+- **Formatter:** `cargo fmt` (standard rustfmt)
+- **Linter:** `cargo clippy --all-targets --all-features -- -D warnings` — zero warnings
+- **Error handling:** `CoreError`/`CoreResult<T>` via `thiserror` in core. Adapter returns `WebSearchResponse` (never errors). MCP tools return `Result<serde_json::Value, ToolError>`.
 
 ## Adding Tests
 
-- **New file** when testing a distinct subsystem or targeting a specific bug class
-- **Extend `integration.rs`** for MCP tool input validation, provider failures, tool response shape
-- **Extend `corpus_runner.rs`** for multi-step workflows
-- **Unit tests** at bottom of source file for private functions
+- New file for distinct subsystems or specific bug classes
+- Extend `integration.rs` for MCP tool input validation, provider failures, tool response shape
+- Extend `corpus_runner.rs` for multi-step workflows
+- Unit tests at bottom of source file for private functions
+- Property tests in `tests/property_*.rs` using `proptest`
+- Adversarial corpus in `tests/corpus/adversarial/`
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
-- **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits, render, local FS, dispatch) using `proptest`
-- **Inventory unit tests** in `src/meta/local_inventory_cache.rs` `#[cfg(test)]` for inventory building, invalidation, git fast path
-- **Forge adapter tests** in `tests/forge_adapter.rs` for endpoint validation, nested maps, resolved ref
-- **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs (245+ cases across 9 files)
-- **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency, and health transitions
-- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, HTML extraction, PDF parsing, sanitization, and document chunking
 
-## Key Conventions
+## Common Pitfalls
 
-- No comments unless explicitly requested
-- Formatter: `cargo fmt` (standard rustfmt)
-- Linter: `cargo clippy --all-targets --all-features -- -D warnings` — zero warnings
-- Error handling: `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`.
-- Deterministic IDs: SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
-- Sanitization: All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.
-- Forge safety: All forge API responses must use `read_bounded_response()` with a hard byte cap. `validate_base_url()` rejects embedded credentials, IPv6 loopback/private, and HTTP with API keys.
-- Evidence postprocessing: `evidence_postprocess.rs` populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths. All new fields are additive and optional.
+- **Forgetting `--features mock`** — integration/corpus tests won't compile
+- **Adding random UUIDs** to stable output types — use FNV-1a hashes via `src/core/identity.rs`
+- **Bypassing sanitization** — all untrusted text must flow through `sanitize.rs`
+- **Hardcoding provider lists** — use `resolve_providers()` which validates enabled/known status
+- **Changing deterministic IDs** — breaks regression corpus tests and cross-tool deduplication
+- **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`
+- **Bypassing forge response bounds** — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
+- **Changing commit_sha semantics** — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA
 
-## Pitfalls
+## Fuzz Targets
 
-- Forgetting `--features mock` — integration/corpus tests won't compile without it
-- Adding random UUIDs to stable output types — use FNV-1a hashes via `src/core/identity.rs`
-- Bypassing sanitization — all untrusted text must flow through `sanitize.rs` or `sanitize_field()`
-- Hardcoding provider lists — use `resolve_providers()` which validates enabled/known status
-- Changing deterministic IDs — breaks regression corpus tests and cross-tool deduplication
-- Missing `cargo fmt` — CI will fail on `cargo fmt --check`
-- Bypassing forge response bounds — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
-- Changing commit_sha semantics — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA
+16 fuzz targets in `fuzz/` using `cargo-fuzz` + `libfuzzer`:
+- URL validation, redirect validation, Content-Type handling
+- HTML extraction, PDF parsing, sanitization pipeline
+- Document chunking, Content-Length parsing
+- Chunk boundary splitting, mixed UTF-8 extraction
+- Redirect chain validation, bounded response reader

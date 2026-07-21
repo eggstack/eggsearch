@@ -164,7 +164,7 @@ pub struct InventoryTelemetry {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FreshnessConfidence {
-    /// Inventory built within the last 5 minutes and HEAD matches.
+    /// Inventory built within the last 5 minutes. Confidence is age-based only; HEAD changes are detected by the rebuild trigger, not the confidence level.
     High,
     /// Inventory built within the last 30 minutes.
     Medium,

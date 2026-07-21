@@ -167,7 +167,7 @@ make hardening                                              # all hardening test
 - **Error handling:** `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`.
 - **Deterministic IDs:** SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
 - **Sanitization:** All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.
-- **Forge safety:** All forge API responses are read through `read_bounded_response()` with a hard byte cap. `validate_base_url()` rejects embedded credentials, IPv6 loopback/private addresses, and HTTP with API keys.
+- **Forge safety:** Primary forge tree and paginated responses are read through `read_bounded_response()` with a hard byte cap (10MB per response, cumulative aggregate cap). Error-body previews and default-branch metadata responses use `resp.text().await` or `resp.json().await` (not yet bounded). `validate_base_url()` rejects embedded credentials, classifies literal IPv4/IPv6 addresses (loopback, private, link-local, documentation, reserved, multicast), and blocks HTTP with API keys. Forge API client does not set an explicit redirect policy (reqwest default applies); fetch client uses `Policy::none()`.
 - **Evidence postprocessing:** `evidence_postprocess.rs` populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths. All new fields are additive and optional.
 
 ## Key Architecture
@@ -181,7 +181,7 @@ make hardening                                              # all hardening test
 - **Nested repository maps:** `repo_map` returns both `root_entries` (backward-compatible root-only) and `entries` (all retained entries within max_depth). Depth calculation: root = 1, `src/lib.rs` = 2.
 - **Local auto-build:** Local workspace inventory is built automatically on first search (auto-build on cache miss). `inventory_truncated` is propagated from inventory roots into search results.
 - **Entry revalidation:** `validate_entry()` in `local_inventory_cache.rs` is called before every content read in both inventory and fallback search paths, skipping stale/deleted/oversized entries.
-- **Bounded git execution:** `run_bounded_command()` in `local_inventory_cache.rs` enforces timeout (5s), stdout cap (16MB), and stderr cap (64KB) on all Git subprocess invocations.
+- **Bounded git execution:** `run_bounded_command()` in `local_inventory_cache.rs` enforces timeout (5s), stdout cap (16MB), and stderr cap (64KB) on Git subprocess invocations. Pipe reads are sequential (stdout then stderr). One unbounded `git ls-files --others` call remains for untracked-file counting.
 - **Freshness confidence:** `FreshnessConfidence` enum (`high`/`medium`/`low`) in `core/local.rs` is computed from inventory age and propagated through `InventoryTelemetry`, `RepoMapResponse`, and `LocalRepoMatch`.
 - **Evidence gap and rationale:** `AgentNextAction` in `core/workflow.rs` carries optional `evidence_gap` and `rationale` fields, populated on all 8 evidence gap kinds in `research_evidence_analysis.rs`.
 

@@ -67,7 +67,7 @@ MCP Tool → MetadataSearchAdapter
 | `local_backend.rs` | Local workspace search backend with auto-build inventory on first search, bounded file walking, scoring, and SymbolBackend trait |
 | `local_ignore.rs` | Minimal `.gitignore` matcher |
 | `local_inventory.rs` | Git worktree discovery, remote URL normalization, identity matching |
-| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path (`git ls-files -z --cached --others --exclude-standard`), native walking, XXH3 fingerprinting, invalidation. Bounded command runner with timeout, stdout/stderr caps, early-exit kill thread |
+| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path (`git ls-files -z --cached --others --exclude-standard`), native walking, XXH3 fingerprinting, invalidation. Bounded command runner with timeout, stdout/stderr caps, sequential pipe reads, post-read truncation, kill-on-timeout watchdog thread |
 
 ### Test Support
 
@@ -252,9 +252,9 @@ Panics are detected by matching `"panicked during dispatch"` in `EngineError::Ne
 
 The forge adapter (`forge_adapter.rs`) handles native remote repository tree retrieval for GitHub, GitLab, Gitea, Forgejo, and Codeberg without cloning repositories.
 
-### Bounded Response Reading
+### Response Reading
 
-All forge API responses are read through `read_bounded_response()` which enforces a hard byte cap during streaming. The function checks `Content-Length` upfront and accumulates bytes incrementally, returning `response_too_large` when the cap is exceeded. No forge adapter path uses `.text().await` or `.bytes().await` without a prior hard bound.
+Primary tree and paginated forge API responses are read through `read_bounded_response()` which enforces a hard byte cap during streaming. The function checks `Content-Length` upfront and accumulates bytes incrementally, returning `response_too_large` when the cap is exceeded. Error-body previews (e.g., rate-limit detection, permission-denied diagnostics) and default-branch metadata lookups use `.text().await` or `.json().await` directly — these paths are unbounded but receive small responses from the forge API.
 
 ### Endpoint Safety
 
@@ -266,7 +266,7 @@ All forge API responses are read through `read_bounded_response()` which enforce
 
 ### Commit Provenance
 
-`commit_sha` in `RepoMapResponse` is set from `resolved_ref` (the actual commit SHA returned by the forge API), not from entry object SHAs. The `resolved_ref_name` field records the original branch or tag name used for the tree lookup. Object SHAs and commit SHAs are independently represented.
+`commit_sha` in `RepoMapResponse` is set from `resolved_ref` in the forge API response. For GitHub, this is the tree SHA from the Git Trees API (not a commit SHA). For GitLab, this is the commit SHA from the ref resolution endpoint. The `resolved_ref_name` field records the original branch or tag name used for the tree lookup. Object SHAs and commit SHAs are independently represented in the internal `ForgeRawEntry` type but are not propagated to the public `RepoMapEntry` type.
 
 ### Nested Repository Map Assembly
 
