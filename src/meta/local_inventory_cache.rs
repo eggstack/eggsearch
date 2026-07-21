@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -15,7 +16,7 @@ use crate::core::local::{
     should_skip_component, LocalConfig,
 };
 use crate::meta::local_ignore::IgnoreStack;
-use crate::meta::local_inventory::read_head_commit;
+use crate::meta::local_inventory::{read_head_commit, resolve_git_dir};
 
 const BUILD_TIMEOUT_SECS: u64 = 5;
 const INVENTORY_BUILD_TIMEOUT: Duration = Duration::from_secs(BUILD_TIMEOUT_SECS);
@@ -71,6 +72,8 @@ pub struct RootInventory {
     pub untracked_count: usize,
     /// Git index file mtime at build time (seconds since epoch), if applicable.
     pub index_mtime_secs: Option<u64>,
+    /// Hash of `git status --porcelain` output for change detection.
+    pub status_hash: Option<u64>,
 }
 
 /// Workspace-level inventory aggregating all roots.
@@ -346,6 +349,7 @@ pub fn build_inventory_native(
         uses_git_backend: false,
         untracked_count: 0,
         index_mtime_secs: None,
+        status_hash: None,
     }
 }
 
@@ -493,11 +497,23 @@ struct BoundedCommandResult {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     timed_out: bool,
+    stdout_truncated: bool,
+    stderr_truncated: bool,
 }
 
 fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandResult {
     use std::io::Read;
-    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
 
     let mut child = match cmd
         .stdout(std::process::Stdio::piped())
@@ -511,6 +527,8 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
                 stdout: Vec::new(),
                 stderr: Vec::new(),
                 timed_out: false,
+                stdout_truncated: false,
+                stderr_truncated: false,
             };
         }
     };
@@ -526,7 +544,7 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
             }
             if std::time::Instant::now() >= deadline {
                 unsafe {
-                    libc::kill(child_id as i32, libc::SIGKILL);
+                    libc::kill(-(child_id as i32), libc::SIGKILL);
                 }
                 return;
             }
@@ -536,17 +554,45 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
+    let mut stdout_truncated = false;
+    let mut stderr_truncated = false;
 
     if let Some(ref mut out) = child.stdout {
-        let _ = out.read_to_end(&mut stdout);
-        if stdout.len() > GIT_STDOUT_CAP {
-            stdout.truncate(GIT_STDOUT_CAP);
+        let mut buf = [0u8; 8192];
+        loop {
+            match out.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let remaining = GIT_STDOUT_CAP.saturating_sub(stdout.len());
+                    if n <= remaining {
+                        stdout.extend_from_slice(&buf[..n]);
+                    } else {
+                        stdout.extend_from_slice(&buf[..remaining]);
+                        stdout_truncated = true;
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
         }
     }
     if let Some(ref mut err) = child.stderr {
-        let _ = err.read_to_end(&mut stderr);
-        if stderr.len() > GIT_STDERR_CAP {
-            stderr.truncate(GIT_STDERR_CAP);
+        let mut buf = [0u8; 8192];
+        loop {
+            match err.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let remaining = GIT_STDERR_CAP.saturating_sub(stderr.len());
+                    if n <= remaining {
+                        stderr.extend_from_slice(&buf[..n]);
+                    } else {
+                        stderr.extend_from_slice(&buf[..remaining]);
+                        stderr_truncated = true;
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
         }
     }
 
@@ -563,6 +609,125 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
         stdout,
         stderr,
         timed_out,
+        stdout_truncated,
+        stderr_truncated,
+    }
+}
+
+fn run_bounded_command_for_inventory(
+    cmd: &mut Command,
+    timeout: Duration,
+    cap: usize,
+) -> BoundedCommandResult {
+    use std::io::Read;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
+
+    let mut child = match cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return BoundedCommandResult {
+                status: None,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                timed_out: false,
+                stdout_truncated: false,
+                stderr_truncated: false,
+            };
+        }
+    };
+
+    let child_id = child.id();
+    let exited = Arc::new(AtomicBool::new(false));
+    let exited_clone = exited.clone();
+    let kill_handle = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if exited_clone.load(Ordering::Relaxed) {
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                unsafe {
+                    libc::kill(-(child_id as i32), libc::SIGKILL);
+                }
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut stdout_truncated = false;
+    let mut stderr_truncated = false;
+
+    if let Some(ref mut out) = child.stdout {
+        let mut buf = [0u8; 8192];
+        loop {
+            match out.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let remaining = cap.saturating_sub(stdout.len());
+                    if n <= remaining {
+                        stdout.extend_from_slice(&buf[..n]);
+                    } else {
+                        stdout.extend_from_slice(&buf[..remaining]);
+                        stdout_truncated = true;
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    if let Some(ref mut err) = child.stderr {
+        let mut buf = [0u8; 8192];
+        loop {
+            match err.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let remaining = GIT_STDERR_CAP.saturating_sub(stderr.len());
+                    if n <= remaining {
+                        stderr.extend_from_slice(&buf[..n]);
+                    } else {
+                        stderr.extend_from_slice(&buf[..remaining]);
+                        stderr_truncated = true;
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    let status = child.wait().ok();
+    exited.store(true, Ordering::Relaxed);
+    let _ = kill_handle.join();
+
+    let timed_out = status
+        .as_ref()
+        .is_some_and(|s| s.code().is_some_and(|c| c == -9 || c == 137));
+
+    BoundedCommandResult {
+        status,
+        stdout,
+        stderr,
+        timed_out,
+        stdout_truncated,
+        stderr_truncated,
     }
 }
 
@@ -615,13 +780,25 @@ pub fn build_inventory_git(
     let mut untracked_cmd = Command::new("git");
     untracked_cmd
         .arg("ls-files")
+        .arg("-z")
         .arg("--others")
         .arg("--exclude-standard")
         .current_dir(root_path);
-    if let Ok(result) = untracked_cmd.output() {
-        if result.status.success() {
-            untracked_count = result.stdout.iter().filter(|&&b| b == b'\n').count();
-        }
+    let untracked_result = run_bounded_command_for_inventory(
+        &mut untracked_cmd,
+        INVENTORY_BUILD_TIMEOUT,
+        GIT_STDOUT_CAP,
+    );
+    if untracked_result
+        .status
+        .as_ref()
+        .is_some_and(|s| s.success())
+    {
+        untracked_count = untracked_result
+            .stdout
+            .split(|&b| b == 0)
+            .filter(|s| !s.is_empty())
+            .count();
     }
 
     for path_bytes in result.stdout.split(|&b| b == 0) {
@@ -684,14 +861,31 @@ pub fn build_inventory_git(
     entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
     let entry_count = entries.len();
-    let index_mtime = root_path
-        .join(".git")
-        .join("index")
-        .metadata()
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs());
+    let index_mtime = resolve_git_dir(root_path).and_then(|git_dir| {
+        let index_path = git_dir.join("index");
+        index_path
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+    });
+
+    let mut status_hash = None;
+    let mut status_cmd = Command::new("git");
+    status_cmd
+        .arg("status")
+        .arg("--porcelain=v2")
+        .arg("-z")
+        .arg("--untracked-files=normal")
+        .current_dir(root_path);
+    let status_result =
+        run_bounded_command_for_inventory(&mut status_cmd, INVENTORY_BUILD_TIMEOUT, GIT_STDOUT_CAP);
+    if status_result.status.as_ref().is_some_and(|s| s.success()) && !status_result.stdout_truncated
+    {
+        use xxhash_rust::xxh3::xxh3_64;
+        status_hash = Some(xxh3_64(&status_result.stdout));
+    }
 
     Some(RootInventory {
         root_index,
@@ -705,6 +899,7 @@ pub fn build_inventory_git(
         uses_git_backend: true,
         untracked_count,
         index_mtime_secs: index_mtime,
+        status_hash,
     })
 }
 
@@ -732,8 +927,7 @@ pub fn needs_rebuild(
                 }
             }
             if let Some(stored_mtime) = ri.index_mtime_secs {
-                let git_dir = ri.root_path.join(".git");
-                if git_dir.is_dir() {
+                if let Some(git_dir) = resolve_git_dir(&ri.root_path) {
                     let index_path = git_dir.join("index");
                     let current_mtime = std::fs::metadata(&index_path)
                         .ok()
@@ -744,6 +938,29 @@ pub fn needs_rebuild(
                         if current_mtime != stored_mtime {
                             return true;
                         }
+                    }
+                }
+            }
+            if ri.status_hash.is_some() {
+                let mut status_cmd = Command::new("git");
+                status_cmd
+                    .arg("status")
+                    .arg("--porcelain=v2")
+                    .arg("-z")
+                    .arg("--untracked-files=normal")
+                    .current_dir(&ri.root_path);
+                let status_result = run_bounded_command_for_inventory(
+                    &mut status_cmd,
+                    INVENTORY_BUILD_TIMEOUT,
+                    GIT_STDOUT_CAP,
+                );
+                if status_result.status.as_ref().is_some_and(|s| s.success())
+                    && !status_result.stdout_truncated
+                {
+                    use xxhash_rust::xxh3::xxh3_64;
+                    let current_hash = xxh3_64(&status_result.stdout);
+                    if Some(current_hash) != ri.status_hash {
+                        return true;
                     }
                 }
             }

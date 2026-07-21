@@ -1373,11 +1373,20 @@ impl MetadataSearchAdapter {
             .cloned()
             .collect();
 
+        let mut all_cards = all_cards;
+        crate::core::evidence_postprocess::materialize_evidence_roles(&mut all_cards);
+
+        let workflow_model = crate::core::evidence_postprocess::resolve_workflow_model(
+            "repo_search",
+            None,
+            None,
+            is_exact_error,
+        );
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
             &providers_queried,
-            None,
+            workflow_model.as_ref(),
             &[],
         );
 
@@ -1654,11 +1663,28 @@ impl MetadataSearchAdapter {
             .cloned()
             .collect();
 
+        let mut all_cards = all_cards;
+        crate::core::evidence_postprocess::materialize_evidence_roles(&mut all_cards);
+
+        let research_domain_str = match req.research_domain.unwrap_or(ResearchDomain::General) {
+            ResearchDomain::SoftwareArchitecture | ResearchDomain::ApiDesign => {
+                Some("architecture_decision")
+            }
+            ResearchDomain::Security => Some("security_review"),
+            ResearchDomain::Performance => Some("performance_investigation"),
+            _ => None,
+        };
+        let workflow_model = crate::core::evidence_postprocess::resolve_workflow_model(
+            "research_search",
+            None,
+            research_domain_str,
+            false,
+        );
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
             &queried_ids,
-            None,
+            workflow_model.as_ref(),
             &[],
         );
 

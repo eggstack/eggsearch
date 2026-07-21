@@ -79,6 +79,15 @@ pub fn assign_evidence_role(card: &SourceCard) -> EvidenceRole {
 }
 
 #[allow(missing_docs)]
+pub fn materialize_evidence_roles(cards: &mut [SourceCard]) {
+    for card in cards.iter_mut() {
+        if card.metadata.evidence_role.is_none() {
+            card.metadata.evidence_role = Some(assign_evidence_role(card));
+        }
+    }
+}
+
+#[allow(missing_docs)]
 pub fn compute_evidence_role_summary(cards: &[SourceCard]) -> EvidenceRoleSummary {
     let mut counts: std::collections::HashMap<EvidenceRole, usize> =
         std::collections::HashMap::new();
@@ -151,8 +160,6 @@ pub fn build_retrieval_summary_for_search(
                 evidence_role: EvidenceRole::UnknownOrWeakContext,
                 absence_kind: if failure.error_class == "timeout" {
                     EvidenceAbsenceKind::DeadlinePreventedCompletion
-                } else if failure.error_class == "rate_limited" {
-                    EvidenceAbsenceKind::ProviderSkippedByPolicy
                 } else {
                     EvidenceAbsenceKind::ProviderFailed
                 },
@@ -298,6 +305,40 @@ pub fn postprocess(
         },
         conflict_metadata,
         evidence_role_summary: Some(evidence_role_summary),
+    }
+}
+
+#[allow(missing_docs)]
+pub fn resolve_workflow_model(
+    tool: &str,
+    profile: Option<&str>,
+    research_domain: Option<&str>,
+    exact_error: bool,
+) -> Option<WorkflowCoverageModel> {
+    use crate::core::workflow_coverage::*;
+
+    match tool {
+        "repo_search" => {
+            if exact_error {
+                Some(error_investigation_model())
+            } else {
+                match profile {
+                    Some("security") => Some(security_review_model()),
+                    Some("research") => Some(comparative_research_model()),
+                    _ => Some(repo_architecture_model()),
+                }
+            }
+        }
+        "research_search" => match research_domain {
+            Some("architecture_decision") => Some(comparative_research_model()),
+            Some("error_investigation") => Some(error_investigation_model()),
+            Some("version_migration") => Some(version_migration_model()),
+            Some("security_review") => Some(security_review_model()),
+            _ => Some(comparative_research_model()),
+        },
+        "security_search" => Some(security_review_model()),
+        "web_search" => None,
+        _ => None,
     }
 }
 

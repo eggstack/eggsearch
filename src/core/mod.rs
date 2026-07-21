@@ -87,8 +87,9 @@ pub use evidence_bundle::{
     DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
 };
 pub use evidence_postprocess::{
-    assign_evidence_role, compute_evidence_role_summary, detect_structured_conflicts, postprocess,
-    EvidencePostprocessResult, EvidenceRoleSummary, RoleCount,
+    assign_evidence_role, compute_evidence_role_summary, detect_structured_conflicts,
+    materialize_evidence_roles, postprocess, resolve_workflow_model, EvidencePostprocessResult,
+    EvidenceRoleSummary, RoleCount,
 };
 pub use evidence_role::EvidenceRole;
 pub use fetch::{

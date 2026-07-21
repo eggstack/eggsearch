@@ -12,7 +12,8 @@ use httpmock::prelude::*;
 use eggsearch::core::code_metadata::CodeHost;
 use eggsearch::core::repo_map::{ImportantFileKind, RepoMapEntryKind, RepoMapMode, RepoMapRequest};
 use eggsearch::meta::forge_adapter::{
-    build_response, fetch_tree, EntryKind, ForgeRawEntry, ForgeTreeConfig, ForgeTreeResponse,
+    build_response, fetch_tree, EntryKind, ForgeEndpointPolicy, ForgeRawEntry, ForgeTreeConfig,
+    ForgeTreeResponse,
 };
 
 fn default_request(host: CodeHost, owner: &str, repo: &str) -> RepoMapRequest {
@@ -1025,54 +1026,70 @@ fn build_response_no_urls_for_unknown_host() {
 
 #[test]
 fn validate_base_url_https_ok() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("https://codeberg.org/api/v1", None)
-            .is_ok()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://codeberg.org/api/v1",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_ok());
 }
 
 #[test]
 fn validate_base_url_http_localhost_ok() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "http://localhost:3000/api/v1",
-        None
+        None,
+        &ForgeEndpointPolicy::default()
     )
     .is_ok());
 }
 
 #[test]
 fn validate_base_url_https_localhost_rejected() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("https://localhost/api/v1", None)
-            .is_err()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://localhost/api/v1",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_err());
 }
 
 #[test]
 fn validate_base_url_non_http_rejected() {
-    assert!(eggsearch::meta::forge_adapter::validate_base_url("ftp://example.com", None).is_err());
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "ftp://example.com",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_err());
 }
 
 #[test]
 fn validate_base_url_http_private_rejected() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("http://192.168.1.1/api/v1", None)
-            .is_err()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://192.168.1.1/api/v1",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_err());
 }
 
 #[test]
 fn validate_base_url_http_10_private_rejected() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("http://10.0.0.1/api/v1", None).is_err()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://10.0.0.1/api/v1",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_err());
 }
 
 #[test]
 fn validate_base_url_credential_bearing_http_rejected() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "http://example.com/api/v1",
-        Some("my-token")
+        Some("my-token"),
+        &ForgeEndpointPolicy::default()
     )
     .is_err());
 }
@@ -1081,7 +1098,8 @@ fn validate_base_url_credential_bearing_http_rejected() {
 fn validate_base_url_credential_bearing_http_localhost_ok() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "http://localhost:3000/api/v1",
-        Some("my-token")
+        Some("my-token"),
+        &ForgeEndpointPolicy::default()
     )
     .is_ok());
 }
@@ -1090,7 +1108,8 @@ fn validate_base_url_credential_bearing_http_localhost_ok() {
 fn validate_base_url_credential_bearing_https_ok() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "https://example.com/api/v1",
-        Some("my-token")
+        Some("my-token"),
+        &ForgeEndpointPolicy::default()
     )
     .is_ok());
 }
@@ -1099,39 +1118,48 @@ fn validate_base_url_credential_bearing_https_ok() {
 fn validate_base_url_embedded_credentials_rejected() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "https://user:pass@example.com/api/v1",
-        None
+        None,
+        &ForgeEndpointPolicy::default()
     )
     .is_err());
 }
 
 #[test]
 fn validate_base_url_ipv6_loopback_rejected() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("https://[::1]/api/v1", None).is_err()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://[::1]/api/v1",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_err());
 }
 
 #[test]
 fn validate_base_url_ipv6_private_rejected() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("https://[fc00::1]/api/v1", None)
-            .is_err()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://[fc00::1]/api/v1",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_err());
 }
 
 #[test]
 fn validate_base_url_ipv6_ula_rejected() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("https://[fd00::1]/api/v1", None)
-            .is_err()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://[fd00::1]/api/v1",
+        None,
+        &ForgeEndpointPolicy::default()
+    )
+    .is_err());
 }
 
 #[test]
 fn validate_base_url_ipv6_documentation_rejected() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "https://[2001:db8::1]/api/v1",
-        None
+        None,
+        &ForgeEndpointPolicy::default()
     )
     .is_err());
 }
@@ -1140,7 +1168,8 @@ fn validate_base_url_ipv6_documentation_rejected() {
 fn validate_base_url_ipv6_public_ok() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "https://[2607:f8b0:4004:800::200e]/api/v1",
-        None
+        None,
+        &ForgeEndpointPolicy::default()
     )
     .is_ok());
 }

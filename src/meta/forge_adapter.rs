@@ -9,6 +9,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use reqwest::redirect::Policy;
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::sync::Semaphore;
@@ -44,31 +45,95 @@ const CODEBERG_API_BASE: &str = "https://codeberg.org/api/v1";
 static FORGE_SEMAPHORE: LazyLock<Semaphore> =
     LazyLock::new(|| Semaphore::new(MAX_CONCURRENT_FORGE_REQUESTS));
 
-async fn read_bounded_response(
+/// Policy controlling which forge endpoint addresses and schemes are permitted.
+#[derive(Debug, Clone)]
+pub struct ForgeEndpointPolicy {
+    /// Whether to allow loopback addresses (localhost, 127.0.0.1, ::1).
+    pub allow_loopback: bool,
+    /// Whether to allow private network addresses (RFC 1918, ULA, etc.).
+    pub allow_private_network: bool,
+    /// Whether to require HTTPS for all endpoints.
+    pub require_https: bool,
+}
+
+impl Default for ForgeEndpointPolicy {
+    fn default() -> Self {
+        Self {
+            allow_loopback: false,
+            allow_private_network: false,
+            require_https: true,
+        }
+    }
+}
+
+struct BoundedBody {
+    bytes: Vec<u8>,
+    #[allow(dead_code)]
+    observed_bytes: usize,
+}
+
+async fn read_bounded_body(
     resp: reqwest::Response,
     per_response_cap: usize,
     total_bytes: &mut usize,
-) -> Result<String, String> {
+) -> Result<BoundedBody, String> {
     if let Some(content_length) = resp.content_length() {
         if content_length as usize > per_response_cap {
             return Err("response_too_large".into());
         }
     }
-    let mut body = String::new();
+    let mut body = Vec::with_capacity(per_response_cap.min(64 * 1024));
+    let mut observed = 0usize;
     let mut stream = resp.bytes_stream();
     use futures::StreamExt;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("failed to read response chunk: {e}"))?;
-        *total_bytes += chunk.len();
-        if *total_bytes > per_response_cap {
+        observed += chunk.len();
+        if observed > per_response_cap {
             return Err("response_too_large".into());
         }
-        body.push_str(
-            std::str::from_utf8(&chunk)
-                .map_err(|e| format!("response body is not valid UTF-8: {e}"))?,
-        );
+        body.extend_from_slice(&chunk);
     }
-    Ok(body)
+    *total_bytes += observed;
+    Ok(BoundedBody {
+        bytes: body,
+        observed_bytes: observed,
+    })
+}
+
+async fn read_bounded_response(
+    resp: reqwest::Response,
+    per_response_cap: usize,
+    total_bytes: &mut usize,
+) -> Result<String, String> {
+    let bounded = read_bounded_body(resp, per_response_cap, total_bytes).await?;
+    std::str::from_utf8(&bounded.bytes)
+        .map(|s| s.to_owned())
+        .map_err(|e| format!("response body is not valid UTF-8: {e}"))
+}
+
+const ERROR_BODY_CAP: usize = 8 * 1024;
+
+async fn read_error_body_preview(resp: reqwest::Response) -> String {
+    let mut body = Vec::with_capacity(ERROR_BODY_CAP.min(8192));
+    let mut stream = resp.bytes_stream();
+    let mut observed = 0usize;
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        if let Ok(chunk) = chunk {
+            observed += chunk.len();
+            if observed > ERROR_BODY_CAP {
+                break;
+            }
+            body.extend_from_slice(&chunk);
+        } else {
+            break;
+        }
+    }
+    String::from_utf8_lossy(&body)
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\r' || *c == '\t')
+        .collect()
 }
 
 /// Configuration for connecting to a forge API.
@@ -127,6 +192,7 @@ fn build_client() -> Result<Client, String> {
     Client::builder()
         .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
         .user_agent("eggsearch/1.0")
+        .redirect(Policy::none())
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))
 }
@@ -160,7 +226,11 @@ pub async fn fetch_tree(
         .await
         .map_err(|_| "concurrency limit exceeded".to_string())?;
     if let Some(ref base) = config.base_url {
-        validate_base_url(base, config.api_key.as_deref())?;
+        validate_base_url(
+            base,
+            config.api_key.as_deref(),
+            &ForgeEndpointPolicy::default(),
+        )?;
     }
     let client = build_client()?;
     let timeout = timeout_duration(req);
@@ -219,9 +289,15 @@ async fn fetch_github_tree(
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let ref_name = req.ref_name.as_deref().unwrap_or("HEAD");
     let max_d = max_depth(req);
+    let encoded_ref = encode_url_component(ref_name);
 
     let mut builder = client
-        .get(format!("{base}/repos/{owner}/{repo}/git/trees/{ref_name}"))
+        .get(format!(
+            "{base}/repos/{}/{}/git/trees/{}",
+            encode_url_component(owner),
+            encode_url_component(repo),
+            encoded_ref
+        ))
         .query(&[("recursive", if max_d > 1 { "1" } else { "0" })])
         .timeout(timeout);
 
@@ -242,14 +318,14 @@ async fn fetch_github_tree(
         return Err("authentication_required".into());
     }
     if status == reqwest::StatusCode::FORBIDDEN {
-        let msg = resp.text().await.unwrap_or_default();
+        let msg = read_error_body_preview(resp).await;
         if msg.contains("rate limit") || msg.contains("Rate limit") {
             return Err("rate_limited".into());
         }
         return Err("permission_denied".into());
     }
     if !status.is_success() {
-        let msg = resp.text().await.unwrap_or_default();
+        let msg = read_error_body_preview(resp).await;
         return Err(format!("provider_unavailable: {status} - {msg}"));
     }
 
@@ -338,7 +414,11 @@ async fn resolve_github_default_branch(
     if !resp.status().is_success() {
         return None;
     }
-    let repo_info: GitHubRepoInfo = resp.json().await.ok()?;
+    let mut total_bytes = 0usize;
+    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes)
+        .await
+        .ok()?;
+    let repo_info: GitHubRepoInfo = serde_json::from_str(&body).ok()?;
     Some(repo_info.default_branch)
 }
 
@@ -490,7 +570,7 @@ async fn fetch_gitlab_tree(
             return Err("rate_limited".into());
         }
         if !status.is_success() {
-            let msg = resp.text().await.unwrap_or_default();
+            let msg = read_error_body_preview(resp).await;
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
@@ -563,7 +643,11 @@ async fn resolve_gitlab_default_branch(
     if !resp.status().is_success() {
         return None;
     }
-    let info: GitLabProjectInfo = resp.json().await.ok()?;
+    let mut total_bytes = 0usize;
+    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes)
+        .await
+        .ok()?;
+    let info: GitLabProjectInfo = serde_json::from_str(&body).ok()?;
     Some(info.default_branch)
 }
 
@@ -629,7 +713,10 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
 
         let mut builder = client
             .get(format!(
-                "{api_base}/repos/{owner}/{repo}/git/trees/{ref_name}"
+                "{api_base}/repos/{}/{}/git/trees/{}",
+                encode_url_component(owner),
+                encode_url_component(repo),
+                encode_url_component(ref_name)
             ))
             .query(&[
                 ("recursive", if max_d > 1 { "1" } else { "0" }),
@@ -664,7 +751,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             return Err("rate_limited".into());
         }
         if !status.is_success() {
-            let msg = resp.text().await.unwrap_or_default();
+            let msg = read_error_body_preview(resp).await;
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
@@ -751,7 +838,11 @@ async fn resolve_forge_default_branch(
     if !resp.status().is_success() {
         return None;
     }
-    let info: ForgeRepoInfo = resp.json().await.ok()?;
+    let mut total_bytes = 0usize;
+    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes)
+        .await
+        .ok()?;
+    let info: ForgeRepoInfo = serde_json::from_str(&body).ok()?;
     Some(info.default_branch)
 }
 
@@ -838,7 +929,11 @@ fn build_entry_urls(
 /// or private IP ranges, does not contain embedded credentials, and
 /// (when `api_key` is provided) rejects plain HTTP.
 /// Returns `Ok(())` if valid, or an error message.
-pub fn validate_base_url(url: &str, api_key: Option<&str>) -> Result<(), String> {
+pub fn validate_base_url(
+    url: &str,
+    api_key: Option<&str>,
+    policy: &ForgeEndpointPolicy,
+) -> Result<(), String> {
     let parsed = url
         .parse::<reqwest::Url>()
         .map_err(|e| format!("invalid base URL: {e}"))?;
@@ -851,57 +946,85 @@ pub fn validate_base_url(url: &str, api_key: Option<&str>) -> Result<(), String>
     if parsed.username() != "" || parsed.password().is_some() {
         return Err("base URL must not contain embedded credentials".into());
     }
-    if parsed.scheme() == "http" && api_key.is_some() {
-        if let Some(host) = parsed.host_str() {
-            if !is_loopback_host(host) {
-                return Err("credential-bearing endpoint must use HTTPS".into());
-            }
-        }
-    }
     if let Some(host) = parsed.host_str() {
-        if parsed.scheme() == "https" {
-            if host == "localhost"
-                || host == "127.0.0.1"
-                || host == "::1"
-                || host == "0.0.0.0"
-                || host.starts_with("192.168.")
-                || host.starts_with("10.")
-                || (host.starts_with("172.")
-                    && host
-                        .split('.')
-                        .nth(1)
-                        .and_then(|s| s.parse::<u8>().ok())
-                        .is_some_and(|o| (16..=31).contains(&o)))
-            {
+        let is_loopback = is_loopback_addr(host);
+
+        if parsed.scheme() == "http" {
+            if !is_loopback {
+                if api_key.is_some() {
+                    return Err("credential-bearing endpoint must use HTTPS".into());
+                }
+                if policy.require_https {
+                    return Err("base URL must use HTTPS per policy".into());
+                }
+            }
+        } else {
+            if is_loopback && !policy.allow_loopback {
                 return Err(format!(
-                    "HTTPS base URL must not point to localhost or private network: {host}"
+                    "HTTPS base URL must not point to localhost: {host}"
                 ));
             }
-            if host.starts_with('[') {
-                let inner = host.trim_start_matches('[').trim_end_matches(']');
-                if let Ok(ip) = inner.parse::<Ipv6Addr>() {
-                    let class = classify_ipv6_forge(ip);
-                    if matches!(
-                        class,
-                        ForgeAddressClass::Loopback
-                            | ForgeAddressClass::Private
-                            | ForgeAddressClass::LinkLocal
-                            | ForgeAddressClass::Documentation
-                            | ForgeAddressClass::Reserved
-                    ) {
-                        return Err(format!(
-                            "HTTPS base URL must not point to localhost or private network: {host}"
-                        ));
+            if !is_loopback {
+                if let Some(ip) = parse_literal_ip(host) {
+                    classify_and_reject_address(ip, policy)?;
+                } else {
+                    let addrs = std::net::ToSocketAddrs::to_socket_addrs(&format!("{host}:443"))
+                        .map_err(|e| format!("DNS resolution failed for {host}: {e}"))?;
+                    for addr in addrs {
+                        match addr {
+                            std::net::SocketAddr::V4(v4) => {
+                                classify_and_reject_address(IpAddr::V4(*v4.ip()), policy)?;
+                            }
+                            std::net::SocketAddr::V6(v6) => {
+                                classify_and_reject_address(IpAddr::V6(*v6.ip()), policy)?;
+                            }
+                        }
                     }
                 }
             }
-        } else if !is_loopback_host(host) {
-            return Err(format!(
-                "HTTP base URL must point to localhost for development use: {host}"
-            ));
         }
     }
     Ok(())
+}
+
+use std::net::IpAddr;
+
+fn parse_literal_ip(host: &str) -> Option<IpAddr> {
+    if let Ok(ip) = host.parse::<Ipv4Addr>() {
+        return Some(IpAddr::V4(ip));
+    }
+    let inner = if host.starts_with('[') && host.ends_with(']') {
+        &host[1..host.len() - 1]
+    } else {
+        host
+    };
+    if let Ok(ip) = inner.parse::<Ipv6Addr>() {
+        return Some(IpAddr::V6(ip));
+    }
+    None
+}
+
+fn classify_and_reject_address(ip: IpAddr, policy: &ForgeEndpointPolicy) -> Result<(), String> {
+    let class = match ip {
+        IpAddr::V4(v4) => classify_ipv4_forge(v4),
+        IpAddr::V6(v6) => classify_ipv6_forge(v6),
+    };
+    match class {
+        ForgeAddressClass::Loopback if !policy.allow_loopback => Err(format!(
+            "resolved address {ip} is loopback, rejected by policy"
+        )),
+        ForgeAddressClass::Private | ForgeAddressClass::LinkLocal
+            if !policy.allow_private_network =>
+        {
+            Err(format!(
+                "resolved address {ip} is private/link-local, rejected by policy"
+            ))
+        }
+        ForgeAddressClass::Documentation | ForgeAddressClass::Reserved => Err(format!(
+            "resolved address {ip} is reserved/documentation, rejected"
+        )),
+        _ => Ok(()),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1002,8 +1125,20 @@ fn ipv4_mapped_from_v6_forge(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     }
 }
 
-fn is_loopback_host(host: &str) -> bool {
-    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0"
+fn encode_url_component(s: &str) -> String {
+    urlencoding::encode(s).into_owned()
+}
+
+fn is_loopback_addr(host: &str) -> bool {
+    host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "0.0.0.0"
+        || (host.starts_with('[')
+            && host.ends_with(']')
+            && host[1..host.len() - 1]
+                .parse::<Ipv6Addr>()
+                .is_ok_and(|ip| ip.is_loopback()))
 }
 
 /// Derive the Gitea/Forgejo instance root URL from an API base URL.

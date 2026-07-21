@@ -8,11 +8,84 @@
 //! cloning, indexing, or running build commands.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::core::code_metadata::CodeHost;
 use crate::core::local::LocalConfig;
+
+const GIT_OP_TIMEOUT: Duration = Duration::from_secs(5);
+const GIT_OP_STDOUT_CAP: usize = 64 * 1024;
+
+fn run_bounded(cmd: &mut Command) -> Option<(bool, Vec<u8>)> {
+    use std::io::Read;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
+
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .ok()?;
+
+    let child_id = child.id();
+    let exited = Arc::new(AtomicBool::new(false));
+    let exited_clone = exited.clone();
+    let kill_handle = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + GIT_OP_TIMEOUT;
+        loop {
+            if exited_clone.load(Ordering::Relaxed) {
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                unsafe {
+                    libc::kill(-(child_id as i32), libc::SIGKILL);
+                }
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    let mut stdout = Vec::new();
+    if let Some(ref mut out) = child.stdout {
+        let mut buf = [0u8; 4096];
+        loop {
+            match out.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let remaining = GIT_OP_STDOUT_CAP.saturating_sub(stdout.len());
+                    if n <= remaining {
+                        stdout.extend_from_slice(&buf[..n]);
+                    } else {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    let status = child.wait().ok();
+    exited.store(true, Ordering::Relaxed);
+    let _ = kill_handle.join();
+
+    let success = status.as_ref().is_some_and(|s| s.success());
+    Some((success, stdout))
+}
 
 /// A normalized remote URL identity for a Git repository.
 ///
@@ -321,7 +394,7 @@ pub fn detect_git_worktree(path: &Path) -> bool {
 /// submodules, `.git` is a file containing `gitdir: <path>`. This
 /// function resolves the actual git directory path in both cases.
 /// Returns `None` if `.git` does not exist or cannot be resolved.
-fn resolve_git_dir(repo_root: &Path) -> Option<PathBuf> {
+pub(crate) fn resolve_git_dir(repo_root: &Path) -> Option<PathBuf> {
     let git_path = repo_root.join(".git");
     if !git_path.exists() {
         return None;
@@ -472,27 +545,23 @@ pub fn read_head_commit(repo_root: &Path) -> Option<String> {
 /// This is acceptable for bounded inventory detection. Returns
 /// `Unknown` if the command fails or is not available.
 pub fn detect_dirty_state(repo_root: &Path) -> LocalDirtyState {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .arg("status")
-        .arg("--porcelain")
-        .output();
-
-    match output {
-        Ok(out) => {
-            if out.status.success() {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                if stdout.trim().is_empty() {
-                    LocalDirtyState::Clean
-                } else {
-                    LocalDirtyState::Dirty
-                }
+    let result = run_bounded(
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .arg("status")
+            .arg("--porcelain"),
+    );
+    match result {
+        Some((true, stdout)) => {
+            if stdout.is_empty() || std::str::from_utf8(&stdout).is_ok_and(|s| s.trim().is_empty())
+            {
+                LocalDirtyState::Clean
             } else {
-                LocalDirtyState::Unknown
+                LocalDirtyState::Dirty
             }
         }
-        Err(_) => LocalDirtyState::Unknown,
+        _ => LocalDirtyState::Unknown,
     }
 }
 
@@ -501,20 +570,20 @@ pub fn detect_dirty_state(repo_root: &Path) -> LocalDirtyState {
 /// Returns `(untracked_count, ignored_count)`. Each count is capped at 999.
 /// Returns `(None, None)` if not a git repo or if the command fails.
 fn count_untracked_ignored(repo_root: &Path) -> (Option<u32>, Option<u32>) {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .arg("status")
-        .arg("--porcelain")
-        .arg("--ignored")
-        .output();
-
-    match output {
-        Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
+    let result = run_bounded(
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .arg("status")
+            .arg("--porcelain")
+            .arg("--ignored"),
+    );
+    match result {
+        Some((true, stdout)) => {
+            let text = std::str::from_utf8(&stdout).unwrap_or("");
             let mut untracked = 0u32;
             let mut ignored = 0u32;
-            for line in stdout.lines() {
+            for line in text.lines() {
                 if line.starts_with("??") {
                     untracked = untracked.saturating_add(1).min(999);
                 } else if line.starts_with("!!") {
@@ -661,15 +730,8 @@ fn discover_in_dir(
 
 /// Check if a path is ignored by Git using `git check-ignore`.
 fn is_gitignored(path: &Path) -> bool {
-    let output = std::process::Command::new("git")
-        .arg("check-ignore")
-        .arg("-q")
-        .arg(path)
-        .output();
-    match output {
-        Ok(out) => out.status.code() == Some(0),
-        Err(_) => false,
-    }
+    let result = run_bounded(Command::new("git").arg("check-ignore").arg("-q").arg(path));
+    matches!(result, Some((true, _)))
 }
 
 /// Build a `LocalRepoIdentity` from a Git repository root.

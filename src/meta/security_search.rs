@@ -757,11 +757,20 @@ pub async fn run_security_search_plan(
         .cloned()
         .collect();
 
+    let mut all_cards = all_cards;
+    crate::core::evidence_postprocess::materialize_evidence_roles(&mut all_cards);
+
+    let workflow_model = crate::core::evidence_postprocess::resolve_workflow_model(
+        "security_search",
+        None,
+        None,
+        false,
+    );
     let postprocess_result = crate::core::evidence_postprocess::postprocess(
         &all_cards,
         &providers_failed,
         &web_resp.providers_queried,
-        None,
+        workflow_model.as_ref(),
         &[],
     );
 
@@ -792,6 +801,8 @@ pub async fn run_security_search_plan(
         security_evidence_summary,
         retrieval_summary: postprocess_result.retrieval_summary,
         evidence_role_summary: postprocess_result.evidence_role_summary,
+        workflow_coverage: postprocess_result.workflow_coverage,
+        conflict_metadata: postprocess_result.conflict_metadata,
     }
 }
 

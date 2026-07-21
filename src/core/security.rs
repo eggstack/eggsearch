@@ -1578,6 +1578,12 @@ pub struct SecuritySearchResponse {
     /// Role-based evidence summary with counts and coverage status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_role_summary: Option<crate::core::evidence_postprocess::EvidenceRoleSummary>,
+    /// Workflow coverage analysis for the security review workflow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_coverage: Option<crate::core::workflow_coverage::WorkflowCoverageResult>,
+    /// Structured conflict metadata between comparable evidence sources.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflict_metadata: Vec<crate::core::conflict::EvidenceConflict>,
 }
 
 #[cfg(test)]
@@ -2486,6 +2492,8 @@ mod tests {
             security_evidence_summary: None,
             retrieval_summary: None,
             evidence_role_summary: None,
+            workflow_coverage: None,
+            conflict_metadata: vec![],
         };
         let json = serde_json::to_value(&resp).unwrap();
         let groups = json["groups"].as_array().expect("groups");
