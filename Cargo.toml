@@ -58,6 +58,7 @@ pulldown-cmark = "0.12"
 lopdf = { version = "0.42", optional = true, default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+libc = "0.2"
 
 [dev-dependencies]
 pretty_assertions = "1"

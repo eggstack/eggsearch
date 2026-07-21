@@ -306,7 +306,7 @@ impl LocalWorkspaceBackend {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn search_sync(
+    pub(crate) fn search_sync(
         config: &LocalConfig,
         roots: &[(usize, PathBuf)],
         query: &str,
@@ -331,6 +331,11 @@ impl LocalWorkspaceBackend {
             content_reads: 0,
             inventory_build_time_ms: 0,
             inventory_fresh: false,
+            cold_build: false,
+            stale_rebuild: false,
+            fallback_walk: false,
+            uses_git_backend: false,
+            untracked_file_count: None,
         };
 
         let query_lower = query.to_lowercase();
@@ -511,40 +516,246 @@ impl LocalWorkspaceBackend {
                 }
             }
         } else {
-            for &(root_index, ref root_path) in roots {
-                if start.elapsed() > timeout {
-                    timed_out = true;
-                    break;
+            let is_stale = inventory
+                .as_ref()
+                .is_some_and(|inv| needs_rebuild(inv, config, Duration::from_secs(300)));
+            let is_cold = inventory.is_none();
+
+            let build_start = Instant::now();
+            let new_inventory = build_inventory(config, roots);
+            let build_time = build_start.elapsed().as_millis() as u64;
+
+            let total_entries: usize = new_inventory.roots.iter().map(|r| r.entry_count).sum();
+
+            if total_entries == 0 {
+                telemetry.fallback_walk = true;
+                telemetry.inventory_build_time_ms = build_time;
+
+                for &(root_index, ref root_path) in roots {
+                    if start.elapsed() > timeout {
+                        timed_out = true;
+                        break;
+                    }
+
+                    let ignore_stack = if config.respect_gitignore {
+                        IgnoreStack::build(root_path, root_path)
+                    } else {
+                        IgnoreStack::new()
+                    };
+
+                    Self::walk_root(
+                        root_path,
+                        root_index,
+                        config,
+                        &query_lower,
+                        &query_tokens,
+                        path_hint,
+                        lang_hint,
+                        file_hint,
+                        symbol_hint,
+                        &ignore_stack,
+                        &mut matches,
+                        &mut files_scanned,
+                        max_results,
+                        &start,
+                        timeout,
+                        &mut timed_out,
+                        &mut truncated,
+                    );
+
+                    if timed_out || truncated {
+                        break;
+                    }
+                }
+            } else {
+                {
+                    if let Ok(mut cache) = inventory_cache.lock() {
+                        *cache = Some(new_inventory.clone());
+                    }
                 }
 
-                let ignore_stack = if config.respect_gitignore {
-                    IgnoreStack::build(root_path, root_path)
-                } else {
-                    IgnoreStack::new()
-                };
+                let inv = new_inventory;
+                telemetry.used_inventory = true;
+                telemetry.inventory_fresh = false;
+                telemetry.cold_build = is_cold;
+                telemetry.stale_rebuild = is_stale;
+                telemetry.inventory_build_time_ms = build_time;
+                telemetry.inventory_entries = inv.roots.iter().map(|r| r.entries.len()).sum();
+                telemetry.uses_git_backend = inv.roots.iter().any(|r| r.uses_git_backend);
+                let total_untracked: usize = inv.roots.iter().map(|r| r.untracked_count).sum();
+                if total_untracked > 0 {
+                    telemetry.untracked_file_count = Some(total_untracked);
+                }
+                let inventory_truncated = inv.roots.iter().any(|r| r.truncated);
 
-                Self::walk_root(
-                    root_path,
-                    root_index,
-                    config,
-                    &query_lower,
-                    &query_tokens,
-                    path_hint,
-                    lang_hint,
-                    file_hint,
-                    symbol_hint,
-                    &ignore_stack,
-                    &mut matches,
-                    &mut files_scanned,
-                    max_results,
-                    &start,
-                    timeout,
-                    &mut timed_out,
-                    &mut truncated,
-                );
+                for root_inv in &inv.roots {
+                    if start.elapsed() > timeout {
+                        timed_out = true;
+                        break;
+                    }
 
-                if timed_out || truncated {
-                    break;
+                    let mut candidates: Vec<&InventoryEntry> = root_inv
+                        .entries
+                        .iter()
+                        .filter(|e| {
+                            if let Some(lang) = lang_hint {
+                                if e.language.as_deref() != Some(lang) {
+                                    return false;
+                                }
+                            }
+                            if let Some(fh) = file_hint {
+                                if !Path::new(&e.relative_path)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("")
+                                    .contains(fh)
+                                {
+                                    return false;
+                                }
+                            }
+                            if let Some(ph) = path_hint {
+                                if !e.relative_path.to_lowercase().contains(&ph.to_lowercase()) {
+                                    return false;
+                                }
+                            }
+                            true
+                        })
+                        .collect();
+
+                    candidates.sort_by(|a, b| {
+                        let sa = score_inventory_entry(a, &query_lower, &query_tokens);
+                        let sb = score_inventory_entry(b, &query_lower, &query_tokens);
+                        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+
+                    candidates.truncate(max_results * 2);
+                    telemetry.candidates_filtered += candidates.len();
+
+                    for entry in candidates {
+                        if start.elapsed() > timeout {
+                            timed_out = true;
+                            break;
+                        }
+                        if truncated {
+                            break;
+                        }
+                        if files_scanned >= config.max_indexed_files {
+                            truncated = true;
+                            break;
+                        }
+                        files_scanned += 1;
+
+                        let root_path = &root_inv.root_path;
+                        let abs_path = root_path.join(&entry.relative_path);
+
+                        let content_text = std::fs::read(&abs_path)
+                            .ok()
+                            .filter(|b| b.len() <= config.max_file_bytes)
+                            .and_then(|bytes| {
+                                let s = String::from_utf8_lossy(&bytes).to_string();
+                                if s.is_empty() {
+                                    None
+                                } else {
+                                    Some(s)
+                                }
+                            });
+
+                        if content_text.is_some() {
+                            telemetry.content_reads += 1;
+                        }
+
+                        let score = Self::score_from_inventory_entry(
+                            entry,
+                            &query_lower,
+                            &query_tokens,
+                            symbol_hint,
+                            content_text.as_deref(),
+                        );
+
+                        if score <= 0.0 {
+                            continue;
+                        }
+
+                        let file_entry = LocalFileEntry {
+                            path: abs_path,
+                            relative_path: entry.relative_path.clone(),
+                            root_index: root_inv.root_index,
+                            size: entry.size,
+                            language: entry.language.clone(),
+                        };
+
+                        let (
+                            snippet,
+                            line_start,
+                            line_end,
+                            matched_symbol,
+                            symbol_kind,
+                            boosted_score,
+                        ) = if let Some(sym_hint) = symbol_hint {
+                            if let Some(ref text) = content_text {
+                                if let Some((name, kind, sym_line)) =
+                                    symbol_backend.find_symbols(text, sym_hint)
+                                {
+                                    let snippet = Self::find_text_match_in_text(text, &name);
+                                    let boosted = score + 30.0;
+                                    (
+                                        snippet,
+                                        Some(sym_line),
+                                        Some(sym_line),
+                                        Some(name),
+                                        Some(kind),
+                                        boosted,
+                                    )
+                                } else if !query_lower.is_empty() {
+                                    let (s, ls, le) = Self::find_text_match(
+                                        &file_entry.path,
+                                        &query_lower,
+                                        config.max_file_bytes,
+                                    );
+                                    (s, ls, le, None, None, score)
+                                } else {
+                                    (None, None, None, None, None, score)
+                                }
+                            } else if !query_lower.is_empty() {
+                                let (s, ls, le) = Self::find_text_match(
+                                    &file_entry.path,
+                                    &query_lower,
+                                    config.max_file_bytes,
+                                );
+                                (s, ls, le, None, None, score)
+                            } else {
+                                (None, None, None, None, None, score)
+                            }
+                        } else if !query_lower.is_empty() {
+                            if let Some(ref text) = content_text {
+                                let snippet = Self::find_text_match_in_text(text, &query_lower);
+                                (snippet, None, None, None, None, score)
+                            } else {
+                                let (s, ls, le) = Self::find_text_match(
+                                    &file_entry.path,
+                                    &query_lower,
+                                    config.max_file_bytes,
+                                );
+                                (s, ls, le, None, None, score)
+                            }
+                        } else {
+                            (None, None, None, None, None, score)
+                        };
+
+                        matches.push(LocalMatch {
+                            file: file_entry,
+                            score: boosted_score,
+                            line_start,
+                            line_end,
+                            snippet,
+                            matched_symbol,
+                            symbol_kind,
+                        });
+                    }
+                }
+
+                if inventory_truncated {
+                    truncated = true;
                 }
             }
         }
@@ -1967,7 +2178,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_falls_back_without_inventory() {
+    fn test_search_auto_builds_inventory_on_first_search() {
         use std::sync::Mutex;
 
         let dir = tempfile::tempdir().unwrap();
@@ -1996,13 +2207,14 @@ mod tests {
         let result = rt.block_on(backend.search(&req));
         assert!(
             result.files_scanned > 0,
-            "fallback should scan at least one file"
+            "search should scan at least one file"
         );
-        assert!(!result.matches.is_empty(), "fallback should find main.rs");
+        assert!(!result.matches.is_empty(), "search should find main.rs");
         let telemetry = result.telemetry.as_ref().unwrap();
         assert!(
-            !telemetry.used_inventory,
-            "should not use inventory when cache is empty"
+            telemetry.used_inventory,
+            "should auto-build and use inventory on first search"
         );
+        assert!(telemetry.cold_build, "first search should be a cold build");
     }
 }

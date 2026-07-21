@@ -72,6 +72,7 @@ The four top-level library modules (`core`, `meta`, `fetch`, `mcp`) plus the `co
 | `workflow_coverage.rs` | `src/core/workflow_coverage.rs` | Deterministic coverage structures for workflow evidence models | |
 | `conflict.rs` | `src/core/conflict.rs` | Contradiction and conflict metadata for source disagreement detection | |
 | `retrieval_status.rs` | `src/core/retrieval_status.rs` | Failure and absence semantics distinguishing evidence absence from retrieval failure | |
+| `evidence_postprocess.rs` | `src/core/evidence_postprocess.rs` | Phase 5 response integration: evidence roles, workflow coverage, retrieval summaries, structured conflicts on all conversion paths | |
 | **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
 | **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection, code-host URL rewriting | [fetch.md](fetch.md) |
 | **mcp** | `src/mcp/` | MCP server over stdio (rmcp), 10 tool definitions, shared server state, policy enforcement | [mcp.md](mcp.md) |
@@ -146,11 +147,12 @@ Profiles are advisory; unavailable providers are skipped with warnings, never er
 7. SourceCard construction with deterministic FNV-1a IDs (identity.rs)
 8. Sanitization (sanitize.rs) — 3 tiers: control chars, framing, injection scan
 9. Quality metadata (quality.rs) — confidence, relevance, authority, freshness, evidence strength
-10. Result grouping (grouping.rs / repo_grouping.rs / research_grouping.rs / security_grouping.rs)
-11. Suggested fetches (suggested_fetches.rs / research_suggested_fetches.rs / security_suggested_fetches.rs)
-12. Fetch ranking (fetch_ranking.rs) — deterministic scoring pipeline
-13. Next-action hints (recipe_catalog.rs) — up to 5 hints per response
-14. Structured warnings (warning.rs) — 50+ machine-readable codes
+10. Evidence postprocessing (evidence_postprocess.rs) — roles, coverage, retrieval summaries, conflicts
+11. Result grouping (grouping.rs / repo_grouping.rs / research_grouping.rs / security_grouping.rs)
+12. Suggested fetches (suggested_fetches.rs / research_suggested_fetches.rs / security_suggested_fetches.rs)
+13. Fetch ranking (fetch_ranking.rs) — deterministic scoring pipeline
+14. Next-action hints (recipe_catalog.rs) — up to 5 hints per response
+15. Structured warnings (warning.rs) — 50+ machine-readable codes
 ```
 
 ### Fetch Flow (web_fetch / repo_fetch / batch_fetch)
@@ -176,7 +178,9 @@ Profiles are advisory; unavailable providers are skipped with warnings, never er
 1. Git worktree discovery (local_inventory.rs)
 2. Remote URL normalization + identity matching
 3. File inventory construction with caching (local_inventory_cache.rs)
-   - Git-aware fast path via `git ls-files` when available
+   - Auto-build on first search (cache miss triggers build)
+   - Git-aware fast path via `git ls-files -z --cached --others --exclude-standard`
+   - Bounded command runner: 5s timeout, 16MB stdout cap, early-exit kill thread
    - Native directory walking fallback
    - XXH3 fingerprinting for change detection
 4. Inventory-first search: candidate filtering → bounded content reads → scoring
@@ -184,6 +188,7 @@ Profiles are advisory; unavailable providers are skipped with warnings, never er
 6. SourceCard conversion with trust = local_trusted
 7. File classification: is_generated, is_vendor, is_test, is_example, is_config, is_lockfile
 8. Telemetry: backend used, inventory age, files considered/read, bytes read
+9. inventory_truncated propagated from inventory roots into search results
 ```
 
 ---
@@ -258,7 +263,11 @@ See [meta.md](meta.md#provider-health) for details.
 
 ### Bounded Everything
 
-Every resource is bounded: timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits, batch sizes, PDF pages, concurrency. Defaults are safe for general MCP exposure.
+Every resource is bounded: timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits, batch sizes, PDF pages, concurrency, forge response bytes. Defaults are safe for general MCP exposure.
+
+### Forge Endpoint Safety
+
+Forge API base URLs are validated before use: embedded credentials are rejected, HTTPS URLs must not target localhost or private networks, HTTP is only allowed for localhost development, and IPv6 addresses are fully classified. See [meta.md](meta.md#forge-adapter) for details.
 
 ---
 
@@ -278,7 +287,7 @@ Every resource is bounded: timeouts, max_results, max_chars, max_bytes, redirect
 
 7. **Three-tier sanitization** — Untrusted text is always stripped/bounded (Tier 1), optionally framed (Tier 2), and optionally scanned for injection markers (Tier 3).
 
-8. **Inventory-first search** — Local workspace search uses a cached file inventory to avoid repeated full-tree walks. Git-aware fast path (`git ls-files`) is preferred when available; native directory walking is the fallback. Per-file lazy validation via XXH3 fingerprinting ensures freshness without eager re-reads.
+8. **Inventory-first search** — Local workspace search uses a cached file inventory to avoid repeated full-tree walks. Git-aware fast path (`git ls-files -z --cached --others --exclude-standard`) is preferred when available; native directory walking is the fallback. Inventory is auto-built on first search (cache miss). Per-file lazy validation via XXH3 fingerprinting ensures freshness without eager re-reads.
 
 ---
 

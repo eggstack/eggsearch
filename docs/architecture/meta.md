@@ -42,7 +42,7 @@ MCP Tool → MetadataSearchAdapter
 | `advisory_range.rs` | Advisory range extraction |
 | `dependency_parse.rs` | Dependency/lock file parser |
 | `repo_mapper.rs` | Repository map planning and classification for the `repo_map` MCP tool |
-| `forge_adapter.rs` | Native remote repository tree retrieval for GitHub, GitLab, Gitea, Forgejo, and Codeberg |
+| `forge_adapter.rs` | Native remote repository tree retrieval for GitHub, GitLab, Gitea, Forgejo, and Codeberg. Bounded response reading, endpoint safety validation, nested map assembly |
 | `security_search.rs` | Security search orchestration: coordinates web search, native advisory lookups, KEV enrichment, grouping |
 | `security_suggested_fetches.rs` | Suggested fetch generation for security search result groups |
 | `research_evidence_analysis.rs` | Deterministic research evidence analysis: claim extraction, conflict detection, quality classification, gap identification |
@@ -64,10 +64,10 @@ MCP Tool → MetadataSearchAdapter
 
 | File | Responsibility |
 |------|----------------|
-| `local_backend.rs` | Local workspace search backend with inventory-first query and SymbolBackend trait |
+| `local_backend.rs` | Local workspace search backend with auto-build inventory on first search, bounded file walking, scoring, and SymbolBackend trait |
 | `local_ignore.rs` | Minimal `.gitignore` matcher |
 | `local_inventory.rs` | Git worktree discovery, remote URL normalization, identity matching |
-| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path, native walking, XXH3 fingerprinting, invalidation |
+| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path (`git ls-files -z --cached --others --exclude-standard`), native walking, XXH3 fingerprinting, invalidation. Bounded command runner with timeout, stdout/stderr caps, early-exit kill thread |
 
 ### Test Support
 
@@ -245,6 +245,37 @@ Panics are detected by matching `"panicked during dispatch"` in `EngineError::Ne
 - `Degraded`: consecutive failures > 0 but below threshold
 - `Cooldown`: 3+ consecutive failures, cooldown active
 - `Unknown`: no health data recorded yet
+
+---
+
+## Forge Adapter
+
+The forge adapter (`forge_adapter.rs`) handles native remote repository tree retrieval for GitHub, GitLab, Gitea, Forgejo, and Codeberg without cloning repositories.
+
+### Bounded Response Reading
+
+All forge API responses are read through `read_bounded_response()` which enforces a hard byte cap during streaming. The function checks `Content-Length` upfront and accumulates bytes incrementally, returning `response_too_large` when the cap is exceeded. No forge adapter path uses `.text().await` or `.bytes().await` without a prior hard bound.
+
+### Endpoint Safety
+
+`validate_base_url()` enforces URL safety before any forge API request:
+- Rejects embedded credentials (username/password in URL)
+- Rejects HTTPS URLs pointing to localhost, loopback, or private IPv4/IPv6 ranges
+- Rejects HTTP URLs with API keys except for localhost development use
+- Full IPv6 classification: loopback, private (ULA), link-local, documentation, reserved, public
+
+### Commit Provenance
+
+`commit_sha` in `RepoMapResponse` is set from `resolved_ref` (the actual commit SHA returned by the forge API), not from entry object SHAs. The `resolved_ref_name` field records the original branch or tag name used for the tree lookup. Object SHAs and commit SHAs are independently represented.
+
+### Nested Repository Map Assembly
+
+`build_response()` assembles the repository map from forge tree entries:
+- **`entries`**: all retained entries within `max_depth`, including nested paths (e.g. `src/lib.rs`)
+- **`root_entries`**: root-level entries only (backward-compatible, no `/` in path)
+- Depth calculation: root-level entry = depth 1, `src/lib.rs` = depth 2
+- Language hints and manifests are populated from all retained entries, not just root entries
+- Entries exceeding `max_entries` are truncated with a `ForgeTreeTruncated` warning
 
 ---
 

@@ -1572,6 +1572,12 @@ pub struct SecuritySearchResponse {
     /// Aggregate security evidence summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub security_evidence_summary: Option<SecurityEvidenceSummary>,
+    /// Retrieval status summary across providers and evidence dimensions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrieval_summary: Option<crate::core::retrieval_status::ResponseRetrievalSummary>,
+    /// Role-based evidence summary with counts and coverage status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_role_summary: Option<crate::core::evidence_postprocess::EvidenceRoleSummary>,
 }
 
 #[cfg(test)]
@@ -2478,6 +2484,8 @@ mod tests {
             next_actions: vec![],
             remediation_actions: vec![],
             security_evidence_summary: None,
+            retrieval_summary: None,
+            evidence_role_summary: None,
         };
         let json = serde_json::to_value(&resp).unwrap();
         let groups = json["groups"].as_array().expect("groups");

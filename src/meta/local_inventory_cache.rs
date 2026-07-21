@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
@@ -9,12 +10,18 @@ use xxhash_rust::xxh3::xxh3_64;
 use crate::core::code_evidence::infer_source_role;
 use crate::core::code_evidence::SourceRole;
 use crate::core::code_evidence::SymbolKind;
-use crate::core::local::{is_binary_extension, language_from_extension, LocalConfig, SKIP_DIRS};
+use crate::core::local::{
+    is_binary_extension, is_eligible_for_indexing, is_git_path_eligible, language_from_extension,
+    should_skip_component, LocalConfig,
+};
 use crate::meta::local_ignore::IgnoreStack;
 use crate::meta::local_inventory::read_head_commit;
 
 const BUILD_TIMEOUT_SECS: u64 = 5;
 const INVENTORY_BUILD_TIMEOUT: Duration = Duration::from_secs(BUILD_TIMEOUT_SECS);
+
+const GIT_STDOUT_CAP: usize = 16 * 1024 * 1024;
+const GIT_STDERR_CAP: usize = 64 * 1024;
 
 /// A single file entry in the workspace inventory.
 #[derive(Clone, Debug)]
@@ -60,6 +67,10 @@ pub struct RootInventory {
     pub truncation_reason: Option<String>,
     /// Whether the git backend was used for this root.
     pub uses_git_backend: bool,
+    /// Number of untracked files included via --others flag.
+    pub untracked_count: usize,
+    /// Git index file mtime at build time (seconds since epoch), if applicable.
+    pub index_mtime_secs: Option<u64>,
 }
 
 /// Workspace-level inventory aggregating all roots.
@@ -258,13 +269,6 @@ fn mtime_secs(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-fn should_skip_component(name: &str, include_hidden: bool) -> bool {
-    if !include_hidden && name.starts_with('.') {
-        return true;
-    }
-    SKIP_DIRS.contains(&name)
-}
-
 /// Build a workspace inventory from configured roots and local config.
 pub fn build_inventory(config: &LocalConfig, roots: &[(usize, PathBuf)]) -> WorkspaceInventory {
     let config_fingerprint = compute_config_fingerprint(config);
@@ -340,6 +344,8 @@ pub fn build_inventory_native(
         truncated,
         truncation_reason,
         uses_git_backend: false,
+        untracked_count: 0,
+        index_mtime_secs: None,
     }
 }
 
@@ -449,17 +455,11 @@ fn build_entry_for_file(
     root_index: usize,
     config: &LocalConfig,
 ) -> Option<InventoryEntry> {
-    let file_name_str = path.file_name()?.to_string_lossy();
-
-    if is_binary_extension(&file_name_str) {
+    if !is_eligible_for_indexing(path, config) {
         return None;
     }
 
     let metadata = std::fs::metadata(path).ok()?;
-    if metadata.len() > config.max_file_bytes as u64 {
-        return None;
-    }
-
     let relative_path = path
         .strip_prefix(root_path)
         .unwrap_or(path)
@@ -487,30 +487,147 @@ fn build_entry_for_file(
 }
 
 /// Build inventory for a single root using `git ls-files` (returns `None` for non-git dirs).
+#[allow(dead_code)]
+struct BoundedCommandResult {
+    status: Option<std::process::ExitStatus>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    timed_out: bool,
+}
+
+fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandResult {
+    use std::io::Read;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let mut child = match cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return BoundedCommandResult {
+                status: None,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                timed_out: false,
+            };
+        }
+    };
+
+    let child_id = child.id();
+    let exited = Arc::new(AtomicBool::new(false));
+    let exited_clone = exited.clone();
+    let kill_handle = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if exited_clone.load(Ordering::Relaxed) {
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                unsafe {
+                    libc::kill(child_id as i32, libc::SIGKILL);
+                }
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    if let Some(ref mut out) = child.stdout {
+        let _ = out.read_to_end(&mut stdout);
+        if stdout.len() > GIT_STDOUT_CAP {
+            stdout.truncate(GIT_STDOUT_CAP);
+        }
+    }
+    if let Some(ref mut err) = child.stderr {
+        let _ = err.read_to_end(&mut stderr);
+        if stderr.len() > GIT_STDERR_CAP {
+            stderr.truncate(GIT_STDERR_CAP);
+        }
+    }
+
+    let status = child.wait().ok();
+    exited.store(true, Ordering::Relaxed);
+    let _ = kill_handle.join();
+
+    let timed_out = status
+        .as_ref()
+        .is_some_and(|s| s.code().is_some_and(|c| c == -9 || c == 137));
+
+    BoundedCommandResult {
+        status,
+        stdout,
+        stderr,
+        timed_out,
+    }
+}
+
+/// Build inventory for a single root using `git ls-files` with bounded command execution.
+/// Returns `None` for non-git directories, timeouts, or output exceeding limits.
 pub fn build_inventory_git(
     root_index: usize,
     root_path: &Path,
     config: &LocalConfig,
 ) -> Option<RootInventory> {
-    let output = Command::new("git")
-        .arg("ls-files")
+    let mut cmd = Command::new("git");
+    cmd.arg("ls-files")
+        .arg("-z")
         .arg("--cached")
-        .current_dir(root_path)
-        .output()
-        .ok()?;
+        .arg("--others")
+        .arg("--exclude-standard")
+        .current_dir(root_path);
 
-    if !output.status.success() {
+    let result = run_bounded_command(&mut cmd, INVENTORY_BUILD_TIMEOUT);
+
+    if result.timed_out {
+        tracing::warn!(
+            root = %root_path.display(),
+            "git ls-files timed out, falling back to native walker"
+        );
         return None;
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let status = result.status?;
+    if !status.success() {
+        return None;
+    }
+
+    if result.stdout.len() >= GIT_STDOUT_CAP {
+        tracing::warn!(
+            root = %root_path.display(),
+            stdout_len = result.stdout.len(),
+            "git ls-files output exceeded cap, falling back to native walker"
+        );
+        return None;
+    }
+
     let head_commit = read_head_commit(root_path);
     let start = Instant::now();
     let mut entries = Vec::new();
     let mut truncated = false;
     let mut truncation_reason = None;
+    let mut untracked_count = 0usize;
 
-    for line in stdout.lines() {
+    let mut untracked_cmd = Command::new("git");
+    untracked_cmd
+        .arg("ls-files")
+        .arg("--others")
+        .arg("--exclude-standard")
+        .current_dir(root_path);
+    if let Ok(result) = untracked_cmd.output() {
+        if result.status.success() {
+            untracked_count = result.stdout.iter().filter(|&&b| b == b'\n').count();
+        }
+    }
+
+    for path_bytes in result.stdout.split(|&b| b == 0) {
+        if path_bytes.is_empty() {
+            continue;
+        }
         if start.elapsed() > INVENTORY_BUILD_TIMEOUT {
             truncated = true;
             truncation_reason = Some("build timeout exceeded".to_string());
@@ -525,34 +642,24 @@ pub fn build_inventory_git(
             break;
         }
 
+        let line = match std::str::from_utf8(path_bytes) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
 
-        let file_name = Path::new(line)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        if should_skip_component(&file_name, config.include_hidden) {
-            continue;
-        }
-
-        if is_binary_extension(&file_name) {
+        if !is_git_path_eligible(line, root_path, config) {
             continue;
         }
 
         let absolute_path = root_path.join(line);
-
         let metadata = match std::fs::metadata(&absolute_path) {
             Ok(m) => m,
             Err(_) => continue,
         };
-
-        if metadata.len() > config.max_file_bytes as u64 {
-            continue;
-        }
 
         let size = metadata.len();
         let mtime = mtime_secs(&absolute_path);
@@ -577,6 +684,14 @@ pub fn build_inventory_git(
     entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
     let entry_count = entries.len();
+    let index_mtime = root_path
+        .join(".git")
+        .join("index")
+        .metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
 
     Some(RootInventory {
         root_index,
@@ -588,6 +703,8 @@ pub fn build_inventory_git(
         truncated,
         truncation_reason,
         uses_git_backend: true,
+        untracked_count,
+        index_mtime_secs: index_mtime,
     })
 }
 
@@ -612,6 +729,22 @@ pub fn needs_rebuild(
             if let Some(current_head) = read_head_commit(&ri.root_path) {
                 if ri.head_commit.as_ref() != Some(&current_head) {
                     return true;
+                }
+            }
+            if let Some(stored_mtime) = ri.index_mtime_secs {
+                let git_dir = ri.root_path.join(".git");
+                if git_dir.is_dir() {
+                    let index_path = git_dir.join("index");
+                    let current_mtime = std::fs::metadata(&index_path)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs());
+                    if let Some(current_mtime) = current_mtime {
+                        if current_mtime != stored_mtime {
+                            return true;
+                        }
+                    }
                 }
             }
         }
@@ -965,5 +1098,425 @@ mod tests {
         assert!(!paths.contains(&"image.png"));
         assert!(!paths.contains(&"archive.zip"));
         assert!(!paths.contains(&"doc.pdf"));
+    }
+
+    #[test]
+    fn test_first_search_builds_inventory() {
+        use crate::meta::local_backend::{LocalWorkspaceBackend, RegexSymbolBackend};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+        fs::write(root.join("lib.rs"), "pub fn add() -> i32 { 1 }").unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let roots = vec![(0, root.to_path_buf())];
+        let cache = std::sync::Mutex::new(None);
+
+        let result = LocalWorkspaceBackend::search_sync(
+            &config,
+            &roots,
+            "main",
+            None,
+            None,
+            None,
+            None,
+            10,
+            Duration::from_secs(10),
+            Instant::now(),
+            &cache,
+            &RegexSymbolBackend,
+        );
+
+        assert!(result.files_scanned > 0);
+        let telemetry = result.telemetry.as_ref().unwrap();
+        assert!(telemetry.used_inventory);
+        assert!(telemetry.cold_build);
+        assert!(telemetry.inventory_build_time_ms > 0);
+
+        let cached = cache.lock().unwrap();
+        assert!(cached.is_some());
+        let inv = cached.as_ref().unwrap();
+        assert!(inv.roots[0].entry_count >= 2);
+    }
+
+    #[test]
+    fn test_second_search_reuses_inventory() {
+        use crate::meta::local_backend::{LocalWorkspaceBackend, RegexSymbolBackend};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+        fs::write(root.join("lib.rs"), "pub fn add() -> i32 { 1 }").unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let roots = vec![(0, root.to_path_buf())];
+        let cache = std::sync::Mutex::new(None);
+
+        let search_config = config.clone();
+        let search_roots = roots.clone();
+        let cache_ref = &cache;
+
+        let _r1 = LocalWorkspaceBackend::search_sync(
+            &search_config,
+            &search_roots,
+            "main",
+            None,
+            None,
+            None,
+            None,
+            10,
+            Duration::from_secs(10),
+            Instant::now(),
+            cache_ref,
+            &RegexSymbolBackend,
+        );
+
+        let start2 = Instant::now();
+        let _r2 = LocalWorkspaceBackend::search_sync(
+            &search_config,
+            &search_roots,
+            "lib",
+            None,
+            None,
+            None,
+            None,
+            10,
+            Duration::from_secs(10),
+            start2,
+            cache_ref,
+            &RegexSymbolBackend,
+        );
+
+        let t2 = _r2.telemetry.as_ref().unwrap();
+        assert!(t2.used_inventory);
+        assert!(t2.inventory_fresh);
+        assert!(!t2.cold_build);
+    }
+
+    #[test]
+    fn test_git_inventory_includes_untracked_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        fs::write(root.join("tracked.rs"), "fn tracked() {}").unwrap();
+        fs::write(root.join("untracked.rs"), "fn untracked() {}").unwrap();
+
+        std::process::Command::new("git")
+            .arg("add")
+            .arg("tracked.rs")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg("initial")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+
+        let ri = build_inventory_git(0, root, &config);
+        assert!(ri.is_some());
+        let ri = ri.unwrap();
+        assert!(ri.uses_git_backend);
+
+        let paths: Vec<&str> = ri
+            .entries
+            .iter()
+            .map(|e| e.relative_path.as_str())
+            .collect();
+        assert!(paths.contains(&"tracked.rs"));
+        assert!(paths.contains(&"untracked.rs"));
+        assert!(ri.untracked_count >= 1);
+    }
+
+    #[test]
+    fn test_git_inventory_excludes_ignored_untracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        fs::write(root.join(".gitignore"), "*.log\n").unwrap();
+        fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+        fs::write(root.join("debug.log"), "log data").unwrap();
+
+        std::process::Command::new("git")
+            .arg("add")
+            .arg(".gitignore")
+            .arg("main.rs")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg("initial")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            respect_gitignore: true,
+            ..Default::default()
+        };
+
+        let ri = build_inventory_git(0, root, &config);
+        assert!(ri.is_some());
+        let ri = ri.unwrap();
+
+        let paths: Vec<&str> = ri
+            .entries
+            .iter()
+            .map(|e| e.relative_path.as_str())
+            .collect();
+        assert!(paths.contains(&"main.rs"));
+        assert!(!paths.contains(&"debug.log"));
+    }
+
+    #[test]
+    fn test_git_inventory_excludes_hidden_components() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        fs::create_dir_all(root.join(".hidden")).unwrap();
+        fs::write(root.join(".hidden/secret.rs"), "fn secret() {}").unwrap();
+        fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+        std::process::Command::new("git")
+            .arg("add")
+            .arg(".hidden/secret.rs")
+            .arg("main.rs")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg("initial")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            include_hidden: false,
+            respect_gitignore: false,
+            ..Default::default()
+        };
+
+        let ri = build_inventory_git(0, root, &config);
+        assert!(ri.is_some());
+        let ri = ri.unwrap();
+
+        let paths: Vec<&str> = ri
+            .entries
+            .iter()
+            .map(|e| e.relative_path.as_str())
+            .collect();
+        assert!(paths.contains(&"main.rs"));
+        assert!(!paths.contains(&".hidden/secret.rs"));
+    }
+
+    #[test]
+    fn test_git_inventory_excludes_skip_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        fs::create_dir_all(root.join("target")).unwrap();
+        fs::write(root.join("target/debug.rs"), "fn debug() {}").unwrap();
+        fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+        std::process::Command::new("git")
+            .arg("add")
+            .arg("target/debug.rs")
+            .arg("main.rs")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg("initial")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+
+        let ri = build_inventory_git(0, root, &config);
+        assert!(ri.is_some());
+        let ri = ri.unwrap();
+
+        let paths: Vec<&str> = ri
+            .entries
+            .iter()
+            .map(|e| e.relative_path.as_str())
+            .collect();
+        assert!(paths.contains(&"main.rs"));
+        assert!(!paths.iter().any(|p| p.starts_with("target/")));
+    }
+
+    #[test]
+    fn test_nul_delimited_paths_with_spaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        fs::create_dir_all(root.join("my folder")).unwrap();
+        fs::write(root.join("my folder/file.rs"), "fn main() {}").unwrap();
+
+        std::process::Command::new("git")
+            .arg("add")
+            .arg("my folder/file.rs")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg("initial")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+
+        let ri = build_inventory_git(0, root, &config);
+        assert!(ri.is_some());
+        let ri = ri.unwrap();
+
+        let paths: Vec<&str> = ri
+            .entries
+            .iter()
+            .map(|e| e.relative_path.as_str())
+            .collect();
+        assert!(
+            paths.contains(&"my folder/file.rs"),
+            "NUL-delimited path with spaces should be parsed correctly: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_git_index_mtime_triggers_rebuild() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+        std::process::Command::new("git")
+            .arg("add")
+            .arg("main.rs")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg("initial")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let roots = vec![(0, root.to_path_buf())];
+        let inv1 = build_inventory(&config, &roots);
+        assert!(!needs_rebuild(&inv1, &config, Duration::from_secs(3600)));
+
+        fs::write(root.join("lib.rs"), "pub fn lib() {}").unwrap();
+        std::process::Command::new("git")
+            .arg("add")
+            .arg("lib.rs")
+            .current_dir(root)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg("add lib")
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        assert!(
+            needs_rebuild(&inv1, &config, Duration::from_secs(3600)),
+            "HEAD change should trigger rebuild"
+        );
     }
 }

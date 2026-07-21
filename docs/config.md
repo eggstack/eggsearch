@@ -192,6 +192,8 @@ respect_gitignore = true
 follow_symlinks = false
 ```
 
+When enabled, the local workspace inventory is built automatically on first search (auto-build on cache miss). The git fast path uses `git ls-files -z --cached --others --exclude-standard` with a bounded command runner (5s timeout, 16MB stdout cap, early-exit kill thread). Native directory walking is the fallback for non-git directories.
+
 ### SearXNG
 
 ```toml eggsearch-config-parse-only

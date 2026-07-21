@@ -72,6 +72,16 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 |------|-----------|----------------|
 | `provider.rs` | `ProviderSkipCode` | 13-variant enum serialized as stable snake_case strings. Variants: `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, `unknown`. Used by `ProviderDescriptor.skip_code` and `ProviderSkipReason.skip_code` for machine-readable diagnostics. |
 
+### Evidence Postprocessing
+
+| File | Key Types | Responsibility |
+|------|-----------|----------------|
+| `evidence_role.rs` | `EvidenceRole` | 19-variant deterministic evidence role taxonomy mapping across source kinds, roles, classes, and tiers |
+| `workflow_coverage.rs` | `WorkflowCoverageModel`, `WorkflowCoverageResult`, `CoverageStatus`, `RetrievalFailure`, `RetrievalFailureKind` | Deterministic coverage structures for 10 core workflows; required/recommended/optional role coverage |
+| `conflict.rs` | `EvidenceConflict`, `ConflictClass`, `ConflictSeverity`, `ConflictResolution` | Contradiction and conflict metadata for source disagreement detection (version ranges, release dates, benchmarks, mutable vs pinned) |
+| `retrieval_status.rs` | `ResponseRetrievalSummary`, `RetrievalDimensionStatus`, `EvidenceAbsenceKind` | Failure and absence semantics distinguishing evidence absence from retrieval failure |
+| `evidence_postprocess.rs` | `EvidencePostprocessResult`, `EvidenceRoleSummary`, `RoleCount` | Phase 5 response integration: populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths |
+
 ### Workflow Guidance
 
 | File | Key Types | Responsibility |
@@ -137,7 +147,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
-| `local.rs` | `LocalConfig`, `LocalFileEntry`, `LocalSearchRequest`, `LocalMatch`, `LocalSearchResult`, `InventoryTelemetry`, `validate_local_fetch_path()` | Local workspace search types. Config: roots, limits, gitignore/symlink policy. `InventoryTelemetry` tracks backend used, inventory age, files considered/read. |
+| `local.rs` | `LocalConfig`, `LocalFileEntry`, `LocalSearchRequest`, `LocalMatch`, `LocalSearchResult`, `InventoryTelemetry`, `validate_local_fetch_path()`, `is_binary_extension()`, `should_skip_component()`, `is_eligible_for_indexing()` | Local workspace search types. Centralized path-component policy for hidden files, SKIP_DIRS, binary extensions, symlinks, size limits. Config: roots, limits, gitignore/symlink policy. `InventoryTelemetry` tracks backend used, inventory age, files considered/read. |
 
 ---
 
@@ -152,6 +162,10 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 4. **Three-tier sanitization** — Untrusted text flows through control-char stripping, external framing, and injection scanning before reaching agents.
 
 5. **URL canonicalization** — Identity system normalizes URLs (strip `www.`, default ports, fragments, percent-encoding) to prevent trivial differences from producing different IDs.
+
+6. **Evidence postprocessing** — `evidence_postprocess.rs` populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths. All new fields are additive and optional.
+
+7. **Centralized path policy** — `local.rs` centralizes path-component rules (hidden, SKIP_DIRS, binary, symlinks, size) used by both inventory building and fetch validation.
 
 ---
 

@@ -741,6 +741,18 @@ pub struct ResearchSearchResponse {
     /// Evidence gap analysis for the research response.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_gaps: Vec<ResearchEvidenceGap>,
+    /// Workflow coverage evaluation when a workflow model is applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_coverage: Option<crate::core::workflow_coverage::WorkflowCoverageResult>,
+    /// Retrieval status summary across providers and evidence dimensions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrieval_summary: Option<crate::core::retrieval_status::ResponseRetrievalSummary>,
+    /// Structured conflicts detected between directly comparable values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflict_metadata: Vec<crate::core::conflict::EvidenceConflict>,
+    /// Role-based evidence summary with counts and coverage status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_role_summary: Option<crate::core::evidence_postprocess::EvidenceRoleSummary>,
 }
 
 #[cfg(test)]
@@ -987,6 +999,10 @@ mod tests {
             conflicts: vec![],
             source_quality: vec![],
             evidence_gaps: vec![],
+            workflow_coverage: None,
+            retrieval_summary: None,
+            conflict_metadata: vec![],
+            evidence_role_summary: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();
@@ -1106,6 +1122,10 @@ mod tests {
             conflicts: vec![],
             source_quality: vec![],
             evidence_gaps: vec![],
+            workflow_coverage: None,
+            retrieval_summary: None,
+            conflict_metadata: vec![],
+            evidence_role_summary: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: ResearchSearchResponse = serde_json::from_str(&json).unwrap();

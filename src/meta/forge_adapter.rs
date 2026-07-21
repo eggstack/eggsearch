@@ -5,6 +5,7 @@
 //! operations enforce entry, depth, byte, pagination, concurrency, and
 //! timeout limits.
 
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -42,6 +43,33 @@ const CODEBERG_API_BASE: &str = "https://codeberg.org/api/v1";
 
 static FORGE_SEMAPHORE: LazyLock<Semaphore> =
     LazyLock::new(|| Semaphore::new(MAX_CONCURRENT_FORGE_REQUESTS));
+
+async fn read_bounded_response(
+    resp: reqwest::Response,
+    per_response_cap: usize,
+    total_bytes: &mut usize,
+) -> Result<String, String> {
+    if let Some(content_length) = resp.content_length() {
+        if content_length as usize > per_response_cap {
+            return Err("response_too_large".into());
+        }
+    }
+    let mut body = String::new();
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("failed to read response chunk: {e}"))?;
+        *total_bytes += chunk.len();
+        if *total_bytes > per_response_cap {
+            return Err("response_too_large".into());
+        }
+        body.push_str(
+            std::str::from_utf8(&chunk)
+                .map_err(|e| format!("response body is not valid UTF-8: {e}"))?,
+        );
+    }
+    Ok(body)
+}
 
 /// Configuration for connecting to a forge API.
 #[derive(Debug, Clone)]
@@ -132,7 +160,7 @@ pub async fn fetch_tree(
         .await
         .map_err(|_| "concurrency limit exceeded".to_string())?;
     if let Some(ref base) = config.base_url {
-        validate_base_url(base)?;
+        validate_base_url(base, config.api_key.as_deref())?;
     }
     let client = build_client()?;
     let timeout = timeout_duration(req);
@@ -225,14 +253,8 @@ async fn fetch_github_tree(
         return Err(format!("provider_unavailable: {status} - {msg}"));
     }
 
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("failed to read GitHub response: {e}"))?;
-
-    if body.len() > DEFAULT_MAX_RESPONSE_BYTES {
-        return Err("response_too_large".into());
-    }
+    let mut total_bytes = 0usize;
+    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
 
     let tree: GitHubTreeResponse =
         serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
@@ -341,10 +363,8 @@ async fn fetch_github_contents_root(
     if !resp.status().is_success() {
         return Err(format!("contents_api_failed: {}", resp.status()));
     }
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("failed to read Contents API response: {e}"))?;
+    let mut total_bytes = 0usize;
+    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
     let items: Vec<GitHubContentsEntry> =
         serde_json::from_str(&body).map_err(|e| format!("malformed Contents response: {e}"))?;
     let entries = items
@@ -420,6 +440,7 @@ async fn fetch_gitlab_tree(
     let mut truncated_by_provider = false;
     let mut warnings = Vec::new();
     let max_pages = DEFAULT_MAX_PAGES;
+    let mut total_bytes = 0usize;
 
     loop {
         if page > max_pages as u32 {
@@ -473,14 +494,8 @@ async fn fetch_gitlab_tree(
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| format!("failed to read GitLab response: {e}"))?;
-
-        if body.len() > DEFAULT_MAX_RESPONSE_BYTES {
-            return Err("response_too_large".into());
-        }
+        let body =
+            read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
 
         let items: Vec<GitLabTreeEntry> =
             serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
@@ -598,6 +613,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
     let mut truncated_by_provider = false;
     let mut warnings = Vec::new();
     let max_pages = DEFAULT_MAX_PAGES;
+    let mut total_bytes = 0usize;
 
     loop {
         if page > max_pages as u32 {
@@ -652,14 +668,8 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| format!("failed to read forge response: {e}"))?;
-
-        if body.len() > DEFAULT_MAX_RESPONSE_BYTES {
-            return Err("response_too_large".into());
-        }
+        let body =
+            read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
 
         let tree: ForgeTreeApiResponse =
             serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
@@ -824,9 +834,11 @@ fn build_entry_urls(
 
 /// Validate a user-supplied base URL for safety.
 ///
-/// Ensures the URL uses HTTPS and does not point to localhost, loopback,
-/// or private IP ranges. Returns `Ok(())` if valid, or an error message.
-pub fn validate_base_url(url: &str) -> Result<(), String> {
+/// Ensures the URL uses HTTPS, does not point to localhost, loopback,
+/// or private IP ranges, does not contain embedded credentials, and
+/// (when `api_key` is provided) rejects plain HTTP.
+/// Returns `Ok(())` if valid, or an error message.
+pub fn validate_base_url(url: &str, api_key: Option<&str>) -> Result<(), String> {
     let parsed = url
         .parse::<reqwest::Url>()
         .map_err(|e| format!("invalid base URL: {e}"))?;
@@ -836,8 +848,18 @@ pub fn validate_base_url(url: &str) -> Result<(), String> {
             parsed.scheme()
         ));
     }
-    if parsed.scheme() == "https" {
+    if parsed.username() != "" || parsed.password().is_some() {
+        return Err("base URL must not contain embedded credentials".into());
+    }
+    if parsed.scheme() == "http" && api_key.is_some() {
         if let Some(host) = parsed.host_str() {
+            if !is_loopback_host(host) {
+                return Err("credential-bearing endpoint must use HTTPS".into());
+            }
+        }
+    }
+    if let Some(host) = parsed.host_str() {
+        if parsed.scheme() == "https" {
             if host == "localhost"
                 || host == "127.0.0.1"
                 || host == "::1"
@@ -855,9 +877,133 @@ pub fn validate_base_url(url: &str) -> Result<(), String> {
                     "HTTPS base URL must not point to localhost or private network: {host}"
                 ));
             }
+            if host.starts_with('[') {
+                let inner = host.trim_start_matches('[').trim_end_matches(']');
+                if let Ok(ip) = inner.parse::<Ipv6Addr>() {
+                    let class = classify_ipv6_forge(ip);
+                    if matches!(
+                        class,
+                        ForgeAddressClass::Loopback
+                            | ForgeAddressClass::Private
+                            | ForgeAddressClass::LinkLocal
+                            | ForgeAddressClass::Documentation
+                            | ForgeAddressClass::Reserved
+                    ) {
+                        return Err(format!(
+                            "HTTPS base URL must not point to localhost or private network: {host}"
+                        ));
+                    }
+                }
+            }
+        } else if !is_loopback_host(host) {
+            return Err(format!(
+                "HTTP base URL must point to localhost for development use: {host}"
+            ));
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ForgeAddressClass {
+    Loopback,
+    Private,
+    LinkLocal,
+    Documentation,
+    Reserved,
+    Public,
+}
+
+fn classify_ipv6_forge(v6: Ipv6Addr) -> ForgeAddressClass {
+    if v6.is_loopback() {
+        return ForgeAddressClass::Loopback;
+    }
+    if v6.is_unspecified() {
+        return ForgeAddressClass::Reserved;
+    }
+    if v6.is_multicast() {
+        return ForgeAddressClass::Reserved;
+    }
+    let seg0 = v6.segments()[0];
+    if (seg0 & 0xfe00) == 0xfc00 {
+        return ForgeAddressClass::Private;
+    }
+    if (seg0 & 0xffc0) == 0xfe80 {
+        return ForgeAddressClass::LinkLocal;
+    }
+    if let Some(v4) = ipv4_mapped_from_v6_forge(v6) {
+        return classify_ipv4_forge(v4);
+    }
+    let seg1 = v6.segments()[1];
+    if seg0 == 0x2001 && seg1 == 0x0db8 {
+        return ForgeAddressClass::Documentation;
+    }
+    if seg0 == 0x2001 && (seg1 == 0x0002 || seg1 == 0x0000) {
+        return ForgeAddressClass::Reserved;
+    }
+    if seg0 == 0x2002 {
+        return ForgeAddressClass::Reserved;
+    }
+    ForgeAddressClass::Public
+}
+
+fn classify_ipv4_forge(v4: Ipv4Addr) -> ForgeAddressClass {
+    if v4.is_loopback() {
+        return ForgeAddressClass::Loopback;
+    }
+    if v4.is_link_local() {
+        return ForgeAddressClass::LinkLocal;
+    }
+    if v4.is_unspecified() {
+        return ForgeAddressClass::Reserved;
+    }
+    let o = v4.octets();
+    let octet0 = o[0];
+    if octet0 == 0 || octet0 == 127 {
+        return ForgeAddressClass::Loopback;
+    }
+    if octet0 == 10 {
+        return ForgeAddressClass::Private;
+    }
+    if octet0 == 100 && (o[1] & 0b1100_0000) == 0b0100_0000 {
+        return ForgeAddressClass::Reserved;
+    }
+    if octet0 == 169 && o[1] == 254 {
+        return ForgeAddressClass::LinkLocal;
+    }
+    if octet0 == 172 && (o[1] & 0b1111_0000) == 16 {
+        return ForgeAddressClass::Private;
+    }
+    if octet0 == 192 && o[1] == 168 {
+        return ForgeAddressClass::Private;
+    }
+    if octet0 == 192 && o[1] == 0 && o[2] == 2 {
+        return ForgeAddressClass::Documentation;
+    }
+    if octet0 == 198 && o[1] == 51 && o[2] == 100 {
+        return ForgeAddressClass::Documentation;
+    }
+    if octet0 == 203 && o[1] == 0 && o[2] == 113 {
+        return ForgeAddressClass::Documentation;
+    }
+    if (224..=239).contains(&octet0) {
+        return ForgeAddressClass::Reserved;
+    }
+    if octet0 >= 240 {
+        return ForgeAddressClass::Reserved;
+    }
+    ForgeAddressClass::Public
+}
+
+fn ipv4_mapped_from_v6_forge(v6: Ipv6Addr) -> Option<Ipv4Addr> {
+    match v6.to_ipv4_mapped() {
+        Some(v4) if !v4.is_unspecified() => Some(v4),
+        _ => None,
+    }
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0"
 }
 
 /// Derive the Gitea/Forgejo instance root URL from an API base URL.
@@ -889,15 +1035,19 @@ pub fn build_response(
     let host = request.host.unwrap_or(CodeHost::Unknown);
     let owner = request.owner.clone();
     let repo = request.repo.clone();
-    let ref_name = forge_response
-        .resolved_ref
-        .clone()
-        .or_else(|| request.ref_name.clone());
-    let commit_sha = forge_response.entries.first().and_then(|e| e.sha.clone());
+    let ref_name = request.ref_name.clone().or_else(|| {
+        forge_response
+            .resolved_ref
+            .as_ref()
+            .filter(|s| !s.chars().all(|c| c.is_ascii_hexdigit()))
+            .cloned()
+    });
+    let commit_sha = forge_response.resolved_ref.clone();
 
     let max_d = max_depth(request);
 
     let mut entries: Vec<RepoMapEntry> = Vec::new();
+    let mut root_entries: Vec<RepoMapEntry> = Vec::new();
     let mut important_files: Vec<RepoImportantFile> = Vec::new();
     let mut important_directories: Vec<RepoImportantDirectory> = Vec::new();
     let mut source_roots: Vec<RepoPathSummary> = Vec::new();
@@ -910,13 +1060,8 @@ pub fn build_response(
     let _ref_str = ref_name.as_deref().unwrap_or("HEAD");
 
     for raw in &forge_response.entries {
-        let depth = raw.path.matches('/').count();
-        if depth >= max_d {
-            continue;
-        }
-
-        let is_root = !raw.path.contains('/');
-        if !is_root {
+        let depth = raw.path.matches('/').count() + 1;
+        if depth > max_d {
             continue;
         }
 
@@ -944,14 +1089,18 @@ pub fn build_response(
                 &raw.path,
                 gitea_base_url,
             );
-            entries.push(RepoMapEntry {
+            let entry = RepoMapEntry {
                 path: raw.path.clone(),
                 kind,
                 size: raw.size,
                 language: language_from_extension(&raw.path).map(String::from),
                 url,
                 raw_url,
-            });
+            };
+            entries.push(entry.clone());
+            if !raw.path.contains('/') {
+                root_entries.push(entry);
+            }
         }
 
         if kind == RepoMapEntryKind::File && include_files {
@@ -996,11 +1145,31 @@ pub fn build_response(
         }
     }
 
+    let mut structured_warnings: Vec<AgentWarning> = Vec::new();
+    if forge_response.truncated_by_provider {
+        structured_warnings.push(AgentWarning::new(
+            WarningCode::ForgeTreeTruncated,
+            "forge tree response was truncated by the provider",
+        ));
+    }
+
+    let me = max_entries(request);
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     important_files.sort_by(|a, b| a.path.cmp(&b.path));
     important_files.truncate(MAX_IMPORTANT_FILE_PROBES);
     important_directories.sort_by(|a, b| a.path.cmp(&b.path));
     important_directories.truncate(MAX_IMPORTANT_DIR_PROBES);
+
+    if entries.len() > me {
+        entries.truncate(me);
+        structured_warnings.push(AgentWarning::new(
+            WarningCode::ForgeTreeTruncated,
+            "entry cap reached: response truncated to max_entries",
+        ));
+    }
+    if root_entries.len() > me {
+        root_entries.truncate(me);
+    }
 
     let manifests: Vec<RepoImportantFile> = important_files
         .iter()
@@ -1010,14 +1179,6 @@ pub fn build_response(
 
     let warnings = forge_response.warnings;
 
-    let mut structured_warnings: Vec<AgentWarning> = Vec::new();
-    if forge_response.truncated_by_provider {
-        structured_warnings.push(AgentWarning::new(
-            WarningCode::ForgeTreeTruncated,
-            "forge tree response was truncated by the provider",
-        ));
-    }
-
     let mut response = RepoMapResponse {
         query: request.query.clone(),
         host,
@@ -1025,9 +1186,11 @@ pub fn build_response(
         repo: repo.clone(),
         ref_name: ref_name.clone(),
         commit_sha,
+        resolved_ref_name: ref_name.clone(),
         default_branch: forge_response.default_branch,
         mode: RepoMapMode::Native,
-        root_entries: entries,
+        root_entries,
+        entries,
         important_files,
         important_directories,
         manifests,

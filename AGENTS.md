@@ -40,7 +40,12 @@ src/
     workflow_coverage.rs # workflow coverage model
     conflict.rs        # contradiction and conflict metadata
     retrieval_status.rs # failure and absence semantics
+    evidence_postprocess.rs # Phase 5 response integration: roles, coverage, conflicts, retrieval summaries
+    local.rs          # centralized path-component policy (hidden, SKIP_DIRS, binary, symlinks, size)
   meta/            # MetadataSearchAdapter + vendored engines + forge tree adapter + local inventory cache
+    forge_adapter.rs  # forge API client with bounded response reading, endpoint safety validation
+    local_backend.rs  # local search backend with auto-build inventory on first search
+    local_inventory_cache.rs # git fast path with bounded command runner
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, and contract tests
@@ -125,6 +130,7 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure, timeout, hang, dedup, concurrency, health transitions tests |
 | `tests/adversarial_corpus.rs` | None | Adversarial corpus structural validation |
 | `tests/corpus/adversarial/*.json` | None | Malformed/edge-case input corpora (271+ cases across 9 files) |
+| `tests/forge_adapter.rs` | None | Forge adapter unit tests (endpoint validation, nested maps, resolved ref) |
 
 ### Running specific suites
 
@@ -161,6 +167,8 @@ make hardening                                              # all hardening test
 - **Error handling:** `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`.
 - **Deterministic IDs:** SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
 - **Sanitization:** All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.
+- **Forge safety:** All forge API responses are read through `read_bounded_response()` with a hard byte cap. `validate_base_url()` rejects embedded credentials, IPv6 loopback/private addresses, and HTTP with API keys.
+- **Evidence postprocessing:** `evidence_postprocess.rs` populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths. All new fields are additive and optional.
 
 ## Key Architecture
 
@@ -170,6 +178,8 @@ make hardening                                              # all hardening test
 - **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors.
 - **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`.
 - **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`.
+- **Nested repository maps:** `repo_map` returns both `root_entries` (backward-compatible root-only) and `entries` (all retained entries within max_depth). Depth calculation: root = 1, `src/lib.rs` = 2.
+- **Local auto-build:** Local workspace inventory is built automatically on first search (auto-build on cache miss). `inventory_truncated` is propagated from inventory roots into search results.
 
 ## MCP Tools (10 total)
 
@@ -202,5 +212,7 @@ commit.
 - **Hardcoding provider lists** — use `resolve_providers()` which validates enabled/known status
 - **Changing deterministic IDs** — breaks regression corpus tests and cross-tool deduplication
 - **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`
+- **Bypassing forge response bounds** — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
+- **Changing commit_sha semantics** — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA
 
 

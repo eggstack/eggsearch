@@ -660,6 +660,18 @@ pub struct RepoSearchResponse {
     /// Next-action hints for chaining tool calls.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub next_actions: Vec<crate::core::workflow::AgentNextAction>,
+    /// Workflow coverage evaluation when a workflow model is applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_coverage: Option<crate::core::workflow_coverage::WorkflowCoverageResult>,
+    /// Retrieval status summary across providers and evidence dimensions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrieval_summary: Option<crate::core::retrieval_status::ResponseRetrievalSummary>,
+    /// Structured conflicts detected between directly comparable values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflict_metadata: Vec<crate::core::conflict::EvidenceConflict>,
+    /// Role-based evidence summary with counts and coverage status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_role_summary: Option<crate::core::evidence_postprocess::EvidenceRoleSummary>,
 }
 
 #[cfg(test)]

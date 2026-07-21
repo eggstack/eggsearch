@@ -280,14 +280,20 @@ pub struct RepoMapResponse {
     /// Full commit SHA, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_sha: Option<String>,
+    /// The resolved ref name (branch or tag) used for the tree lookup, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_ref_name: Option<String>,
     /// The repository's default branch, if determined.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_branch: Option<String>,
     /// The mode used to produce this response.
     pub mode: RepoMapMode,
-    /// Root-level entries in the repository.
+    /// Root-level entries in the repository (backward-compatible, root-only).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub root_entries: Vec<RepoMapEntry>,
+    /// All retained entries within max_depth, including nested paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<RepoMapEntry>,
     /// Important files classified by the server.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub important_files: Vec<RepoImportantFile>,
@@ -1116,6 +1122,7 @@ mod tests {
             repo: "test-repo".to_string(),
             ref_name: Some("main".to_string()),
             commit_sha: Some("abc123".to_string()),
+            resolved_ref_name: Some("main".to_string()),
             default_branch: Some("main".to_string()),
             mode: RepoMapMode::Native,
             root_entries: vec![RepoMapEntry {
@@ -1126,6 +1133,7 @@ mod tests {
                 url: None,
                 raw_url: None,
             }],
+            entries: vec![],
             important_files: vec![RepoImportantFile {
                 path: "Cargo.toml".to_string(),
                 kind: ImportantFileKind::Manifest,

@@ -150,7 +150,7 @@ Use `next_actions` to chain tools without prompt-level reasoning. Priority 1 act
 
 ### Evidence Role Taxonomy
 
-Every search result can be classified into one of 19 deterministic evidence roles. The `EvidenceRole` enum on `SourceCard.metadata.evidence_role` provides workflow-aware grouping:
+Every search result can be classified into one of 19 deterministic evidence roles. The `EvidenceRole` enum on `SourceCard.metadata.evidence_role` provides workflow-aware grouping. Evidence roles are populated on all result conversion paths by `evidence_postprocess.rs`:
 
 | Evidence Role | Description |
 |---------------|-------------|
@@ -178,7 +178,7 @@ Roles are derived deterministically from existing metadata (source kind, source 
 
 ### Workflow Coverage Model
 
-Each of the 10 core workflows has a deterministic coverage model defining required, recommended, and optional evidence roles:
+Each of the 10 core workflows has a deterministic coverage model defining required, recommended, and optional evidence roles. Coverage is computed from the returned evidence by `evidence_postprocess.rs`:
 
 | Workflow | Required Roles | Recommended Roles |
 |----------|---------------|-------------------|
@@ -197,7 +197,7 @@ Coverage status is one of: `sufficient`, `usable_with_gaps`, `insufficient`, or 
 
 ### Conflict and Contradiction Detection
 
-Search responses may include `conflict_metadata` when sources disagree on structured fields. Conflict classes include:
+Search responses may include `conflict_metadata` when sources disagree on structured fields. Conflicts are detected by `evidence_postprocess.rs` on all result conversion paths. Conflict classes include:
 
 - `differing_version_ranges` — two sources give different affected version ranges
 - `conflicting_release_dates` — sources disagree on release dates
@@ -225,6 +225,14 @@ Responses distinguish between evidence absence and retrieval failure:
 | `evidence_role_indeterminate_because_retrieval_failed` | Cannot determine if evidence exists |
 
 A host agent must never interpret an empty group as proof of absence when the corresponding retrieval dimension failed.
+
+### Retrieval Summaries
+
+Search responses include a `retrieval_summary` field that maps provider outcomes into retrieval dimensions. Each dimension records the evidence role, absence kind, provider ID, and a human-readable message. The summary has three boolean flags: `has_failures`, `has_absences`, and `has_truncation`. Retrieval summaries are populated by `evidence_postprocess.rs` on all result conversion paths.
+
+### Evidence Role Summary
+
+Search responses include an `evidence_role_summary` field with per-role counts and overall coverage status. This enables agents to quickly assess which evidence roles are well-represented and which are missing.
 
 ### Example Workflow with Recipes
 

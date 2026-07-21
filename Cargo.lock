@@ -903,6 +903,7 @@ dependencies = [
  "ego-tree",
  "futures",
  "httpmock",
+ "libc",
  "lopdf",
  "pretty_assertions",
  "proptest",

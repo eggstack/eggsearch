@@ -122,3 +122,16 @@ Use `metadata_only` when you need page metadata but do not need the body content
 ## Security Search
 
 `security_search` and the advisory-backed paths return advisory data and severity metadata for triage. They do not decide exploitability for a specific deployment, patch state, or runtime reachability profile.
+
+## Forge Endpoint Safety
+
+Forge API base URLs (GitHub, GitLab, Gitea, Forgejo, Codeberg) are validated by `validate_base_url()` before any API request:
+
+- **Embedded credentials** in the URL are always rejected (username or password in URL)
+- **HTTPS URLs** must not point to localhost, loopback, or any private/link-local/reserved IPv4/IPv6 range
+- **HTTP URLs** are only allowed for localhost development use; HTTP with an API key is rejected except on loopback
+- **IPv6 addresses** are fully classified: loopback, ULA (private), link-local, documentation, reserved, multicast, public
+
+This prevents forge adapters from being redirected to internal services or leaking API keys over plaintext connections.
+
+All forge API responses are read through `read_bounded_response()` with a hard byte cap (default 10MB per response). No forge adapter path uses unbounded `.text().await` or `.bytes().await`.

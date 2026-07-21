@@ -16,6 +16,8 @@ pub mod error;
 pub mod error_query;
 /// Evidence bundle types for multi-agent handoff.
 pub mod evidence_bundle;
+/// Post-processing stage for evidence roles, conflicts, retrieval status, and workflow coverage.
+pub mod evidence_postprocess;
 /// Unified evidence role taxonomy mapping across source kinds, roles, classes, and tiers.
 pub mod evidence_role;
 pub mod fetch;
@@ -83,6 +85,10 @@ pub use evidence_bundle::{
     EvidenceFetchInput, EvidenceGap, EvidenceGapKind, EvidenceProviderCount,
     EvidenceProviderSummary, EvidenceSourceInput, EvidenceTrustSummary, DEFAULT_MAX_FETCHED_ITEMS,
     DEFAULT_MAX_SOURCES, DEFAULT_MAX_TOTAL_CHARS,
+};
+pub use evidence_postprocess::{
+    assign_evidence_role, compute_evidence_role_summary, detect_structured_conflicts, postprocess,
+    EvidencePostprocessResult, EvidenceRoleSummary, RoleCount,
 };
 pub use evidence_role::EvidenceRole;
 pub use fetch::{

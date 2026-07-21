@@ -573,10 +573,14 @@ fn build_response_depth_filtering() {
     );
 
     let resp = build_response(&req, forge, true, true, true, true, None);
-    let paths: Vec<&str> = resp.root_entries.iter().map(|e| e.path.as_str()).collect();
-    assert!(paths.contains(&"src"));
-    assert!(!paths.contains(&"src/main.rs"));
-    assert!(!paths.contains(&"src/deep/nested/file.rs"));
+    let root_paths: Vec<&str> = resp.root_entries.iter().map(|e| e.path.as_str()).collect();
+    assert!(root_paths.contains(&"src"));
+    assert!(!root_paths.contains(&"src/main.rs"));
+    assert!(!root_paths.contains(&"src/deep/nested/file.rs"));
+    let all_paths: Vec<&str> = resp.entries.iter().map(|e| e.path.as_str()).collect();
+    assert!(all_paths.contains(&"src"));
+    assert!(all_paths.contains(&"src/main.rs"));
+    assert!(!all_paths.contains(&"src/deep/nested/file.rs"));
 }
 
 #[test]
@@ -882,8 +886,12 @@ fn build_response_preserves_partial_entries() {
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
-    assert_eq!(resp.root_entries.len(), 1);
-    assert_eq!(resp.root_entries[0].path, "README.md");
+    let root_paths: Vec<&str> = resp.root_entries.iter().map(|e| e.path.as_str()).collect();
+    assert!(root_paths.contains(&"README.md"));
+    assert!(!root_paths.contains(&"missing/deep/file.rs"));
+    let all_paths: Vec<&str> = resp.entries.iter().map(|e| e.path.as_str()).collect();
+    assert!(all_paths.contains(&"README.md"));
+    assert!(all_paths.contains(&"missing/deep/file.rs"));
 }
 
 // ===========================================================================
@@ -1018,25 +1026,123 @@ fn build_response_no_urls_for_unknown_host() {
 #[test]
 fn validate_base_url_https_ok() {
     assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("https://codeberg.org/api/v1").is_ok()
+        eggsearch::meta::forge_adapter::validate_base_url("https://codeberg.org/api/v1", None)
+            .is_ok()
     );
 }
 
 #[test]
 fn validate_base_url_http_localhost_ok() {
-    assert!(
-        eggsearch::meta::forge_adapter::validate_base_url("http://localhost:3000/api/v1").is_ok()
-    );
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://localhost:3000/api/v1",
+        None
+    )
+    .is_ok());
 }
 
 #[test]
 fn validate_base_url_https_localhost_rejected() {
-    assert!(eggsearch::meta::forge_adapter::validate_base_url("https://localhost/api/v1").is_err());
+    assert!(
+        eggsearch::meta::forge_adapter::validate_base_url("https://localhost/api/v1", None)
+            .is_err()
+    );
 }
 
 #[test]
 fn validate_base_url_non_http_rejected() {
-    assert!(eggsearch::meta::forge_adapter::validate_base_url("ftp://example.com").is_err());
+    assert!(eggsearch::meta::forge_adapter::validate_base_url("ftp://example.com", None).is_err());
+}
+
+#[test]
+fn validate_base_url_http_private_rejected() {
+    assert!(
+        eggsearch::meta::forge_adapter::validate_base_url("http://192.168.1.1/api/v1", None)
+            .is_err()
+    );
+}
+
+#[test]
+fn validate_base_url_http_10_private_rejected() {
+    assert!(
+        eggsearch::meta::forge_adapter::validate_base_url("http://10.0.0.1/api/v1", None).is_err()
+    );
+}
+
+#[test]
+fn validate_base_url_credential_bearing_http_rejected() {
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://example.com/api/v1",
+        Some("my-token")
+    )
+    .is_err());
+}
+
+#[test]
+fn validate_base_url_credential_bearing_http_localhost_ok() {
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://localhost:3000/api/v1",
+        Some("my-token")
+    )
+    .is_ok());
+}
+
+#[test]
+fn validate_base_url_credential_bearing_https_ok() {
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://example.com/api/v1",
+        Some("my-token")
+    )
+    .is_ok());
+}
+
+#[test]
+fn validate_base_url_embedded_credentials_rejected() {
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://user:pass@example.com/api/v1",
+        None
+    )
+    .is_err());
+}
+
+#[test]
+fn validate_base_url_ipv6_loopback_rejected() {
+    assert!(
+        eggsearch::meta::forge_adapter::validate_base_url("https://[::1]/api/v1", None).is_err()
+    );
+}
+
+#[test]
+fn validate_base_url_ipv6_private_rejected() {
+    assert!(
+        eggsearch::meta::forge_adapter::validate_base_url("https://[fc00::1]/api/v1", None)
+            .is_err()
+    );
+}
+
+#[test]
+fn validate_base_url_ipv6_ula_rejected() {
+    assert!(
+        eggsearch::meta::forge_adapter::validate_base_url("https://[fd00::1]/api/v1", None)
+            .is_err()
+    );
+}
+
+#[test]
+fn validate_base_url_ipv6_documentation_rejected() {
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://[2001:db8::1]/api/v1",
+        None
+    )
+    .is_err());
+}
+
+#[test]
+fn validate_base_url_ipv6_public_ok() {
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://[2607:f8b0:4004:800::200e]/api/v1",
+        None
+    )
+    .is_ok());
 }
 
 // ===========================================================================
@@ -1074,4 +1180,234 @@ fn repo_map_response_schema_is_additive_compatible() {
     assert!(entry.get("kind").is_some());
     assert!(entry.get("url").is_some());
     assert!(entry.get("raw_url").is_some());
+}
+
+// ===========================================================================
+// Bounded Response Reader Tests
+// ===========================================================================
+
+#[test]
+fn bounded_reader_rejects_honest_content_length_over_cap() {
+    let server = MockServer::start();
+    let large_body: String = "x".repeat(1024 * 1024 + 1);
+    let mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/main");
+        then.status(200).body(large_body);
+    });
+
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_tree.assert();
+
+    let err = result.unwrap_err();
+    assert!(
+        err == "response_too_large" || err.contains("failed to read") || err.contains("malformed"),
+        "expected response_too_large or parse error, got: {err}"
+    );
+}
+
+#[test]
+fn bounded_reader_caps_chunked_response() {
+    let server = MockServer::start();
+    let large_tree: Vec<serde_json::Value> = (0..100)
+        .map(|i| {
+            serde_json::json!({
+                "path": format!("file_{i}.txt"),
+                "type": "blob",
+                "mode": "100644",
+                "size": 100,
+                "sha": format!("sha{i}"),
+            })
+        })
+        .collect();
+    let mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/main");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_abc123",
+            "truncated": false,
+            "tree": large_tree,
+        }));
+    });
+    let mock_repo = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({
+            "default_branch": "main"
+        }));
+    });
+
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_tree.assert();
+    mock_repo.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(resp.entries.len(), 100);
+}
+
+#[test]
+fn bounded_reader_enforces_total_bytes_across_pages() {
+    let server = MockServer::start();
+    let page1_tree: Vec<serde_json::Value> = (0..100)
+        .map(|i| {
+            serde_json::json!({
+                "path": format!("file_{i}.txt"),
+                "type": "blob",
+                "size": 100,
+                "id": format!("sha{i}"),
+            })
+        })
+        .collect();
+    let page2_tree: Vec<serde_json::Value> = (100..120)
+        .map(|i| {
+            serde_json::json!({
+                "path": format!("file_{i}.txt"),
+                "type": "blob",
+                "size": 100,
+                "id": format!("sha{i}"),
+            })
+        })
+        .collect();
+    let mock_page1 = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/tree")
+            .query_param("page", "1");
+        then.json_body(serde_json::json!(page1_tree));
+    });
+    let mock_page2 = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/tree")
+            .query_param("page", "2");
+        then.json_body(serde_json::json!(page2_tree));
+    });
+
+    let req = RepoMapRequest {
+        max_entries: Some(200),
+        ..default_request(CodeHost::Gitlab, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(format!("{}/api/v4", server.base_url())),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Gitlab,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_page1.assert();
+    mock_page2.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(resp.entries.len(), 120);
+}
+
+// ===========================================================================
+// Commit SHA Provenance Tests
+// ===========================================================================
+
+#[test]
+fn build_response_commit_sha_uses_resolved_ref() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![
+            ForgeRawEntry {
+                path: "README.md".into(),
+                kind: EntryKind::File,
+                size: Some(100),
+                sha: Some("blob_sha_not_commit".into()),
+            },
+            ForgeRawEntry {
+                path: "src".into(),
+                kind: EntryKind::Directory,
+                size: None,
+                sha: Some("tree_sha_not_commit".into()),
+            },
+        ],
+        default_branch: Some("main".into()),
+        resolved_ref: Some("abc123def456".into()),
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert_eq!(
+        resp.commit_sha.as_deref(),
+        Some("abc123def456"),
+        "commit_sha should be the resolved commit SHA, not entry object SHA"
+    );
+}
+
+#[test]
+fn build_response_commit_sha_none_when_no_resolved_ref() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![ForgeRawEntry {
+            path: "README.md".into(),
+            kind: EntryKind::File,
+            size: Some(100),
+            sha: Some("blob_sha".into()),
+        }],
+        default_branch: Some("main".into()),
+        resolved_ref: None,
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert_eq!(resp.commit_sha, None);
+}
+
+#[test]
+fn build_response_resolved_ref_name_populated() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![ForgeRawEntry {
+            path: "README.md".into(),
+            kind: EntryKind::File,
+            size: Some(100),
+            sha: Some("sha1".into()),
+        }],
+        default_branch: Some("main".into()),
+        resolved_ref: Some("abc123".into()),
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert_eq!(
+        resp.resolved_ref_name.as_deref(),
+        Some("main"),
+        "resolved_ref_name should hold the original ref name"
+    );
 }

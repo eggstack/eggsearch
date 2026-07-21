@@ -140,6 +140,21 @@ pub struct InventoryTelemetry {
     pub inventory_build_time_ms: u64,
     /// Whether the cached inventory was still fresh.
     pub inventory_fresh: bool,
+    /// Whether this was a cold build (first search built inventory).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cold_build: bool,
+    /// Whether the inventory was rebuilt due to staleness.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stale_rebuild: bool,
+    /// Whether the search fell back to legacy bounded walk.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fallback_walk: bool,
+    /// Whether the git backend was used for the inventory.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uses_git_backend: bool,
+    /// Number of untracked files included via git --others flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub untracked_file_count: Option<usize>,
 }
 
 /// Result from a local workspace search.
@@ -239,6 +254,75 @@ pub fn is_binary_extension(path: &str) -> bool {
     BINARY_EXTENSIONS.contains(&ext.as_str())
 }
 
+/// Check if a path component should be skipped based on hidden and SKIP_DIRS rules.
+pub fn should_skip_component(name: &str, include_hidden: bool) -> bool {
+    if !include_hidden && name.starts_with('.') {
+        return true;
+    }
+    SKIP_DIRS.contains(&name)
+}
+
+/// Check if a file path is eligible for indexing based on binary extension,
+/// file size, and symlink policy.
+pub fn is_eligible_for_indexing(path: &Path, config: &LocalConfig) -> bool {
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        if is_binary_extension(name) {
+            return false;
+        }
+    }
+
+    if let Ok(metadata) = std::fs::metadata(path) {
+        if metadata.len() > config.max_file_bytes as u64 {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    if !config.follow_symlinks {
+        if let Ok(meta) = std::fs::symlink_metadata(path) {
+            if meta.file_type().is_symlink() {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+/// Check if a relative path from git ls-files output is eligible for indexing.
+/// Applies hidden component checks, SKIP_DIRS, binary extension, and size limits.
+pub fn is_git_path_eligible(relative_path: &str, root_path: &Path, config: &LocalConfig) -> bool {
+    let path = Path::new(relative_path);
+
+    for component in path.components() {
+        if let Component::Normal(name) = component {
+            if let Some(name_str) = name.to_str() {
+                if should_skip_component(name_str, config.include_hidden) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        if is_binary_extension(name) {
+            return false;
+        }
+    }
+
+    let absolute_path = root_path.join(relative_path);
+    if let Ok(metadata) = std::fs::metadata(&absolute_path) {
+        if metadata.len() > config.max_file_bytes as u64 {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    true
+}
+
 /// Errors that can occur when validating a local fetch path.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum LocalFetchPathError {
@@ -327,10 +411,10 @@ pub fn validate_local_fetch_path(
     for component in requested_path.components() {
         if let Component::Normal(os) = component {
             if let Some(name) = os.to_str() {
-                if SKIP_DIRS.contains(&name) {
-                    return Err(LocalFetchPathError::SkippedDirectory(name.to_string()));
-                }
-                if !cfg.include_hidden && name.starts_with('.') {
+                if should_skip_component(name, cfg.include_hidden) {
+                    if SKIP_DIRS.contains(&name) {
+                        return Err(LocalFetchPathError::SkippedDirectory(name.to_string()));
+                    }
                     return Err(LocalFetchPathError::HiddenPath(name.to_string()));
                 }
             }

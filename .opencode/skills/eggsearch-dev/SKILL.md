@@ -38,7 +38,7 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - `lib.rs` — library root, re-exports core/meta/fetch/mcp
 - `config.rs` — CLI config loader
 - `commands/` — subcommands: doctor, search, providers, mcp, fetch
-- `core/` — types, config, error, query, sanitize, identity, warning
+- `core/` — types, config, error, query, sanitize, identity, warning, evidence roles, workflow coverage, conflict, retrieval status, local path policy
 - `meta/` — MetadataSearchAdapter + vendored engines + forge tree adapter + local inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, extraction, span selection
 - `mcp/` — MCP server (rmcp), tool definitions, server state
@@ -64,6 +64,7 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
 - **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits, render, local FS, dispatch) using `proptest`
 - **Inventory unit tests** in `src/meta/local_inventory_cache.rs` `#[cfg(test)]` for inventory building, invalidation, git fast path
+- **Forge adapter tests** in `tests/forge_adapter.rs` for endpoint validation, nested maps, resolved ref
 - **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs (245+ cases across 9 files)
 - **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency, and health transitions
 - **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, HTML extraction, PDF parsing, sanitization, and document chunking
@@ -76,6 +77,8 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - Error handling: `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`.
 - Deterministic IDs: SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
 - Sanitization: All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.
+- Forge safety: All forge API responses must use `read_bounded_response()` with a hard byte cap. `validate_base_url()` rejects embedded credentials, IPv6 loopback/private, and HTTP with API keys.
+- Evidence postprocessing: `evidence_postprocess.rs` populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths. All new fields are additive and optional.
 
 ## Pitfalls
 
@@ -85,3 +88,5 @@ Single library + binary crate (not a workspace). Submodules under `src/`:
 - Hardcoding provider lists — use `resolve_providers()` which validates enabled/known status
 - Changing deterministic IDs — breaks regression corpus tests and cross-tool deduplication
 - Missing `cargo fmt` — CI will fail on `cargo fmt --check`
+- Bypassing forge response bounds — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
+- Changing commit_sha semantics — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA

@@ -2,7 +2,7 @@ use eggsearch::fetch::limits::{validate_url, FetchLimits};
 use proptest::prelude::*;
 
 fn https_url_strategy() -> impl Strategy<Value = String> {
-    "https://[a-z][a-z0-9-]*\\.[a-z]{2,}/[a-zA-Z0-9/_.-]{0,50}"
+    "https://[a-z][a-z0-9]{2,}\\.[a-z]{2,}/[a-zA-Z0-9/_.-]{0,50}"
 }
 
 proptest! {

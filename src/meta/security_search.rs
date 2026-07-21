@@ -751,6 +751,20 @@ pub async fn run_security_search_plan(
 
     let structured_warnings = crate::core::warning::convert_warnings(&warnings);
 
+    let all_cards: Vec<crate::core::SourceCard> = groups
+        .iter()
+        .flat_map(|g| g.results.iter())
+        .cloned()
+        .collect();
+
+    let postprocess_result = crate::core::evidence_postprocess::postprocess(
+        &all_cards,
+        &providers_failed,
+        &web_resp.providers_queried,
+        None,
+        &[],
+    );
+
     SecuritySearchResponse {
         query: req.query.clone(),
         mode: "security_metasearch".to_string(),
@@ -776,6 +790,8 @@ pub async fn run_security_search_plan(
         next_actions: vec![],
         remediation_actions,
         security_evidence_summary,
+        retrieval_summary: postprocess_result.retrieval_summary,
+        evidence_role_summary: postprocess_result.evidence_role_summary,
     }
 }
 

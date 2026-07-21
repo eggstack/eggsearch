@@ -1367,6 +1367,20 @@ impl MetadataSearchAdapter {
 
         let structured_warnings = crate::core::warning::convert_warnings(&warnings);
 
+        let all_cards: Vec<SourceCard> = groups
+            .iter()
+            .flat_map(|g| g.results.iter())
+            .cloned()
+            .collect();
+
+        let postprocess_result = crate::core::evidence_postprocess::postprocess(
+            &all_cards,
+            &providers_failed,
+            &providers_queried,
+            None,
+            &[],
+        );
+
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
             mode: if is_exact_error {
@@ -1388,6 +1402,10 @@ impl MetadataSearchAdapter {
             error_context,
             structured_warnings,
             next_actions: vec![],
+            workflow_coverage: postprocess_result.workflow_coverage,
+            retrieval_summary: postprocess_result.retrieval_summary,
+            conflict_metadata: postprocess_result.conflict_metadata,
+            evidence_role_summary: postprocess_result.evidence_role_summary,
         }
     }
 
@@ -1630,6 +1648,20 @@ impl MetadataSearchAdapter {
 
         let analysis = analyze_research_evidence(&groups, Some(&req.query));
 
+        let all_cards: Vec<SourceCard> = groups
+            .iter()
+            .flat_map(|g| g.results.iter())
+            .cloned()
+            .collect();
+
+        let postprocess_result = crate::core::evidence_postprocess::postprocess(
+            &all_cards,
+            &providers_failed,
+            &queried_ids,
+            None,
+            &[],
+        );
+
         ResearchSearchResponse {
             query: req.query.clone(),
             mode: "research_metasearch".to_string(),
@@ -1649,6 +1681,10 @@ impl MetadataSearchAdapter {
             conflicts: analysis.1,
             source_quality: analysis.2,
             evidence_gaps: analysis.3,
+            workflow_coverage: postprocess_result.workflow_coverage,
+            retrieval_summary: postprocess_result.retrieval_summary,
+            conflict_metadata: postprocess_result.conflict_metadata,
+            evidence_role_summary: postprocess_result.evidence_role_summary,
         }
     }
 }
