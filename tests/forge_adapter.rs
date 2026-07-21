@@ -13,7 +13,7 @@ use eggsearch::core::code_metadata::CodeHost;
 use eggsearch::core::repo_map::{ImportantFileKind, RepoMapEntryKind, RepoMapMode, RepoMapRequest};
 use eggsearch::meta::forge_adapter::{
     build_response, fetch_tree, EntryKind, ForgeEndpointPolicy, ForgeRawEntry, ForgeTreeConfig,
-    ForgeTreeResponse,
+    ForgeTreeResponse, ResolvedRepositoryIdentity,
 };
 
 fn default_request(host: CodeHost, owner: &str, repo: &str) -> RepoMapRequest {
@@ -28,10 +28,22 @@ fn default_request(host: CodeHost, owner: &str, repo: &str) -> RepoMapRequest {
 }
 
 fn forge_response(entries: Vec<ForgeRawEntry>, provider_id: &str) -> ForgeTreeResponse {
+    forge_response_with_commit(entries, provider_id, None)
+}
+
+fn forge_response_with_commit(
+    entries: Vec<ForgeRawEntry>,
+    provider_id: &str,
+    commit_sha: Option<&str>,
+) -> ForgeTreeResponse {
     ForgeTreeResponse {
         entries,
-        default_branch: Some("main".into()),
-        resolved_ref: Some("main".into()),
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            resolved_commit_sha: commit_sha.map(String::from),
+            ..Default::default()
+        },
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: provider_id.into(),
@@ -45,6 +57,17 @@ fn forge_response(entries: Vec<ForgeRawEntry>, provider_id: &str) -> ForgeTreeRe
 #[test]
 fn github_tree_small_repo() {
     let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/commits/main");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_abc123",
+            "commit": {
+                "tree": {
+                    "sha": "tree_sha_def456"
+                }
+            }
+        }));
+    });
     let mock_repo = server.mock(|when, then| {
         when.path("/repos/test-owner/test-repo")
             .header("User-Agent", "eggsearch/1.0");
@@ -53,10 +76,9 @@ fn github_tree_small_repo() {
         }));
     });
     let mock_tree = server.mock(|when, then| {
-        when.path("/repos/test-owner/test-repo/git/trees/main")
+        when.path("/repos/test-owner/test-repo/git/trees/tree_sha_def456")
             .query_param("recursive", "1");
         then.json_body(serde_json::json!({
-            "sha": "abc123",
             "truncated": false,
             "tree": [
                 {"path": "README.md", "type": "blob", "mode": "100644", "size": 100, "sha": "sha1"},
@@ -82,6 +104,7 @@ fn github_tree_small_repo() {
         &config,
     ));
 
+    mock_commit.assert();
     mock_repo.assert();
     mock_tree.assert();
 
@@ -89,7 +112,11 @@ fn github_tree_small_repo() {
     assert_eq!(resp.provider_id, "github_tree");
     assert_eq!(resp.entries.len(), 4);
     assert!(!resp.truncated_by_provider);
-    assert_eq!(resp.resolved_ref.as_deref(), Some("abc123"));
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_abc123")
+    );
+    assert_eq!(resp.identity.tree_sha.as_deref(), Some("tree_sha_def456"));
 }
 
 #[test]
@@ -466,19 +493,19 @@ fn build_response_populates_language_hints() {
                 path: "main.rs".into(),
                 kind: EntryKind::File,
                 size: Some(1024),
-                sha: Some("sha1".into()),
+                object_sha: Some("sha1".into()),
             },
             ForgeRawEntry {
                 path: "app.py".into(),
                 kind: EntryKind::File,
                 size: Some(512),
-                sha: Some("sha2".into()),
+                object_sha: Some("sha2".into()),
             },
             ForgeRawEntry {
                 path: "README.md".into(),
                 kind: EntryKind::File,
                 size: Some(200),
-                sha: Some("sha3".into()),
+                object_sha: Some("sha3".into()),
             },
         ],
         "github_tree",
@@ -514,19 +541,19 @@ fn build_response_populates_manifests() {
                 path: "Cargo.toml".into(),
                 kind: EntryKind::File,
                 size: Some(200),
-                sha: Some("sha1".into()),
+                object_sha: Some("sha1".into()),
             },
             ForgeRawEntry {
                 path: "package.json".into(),
                 kind: EntryKind::File,
                 size: Some(100),
-                sha: Some("sha2".into()),
+                object_sha: Some("sha2".into()),
             },
             ForgeRawEntry {
                 path: "README.md".into(),
                 kind: EntryKind::File,
                 size: Some(50),
-                sha: Some("sha3".into()),
+                object_sha: Some("sha3".into()),
             },
         ],
         "github_tree",
@@ -555,19 +582,19 @@ fn build_response_depth_filtering() {
                 path: "src".into(),
                 kind: EntryKind::Directory,
                 size: None,
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "src/main.rs".into(),
                 kind: EntryKind::File,
                 size: Some(100),
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "src/deep/nested/file.rs".into(),
                 kind: EntryKind::File,
                 size: Some(50),
-                sha: None,
+                object_sha: None,
             },
         ],
         "github_tree",
@@ -596,13 +623,13 @@ fn build_response_include_files_false() {
                 path: "README.md".into(),
                 kind: EntryKind::File,
                 size: Some(100),
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "src".into(),
                 kind: EntryKind::Directory,
                 size: None,
-                sha: None,
+                object_sha: None,
             },
         ],
         "github_tree",
@@ -623,10 +650,13 @@ fn build_response_truncated_produces_structured_warning() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: None,
+            object_sha: None,
         }],
-        default_branch: Some("main".into()),
-        resolved_ref: Some("main".into()),
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            ..Default::default()
+        },
         truncated_by_provider: true,
         warnings: vec![],
         provider_id: "github_tree".into(),
@@ -658,13 +688,13 @@ fn build_response_symlink_and_submodule_entries() {
                 path: "link".into(),
                 kind: EntryKind::Symlink,
                 size: None,
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "vendor".into(),
                 kind: EntryKind::Submodule,
                 size: None,
-                sha: None,
+                object_sha: None,
             },
         ],
         "github_tree",
@@ -703,19 +733,19 @@ fn contract_all_hosts_produce_equivalent_response_shape() {
                     path: "README.md".into(),
                     kind: EntryKind::File,
                     size: Some(100),
-                    sha: Some("sha1".into()),
+                    object_sha: Some("sha1".into()),
                 },
                 ForgeRawEntry {
                     path: "src".into(),
                     kind: EntryKind::Directory,
                     size: None,
-                    sha: Some("sha2".into()),
+                    object_sha: Some("sha2".into()),
                 },
                 ForgeRawEntry {
                     path: "Cargo.toml".into(),
                     kind: EntryKind::File,
                     size: Some(200),
-                    sha: Some("sha3".into()),
+                    object_sha: Some("sha3".into()),
                 },
             ],
             provider_id,
@@ -751,23 +781,26 @@ fn forge_truncated_provider_produces_structured_warning() {
                 path: "a.txt".into(),
                 kind: EntryKind::File,
                 size: Some(10),
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "b.txt".into(),
                 kind: EntryKind::File,
                 size: Some(10),
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "c.txt".into(),
                 kind: EntryKind::File,
                 size: Some(10),
-                sha: None,
+                object_sha: None,
             },
         ],
-        default_branch: Some("main".into()),
-        resolved_ref: Some("main".into()),
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            ..Default::default()
+        },
         truncated_by_provider: true,
         warnings: vec![],
         provider_id: "github_tree".into(),
@@ -793,23 +826,26 @@ fn forge_depth_limit_filters_nested_entries() {
                 path: "src".into(),
                 kind: EntryKind::Directory,
                 size: None,
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "src/main.rs".into(),
                 kind: EntryKind::File,
                 size: Some(100),
-                sha: None,
+                object_sha: None,
             },
             ForgeRawEntry {
                 path: "src/deep/nested.rs".into(),
                 kind: EntryKind::File,
                 size: Some(50),
-                sha: None,
+                object_sha: None,
             },
         ],
-        default_branch: Some("main".into()),
-        resolved_ref: Some("main".into()),
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            ..Default::default()
+        },
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
@@ -870,17 +906,20 @@ fn build_response_preserves_partial_entries() {
                 path: "README.md".into(),
                 kind: EntryKind::File,
                 size: Some(100),
-                sha: Some("sha1".into()),
+                object_sha: Some("sha1".into()),
             },
             ForgeRawEntry {
                 path: "missing/deep/file.rs".into(),
                 kind: EntryKind::File,
                 size: Some(50),
-                sha: None,
+                object_sha: None,
             },
         ],
-        default_branch: Some("main".into()),
-        resolved_ref: Some("main".into()),
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            ..Default::default()
+        },
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
@@ -902,14 +941,15 @@ fn build_response_preserves_partial_entries() {
 #[test]
 fn build_response_populates_urls_for_github() {
     let req = default_request(CodeHost::Github, "octocat", "hello-world");
-    let forge = forge_response(
+    let forge = forge_response_with_commit(
         vec![ForgeRawEntry {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: Some("abc123".into()),
+            object_sha: Some("blob_sha".into()),
         }],
         "github_tree",
+        Some("commit_sha_abc123"),
     );
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -924,7 +964,8 @@ fn build_response_populates_urls_for_github() {
         .as_deref()
         .unwrap()
         .contains("raw.githubusercontent.com"));
-    assert!(entry.url.as_deref().unwrap().contains("abc123"));
+    assert!(entry.url.as_deref().unwrap().contains("commit_sha_abc123"));
+    assert!(!entry.url.as_deref().unwrap().contains("blob_sha"));
 }
 
 #[test]
@@ -935,7 +976,7 @@ fn build_response_populates_urls_for_gitlab() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: Some("sha1".into()),
+            object_sha: Some("sha1".into()),
         }],
         "gitlab_tree",
     );
@@ -954,7 +995,7 @@ fn build_response_populates_urls_for_codeberg() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: Some("sha1".into()),
+            object_sha: Some("sha1".into()),
         }],
         "codeberg_tree",
     );
@@ -973,7 +1014,7 @@ fn build_response_populates_urls_for_gitea_with_base() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: Some("sha1".into()),
+            object_sha: Some("sha1".into()),
         }],
         "gitea_tree",
     );
@@ -1009,7 +1050,7 @@ fn build_response_no_urls_for_unknown_host() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: None,
+            object_sha: None,
         }],
         "unknown",
     );
@@ -1186,7 +1227,7 @@ fn repo_map_response_schema_is_additive_compatible() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: Some("sha1".into()),
+            object_sha: Some("sha1".into()),
         }],
         "github_tree",
     );
@@ -1371,17 +1412,20 @@ fn build_response_commit_sha_uses_resolved_ref() {
                 path: "README.md".into(),
                 kind: EntryKind::File,
                 size: Some(100),
-                sha: Some("blob_sha_not_commit".into()),
+                object_sha: Some("blob_sha_not_commit".into()),
             },
             ForgeRawEntry {
                 path: "src".into(),
                 kind: EntryKind::Directory,
                 size: None,
-                sha: Some("tree_sha_not_commit".into()),
+                object_sha: Some("tree_sha_not_commit".into()),
             },
         ],
-        default_branch: Some("main".into()),
-        resolved_ref: Some("abc123def456".into()),
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_commit_sha: Some("abc123def456".into()),
+            ..Default::default()
+        },
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
@@ -1403,10 +1447,13 @@ fn build_response_commit_sha_none_when_no_resolved_ref() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: Some("blob_sha".into()),
+            object_sha: Some("blob_sha".into()),
         }],
-        default_branch: Some("main".into()),
-        resolved_ref: None,
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_commit_sha: None,
+            ..Default::default()
+        },
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
@@ -1424,10 +1471,13 @@ fn build_response_resolved_ref_name_populated() {
             path: "README.md".into(),
             kind: EntryKind::File,
             size: Some(100),
-            sha: Some("sha1".into()),
+            object_sha: Some("sha1".into()),
         }],
-        default_branch: Some("main".into()),
-        resolved_ref: Some("abc123".into()),
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            ..Default::default()
+        },
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
@@ -1439,4 +1489,274 @@ fn build_response_resolved_ref_name_populated() {
         Some("main"),
         "resolved_ref_name should hold the original ref name"
     );
+}
+
+// ===========================================================================
+// Additional Provenance Tests (B.6)
+// ===========================================================================
+
+#[test]
+fn provenance_branch_ref_resolves_to_commit_sha() {
+    let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/commits/feature%2Fmy-branch");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_feature",
+            "commit": {
+                "tree": { "sha": "tree_sha_feature" }
+            }
+        }));
+    });
+    let mock_repo = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({ "default_branch": "main" }));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/tree_sha_feature");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [{"path": "README.md", "type": "blob", "mode": "100644", "size": 10, "sha": "blob1"}]
+        }));
+    });
+
+    let req = RepoMapRequest {
+        ref_name: Some("feature/my-branch".into()),
+        ..default_request(CodeHost::Github, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_commit.assert();
+    mock_repo.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_feature")
+    );
+    assert_eq!(resp.identity.tree_sha.as_deref(), Some("tree_sha_feature"));
+}
+
+#[test]
+fn provenance_commit_sha_differs_from_tree_sha_and_blob_sha() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![
+            ForgeRawEntry {
+                path: "README.md".into(),
+                kind: EntryKind::File,
+                size: Some(100),
+                object_sha: Some("blob_sha_aaa".into()),
+            },
+            ForgeRawEntry {
+                path: "src".into(),
+                kind: EntryKind::Directory,
+                size: None,
+                object_sha: Some("tree_sha_bbb".into()),
+            },
+        ],
+        identity: ResolvedRepositoryIdentity {
+            requested_ref: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            resolved_commit_sha: Some("commit_sha_ccc".into()),
+            tree_sha: Some("tree_sha_ddd".into()),
+            default_branch: Some("main".into()),
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert_eq!(resp.commit_sha.as_deref(), Some("commit_sha_ccc"));
+    assert_eq!(resp.tree_sha.as_deref(), Some("tree_sha_ddd"));
+
+    let file_entry = resp
+        .root_entries
+        .iter()
+        .find(|e| e.path == "README.md")
+        .unwrap();
+    let url = file_entry.url.as_deref().unwrap();
+    assert!(
+        url.contains("commit_sha_ccc"),
+        "URL should use commit SHA, not blob SHA"
+    );
+    assert!(
+        !url.contains("blob_sha_aaa"),
+        "URL must not contain blob SHA"
+    );
+
+    let dir_entry = resp.entries.iter().find(|e| e.path == "src").unwrap();
+    let dir_url = dir_entry.url.as_deref().unwrap();
+    assert!(
+        dir_url.contains("commit_sha_ccc"),
+        "Directory URL should use commit SHA"
+    );
+}
+
+#[test]
+fn provenance_directory_entries_omit_raw_url() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![ForgeRawEntry {
+            path: "src".into(),
+            kind: EntryKind::Directory,
+            size: None,
+            object_sha: Some("tree_sha".into()),
+        }],
+        identity: ResolvedRepositoryIdentity {
+            resolved_commit_sha: Some("commit_sha".into()),
+            ..Default::default()
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    let dir_entry = &resp.entries[0];
+    assert!(
+        dir_entry.raw_url.is_none(),
+        "Directory entries should not have raw URLs"
+    );
+}
+
+#[test]
+fn provenance_unpinned_fallback_uses_ref_name() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![ForgeRawEntry {
+            path: "README.md".into(),
+            kind: EntryKind::File,
+            size: Some(100),
+            object_sha: Some("blob_sha".into()),
+        }],
+        identity: ResolvedRepositoryIdentity {
+            requested_ref: Some("develop".into()),
+            resolved_ref_name: Some("develop".into()),
+            resolved_commit_sha: None,
+            tree_sha: None,
+            default_branch: Some("main".into()),
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert!(!resp.provenance_pinned);
+    assert!(resp.commit_sha.is_none());
+
+    let entry = &resp.root_entries[0];
+    let url = entry.url.as_deref().unwrap();
+    assert!(
+        url.contains("develop"),
+        "URL should use ref name when commit SHA is unavailable"
+    );
+}
+
+#[test]
+fn provenance_provenance_pinned_true_when_commit_present() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![],
+        identity: ResolvedRepositoryIdentity {
+            resolved_commit_sha: Some("abc123".into()),
+            ..Default::default()
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert!(resp.provenance_pinned);
+}
+
+#[test]
+fn provenance_provenance_pinned_false_when_no_commit() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![],
+        identity: ResolvedRepositoryIdentity {
+            resolved_commit_sha: None,
+            ..Default::default()
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert!(!resp.provenance_pinned);
+}
+
+#[test]
+fn provenance_tree_sha_preserved_in_response() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![],
+        identity: ResolvedRepositoryIdentity {
+            resolved_commit_sha: Some("commit_sha".into()),
+            tree_sha: Some("tree_sha".into()),
+            ..Default::default()
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    assert_eq!(resp.tree_sha.as_deref(), Some("tree_sha"));
+}
+
+#[test]
+fn provenance_serialization_additive_compatible() {
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![ForgeRawEntry {
+            path: "README.md".into(),
+            kind: EntryKind::File,
+            size: Some(100),
+            object_sha: Some("blob_sha".into()),
+        }],
+        identity: ResolvedRepositoryIdentity {
+            requested_ref: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            resolved_commit_sha: Some("commit_sha".into()),
+            tree_sha: Some("tree_sha".into()),
+            default_branch: Some("main".into()),
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    let json = serde_json::to_value(&resp).unwrap();
+
+    assert!(json.get("query").is_some());
+    assert!(json.get("host").is_some());
+    assert!(json.get("owner").is_some());
+    assert!(json.get("repo").is_some());
+    assert!(json.get("commit_sha").is_some());
+    assert!(json.get("tree_sha").is_some());
+    assert!(json.get("resolved_ref_name").is_some());
+    assert!(json.get("default_branch").is_some());
+    assert!(json.get("provenance_pinned").is_some());
+    assert!(json.get("mode").is_some());
+    assert!(json.get("entries").is_some());
+    assert!(json.get("root_entries").is_some());
 }

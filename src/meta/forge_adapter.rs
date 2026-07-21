@@ -145,15 +145,36 @@ pub struct ForgeTreeConfig {
     pub base_url: Option<String>,
 }
 
+/// Resolved repository identity after fetching a tree.
+///
+/// Separates the caller-supplied ref from provider-resolved commit and
+/// tree SHAs. This prevents treating tree or blob object SHAs as commit
+/// SHAs in permalink construction.
+#[derive(Debug, Clone, Default)]
+pub struct ResolvedRepositoryIdentity {
+    /// The caller-supplied branch, tag, commit, or symbolic ref.
+    pub requested_ref: Option<String>,
+    /// The resolved ref name (branch or tag) used by the provider, when known.
+    pub resolved_ref_name: Option<String>,
+    /// The actual commit SHA resolved by the provider.
+    /// For GitHub, this comes from a separate commit/ref resolution endpoint.
+    /// For GitLab, this comes from the repository commit endpoint.
+    /// For Gitea/Forgejo/Codeberg, this comes from the ref resolution endpoint.
+    /// Must never contain a tree SHA, blob SHA, or branch name.
+    pub resolved_commit_sha: Option<String>,
+    /// The root tree SHA associated with the resolved commit, when available.
+    pub tree_sha: Option<String>,
+    /// The repository's default branch, if determined.
+    pub default_branch: Option<String>,
+}
+
 /// Response from a forge tree API call, containing raw entries and metadata.
 #[derive(Debug)]
 pub struct ForgeTreeResponse {
     /// Raw tree entries from the API.
     pub entries: Vec<ForgeRawEntry>,
-    /// The repository's default branch, if resolved.
-    pub default_branch: Option<String>,
-    /// The resolved ref/commit SHA used for the tree.
-    pub resolved_ref: Option<String>,
+    /// Resolved repository identity with separated commit/tree/object SHAs.
+    pub identity: ResolvedRepositoryIdentity,
     /// Whether the provider reported a truncated response.
     pub truncated_by_provider: bool,
     /// Warnings accumulated during the fetch.
@@ -171,8 +192,11 @@ pub struct ForgeRawEntry {
     pub kind: EntryKind,
     /// File size in bytes, if known.
     pub size: Option<u64>,
-    /// Object SHA, if available.
-    pub sha: Option<String>,
+    /// The blob, tree, or submodule object SHA for this specific entry.
+    /// This is NOT the commit SHA; it identifies the individual object
+    /// within the tree. Use `ResolvedRepositoryIdentity.resolved_commit_sha`
+    /// for permalink construction.
+    pub object_sha: Option<String>,
 }
 
 /// Entry kind in a forge tree response.
@@ -289,14 +313,29 @@ async fn fetch_github_tree(
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let ref_name = req.ref_name.as_deref().unwrap_or("HEAD");
     let max_d = max_depth(req);
-    let encoded_ref = encode_url_component(ref_name);
+
+    let mut identity = ResolvedRepositoryIdentity {
+        requested_ref: Some(ref_name.to_string()),
+        ..Default::default()
+    };
+
+    let (commit_sha, tree_sha) =
+        resolve_github_commit(client, owner, repo, ref_name, config, timeout).await;
+
+    identity.resolved_commit_sha = commit_sha.clone();
+    identity.tree_sha = tree_sha.clone();
+
+    let default_branch = resolve_github_default_branch(client, owner, repo, config, timeout).await;
+    identity.default_branch = default_branch.clone();
+
+    let tree_ref = tree_sha.as_deref().unwrap_or(ref_name);
 
     let mut builder = client
         .get(format!(
             "{base}/repos/{}/{}/git/trees/{}",
             encode_url_component(owner),
             encode_url_component(repo),
-            encoded_ref
+            encode_url_component(tree_ref)
         ))
         .query(&[("recursive", if max_d > 1 { "1" } else { "0" })])
         .timeout(timeout);
@@ -336,8 +375,6 @@ async fn fetch_github_tree(
         serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
 
     let truncated_by_provider = tree.truncated.unwrap_or(false);
-    let resolved_ref = tree.sha.clone();
-    let default_branch = resolve_github_default_branch(client, owner, repo, config, timeout).await;
 
     let mut entries: Vec<ForgeRawEntry> = tree
         .tree
@@ -359,13 +396,14 @@ async fn fetch_github_tree(
                 path: item.path,
                 kind,
                 size: item.size,
-                sha: item.sha,
+                object_sha: item.sha,
             }
         })
         .collect();
 
     if truncated_by_provider {
-        if let Ok(fallback) = fetch_github_contents_root(client, owner, repo, config, timeout).await
+        if let Ok(fallback) =
+            fetch_github_contents_root(client, owner, repo, config, timeout, tree_ref).await
         {
             let existing_paths: std::collections::HashSet<String> =
                 entries.iter().map(|e| e.path.clone()).collect();
@@ -385,11 +423,20 @@ async fn fetch_github_tree(
              results may be incomplete",
         ));
     }
+    if commit_sha.is_none() {
+        identity.resolved_ref_name = Some(ref_name.to_string());
+        warnings.push(SearchWarning::new(
+            "github_tree",
+            "commit_resolution_unavailable: could not resolve ref to commit SHA; \
+             URLs will use mutable ref instead of immutable commit",
+        ));
+    } else {
+        identity.resolved_ref_name = Some(ref_name.to_string());
+    }
 
     Ok(ForgeTreeResponse {
         entries,
-        default_branch,
-        resolved_ref,
+        identity,
         truncated_by_provider,
         warnings,
         provider_id: "github_tree".to_string(),
@@ -422,16 +469,66 @@ async fn resolve_github_default_branch(
     Some(repo_info.default_branch)
 }
 
+/// Resolve a GitHub ref to a commit SHA and tree SHA.
+///
+/// Uses `GET /repos/{owner}/{repo}/commits/{ref}` to obtain the commit
+/// SHA and the root tree SHA for the given ref. Returns
+/// `(commit_sha, tree_sha)` where either may be `None` if resolution
+/// fails.
+async fn resolve_github_commit(
+    client: &Client,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    config: &ForgeTreeConfig,
+    timeout: Duration,
+) -> (Option<String>, Option<String>) {
+    let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
+    let mut builder = client
+        .get(format!(
+            "{base}/repos/{}/{}/commits/{}",
+            encode_url_component(owner),
+            encode_url_component(repo),
+            encode_url_component(ref_name)
+        ))
+        .timeout(timeout);
+    if let Some(ref key) = config.api_key {
+        builder = builder.header("Authorization", format!("Bearer {key}"));
+    }
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(_) => return (None, None),
+    };
+    if !resp.status().is_success() {
+        return (None, None);
+    }
+    let mut total_bytes = 0usize;
+    let body = match read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await
+    {
+        Ok(b) => b,
+        Err(_) => return (None, None),
+    };
+    let commit: GitHubCommitInfo = match serde_json::from_str(&body) {
+        Ok(c) => c,
+        Err(_) => return (None, None),
+    };
+    let commit_sha = Some(commit.sha);
+    let tree_sha = Some(commit.commit_info.tree.sha);
+    (commit_sha, tree_sha)
+}
+
 async fn fetch_github_contents_root(
     client: &Client,
     owner: &str,
     repo: &str,
     config: &ForgeTreeConfig,
     timeout: Duration,
+    tree_ref: &str,
 ) -> Result<Vec<ForgeRawEntry>, String> {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let mut builder = client
         .get(format!("{base}/repos/{owner}/{repo}/contents/"))
+        .query(&[("ref", tree_ref)])
         .timeout(timeout);
     if let Some(ref key) = config.api_key {
         builder = builder.header("Authorization", format!("Bearer {key}"));
@@ -461,7 +558,7 @@ async fn fetch_github_contents_root(
                 path: item.name,
                 kind,
                 size: item.size,
-                sha: item.sha,
+                object_sha: item.sha,
             }
         })
         .collect();
@@ -483,8 +580,24 @@ struct GitHubRepoInfo {
 }
 
 #[derive(Deserialize)]
+struct GitHubCommitInfo {
+    sha: String,
+    #[serde(rename = "commit")]
+    commit_info: GitHubCommitObject,
+}
+
+#[derive(Deserialize)]
+struct GitHubCommitObject {
+    tree: GitHubTreeRef,
+}
+
+#[derive(Deserialize)]
+struct GitHubTreeRef {
+    sha: String,
+}
+
+#[derive(Deserialize)]
 struct GitHubTreeResponse {
-    sha: Option<String>,
     truncated: Option<bool>,
     tree: Vec<GitHubTreeEntry>,
 }
@@ -514,6 +627,20 @@ async fn fetch_gitlab_tree(
     let max_d = max_depth(req);
     let max_e = max_entries(req);
     let per_page = 100.min(max_e);
+
+    let mut identity = ResolvedRepositoryIdentity {
+        requested_ref: Some(ref_name.to_string()),
+        resolved_ref_name: Some(ref_name.to_string()),
+        ..Default::default()
+    };
+
+    let (commit_sha, tree_sha) =
+        resolve_gitlab_commit(client, owner, repo, ref_name, config, timeout).await;
+    identity.resolved_commit_sha = commit_sha;
+    identity.tree_sha = tree_sha;
+
+    let default_branch = resolve_gitlab_default_branch(client, owner, repo, config, timeout).await;
+    identity.default_branch = default_branch;
 
     let mut all_entries: Vec<ForgeRawEntry> = Vec::new();
     let mut page = 1u32;
@@ -592,7 +719,7 @@ async fn fetch_gitlab_tree(
                 path: item.path,
                 kind,
                 size: item.size,
-                sha: item.id,
+                object_sha: item.id,
             });
         }
 
@@ -611,12 +738,9 @@ async fn fetch_gitlab_tree(
         all_entries.truncate(max_e);
     }
 
-    let default_branch = resolve_gitlab_default_branch(client, owner, repo, config, timeout).await;
-
     Ok(ForgeTreeResponse {
         entries: all_entries,
-        default_branch,
-        resolved_ref: Some(ref_name.to_string()),
+        identity,
         truncated_by_provider,
         warnings,
         provider_id: "gitlab_tree".to_string(),
@@ -656,6 +780,59 @@ struct GitLabProjectInfo {
     default_branch: String,
 }
 
+/// Resolve a GitLab ref to a commit SHA and tree SHA.
+///
+/// Uses `GET /projects/:id/repository/commits/:sha` to obtain the commit
+/// SHA and root tree SHA for the given ref. Returns
+/// `(commit_sha, tree_sha)` where either may be `None` if resolution
+/// fails.
+async fn resolve_gitlab_commit(
+    client: &Client,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    config: &ForgeTreeConfig,
+    timeout: Duration,
+) -> (Option<String>, Option<String>) {
+    let base = config.base_url.as_deref().unwrap_or(GITLAB_API_BASE);
+    let project_path_raw = format!("{owner}/{repo}");
+    let project_path = urlencoding::encode(&project_path_raw);
+    let mut builder = client
+        .get(format!(
+            "{base}/projects/{project_path}/repository/commits/{ref_name}"
+        ))
+        .timeout(timeout);
+    if let Some(ref key) = config.api_key {
+        builder = builder.header("PRIVATE-TOKEN", key.as_str());
+    }
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(_) => return (None, None),
+    };
+    if !resp.status().is_success() {
+        return (None, None);
+    }
+    let mut total_bytes = 0usize;
+    let body = match read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await
+    {
+        Ok(b) => b,
+        Err(_) => return (None, None),
+    };
+    let commit: GitLabCommitInfo = match serde_json::from_str(&body) {
+        Ok(c) => c,
+        Err(_) => return (None, None),
+    };
+    let commit_sha = Some(commit.id);
+    let tree_sha = commit.tree_id;
+    (commit_sha, tree_sha)
+}
+
+#[derive(Deserialize)]
+struct GitLabCommitInfo {
+    id: String,
+    tree_id: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct GitLabTreeEntry {
     id: Option<String>,
@@ -691,6 +868,21 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
     let max_d = max_depth(req);
     let max_e = max_entries(req);
     let per_page = 100.min(max_e);
+
+    let mut identity = ResolvedRepositoryIdentity {
+        requested_ref: Some(ref_name.to_string()),
+        resolved_ref_name: Some(ref_name.to_string()),
+        ..Default::default()
+    };
+
+    let (commit_sha, tree_sha) =
+        resolve_forge_commit(client, owner, repo, ref_name, config, timeout, api_base).await;
+    identity.resolved_commit_sha = commit_sha;
+    identity.tree_sha = tree_sha;
+
+    let default_branch =
+        resolve_forge_default_branch(client, owner, repo, config, timeout, api_base).await;
+    identity.default_branch = default_branch;
 
     let mut all_entries: Vec<ForgeRawEntry> = Vec::new();
     let mut page = 1u32;
@@ -781,7 +973,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
                 path: item.path,
                 kind,
                 size: item.size,
-                sha: item.sha,
+                object_sha: item.sha,
             });
         }
 
@@ -800,9 +992,6 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         all_entries.truncate(max_e);
     }
 
-    let default_branch =
-        resolve_forge_default_branch(client, owner, repo, config, timeout, api_base).await;
-
     if truncated_by_provider {
         warnings.push(SearchWarning::new(
             provider_id,
@@ -810,10 +999,17 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         ));
     }
 
+    if identity.resolved_commit_sha.is_none() {
+        warnings.push(SearchWarning::new(
+            provider_id,
+            "commit_resolution_unavailable: could not resolve ref to commit SHA; \
+             URLs will use mutable ref instead of immutable commit",
+        ));
+    }
+
     Ok(ForgeTreeResponse {
         entries: all_entries,
-        default_branch,
-        resolved_ref: Some(ref_name.to_string()),
+        identity,
         truncated_by_provider,
         warnings,
         provider_id: provider_id.to_string(),
@@ -846,6 +1042,58 @@ async fn resolve_forge_default_branch(
     Some(info.default_branch)
 }
 
+/// Resolve a forge ref (Gitea/Forgejo/Codeberg) to a commit SHA.
+///
+/// Uses `GET /repos/{owner}/{repo}/commits/{ref}` to obtain the commit
+/// SHA. The tree SHA is not directly available from this endpoint for
+/// all providers, so it may be `None`. Returns `(commit_sha, tree_sha)`
+/// where either may be `None` if resolution fails.
+async fn resolve_forge_commit(
+    client: &Client,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    config: &ForgeTreeConfig,
+    timeout: Duration,
+    api_base: &str,
+) -> (Option<String>, Option<String>) {
+    let mut builder = client
+        .get(format!(
+            "{api_base}/repos/{}/{}/commits/{}",
+            encode_url_component(owner),
+            encode_url_component(repo),
+            encode_url_component(ref_name)
+        ))
+        .timeout(timeout);
+    if let Some(ref key) = config.api_key {
+        builder = builder.header("Authorization", format!("token {key}"));
+    }
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(_) => return (None, None),
+    };
+    if !resp.status().is_success() {
+        return (None, None);
+    }
+    let mut total_bytes = 0usize;
+    let body = match read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await
+    {
+        Ok(b) => b,
+        Err(_) => return (None, None),
+    };
+    let commit: ForgeCommitInfo = match serde_json::from_str(&body) {
+        Ok(c) => c,
+        Err(_) => return (None, None),
+    };
+    let commit_sha = Some(commit.sha);
+    (commit_sha, None)
+}
+
+#[derive(Deserialize)]
+struct ForgeCommitInfo {
+    sha: String,
+}
+
 #[derive(Deserialize)]
 struct ForgeRepoInfo {
     default_branch: String,
@@ -869,20 +1117,59 @@ struct ForgeTreeApiEntry {
 
 /// Compute browser and raw URLs for a tree entry based on the host.
 ///
-/// For Gitea/Forgejo, `gitea_base_url` should be the instance root URL
+/// For GitHub, immutable permalinks use `commit_sha` (the resolved commit
+/// SHA), not the entry's `object_sha` (blob/tree SHA). For Gitea/Forgejo,
+/// `gitea_base_url` should be the instance root URL
 /// (e.g. `https://gitea.example.com`), not the API base.
+///
+/// Directory entries do not receive raw-file URLs.
+#[allow(clippy::too_many_arguments)]
 fn build_entry_urls(
     host: CodeHost,
     owner: &str,
     repo: &str,
     ref_name: &str,
-    sha: Option<&str>,
+    commit_sha: Option<&str>,
+    object_sha: Option<&str>,
     path: &str,
+    kind: EntryKind,
     gitea_base_url: Option<&str>,
 ) -> (Option<String>, Option<String>) {
+    if kind == EntryKind::Directory {
+        let browser = match host {
+            CodeHost::Github => {
+                let r = commit_sha.unwrap_or(ref_name);
+                github_browser_url(owner, repo, r, path)
+            }
+            CodeHost::Gitlab => {
+                let r = commit_sha.unwrap_or(ref_name);
+                gitlab_browser_url(owner, repo, r, path)
+            }
+            CodeHost::Codeberg => {
+                let r = commit_sha.unwrap_or(ref_name);
+                codeberg_browser_url(owner, repo, r, path)
+            }
+            CodeHost::Gitea | CodeHost::Forgejo => {
+                let r = commit_sha.unwrap_or(ref_name);
+                if let Some(base) = gitea_base_url {
+                    gitea_browser_url(base, owner, repo, r, path)
+                } else {
+                    String::new()
+                }
+            }
+            CodeHost::Unknown => String::new(),
+        };
+        let browser_opt = if browser.is_empty() {
+            None
+        } else {
+            Some(browser)
+        };
+        return (browser_opt, None);
+    }
+
     let (browser, raw) = match host {
         CodeHost::Github => {
-            if let Some(sha) = sha {
+            if let Some(sha) = commit_sha {
                 (
                     github_permalink_url(owner, repo, sha, path),
                     github_raw_permalink_url(owner, repo, sha, path),
@@ -894,19 +1181,38 @@ fn build_entry_urls(
                 )
             }
         }
-        CodeHost::Gitlab => (
-            gitlab_browser_url(owner, repo, ref_name, path),
-            gitlab_raw_url(owner, repo, ref_name, path),
-        ),
-        CodeHost::Codeberg => (
-            codeberg_browser_url(owner, repo, ref_name, path),
-            codeberg_raw_url(owner, repo, ref_name, path),
-        ),
+        CodeHost::Gitlab => {
+            if let Some(sha) = commit_sha {
+                (
+                    gitlab_browser_url(owner, repo, sha, path),
+                    gitlab_raw_url(owner, repo, sha, path),
+                )
+            } else {
+                (
+                    gitlab_browser_url(owner, repo, ref_name, path),
+                    gitlab_raw_url(owner, repo, ref_name, path),
+                )
+            }
+        }
+        CodeHost::Codeberg => {
+            if let Some(sha) = commit_sha {
+                (
+                    codeberg_browser_url(owner, repo, sha, path),
+                    codeberg_raw_url(owner, repo, sha, path),
+                )
+            } else {
+                (
+                    codeberg_browser_url(owner, repo, ref_name, path),
+                    codeberg_raw_url(owner, repo, ref_name, path),
+                )
+            }
+        }
         CodeHost::Gitea | CodeHost::Forgejo => {
+            let ref_or_commit = commit_sha.unwrap_or(ref_name);
             if let Some(base) = gitea_base_url {
                 (
-                    gitea_browser_url(base, owner, repo, ref_name, path),
-                    gitea_raw_url(base, owner, repo, ref_name, path),
+                    gitea_browser_url(base, owner, repo, ref_or_commit, path),
+                    gitea_raw_url(base, owner, repo, ref_or_commit, path),
                 )
             } else {
                 (String::new(), String::new())
@@ -914,6 +1220,7 @@ fn build_entry_urls(
         }
         CodeHost::Unknown => (String::new(), String::new()),
     };
+    let _ = object_sha;
     let browser_opt = if browser.is_empty() {
         None
     } else {
@@ -1170,14 +1477,15 @@ pub fn build_response(
     let host = request.host.unwrap_or(CodeHost::Unknown);
     let owner = request.owner.clone();
     let repo = request.repo.clone();
-    let ref_name = request.ref_name.clone().or_else(|| {
-        forge_response
-            .resolved_ref
+    let identity = &forge_response.identity;
+    let ref_name = identity.requested_ref.clone().or_else(|| {
+        identity
+            .resolved_ref_name
             .as_ref()
             .filter(|s| !s.chars().all(|c| c.is_ascii_hexdigit()))
             .cloned()
     });
-    let commit_sha = forge_response.resolved_ref.clone();
+    let commit_sha = identity.resolved_commit_sha.clone();
 
     let max_d = max_depth(request);
 
@@ -1214,14 +1522,15 @@ pub fn build_response(
 
         if include {
             let ref_str = ref_name.as_deref().unwrap_or("HEAD");
-            let sha_str = raw.sha.as_deref();
             let (url, raw_url) = build_entry_urls(
                 host,
                 &owner,
                 &repo,
                 ref_str,
-                sha_str,
+                commit_sha.as_deref(),
+                raw.object_sha.as_deref(),
                 &raw.path,
+                raw.kind,
                 gitea_base_url,
             );
             let entry = RepoMapEntry {
@@ -1320,9 +1629,11 @@ pub fn build_response(
         owner: owner.clone(),
         repo: repo.clone(),
         ref_name: ref_name.clone(),
-        commit_sha,
-        resolved_ref_name: ref_name.clone(),
-        default_branch: forge_response.default_branch,
+        commit_sha: commit_sha.clone(),
+        tree_sha: identity.tree_sha.clone(),
+        resolved_ref_name: identity.resolved_ref_name.clone(),
+        default_branch: identity.default_branch.clone(),
+        provenance_pinned: commit_sha.is_some(),
         mode: RepoMapMode::Native,
         root_entries,
         entries,
@@ -1437,13 +1748,13 @@ mod tests {
             path: "src/main.rs".into(),
             kind: EntryKind::File,
             size: Some(1024),
-            sha: Some("abc123".into()),
+            object_sha: Some("abc123".into()),
         };
         let e2 = ForgeRawEntry {
             path: "src".into(),
             kind: EntryKind::Directory,
             size: None,
-            sha: Some("def456".into()),
+            object_sha: Some("def456".into()),
         };
         assert_eq!(e1.kind, EntryKind::File);
         assert_eq!(e2.kind, EntryKind::Directory);
@@ -1463,10 +1774,15 @@ mod tests {
                 path: "README.md".into(),
                 kind: EntryKind::File,
                 size: Some(100),
-                sha: Some("sha1".into()),
+                object_sha: Some("sha1".into()),
             }],
-            default_branch: Some("main".into()),
-            resolved_ref: Some("main".into()),
+            identity: ResolvedRepositoryIdentity {
+                requested_ref: Some("main".into()),
+                resolved_ref_name: Some("main".into()),
+                resolved_commit_sha: Some("commit_sha_abc".into()),
+                tree_sha: Some("tree_sha_def".into()),
+                default_branch: Some("main".into()),
+            },
             truncated_by_provider: false,
             warnings: vec![],
             provider_id: "github_tree".into(),
@@ -1477,6 +1793,9 @@ mod tests {
         assert_eq!(resp.root_entries.len(), 1);
         assert_eq!(resp.root_entries[0].path, "README.md");
         assert_eq!(resp.default_branch.as_deref(), Some("main"));
+        assert_eq!(resp.commit_sha.as_deref(), Some("commit_sha_abc"));
+        assert_eq!(resp.tree_sha.as_deref(), Some("tree_sha_def"));
+        assert!(resp.provenance_pinned);
     }
 
     #[test]
@@ -1494,17 +1813,20 @@ mod tests {
                     path: "src".into(),
                     kind: EntryKind::Directory,
                     size: None,
-                    sha: None,
+                    object_sha: None,
                 },
                 ForgeRawEntry {
                     path: "src/main.rs".into(),
                     kind: EntryKind::File,
                     size: Some(100),
-                    sha: None,
+                    object_sha: None,
                 },
             ],
-            default_branch: None,
-            resolved_ref: Some("main".into()),
+            identity: ResolvedRepositoryIdentity {
+                requested_ref: Some("main".into()),
+                resolved_ref_name: Some("main".into()),
+                ..Default::default()
+            },
             truncated_by_provider: false,
             warnings: vec![],
             provider_id: "github_tree".into(),
@@ -1529,17 +1851,20 @@ mod tests {
                     path: "README.md".into(),
                     kind: EntryKind::File,
                     size: Some(100),
-                    sha: None,
+                    object_sha: None,
                 },
                 ForgeRawEntry {
                     path: "src".into(),
                     kind: EntryKind::Directory,
                     size: None,
-                    sha: None,
+                    object_sha: None,
                 },
             ],
-            default_branch: None,
-            resolved_ref: Some("main".into()),
+            identity: ResolvedRepositoryIdentity {
+                requested_ref: Some("main".into()),
+                resolved_ref_name: Some("main".into()),
+                ..Default::default()
+            },
             truncated_by_provider: false,
             warnings: vec![],
             provider_id: "github_tree".into(),
@@ -1563,13 +1888,96 @@ mod tests {
         };
         let forge = ForgeTreeResponse {
             entries: vec![],
-            default_branch: None,
-            resolved_ref: None,
+            identity: ResolvedRepositoryIdentity::default(),
             truncated_by_provider: true,
             warnings: vec![SearchWarning::new("github_tree", "truncated")],
             provider_id: "github_tree".into(),
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(!resp.warnings.is_empty());
+    }
+
+    #[test]
+    fn build_entry_urls_uses_commit_sha_for_github() {
+        let (browser, raw) = build_entry_urls(
+            CodeHost::Github,
+            "owner",
+            "repo",
+            "main",
+            Some("commit_abc123"),
+            Some("blob_def456"),
+            "src/main.rs",
+            EntryKind::File,
+            None,
+        );
+        let browser = browser.unwrap();
+        let raw = raw.unwrap();
+        assert!(browser.contains("commit_abc123"));
+        assert!(raw.contains("commit_abc123"));
+        assert!(!browser.contains("blob_def456"));
+        assert!(!raw.contains("blob_def456"));
+    }
+
+    #[test]
+    fn build_entry_urls_falls_back_to_ref_when_no_commit() {
+        let (browser, raw) = build_entry_urls(
+            CodeHost::Github,
+            "owner",
+            "repo",
+            "main",
+            None,
+            Some("blob_def456"),
+            "src/main.rs",
+            EntryKind::File,
+            None,
+        );
+        let browser = browser.unwrap();
+        let raw = raw.unwrap();
+        assert!(browser.contains("main"));
+        assert!(raw.contains("main"));
+    }
+
+    #[test]
+    fn build_entry_urls_directory_omits_raw_url() {
+        let (browser, raw) = build_entry_urls(
+            CodeHost::Github,
+            "owner",
+            "repo",
+            "main",
+            Some("commit_abc123"),
+            Some("tree_def456"),
+            "src",
+            EntryKind::Directory,
+            None,
+        );
+        assert!(browser.is_some(), "Directory should have browser URL");
+        assert!(raw.is_none(), "Directory should not have raw URL");
+    }
+
+    #[test]
+    fn build_response_unpinned_when_no_commit() {
+        let req = RepoMapRequest {
+            owner: "test".into(),
+            repo: "repo".into(),
+            host: Some(CodeHost::Github),
+            ref_name: Some("main".into()),
+            ..Default::default()
+        };
+        let forge = ForgeTreeResponse {
+            entries: vec![],
+            identity: ResolvedRepositoryIdentity {
+                requested_ref: Some("main".into()),
+                resolved_ref_name: Some("main".into()),
+                resolved_commit_sha: None,
+                tree_sha: None,
+                default_branch: Some("main".into()),
+            },
+            truncated_by_provider: false,
+            warnings: vec![],
+            provider_id: "github_tree".into(),
+        };
+        let resp = build_response(&req, forge, true, true, true, true, None);
+        assert!(!resp.provenance_pinned);
+        assert!(resp.commit_sha.is_none());
     }
 }

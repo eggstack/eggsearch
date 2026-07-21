@@ -277,15 +277,25 @@ pub struct RepoMapResponse {
     /// Branch, tag, or commit ref used for the response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ref_name: Option<String>,
-    /// Full commit SHA, when known.
+    /// Full commit SHA, when known. This is an actual commit object
+    /// identifier resolved by the provider, never a tree SHA, blob SHA,
+    /// or branch name. Used for immutable permalink construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_sha: Option<String>,
+    /// The root tree SHA associated with the resolved commit, when
+    /// available from the provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_sha: Option<String>,
     /// The resolved ref name (branch or tag) used for the tree lookup, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_ref_name: Option<String>,
     /// The repository's default branch, if determined.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_branch: Option<String>,
+    /// Whether the repository identity was resolved to an immutable
+    /// commit SHA. When false, URLs use the mutable ref name.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub provenance_pinned: bool,
     /// The mode used to produce this response.
     pub mode: RepoMapMode,
     /// Root-level entries in the repository (backward-compatible, root-only).
@@ -1125,8 +1135,10 @@ mod tests {
             repo: "test-repo".to_string(),
             ref_name: Some("main".to_string()),
             commit_sha: Some("abc123".to_string()),
+            tree_sha: Some("tree_sha".to_string()),
             resolved_ref_name: Some("main".to_string()),
             default_branch: Some("main".to_string()),
+            provenance_pinned: true,
             mode: RepoMapMode::Native,
             root_entries: vec![RepoMapEntry {
                 path: "src".to_string(),
