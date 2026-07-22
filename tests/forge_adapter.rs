@@ -2239,3 +2239,329 @@ fn telemetry_cap_applied_when_bytes_exceed_limit() {
     assert!(telemetry.aggregate_byte_cap_reached);
     assert_eq!(telemetry.response_bytes_observed, Some(10 * 1024 * 1024));
 }
+
+// ===========================================================================
+// Slash-Ref Encoding Tests (D.6)
+// ===========================================================================
+
+#[test]
+fn gitlab_slash_ref_encodes_correctly() {
+    let server = MockServer::start();
+    let mock_project = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo");
+        then.json_body(serde_json::json!({
+            "default_branch": "main"
+        }));
+    });
+    let mock_commit = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/commits/feature%2Ffoo");
+        then.json_body(serde_json::json!({
+            "id": "commit_sha_slash",
+            "tree_id": "tree_sha_slash"
+        }));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/tree")
+            .query_param("ref", "feature/foo");
+        then.json_body(serde_json::json!([
+            {"path": "README.md", "type": "blob", "size": 10, "id": "sha1"},
+        ]));
+    });
+
+    let req = RepoMapRequest {
+        ref_name: Some("feature/foo".into()),
+        ..default_request(CodeHost::Gitlab, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Gitlab,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_project.assert();
+    mock_commit.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_slash")
+    );
+    assert_eq!(resp.identity.tree_sha.as_deref(), Some("tree_sha_slash"));
+    assert_eq!(resp.entries.len(), 1);
+}
+
+#[test]
+fn gitlab_release_slash_ref_encodes_correctly() {
+    let server = MockServer::start();
+    let mock_project = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo");
+        then.json_body(serde_json::json!({
+            "default_branch": "main"
+        }));
+    });
+    let mock_commit = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/commits/release%2F2026.07");
+        then.json_body(serde_json::json!({
+            "id": "commit_sha_release",
+            "tree_id": "tree_sha_release"
+        }));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/tree")
+            .query_param("ref", "release/2026.07");
+        then.json_body(serde_json::json!([
+            {"path": "version.txt", "type": "blob", "size": 5, "id": "sha1"},
+        ]));
+    });
+
+    let req = RepoMapRequest {
+        ref_name: Some("release/2026.07".into()),
+        ..default_request(CodeHost::Gitlab, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Gitlab,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_project.assert();
+    mock_commit.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_release")
+    );
+}
+
+#[test]
+fn codeberg_slash_ref_encodes_correctly() {
+    let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/api/v1/repos/test-owner/test-repo/commits/feature%2Fbar");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_cb",
+            "commit": {
+                "tree": { "sha": "tree_sha_cb" }
+            }
+        }));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/api/v1/repos/test-owner/test-repo/git/trees/feature%2Fbar");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644", "size": 10, "sha": "sha1"},
+            ]
+        }));
+    });
+
+    let req = RepoMapRequest {
+        ref_name: Some("feature/bar".into()),
+        ..default_request(CodeHost::Codeberg, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(format!("{}/api/v1", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Codeberg,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_commit.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_cb")
+    );
+    assert_eq!(resp.entries.len(), 1);
+}
+
+#[test]
+fn gitea_slash_ref_encodes_correctly() {
+    let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/api/v1/repos/test-owner/test-repo/commits/release%2F2026.07");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_gitea",
+            "commit": {
+                "tree": { "sha": "tree_sha_gitea" }
+            }
+        }));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/api/v1/repos/test-owner/test-repo/git/trees/release%2F2026.07");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [
+                {"path": "VERSION", "type": "blob", "mode": "100644", "size": 8, "sha": "sha1"},
+            ]
+        }));
+    });
+
+    let req = RepoMapRequest {
+        ref_name: Some("release/2026.07".into()),
+        ..default_request(CodeHost::Gitea, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(format!("{}/api/v1", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Gitea,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_commit.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_gitea")
+    );
+    assert_eq!(resp.entries.len(), 1);
+}
+
+#[test]
+fn forgejo_slash_ref_encodes_correctly() {
+    let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/api/v1/repos/test-owner/test-repo/commits/feature%2Fmy-feature");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_forgejo",
+            "commit": {
+                "tree": { "sha": "tree_sha_forgejo" }
+            }
+        }));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/api/v1/repos/test-owner/test-repo/git/trees/feature%2Fmy-feature");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [
+                {"path": "src", "type": "tree", "mode": "040000", "sha": "sha2"},
+            ]
+        }));
+    });
+
+    let req = RepoMapRequest {
+        ref_name: Some("feature/my-feature".into()),
+        ..default_request(CodeHost::Forgejo, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(format!("{}/api/v1", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Forgejo,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_commit.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_forgejo")
+    );
+    assert_eq!(resp.entries.len(), 1);
+}
+
+#[test]
+fn github_slash_ref_encodes_commit_path_correctly() {
+    let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/commits/feature%2Fmy-branch");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_gh_slash",
+            "commit": {
+                "tree": { "sha": "tree_sha_gh_slash" }
+            }
+        }));
+    });
+    let mock_repo = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({ "default_branch": "main" }));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/tree_sha_gh_slash");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [{"path": "file.txt", "type": "blob", "mode": "100644", "size": 5, "sha": "b1"}]
+        }));
+    });
+
+    let req = RepoMapRequest {
+        ref_name: Some("feature/my-branch".into()),
+        ..default_request(CodeHost::Github, "test-owner", "test-repo")
+    };
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_commit.assert();
+    mock_repo.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(
+        resp.identity.resolved_commit_sha.as_deref(),
+        Some("commit_sha_gh_slash")
+    );
+    assert_eq!(resp.identity.tree_sha.as_deref(), Some("tree_sha_gh_slash"));
+    assert_eq!(resp.entries.len(), 1);
+}

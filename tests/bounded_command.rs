@@ -279,6 +279,136 @@ fn test_bounded_command_failure_no_cache_poison() {
 }
 
 #[test]
+fn test_bounded_command_concurrent_drainage() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c")
+        .arg("echo OUT_A; echo ERR_A >&2; sleep 0.05; echo OUT_B; echo ERR_B >&2");
+    let result = bct::run(&mut cmd, Duration::from_secs(5));
+    assert!(result.status.unwrap().success());
+    assert!(!result.timed_out);
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stdout.contains("OUT_A"),
+        "stdout should contain OUT_A: {stdout}"
+    );
+    assert!(
+        stdout.contains("OUT_B"),
+        "stdout should contain OUT_B: {stdout}"
+    );
+    assert!(
+        stderr.contains("ERR_A"),
+        "stderr should contain ERR_A: {stderr}"
+    );
+    assert!(
+        stderr.contains("ERR_B"),
+        "stderr should contain ERR_B: {stderr}"
+    );
+}
+
+#[test]
+fn test_bounded_command_simultaneous_saturation() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c")
+        .arg("yes A 2>/dev/null & yes B >&2 2>/dev/null & sleep 0.1; kill 0; wait");
+    let result = bct::run(&mut cmd, Duration::from_secs(5));
+    assert!(
+        result.status.is_some(),
+        "should complete even with both pipes saturated"
+    );
+    assert!(
+        result.stdout.len() > 100,
+        "should capture some stdout bytes"
+    );
+    assert!(
+        result.stderr.len() > 100,
+        "should capture some stderr bytes"
+    );
+}
+
+#[test]
+fn test_bounded_command_stderr_cap_termination() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(
+        "exec 1>/dev/null; i=0; while [ $i -lt 50000 ]; do printf 'err_line_%d\\n' $i >&2; i=$((i+1)); done; exit 0",
+    );
+    let result = bct::run(&mut cmd, Duration::from_secs(5));
+    assert!(
+        result.stderr_truncated,
+        "stderr should be truncated when exceeding 64KB cap"
+    );
+    assert!(
+        !result.stdout_truncated,
+        "stdout should not be truncated when redirected to /dev/null"
+    );
+}
+
+#[test]
+fn test_bounded_command_spawn_failure() {
+    let mut cmd = Command::new("/nonexistent_binary_path_xyz");
+    let result = bct::run(&mut cmd, Duration::from_secs(5));
+    assert!(
+        result.status.is_none(),
+        "spawn failure should have no status"
+    );
+    assert!(
+        format!("{:?}", result.termination).contains("SpawnFailed"),
+        "termination should be SpawnFailed"
+    );
+    assert!(result.stdout.is_empty());
+    assert!(result.stderr.is_empty());
+}
+
+#[test]
+fn test_bounded_command_nonzero_exit_with_diagnostics() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg("echo diagnostic_info; exit 7");
+    let result = bct::run(&mut cmd, Duration::from_secs(5));
+    assert!(!result.timed_out);
+    assert_eq!(result.status.unwrap().code(), Some(7));
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        stdout.contains("diagnostic_info"),
+        "should capture diagnostic output: {stdout}"
+    );
+}
+
+#[test]
+fn test_bounded_command_inventory_cap_breach_terminates() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git_init(root);
+    for i in 0..2000 {
+        let name = format!("f{i:04}.txt");
+        std::fs::write(root.join(&name), format!("c{i}")).unwrap();
+        git_add(root, &name);
+    }
+    git_commit(root, "many files");
+
+    let mut cmd = Command::new("git");
+    cmd.arg("ls-files")
+        .arg("-z")
+        .arg("--cached")
+        .current_dir(root);
+    let start = std::time::Instant::now();
+    let result = bct::run_for_inventory(&mut cmd, Duration::from_secs(10), 500);
+    let elapsed = start.elapsed();
+    assert!(
+        result.stdout_truncated,
+        "output should be truncated with tiny cap"
+    );
+    assert!(
+        format!("{:?}", result.termination).contains("StdoutLimitExceeded"),
+        "termination should be StdoutLimitExceeded, got {:?}",
+        result.termination
+    );
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "cap breach should terminate quickly, not wait for timeout"
+    );
+}
+
+#[test]
 fn test_bounded_command_worktree_resolution() {
     let dir = tempfile::tempdir().unwrap();
     let main_repo = dir.path().join("main");

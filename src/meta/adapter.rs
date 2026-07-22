@@ -1601,7 +1601,7 @@ impl MetadataSearchAdapter {
         let groups = group_research_results(cards, max_per_group, max_groups);
 
         // Apply diversity caps
-        let (groups, diversity_warnings) = apply_diversity_caps(groups, max_per_group);
+        let (mut groups, diversity_warnings) = apply_diversity_caps(groups, max_per_group);
 
         let suggested_fetches = generate_research_suggested_fetches(&groups);
 
@@ -1684,14 +1684,15 @@ impl MetadataSearchAdapter {
 
         let analysis = analyze_research_evidence(&groups, Some(&req.query));
 
+        for group in groups.iter_mut() {
+            crate::core::evidence_postprocess::materialize_evidence_roles(&mut group.results);
+        }
+
         let all_cards: Vec<SourceCard> = groups
             .iter()
             .flat_map(|g| g.results.iter())
             .cloned()
             .collect();
-
-        let mut all_cards = all_cards;
-        crate::core::evidence_postprocess::materialize_evidence_roles(&mut all_cards);
 
         let research_domain_str = match req.research_domain.unwrap_or(ResearchDomain::General) {
             ResearchDomain::SoftwareArchitecture | ResearchDomain::ApiDesign => {
@@ -2806,7 +2807,7 @@ pub(crate) fn build_retrieval_failures(
     providers_failed: &[ProviderFailure],
     providers_queried: &[String],
 ) -> Vec<crate::core::workflow_coverage::RetrievalFailure> {
-    use crate::core::evidence_role::EvidenceRole;
+    use crate::core::retrieval_status::map_provider_to_intended_roles;
     use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
 
     let failed_set: std::collections::HashSet<&str> =
@@ -2822,11 +2823,8 @@ pub(crate) fn build_retrieval_failures(
                 } else {
                     RetrievalFailureKind::ProviderFailed
                 };
-                let role = if provider_id.contains("advisory") || provider_id.contains("osv") {
-                    EvidenceRole::AuthoritativeSecurityAdvisory
-                } else {
-                    EvidenceRole::PrimaryImplementation
-                };
+                let roles = map_provider_to_intended_roles(provider_id, "source");
+                let role = roles.into_iter().next().unwrap_or_default();
                 failures.push(RetrievalFailure {
                     kind,
                     role,

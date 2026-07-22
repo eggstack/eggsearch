@@ -1156,16 +1156,19 @@ pub async fn run_repo_search(
     // Add routing decision telemetry
     response.telemetry.routing_decision = Some(routing_decision);
 
-    // Add next-action hints
-    let source_ids: Vec<String> = response
-        .groups
-        .iter()
-        .flat_map(|g| &g.results)
-        .filter_map(|r| r.stable_id.clone())
-        .collect();
-    let has_suggested_fetches = !response.suggested_fetches.is_empty();
-    response.next_actions =
-        crate::meta::repo_search_next_actions(&source_ids, has_suggested_fetches);
+    // Supplement gap-driven next actions with recipe-based hints when
+    // the adapter did not produce gap-driven actions.
+    if response.next_actions.is_empty() {
+        let source_ids: Vec<String> = response
+            .groups
+            .iter()
+            .flat_map(|g| &g.results)
+            .filter_map(|r| r.stable_id.clone())
+            .collect();
+        let has_suggested_fetches = !response.suggested_fetches.is_empty();
+        response.next_actions =
+            crate::meta::repo_search_next_actions(&source_ids, has_suggested_fetches);
+    }
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
@@ -1306,16 +1309,19 @@ pub async fn run_research_search(
         );
     }
 
-    // Add next-action hints
-    let source_ids: Vec<String> = response
-        .groups
-        .iter()
-        .flat_map(|g| &g.results)
-        .filter_map(|r| r.stable_id.clone())
-        .collect();
-    let has_suggested_fetches = !response.suggested_fetches.is_empty();
-    response.next_actions =
-        crate::meta::research_search_next_actions(&source_ids, has_suggested_fetches);
+    // Supplement gap-driven next actions with recipe-based hints when
+    // the adapter did not produce gap-driven actions.
+    if response.next_actions.is_empty() {
+        let source_ids: Vec<String> = response
+            .groups
+            .iter()
+            .flat_map(|g| &g.results)
+            .filter_map(|r| r.stable_id.clone())
+            .collect();
+        let has_suggested_fetches = !response.suggested_fetches.is_empty();
+        response.next_actions =
+            crate::meta::research_search_next_actions(&source_ids, has_suggested_fetches);
+    }
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;

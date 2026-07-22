@@ -584,4 +584,86 @@ mod tests {
             Err(SafeOpenError::NullByte)
         ));
     }
+    #[test]
+    fn safe_open_rejects_directory_as_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+        let config = default_config();
+        assert!(matches!(
+            safe_open_relative(dir.path(), "subdir", &config),
+            Err(SafeOpenError::NotAFile)
+        ));
+    }
+
+    #[test]
+    fn safe_read_file_rejects_symlink_swap_during_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_content = b"real content here!!!";
+        std::fs::write(dir.path().join("data.txt"), real_content).unwrap();
+        #[cfg(unix)]
+        {
+            use std::sync::{Arc, Barrier};
+            use std::thread;
+
+            let barrier = Arc::new(Barrier::new(2));
+            let barrier_clone = barrier.clone();
+            let root = Arc::new(dir.path().to_path_buf());
+
+            let root_clone = Arc::clone(&root);
+            let handle = thread::spawn(move || {
+                barrier_clone.wait();
+                let outside = root_clone.join("outside_target");
+                std::fs::write(&outside, b"escape data").unwrap();
+                std::fs::remove_file(root_clone.join("data.txt")).unwrap();
+                std::os::unix::fs::symlink(&outside, root_clone.join("data.txt")).unwrap();
+            });
+
+            let config = default_config();
+            let sf = safe_open_relative(&root, "data.txt", &config).unwrap();
+            assert_eq!(sf.size, real_content.len() as u64);
+            barrier.wait();
+            handle.join().unwrap();
+            let mut buf = Vec::new();
+            let mut fd = sf.fd;
+            std::io::Read::read_to_end(&mut fd, &mut buf).unwrap();
+            assert_eq!(
+                buf, real_content,
+                "should read original file, not symlink target"
+            );
+        }
+    }
+
+    #[test]
+    fn safe_read_file_stops_at_content_cap_without_overalloc() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = vec![b'x'; 5000];
+        std::fs::write(dir.path().join("big.txt"), &data).unwrap();
+        let config = default_config();
+        let err = safe_read_file(dir.path(), "big.txt", &config, 100).unwrap_err();
+        match err {
+            SafeOpenError::FileContentLimitExceeded(cap, observed) => {
+                assert_eq!(cap, 100);
+                assert_eq!(observed, 5000);
+            }
+            other => panic!("expected FileContentLimitExceeded, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn safe_open_deeply_nested_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut path = dir.path().to_path_buf();
+        for i in 0..20 {
+            path = path.join(format!("d{i}"));
+            std::fs::create_dir(&path).unwrap();
+        }
+        std::fs::write(path.join("leaf.txt"), "deep").unwrap();
+        let config = default_config();
+        let mut rel = (0..20)
+            .map(|i| format!("d{i}"))
+            .collect::<Vec<_>>()
+            .join("/");
+        rel.push_str("/leaf.txt");
+        assert!(safe_open_relative(dir.path(), &rel, &config).is_ok());
+    }
 }

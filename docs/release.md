@@ -26,7 +26,7 @@ cargo test --locked --features mock --test security_applicability_corpus
 cargo test --locked --features mock --test research_evidence_corpus
 cargo test --locked --features mock --test recipes_next_actions
 cargo test --locked --features mock --test evidence_bundle_handoff
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
 cargo build --release
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 cargo publish --dry-run --locked
@@ -75,6 +75,7 @@ workflow defines; do not weaken or remove them.
 | `fmt` | `cargo fmt --check`. |
 | `schema-corpus` | The six regression corpus test binaries. |
 | `docs-contract` | The four documentation contract tests. |
+| `hardening` | Property tests, dispatch fault injection, and adversarial corpus validation. |
 | `release-build` | `cargo build --release` to confirm the release artifact compiles. |
 | `publish-check` | `cargo publish --dry-run --locked` to confirm packaging. |
 | `docs` | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps`. |
