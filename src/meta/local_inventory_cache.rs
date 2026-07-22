@@ -5,6 +5,11 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
+/// Short freshness probe interval (checks status hash without full rebuild).
+pub const FRESHNESS_PROBE_INTERVAL: Duration = Duration::from_secs(30);
+/// Full inventory rebuild TTL.
+pub const INVENTORY_REBUILD_TTL: Duration = Duration::from_secs(300);
+
 use regex::Regex;
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -23,6 +28,20 @@ const INVENTORY_BUILD_TIMEOUT: Duration = Duration::from_secs(BUILD_TIMEOUT_SECS
 
 const GIT_STDOUT_CAP: usize = 16 * 1024 * 1024;
 const GIT_STDERR_CAP: usize = 64 * 1024;
+
+fn is_sigkill(status: &Option<std::process::ExitStatus>) -> bool {
+    status.as_ref().is_some_and(|s| {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            s.signal() == Some(libc::SIGKILL)
+        }
+        #[cfg(not(unix))]
+        {
+            s.code().is_some_and(|c| c == -9 || c == 137)
+        }
+    })
+}
 
 /// A single file entry in the workspace inventory.
 #[derive(Clone, Debug)]
@@ -492,6 +511,7 @@ fn build_entry_for_file(
 
 /// Build inventory for a single root using `git ls-files` (returns `None` for non-git dirs).
 #[allow(dead_code)]
+#[cfg(not(feature = "mock"))]
 struct BoundedCommandResult {
     status: Option<std::process::ExitStatus>,
     stdout: Vec<u8>,
@@ -499,6 +519,53 @@ struct BoundedCommandResult {
     timed_out: bool,
     stdout_truncated: bool,
     stderr_truncated: bool,
+}
+
+#[allow(dead_code)]
+#[cfg(feature = "mock")]
+/// Result of a bounded command execution.
+pub struct BoundedCommandResult {
+    /// The exit status of the command, if it was spawned.
+    pub status: Option<std::process::ExitStatus>,
+    /// Captured stdout bytes.
+    pub stdout: Vec<u8>,
+    /// Captured stderr bytes.
+    pub stderr: Vec<u8>,
+    /// Whether the command was killed due to timeout.
+    pub timed_out: bool,
+    /// Whether stdout was truncated at the cap.
+    pub stdout_truncated: bool,
+    /// Whether stderr was truncated at the cap.
+    pub stderr_truncated: bool,
+}
+
+#[cfg(feature = "mock")]
+pub mod test_harness {
+    //! Test harness for the bounded command runner infrastructure.
+    //! Gated behind the `mock` feature so downstream binaries don't link test code.
+
+    use super::*;
+
+    /// Run a command with timeout, stdout/stderr caps, and process group management.
+    pub fn run(cmd: &mut Command, timeout: Duration) -> BoundedCommandResult {
+        run_bounded_command(cmd, timeout)
+    }
+
+    /// Run a command with inventory-specific caps.
+    pub fn run_for_inventory(
+        cmd: &mut Command,
+        timeout: Duration,
+        cap: usize,
+    ) -> BoundedCommandResult {
+        run_bounded_command_for_inventory(cmd, timeout, cap)
+    }
+
+    /// The default inventory build timeout.
+    pub const INVENTORY_TIMEOUT: Duration = INVENTORY_BUILD_TIMEOUT;
+    /// The default stdout cap (16 MB).
+    pub const STDOUT_CAP: usize = GIT_STDOUT_CAP;
+    /// The default stderr cap (64 KB).
+    pub const STDERR_CAP: usize = GIT_STDERR_CAP;
 }
 
 fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandResult {
@@ -600,9 +667,7 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
     exited.store(true, Ordering::Relaxed);
     let _ = kill_handle.join();
 
-    let timed_out = status
-        .as_ref()
-        .is_some_and(|s| s.code().is_some_and(|c| c == -9 || c == 137));
+    let timed_out = is_sigkill(&status);
 
     BoundedCommandResult {
         status,
@@ -717,9 +782,7 @@ fn run_bounded_command_for_inventory(
     exited.store(true, Ordering::Relaxed);
     let _ = kill_handle.join();
 
-    let timed_out = status
-        .as_ref()
-        .is_some_and(|s| s.code().is_some_and(|c| c == -9 || c == 137));
+    let timed_out = is_sigkill(&status);
 
     BoundedCommandResult {
         status,
@@ -926,21 +989,6 @@ pub fn needs_rebuild(
                     return true;
                 }
             }
-            if let Some(stored_mtime) = ri.index_mtime_secs {
-                if let Some(git_dir) = resolve_git_dir(&ri.root_path) {
-                    let index_path = git_dir.join("index");
-                    let current_mtime = std::fs::metadata(&index_path)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs());
-                    if let Some(current_mtime) = current_mtime {
-                        if current_mtime != stored_mtime {
-                            return true;
-                        }
-                    }
-                }
-            }
             if ri.status_hash.is_some() {
                 let mut status_cmd = Command::new("git");
                 status_cmd
@@ -962,11 +1010,66 @@ pub fn needs_rebuild(
                     if Some(current_hash) != ri.status_hash {
                         return true;
                     }
+                    // Status hash matches — working tree state is identical;
+                    // skip the index_mtime check (status_hash is authoritative).
+                    continue;
+                }
+            }
+            // Fallback: check index_mtime when status_hash is unavailable.
+            if let Some(stored_mtime) = ri.index_mtime_secs {
+                if let Some(git_dir) = resolve_git_dir(&ri.root_path) {
+                    let index_path = git_dir.join("index");
+                    let current_mtime = std::fs::metadata(&index_path)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs());
+                    if let Some(current_mtime) = current_mtime {
+                        if current_mtime != stored_mtime {
+                            return true;
+                        }
+                    }
                 }
             }
         }
     }
 
+    false
+}
+
+/// Lightweight freshness probe: checks status hash only (no age/config/HEAD checks).
+/// Returns `true` if the status hash has changed, meaning the inventory is stale.
+/// Returns `false` if the status hash is unchanged (inventory is still fresh).
+/// Returns `true` if status hash is unavailable (conservative: assume stale).
+pub fn probe_needs_rebuild(inventory: &WorkspaceInventory) -> bool {
+    for ri in &inventory.roots {
+        if ri.uses_git_backend {
+            if let Some(stored_hash) = ri.status_hash {
+                let mut status_cmd = Command::new("git");
+                status_cmd
+                    .arg("status")
+                    .arg("--porcelain=v2")
+                    .arg("-z")
+                    .arg("--untracked-files=normal")
+                    .current_dir(&ri.root_path);
+                let status_result = run_bounded_command_for_inventory(
+                    &mut status_cmd,
+                    INVENTORY_BUILD_TIMEOUT,
+                    GIT_STDOUT_CAP,
+                );
+                if status_result.status.as_ref().is_some_and(|s| s.success())
+                    && !status_result.stdout_truncated
+                {
+                    let current_hash = xxh3_64(&status_result.stdout);
+                    if Some(current_hash) != Some(stored_hash) {
+                        return true;
+                    }
+                } else {
+                    return true;
+                }
+            }
+        }
+    }
     false
 }
 
@@ -1333,7 +1436,7 @@ mod tests {
             ..Default::default()
         };
         let roots = vec![(0, root.to_path_buf())];
-        let cache = std::sync::Mutex::new(None);
+        let cache = std::sync::RwLock::new(None);
 
         let result = LocalWorkspaceBackend::search_sync(
             &config,
@@ -1356,7 +1459,7 @@ mod tests {
         assert!(telemetry.cold_build);
         assert!(telemetry.inventory_build_time_ms > 0);
 
-        let cached = cache.lock().unwrap();
+        let cached = cache.read().unwrap();
         assert!(cached.is_some());
         let inv = cached.as_ref().unwrap();
         assert!(inv.roots[0].entry_count >= 2);
@@ -1378,7 +1481,7 @@ mod tests {
             ..Default::default()
         };
         let roots = vec![(0, root.to_path_buf())];
-        let cache = std::sync::Mutex::new(None);
+        let cache = std::sync::RwLock::new(None);
 
         let search_config = config.clone();
         let search_roots = roots.clone();
@@ -1715,6 +1818,8 @@ mod tests {
         let roots = vec![(0, root.to_path_buf())];
         let inv1 = build_inventory(&config, &roots);
         assert!(!needs_rebuild(&inv1, &config, Duration::from_secs(3600)));
+
+        std::thread::sleep(Duration::from_secs(1));
 
         fs::write(root.join("lib.rs"), "pub fn lib() {}").unwrap();
         std::process::Command::new("git")

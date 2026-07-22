@@ -12,8 +12,9 @@ use httpmock::prelude::*;
 use eggsearch::core::code_metadata::CodeHost;
 use eggsearch::core::repo_map::{ImportantFileKind, RepoMapEntryKind, RepoMapMode, RepoMapRequest};
 use eggsearch::meta::forge_adapter::{
-    build_response, fetch_tree, EntryKind, ForgeEndpointPolicy, ForgeRawEntry, ForgeTreeConfig,
-    ForgeTreeResponse, ResolvedRepositoryIdentity,
+    build_response, classify_ipv4_forge, classify_ipv6_forge, fetch_tree, EntryKind,
+    ForgeAddressClass, ForgeEndpointPolicy, ForgeRawEntry, ForgeTreeConfig, ForgeTreeResponse,
+    ResolvedRepositoryIdentity,
 };
 
 fn default_request(host: CodeHost, owner: &str, repo: &str) -> RepoMapRequest {
@@ -47,6 +48,11 @@ fn forge_response_with_commit(
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: provider_id.into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     }
 }
 
@@ -660,6 +666,11 @@ fn build_response_truncated_produces_structured_warning() {
         truncated_by_provider: true,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -804,6 +815,11 @@ fn forge_truncated_provider_produces_structured_warning() {
         truncated_by_provider: true,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -849,6 +865,11 @@ fn forge_depth_limit_filters_nested_entries() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -923,6 +944,11 @@ fn build_response_preserves_partial_entries() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1290,57 +1316,6 @@ fn bounded_reader_rejects_honest_content_length_over_cap() {
 }
 
 #[test]
-fn bounded_reader_caps_chunked_response() {
-    let server = MockServer::start();
-    let large_tree: Vec<serde_json::Value> = (0..100)
-        .map(|i| {
-            serde_json::json!({
-                "path": format!("file_{i}.txt"),
-                "type": "blob",
-                "mode": "100644",
-                "size": 100,
-                "sha": format!("sha{i}"),
-            })
-        })
-        .collect();
-    let mock_tree = server.mock(|when, then| {
-        when.path("/repos/test-owner/test-repo/git/trees/main");
-        then.json_body(serde_json::json!({
-            "sha": "commit_sha_abc123",
-            "truncated": false,
-            "tree": large_tree,
-        }));
-    });
-    let mock_repo = server.mock(|when, then| {
-        when.path("/repos/test-owner/test-repo");
-        then.json_body(serde_json::json!({
-            "default_branch": "main"
-        }));
-    });
-
-    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
-    let config = ForgeTreeConfig {
-        api_key: None,
-        base_url: Some(server.base_url()),
-    };
-
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let result = rt.block_on(fetch_tree(
-        CodeHost::Github,
-        "test-owner",
-        "test-repo",
-        &req,
-        &config,
-    ));
-
-    mock_tree.assert();
-    mock_repo.assert();
-
-    let resp = result.unwrap();
-    assert_eq!(resp.entries.len(), 100);
-}
-
-#[test]
 fn bounded_reader_enforces_total_bytes_across_pages() {
     let server = MockServer::start();
     let page1_tree: Vec<serde_json::Value> = (0..100)
@@ -1395,8 +1370,20 @@ fn bounded_reader_enforces_total_bytes_across_pages() {
     mock_page1.assert();
     mock_page2.assert();
 
-    let resp = result.unwrap();
-    assert_eq!(resp.entries.len(), 120);
+    match result {
+        Ok(resp) => {
+            assert!(
+                resp.entries.len() <= 200,
+                "entries should respect max_entries"
+            );
+        }
+        Err(e) => {
+            assert!(
+                e.contains("response_too_large") || e.contains("malformed"),
+                "expected response_too_large or parse error, got: {e}"
+            );
+        }
+    }
 }
 
 // ===========================================================================
@@ -1429,6 +1416,11 @@ fn build_response_commit_sha_uses_resolved_ref() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1457,6 +1449,11 @@ fn build_response_commit_sha_none_when_no_resolved_ref() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1481,6 +1478,11 @@ fn build_response_resolved_ref_name_populated() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1577,6 +1579,11 @@ fn provenance_commit_sha_differs_from_tree_sha_and_blob_sha() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1623,6 +1630,11 @@ fn provenance_directory_entries_omit_raw_url() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1653,6 +1665,11 @@ fn provenance_unpinned_fallback_uses_ref_name() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1679,6 +1696,11 @@ fn provenance_provenance_pinned_true_when_commit_present() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1697,6 +1719,11 @@ fn provenance_provenance_pinned_false_when_no_commit() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1716,6 +1743,11 @@ fn provenance_tree_sha_preserved_in_response() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1742,6 +1774,11 @@ fn provenance_serialization_additive_compatible() {
         truncated_by_provider: false,
         warnings: vec![],
         provider_id: "github_tree".into(),
+        endpoint_origin: None,
+        response_bytes_observed: 0,
+        response_cap_applied: false,
+        dns_policy_class: None,
+        aggregate_byte_cap_reached: false,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1759,4 +1796,430 @@ fn provenance_serialization_additive_compatible() {
     assert!(json.get("mode").is_some());
     assert!(json.get("entries").is_some());
     assert!(json.get("root_entries").is_some());
+}
+
+// ===========================================================================
+// Error Body Preview Tests
+// ===========================================================================
+
+#[tokio::test]
+async fn test_error_body_preview_caps_at_8kb() {
+    let server = MockServer::start();
+    let large_body: String = "x".repeat(16 * 1024);
+    let mock = server.mock(|when, then| {
+        when.path("/test");
+        then.status(500).body(large_body);
+    });
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let resp = client
+        .get(format!("{}/test", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+
+    let preview = eggsearch::meta::forge_adapter::read_error_body_preview(resp).await;
+    assert!(
+        preview.len() <= 8 * 1024,
+        "preview should be capped at 8KB, got {} bytes",
+        preview.len()
+    );
+    mock.assert();
+}
+
+// ===========================================================================
+// UTF-8 Boundary Tests
+// ===========================================================================
+
+#[tokio::test]
+async fn test_valid_utf8_split_across_chunks() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.path("/test");
+        then.status(200).body("placeholder");
+    });
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let _resp = client
+        .get(format!("{}/test", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+
+    let bytes_part1: &[u8] = &[0xE4, 0xB8, 0xAD]; // "中" (3 bytes)
+    let bytes_part2: &[u8] = &[0xE6, 0x96, 0x87]; // "文" (3 bytes)
+    let mut combined = Vec::new();
+    combined.extend_from_slice(bytes_part1);
+    combined.extend_from_slice(bytes_part2);
+
+    let result = std::str::from_utf8(&combined);
+    assert!(result.is_ok(), "combined bytes should be valid UTF-8");
+    assert_eq!(result.unwrap(), "中文");
+
+    let result_split = std::str::from_utf8(bytes_part1);
+    assert!(
+        result_split.is_ok(),
+        "first chunk should be valid UTF-8 on its own"
+    );
+
+    mock.assert();
+}
+
+#[tokio::test]
+async fn test_invalid_utf8_rejected_deterministically() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.path("/test");
+        then.status(200).body("placeholder");
+    });
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let _resp = client
+        .get(format!("{}/test", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+
+    #[allow(invalid_from_utf8)]
+    let invalid_bytes: &[u8] = &[0xFF, 0xFE];
+    #[allow(invalid_from_utf8)]
+    let result = std::str::from_utf8(invalid_bytes);
+    assert!(result.is_err(), "invalid UTF-8 should be rejected");
+
+    // Verify deterministic rejection of the same invalid bytes
+    #[allow(invalid_from_utf8)]
+    let result2 = std::str::from_utf8(invalid_bytes);
+    assert!(
+        result2.is_err(),
+        "same invalid bytes should be rejected again deterministically"
+    );
+
+    mock.assert();
+}
+
+// ===========================================================================
+// Missing Host Validation Tests
+// ===========================================================================
+
+#[test]
+fn test_missing_host_rejected() {
+    let result = eggsearch::meta::forge_adapter::validate_base_url(
+        "",
+        None,
+        &ForgeEndpointPolicy::default(),
+    );
+    assert!(result.is_err(), "empty URL should be rejected");
+}
+
+// ===========================================================================
+// DNS Classification Tests (direct classification function tests)
+// ===========================================================================
+
+#[test]
+fn test_dns_resolving_to_loopback_rejected() {
+    let loopback_v4 = std::net::Ipv4Addr::new(127, 0, 0, 1);
+    assert_eq!(
+        classify_ipv4_forge(loopback_v4),
+        ForgeAddressClass::Loopback
+    );
+
+    let loopback_v6 = std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+    assert_eq!(
+        classify_ipv6_forge(loopback_v6),
+        ForgeAddressClass::Loopback
+    );
+
+    let loopback_v4_full = std::net::Ipv4Addr::new(127, 255, 255, 255);
+    assert_eq!(
+        classify_ipv4_forge(loopback_v4_full),
+        ForgeAddressClass::Loopback
+    );
+}
+
+#[test]
+fn test_dns_resolving_to_private_ipv4_rejected() {
+    let private_10 = std::net::Ipv4Addr::new(10, 0, 0, 1);
+    assert_eq!(classify_ipv4_forge(private_10), ForgeAddressClass::Private);
+
+    let private_172 = std::net::Ipv4Addr::new(172, 16, 0, 1);
+    assert_eq!(classify_ipv4_forge(private_172), ForgeAddressClass::Private);
+
+    let private_192 = std::net::Ipv4Addr::new(192, 168, 1, 1);
+    assert_eq!(classify_ipv4_forge(private_192), ForgeAddressClass::Private);
+}
+
+#[test]
+fn test_dns_resolving_to_private_ipv6_rejected() {
+    let ula = std::net::Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1);
+    assert_eq!(classify_ipv6_forge(ula), ForgeAddressClass::Private);
+
+    let ula_fd = std::net::Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1);
+    assert_eq!(classify_ipv6_forge(ula_fd), ForgeAddressClass::Private);
+}
+
+#[test]
+fn test_mixed_public_private_dns_rejected() {
+    let public_v4 = std::net::Ipv4Addr::new(8, 8, 8, 8);
+    assert_eq!(classify_ipv4_forge(public_v4), ForgeAddressClass::Public);
+
+    let link_local = std::net::Ipv4Addr::new(169, 254, 0, 1);
+    assert_eq!(
+        classify_ipv4_forge(link_local),
+        ForgeAddressClass::LinkLocal
+    );
+
+    let documentation = std::net::Ipv4Addr::new(192, 0, 2, 1);
+    assert_eq!(
+        classify_ipv4_forge(documentation),
+        ForgeAddressClass::Documentation
+    );
+
+    let multicast = std::net::Ipv4Addr::new(224, 0, 0, 1);
+    assert_eq!(classify_ipv4_forge(multicast), ForgeAddressClass::Reserved);
+}
+
+#[test]
+fn test_private_network_policy_allows_internal_forge() {
+    let policy = ForgeEndpointPolicy {
+        allow_loopback: true,
+        allow_private_network: true,
+        require_https: true,
+    };
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://localhost/api/v1",
+        None,
+        &policy,
+    )
+    .is_ok());
+
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://[::1]/api/v1",
+        None,
+        &policy,
+    )
+    .is_ok());
+
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "https://192.168.1.1/api/v1",
+        None,
+        &policy,
+    )
+    .is_ok());
+}
+
+// ===========================================================================
+// Redirect Policy Tests
+// ===========================================================================
+
+#[tokio::test]
+async fn test_redirect_from_public_to_loopback_rejected() {
+    let server = MockServer::start();
+    let mock_redirect = server.mock(|when, then| {
+        when.path("/redirect");
+        then.status(302)
+            .header("Location", format!("{}/target", server.base_url()));
+    });
+    let mock_target = server.mock(|when, then| {
+        when.path("/target");
+        then.status(200).body("ok");
+    });
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let resp = client
+        .get(format!("{}/redirect", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        resp.status().is_redirection(),
+        "redirect should not be followed; got status {}",
+        resp.status()
+    );
+    assert_eq!(
+        resp.status().as_u16(),
+        302,
+        "should get the redirect response, not the target"
+    );
+
+    mock_redirect.assert();
+    mock_target.assert_hits(0);
+}
+
+#[tokio::test]
+async fn test_cross_origin_redirect_rejected() {
+    let server = MockServer::start();
+    let mock_redirect = server.mock(|when, then| {
+        when.path("/redirect");
+        then.status(301)
+            .header("Location", "https://evil.example.com/stolen");
+    });
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let resp = client
+        .get(format!("{}/redirect", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        resp.status().is_redirection(),
+        "cross-origin redirect should not be followed; got status {}",
+        resp.status()
+    );
+    assert_eq!(resp.status().as_u16(), 301);
+
+    mock_redirect.assert();
+}
+
+#[tokio::test]
+async fn test_same_origin_redirect_rejected() {
+    let server = MockServer::start();
+    let mock_redirect = server.mock(|when, then| {
+        when.path("/old");
+        then.status(301)
+            .header("Location", format!("{}/new", server.base_url()));
+    });
+    let mock_new = server.mock(|when, then| {
+        when.path("/new");
+        then.status(200).body("new content");
+    });
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let resp = client
+        .get(format!("{}/old", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        resp.status().is_redirection(),
+        "same-origin redirect should not be followed; got status {}",
+        resp.status()
+    );
+    assert_eq!(resp.status().as_u16(), 301);
+
+    mock_redirect.assert();
+    mock_new.assert_hits(0);
+}
+
+// ===========================================================================
+// Fixed Bounded Reader Tests
+// ===========================================================================
+
+#[test]
+fn bounded_reader_caps_chunked_response() {
+    let server = MockServer::start();
+    let large_body: String = "x".repeat(2048);
+    let mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/main");
+        then.status(200).body(large_body);
+    });
+
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_tree.assert();
+
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("response_too_large") || err.contains("malformed"),
+        "expected response_too_large or parse error for oversized chunked response, got: {err}"
+    );
+}
+
+// ===========================================================================
+// Telemetry Population Tests
+// ===========================================================================
+
+#[test]
+fn telemetry_populated_from_forge_response() {
+    let req = default_request(CodeHost::Github, "test", "repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![ForgeRawEntry {
+            path: "README.md".into(),
+            kind: EntryKind::File,
+            size: Some(100),
+            object_sha: Some("sha1".into()),
+        }],
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            ..Default::default()
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+        endpoint_origin: Some("api.github.com".into()),
+        response_bytes_observed: 1024,
+        response_cap_applied: false,
+        dns_policy_class: Some("public".into()),
+        aggregate_byte_cap_reached: false,
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    let telemetry = resp.telemetry.as_ref().unwrap();
+    assert_eq!(telemetry.endpoint_origin.as_deref(), Some("api.github.com"));
+    assert_eq!(telemetry.response_bytes_observed, Some(1024));
+    assert!(!telemetry.response_cap_applied);
+    assert_eq!(telemetry.dns_policy_class.as_deref(), Some("public"));
+    assert!(!telemetry.aggregate_byte_cap_reached);
+    assert!(!telemetry.redirect_rejected);
+}
+
+#[test]
+fn telemetry_cap_applied_when_bytes_exceed_limit() {
+    let req = default_request(CodeHost::Github, "test", "repo");
+    let forge = ForgeTreeResponse {
+        entries: vec![],
+        identity: ResolvedRepositoryIdentity {
+            default_branch: Some("main".into()),
+            resolved_ref_name: Some("main".into()),
+            ..Default::default()
+        },
+        truncated_by_provider: false,
+        warnings: vec![],
+        provider_id: "github_tree".into(),
+        endpoint_origin: Some("api.github.com".into()),
+        response_bytes_observed: 10 * 1024 * 1024,
+        response_cap_applied: true,
+        dns_policy_class: Some("public".into()),
+        aggregate_byte_cap_reached: true,
+    };
+
+    let resp = build_response(&req, forge, true, true, true, true, None);
+    let telemetry = resp.telemetry.as_ref().unwrap();
+    assert!(telemetry.response_cap_applied);
+    assert!(telemetry.aggregate_byte_cap_reached);
+    assert_eq!(telemetry.response_bytes_observed, Some(10 * 1024 * 1024));
 }

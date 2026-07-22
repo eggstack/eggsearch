@@ -7,7 +7,7 @@
 //! `TrustLevel::LocalTrusted`.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, RwLock};
 use std::time::{Duration, Instant};
 
 use regex::Regex;
@@ -26,9 +26,11 @@ use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
 use crate::meta::local_ignore::IgnoreStack;
 use crate::meta::local_inventory_cache::{
-    build_inventory, find_symbols_in_text, needs_rebuild, score_inventory_entry, validate_entry,
-    InventoryEntry, WorkspaceInventory,
+    build_inventory, find_symbols_in_text, needs_rebuild, probe_needs_rebuild,
+    score_inventory_entry, validate_entry, InventoryEntry, WorkspaceInventory,
+    FRESHNESS_PROBE_INTERVAL, INVENTORY_REBUILD_TTL,
 };
+use crate::meta::safe_open::safe_read_file;
 
 /// Local workspace search backend.
 ///
@@ -57,7 +59,7 @@ impl SymbolBackend for RegexSymbolBackend {
 pub struct LocalWorkspaceBackend {
     config: LocalConfig,
     roots: Vec<(usize, PathBuf)>,
-    inventory_cache: Arc<Mutex<Option<WorkspaceInventory>>>,
+    inventory_cache: Arc<RwLock<Option<Arc<WorkspaceInventory>>>>,
     symbol_backend: Arc<dyn SymbolBackend>,
 }
 
@@ -163,7 +165,7 @@ impl LocalWorkspaceBackend {
             return Ok(Self {
                 config,
                 roots: Vec::new(),
-                inventory_cache: Arc::new(Mutex::new(None)),
+                inventory_cache: Arc::new(RwLock::new(None)),
                 symbol_backend: Arc::new(RegexSymbolBackend),
             });
         }
@@ -186,7 +188,7 @@ impl LocalWorkspaceBackend {
         Ok(Self {
             config,
             roots,
-            inventory_cache: Arc::new(Mutex::new(None)),
+            inventory_cache: Arc::new(RwLock::new(None)),
             symbol_backend: Arc::new(RegexSymbolBackend),
         })
     }
@@ -260,16 +262,23 @@ impl LocalWorkspaceBackend {
     /// Return the cached workspace inventory, rebuilding if stale or absent.
     pub fn get_or_build_inventory(&self) -> Option<WorkspaceInventory> {
         {
-            let cache = self.inventory_cache.lock().ok()?;
+            let cache = self.inventory_cache.read().ok()?;
             if let Some(ref inv) = *cache {
-                if !needs_rebuild(inv, &self.config, Duration::from_secs(300)) {
-                    return Some(inv.clone());
+                let age = inv.built_at.elapsed();
+                if age < FRESHNESS_PROBE_INTERVAL {
+                    return Some(inv.as_ref().clone());
+                }
+                if age < INVENTORY_REBUILD_TTL && !probe_needs_rebuild(inv) {
+                    return Some(inv.as_ref().clone());
+                }
+                if !needs_rebuild(inv, &self.config, INVENTORY_REBUILD_TTL) {
+                    return Some(inv.as_ref().clone());
                 }
             }
         }
         let inventory = build_inventory(&self.config, &self.roots);
-        let mut cache = self.inventory_cache.lock().ok()?;
-        *cache = Some(inventory.clone());
+        let mut cache = self.inventory_cache.write().ok()?;
+        *cache = Some(Arc::new(inventory.clone()));
         Some(inventory)
     }
 
@@ -317,7 +326,7 @@ impl LocalWorkspaceBackend {
         max_results: usize,
         timeout: Duration,
         start: Instant,
-        inventory_cache: &Mutex<Option<WorkspaceInventory>>,
+        inventory_cache: &RwLock<Option<Arc<WorkspaceInventory>>>,
         symbol_backend: &dyn SymbolBackend,
     ) -> LocalSearchResult {
         let mut matches = Vec::new();
@@ -343,13 +352,13 @@ impl LocalWorkspaceBackend {
         let query_tokens: Vec<&str> = query_lower.split_whitespace().collect();
 
         let inventory = {
-            let cache = inventory_cache.lock().ok();
-            cache.and_then(|c| c.clone())
+            let cache = inventory_cache.read().ok();
+            cache.and_then(|c| c.as_deref().cloned())
         };
 
         let inventory_usable = inventory
             .as_ref()
-            .is_some_and(|inv| !needs_rebuild(inv, config, Duration::from_secs(300)));
+            .is_some_and(|inv| !needs_rebuild(inv, config, INVENTORY_REBUILD_TTL));
 
         if inventory_usable {
             let inv = inventory.unwrap();
@@ -358,9 +367,9 @@ impl LocalWorkspaceBackend {
             telemetry.inventory_entries = inv.roots.iter().map(|r| r.entries.len()).sum();
 
             let age_secs = inv.built_at.elapsed().as_secs();
-            telemetry.freshness_confidence = if age_secs < 300 {
+            telemetry.freshness_confidence = if age_secs < FRESHNESS_PROBE_INTERVAL.as_secs() {
                 Some(FreshnessConfidence::High)
-            } else if age_secs < 1800 {
+            } else if age_secs < INVENTORY_REBUILD_TTL.as_secs() {
                 Some(FreshnessConfidence::Medium)
             } else {
                 Some(FreshnessConfidence::Low)
@@ -424,23 +433,26 @@ impl LocalWorkspaceBackend {
                     files_scanned += 1;
 
                     let root_path = &root_inv.root_path;
-                    let abs_path = root_path.join(&entry.relative_path);
 
                     if !validate_entry(entry, config) {
                         continue;
                     }
 
-                    let content_text = std::fs::read(&abs_path)
-                        .ok()
-                        .filter(|b| b.len() <= config.max_file_bytes)
-                        .and_then(|bytes| {
-                            let s = String::from_utf8_lossy(&bytes).to_string();
-                            if s.is_empty() {
-                                None
-                            } else {
-                                Some(s)
-                            }
-                        });
+                    let content_text = safe_read_file(
+                        root_path,
+                        &entry.relative_path,
+                        config,
+                        config.max_file_bytes,
+                    )
+                    .ok()
+                    .and_then(|bytes| {
+                        let s = String::from_utf8_lossy(&bytes).to_string();
+                        if s.is_empty() {
+                            None
+                        } else {
+                            Some(s)
+                        }
+                    });
 
                     if content_text.is_some() {
                         telemetry.content_reads += 1;
@@ -459,7 +471,7 @@ impl LocalWorkspaceBackend {
                     }
 
                     let file_entry = LocalFileEntry {
-                        path: abs_path,
+                        path: root_path.join(&entry.relative_path),
                         relative_path: entry.relative_path.clone(),
                         root_index: root_inv.root_index,
                         size: entry.size,
@@ -532,7 +544,7 @@ impl LocalWorkspaceBackend {
         } else {
             let is_stale = inventory
                 .as_ref()
-                .is_some_and(|inv| needs_rebuild(inv, config, Duration::from_secs(300)));
+                .is_some_and(|inv| needs_rebuild(inv, config, INVENTORY_REBUILD_TTL));
             let is_cold = inventory.is_none();
 
             let build_start = Instant::now();
@@ -583,8 +595,8 @@ impl LocalWorkspaceBackend {
                 }
             } else {
                 {
-                    if let Ok(mut cache) = inventory_cache.lock() {
-                        *cache = Some(new_inventory.clone());
+                    if let Ok(mut cache) = inventory_cache.write() {
+                        *cache = Some(Arc::new(new_inventory.clone()));
                     }
                 }
 
@@ -660,23 +672,26 @@ impl LocalWorkspaceBackend {
                         files_scanned += 1;
 
                         let root_path = &root_inv.root_path;
-                        let abs_path = root_path.join(&entry.relative_path);
 
                         if !validate_entry(entry, config) {
                             continue;
                         }
 
-                        let content_text = std::fs::read(&abs_path)
-                            .ok()
-                            .filter(|b| b.len() <= config.max_file_bytes)
-                            .and_then(|bytes| {
-                                let s = String::from_utf8_lossy(&bytes).to_string();
-                                if s.is_empty() {
-                                    None
-                                } else {
-                                    Some(s)
-                                }
-                            });
+                        let content_text = safe_read_file(
+                            root_path,
+                            &entry.relative_path,
+                            config,
+                            config.max_file_bytes,
+                        )
+                        .ok()
+                        .and_then(|bytes| {
+                            let s = String::from_utf8_lossy(&bytes).to_string();
+                            if s.is_empty() {
+                                None
+                            } else {
+                                Some(s)
+                            }
+                        });
 
                         if content_text.is_some() {
                             telemetry.content_reads += 1;
@@ -695,7 +710,7 @@ impl LocalWorkspaceBackend {
                         }
 
                         let file_entry = LocalFileEntry {
-                            path: abs_path,
+                            path: root_path.join(&entry.relative_path),
                             relative_path: entry.relative_path.clone(),
                             root_index: root_inv.root_index,
                             size: entry.size,
@@ -2198,8 +2213,6 @@ mod tests {
 
     #[test]
     fn test_search_auto_builds_inventory_on_first_search() {
-        use std::sync::Mutex;
-
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::write(root.join("main.rs"), "fn main() {}").unwrap();
@@ -2213,7 +2226,7 @@ mod tests {
         let backend = LocalWorkspaceBackend {
             config,
             roots: vec![(0, root.to_path_buf())],
-            inventory_cache: Arc::new(Mutex::new(None)),
+            inventory_cache: Arc::new(RwLock::new(None)),
             symbol_backend: Arc::new(RegexSymbolBackend),
         };
 

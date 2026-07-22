@@ -52,6 +52,8 @@ pub mod research_planner;
 pub mod research_suggested_fetches;
 pub mod research_workflow;
 pub mod response;
+/// Race-resistant file opening using component-wise path walking.
+pub mod safe_open;
 pub mod security_grouping;
 pub mod security_search;
 pub mod security_suggested_fetches;

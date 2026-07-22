@@ -338,6 +338,68 @@ pub fn is_git_path_eligible(relative_path: &str, root_path: &Path, config: &Loca
     true
 }
 
+/// Consolidated eligibility check that combines hidden component, binary
+/// extension, size, symlink, and root containment checks. This is the
+/// single source of truth for whether a path should be indexed or fetched.
+pub fn is_eligible(
+    path: &Path,
+    root: Option<&Path>,
+    config: &LocalConfig,
+    check_symlinks: bool,
+) -> bool {
+    for component in path.components() {
+        if let Component::Normal(name) = component {
+            if let Some(name_str) = name.to_str() {
+                if should_skip_component(name_str, config.include_hidden) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        if is_binary_extension(name) {
+            return false;
+        }
+    }
+
+    let abs_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else if let Some(r) = root {
+        r.join(path)
+    } else {
+        return false;
+    };
+
+    if let Ok(metadata) = std::fs::metadata(&abs_path) {
+        if metadata.len() > config.max_file_bytes as u64 {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    if check_symlinks && !config.follow_symlinks {
+        if let Ok(meta) = std::fs::symlink_metadata(&abs_path) {
+            if meta.file_type().is_symlink() {
+                return false;
+            }
+        }
+    }
+
+    if let Some(r) = root {
+        if let Ok(root_canonical) = r.canonicalize() {
+            if let Ok(file_canonical) = abs_path.canonicalize() {
+                if !file_canonical.starts_with(&root_canonical) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
+}
+
 /// Errors that can occur when validating a local fetch path.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum LocalFetchPathError {

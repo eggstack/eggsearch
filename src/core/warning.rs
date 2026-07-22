@@ -157,6 +157,12 @@ pub enum WarningCode {
     ForgeTreeTruncated,
     /// Native tree adapter was skipped (unsupported host or version).
     ForgeTreeUnsupportedHost,
+    /// Forge redirect was rejected by the client policy.
+    ForgeRedirectRejected,
+    /// Forge response exceeded the per-response byte cap.
+    ForgeResponseCapApplied,
+    /// Forge aggregate byte budget was reached across pages.
+    ForgeAggregateCapReached,
 
     // --- Generic ---
     /// Generic context untrusted content advisory.
@@ -234,6 +240,9 @@ impl WarningCode {
             Self::ForgeAuthRequired => "forge_auth_required",
             Self::ForgeTreeTruncated => "forge_tree_truncated",
             Self::ForgeTreeUnsupportedHost => "forge_tree_unsupported_host",
+            Self::ForgeRedirectRejected => "forge_redirect_rejected",
+            Self::ForgeResponseCapApplied => "forge_response_cap_applied",
+            Self::ForgeAggregateCapReached => "forge_aggregate_cap_reached",
             Self::GenericContextUntrusted => "generic_context_untrusted",
             Self::ProviderResolutionFailed => "provider_resolution_failed",
             Self::DefaultProviderResolutionFailed => "default_provider_resolution_failed",
@@ -296,6 +305,9 @@ impl WarningCode {
             | Self::ForgeAuthRequired
             | Self::ForgeTreeTruncated
             | Self::ForgeTreeUnsupportedHost
+            | Self::ForgeRedirectRejected
+            | Self::ForgeResponseCapApplied
+            | Self::ForgeAggregateCapReached
             | Self::ProviderResolutionFailed
             | Self::DefaultProviderResolutionFailed
             | Self::EmptyResultGroup
@@ -399,6 +411,15 @@ impl WarningCode {
             }
             Self::ForgeTreeUnsupportedHost => {
                 Some("Host is not supported for native tree retrieval; use a local checkout.")
+            }
+            Self::ForgeRedirectRejected => {
+                Some("Forge redirect was rejected by client policy; verify the endpoint URL.")
+            }
+            Self::ForgeResponseCapApplied => {
+                Some("Forge response exceeded per-response byte cap; results may be incomplete.")
+            }
+            Self::ForgeAggregateCapReached => {
+                Some("Forge aggregate byte budget reached; results may be incomplete.")
             }
             Self::FetchWarning => {
                 Some("Fetch-layer warning; review the original message for details.")

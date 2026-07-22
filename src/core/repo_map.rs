@@ -373,6 +373,27 @@ pub struct RepoMapTelemetry {
     /// Human-readable mode description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode_reason: Option<String>,
+    /// Endpoint origin used for forge requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_origin: Option<String>,
+    /// Whether a redirect was rejected.
+    ///
+    /// Always `false` when the client uses `Policy::none()`, which rejects
+    /// all redirects at the transport level before any response is received.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub redirect_rejected: bool,
+    /// Total response bytes observed across all forge pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_bytes_observed: Option<usize>,
+    /// Whether any response hit the per-response byte cap.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub response_cap_applied: bool,
+    /// DNS policy classification of the endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns_policy_class: Option<String>,
+    /// Whether the aggregate byte budget was reached.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub aggregate_byte_cap_reached: bool,
 }
 
 /// Local checkout metadata for a repo map response.

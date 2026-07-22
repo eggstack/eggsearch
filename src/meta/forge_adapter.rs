@@ -114,7 +114,11 @@ async fn read_bounded_response(
 
 const ERROR_BODY_CAP: usize = 8 * 1024;
 
-async fn read_error_body_preview(resp: reqwest::Response) -> String {
+/// Read a preview of an error response body, capped at 8KB.
+///
+/// Strips control characters (except newline, carriage return, tab)
+/// and truncates at the byte cap.
+pub async fn read_error_body_preview(resp: reqwest::Response) -> String {
     let mut body = Vec::with_capacity(ERROR_BODY_CAP.min(8192));
     let mut stream = resp.bytes_stream();
     let mut observed = 0usize;
@@ -181,6 +185,16 @@ pub struct ForgeTreeResponse {
     pub warnings: Vec<SearchWarning>,
     /// The provider ID that served this response.
     pub provider_id: String,
+    /// Endpoint origin used for forge requests.
+    pub endpoint_origin: Option<String>,
+    /// Total response bytes observed across all forge pages.
+    pub response_bytes_observed: usize,
+    /// Whether any response hit the per-response byte cap.
+    pub response_cap_applied: bool,
+    /// DNS policy classification of the endpoint.
+    pub dns_policy_class: Option<String>,
+    /// Whether the aggregate byte budget was reached.
+    pub aggregate_byte_cap_reached: bool,
 }
 
 /// A raw tree entry from a forge API response.
@@ -440,6 +454,11 @@ async fn fetch_github_tree(
         truncated_by_provider,
         warnings,
         provider_id: "github_tree".to_string(),
+        endpoint_origin: extract_host(base),
+        response_bytes_observed: total_bytes,
+        response_cap_applied: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        dns_policy_class: classify_host_from_url(base),
+        aggregate_byte_cap_reached: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
     })
 }
 
@@ -744,6 +763,13 @@ async fn fetch_gitlab_tree(
         truncated_by_provider,
         warnings,
         provider_id: "gitlab_tree".to_string(),
+        endpoint_origin: extract_host(config.base_url.as_deref().unwrap_or(GITLAB_API_BASE)),
+        response_bytes_observed: total_bytes,
+        response_cap_applied: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        dns_policy_class: classify_host_from_url(
+            config.base_url.as_deref().unwrap_or(GITLAB_API_BASE),
+        ),
+        aggregate_byte_cap_reached: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
     })
 }
 
@@ -1013,6 +1039,11 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         truncated_by_provider,
         warnings,
         provider_id: provider_id.to_string(),
+        endpoint_origin: extract_host(api_base),
+        response_bytes_observed: total_bytes,
+        response_cap_applied: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        dns_policy_class: classify_host_from_url(api_base),
+        aggregate_byte_cap_reached: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
     })
 }
 
@@ -1334,17 +1365,39 @@ fn classify_and_reject_address(ip: IpAddr, policy: &ForgeEndpointPolicy) -> Resu
     }
 }
 
+/// Classification of an IP address for forge endpoint safety.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ForgeAddressClass {
+pub enum ForgeAddressClass {
+    /// Loopback address (127.0.0.0/8, ::1).
     Loopback,
+    /// Private network address (RFC 1918, ULA).
     Private,
+    /// Link-local address (169.254.0.0/16, fe80::/10).
     LinkLocal,
+    /// Documentation address (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32).
     Documentation,
+    /// Reserved address (multicast, unspecified, etc.).
     Reserved,
+    /// Public routable address.
     Public,
 }
 
-fn classify_ipv6_forge(v6: Ipv6Addr) -> ForgeAddressClass {
+impl ForgeAddressClass {
+    /// Stable string representation for telemetry.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Loopback => "loopback",
+            Self::Private => "private",
+            Self::LinkLocal => "link_local",
+            Self::Documentation => "documentation",
+            Self::Reserved => "reserved",
+            Self::Public => "public",
+        }
+    }
+}
+
+/// Classify an IPv6 address for forge endpoint safety.
+pub fn classify_ipv6_forge(v6: Ipv6Addr) -> ForgeAddressClass {
     if v6.is_loopback() {
         return ForgeAddressClass::Loopback;
     }
@@ -1377,7 +1430,8 @@ fn classify_ipv6_forge(v6: Ipv6Addr) -> ForgeAddressClass {
     ForgeAddressClass::Public
 }
 
-fn classify_ipv4_forge(v4: Ipv4Addr) -> ForgeAddressClass {
+/// Classify an IPv4 address for forge endpoint safety.
+pub fn classify_ipv4_forge(v4: Ipv4Addr) -> ForgeAddressClass {
     if v4.is_loopback() {
         return ForgeAddressClass::Loopback;
     }
@@ -1430,6 +1484,35 @@ fn ipv4_mapped_from_v6_forge(v6: Ipv6Addr) -> Option<Ipv4Addr> {
         Some(v4) if !v4.is_unspecified() => Some(v4),
         _ => None,
     }
+}
+
+fn extract_host(url: &str) -> Option<String> {
+    url.parse::<reqwest::Url>()
+        .ok()
+        .and_then(|u| u.host_str().map(String::from))
+}
+
+fn classify_host_from_url(url: &str) -> Option<String> {
+    let parsed = url.parse::<reqwest::Url>().ok()?;
+    let host = parsed.host_str()?;
+    if let Some(ip) = parse_literal_ip(host) {
+        let class = match ip {
+            IpAddr::V4(v4) => classify_ipv4_forge(v4),
+            IpAddr::V6(v6) => classify_ipv6_forge(v6),
+        };
+        return Some(class.as_str().to_string());
+    }
+    let addrs = std::net::ToSocketAddrs::to_socket_addrs(&format!("{host}:443")).ok()?;
+    for addr in addrs {
+        let class = match addr {
+            std::net::SocketAddr::V4(v4) => classify_ipv4_forge(*v4.ip()),
+            std::net::SocketAddr::V6(v6) => classify_ipv6_forge(*v6.ip()),
+        };
+        if class != ForgeAddressClass::Public {
+            return Some(class.as_str().to_string());
+        }
+    }
+    Some(ForgeAddressClass::Public.as_str().to_string())
 }
 
 fn encode_url_component(s: &str) -> String {
@@ -1657,6 +1740,16 @@ pub fn build_response(
             providers_queried: vec![forge_response.provider_id.clone()],
             deadline_exceeded: false,
             mode_reason: Some(format!("native tree from {}", forge_response.provider_id)),
+            endpoint_origin: forge_response.endpoint_origin,
+            redirect_rejected: false,
+            response_bytes_observed: if forge_response.response_bytes_observed > 0 {
+                Some(forge_response.response_bytes_observed)
+            } else {
+                None
+            },
+            response_cap_applied: forge_response.response_cap_applied,
+            dns_policy_class: forge_response.dns_policy_class,
+            aggregate_byte_cap_reached: forge_response.aggregate_byte_cap_reached,
         }),
         freshness_confidence: None,
     };
@@ -1786,6 +1879,11 @@ mod tests {
             truncated_by_provider: false,
             warnings: vec![],
             provider_id: "github_tree".into(),
+            endpoint_origin: None,
+            response_bytes_observed: 0,
+            response_cap_applied: false,
+            dns_policy_class: None,
+            aggregate_byte_cap_reached: false,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(matches!(resp.mode, RepoMapMode::Native));
@@ -1830,6 +1928,11 @@ mod tests {
             truncated_by_provider: false,
             warnings: vec![],
             provider_id: "github_tree".into(),
+            endpoint_origin: None,
+            response_bytes_observed: 0,
+            response_cap_applied: false,
+            dns_policy_class: None,
+            aggregate_byte_cap_reached: false,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert_eq!(resp.root_entries.len(), 1);
@@ -1868,6 +1971,11 @@ mod tests {
             truncated_by_provider: false,
             warnings: vec![],
             provider_id: "github_tree".into(),
+            endpoint_origin: None,
+            response_bytes_observed: 0,
+            response_cap_applied: false,
+            dns_policy_class: None,
+            aggregate_byte_cap_reached: false,
         };
         let resp = build_response(&req, forge, false, true, true, true, None);
         let files: Vec<_> = resp
@@ -1892,6 +2000,11 @@ mod tests {
             truncated_by_provider: true,
             warnings: vec![SearchWarning::new("github_tree", "truncated")],
             provider_id: "github_tree".into(),
+            endpoint_origin: None,
+            response_bytes_observed: 0,
+            response_cap_applied: false,
+            dns_policy_class: None,
+            aggregate_byte_cap_reached: false,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(!resp.warnings.is_empty());
@@ -1975,6 +2088,11 @@ mod tests {
             truncated_by_provider: false,
             warnings: vec![],
             provider_id: "github_tree".into(),
+            endpoint_origin: None,
+            response_bytes_observed: 0,
+            response_cap_applied: false,
+            dns_policy_class: None,
+            aggregate_byte_cap_reached: false,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(!resp.provenance_pinned);
