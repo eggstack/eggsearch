@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::evidence_role::EvidenceRole;
+use crate::core::workflow::AgentNextAction;
 
 /// Overall coverage status for a workflow given the evidence that was found.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -95,8 +96,8 @@ pub struct WorkflowCoverageResult {
     pub completion_confidence: f32,
     /// Human-readable reasons for the status.
     pub reasons: Vec<String>,
-    /// Brief descriptions of suggested next actions.
-    pub next_actions: Vec<String>,
+    /// Structured next-action hints driven by coverage gaps.
+    pub next_actions: Vec<AgentNextAction>,
 }
 
 /// Defines the evidence roles required, recommended, and optional for a workflow.
@@ -311,6 +312,142 @@ pub fn coverage_status(
     CoverageStatus::Insufficient
 }
 
+/// Determine the most productive MCP tool for filling a missing evidence role.
+fn role_to_next_tool(role: &EvidenceRole) -> (&'static str, &'static str) {
+    match role {
+        EvidenceRole::PrimaryImplementation => ("repo_search", "fetch_primary_source"),
+        EvidenceRole::InterfaceOrApiDefinition => ("web_search", "fetch_api_definition"),
+        EvidenceRole::UsageExample => ("web_search", "fetch_usage_example"),
+        EvidenceRole::TestOrBehavioralSpecification => ("repo_search", "fetch_test_spec"),
+        EvidenceRole::ConfigurationOrFeatureGate => ("repo_search", "fetch_config"),
+        EvidenceRole::ManifestOrDependencyMetadata => ("repo_search", "fetch_manifest"),
+        EvidenceRole::OfficialDocumentation => ("web_search", "fetch_documentation"),
+        EvidenceRole::ArchitectureOrDesignDocument => ("web_search", "fetch_architecture_doc"),
+        EvidenceRole::ReleaseNoteOrChangelog => ("repo_search", "fetch_release_notes"),
+        EvidenceRole::MigrationGuidance => ("web_search", "fetch_migration_guide"),
+        EvidenceRole::BenchmarkOrPerformanceEvidence => ("web_search", "fetch_benchmark_evidence"),
+        EvidenceRole::IssueOrIncidentDiscussion => ("repo_search", "fetch_issue_discussion"),
+        EvidenceRole::PullRequestOrDesignReview => ("repo_search", "fetch_pr_review"),
+        EvidenceRole::AuthoritativeSecurityAdvisory => {
+            ("security_search", "fetch_security_advisory")
+        }
+        EvidenceRole::VendorSecurityGuidance => ("security_search", "fetch_vendor_guidance"),
+        EvidenceRole::IndependentCorroboration => ("research_search", "fetch_corroboration"),
+        EvidenceRole::CounterpointOrConflictingEvidence => {
+            ("research_search", "fetch_counterpoint")
+        }
+        EvidenceRole::CommunityDiscussion => ("web_search", "fetch_community_discussion"),
+        EvidenceRole::UnknownOrWeakContext => ("web_search", "fetch_general_context"),
+    }
+}
+
+/// Generate gap-driven next actions from a coverage result, considering
+/// retrieval history and tool context.
+///
+/// For each missing/indeterminate role, selects the most productive MCP tool,
+/// populates a valid input template, and avoids repeating failed calls unless
+/// scope changes.
+pub fn generate_gap_driven_next_actions(
+    result: &WorkflowCoverageResult,
+    retrieval_history: &[RetrievalFailure],
+    known_source_ids: &[String],
+) -> Vec<AgentNextAction> {
+    let mut actions = Vec::new();
+    let mut attempted_roles: std::collections::HashSet<EvidenceRole> =
+        std::collections::HashSet::new();
+
+    // Record which roles have already failed (to avoid repeating)
+    for failure in retrieval_history {
+        attempted_roles.insert(failure.role);
+    }
+
+    // Prioritize missing required roles first
+    for role in &result.missing_required {
+        let (tool, reason_code) = role_to_next_tool(role);
+        let input_template = match tool {
+            "repo_search" => serde_json::json!({
+                "query": "<search_query>",
+                "owner": "<owner>",
+                "repo": "<repo>"
+            }),
+            "security_search" => serde_json::json!({
+                "query": "<vulnerability_or_package>"
+            }),
+            "research_search" => serde_json::json!({
+                "query": "<research_question>"
+            }),
+            _ => serde_json::json!({
+                "query": "<search_query>"
+            }),
+        };
+
+        let mut action = AgentNextAction::new(
+            tool,
+            reason_code,
+            1,
+            input_template,
+            known_source_ids.to_vec(),
+            Some(*role),
+        )
+        .with_evidence_gap(format!("missing_required_{role:?}"))
+        .with_rationale(format!(
+            "Required role {:?} is missing; {}",
+            role,
+            if attempted_roles.contains(role) {
+                "retry with different provider or query scope"
+            } else {
+                "search for evidence fulfilling this role"
+            }
+        ));
+
+        // Avoid repeating failed calls unless scope changes
+        if attempted_roles.contains(role) {
+            action = action.with_evidence_gap(format!("retry_required_{role:?}_after_failure"));
+        }
+
+        actions.push(action);
+    }
+
+    // Then missing recommended roles
+    for role in &result.missing_recommended {
+        let (tool, reason_code) = role_to_next_tool(role);
+        let input_template = match tool {
+            "repo_search" => serde_json::json!({
+                "query": "<search_query>",
+                "owner": "<owner>",
+                "repo": "<repo>"
+            }),
+            "security_search" => serde_json::json!({
+                "query": "<vulnerability_or_package>"
+            }),
+            "research_search" => serde_json::json!({
+                "query": "<research_question>"
+            }),
+            _ => serde_json::json!({
+                "query": "<search_query>"
+            }),
+        };
+
+        let action = AgentNextAction::new(
+            tool,
+            reason_code,
+            3,
+            input_template,
+            known_source_ids.to_vec(),
+            Some(*role),
+        )
+        .with_evidence_gap(format!("missing_recommended_{role:?}"))
+        .with_rationale(format!(
+            "Recommended role {:?} would improve coverage",
+            role
+        ));
+
+        actions.push(action);
+    }
+
+    actions
+}
+
 /// Compute full coverage result from a model definition, found evidence, and failures.
 pub fn compute_coverage(
     model: &WorkflowCoverageModel,
@@ -383,10 +520,36 @@ pub fn compute_coverage(
 
     let mut next_actions = Vec::new();
     for role in &missing_required {
-        next_actions.push(format!("Retrieve evidence for required role: {role:?}"));
+        let (tool, reason_code) = role_to_next_tool(role);
+        next_actions.push(
+            AgentNextAction::new(
+                tool,
+                reason_code,
+                1,
+                serde_json::json!({"query": "<search_query>"}),
+                vec![],
+                Some(*role),
+            )
+            .with_evidence_gap(format!("missing_required_{role:?}"))
+            .with_rationale(format!("Required role {role:?} is missing from evidence")),
+        );
     }
     for role in &missing_recommended {
-        next_actions.push(format!("Retrieve evidence for recommended role: {role:?}"));
+        let (tool, reason_code) = role_to_next_tool(role);
+        next_actions.push(
+            AgentNextAction::new(
+                tool,
+                reason_code,
+                3,
+                serde_json::json!({"query": "<search_query>"}),
+                vec![],
+                Some(*role),
+            )
+            .with_evidence_gap(format!("missing_recommended_{role:?}"))
+            .with_rationale(format!(
+                "Recommended role {role:?} is missing from evidence"
+            )),
+        );
     }
     for failure in failures {
         if matches!(
@@ -394,10 +557,21 @@ pub fn compute_coverage(
             RetrievalFailureKind::ProviderFailed
                 | RetrievalFailureKind::DeadlinePreventedCompletion
         ) {
-            next_actions.push(format!(
-                "Retry or try alternative provider for {:?}: {}",
-                failure.role, failure.message
-            ));
+            next_actions.push(
+                AgentNextAction::new(
+                    "web_search",
+                    "retry_provider",
+                    2,
+                    serde_json::json!({"query": "<search_query>"}),
+                    vec![],
+                    Some(failure.role),
+                )
+                .with_evidence_gap(format!("provider_failure_{:?}", failure.role))
+                .with_rationale(format!(
+                    "Retry or try alternative provider for {:?}: {}",
+                    failure.role, failure.message
+                )),
+            );
         }
     }
 
@@ -582,7 +756,7 @@ mod tests {
         assert!(result
             .next_actions
             .iter()
-            .any(|a| a.contains("PrimaryImplementation")));
+            .any(|a| a.evidence_role == Some(EvidenceRole::PrimaryImplementation)));
     }
 
     #[test]

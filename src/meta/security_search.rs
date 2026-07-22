@@ -71,6 +71,7 @@ pub async fn run_security_search_plan(
         providers_failed: providers_failed.clone(),
         warnings: dispatch_warnings,
         trust_markers,
+        evidence_postprocess: None,
     };
 
     // 3. Check if any native security provider (OSV) is available

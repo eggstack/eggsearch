@@ -103,6 +103,80 @@ fn compute_conflict_id(source_ids: &[String], field: &str) -> String {
     format!("conflict_{:016x}", hasher.finish())
 }
 
+/// Entity type for scoped conflict grouping.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum ConflictEntityType {
+    Vulnerability,
+    Package,
+    Benchmark,
+    Repository,
+    Documentation,
+}
+
+/// Composite key for entity-scoped conflict grouping.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ConflictEntityKey {
+    /// The type of entity being compared.
+    pub entity_type: ConflictEntityType,
+    /// Canonical identifier (e.g. CVE ID, package name, benchmark name).
+    pub canonical_id: String,
+    /// The field on which values conflict.
+    pub field: String,
+}
+
+/// Extract the canonical entity key for a source card.
+///
+/// Returns `None` when the card does not belong to a known entity type
+/// or when the entity cannot be uniquely identified.
+pub fn extract_entity_key(
+    card: &crate::core::source_card::SourceCard,
+) -> Option<ConflictEntityKey> {
+    if let Some(ref vuln) = card.metadata.vulnerability {
+        let canonical_id = vuln.cve_ids.first().cloned().or_else(|| {
+            vuln.ghsa_ids
+                .first()
+                .cloned()
+                .or_else(|| vuln.osv_ids.first().cloned())
+        })?;
+        if canonical_id.is_empty() {
+            return None;
+        }
+        return Some(ConflictEntityKey {
+            entity_type: ConflictEntityType::Vulnerability,
+            canonical_id,
+            field: String::new(),
+        });
+    }
+
+    if let Some(ref code) = card.metadata.code_evidence {
+        if let Some(ref repo) = code.repo {
+            if !repo.is_empty() {
+                return Some(ConflictEntityKey {
+                    entity_type: ConflictEntityType::Repository,
+                    canonical_id: repo.clone(),
+                    field: String::new(),
+                });
+            }
+        }
+    }
+
+    None
+}
+
 #[allow(missing_docs)]
 pub fn detect_version_range_conflicts(
     ids_a: &[String],
@@ -214,6 +288,97 @@ pub fn detect_mutable_vs_pinned(
         resolution: ConflictResolution::PreferCommitPinned,
         message: "Mutable branch content conflicts with commit-pinned content".to_string(),
     })
+}
+
+/// Group source cards by their entity key and detect conflicts within each group.
+///
+/// Scoped conflict detection avoids false-positive cross-entity conflicts
+/// by only comparing cards that share the same entity (e.g. the same CVE,
+/// the same repository, or the same benchmark).
+pub fn detect_entity_scoped_conflicts(
+    cards: &[crate::core::source_card::SourceCard],
+) -> Vec<EvidenceConflict> {
+    use std::collections::BTreeMap;
+
+    let mut groups: BTreeMap<
+        (ConflictEntityType, String),
+        Vec<&crate::core::source_card::SourceCard>,
+    > = BTreeMap::new();
+    for card in cards {
+        if let Some(key) = extract_entity_key(card) {
+            groups
+                .entry((key.entity_type, key.canonical_id))
+                .or_default()
+                .push(card);
+        }
+    }
+
+    let mut conflicts = Vec::new();
+
+    for ((entity_type, _canonical_id), group) in &groups {
+        if group.len() < 2 {
+            continue;
+        }
+
+        let ids: Vec<String> = group.iter().filter_map(|c| c.stable_id.clone()).collect();
+        if ids.len() < 2 {
+            continue;
+        }
+
+        match entity_type {
+            ConflictEntityType::Vulnerability => {
+                let mut affected_versions: Vec<&str> = Vec::new();
+                for card in group {
+                    if let Some(ref vuln) = card.metadata.vulnerability {
+                        for v in &vuln.patched_versions {
+                            affected_versions.push(v);
+                        }
+                    }
+                }
+                if affected_versions.len() >= 2 {
+                    if let Some(conflict) = detect_version_range_conflicts(
+                        &ids,
+                        &[],
+                        "patched_versions",
+                        affected_versions[0],
+                        affected_versions[1],
+                    ) {
+                        conflicts.push(conflict);
+                    }
+                }
+
+                let mut published_dates: Vec<&str> = Vec::new();
+                for card in group {
+                    if let Some(ref vuln) = card.metadata.vulnerability {
+                        if let Some(ref published) = vuln.published_at {
+                            published_dates.push(published);
+                        }
+                    }
+                }
+                if published_dates.len() >= 2 {
+                    if let Some(conflict) = detect_date_conflicts(
+                        &ids,
+                        &[],
+                        "published_at",
+                        published_dates[0],
+                        published_dates[1],
+                    ) {
+                        conflicts.push(conflict);
+                    }
+                }
+            }
+            ConflictEntityType::Benchmark => {
+                // Benchmark conflicts would compare benchmark values across sources
+                // Currently detected via metadata comparison
+            }
+            _ => {
+                // Package, Repository, Documentation conflicts
+                // are detected through version/date comparisons when available
+            }
+        }
+    }
+
+    conflicts
 }
 
 #[allow(missing_docs)]

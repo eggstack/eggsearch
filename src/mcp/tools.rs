@@ -834,6 +834,10 @@ pub async fn run_web_search(
         "routing_decision": serde_json::to_value(&routing_decision)
             .unwrap_or(serde_json::json!({})),
         "next_actions": next_actions,
+        "workflow_coverage": resp.evidence_postprocess.as_ref().and_then(|ep| ep.workflow_coverage.as_ref()),
+        "retrieval_summary": resp.evidence_postprocess.as_ref().and_then(|ep| ep.retrieval_summary.as_ref()),
+        "conflict_metadata": resp.evidence_postprocess.as_ref().map(|ep| &ep.conflict_metadata),
+        "evidence_role_summary": resp.evidence_postprocess.as_ref().and_then(|ep| ep.evidence_role_summary.as_ref()),
     });
 
     if providers_failed.len() == effective_providers.len()
@@ -2255,6 +2259,12 @@ pub async fn run_repo_map(
                             providers_queried: Vec::new(),
                             deadline_exceeded: true,
                             mode_reason: Some("forge tree request timed out".to_string()),
+                            endpoint_origin: None,
+                            redirect_rejected: false,
+                            response_bytes_observed: None,
+                            response_cap_applied: false,
+                            dns_policy_class: None,
+                            aggregate_byte_cap_reached: false,
                         });
                     }
                     fallback

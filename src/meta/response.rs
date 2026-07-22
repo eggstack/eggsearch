@@ -1,5 +1,6 @@
 //! Response types for the metasearch adapter.
 
+use crate::core::evidence_postprocess::EvidencePostprocessResult;
 use crate::core::sanitize::TrustMarkers;
 use crate::core::SearchWarning;
 use crate::core::SourceCard;
@@ -40,6 +41,9 @@ pub struct WebSearchResponse {
     /// a zero record; the adapter populates it after each card is
     /// sanitized.
     pub trust_markers: TrustMarkers,
+    /// Evidence integration postprocessing result, populated by
+    /// `materialize_evidence_roles()` and `postprocess()`.
+    pub evidence_postprocess: Option<EvidencePostprocessResult>,
 }
 
 #[cfg(test)]

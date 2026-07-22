@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::evidence_role::EvidenceRole;
+use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
 
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -150,6 +151,183 @@ pub fn classify_absence(kind: EvidenceAbsenceKind) -> &'static str {
             "evidence_role_indeterminate_because_retrieval_failed"
         }
         EvidenceAbsenceKind::NotApplicable => "not_applicable",
+    }
+}
+
+/// Outcome of a single retrieval attempt.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalAttemptOutcome {
+    /// Provider returned results.
+    SuccessWithResults,
+    /// Provider returned successfully but zero results.
+    SuccessZeroResults,
+    /// Provider returned an error.
+    Failed,
+    /// Provider timed out.
+    TimedOut,
+    /// Provider was rate-limited.
+    RateLimited,
+    /// Provider was skipped by operator policy.
+    SkippedByPolicy,
+    /// Provider capability was unavailable.
+    SkippedCapabilityUnavailable,
+    /// Not applicable to this query.
+    NotApplicable,
+    /// Interrupted by global deadline.
+    InterruptedByDeadline,
+    /// Truncated after partial success.
+    TruncatedAfterPartialSuccess,
+}
+
+/// Record of a single provider/subquery retrieval attempt.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct RetrievalAttempt {
+    /// The provider that was attempted.
+    pub provider_id: String,
+    /// Optional subquery identifier for multi-query workflows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subquery_id: Option<String>,
+    /// Evidence roles this attempt was intended to produce.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intended_roles: Vec<EvidenceRole>,
+    /// The outcome of the retrieval attempt.
+    pub outcome: RetrievalAttemptOutcome,
+    /// Number of results returned (0 if failed or timed out).
+    pub result_count: usize,
+}
+
+impl RetrievalAttempt {
+    /// Convert this attempt to a `RetrievalFailure` if it represents a failure.
+    pub fn to_retrieval_failure(&self) -> Option<RetrievalFailure> {
+        match self.outcome {
+            RetrievalAttemptOutcome::Failed => Some(RetrievalFailure {
+                kind: RetrievalFailureKind::ProviderFailed,
+                role: self
+                    .intended_roles
+                    .first()
+                    .copied()
+                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
+                message: format!("provider {} failed", self.provider_id),
+                provider_id: Some(self.provider_id.clone()),
+            }),
+            RetrievalAttemptOutcome::TimedOut => Some(RetrievalFailure {
+                kind: RetrievalFailureKind::DeadlinePreventedCompletion,
+                role: self
+                    .intended_roles
+                    .first()
+                    .copied()
+                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
+                message: format!("provider {} timed out", self.provider_id),
+                provider_id: Some(self.provider_id.clone()),
+            }),
+            RetrievalAttemptOutcome::RateLimited => Some(RetrievalFailure {
+                kind: RetrievalFailureKind::ProviderFailed,
+                role: self
+                    .intended_roles
+                    .first()
+                    .copied()
+                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
+                message: format!("provider {} rate limited", self.provider_id),
+                provider_id: Some(self.provider_id.clone()),
+            }),
+            RetrievalAttemptOutcome::InterruptedByDeadline => Some(RetrievalFailure {
+                kind: RetrievalFailureKind::DeadlinePreventedCompletion,
+                role: self
+                    .intended_roles
+                    .first()
+                    .copied()
+                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
+                message: format!(
+                    "provider {} interrupted by global deadline",
+                    self.provider_id
+                ),
+                provider_id: Some(self.provider_id.clone()),
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Convert a slice of `RetrievalAttempt` records into `RetrievalFailure` records
+/// for failure/timed-out/rate-limited attempts.
+pub fn attempts_to_failures(attempts: &[RetrievalAttempt]) -> Vec<RetrievalFailure> {
+    attempts
+        .iter()
+        .filter_map(RetrievalAttempt::to_retrieval_failure)
+        .collect()
+}
+
+/// Map a provider ID and subquery label to intended evidence roles.
+///
+/// The mapping is deterministic and based on provider capabilities and
+/// the subquery's purpose within the search plan.
+pub fn map_provider_to_intended_roles(
+    provider_id: &str,
+    subquery_label: &str,
+) -> Vec<EvidenceRole> {
+    match subquery_label {
+        "advisory" | "security" => {
+            vec![EvidenceRole::AuthoritativeSecurityAdvisory]
+        }
+        "vendor" => {
+            vec![EvidenceRole::VendorSecurityGuidance]
+        }
+        "defensive" => {
+            vec![EvidenceRole::ConfigurationOrFeatureGate]
+        }
+        "source" | "code" => {
+            vec![EvidenceRole::PrimaryImplementation]
+        }
+        "issues" => {
+            vec![EvidenceRole::IssueOrIncidentDiscussion]
+        }
+        "releases" => {
+            vec![EvidenceRole::ReleaseNoteOrChangelog]
+        }
+        "docs" | "documentation" => {
+            vec![EvidenceRole::OfficialDocumentation]
+        }
+        "examples" => {
+            vec![EvidenceRole::UsageExample]
+        }
+        "registry" | "packages" => {
+            vec![EvidenceRole::ManifestOrDependencyMetadata]
+        }
+        "benchmarks" => {
+            vec![EvidenceRole::BenchmarkOrPerformanceEvidence]
+        }
+        "research" | "academic" => {
+            vec![EvidenceRole::IndependentCorroboration]
+        }
+        "exact_phrase" | "error_exact" => {
+            vec![EvidenceRole::PrimaryImplementation]
+        }
+        "error_code" => {
+            vec![EvidenceRole::IssueOrIncidentDiscussion]
+        }
+        "error_package" => {
+            vec![EvidenceRole::ManifestOrDependencyMetadata]
+        }
+        "error_issues" => {
+            vec![EvidenceRole::IssueOrIncidentDiscussion]
+        }
+        "error_releases" => {
+            vec![EvidenceRole::ReleaseNoteOrChangelog]
+        }
+        "error_docs" => {
+            vec![EvidenceRole::OfficialDocumentation]
+        }
+        _ => {
+            // Provider-specific fallback for generic subqueries
+            if provider_id == "osv" || provider_id.contains("advisory") {
+                vec![EvidenceRole::AuthoritativeSecurityAdvisory]
+            } else if provider_id.contains("code") || provider_id.contains("repo") {
+                vec![EvidenceRole::PrimaryImplementation]
+            } else {
+                vec![EvidenceRole::UnknownOrWeakContext]
+            }
+        }
     }
 }
 

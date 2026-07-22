@@ -814,6 +814,16 @@ impl MetadataSearchAdapter {
             .collect();
         warnings.extend(capability_warnings);
 
+        crate::core::evidence_postprocess::materialize_evidence_roles(&mut results);
+
+        let postprocess_result = crate::core::evidence_postprocess::postprocess(
+            &results,
+            &providers_failed,
+            &providers_queried,
+            None,
+            &[],
+        );
+
         WebSearchResponse {
             query: req.query.clone(),
             mode: "live_metasearch",
@@ -822,6 +832,7 @@ impl MetadataSearchAdapter {
             providers_failed,
             warnings,
             trust_markers,
+            evidence_postprocess: Some(postprocess_result),
         }
     }
 

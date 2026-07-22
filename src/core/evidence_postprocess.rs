@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::conflict::{
-    detect_date_conflicts, detect_mutable_vs_pinned, detect_version_range_conflicts,
-    EvidenceConflict,
+    detect_entity_scoped_conflicts, detect_mutable_vs_pinned, EvidenceConflict,
 };
 use crate::core::evidence_role::EvidenceRole;
 use crate::core::retrieval_status::{
@@ -187,68 +186,7 @@ pub fn build_retrieval_summary_for_search(
 
 #[allow(missing_docs)]
 pub fn detect_structured_conflicts(cards: &[SourceCard]) -> Vec<EvidenceConflict> {
-    let mut conflicts = Vec::new();
-
-    let mut advisory_groups: std::collections::BTreeMap<String, Vec<&SourceCard>> =
-        std::collections::BTreeMap::new();
-    for card in cards {
-        if let Some(ref vuln) = card.metadata.vulnerability {
-            let key = vuln.cve_ids.first().cloned().unwrap_or_else(|| {
-                vuln.ghsa_ids
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| vuln.osv_ids.first().cloned().unwrap_or_default())
-            });
-            if !key.is_empty() {
-                advisory_groups.entry(key).or_default().push(card);
-            }
-        }
-    }
-
-    for group in advisory_groups.values() {
-        if group.len() < 2 {
-            continue;
-        }
-
-        let ids: Vec<String> = group.iter().filter_map(|c| c.stable_id.clone()).collect();
-        if ids.len() < 2 {
-            continue;
-        }
-
-        let mut affected_versions: Vec<&str> = Vec::new();
-        for card in group {
-            if let Some(ref vuln) = card.metadata.vulnerability {
-                for v in &vuln.patched_versions {
-                    affected_versions.push(v);
-                }
-            }
-        }
-        if affected_versions.len() >= 2 {
-            let a = affected_versions[0];
-            let b = affected_versions[1];
-            if let Some(conflict) =
-                detect_version_range_conflicts(&ids, &[], "patched_versions", a, b)
-            {
-                conflicts.push(conflict);
-            }
-        }
-
-        let mut published_dates: Vec<&str> = Vec::new();
-        for card in group {
-            if let Some(ref vuln) = card.metadata.vulnerability {
-                if let Some(ref published) = vuln.published_at {
-                    published_dates.push(published);
-                }
-            }
-        }
-        if published_dates.len() >= 2 {
-            let a = published_dates[0];
-            let b = published_dates[1];
-            if let Some(conflict) = detect_date_conflicts(&ids, &[], "published_at", a, b) {
-                conflicts.push(conflict);
-            }
-        }
-    }
+    let mut conflicts = detect_entity_scoped_conflicts(cards);
 
     let mut mutable_ids: Vec<String> = Vec::new();
     let mut pinned_ids: Vec<String> = Vec::new();
