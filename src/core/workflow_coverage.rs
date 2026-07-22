@@ -309,6 +309,17 @@ pub fn coverage_status(
         return CoverageStatus::UsableWithGaps;
     }
 
+    let has_provider_failure = failures.iter().any(|f| {
+        matches!(
+            f.kind,
+            RetrievalFailureKind::ProviderFailed
+                | RetrievalFailureKind::DeadlinePreventedCompletion
+        ) && model.required.contains(&f.role)
+    });
+    if has_provider_failure {
+        return CoverageStatus::IndeterminateDueToFailures;
+    }
+
     CoverageStatus::Insufficient
 }
 

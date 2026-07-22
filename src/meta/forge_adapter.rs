@@ -72,6 +72,13 @@ struct BoundedBody {
     observed_bytes: usize,
 }
 
+#[allow(dead_code)]
+pub(crate) struct ForgeReadBudget {
+    pub per_response_limit: usize,
+    pub aggregate_limit: usize,
+    pub aggregate_observed: usize,
+}
+
 async fn read_bounded_body(
     resp: reqwest::Response,
     per_response_cap: usize,

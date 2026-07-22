@@ -3,6 +3,7 @@ use eggsearch::core::conflict::{
     detect_mutable_vs_pinned, detect_provider_metadata_conflicts, detect_version_range_conflicts,
     extract_entity_key,
 };
+use eggsearch::core::evidence_postprocess::detect_structured_conflicts;
 use eggsearch::core::result::TrustLevel;
 use eggsearch::core::security::{SeverityLevel, VulnerabilitySource};
 use eggsearch::core::source_card::SourceCard;
@@ -287,5 +288,57 @@ proptest! {
             prop_assert!(result.is_some(),
                 "non-empty mutable and pinned should produce a conflict");
         }
+    }
+
+    #[test]
+    fn unrelated_repositories_do_not_produce_mutable_vs_pinned_conflict(
+        repo_a in "[a-z]{3,10}",
+        repo_b in "[a-z]{3,10}",
+    ) {
+        prop_assume!(repo_a != repo_b);
+        let mut card_a = SourceCard::new(
+            "implementation from org-a",
+            format!("https://github.com/org-a/{repo_a}/blob/main/src/lib.rs"),
+            vec!["github_code".to_string()],
+            Some(0.8),
+            TrustLevel::ExternalUntrusted,
+        );
+        card_a.metadata.code_evidence = Some(
+            eggsearch::core::code_evidence::CodeEvidence {
+                owner: Some("org-a".to_string()),
+                repo: Some(repo_a.clone()),
+                ref_name: Some("main".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                commit_sha: Some("abc123def456".to_string()),
+                language: Some("rust".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let mut card_b = SourceCard::new(
+            "implementation from org-b",
+            format!("https://github.com/org-b/{repo_b}/blob/main/src/main.rs"),
+            vec!["github_code".to_string()],
+            Some(0.8),
+            TrustLevel::ExternalUntrusted,
+        );
+        card_b.metadata.code_evidence = Some(
+            eggsearch::core::code_evidence::CodeEvidence {
+                owner: Some("org-b".to_string()),
+                repo: Some(repo_b.clone()),
+                ref_name: Some("main".to_string()),
+                path: Some("src/main.rs".to_string()),
+                commit_sha: None,
+                language: Some("rust".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let conflicts = detect_structured_conflicts(&[card_a, card_b]);
+        let mutable_vs_pinned: Vec<_> = conflicts.iter()
+            .filter(|c| matches!(c.conflict_class, eggsearch::core::conflict::ConflictClass::MutableVsCommitPinnedContent))
+            .collect();
+        prop_assert!(mutable_vs_pinned.is_empty(),
+            "mutable-vs-pinned conflict must NOT be reported for cards from unrelated repositories (org-a/{repo_a} vs org-b/{repo_b}). Cross-entity conflicts produce false positives.");
     }
 }

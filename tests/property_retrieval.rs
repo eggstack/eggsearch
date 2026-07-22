@@ -3,6 +3,9 @@ use eggsearch::core::retrieval_status::{
     attempts_to_failures, classify_absence, map_provider_to_intended_roles, EvidenceAbsenceKind,
     RetrievalAttempt, RetrievalAttemptOutcome,
 };
+use eggsearch::core::workflow_coverage::{
+    compute_coverage, CoverageStatus, RetrievalFailureKind, WorkflowCoverageModel,
+};
 use proptest::prelude::*;
 
 fn provider_id_strategy() -> impl Strategy<Value = String> {
@@ -298,5 +301,31 @@ proptest! {
         };
         let failures = attempts_to_failures(&[attempt]);
         prop_assert!(failures.is_empty(), "non-failure outcome must produce no failures");
+    }
+
+    #[test]
+    fn provider_failure_for_required_role_reports_indeterminate(
+        provider_id in provider_id_strategy(),
+    ) {
+        let model = WorkflowCoverageModel {
+            workflow_id: "test_security".to_string(),
+            title: "Test Security".to_string(),
+            required: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            recommended: vec![],
+            optional: vec![],
+        };
+        let failures = vec![eggsearch::core::workflow_coverage::RetrievalFailure {
+            kind: RetrievalFailureKind::ProviderFailed,
+            role: EvidenceRole::AuthoritativeSecurityAdvisory,
+            provider_id: Some(provider_id),
+            message: "provider error".into(),
+        }];
+        let result = compute_coverage(&model, &[], &failures);
+        prop_assert_eq!(
+            result.status,
+            CoverageStatus::IndeterminateDueToFailures,
+            "when a required role's provider fails, coverage must be IndeterminateDueToFailures, not {:?}",
+            result.status
+        );
     }
 }

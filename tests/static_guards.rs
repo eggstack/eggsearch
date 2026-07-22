@@ -170,6 +170,34 @@ fn postprocess_called_with_workflow_model_for_non_web_tools() {
 }
 
 #[test]
+fn git_runner_drains_stdout_before_stderr_concurrently() {
+    let source = read_source("src/meta/local_inventory_cache.rs");
+    let non_test = strip_test_code(&source);
+
+    let has_stdout_thread = non_test.contains("std::thread::spawn")
+        && non_test
+            .lines()
+            .any(|l| l.contains("stdout") && l.contains("thread"));
+    assert!(
+        has_stdout_thread,
+        "run_bounded_command must drain stdout and stderr concurrently using threads, \
+         not sequentially. Currently reads stdout to completion before stderr."
+    );
+}
+
+#[test]
+fn forge_has_aggregate_byte_budget_type() {
+    let source = read_source("src/meta/forge_adapter.rs");
+    let non_test = strip_test_code(&source);
+
+    assert!(
+        non_test.contains("struct ForgeReadBudget"),
+        "forge_adapter.rs must define ForgeReadBudget for aggregate byte enforcement. \
+         Currently uses bare total_bytes: &mut usize without formal budget."
+    );
+}
+
+#[test]
 fn all_forge_response_paths_bounded() {
     let source = read_source("src/meta/forge_adapter.rs");
     let non_test = strip_test_code(&source);

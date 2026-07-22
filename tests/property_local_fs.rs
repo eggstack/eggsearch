@@ -266,3 +266,22 @@ proptest! {
             "nonexistent path must return an error, got ok");
     }
 }
+
+#[test]
+fn safe_open_uses_descriptor_relative_syscalls() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let source = std::fs::read_to_string(format!("{manifest_dir}/src/meta/safe_open.rs")).unwrap();
+
+    let uses_openat = source.contains("openat")
+        || source.contains("openat2")
+        || (source.contains("OpenOptions")
+            && source.contains("raw_fd")
+            && source.contains("OwnedFd"));
+
+    assert!(
+        uses_openat,
+        "safe_open.rs must use descriptor-relative syscalls (openat/openat2) \
+         to prevent TOCTOU races between symlink_metadata check and final open. \
+         Currently uses pathname-based File::open which has a race window."
+    );
+}

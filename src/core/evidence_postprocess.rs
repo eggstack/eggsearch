@@ -188,23 +188,40 @@ pub fn build_retrieval_summary_for_search(
 pub fn detect_structured_conflicts(cards: &[SourceCard]) -> Vec<EvidenceConflict> {
     let mut conflicts = detect_entity_scoped_conflicts(cards);
 
-    let mut mutable_ids: Vec<String> = Vec::new();
-    let mut pinned_ids: Vec<String> = Vec::new();
+    let mut repo_groups: std::collections::HashMap<String, (Vec<String>, Vec<String>)> =
+        std::collections::HashMap::new();
+
     for card in cards {
         let id = card.stable_id.clone().unwrap_or_default();
-        if card
-            .metadata
-            .code_evidence
-            .as_ref()
-            .is_some_and(|c| c.commit_sha.is_some())
-        {
-            pinned_ids.push(id);
-        } else {
-            mutable_ids.push(id);
+        let repo_key =
+            card.metadata
+                .code_evidence
+                .as_ref()
+                .and_then(|c| match (&c.owner, &c.repo) {
+                    (Some(owner), Some(repo)) => Some(format!("{owner}/{repo}")),
+                    _ => None,
+                });
+        if let Some(key) = repo_key {
+            let is_pinned = card
+                .metadata
+                .code_evidence
+                .as_ref()
+                .is_some_and(|c| c.commit_sha.is_some());
+            let entry = repo_groups
+                .entry(key)
+                .or_insert_with(|| (Vec::new(), Vec::new()));
+            if is_pinned {
+                entry.1.push(id);
+            } else {
+                entry.0.push(id);
+            }
         }
     }
-    if let Some(conflict) = detect_mutable_vs_pinned(&mutable_ids, &pinned_ids) {
-        conflicts.push(conflict);
+
+    for (mutable_ids, pinned_ids) in repo_groups.into_values() {
+        if let Some(conflict) = detect_mutable_vs_pinned(&mutable_ids, &pinned_ids) {
+            conflicts.push(conflict);
+        }
     }
 
     conflicts.truncate(MAX_CONFLICTS);

@@ -619,31 +619,38 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
         }
     });
 
-    let mut stdout = Vec::new();
     let mut stderr = Vec::new();
-    let mut stdout_truncated = false;
     let mut stderr_truncated = false;
 
-    if let Some(ref mut out) = child.stdout {
-        let mut buf = [0u8; 8192];
-        loop {
-            match out.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let remaining = GIT_STDOUT_CAP.saturating_sub(stdout.len());
-                    if n <= remaining {
-                        stdout.extend_from_slice(&buf[..n]);
-                    } else {
-                        stdout.extend_from_slice(&buf[..remaining]);
-                        stdout_truncated = true;
-                        break;
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+
+    let stdout_thread = std::thread::spawn(move || {
+        let mut local_stdout = Vec::new();
+        let mut local_truncated = false;
+        if let Some(mut out) = stdout_handle {
+            let mut buf = [0u8; 8192];
+            loop {
+                match out.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let remaining = GIT_STDOUT_CAP.saturating_sub(local_stdout.len());
+                        if n <= remaining {
+                            local_stdout.extend_from_slice(&buf[..n]);
+                        } else {
+                            local_stdout.extend_from_slice(&buf[..remaining]);
+                            local_truncated = true;
+                            break;
+                        }
                     }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
         }
-    }
-    if let Some(ref mut err) = child.stderr {
+        (local_stdout, local_truncated)
+    });
+
+    if let Some(mut err) = stderr_handle {
         let mut buf = [0u8; 8192];
         loop {
             match err.read(&mut buf) {
@@ -662,6 +669,8 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
             }
         }
     }
+
+    let (stdout, stdout_truncated) = stdout_thread.join().unwrap_or((Vec::new(), false));
 
     let status = child.wait().ok();
     exited.store(true, Ordering::Relaxed);

@@ -107,6 +107,7 @@ fn evaluate_semver_range(version: &str, range: &str) -> Option<bool> {
             continue;
         }
 
+        #[allow(clippy::question_mark)]
         let satisfied = if let Some(ver) = part.strip_prefix(">=") {
             compare_semver_like(version, ver.trim()).map(|ord| ord != std::cmp::Ordering::Less)
         } else if let Some(ver) = part.strip_prefix('>') {

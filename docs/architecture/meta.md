@@ -67,7 +67,7 @@ MCP Tool → MetadataSearchAdapter
 | `local_backend.rs` | Local workspace search backend with auto-build inventory on first search, bounded file walking, scoring, and SymbolBackend trait |
 | `local_ignore.rs` | Minimal `.gitignore` matcher |
 | `local_inventory.rs` | Git worktree discovery, remote URL normalization, identity matching |
-| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path (`git ls-files -z --cached --others --exclude-standard`), native walking, XXH3 fingerprinting, invalidation. Bounded command runner with timeout, stdout/stderr caps, sequential pipe reads, post-read truncation, kill-on-timeout watchdog thread |
+| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path (`git ls-files -z --cached --others --exclude-standard`), native walking, XXH3 fingerprinting, invalidation. Bounded command runner with timeout, stdout/stderr caps, concurrent pipe drainage, kill-on-timeout watchdog thread |
 
 ### Test Support
 

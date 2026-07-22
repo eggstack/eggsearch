@@ -6507,6 +6507,39 @@ mod repo_search {
     }
 
     #[tokio::test]
+    async fn repo_search_grouped_cards_have_materialized_evidence_role() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new("Docs", "https://docs.rs/axum/latest/axum/", "mock_a"),
+                MockResult::new(
+                    "Source",
+                    "https://github.com/tokio-rs/axum/blob/main/src/lib.rs",
+                    "mock_a",
+                ),
+            ],
+        )];
+        let state = repo_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_repo_search(state, repo_args("axum")).await.expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups is array");
+        for group in groups {
+            let results = group["results"].as_array().expect("results is array");
+            for card in results {
+                let has_role = card.get("evidence_role").is_some()
+                    || card
+                        .get("metadata")
+                        .and_then(|m| m.get("evidence_role"))
+                        .is_some();
+                assert!(
+                    has_role,
+                    "grouped card must have evidence_role materialized; got: {card}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn repo_search_groups_are_nonempty_when_results_exist() {
         let engines = vec![MockEngine::success(
             "mock_a",

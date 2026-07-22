@@ -157,7 +157,7 @@ fn test_bounded_command_nonzero_exit() {
 fn test_bounded_command_invalid_utf8() {
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
-        .arg(r#"printf '\xff\xfe\x00\x01binary data\n'"#);
+        .arg(r#"printf '\377\376\0\1binary data\n'"#);
     let result = bct::run(&mut cmd, Duration::from_secs(5));
     assert!(result.status.unwrap().success());
     assert!(!result.stdout.is_empty());

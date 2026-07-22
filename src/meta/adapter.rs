@@ -1378,14 +1378,15 @@ impl MetadataSearchAdapter {
 
         let structured_warnings = crate::core::warning::convert_warnings(&warnings);
 
+        for group in groups.iter_mut() {
+            crate::core::evidence_postprocess::materialize_evidence_roles(&mut group.results);
+        }
+
         let all_cards: Vec<SourceCard> = groups
             .iter()
             .flat_map(|g| g.results.iter())
             .cloned()
             .collect();
-
-        let mut all_cards = all_cards;
-        crate::core::evidence_postprocess::materialize_evidence_roles(&mut all_cards);
 
         let workflow_model = crate::core::evidence_postprocess::resolve_workflow_model(
             "repo_search",
