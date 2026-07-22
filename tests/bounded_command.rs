@@ -78,7 +78,17 @@ fn test_bounded_command_stdout_over_cap() {
         .arg("--cached")
         .current_dir(root);
     let result = bct::run_for_inventory(&mut cmd, Duration::from_secs(5), 200);
-    assert!(result.status.unwrap().success());
+    let status = result.status.unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        let ok = status.success() || status.signal() == Some(13);
+        assert!(ok, "expected success or SIGPIPE, got: {status:?}");
+    }
+    #[cfg(not(unix))]
+    {
+        assert!(status.success());
+    }
     assert!(
         result.stdout_truncated,
         "output should be truncated with tiny cap"
@@ -156,8 +166,7 @@ fn test_bounded_command_nonzero_exit() {
 #[test]
 fn test_bounded_command_invalid_utf8() {
     let mut cmd = Command::new("sh");
-    cmd.arg("-c")
-        .arg(r#"printf '\377\376\0\1binary data\n'"#);
+    cmd.arg("-c").arg(r#"printf '\377\376\0\1binary data\n'"#);
     let result = bct::run(&mut cmd, Duration::from_secs(5));
     assert!(result.status.unwrap().success());
     assert!(!result.stdout.is_empty());

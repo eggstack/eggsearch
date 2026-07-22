@@ -816,12 +816,13 @@ impl MetadataSearchAdapter {
 
         crate::core::evidence_postprocess::materialize_evidence_roles(&mut results);
 
+        let retrieval_failures = build_retrieval_failures(&providers_failed, &providers_queried);
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &results,
             &providers_failed,
             &providers_queried,
             None,
-            &[],
+            &retrieval_failures,
         );
 
         WebSearchResponse {
@@ -1394,13 +1395,27 @@ impl MetadataSearchAdapter {
             None,
             is_exact_error,
         );
+        let retrieval_failures = build_retrieval_failures(&providers_failed, &providers_queried);
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
             &providers_queried,
             workflow_model.as_ref(),
-            &[],
+            &retrieval_failures,
         );
+
+        let next_actions = postprocess_result
+            .workflow_coverage
+            .as_ref()
+            .map(|wc| {
+                let known_ids: Vec<String> = all_cards.iter().map(|c| c.id.clone()).collect();
+                crate::core::workflow_coverage::generate_gap_driven_next_actions(
+                    wc,
+                    &retrieval_failures,
+                    &known_ids,
+                )
+            })
+            .unwrap_or_default();
 
         crate::core::repo_search::RepoSearchResponse {
             query: req.query.clone(),
@@ -1422,7 +1437,7 @@ impl MetadataSearchAdapter {
             security_context,
             error_context,
             structured_warnings,
-            next_actions: vec![],
+            next_actions,
             workflow_coverage: postprocess_result.workflow_coverage,
             retrieval_summary: postprocess_result.retrieval_summary,
             conflict_metadata: postprocess_result.conflict_metadata,
@@ -1692,13 +1707,27 @@ impl MetadataSearchAdapter {
             research_domain_str,
             false,
         );
+        let retrieval_failures = build_retrieval_failures(&providers_failed, &queried_ids);
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
             &queried_ids,
             workflow_model.as_ref(),
-            &[],
+            &retrieval_failures,
         );
+
+        let next_actions = postprocess_result
+            .workflow_coverage
+            .as_ref()
+            .map(|wc| {
+                let known_ids: Vec<String> = all_cards.iter().map(|c| c.id.clone()).collect();
+                crate::core::workflow_coverage::generate_gap_driven_next_actions(
+                    wc,
+                    &retrieval_failures,
+                    &known_ids,
+                )
+            })
+            .unwrap_or_default();
 
         ResearchSearchResponse {
             query: req.query.clone(),
@@ -1714,7 +1743,7 @@ impl MetadataSearchAdapter {
             workflow_context,
             telemetry,
             structured_warnings,
-            next_actions: vec![],
+            next_actions,
             claims: analysis.0,
             conflicts: analysis.1,
             source_quality: analysis.2,
@@ -2771,6 +2800,44 @@ fn apply_intent_reranking(
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+}
+
+pub(crate) fn build_retrieval_failures(
+    providers_failed: &[ProviderFailure],
+    providers_queried: &[String],
+) -> Vec<crate::core::workflow_coverage::RetrievalFailure> {
+    use crate::core::evidence_role::EvidenceRole;
+    use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
+
+    let failed_set: std::collections::HashSet<&str> =
+        providers_failed.iter().map(|f| f.id.as_str()).collect();
+
+    let mut failures = Vec::new();
+
+    for provider_id in providers_queried {
+        if failed_set.contains(provider_id.as_str()) {
+            if let Some(pf) = providers_failed.iter().find(|f| f.id == *provider_id) {
+                let kind = if pf.error_class == "timeout" {
+                    RetrievalFailureKind::DeadlinePreventedCompletion
+                } else {
+                    RetrievalFailureKind::ProviderFailed
+                };
+                let role = if provider_id.contains("advisory") || provider_id.contains("osv") {
+                    EvidenceRole::AuthoritativeSecurityAdvisory
+                } else {
+                    EvidenceRole::PrimaryImplementation
+                };
+                failures.push(RetrievalFailure {
+                    kind,
+                    role,
+                    message: format!("[{}] {}", pf.error_class, pf.message),
+                    provider_id: Some(provider_id.clone()),
+                });
+            }
+        }
+    }
+
+    failures
 }
 
 // ---------------------------------------------------------------------------

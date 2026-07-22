@@ -496,9 +496,10 @@ impl LocalWorkspaceBackend {
                                     )
                                 } else if !query_lower.is_empty() {
                                     let (s, ls, le) = Self::find_text_match(
-                                        &file_entry.path,
+                                        root_path,
+                                        &entry.relative_path,
                                         &query_lower,
-                                        config.max_file_bytes,
+                                        config,
                                     );
                                     (s, ls, le, None, None, score)
                                 } else {
@@ -506,9 +507,10 @@ impl LocalWorkspaceBackend {
                                 }
                             } else if !query_lower.is_empty() {
                                 let (s, ls, le) = Self::find_text_match(
-                                    &file_entry.path,
+                                    root_path,
+                                    &entry.relative_path,
                                     &query_lower,
-                                    config.max_file_bytes,
+                                    config,
                                 );
                                 (s, ls, le, None, None, score)
                             } else {
@@ -520,9 +522,10 @@ impl LocalWorkspaceBackend {
                                 (snippet, None, None, None, None, score)
                             } else {
                                 let (s, ls, le) = Self::find_text_match(
-                                    &file_entry.path,
+                                    root_path,
+                                    &entry.relative_path,
                                     &query_lower,
-                                    config.max_file_bytes,
+                                    config,
                                 );
                                 (s, ls, le, None, None, score)
                             }
@@ -741,9 +744,10 @@ impl LocalWorkspaceBackend {
                                     )
                                 } else if !query_lower.is_empty() {
                                     let (s, ls, le) = Self::find_text_match(
-                                        &file_entry.path,
+                                        root_path,
+                                        &entry.relative_path,
                                         &query_lower,
-                                        config.max_file_bytes,
+                                        config,
                                     );
                                     (s, ls, le, None, None, score)
                                 } else {
@@ -751,9 +755,10 @@ impl LocalWorkspaceBackend {
                                 }
                             } else if !query_lower.is_empty() {
                                 let (s, ls, le) = Self::find_text_match(
-                                    &file_entry.path,
+                                    root_path,
+                                    &entry.relative_path,
                                     &query_lower,
-                                    config.max_file_bytes,
+                                    config,
                                 );
                                 (s, ls, le, None, None, score)
                             } else {
@@ -765,9 +770,10 @@ impl LocalWorkspaceBackend {
                                 (snippet, None, None, None, None, score)
                             } else {
                                 let (s, ls, le) = Self::find_text_match(
-                                    &file_entry.path,
+                                    root_path,
+                                    &entry.relative_path,
                                     &query_lower,
-                                    config.max_file_bytes,
+                                    config,
                                 );
                                 (s, ls, le, None, None, score)
                             }
@@ -1110,9 +1116,8 @@ impl LocalWorkspaceBackend {
             }
         }
 
-        let content_text = std::fs::read(path)
+        let content_text = safe_read_file(root_path, &relative_path, config, config.max_file_bytes)
             .ok()
-            .filter(|b| b.len() <= config.max_file_bytes)
             .and_then(|bytes| {
                 let s = String::from_utf8_lossy(&bytes).to_string();
                 if s.is_empty() {
@@ -1152,14 +1157,14 @@ impl LocalWorkspaceBackend {
                         )
                     } else if !query_lower.is_empty() {
                         let (s, ls, le) =
-                            Self::find_text_match(path, query_lower, config.max_file_bytes);
+                            Self::find_text_match(root_path, &relative_path, query_lower, config);
                         (s, ls, le, None, None, score)
                     } else {
                         (None, None, None, None, None, score)
                     }
                 } else if !query_lower.is_empty() {
                     let (s, ls, le) =
-                        Self::find_text_match(path, query_lower, config.max_file_bytes);
+                        Self::find_text_match(root_path, &relative_path, query_lower, config);
                     (s, ls, le, None, None, score)
                 } else {
                     (None, None, None, None, None, score)
@@ -1170,7 +1175,7 @@ impl LocalWorkspaceBackend {
                     (snippet, None, None, None, None, score)
                 } else {
                     let (s, ls, le) =
-                        Self::find_text_match(path, query_lower, config.max_file_bytes);
+                        Self::find_text_match(root_path, &relative_path, query_lower, config);
                     (s, ls, le, None, None, score)
                 }
             } else {
@@ -1270,17 +1275,14 @@ impl LocalWorkspaceBackend {
 
     /// Search for a text match in the file content.
     fn find_text_match(
-        path: &Path,
+        root_path: &Path,
+        relative_path: &str,
         query: &str,
-        max_file_bytes: usize,
+        config: &LocalConfig,
     ) -> (Option<String>, Option<u32>, Option<u32>) {
-        let content = match std::fs::read(path) {
-            Ok(bytes) => {
-                if bytes.len() > max_file_bytes {
-                    return (None, None, None);
-                }
-                String::from_utf8_lossy(&bytes).to_string()
-            }
+        let content = match safe_read_file(root_path, relative_path, config, config.max_file_bytes)
+        {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
             Err(_) => return (None, None, None),
         };
 
@@ -1700,9 +1702,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("test.txt");
         fs::write(&file_path, "line one\nline two\nline three\n").unwrap();
+        let config = LocalConfig {
+            enabled: true,
+            roots: Vec::new(),
+            max_file_bytes: 1_048_576,
+            max_indexed_files: 50_000,
+            include_hidden: false,
+            respect_gitignore: false,
+            follow_symlinks: false,
+        };
 
         let (snippet, start, end) =
-            LocalWorkspaceBackend::find_text_match(&file_path, "line two", 1048576);
+            LocalWorkspaceBackend::find_text_match(dir.path(), "test.txt", "line two", &config);
         assert_eq!(snippet.as_deref(), Some("line two"));
         assert_eq!(start, Some(2));
         assert_eq!(end, Some(2));
@@ -1713,9 +1724,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("test.txt");
         fs::write(&file_path, "hello world\n").unwrap();
+        let config = LocalConfig {
+            enabled: true,
+            roots: Vec::new(),
+            max_file_bytes: 1_048_576,
+            max_indexed_files: 50_000,
+            include_hidden: false,
+            respect_gitignore: false,
+            follow_symlinks: false,
+        };
 
         let (snippet, start, end) =
-            LocalWorkspaceBackend::find_text_match(&file_path, "xyz", 1048576);
+            LocalWorkspaceBackend::find_text_match(dir.path(), "test.txt", "xyz", &config);
         assert!(snippet.is_none());
         assert!(start.is_none());
         assert!(end.is_none());

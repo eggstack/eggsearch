@@ -509,6 +509,23 @@ fn build_entry_for_file(
     })
 }
 
+/// How the bounded command was terminated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandTermination {
+    /// Process exited normally.
+    Exited,
+    /// Process was killed due to timeout.
+    TimedOut,
+    /// Stdout cap breach triggered termination.
+    StdoutLimitExceeded,
+    /// Stderr cap breach triggered termination.
+    StderrLimitExceeded,
+    /// Process could not be spawned.
+    SpawnFailed,
+    /// Process was killed by a signal.
+    Signaled,
+}
+
 /// Build inventory for a single root using `git ls-files` (returns `None` for non-git dirs).
 #[allow(dead_code)]
 #[cfg(not(feature = "mock"))]
@@ -519,6 +536,7 @@ struct BoundedCommandResult {
     timed_out: bool,
     stdout_truncated: bool,
     stderr_truncated: bool,
+    termination: CommandTermination,
 }
 
 #[allow(dead_code)]
@@ -537,6 +555,8 @@ pub struct BoundedCommandResult {
     pub stdout_truncated: bool,
     /// Whether stderr was truncated at the cap.
     pub stderr_truncated: bool,
+    /// How the command was terminated.
+    pub termination: CommandTermination,
 }
 
 #[cfg(feature = "mock")]
@@ -596,6 +616,7 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
                 timed_out: false,
                 stdout_truncated: false,
                 stderr_truncated: false,
+                termination: CommandTermination::SpawnFailed,
             };
         }
     };
@@ -618,9 +639,6 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
             std::thread::sleep(Duration::from_millis(50));
         }
     });
-
-    let mut stderr = Vec::new();
-    let mut stderr_truncated = false;
 
     let stdout_handle = child.stdout.take();
     let stderr_handle = child.stderr.take();
@@ -650,33 +668,48 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
         (local_stdout, local_truncated)
     });
 
-    if let Some(mut err) = stderr_handle {
-        let mut buf = [0u8; 8192];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let remaining = GIT_STDERR_CAP.saturating_sub(stderr.len());
-                    if n <= remaining {
-                        stderr.extend_from_slice(&buf[..n]);
-                    } else {
-                        stderr.extend_from_slice(&buf[..remaining]);
-                        stderr_truncated = true;
-                        break;
+    let stderr_thread = std::thread::spawn(move || {
+        let mut local_stderr = Vec::new();
+        let mut local_truncated = false;
+        if let Some(mut err) = stderr_handle {
+            let mut buf = [0u8; 8192];
+            loop {
+                match err.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let remaining = GIT_STDERR_CAP.saturating_sub(local_stderr.len());
+                        if n <= remaining {
+                            local_stderr.extend_from_slice(&buf[..n]);
+                        } else {
+                            local_stderr.extend_from_slice(&buf[..remaining]);
+                            local_truncated = true;
+                            break;
+                        }
                     }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
         }
-    }
+        (local_stderr, local_truncated)
+    });
 
     let (stdout, stdout_truncated) = stdout_thread.join().unwrap_or((Vec::new(), false));
+    let (stderr, stderr_truncated) = stderr_thread.join().unwrap_or((Vec::new(), false));
 
     let status = child.wait().ok();
     exited.store(true, Ordering::Relaxed);
     let _ = kill_handle.join();
 
     let timed_out = is_sigkill(&status);
+    let termination = if timed_out {
+        CommandTermination::TimedOut
+    } else if stdout_truncated {
+        CommandTermination::StdoutLimitExceeded
+    } else if stderr_truncated {
+        CommandTermination::StderrLimitExceeded
+    } else {
+        CommandTermination::Exited
+    };
 
     BoundedCommandResult {
         status,
@@ -685,6 +718,7 @@ fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandRe
         timed_out,
         stdout_truncated,
         stderr_truncated,
+        termination,
     }
 }
 
@@ -720,6 +754,7 @@ fn run_bounded_command_for_inventory(
                 timed_out: false,
                 stdout_truncated: false,
                 stderr_truncated: false,
+                termination: CommandTermination::SpawnFailed,
             };
         }
     };
@@ -743,55 +778,76 @@ fn run_bounded_command_for_inventory(
         }
     });
 
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let mut stdout_truncated = false;
-    let mut stderr_truncated = false;
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
 
-    if let Some(ref mut out) = child.stdout {
-        let mut buf = [0u8; 8192];
-        loop {
-            match out.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let remaining = cap.saturating_sub(stdout.len());
-                    if n <= remaining {
-                        stdout.extend_from_slice(&buf[..n]);
-                    } else {
-                        stdout.extend_from_slice(&buf[..remaining]);
-                        stdout_truncated = true;
-                        break;
+    let stdout_thread = std::thread::spawn(move || {
+        let mut local_stdout = Vec::new();
+        let mut local_truncated = false;
+        if let Some(mut out) = stdout_handle {
+            let mut buf = [0u8; 8192];
+            loop {
+                match out.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let remaining = cap.saturating_sub(local_stdout.len());
+                        if n <= remaining {
+                            local_stdout.extend_from_slice(&buf[..n]);
+                        } else {
+                            local_stdout.extend_from_slice(&buf[..remaining]);
+                            local_truncated = true;
+                            break;
+                        }
                     }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
         }
-    }
-    if let Some(ref mut err) = child.stderr {
-        let mut buf = [0u8; 8192];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let remaining = GIT_STDERR_CAP.saturating_sub(stderr.len());
-                    if n <= remaining {
-                        stderr.extend_from_slice(&buf[..n]);
-                    } else {
-                        stderr.extend_from_slice(&buf[..remaining]);
-                        stderr_truncated = true;
-                        break;
+        (local_stdout, local_truncated)
+    });
+
+    let stderr_thread = std::thread::spawn(move || {
+        let mut local_stderr = Vec::new();
+        let mut local_truncated = false;
+        if let Some(mut err) = stderr_handle {
+            let mut buf = [0u8; 8192];
+            loop {
+                match err.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let remaining = GIT_STDERR_CAP.saturating_sub(local_stderr.len());
+                        if n <= remaining {
+                            local_stderr.extend_from_slice(&buf[..n]);
+                        } else {
+                            local_stderr.extend_from_slice(&buf[..remaining]);
+                            local_truncated = true;
+                            break;
+                        }
                     }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
         }
-    }
+        (local_stderr, local_truncated)
+    });
+
+    let (stdout, stdout_truncated) = stdout_thread.join().unwrap_or((Vec::new(), false));
+    let (stderr, stderr_truncated) = stderr_thread.join().unwrap_or((Vec::new(), false));
 
     let status = child.wait().ok();
     exited.store(true, Ordering::Relaxed);
     let _ = kill_handle.join();
 
     let timed_out = is_sigkill(&status);
+    let termination = if timed_out {
+        CommandTermination::TimedOut
+    } else if stdout_truncated {
+        CommandTermination::StdoutLimitExceeded
+    } else if stderr_truncated {
+        CommandTermination::StderrLimitExceeded
+    } else {
+        CommandTermination::Exited
+    };
 
     BoundedCommandResult {
         status,
@@ -800,6 +856,7 @@ fn run_bounded_command_for_inventory(
         timed_out,
         stdout_truncated,
         stderr_truncated,
+        termination,
     }
 }
 

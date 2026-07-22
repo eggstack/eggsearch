@@ -72,11 +72,35 @@ struct BoundedBody {
     observed_bytes: usize,
 }
 
+/// Aggregate byte budget for an entire forge-tree operation.
 #[allow(dead_code)]
 pub(crate) struct ForgeReadBudget {
     pub per_response_limit: usize,
     pub aggregate_limit: usize,
     pub aggregate_observed: usize,
+}
+
+#[allow(dead_code)]
+impl ForgeReadBudget {
+    pub fn new(aggregate_limit: usize) -> Self {
+        Self {
+            per_response_limit: DEFAULT_MAX_RESPONSE_BYTES,
+            aggregate_limit,
+            aggregate_observed: 0,
+        }
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.aggregate_limit.saturating_sub(self.aggregate_observed)
+    }
+
+    pub fn consume(&mut self, bytes: usize) {
+        self.aggregate_observed = self.aggregate_observed.saturating_add(bytes);
+    }
+
+    pub fn exceeded(&self) -> bool {
+        self.aggregate_observed >= self.aggregate_limit
+    }
 }
 
 async fn read_bounded_body(
@@ -154,6 +178,19 @@ pub struct ForgeTreeConfig {
     pub api_key: Option<String>,
     /// Optional base URL override for the API endpoint.
     pub base_url: Option<String>,
+    /// Endpoint policy controlling allowed addresses and schemes.
+    pub endpoint_policy: ForgeEndpointPolicy,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for ForgeTreeConfig {
+    fn default() -> Self {
+        Self {
+            api_key: None,
+            base_url: None,
+            endpoint_policy: ForgeEndpointPolicy::default(),
+        }
+    }
 }
 
 /// Resolved repository identity after fetching a tree.
@@ -271,11 +308,7 @@ pub async fn fetch_tree(
         .await
         .map_err(|_| "concurrency limit exceeded".to_string())?;
     if let Some(ref base) = config.base_url {
-        validate_base_url(
-            base,
-            config.api_key.as_deref(),
-            &ForgeEndpointPolicy::default(),
-        )?;
+        validate_base_url(base, config.api_key.as_deref(), &config.endpoint_policy)?;
     }
     let client = build_client()?;
     let timeout = timeout_duration(req);
@@ -334,6 +367,7 @@ async fn fetch_github_tree(
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let ref_name = req.ref_name.as_deref().unwrap_or("HEAD");
     let max_d = max_depth(req);
+    let mut budget = ForgeReadBudget::new(DEFAULT_MAX_RESPONSE_BYTES);
 
     let mut identity = ResolvedRepositoryIdentity {
         requested_ref: Some(ref_name.to_string()),
@@ -389,8 +423,12 @@ async fn fetch_github_tree(
         return Err(format!("provider_unavailable: {status} - {msg}"));
     }
 
-    let mut total_bytes = 0usize;
-    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
+    let body = read_bounded_response(
+        resp,
+        DEFAULT_MAX_RESPONSE_BYTES,
+        &mut budget.aggregate_observed,
+    )
+    .await?;
 
     let tree: GitHubTreeResponse =
         serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
@@ -462,10 +500,10 @@ async fn fetch_github_tree(
         warnings,
         provider_id: "github_tree".to_string(),
         endpoint_origin: extract_host(base),
-        response_bytes_observed: total_bytes,
-        response_cap_applied: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_bytes_observed: budget.aggregate_observed,
+        response_cap_applied: budget.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
         dns_policy_class: classify_host_from_url(base),
-        aggregate_byte_cap_reached: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        aggregate_byte_cap_reached: budget.exceeded(),
     })
 }
 
@@ -673,7 +711,7 @@ async fn fetch_gitlab_tree(
     let mut truncated_by_provider = false;
     let mut warnings = Vec::new();
     let max_pages = DEFAULT_MAX_PAGES;
-    let mut total_bytes = 0usize;
+    let mut budget = ForgeReadBudget::new(DEFAULT_MAX_RESPONSE_BYTES);
 
     loop {
         if page > max_pages as u32 {
@@ -684,6 +722,13 @@ async fn fetch_gitlab_tree(
             break;
         }
         if all_entries.len() >= max_e {
+            break;
+        }
+        if budget.exceeded() {
+            warnings.push(SearchWarning::new(
+                "gitlab_tree",
+                "aggregate_budget_exhausted: aggregate byte budget reached",
+            ));
             break;
         }
 
@@ -727,8 +772,12 @@ async fn fetch_gitlab_tree(
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
-        let body =
-            read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
+        let body = read_bounded_response(
+            resp,
+            DEFAULT_MAX_RESPONSE_BYTES,
+            &mut budget.aggregate_observed,
+        )
+        .await?;
 
         let items: Vec<GitLabTreeEntry> =
             serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
@@ -771,12 +820,12 @@ async fn fetch_gitlab_tree(
         warnings,
         provider_id: "gitlab_tree".to_string(),
         endpoint_origin: extract_host(config.base_url.as_deref().unwrap_or(GITLAB_API_BASE)),
-        response_bytes_observed: total_bytes,
-        response_cap_applied: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_bytes_observed: budget.aggregate_observed,
+        response_cap_applied: budget.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
         dns_policy_class: classify_host_from_url(
             config.base_url.as_deref().unwrap_or(GITLAB_API_BASE),
         ),
-        aggregate_byte_cap_reached: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        aggregate_byte_cap_reached: budget.exceeded(),
     })
 }
 
@@ -830,9 +879,10 @@ async fn resolve_gitlab_commit(
     let base = config.base_url.as_deref().unwrap_or(GITLAB_API_BASE);
     let project_path_raw = format!("{owner}/{repo}");
     let project_path = urlencoding::encode(&project_path_raw);
+    let encoded_ref = encode_url_component(ref_name);
     let mut builder = client
         .get(format!(
-            "{base}/projects/{project_path}/repository/commits/{ref_name}"
+            "{base}/projects/{project_path}/repository/commits/{encoded_ref}"
         ))
         .timeout(timeout);
     if let Some(ref key) = config.api_key {
@@ -922,7 +972,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
     let mut truncated_by_provider = false;
     let mut warnings = Vec::new();
     let max_pages = DEFAULT_MAX_PAGES;
-    let mut total_bytes = 0usize;
+    let mut budget = ForgeReadBudget::new(DEFAULT_MAX_RESPONSE_BYTES);
 
     loop {
         if page > max_pages as u32 {
@@ -933,6 +983,13 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             break;
         }
         if all_entries.len() >= max_e {
+            break;
+        }
+        if budget.exceeded() {
+            warnings.push(SearchWarning::new(
+                provider_id,
+                "aggregate_budget_exhausted: aggregate byte budget reached",
+            ));
             break;
         }
 
@@ -980,8 +1037,12 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
-        let body =
-            read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
+        let body = read_bounded_response(
+            resp,
+            DEFAULT_MAX_RESPONSE_BYTES,
+            &mut budget.aggregate_observed,
+        )
+        .await?;
 
         let tree: ForgeTreeApiResponse =
             serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
@@ -1047,10 +1108,10 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         warnings,
         provider_id: provider_id.to_string(),
         endpoint_origin: extract_host(api_base),
-        response_bytes_observed: total_bytes,
-        response_cap_applied: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_bytes_observed: budget.aggregate_observed,
+        response_cap_applied: budget.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
         dns_policy_class: classify_host_from_url(api_base),
-        aggregate_byte_cap_reached: total_bytes >= DEFAULT_MAX_RESPONSE_BYTES,
+        aggregate_byte_cap_reached: budget.exceeded(),
     })
 }
 

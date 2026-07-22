@@ -35,6 +35,12 @@ pub enum SafeOpenError {
     /// File size exceeds the configured maximum.
     #[error("file size {0} exceeds max {1}")]
     FileTooLarge(u64, usize),
+    /// File content exceeds the hard read cap.
+    #[error("file content exceeds hard cap of {0} bytes (observed {1})")]
+    FileContentLimitExceeded(usize, usize),
+    /// A path component contains a NUL byte.
+    #[error("path component contains NUL byte")]
+    NullByte,
     /// I/O error during path walking or file open.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -151,6 +157,10 @@ pub fn safe_open_relative(
 
     for comp in &components {
         if let Component::Normal(name) = comp {
+            let name_bytes = name.as_encoded_bytes();
+            if name_bytes.contains(&0u8) {
+                return Err(SafeOpenError::NullByte);
+            }
             let name_str = name.to_str().ok_or_else(|| {
                 SafeOpenError::NotFound(format!("non-UTF8 component: {:?}", comp))
             })?;
@@ -375,8 +385,9 @@ pub fn safe_open_relative(
 
 /// Read a file safely using component-wise path walking.
 ///
-/// Opens the file via `safe_open_relative()`, enforces a byte cap,
-/// and returns the contents.
+/// Opens the file via `safe_open_relative()`, enforces a hard byte cap
+/// without over-allocating, and returns the contents. Returns
+/// `FileContentLimitExceeded` if the file exceeds `max_size`.
 pub fn safe_read_file(
     root: &Path,
     relative: &str,
@@ -384,11 +395,31 @@ pub fn safe_read_file(
     max_size: usize,
 ) -> Result<Vec<u8>, SafeOpenError> {
     let safe = safe_open_relative(root, relative, config)?;
-    let mut buf = Vec::with_capacity(safe.size.min(max_size as u64) as usize);
+    let mut buf = Vec::with_capacity((safe.size.min(max_size as u64) as usize).min(64 * 1024));
     let mut fd = safe.fd;
-    fd.read_to_end(&mut buf)?;
-    if buf.len() > max_size {
-        buf.truncate(max_size);
+    let mut remaining = max_size;
+    let mut total_read = 0usize;
+    let mut hit_limit = false;
+    let mut tmp = [0u8; 8192];
+    loop {
+        let n = fd.read(&mut tmp)?;
+        if n == 0 {
+            break;
+        }
+        total_read += n;
+        if n <= remaining {
+            buf.extend_from_slice(&tmp[..n]);
+            remaining -= n;
+        } else {
+            buf.extend_from_slice(&tmp[..remaining]);
+            hit_limit = true;
+            break;
+        }
+    }
+    if hit_limit || total_read > max_size {
+        return Err(SafeOpenError::FileContentLimitExceeded(
+            max_size, total_read,
+        ));
     }
     Ok(buf)
 }
@@ -531,11 +562,26 @@ mod tests {
     }
 
     #[test]
-    fn safe_read_file_truncates_at_max() {
+    fn safe_read_file_rejects_oversized() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("big.txt"), vec![b'x'; 100]).unwrap();
         let config = default_config();
-        let data = safe_read_file(dir.path(), "big.txt", &config, 10).unwrap();
-        assert_eq!(data.len(), 10);
+        let err = safe_read_file(dir.path(), "big.txt", &config, 10).unwrap_err();
+        assert!(matches!(
+            err,
+            SafeOpenError::FileContentLimitExceeded(10, 100)
+        ));
+    }
+
+    #[test]
+    fn safe_open_nul_byte_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ok.txt"), "data").unwrap();
+        let config = default_config();
+        let bad_name = "ok.txt\0hidden";
+        assert!(matches!(
+            safe_open_relative(dir.path(), bad_name, &config),
+            Err(SafeOpenError::NullByte)
+        ));
     }
 }

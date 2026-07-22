@@ -257,14 +257,17 @@ pub async fn run_security_search_plan(
             std::collections::HashSet::new();
 
         for file_path in &req.dependency_files {
-            if let Ok(content) = std::fs::read_to_string(file_path) {
-                let findings = parse_dependency_file(file_path, &content);
-                dependency_findings.extend(findings);
-            } else {
-                warnings.push(SearchWarning::new(
-                    "_system",
-                    format!("dependency_file_read_error: could not read {file_path}"),
-                ));
+            match read_bounded_file(file_path) {
+                Ok(content) => {
+                    let findings = parse_dependency_file(file_path, &content);
+                    dependency_findings.extend(findings);
+                }
+                Err(_) => {
+                    warnings.push(SearchWarning::new(
+                        "_system",
+                        format!("dependency_file_read_error: could not read {file_path}"),
+                    ));
+                }
             }
         }
 
@@ -767,12 +770,16 @@ pub async fn run_security_search_plan(
         None,
         false,
     );
+    let retrieval_failures = crate::meta::adapter::build_retrieval_failures(
+        &providers_failed,
+        &web_resp.providers_queried,
+    );
     let postprocess_result = crate::core::evidence_postprocess::postprocess(
         &all_cards,
         &providers_failed,
         &web_resp.providers_queried,
         workflow_model.as_ref(),
-        &[],
+        &retrieval_failures,
     );
 
     SecuritySearchResponse {
@@ -797,7 +804,18 @@ pub async fn run_security_search_plan(
         applicability: applicability_assessments,
         dependency_findings,
         structured_warnings,
-        next_actions: vec![],
+        next_actions: postprocess_result
+            .workflow_coverage
+            .as_ref()
+            .map(|wc| {
+                let known_ids: Vec<String> = all_cards.iter().map(|c| c.id.clone()).collect();
+                crate::core::workflow_coverage::generate_gap_driven_next_actions(
+                    wc,
+                    &retrieval_failures,
+                    &known_ids,
+                )
+            })
+            .unwrap_or_default(),
         remediation_actions,
         security_evidence_summary,
         retrieval_summary: postprocess_result.retrieval_summary,
@@ -830,6 +848,28 @@ fn ids_overlap(a: &VulnerabilityMetadata, b: &VulnerabilityMetadata) -> bool {
         }
     }
     false
+}
+
+fn read_bounded_file(path: &str) -> Result<String, std::io::Error> {
+    use std::fs::File;
+    use std::io::Read;
+    let mut file = File::open(path)?;
+    let mut buf = Vec::with_capacity(64 * 1024);
+    let mut tmp = [0u8; 8192];
+    let cap = 1024 * 1024;
+    let mut total = 0usize;
+    loop {
+        let n = file.read(&mut tmp)?;
+        if n == 0 {
+            break;
+        }
+        total += n;
+        if total > cap {
+            return Err(std::io::Error::other("file exceeds 1MB cap"));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    }
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 #[cfg(test)]

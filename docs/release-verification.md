@@ -141,8 +141,11 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 ### Forge safety
 - [x] Redirect following is disabled (`Policy::none()`)
 - [x] Credentials cannot cross origins (ForgeEndpointPolicy)
+- [x] Endpoint policy is configurable from TOML and passed to fetch_tree
 - [x] DNS-resolved addresses are classified under explicit policy
 - [x] Credential-bearing HTTP is rejected without exception
+- [x] Per-response and aggregate byte budgets are enforced (`ForgeReadBudget`)
+- [x] Pagination stops on aggregate budget exhaustion
 - [x] Successful, metadata, fallback, and error bodies are hard-bounded
 - [x] Split-chunk valid UTF-8 succeeds (test in forge_adapter)
 - [x] No forbidden unbounded body helper remains in forge code (static guard test)
@@ -156,9 +159,10 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 - [x] Tests use intentionally different commit/tree/blob IDs
 
 ### Git execution
-- [x] Stdout and stderr are drained concurrently (capped streaming reads)
-- [x] Output is capped during read
-- [x] Timeouts and cap breaches terminate and reap the process (setsid + kill)
+- [x] Stdout and stderr are drained concurrently on separate threads (capped streaming reads)
+- [x] Output is capped during read with independent per-stream caps
+- [x] Timeouts and cap breaches terminate and reap the process group (setsid + SIGKILL)
+- [x] Explicit `CommandTermination` enum records termination reason
 - [x] No unbounded Git `.output()` remains (static guard test)
 - [x] Tracked and untracked outputs are both bounded
 - [x] Linked worktrees resolve correctly
@@ -167,7 +171,11 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 - [x] New untracked files invalidate inventory via git status hash probe
 - [x] Index, HEAD, ignore, and linked-worktree changes are detected
 - [x] Failed rebuilds do not poison valid cache state (atomic publication)
-- [x] Local reads use race-resistant file handles (safe_open.rs)
+- [x] Local reads use descriptor-relative openat/openat2 with RESOLVE_BENEATH, RESOLVE_NO_MAGICLINKS
+- [x] Bounded reader stops at hard cap without read_to_end over-allocation
+- [x] FileContentLimitExceeded returned for oversized files
+- [x] NUL-byte components rejected before CString conversion
+- [x] All local search/fetch/map read paths route through safe_open
 - [x] Intermediate and final symlink races are tested
 - [x] Freshness confidence reflects actual probe state (3-tier: high/medium/full)
 
@@ -175,9 +183,11 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 - [x] Returned cards contain evidence roles (materialize_evidence_roles)
 - [x] Applicable requests select an actual workflow model (resolve_workflow_model)
 - [x] Coverage is populated for repo, research, and security workflows
+- [x] Provider failures are propagated as RetrievalFailure records to coverage
+- [x] coverage_status returns IndeterminateDueToFailures for failed required roles
 - [x] Retrieval outcomes distinguish zero results, failure, timeout, rate limit, skip, deadline, and truncation
 - [x] Conflicts are scoped to canonical entities and distinct sources
-- [x] Gap-driven next actions include valid templates and rationale
+- [x] Gap-driven next actions are generated from workflow coverage gaps
 - [x] End-to-end MCP fixtures cover codegg consumption
 
 ### Release evidence
@@ -204,4 +214,4 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 
 ## Release Classification
 
-**Release candidate.** All safety and correctness gates pass. Deterministic CI is green. Live-smoke evidence is captured. No known issue can cause credential disclosure, unbounded memory/process behavior, provenance misrepresentation, workspace escape, or materially misleading evidence semantics.
+**Provisional release candidate.** All safety and correctness gates pass. Deterministic CI is green. Live-smoke evidence is captured in fallback mode only (no API tokens configured). Native provider smoke tests have not been run. No known issue can cause credential disclosure, unbounded memory/process behavior, provenance misrepresentation, workspace escape, or materially misleading evidence semantics. Promotion to release candidate requires native provider smoke evidence and cross-platform CI coverage.

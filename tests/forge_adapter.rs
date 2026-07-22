@@ -99,6 +99,7 @@ fn github_tree_small_repo() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -158,6 +159,7 @@ fn github_tree_truncated_falls_back_to_contents_api() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -193,6 +195,7 @@ fn github_tree_404_returns_repository_not_found() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -222,6 +225,7 @@ fn github_tree_rate_limited() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -251,6 +255,7 @@ fn github_tree_auth_required() {
     let config = ForgeTreeConfig {
         api_key: Some("test-token".into()),
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -295,6 +300,7 @@ fn gitlab_tree_basic() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -335,6 +341,7 @@ fn gitlab_tree_nested_namespace() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -365,6 +372,7 @@ fn gitlab_tree_404_returns_repository_not_found() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -394,6 +402,7 @@ fn gitlab_tree_auth_required() {
     let config = ForgeTreeConfig {
         api_key: Some("test-token".into()),
         base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -433,6 +442,7 @@ fn forge_tree_codeberg_basic() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -468,6 +478,7 @@ fn forge_tree_gitea_with_custom_base_url() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -900,6 +911,7 @@ fn forge_partial_result_when_page_limit_reached() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1295,6 +1307,7 @@ fn bounded_reader_rejects_honest_content_length_over_cap() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1356,6 +1369,7 @@ fn bounded_reader_enforces_total_bytes_across_pages() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1528,6 +1542,7 @@ fn provenance_branch_ref_resolves_to_commit_sha() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2138,6 +2153,7 @@ fn bounded_reader_caps_chunked_response() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();

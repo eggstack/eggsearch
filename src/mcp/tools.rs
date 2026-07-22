@@ -2155,7 +2155,17 @@ fn build_forge_tree_config(
 
     let base_url = api_config.and_then(|c| c.base_url.clone()).or(default_base);
 
-    crate::meta::forge_adapter::ForgeTreeConfig { api_key, base_url }
+    let endpoint_policy = crate::meta::forge_adapter::ForgeEndpointPolicy {
+        allow_loopback: state.config.fetch.allow_localhost,
+        allow_private_network: state.config.fetch.allow_private_network,
+        require_https: true,
+    };
+
+    crate::meta::forge_adapter::ForgeTreeConfig {
+        api_key,
+        base_url,
+        endpoint_policy,
+    }
 }
 
 /// Run the `repo_map` tool.
