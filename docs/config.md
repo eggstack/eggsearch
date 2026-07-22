@@ -192,7 +192,7 @@ respect_gitignore = true
 follow_symlinks = false
 ```
 
-When enabled, the local workspace inventory is built automatically on first search (auto-build on cache miss). The git fast path uses `git ls-files -z --cached --others --exclude-standard` with a bounded command runner (5s timeout, 16MB stdout / 64KB stderr caps, concurrent pipe drainage, kill-on-timeout watchdog thread). A `git status --porcelain=v2` hash is stored alongside the inventory for change detection between builds. Native directory walking is the fallback for non-git directories.
+When enabled, the local workspace inventory is built automatically on first search (auto-build on cache miss). The git fast path uses `git ls-files -z --cached --others --exclude-standard` with a bounded command runner (5s timeout, 16MB stdout / 64KB stderr caps, concurrent pipe drainage, cap breaches trigger immediate process termination). A `git status --porcelain=v2` hash is stored alongside the inventory for change detection between builds. Native directory walking is the fallback for non-git directories.
 
 ### SearXNG
 

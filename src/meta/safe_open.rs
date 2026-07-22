@@ -41,6 +41,9 @@ pub enum SafeOpenError {
     /// A path component contains a NUL byte.
     #[error("path component contains NUL byte")]
     NullByte,
+    /// Safe symlink following is not supported on this platform.
+    #[error("safe symlink following is not supported on this platform")]
+    SafeSymlinkFollowingUnsupported,
     /// I/O error during path walking or file open.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -59,15 +62,14 @@ fn openat_sys(
     dirfd: libc::c_int,
     name: &std::ffi::CStr,
     flags: libc::c_int,
-    use_openat2: bool,
+    resolve: Option<u64>,
 ) -> Result<libc::c_int, std::io::Error> {
     #[cfg(target_os = "linux")]
-    if use_openat2 {
+    if let Some(resolve_flags) = resolve {
         let mut how: libc::open_how = unsafe { std::mem::zeroed() };
         how.flags = (flags | libc::O_CLOEXEC) as u64;
         how.mode = 0;
-        how.resolve =
-            libc::RESOLVE_BENEATH | libc::RESOLVE_NO_MAGICLINKS | libc::RESOLVE_NO_SYMLINKS;
+        how.resolve = resolve_flags;
         let fd = unsafe {
             libc::syscall(
                 libc::SYS_openat2,
@@ -80,18 +82,10 @@ fn openat_sys(
         if fd >= 0 {
             return Ok(fd);
         }
-        let err = std::io::Error::last_os_error();
-        let code = err.raw_os_error().unwrap_or(0);
-        if code != libc::ENOSYS && code != libc::EINVAL {
-            return Err(err);
-        }
+        return Err(std::io::Error::last_os_error());
     }
 
-    let full_flags = if use_openat2 {
-        flags | libc::O_CLOEXEC
-    } else {
-        flags
-    };
+    let full_flags = flags | libc::O_CLOEXEC;
     let fd = unsafe { libc::openat(dirfd, name.as_ptr(), full_flags) };
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
@@ -118,11 +112,21 @@ fn fstat_is_regular_and_size(fd: libc::c_int) -> Result<(bool, u64), std::io::Er
 
 /// Open a file safely using component-wise path walking.
 ///
-/// On Unix, uses descriptor-relative `openat2` (with `RESOLVE_BENEATH |
-/// RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS`) when available, falling
-/// back to `openat` with `O_NOFOLLOW`. This eliminates the TOCTOU race
-/// window between validation and open by never constructing a full pathname
-/// for the final open.
+/// On Linux, uses descriptor-relative `openat2` with kernel-enforced
+/// beneath-root resolution. For `follow_symlinks=false`, uses
+/// `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS`.
+/// For `follow_symlinks=true`, uses `RESOLVE_BENEATH |
+/// RESOLVE_NO_MAGICLINKS` (omitting `RESOLVE_NO_SYMLINKS`) to let the
+/// kernel enforce containment while allowing symlinks. Falls back to
+/// `openat` with `O_NOFOLLOW` only when `openat2` is unavailable and
+/// `follow_symlinks=false`.
+///
+/// On non-Linux Unix platforms, `follow_symlinks=true` returns
+/// `SafeSymlinkFollowingUnsupported` because no race-safe containment
+/// primitive is available.
+///
+/// On non-Unix platforms, `follow_symlinks=true` returns
+/// `SafeSymlinkFollowingUnsupported`.
 pub fn safe_open_relative(
     root: &Path,
     relative: &str,
@@ -200,6 +204,14 @@ pub fn safe_open_relative(
         let mut current_fd: libc::c_int = root_fd;
         let num_components = components.len();
 
+        let resolve_flags: u64 = libc::RESOLVE_BENEATH
+            | libc::RESOLVE_NO_MAGICLINKS
+            | if config.follow_symlinks {
+                0
+            } else {
+                libc::RESOLVE_NO_SYMLINKS
+            };
+
         for (i, component) in components.iter().enumerate() {
             let name = match component {
                 Component::Normal(n) => n.to_str().unwrap(),
@@ -213,36 +225,69 @@ pub fn safe_open_relative(
                 SafeOpenError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
             })?;
 
-            if is_last {
-                let mut flags = libc::O_RDONLY;
-                if !config.follow_symlinks {
-                    flags |= libc::O_NOFOLLOW;
-                }
+            let mut flags = libc::O_RDONLY;
+            if !is_last {
+                flags |= libc::O_DIRECTORY;
+            }
+            if !config.follow_symlinks {
+                flags |= libc::O_NOFOLLOW;
+            }
 
-                let use_openat2 = !config.follow_symlinks;
-                let fd = match openat_sys(current_fd, &name_cstr, flags, use_openat2) {
-                    Ok(fd) => fd,
-                    Err(e) => {
+            let fd = match openat_sys(current_fd, &name_cstr, flags, Some(resolve_flags)) {
+                Ok(fd) => fd,
+                Err(e) => {
+                    let code = e.raw_os_error().unwrap_or(0);
+                    if code == libc::ENOSYS || code == libc::EINVAL {
+                        if config.follow_symlinks {
+                            close_fd(current_fd);
+                            return Err(SafeOpenError::SafeSymlinkFollowingUnsupported);
+                        }
+                        let fallback_flags = flags | libc::O_CLOEXEC;
+                        let fd =
+                            unsafe { libc::openat(current_fd, name_cstr.as_ptr(), fallback_flags) };
+                        if fd < 0 {
+                            close_fd(current_fd);
+                            let e2 = std::io::Error::last_os_error();
+                            let code2 = e2.raw_os_error().unwrap_or(0);
+                            if code2 == libc::ELOOP {
+                                return Err(SafeOpenError::SymlinkDetected(if is_last {
+                                    format!("{}/{}", root.display(), relative)
+                                } else {
+                                    name.to_string()
+                                }));
+                            }
+                            if e2.kind() == std::io::ErrorKind::NotFound {
+                                return Err(SafeOpenError::NotFound(if is_last {
+                                    format!("{}/{}", root.display(), relative)
+                                } else {
+                                    name.to_string()
+                                }));
+                            }
+                            return Err(SafeOpenError::Io(e2));
+                        }
+                        fd
+                    } else {
                         close_fd(current_fd);
-                        let code = e.raw_os_error().unwrap_or(0);
                         if code == libc::ELOOP {
-                            return Err(SafeOpenError::SymlinkDetected(format!(
-                                "{}/{}",
-                                root.display(),
-                                relative
-                            )));
+                            return Err(SafeOpenError::SymlinkDetected(if is_last {
+                                format!("{}/{}", root.display(), relative)
+                            } else {
+                                name.to_string()
+                            }));
                         }
                         if e.kind() == std::io::ErrorKind::NotFound {
-                            return Err(SafeOpenError::NotFound(format!(
-                                "{}/{}",
-                                root.display(),
-                                relative
-                            )));
+                            return Err(SafeOpenError::NotFound(if is_last {
+                                format!("{}/{}", root.display(), relative)
+                            } else {
+                                name.to_string()
+                            }));
                         }
                         return Err(SafeOpenError::Io(e));
                     }
-                };
+                }
+            };
 
+            if is_last {
                 close_fd(current_fd);
 
                 let (is_regular, size) = fstat_is_regular_and_size(fd).map_err(|e| {
@@ -264,51 +309,8 @@ pub fn safe_open_relative(
                 return Ok(SafeFile { fd: file, size });
             }
 
-            let mut flags = libc::O_RDONLY | libc::O_DIRECTORY;
-            if !config.follow_symlinks {
-                flags |= libc::O_NOFOLLOW;
-            }
-
-            let use_openat2 = !config.follow_symlinks;
-            let new_fd = match openat_sys(current_fd, &name_cstr, flags, use_openat2) {
-                Ok(fd) => fd,
-                Err(e) => {
-                    close_fd(current_fd);
-                    let code = e.raw_os_error().unwrap_or(0);
-                    if code == libc::ELOOP {
-                        return Err(SafeOpenError::SymlinkDetected(name.to_string()));
-                    }
-                    if e.kind() == std::io::ErrorKind::NotFound {
-                        return Err(SafeOpenError::NotFound(name.to_string()));
-                    }
-                    return Err(SafeOpenError::Io(e));
-                }
-            };
-
-            if config.follow_symlinks {
-                #[cfg(target_os = "linux")]
-                {
-                    let fd_link = format!("/proc/self/fd/{new_fd}");
-                    if let Ok(target) = std::fs::read_link(&fd_link) {
-                        let root_canonical = root.canonicalize().map_err(|e| {
-                            close_fd(new_fd);
-                            close_fd(current_fd);
-                            SafeOpenError::RootOpenFailed(e.to_string())
-                        })?;
-                        if !target.starts_with(&root_canonical) {
-                            close_fd(new_fd);
-                            close_fd(current_fd);
-                            return Err(SafeOpenError::SymlinkDetected(format!(
-                                "symlink escapes root: {}",
-                                name
-                            )));
-                        }
-                    }
-                }
-            }
-
             close_fd(current_fd);
-            current_fd = new_fd;
+            current_fd = fd;
         }
 
         close_fd(current_fd);
@@ -317,6 +319,10 @@ pub fn safe_open_relative(
 
     #[cfg(not(unix))]
     {
+        if config.follow_symlinks {
+            return Err(SafeOpenError::SafeSymlinkFollowingUnsupported);
+        }
+
         let _ = File::open(root)
             .map_err(|e| SafeOpenError::RootOpenFailed(format!("{}: {}", root.display(), e)))?;
 

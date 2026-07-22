@@ -206,6 +206,7 @@ fn all_forge_response_paths_bounded() {
     // or read_bounded_body. Verify no direct .bytes_stream() usage outside
     // of these two functions and read_error_body_preview.
     let bounded_fns = [
+        "fn read_with_budget",
         "fn read_bounded_body",
         "fn read_bounded_response",
         "fn read_error_body_preview",
@@ -218,9 +219,11 @@ fn all_forge_response_paths_bounded() {
         if line.contains("bytes_stream()") {
             let nearest_fn = lines.iter().take(line_num).rev().find_map(|l| {
                 let t = l.trim();
-                if t.starts_with("fn ")
-                    || t.starts_with("pub async fn ")
-                    || t.starts_with("async fn ")
+                if (t.starts_with("fn ")
+                    || t.starts_with("pub ")
+                    || t.starts_with("pub(crate) ")
+                    || t.starts_with("async fn "))
+                    && t.contains("fn ")
                 {
                     Some(*l)
                 } else {

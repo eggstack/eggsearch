@@ -53,6 +53,10 @@ fn forge_response_with_commit(
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     }
 }
 
@@ -100,6 +104,7 @@ fn github_tree_small_repo() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -160,6 +165,7 @@ fn github_tree_truncated_falls_back_to_contents_api() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -196,6 +202,7 @@ fn github_tree_404_returns_repository_not_found() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -226,6 +233,7 @@ fn github_tree_rate_limited() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -256,6 +264,7 @@ fn github_tree_auth_required() {
         api_key: Some("test-token".into()),
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -301,6 +310,7 @@ fn gitlab_tree_basic() {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -342,6 +352,7 @@ fn gitlab_tree_nested_namespace() {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -373,6 +384,7 @@ fn gitlab_tree_404_returns_repository_not_found() {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -403,6 +415,7 @@ fn gitlab_tree_auth_required() {
         api_key: Some("test-token".into()),
         base_url: Some(format!("{}/api/v4", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -443,6 +456,7 @@ fn forge_tree_codeberg_basic() {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -479,6 +493,7 @@ fn forge_tree_gitea_with_custom_base_url() {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -682,6 +697,10 @@ fn build_response_truncated_produces_structured_warning() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -831,6 +850,10 @@ fn forge_truncated_provider_produces_structured_warning() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -881,6 +904,10 @@ fn forge_depth_limit_filters_nested_entries() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -912,6 +939,7 @@ fn forge_partial_result_when_page_limit_reached() {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -961,6 +989,10 @@ fn build_response_preserves_partial_entries() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1308,6 +1340,7 @@ fn bounded_reader_rejects_honest_content_length_over_cap() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1370,6 +1403,7 @@ fn bounded_reader_enforces_total_bytes_across_pages() {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1435,6 +1469,10 @@ fn build_response_commit_sha_uses_resolved_ref() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1468,6 +1506,10 @@ fn build_response_commit_sha_none_when_no_resolved_ref() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1497,6 +1539,10 @@ fn build_response_resolved_ref_name_populated() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1543,6 +1589,7 @@ fn provenance_branch_ref_resolves_to_commit_sha() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1599,6 +1646,10 @@ fn provenance_commit_sha_differs_from_tree_sha_and_blob_sha() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1650,6 +1701,10 @@ fn provenance_directory_entries_omit_raw_url() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1685,6 +1740,10 @@ fn provenance_unpinned_fallback_uses_ref_name() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1716,6 +1775,10 @@ fn provenance_provenance_pinned_true_when_commit_present() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1739,6 +1802,10 @@ fn provenance_provenance_pinned_false_when_no_commit() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1763,6 +1830,10 @@ fn provenance_tree_sha_preserved_in_response() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -1794,6 +1865,10 @@ fn provenance_serialization_additive_compatible() {
         response_cap_applied: false,
         dns_policy_class: None,
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -2154,6 +2229,7 @@ fn bounded_reader_caps_chunked_response() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2201,6 +2277,10 @@ fn telemetry_populated_from_forge_response() {
         response_cap_applied: false,
         dns_policy_class: Some("public".into()),
         aggregate_byte_cap_reached: false,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 10 * 1024 * 1024,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -2231,6 +2311,10 @@ fn telemetry_cap_applied_when_bytes_exceed_limit() {
         response_cap_applied: true,
         dns_policy_class: Some("public".into()),
         aggregate_byte_cap_reached: true,
+        aggregate_limit: 10 * 1024 * 1024,
+        aggregate_remaining: 0,
+        request_count: 0,
+        exhausted_by: None,
     };
 
     let resp = build_response(&req, forge, true, true, true, true, None);
@@ -2276,6 +2360,7 @@ fn gitlab_slash_ref_encodes_correctly() {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2332,6 +2417,7 @@ fn gitlab_release_slash_ref_encodes_correctly() {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2384,6 +2470,7 @@ fn codeberg_slash_ref_encodes_correctly() {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2436,6 +2523,7 @@ fn gitea_slash_ref_encodes_correctly() {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2488,6 +2576,7 @@ fn forgejo_slash_ref_encodes_correctly() {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2542,6 +2631,7 @@ fn github_slash_ref_encodes_commit_path_correctly() {
         api_key: None,
         base_url: Some(server.base_url()),
         endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -2564,4 +2654,367 @@ fn github_slash_ref_encodes_commit_path_correctly() {
     );
     assert_eq!(resp.identity.tree_sha.as_deref(), Some("tree_sha_gh_slash"));
     assert_eq!(resp.entries.len(), 1);
+}
+
+// ===========================================================================
+// Operation-Wide Forge Byte Budget Tests (Workstream B)
+// ===========================================================================
+
+#[test]
+fn budget_operation_wide_accounting_github() {
+    let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/commits/main");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_budget",
+            "commit": {"tree": {"sha": "tree_sha_budget"}}
+        }));
+    });
+    let mock_repo = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({"default_branch": "main"}));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/tree_sha_budget");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644", "size": 100, "sha": "sha1"},
+                {"path": "src", "type": "tree", "mode": "040000", "sha": "sha2"},
+            ]
+        }));
+    });
+
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_commit.assert();
+    mock_repo.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert_eq!(resp.entries.len(), 2);
+    assert!(resp.request_count >= 3);
+    assert!(resp.response_bytes_observed > 0);
+    assert!(resp.aggregate_limit > 0);
+    assert!(resp.response_bytes_observed <= resp.aggregate_limit);
+    assert_eq!(
+        resp.response_bytes_observed + resp.aggregate_remaining,
+        resp.aggregate_limit
+    );
+}
+
+#[test]
+fn budget_exhausted_by_tree_page_github() {
+    let server = MockServer::start();
+    let _mock_commit = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/commits/main");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_ex",
+            "commit": {"tree": {"sha": "tree_sha_ex"}}
+        }));
+    });
+    let _mock_repo = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({"default_branch": "main"}));
+    });
+    let _mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/main");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644", "size": 100, "sha": "sha1"},
+            ]
+        }));
+    });
+
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: Some(1),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("aggregate_budget_exhausted") || err.contains("response_too_large"),
+        "expected budget exhaustion or response too large, got: {err}"
+    );
+}
+
+#[test]
+fn budget_commit_resolution_consumes_before_tree() {
+    let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/commits/main");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_cr",
+            "commit": {"tree": {"sha": "tree_sha_cr"}}
+        }));
+    });
+    let mock_repo = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({"default_branch": "main"}));
+    });
+    let mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/tree_sha_cr");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [{"path": "file.txt", "type": "blob", "mode": "100644", "size": 10, "sha": "sha1"}]
+        }));
+    });
+
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: Some(20000),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    mock_commit.assert();
+    mock_repo.assert();
+    mock_tree.assert();
+
+    let resp = result.unwrap();
+    assert!(resp.request_count >= 3);
+    assert!(resp.response_bytes_observed > 0);
+    assert!(resp.response_bytes_observed <= resp.aggregate_limit);
+}
+
+#[test]
+fn budget_telemetry_never_exceeds_aggregate_limit() {
+    let server = MockServer::start();
+    let _mock_project = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo");
+        then.json_body(serde_json::json!({
+            "default_branch": "main"
+        }));
+    });
+    let _mock_commit = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/commits/main");
+        then.json_body(serde_json::json!({
+            "id": "commit_sha_tel",
+            "tree_id": "tree_sha_tel"
+        }));
+    });
+    let _mock_tree = server.mock(|when, then| {
+        when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/tree");
+        then.json_body(serde_json::json!([
+            {"path": "a.txt", "type": "blob", "size": 10, "id": "sha1"},
+        ]));
+    });
+
+    let req = default_request(CodeHost::Gitlab, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(format!("{}/api/v4", server.base_url())),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: Some(500),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Gitlab,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    let resp = result.unwrap();
+    assert!(
+        resp.response_bytes_observed <= resp.aggregate_limit,
+        "observed {} exceeded limit {}",
+        resp.response_bytes_observed,
+        resp.aggregate_limit
+    );
+    assert_eq!(
+        resp.response_bytes_observed + resp.aggregate_remaining,
+        resp.aggregate_limit
+    );
+}
+
+#[test]
+fn budget_fallback_skipped_when_exhausted() {
+    let server = MockServer::start();
+    let _mock_repo = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({"default_branch": "main"}));
+    });
+    let _mock_tree = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/git/trees/main");
+        then.json_body(serde_json::json!({
+            "truncated": true,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644", "size": 100, "sha": "sha1"},
+            ]
+        }));
+    });
+    let mock_contents = server.mock(|when, then| {
+        when.path("/repos/test-owner/test-repo/contents/");
+        then.json_body(serde_json::json!([
+            {"name": "extra.txt", "type": "file", "size": 10, "sha": "sha_extra"},
+        ]));
+    });
+
+    let req = default_request(CodeHost::Github, "test-owner", "test-repo");
+    let config = ForgeTreeConfig {
+        api_key: None,
+        base_url: Some(server.base_url()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: Some(1),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(fetch_tree(
+        CodeHost::Github,
+        "test-owner",
+        "test-repo",
+        &req,
+        &config,
+    ));
+
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("aggregate_budget_exhausted") || err.contains("response_too_large"),
+        "expected budget exhaustion, got: {err}"
+    );
+    mock_contents.assert_hits(0);
+}
+
+#[test]
+fn budget_all_forge_families_same_semantics() {
+    let hosts = [
+        (CodeHost::Github, "github_tree"),
+        (CodeHost::Gitlab, "gitlab_tree"),
+        (CodeHost::Codeberg, "codeberg_tree"),
+        (CodeHost::Gitea, "gitea_tree"),
+        (CodeHost::Forgejo, "forgejo_tree"),
+    ];
+
+    for (host, provider_id) in hosts {
+        let server = MockServer::start();
+        let base = match host {
+            CodeHost::Github => server.base_url(),
+            CodeHost::Gitlab => format!("{}/api/v4", server.base_url()),
+            _ => format!("{}/api/v1", server.base_url()),
+        };
+
+        match host {
+            CodeHost::Github => {
+                server.mock(|when, then| {
+                    when.path("/repos/test-owner/test-repo/commits/main");
+                    then.json_body(serde_json::json!({
+                        "sha": "sha",
+                        "commit": {"tree": {"sha": "tree_sha"}}
+                    }));
+                });
+                server.mock(|when, then| {
+                    when.path("/repos/test-owner/test-repo");
+                    then.json_body(serde_json::json!({"default_branch": "main"}));
+                });
+                server.mock(|when, then| {
+                    when.path("/repos/test-owner/test-repo/git/trees/tree_sha");
+                    then.json_body(serde_json::json!({
+                        "truncated": false,
+                        "tree": [{"path": "README.md", "type": "blob", "mode": "100644", "size": 10, "sha": "sha1"}]
+                    }));
+                });
+            }
+            CodeHost::Gitlab => {
+                server.mock(|when, then| {
+                    when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/commits/main");
+                    then.json_body(serde_json::json!({
+                        "id": "sha",
+                        "tree_id": "tree_sha"
+                    }));
+                });
+                server.mock(|when, then| {
+                    when.path("/api/v4/projects/test-owner%2Ftest-repo");
+                    then.json_body(serde_json::json!({"default_branch": "main"}));
+                });
+                server.mock(|when, then| {
+                    when.path("/api/v4/projects/test-owner%2Ftest-repo/repository/tree");
+                    then.json_body(serde_json::json!([
+                        {"path": "README.md", "type": "blob", "size": 10, "id": "sha1"},
+                    ]));
+                });
+            }
+            _ => {
+                server.mock(|when, then| {
+                    when.path("/api/v1/repos/test-owner/test-repo/commits/main");
+                    then.json_body(serde_json::json!({
+                        "sha": "sha",
+                        "commit": {"tree": {"sha": "tree_sha"}}
+                    }));
+                });
+                server.mock(|when, then| {
+                    when.path("/api/v1/repos/test-owner/test-repo");
+                    then.json_body(serde_json::json!({"default_branch": "main"}));
+                });
+                server.mock(|when, then| {
+                    when.path("/api/v1/repos/test-owner/test-repo/git/trees/main");
+                    then.json_body(serde_json::json!({
+                        "truncated": false,
+                        "tree": [{"path": "README.md", "type": "blob", "mode": "100644", "size": 10, "sha": "sha1"}]
+                    }));
+                });
+            }
+        }
+
+        let req = default_request(host, "test-owner", "test-repo");
+        let config = ForgeTreeConfig {
+            api_key: None,
+            base_url: Some(base),
+            endpoint_policy: ForgeEndpointPolicy::default(),
+            forge_budget_limit: Some(5000),
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(fetch_tree(host, "test-owner", "test-repo", &req, &config));
+
+        let resp = result.unwrap();
+        assert_eq!(resp.provider_id, provider_id);
+        assert!(
+            resp.response_bytes_observed <= resp.aggregate_limit,
+            "{provider_id}: observed {} exceeded limit {}",
+            resp.response_bytes_observed,
+            resp.aggregate_limit
+        );
+        assert_eq!(resp.aggregate_limit, 5000);
+    }
 }

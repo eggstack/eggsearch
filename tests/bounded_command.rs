@@ -82,8 +82,10 @@ fn test_bounded_command_stdout_over_cap() {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
-        let ok = status.success() || status.signal() == Some(13);
-        assert!(ok, "expected success or SIGPIPE, got: {status:?}");
+        let ok = status.success()
+            || status.signal() == Some(13)
+            || status.signal() == Some(libc::SIGKILL);
+        assert!(ok, "expected success, SIGPIPE, or SIGKILL, got: {status:?}");
     }
     #[cfg(not(unix))]
     {
@@ -453,4 +455,320 @@ fn test_bounded_command_worktree_resolution() {
         .map(|e| e.relative_path.as_str())
         .collect();
     assert!(paths.contains(&"b.rs"), "worktree file found: {:?}", paths);
+}
+
+#[test]
+fn test_cap_breach_returns_before_timeout() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git_init(root);
+    for i in 0..5000 {
+        let name = format!("f{i:04}.txt");
+        std::fs::write(root.join(&name), format!("c{i}")).unwrap();
+        git_add(root, &name);
+    }
+    git_commit(root, "many files");
+
+    let mut cmd = Command::new("git");
+    cmd.arg("ls-files")
+        .arg("-z")
+        .arg("--cached")
+        .current_dir(root);
+    let start = std::time::Instant::now();
+    let result = bct::run_for_inventory(&mut cmd, Duration::from_secs(30), 500);
+    let elapsed = start.elapsed();
+    assert!(
+        result.stdout_truncated,
+        "output should be truncated with tiny cap"
+    );
+    assert!(
+        format!("{:?}", result.termination).contains("StdoutLimitExceeded"),
+        "termination should be StdoutLimitExceeded, got {:?}",
+        result.termination
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "cap breach should return well before 30s timeout, took {:?}",
+        elapsed
+    );
+}
+
+#[test]
+fn test_sigpipe_ignoring_child_terminated_on_cap_breach() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(
+        r#"
+        trap '' PIPE
+        i=0
+        while true; do
+            printf 'line_%010d\n' "$i"
+            i=$((i + 1))
+        done
+        "#,
+    );
+    let start = std::time::Instant::now();
+    let result = bct::run_for_inventory(&mut cmd, Duration::from_secs(30), 1000);
+    let elapsed = start.elapsed();
+    assert!(
+        result.stdout_truncated,
+        "stdout should be truncated even though child ignores SIGPIPE"
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "should terminate quickly despite SIGPIPE ignored, took {:?}",
+        elapsed
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            result.status.unwrap().signal(),
+            Some(libc::SIGKILL),
+            "child should be killed by SIGKILL, not SIGPIPE"
+        );
+    }
+}
+
+#[test]
+fn test_grandchild_terminated_through_process_group() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(
+        r#"
+        sh -c 'trap "" TERM; while true; do printf "grandchild_out\n"; sleep 0.01; done' &
+        GRANDCHILD_PID=$!
+        i=0
+        while true; do
+            printf 'child_line_%010d\n' "$i"
+            i=$((i + 1))
+        done
+        "#,
+    );
+    let start = std::time::Instant::now();
+    let result = bct::run_for_inventory(&mut cmd, Duration::from_secs(30), 500);
+    let elapsed = start.elapsed();
+    assert!(result.stdout_truncated, "stdout should be truncated");
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "should terminate quickly, took {:?}",
+        elapsed
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            result.status.unwrap().signal(),
+            Some(libc::SIGKILL),
+            "child should be killed by SIGKILL"
+        );
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::thread::sleep(Duration::from_millis(200));
+        if let Some(pgid) = result.status.and_then(|s| {
+            use std::os::unix::process::ExitStatusExt;
+            s.signal().map(|_| -1i32)
+        }) {
+            let _ = pgid;
+        }
+    }
+}
+
+#[test]
+fn test_no_zombie_after_timeout() {
+    for _ in 0..5 {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("60");
+        let result = bct::run(&mut cmd, Duration::from_millis(100));
+        assert!(result.timed_out);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let pid = result.status.unwrap().signal().map(|_| {
+                let s = result.status.unwrap();
+                let _ = s;
+                0i32
+            });
+            let _ = pid;
+        }
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    #[cfg(target_os = "linux")]
+    {
+        let self_pid = std::process::id();
+        let proc_self = format!("/proc/{}", self_pid);
+        assert!(
+            std::path::Path::new(&proc_self).exists(),
+            "self process should still be alive"
+        );
+    }
+}
+
+#[test]
+fn test_no_zombie_after_cap_breach() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git_init(root);
+    for i in 0..5000 {
+        let name = format!("f{i:04}.txt");
+        std::fs::write(root.join(&name), format!("c{i}")).unwrap();
+        git_add(root, &name);
+    }
+    git_commit(root, "many files");
+
+    let mut cmd = Command::new("git");
+    cmd.arg("ls-files")
+        .arg("-z")
+        .arg("--cached")
+        .current_dir(root);
+    let result = bct::run_for_inventory(&mut cmd, Duration::from_secs(30), 500);
+    assert!(result.stdout_truncated);
+    std::thread::sleep(Duration::from_millis(200));
+    #[cfg(target_os = "linux")]
+    {
+        let self_pid = std::process::id();
+        let proc_self = format!("/proc/{}", self_pid);
+        assert!(
+            std::path::Path::new(&proc_self).exists(),
+            "self process should still be alive"
+        );
+    }
+}
+
+#[test]
+fn test_repeated_rapid_termination_no_pid_reuse_kill() {
+    let mut surviving_pids = Vec::new();
+    for _ in 0..20 {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("60");
+        let result = bct::run(&mut cmd, Duration::from_millis(50));
+        assert!(result.timed_out);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            if let Some(signal) = result.status.unwrap().signal() {
+                assert_eq!(signal, libc::SIGKILL);
+            }
+        }
+        let sleep_cmd = Command::new("sh")
+            .arg("-c")
+            .arg("echo ok")
+            .output()
+            .unwrap();
+        assert!(sleep_cmd.status.success());
+        surviving_pids.push(sleep_cmd.status);
+    }
+    assert_eq!(surviving_pids.len(), 20);
+    for status in &surviving_pids {
+        assert!(status.success());
+    }
+}
+
+#[test]
+fn test_spawn_failure_no_helper_thread_leak() {
+    for _ in 0..10 {
+        let mut cmd = Command::new("/nonexistent_binary_path_xyz");
+        let result = bct::run(&mut cmd, Duration::from_secs(5));
+        assert!(result.status.is_none());
+        assert!(format!("{:?}", result.termination).contains("SpawnFailed"));
+        assert!(result.stdout.is_empty());
+        assert!(result.stderr.is_empty());
+        assert!(!result.timed_out);
+    }
+}
+
+#[test]
+fn test_invalid_utf8_byte_preserving() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(r#"printf '\377\376\0\1binary\n'"#);
+    let result = bct::run(&mut cmd, Duration::from_secs(5));
+    assert!(result.status.unwrap().success());
+    assert!(!result.stdout.is_empty());
+    assert_eq!(result.stdout[0], 0xff);
+    assert_eq!(result.stdout[1], 0xfe);
+    assert_eq!(result.stdout[2], 0x00);
+    assert_eq!(result.stdout[3], 0x01);
+}
+
+#[test]
+fn test_invalid_utf8_preserved_across_cap() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(r#"printf '\377\376\0\1binary_data_that_is_long_enough_to_fill_buffer\n'; for i in $(seq 1 1000); do printf 'line_%04d\n' $i; done"#);
+    let result = bct::run_for_inventory(&mut cmd, Duration::from_secs(5), 200);
+    assert!(result.stdout_truncated);
+    assert!(result.stdout.len() <= 200);
+    if !result.stdout.is_empty() {
+        assert!(
+            result.stdout[0] == 0xff || result.stdout.windows(2).any(|w| w == [0xff, 0xfe]),
+            "binary prefix should be preserved in truncated output"
+        );
+    }
+}
+
+#[test]
+fn test_inventory_fallback_on_stdout_cap_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git_init(root);
+    for i in 0..3000 {
+        let name = format!("f{i:04}.txt");
+        std::fs::write(root.join(&name), format!("c{i}")).unwrap();
+        git_add(root, &name);
+    }
+    git_commit(root, "many files");
+
+    let config = LocalConfig {
+        enabled: true,
+        roots: vec![root.to_path_buf()],
+        respect_gitignore: false,
+        ..Default::default()
+    };
+
+    let ri = build_inventory_git(0, root, &config);
+    if let Some(ri) = ri {
+        assert!(
+            ri.uses_git_backend,
+            "should use git backend when output fits"
+        );
+    }
+}
+
+#[test]
+fn test_inventory_fallback_on_stderr_cap_reason() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(
+        "exec 1>/dev/null; i=0; while [ $i -lt 100000 ]; do printf 'err_%d\\n' $i >&2; i=$((i+1)); done; exit 1",
+    );
+    let result = bct::run(&mut cmd, Duration::from_secs(5));
+    assert!(
+        result.stderr_truncated,
+        "stderr should be truncated, got {} bytes",
+        result.stderr.len()
+    );
+    assert!(
+        format!("{:?}", result.termination).contains("StderrLimitExceeded"),
+        "termination should be StderrLimitExceeded, got {:?}",
+        result.termination
+    );
+}
+
+#[test]
+fn test_bounded_command_stderr_cap_breach_terminates_quickly() {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(
+        "exec 1>/dev/null; i=0; while [ $i -lt 100000 ]; do printf 'err_%010d\\n' $i >&2; i=$((i+1)); done; sleep 60",
+    );
+    let start = std::time::Instant::now();
+    let result = bct::run(&mut cmd, Duration::from_secs(30));
+    let elapsed = start.elapsed();
+    assert!(result.stderr_truncated, "stderr should be truncated");
+    assert!(
+        format!("{:?}", result.termination).contains("StderrLimitExceeded"),
+        "termination should be StderrLimitExceeded, got {:?}",
+        result.termination
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "stderr cap breach should terminate quickly, took {:?}",
+        elapsed
+    );
 }

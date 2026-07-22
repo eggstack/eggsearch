@@ -4,6 +4,116 @@ use serde::{Deserialize, Serialize};
 use crate::core::evidence_role::EvidenceRole;
 use crate::core::workflow::AgentNextAction;
 
+/// Workflow kind for coverage model selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowKind {
+    /// API comprehension and understanding tasks.
+    ApiComprehension,
+    /// Repository architecture understanding tasks.
+    RepositoryArchitecture,
+    /// Error investigation and debugging tasks.
+    ErrorInvestigation,
+    /// Version migration and upgrade tasks.
+    VersionMigration,
+    /// Security review and vulnerability assessment tasks.
+    SecurityReview,
+    /// Dependency evaluation and assessment tasks.
+    DependencyEvaluation,
+    /// Performance investigation and benchmarking tasks.
+    PerformanceInvestigation,
+    /// Comparative research across multiple options.
+    ComparativeResearch,
+    /// Pre-change evidence gathering tasks.
+    PreChangeEvidence,
+    /// Post-change review and validation tasks.
+    PostChangeReview,
+}
+
+impl WorkflowKind {
+    /// Stable snake-case string form.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ApiComprehension => "api_comprehension",
+            Self::RepositoryArchitecture => "repository_architecture",
+            Self::ErrorInvestigation => "error_investigation",
+            Self::VersionMigration => "version_migration",
+            Self::SecurityReview => "security_review",
+            Self::DependencyEvaluation => "dependency_evaluation",
+            Self::PerformanceInvestigation => "performance_investigation",
+            Self::ComparativeResearch => "comparative_research",
+            Self::PreChangeEvidence => "pre_change_evidence",
+            Self::PostChangeReview => "post_change_review",
+        }
+    }
+
+    /// Parse a workflow kind string, accepting stable names and short aliases.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "api_comprehension" | "api" => Some(Self::ApiComprehension),
+            "repository_architecture" | "repo_architecture" | "architecture" => {
+                Some(Self::RepositoryArchitecture)
+            }
+            "error_investigation" | "error" => Some(Self::ErrorInvestigation),
+            "version_migration" | "migration" => Some(Self::VersionMigration),
+            "security_review" | "security" => Some(Self::SecurityReview),
+            "dependency_evaluation" | "dependency" => Some(Self::DependencyEvaluation),
+            "performance_investigation" | "performance" => Some(Self::PerformanceInvestigation),
+            "comparative_research" | "research" | "comparative" => Some(Self::ComparativeResearch),
+            "pre_change_evidence" | "pre_change" => Some(Self::PreChangeEvidence),
+            "post_change_review" | "post_change" => Some(Self::PostChangeReview),
+            _ => None,
+        }
+    }
+
+    /// Convert this workflow kind to its corresponding coverage model.
+    pub fn to_model(self) -> WorkflowCoverageModel {
+        match self {
+            Self::ApiComprehension => api_comprehension_model(),
+            Self::RepositoryArchitecture => repo_architecture_model(),
+            Self::ErrorInvestigation => error_investigation_model(),
+            Self::VersionMigration => version_migration_model(),
+            Self::SecurityReview => security_review_model(),
+            Self::DependencyEvaluation => dependency_evaluation_model(),
+            Self::PerformanceInvestigation => performance_investigation_model(),
+            Self::ComparativeResearch => comparative_research_model(),
+            Self::PreChangeEvidence => pre_change_evidence_model(),
+            Self::PostChangeReview => post_change_review_model(),
+        }
+    }
+}
+
+/// Indicates which layer of the resolution precedence selected the workflow model.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolutionSource {
+    /// Explicit workflow parameter from the request.
+    ExplicitWorkflow,
+    /// Profile-based resolution (e.g. security, research).
+    Profile,
+    /// Mode-based resolution (e.g. exact_error).
+    Mode,
+    /// Research domain-based resolution.
+    Domain,
+    /// Default fallback when no higher-precedence signal is available.
+    Default,
+}
+
+/// Context for workflow model resolution, carrying all signals that
+/// influence which coverage model is selected.
+pub struct WorkflowResolutionContext<'a> {
+    /// The MCP tool calling the resolver.
+    pub tool: &'a str,
+    /// Explicit workflow kind from the request, highest precedence.
+    pub workflow: Option<WorkflowKind>,
+    /// Search profile from the request.
+    pub profile: Option<&'a str>,
+    /// Research domain from the request.
+    pub research_domain: Option<&'a str>,
+    /// Whether exact-error mode is active.
+    pub exact_error: bool,
+}
+
 /// Overall coverage status for a workflow given the evidence that was found.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -98,6 +208,9 @@ pub struct WorkflowCoverageResult {
     pub reasons: Vec<String>,
     /// Structured next-action hints driven by coverage gaps.
     pub next_actions: Vec<AgentNextAction>,
+    /// Which layer of the resolution precedence selected this model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution_source: Option<ResolutionSource>,
 }
 
 /// Defines the evidence roles required, recommended, and optional for a workflow.
@@ -597,6 +710,7 @@ pub fn compute_coverage(
         completion_confidence,
         reasons,
         next_actions,
+        resolution_source: None,
     }
 }
 
@@ -779,5 +893,202 @@ mod tests {
         let result = compute_coverage(&model, &[], &[]);
         assert_eq!(result.status, CoverageStatus::Sufficient);
         assert_eq!(result.completion_confidence, 1.0);
+    }
+
+    #[test]
+    fn explicit_workflow_maps_to_expected_model() {
+        let cases: Vec<(WorkflowKind, &str)> = vec![
+            (WorkflowKind::ApiComprehension, "api_comprehension"),
+            (WorkflowKind::RepositoryArchitecture, "repo_architecture"),
+            (WorkflowKind::ErrorInvestigation, "error_investigation"),
+            (WorkflowKind::VersionMigration, "version_migration"),
+            (WorkflowKind::SecurityReview, "security_review"),
+            (WorkflowKind::DependencyEvaluation, "dependency_evaluation"),
+            (
+                WorkflowKind::PerformanceInvestigation,
+                "performance_investigation",
+            ),
+            (WorkflowKind::ComparativeResearch, "comparative_research"),
+            (WorkflowKind::PreChangeEvidence, "pre_change_evidence"),
+            (WorkflowKind::PostChangeReview, "post_change_review"),
+        ];
+        for (kind, expected_id) in cases {
+            let model = kind.to_model();
+            assert_eq!(model.workflow_id, expected_id);
+        }
+    }
+
+    #[test]
+    fn explicit_workflow_wins_over_domain() {
+        let (model, source) =
+            crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+                &WorkflowResolutionContext {
+                    tool: "research_search",
+                    workflow: Some(WorkflowKind::SecurityReview),
+                    profile: None,
+                    research_domain: Some("architecture_decision"),
+                    exact_error: false,
+                },
+            );
+        assert_eq!(model.unwrap().workflow_id, "security_review");
+        assert_eq!(source, Some(ResolutionSource::ExplicitWorkflow));
+    }
+
+    #[test]
+    fn profile_honored_by_repo_search() {
+        let (model, source) =
+            crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+                &WorkflowResolutionContext {
+                    tool: "repo_search",
+                    workflow: None,
+                    profile: Some("security"),
+                    research_domain: None,
+                    exact_error: false,
+                },
+            );
+        assert_eq!(model.unwrap().workflow_id, "security_review");
+        assert_eq!(source, Some(ResolutionSource::Profile));
+    }
+
+    #[test]
+    fn exact_error_is_deterministic() {
+        let (model1, src1) = crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+            &WorkflowResolutionContext {
+                tool: "repo_search",
+                workflow: None,
+                profile: Some("security"),
+                research_domain: None,
+                exact_error: true,
+            },
+        );
+        let (model2, src2) = crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+            &WorkflowResolutionContext {
+                tool: "repo_search",
+                workflow: None,
+                profile: None,
+                research_domain: None,
+                exact_error: true,
+            },
+        );
+        assert_eq!(model1.unwrap().workflow_id, "error_investigation");
+        assert_eq!(src1, Some(ResolutionSource::Mode));
+        assert_eq!(model2.unwrap().workflow_id, "error_investigation");
+        assert_eq!(src2, Some(ResolutionSource::Mode));
+    }
+
+    #[test]
+    fn omitted_fields_preserve_defaults() {
+        let (model, source) =
+            crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+                &WorkflowResolutionContext {
+                    tool: "repo_search",
+                    workflow: None,
+                    profile: None,
+                    research_domain: None,
+                    exact_error: false,
+                },
+            );
+        assert_eq!(model.unwrap().workflow_id, "repo_architecture");
+        assert_eq!(source, Some(ResolutionSource::Default));
+    }
+
+    #[test]
+    fn coverage_changes_between_workflows_for_identical_cards() {
+        let found = vec![
+            EvidenceRole::PrimaryImplementation,
+            EvidenceRole::InterfaceOrApiDefinition,
+            EvidenceRole::OfficialDocumentation,
+            EvidenceRole::UsageExample,
+            EvidenceRole::TestOrBehavioralSpecification,
+        ];
+        let api_result = compute_coverage(&api_comprehension_model(), &found, &[]);
+        let security_result = compute_coverage(&security_review_model(), &found, &[]);
+        assert_ne!(api_result.status, security_result.status);
+    }
+
+    #[test]
+    fn workflow_kind_parse_roundtrip() {
+        assert_eq!(
+            WorkflowKind::parse("api_comprehension"),
+            Some(WorkflowKind::ApiComprehension)
+        );
+        assert_eq!(
+            WorkflowKind::parse("api"),
+            Some(WorkflowKind::ApiComprehension)
+        );
+        assert_eq!(
+            WorkflowKind::parse("security"),
+            Some(WorkflowKind::SecurityReview)
+        );
+        assert_eq!(
+            WorkflowKind::parse("migration"),
+            Some(WorkflowKind::VersionMigration)
+        );
+        assert_eq!(
+            WorkflowKind::parse("comparative"),
+            Some(WorkflowKind::ComparativeResearch)
+        );
+        assert_eq!(WorkflowKind::parse("bogus"), None);
+    }
+
+    #[test]
+    fn resolution_source_serialization() {
+        let result = WorkflowCoverageResult {
+            workflow_id: "test".to_string(),
+            required_roles: vec![],
+            recommended_roles: vec![],
+            optional_roles: vec![],
+            found_roles: vec![],
+            missing_required: vec![],
+            missing_recommended: vec![],
+            missing_optional: vec![],
+            retrieval_failures: vec![],
+            status: CoverageStatus::Sufficient,
+            completion_confidence: 1.0,
+            reasons: vec![],
+            next_actions: vec![],
+            resolution_source: Some(ResolutionSource::ExplicitWorkflow),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("resolution_source"));
+        assert!(json.contains("explicit_workflow"));
+        let restored: WorkflowCoverageResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            restored.resolution_source,
+            Some(ResolutionSource::ExplicitWorkflow)
+        );
+    }
+
+    #[test]
+    fn research_domain_selects_correct_model() {
+        let cases: Vec<(Option<&str>, &str)> = vec![
+            (Some("architecture_decision"), "comparative_research"),
+            (Some("error_investigation"), "error_investigation"),
+            (Some("version_migration"), "version_migration"),
+            (Some("security_review"), "security_review"),
+            (
+                Some("performance_investigation"),
+                "performance_investigation",
+            ),
+            (None, "comparative_research"),
+        ];
+        for (domain, expected_id) in cases {
+            let (model, source) =
+                crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+                    &WorkflowResolutionContext {
+                        tool: "research_search",
+                        workflow: None,
+                        profile: None,
+                        research_domain: domain,
+                        exact_error: false,
+                    },
+                );
+            assert_eq!(model.unwrap().workflow_id, expected_id);
+            if domain.is_some() {
+                assert_eq!(source, Some(ResolutionSource::Domain));
+            } else {
+                assert_eq!(source, Some(ResolutionSource::Default));
+            }
+        }
     }
 }

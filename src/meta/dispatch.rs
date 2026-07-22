@@ -17,6 +17,8 @@ use futures::FutureExt;
 use tokio::task::JoinSet;
 use tracing::warn;
 
+use crate::core::evidence_role::EvidenceRole;
+use crate::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::SearchResult;
 use crate::meta::engines::SearchEngine;
@@ -37,6 +39,8 @@ pub(crate) struct DispatchJob {
     pub subquery_order: usize,
     /// Stable provider ordering within the subquery.
     pub provider_order: usize,
+    /// Evidence roles this job was intended to produce.
+    pub intended_roles: Vec<EvidenceRole>,
 }
 
 /// Configuration for parallel dispatch.
@@ -104,6 +108,8 @@ pub(crate) struct DispatchOutput {
     pub raw_failures: Vec<(String, EngineError)>,
     /// Deadline tracking.
     pub deadline: RequestDeadlineStats,
+    /// Attempt records for every dispatched and skipped job.
+    pub attempts: Vec<RetrievalAttempt>,
 }
 
 /// Result returned by a spawned task, including ordering metadata.
@@ -177,6 +183,11 @@ pub(crate) async fn dispatch_parallel(
     let mut collected_results: Vec<DispatchedResult> = Vec::with_capacity(sorted_jobs.len());
     let mut collected_failures: Vec<DispatchedFailure> = Vec::with_capacity(sorted_jobs.len());
 
+    // Track spawn time per (subquery_id, provider_id) for duration measurement.
+    let mut job_start_times: HashMap<(String, String), tokio::time::Instant> = HashMap::new();
+    // Attempt records for every dispatched job.
+    let mut collected_attempts: Vec<RetrievalAttempt> = Vec::with_capacity(sorted_jobs.len());
+
     // Helper: check if a job can run given current capacity
     let can_start = |provider_id: &str,
                      provider_active: &HashMap<String, usize>,
@@ -223,6 +234,11 @@ pub(crate) async fn dispatch_parallel(
                     *running_subquery_counts
                         .entry(job.subquery_id.clone())
                         .or_insert(0) += 1;
+
+                    job_start_times.insert(
+                        (job.subquery_id.clone(), job.provider_id.clone()),
+                        tokio::time::Instant::now(),
+                    );
 
                     join_set.spawn(async move {
                         let provider_id_str_for_inner = provider_id_str.clone();
@@ -371,29 +387,100 @@ pub(crate) async fn dispatch_parallel(
                             *count = count.saturating_sub(1);
                         }
 
+                        // Look up intended roles from the original job
+                        let intended_roles = sorted_jobs
+                            .iter()
+                            .find(|j| {
+                                j.subquery_order == tr.subquery_order
+                                    && j.provider_order == tr.provider_order
+                            })
+                            .map(|j| j.intended_roles.clone())
+                            .unwrap_or_default();
+
+                        let start_key = (tr.subquery_id.clone(), tr.provider_id.clone());
+                        let duration_ms = job_start_times
+                            .remove(&start_key)
+                            .map(|t| t.elapsed().as_millis() as u64);
+
                         match tr.result {
                             Ok(results) => {
+                                let result_count = results.len();
                                 *terminal_subquery_counts
                                     .entry(tr.subquery_id.clone())
                                     .or_insert(0) += 1;
                                 collected_results.push(DispatchedResult {
-                                    subquery_id: tr.subquery_id,
+                                    subquery_id: tr.subquery_id.clone(),
                                     subquery_order: tr.subquery_order,
-                                    provider_id: tr.provider_id,
+                                    provider_id: tr.provider_id.clone(),
                                     provider_order: tr.provider_order,
                                     results,
                                 });
+                                let outcome = if result_count == 0 {
+                                    RetrievalAttemptOutcome::SuccessZeroResults
+                                } else {
+                                    RetrievalAttemptOutcome::SuccessWithResults
+                                };
+                                collected_attempts.push(RetrievalAttempt {
+                                    provider_id: tr.provider_id,
+                                    subquery_id: Some(tr.subquery_id),
+                                    intended_roles,
+                                    outcome,
+                                    result_count,
+                                    error_class: None,
+                                    deadline_interrupted: false,
+                                    truncated: false,
+                                    query_fingerprint: None,
+                                    duration_ms,
+                                });
                             }
                             Err(err) => {
+                                let (outcome, error_class) = match &err {
+                                    EngineError::Timeout { .. } => (
+                                        RetrievalAttemptOutcome::TimedOut,
+                                        Some("timeout".to_string()),
+                                    ),
+                                    EngineError::BadStatus { status, .. } if *status == 429 => (
+                                        RetrievalAttemptOutcome::RateLimited,
+                                        Some("rate_limited".to_string()),
+                                    ),
+                                    EngineError::BadStatus { .. } => (
+                                        RetrievalAttemptOutcome::Failed,
+                                        Some("http_status".to_string()),
+                                    ),
+                                    EngineError::ParseFailed { .. } => (
+                                        RetrievalAttemptOutcome::Failed,
+                                        Some("parse_error".to_string()),
+                                    ),
+                                    EngineError::NetworkError { .. } => (
+                                        RetrievalAttemptOutcome::Failed,
+                                        Some("network_error".to_string()),
+                                    ),
+                                    EngineError::Http { .. } => (
+                                        RetrievalAttemptOutcome::Failed,
+                                        Some("network_error".to_string()),
+                                    ),
+                                };
                                 *terminal_subquery_counts
                                     .entry(tr.subquery_id.clone())
                                     .or_insert(0) += 1;
                                 collected_failures.push(DispatchedFailure {
-                                    subquery_id: tr.subquery_id,
+                                    subquery_id: tr.subquery_id.clone(),
                                     subquery_order: tr.subquery_order,
-                                    provider_id: tr.provider_id,
+                                    provider_id: tr.provider_id.clone(),
                                     provider_order: tr.provider_order,
                                     error: err,
+                                });
+                                collected_attempts.push(RetrievalAttempt {
+                                    provider_id: tr.provider_id,
+                                    subquery_id: Some(tr.subquery_id),
+                                    intended_roles,
+                                    outcome,
+                                    result_count: 0,
+                                    error_class,
+                                    deadline_interrupted: false,
+                                    truncated: false,
+                                    query_fingerprint: None,
+                                    duration_ms,
                                 });
                             }
                         }
@@ -488,6 +575,67 @@ pub(crate) async fn dispatch_parallel(
         deadline.subqueries_completed = completed_count;
     }
 
+    // Synthesize InterruptedByDeadline attempts for jobs that were never
+    // dispatched (still in pending_queue) or that were running when the
+    // deadline hit (aborted by join_set.abort_all()).
+    let dispatched_keys: std::collections::HashSet<(String, String)> = collected_attempts
+        .iter()
+        .filter_map(|a| {
+            a.subquery_id
+                .as_ref()
+                .map(|sid| (sid.clone(), a.provider_id.clone()))
+        })
+        .collect();
+
+    for &idx in &pending_queue {
+        let job = &sorted_jobs[idx];
+        let key = (job.subquery_id.clone(), job.provider_id.clone());
+        if !dispatched_keys.contains(&key) {
+            let start_key = (job.subquery_id.clone(), job.provider_id.clone());
+            let duration_ms = job_start_times
+                .remove(&start_key)
+                .map(|t| t.elapsed().as_millis() as u64);
+            collected_attempts.push(RetrievalAttempt {
+                provider_id: job.provider_id.clone(),
+                subquery_id: Some(job.subquery_id.clone()),
+                intended_roles: job.intended_roles.clone(),
+                outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
+                result_count: 0,
+                error_class: None,
+                deadline_interrupted: true,
+                truncated: false,
+                query_fingerprint: None,
+                duration_ms,
+            });
+        }
+    }
+
+    // Synthesize attempts for remaining start times (jobs that were
+    // running when the deadline hit and were not collected).
+    for ((sid, pid), start) in job_start_times.drain() {
+        let key = (sid.clone(), pid.clone());
+        if !dispatched_keys.contains(&key) {
+            // Find the intended roles from sorted_jobs
+            let intended_roles = sorted_jobs
+                .iter()
+                .find(|j| j.subquery_id == sid && j.provider_id == pid)
+                .map(|j| j.intended_roles.clone())
+                .unwrap_or_default();
+            collected_attempts.push(RetrievalAttempt {
+                provider_id: pid,
+                subquery_id: Some(sid),
+                intended_roles,
+                outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
+                result_count: 0,
+                error_class: None,
+                deadline_interrupted: true,
+                truncated: false,
+                query_fingerprint: None,
+                duration_ms: Some(start.elapsed().as_millis() as u64),
+            });
+        }
+    }
+
     // Sort results deterministically by (subquery_order, provider_order)
     collected_results.sort_by(|a, b| {
         a.subquery_order
@@ -515,6 +663,7 @@ pub(crate) async fn dispatch_parallel(
         raw_results,
         raw_failures,
         deadline,
+        attempts: collected_attempts,
     }
 }
 
@@ -602,6 +751,7 @@ mod tests {
             priority,
             subquery_order,
             provider_order,
+            intended_roles: vec![],
         }
     }
 

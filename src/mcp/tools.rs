@@ -338,6 +338,13 @@ pub struct RepoSearchArgs {
     /// diagnosed; use "default" for everything else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    /// Workflow type for coverage model selection. Overrides profile-based
+    /// and mode-based defaults when set. Accepted values: api_comprehension,
+    /// repository_architecture, error_investigation, version_migration,
+    /// security_review, dependency_evaluation, performance_investigation,
+    /// comparative_research, pre_change_evidence, post_change_review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -414,6 +421,14 @@ pub struct SecuritySearchArgs {
     /// version-range comparison when assess_applicability is true.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_files: Vec<String>,
+    /// Workflow type for coverage model selection. Overrides the
+    /// default security_review model when set. Accepted values:
+    /// api_comprehension, repository_architecture, error_investigation,
+    /// version_migration, security_review, dependency_evaluation,
+    /// performance_investigation, comparative_research,
+    /// pre_change_evidence, post_change_review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -902,6 +917,25 @@ pub async fn run_repo_search(
         &["normal", "exact_error", "(aliases: default, error)"],
     )?;
 
+    let workflow = parse_strict_enum_arg(
+        "workflow",
+        args.workflow.as_deref(),
+        crate::core::workflow_coverage::WorkflowKind::parse,
+        &[
+            "api_comprehension",
+            "repository_architecture",
+            "error_investigation",
+            "version_migration",
+            "security_review",
+            "dependency_evaluation",
+            "performance_investigation",
+            "comparative_research",
+            "pre_change_evidence",
+            "post_change_review",
+            "(aliases: api, architecture, error, migration, security, dependency, performance, research/comparative, pre_change, post_change)",
+        ],
+    )?;
+
     let (owner, repo) = if let Some(r) = &args.repo {
         if r.contains('/') && args.owner.is_none() {
             if let Some((o, rest)) = r.split_once('/') {
@@ -975,6 +1009,7 @@ pub async fn run_repo_search(
         include_migration_guides: args.include_migration_guides,
         include_local: args.include_local,
         mode,
+        workflow,
         exact_error_config: Some(state.config.search.exact_error.clone()),
     };
 
@@ -2171,6 +2206,7 @@ fn build_forge_tree_config(
         api_key,
         base_url,
         endpoint_policy,
+        forge_budget_limit: None,
     }
 }
 
@@ -2281,6 +2317,10 @@ pub async fn run_repo_map(
                             response_cap_applied: false,
                             dns_policy_class: None,
                             aggregate_byte_cap_reached: false,
+                            aggregate_limit: None,
+                            aggregate_remaining: None,
+                            request_count: None,
+                            exhausted_by: None,
                         });
                     }
                     fallback
@@ -3438,6 +3478,25 @@ pub async fn run_security_search(
 
     let freshness = parse_strict_freshness(args.freshness.as_deref())?.unwrap_or_default();
 
+    let workflow = parse_strict_enum_arg(
+        "workflow",
+        args.workflow.as_deref(),
+        crate::core::workflow_coverage::WorkflowKind::parse,
+        &[
+            "api_comprehension",
+            "repository_architecture",
+            "error_investigation",
+            "version_migration",
+            "security_review",
+            "dependency_evaluation",
+            "performance_investigation",
+            "comparative_research",
+            "pre_change_evidence",
+            "post_change_review",
+            "(aliases: api, architecture, error, migration, security, dependency, performance, research/comparative, pre_change, post_change)",
+        ],
+    )?;
+
     let req = SecuritySearchRequest {
         query: query.clone(),
         ecosystem: args.ecosystem.clone(),
@@ -3459,6 +3518,7 @@ pub async fn run_security_search(
         providers: args.providers.clone(),
         assess_applicability: args.assess_applicability,
         dependency_files: args.dependency_files.clone(),
+        workflow,
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {

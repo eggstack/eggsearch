@@ -66,27 +66,88 @@ impl Default for ForgeEndpointPolicy {
     }
 }
 
-struct BoundedBody {
-    bytes: Vec<u8>,
+/// Identifies the type of forge HTTP request for budget tracking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForgeRequestKind {
+    /// Commit SHA resolution request.
+    CommitResolution,
+    /// Default branch lookup request.
     #[allow(dead_code)]
-    observed_bytes: usize,
+    DefaultBranchLookup,
+    /// Tree page retrieval request.
+    TreePage,
+    /// Contents API fallback request.
+    #[allow(dead_code)]
+    ContentsFallback,
+    /// Repository metadata request (default branch, project info).
+    RepositoryMetadata,
+    /// Error body preview request (separately capped, not part of operation budget).
+    #[allow(dead_code)]
+    ErrorPreview,
 }
 
-/// Aggregate byte budget for an entire forge-tree operation.
-#[allow(dead_code)]
+/// Error type for forge bounded-read operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ForgeReadError {
+    /// A single response exceeded the per-response byte limit.
+    PerResponseLimitExceeded,
+    /// The aggregate operation budget was exhausted.
+    AggregateBudgetExhausted,
+    /// The declared Content-Length exceeded the effective byte cap.
+    ContentLengthTooLarge,
+    /// Reading a response stream chunk failed.
+    StreamReadFailure,
+}
+
+impl std::fmt::Display for ForgeReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PerResponseLimitExceeded => write!(f, "response_too_large"),
+            Self::AggregateBudgetExhausted => write!(f, "aggregate_budget_exhausted"),
+            Self::ContentLengthTooLarge => write!(f, "response_too_large"),
+            Self::StreamReadFailure => write!(f, "stream_read_failure"),
+        }
+    }
+}
+
+impl ForgeReadError {
+    /// Return a stable static string representation of the error variant.
+    pub fn as_static_str(&self) -> &'static str {
+        match self {
+            Self::PerResponseLimitExceeded => "response_too_large",
+            Self::AggregateBudgetExhausted => "aggregate_budget_exhausted",
+            Self::ContentLengthTooLarge => "response_too_large",
+            Self::StreamReadFailure => "stream_read_failure",
+        }
+    }
+}
+
+pub(crate) struct ForgeReadBudgetTelemetry {
+    pub aggregate_limit: usize,
+    pub aggregate_observed: usize,
+    pub remaining: usize,
+    pub request_count: usize,
+    pub exhausted_by: Option<ForgeRequestKind>,
+}
+
 pub(crate) struct ForgeReadBudget {
     pub per_response_limit: usize,
     pub aggregate_limit: usize,
     pub aggregate_observed: usize,
+    pub exhausted: bool,
+    pub exhausted_by: Option<ForgeRequestKind>,
+    pub request_count: usize,
 }
 
-#[allow(dead_code)]
 impl ForgeReadBudget {
     pub fn new(aggregate_limit: usize) -> Self {
         Self {
             per_response_limit: DEFAULT_MAX_RESPONSE_BYTES,
             aggregate_limit,
             aggregate_observed: 0,
+            exhausted: false,
+            exhausted_by: None,
+            request_count: 0,
         }
     }
 
@@ -94,53 +155,58 @@ impl ForgeReadBudget {
         self.aggregate_limit.saturating_sub(self.aggregate_observed)
     }
 
-    pub fn consume(&mut self, bytes: usize) {
+    pub fn consume(&mut self, bytes: usize, kind: ForgeRequestKind) {
         self.aggregate_observed = self.aggregate_observed.saturating_add(bytes);
+        self.request_count += 1;
+        if self.aggregate_observed >= self.aggregate_limit && !self.exhausted {
+            self.exhausted = true;
+            self.exhausted_by = Some(kind);
+        }
     }
 
     pub fn exceeded(&self) -> bool {
-        self.aggregate_observed >= self.aggregate_limit
+        self.exhausted
+    }
+
+    pub fn telemetry(&self) -> ForgeReadBudgetTelemetry {
+        ForgeReadBudgetTelemetry {
+            aggregate_limit: self.aggregate_limit,
+            aggregate_observed: self.aggregate_observed,
+            remaining: self.remaining(),
+            request_count: self.request_count,
+            exhausted_by: self.exhausted_by,
+        }
     }
 }
 
-async fn read_bounded_body(
+pub(crate) async fn read_with_budget(
     resp: reqwest::Response,
-    per_response_cap: usize,
-    total_bytes: &mut usize,
-) -> Result<BoundedBody, String> {
+    budget: &mut ForgeReadBudget,
+    kind: ForgeRequestKind,
+) -> Result<Vec<u8>, ForgeReadError> {
+    let effective_cap = budget.per_response_limit.min(budget.remaining());
+    if effective_cap == 0 {
+        return Err(ForgeReadError::AggregateBudgetExhausted);
+    }
     if let Some(content_length) = resp.content_length() {
-        if content_length as usize > per_response_cap {
-            return Err("response_too_large".into());
+        if content_length as usize > effective_cap {
+            return Err(ForgeReadError::ContentLengthTooLarge);
         }
     }
-    let mut body = Vec::with_capacity(per_response_cap.min(64 * 1024));
+    let mut body = Vec::with_capacity(effective_cap.min(64 * 1024));
     let mut observed = 0usize;
     let mut stream = resp.bytes_stream();
     use futures::StreamExt;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("failed to read response chunk: {e}"))?;
+        let chunk = chunk.map_err(|_| ForgeReadError::StreamReadFailure)?;
         observed += chunk.len();
-        if observed > per_response_cap {
-            return Err("response_too_large".into());
+        if observed > effective_cap {
+            return Err(ForgeReadError::PerResponseLimitExceeded);
         }
         body.extend_from_slice(&chunk);
     }
-    *total_bytes += observed;
-    Ok(BoundedBody {
-        bytes: body,
-        observed_bytes: observed,
-    })
-}
-
-async fn read_bounded_response(
-    resp: reqwest::Response,
-    per_response_cap: usize,
-    total_bytes: &mut usize,
-) -> Result<String, String> {
-    let bounded = read_bounded_body(resp, per_response_cap, total_bytes).await?;
-    std::str::from_utf8(&bounded.bytes)
-        .map(|s| s.to_owned())
-        .map_err(|e| format!("response body is not valid UTF-8: {e}"))
+    budget.consume(observed, kind);
+    Ok(body)
 }
 
 const ERROR_BODY_CAP: usize = 8 * 1024;
@@ -180,6 +246,9 @@ pub struct ForgeTreeConfig {
     pub base_url: Option<String>,
     /// Endpoint policy controlling allowed addresses and schemes.
     pub endpoint_policy: ForgeEndpointPolicy,
+    /// Optional override for the aggregate byte budget limit.
+    /// When `None`, uses `DEFAULT_MAX_RESPONSE_BYTES`.
+    pub forge_budget_limit: Option<usize>,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -189,6 +258,7 @@ impl Default for ForgeTreeConfig {
             api_key: None,
             base_url: None,
             endpoint_policy: ForgeEndpointPolicy::default(),
+            forge_budget_limit: None,
         }
     }
 }
@@ -239,6 +309,14 @@ pub struct ForgeTreeResponse {
     pub dns_policy_class: Option<String>,
     /// Whether the aggregate byte budget was reached.
     pub aggregate_byte_cap_reached: bool,
+    /// The configured aggregate byte limit for this operation.
+    pub aggregate_limit: usize,
+    /// Remaining aggregate budget after the operation.
+    pub aggregate_remaining: usize,
+    /// Number of HTTP requests made during this operation.
+    pub request_count: usize,
+    /// The request kind that exhausted the budget, if any.
+    pub exhausted_by: Option<ForgeRequestKind>,
 }
 
 /// A raw tree entry from a forge API response.
@@ -367,7 +445,10 @@ async fn fetch_github_tree(
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let ref_name = req.ref_name.as_deref().unwrap_or("HEAD");
     let max_d = max_depth(req);
-    let mut budget = ForgeReadBudget::new(DEFAULT_MAX_RESPONSE_BYTES);
+    let aggregate_limit = config
+        .forge_budget_limit
+        .unwrap_or(DEFAULT_MAX_RESPONSE_BYTES);
+    let mut budget = ForgeReadBudget::new(aggregate_limit);
 
     let mut identity = ResolvedRepositoryIdentity {
         requested_ref: Some(ref_name.to_string()),
@@ -375,12 +456,13 @@ async fn fetch_github_tree(
     };
 
     let (commit_sha, tree_sha) =
-        resolve_github_commit(client, owner, repo, ref_name, config, timeout).await;
+        resolve_github_commit(client, owner, repo, ref_name, config, timeout, &mut budget).await;
 
     identity.resolved_commit_sha = commit_sha.clone();
     identity.tree_sha = tree_sha.clone();
 
-    let default_branch = resolve_github_default_branch(client, owner, repo, config, timeout).await;
+    let default_branch =
+        resolve_github_default_branch(client, owner, repo, config, timeout, &mut budget).await;
     identity.default_branch = default_branch.clone();
 
     let tree_ref = tree_sha.as_deref().unwrap_or(ref_name);
@@ -423,15 +505,16 @@ async fn fetch_github_tree(
         return Err(format!("provider_unavailable: {status} - {msg}"));
     }
 
-    let body = read_bounded_response(
-        resp,
-        DEFAULT_MAX_RESPONSE_BYTES,
-        &mut budget.aggregate_observed,
-    )
-    .await?;
+    let body = read_with_budget(resp, &mut budget, ForgeRequestKind::TreePage)
+        .await
+        .map_err(|e| e.as_static_str().to_string())?;
+
+    let body_str = std::str::from_utf8(&body)
+        .map(|s| s.to_owned())
+        .map_err(|_| "invalid_utf8".to_string())?;
 
     let tree: GitHubTreeResponse =
-        serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
+        serde_json::from_str(&body_str).map_err(|e| format!("malformed response: {e}"))?;
 
     let truncated_by_provider = tree.truncated.unwrap_or(false);
 
@@ -460,9 +543,10 @@ async fn fetch_github_tree(
         })
         .collect();
 
-    if truncated_by_provider {
+    if truncated_by_provider && !budget.exceeded() {
         if let Ok(fallback) =
-            fetch_github_contents_root(client, owner, repo, config, timeout, tree_ref).await
+            fetch_github_contents_root(client, owner, repo, config, timeout, tree_ref, &mut budget)
+                .await
         {
             let existing_paths: std::collections::HashSet<String> =
                 entries.iter().map(|e| e.path.clone()).collect();
@@ -492,6 +576,14 @@ async fn fetch_github_tree(
     } else {
         identity.resolved_ref_name = Some(ref_name.to_string());
     }
+    if budget.exceeded() {
+        warnings.push(SearchWarning::new(
+            "github_tree",
+            "aggregate_budget_exhausted: aggregate byte budget reached",
+        ));
+    }
+
+    let telemetry = budget.telemetry();
 
     Ok(ForgeTreeResponse {
         entries,
@@ -500,10 +592,14 @@ async fn fetch_github_tree(
         warnings,
         provider_id: "github_tree".to_string(),
         endpoint_origin: extract_host(base),
-        response_bytes_observed: budget.aggregate_observed,
-        response_cap_applied: budget.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_bytes_observed: telemetry.aggregate_observed,
+        response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
         dns_policy_class: classify_host_from_url(base),
         aggregate_byte_cap_reached: budget.exceeded(),
+        aggregate_limit: telemetry.aggregate_limit,
+        aggregate_remaining: telemetry.remaining,
+        request_count: telemetry.request_count,
+        exhausted_by: telemetry.exhausted_by,
     })
 }
 
@@ -513,6 +609,7 @@ async fn resolve_github_default_branch(
     repo: &str,
     config: &ForgeTreeConfig,
     timeout: Duration,
+    budget: &mut ForgeReadBudget,
 ) -> Option<String> {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let mut builder = client
@@ -525,11 +622,11 @@ async fn resolve_github_default_branch(
     if !resp.status().is_success() {
         return None;
     }
-    let mut total_bytes = 0usize;
-    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes)
+    let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
         .await
         .ok()?;
-    let repo_info: GitHubRepoInfo = serde_json::from_str(&body).ok()?;
+    let body_str = std::str::from_utf8(&body).ok()?;
+    let repo_info: GitHubRepoInfo = serde_json::from_str(body_str).ok()?;
     Some(repo_info.default_branch)
 }
 
@@ -546,6 +643,7 @@ async fn resolve_github_commit(
     ref_name: &str,
     config: &ForgeTreeConfig,
     timeout: Duration,
+    budget: &mut ForgeReadBudget,
 ) -> (Option<String>, Option<String>) {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let mut builder = client
@@ -566,13 +664,15 @@ async fn resolve_github_commit(
     if !resp.status().is_success() {
         return (None, None);
     }
-    let mut total_bytes = 0usize;
-    let body = match read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await
-    {
+    let body = match read_with_budget(resp, budget, ForgeRequestKind::CommitResolution).await {
         Ok(b) => b,
         Err(_) => return (None, None),
     };
-    let commit: GitHubCommitInfo = match serde_json::from_str(&body) {
+    let body_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => return (None, None),
+    };
+    let commit: GitHubCommitInfo = match serde_json::from_str(body_str) {
         Ok(c) => c,
         Err(_) => return (None, None),
     };
@@ -588,6 +688,7 @@ async fn fetch_github_contents_root(
     config: &ForgeTreeConfig,
     timeout: Duration,
     tree_ref: &str,
+    budget: &mut ForgeReadBudget,
 ) -> Result<Vec<ForgeRawEntry>, String> {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let mut builder = client
@@ -604,10 +705,12 @@ async fn fetch_github_contents_root(
     if !resp.status().is_success() {
         return Err(format!("contents_api_failed: {}", resp.status()));
     }
-    let mut total_bytes = 0usize;
-    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await?;
+    let body = read_with_budget(resp, budget, ForgeRequestKind::ContentsFallback)
+        .await
+        .map_err(|e| e.as_static_str().to_string())?;
+    let body_str = std::str::from_utf8(&body).map_err(|_| "invalid_utf8".to_string())?;
     let items: Vec<GitHubContentsEntry> =
-        serde_json::from_str(&body).map_err(|e| format!("malformed Contents response: {e}"))?;
+        serde_json::from_str(body_str).map_err(|e| format!("malformed Contents response: {e}"))?;
     let entries = items
         .into_iter()
         .map(|item| {
@@ -698,12 +801,19 @@ async fn fetch_gitlab_tree(
         ..Default::default()
     };
 
+    let mut budget = ForgeReadBudget::new(
+        config
+            .forge_budget_limit
+            .unwrap_or(DEFAULT_MAX_RESPONSE_BYTES),
+    );
+
     let (commit_sha, tree_sha) =
-        resolve_gitlab_commit(client, owner, repo, ref_name, config, timeout).await;
+        resolve_gitlab_commit(client, owner, repo, ref_name, config, timeout, &mut budget).await;
     identity.resolved_commit_sha = commit_sha;
     identity.tree_sha = tree_sha;
 
-    let default_branch = resolve_gitlab_default_branch(client, owner, repo, config, timeout).await;
+    let default_branch =
+        resolve_gitlab_default_branch(client, owner, repo, config, timeout, &mut budget).await;
     identity.default_branch = default_branch;
 
     let mut all_entries: Vec<ForgeRawEntry> = Vec::new();
@@ -711,7 +821,6 @@ async fn fetch_gitlab_tree(
     let mut truncated_by_provider = false;
     let mut warnings = Vec::new();
     let max_pages = DEFAULT_MAX_PAGES;
-    let mut budget = ForgeReadBudget::new(DEFAULT_MAX_RESPONSE_BYTES);
 
     loop {
         if page > max_pages as u32 {
@@ -772,15 +881,14 @@ async fn fetch_gitlab_tree(
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
-        let body = read_bounded_response(
-            resp,
-            DEFAULT_MAX_RESPONSE_BYTES,
-            &mut budget.aggregate_observed,
-        )
-        .await?;
+        let body = read_with_budget(resp, &mut budget, ForgeRequestKind::TreePage)
+            .await
+            .map_err(|e| e.as_static_str().to_string())?;
+
+        let body_str = std::str::from_utf8(&body).map_err(|_| "invalid_utf8".to_string())?;
 
         let items: Vec<GitLabTreeEntry> =
-            serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
+            serde_json::from_str(body_str).map_err(|e| format!("malformed response: {e}"))?;
 
         let page_len = items.len();
         for item in items {
@@ -813,6 +921,8 @@ async fn fetch_gitlab_tree(
         all_entries.truncate(max_e);
     }
 
+    let telemetry = budget.telemetry();
+
     Ok(ForgeTreeResponse {
         entries: all_entries,
         identity,
@@ -820,12 +930,16 @@ async fn fetch_gitlab_tree(
         warnings,
         provider_id: "gitlab_tree".to_string(),
         endpoint_origin: extract_host(config.base_url.as_deref().unwrap_or(GITLAB_API_BASE)),
-        response_bytes_observed: budget.aggregate_observed,
-        response_cap_applied: budget.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_bytes_observed: telemetry.aggregate_observed,
+        response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
         dns_policy_class: classify_host_from_url(
             config.base_url.as_deref().unwrap_or(GITLAB_API_BASE),
         ),
         aggregate_byte_cap_reached: budget.exceeded(),
+        aggregate_limit: telemetry.aggregate_limit,
+        aggregate_remaining: telemetry.remaining,
+        request_count: telemetry.request_count,
+        exhausted_by: telemetry.exhausted_by,
     })
 }
 
@@ -835,6 +949,7 @@ async fn resolve_gitlab_default_branch(
     repo: &str,
     config: &ForgeTreeConfig,
     timeout: Duration,
+    budget: &mut ForgeReadBudget,
 ) -> Option<String> {
     let base = config.base_url.as_deref().unwrap_or(GITLAB_API_BASE);
     let project_path_raw = format!("{owner}/{repo}");
@@ -849,11 +964,11 @@ async fn resolve_gitlab_default_branch(
     if !resp.status().is_success() {
         return None;
     }
-    let mut total_bytes = 0usize;
-    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes)
+    let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
         .await
         .ok()?;
-    let info: GitLabProjectInfo = serde_json::from_str(&body).ok()?;
+    let body_str = std::str::from_utf8(&body).ok()?;
+    let info: GitLabProjectInfo = serde_json::from_str(body_str).ok()?;
     Some(info.default_branch)
 }
 
@@ -875,6 +990,7 @@ async fn resolve_gitlab_commit(
     ref_name: &str,
     config: &ForgeTreeConfig,
     timeout: Duration,
+    budget: &mut ForgeReadBudget,
 ) -> (Option<String>, Option<String>) {
     let base = config.base_url.as_deref().unwrap_or(GITLAB_API_BASE);
     let project_path_raw = format!("{owner}/{repo}");
@@ -895,13 +1011,15 @@ async fn resolve_gitlab_commit(
     if !resp.status().is_success() {
         return (None, None);
     }
-    let mut total_bytes = 0usize;
-    let body = match read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await
-    {
+    let body = match read_with_budget(resp, budget, ForgeRequestKind::CommitResolution).await {
         Ok(b) => b,
         Err(_) => return (None, None),
     };
-    let commit: GitLabCommitInfo = match serde_json::from_str(&body) {
+    let body_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => return (None, None),
+    };
+    let commit: GitLabCommitInfo = match serde_json::from_str(body_str) {
         Ok(c) => c,
         Err(_) => return (None, None),
     };
@@ -958,13 +1076,29 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         ..Default::default()
     };
 
-    let (commit_sha, tree_sha) =
-        resolve_forge_commit(client, owner, repo, ref_name, config, timeout, api_base).await;
+    let mut budget = ForgeReadBudget::new(
+        config
+            .forge_budget_limit
+            .unwrap_or(DEFAULT_MAX_RESPONSE_BYTES),
+    );
+
+    let (commit_sha, tree_sha) = resolve_forge_commit(
+        client,
+        owner,
+        repo,
+        ref_name,
+        config,
+        timeout,
+        api_base,
+        &mut budget,
+    )
+    .await;
     identity.resolved_commit_sha = commit_sha;
     identity.tree_sha = tree_sha;
 
     let default_branch =
-        resolve_forge_default_branch(client, owner, repo, config, timeout, api_base).await;
+        resolve_forge_default_branch(client, owner, repo, config, timeout, api_base, &mut budget)
+            .await;
     identity.default_branch = default_branch;
 
     let mut all_entries: Vec<ForgeRawEntry> = Vec::new();
@@ -972,7 +1106,6 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
     let mut truncated_by_provider = false;
     let mut warnings = Vec::new();
     let max_pages = DEFAULT_MAX_PAGES;
-    let mut budget = ForgeReadBudget::new(DEFAULT_MAX_RESPONSE_BYTES);
 
     loop {
         if page > max_pages as u32 {
@@ -1037,15 +1170,14 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
-        let body = read_bounded_response(
-            resp,
-            DEFAULT_MAX_RESPONSE_BYTES,
-            &mut budget.aggregate_observed,
-        )
-        .await?;
+        let body = read_with_budget(resp, &mut budget, ForgeRequestKind::TreePage)
+            .await
+            .map_err(|e| e.as_static_str().to_string())?;
+
+        let body_str = std::str::from_utf8(&body).map_err(|_| "invalid_utf8".to_string())?;
 
         let tree: ForgeTreeApiResponse =
-            serde_json::from_str(&body).map_err(|e| format!("malformed response: {e}"))?;
+            serde_json::from_str(body_str).map_err(|e| format!("malformed response: {e}"))?;
 
         truncated_by_provider = tree.truncated.unwrap_or(false);
 
@@ -1100,6 +1232,14 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
              URLs will use mutable ref instead of immutable commit",
         ));
     }
+    if budget.exceeded() {
+        warnings.push(SearchWarning::new(
+            provider_id,
+            "aggregate_budget_exhausted: aggregate byte budget reached",
+        ));
+    }
+
+    let telemetry = budget.telemetry();
 
     Ok(ForgeTreeResponse {
         entries: all_entries,
@@ -1108,10 +1248,14 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         warnings,
         provider_id: provider_id.to_string(),
         endpoint_origin: extract_host(api_base),
-        response_bytes_observed: budget.aggregate_observed,
-        response_cap_applied: budget.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_bytes_observed: telemetry.aggregate_observed,
+        response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
         dns_policy_class: classify_host_from_url(api_base),
         aggregate_byte_cap_reached: budget.exceeded(),
+        aggregate_limit: telemetry.aggregate_limit,
+        aggregate_remaining: telemetry.remaining,
+        request_count: telemetry.request_count,
+        exhausted_by: telemetry.exhausted_by,
     })
 }
 
@@ -1122,6 +1266,7 @@ async fn resolve_forge_default_branch(
     config: &ForgeTreeConfig,
     timeout: Duration,
     api_base: &str,
+    budget: &mut ForgeReadBudget,
 ) -> Option<String> {
     let mut builder = client
         .get(format!("{api_base}/repos/{owner}/{repo}"))
@@ -1133,11 +1278,11 @@ async fn resolve_forge_default_branch(
     if !resp.status().is_success() {
         return None;
     }
-    let mut total_bytes = 0usize;
-    let body = read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes)
+    let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
         .await
         .ok()?;
-    let info: ForgeRepoInfo = serde_json::from_str(&body).ok()?;
+    let body_str = std::str::from_utf8(&body).ok()?;
+    let info: ForgeRepoInfo = serde_json::from_str(body_str).ok()?;
     Some(info.default_branch)
 }
 
@@ -1147,6 +1292,7 @@ async fn resolve_forge_default_branch(
 /// SHA. The tree SHA is not directly available from this endpoint for
 /// all providers, so it may be `None`. Returns `(commit_sha, tree_sha)`
 /// where either may be `None` if resolution fails.
+#[allow(clippy::too_many_arguments)]
 async fn resolve_forge_commit(
     client: &Client,
     owner: &str,
@@ -1155,6 +1301,7 @@ async fn resolve_forge_commit(
     config: &ForgeTreeConfig,
     timeout: Duration,
     api_base: &str,
+    budget: &mut ForgeReadBudget,
 ) -> (Option<String>, Option<String>) {
     let mut builder = client
         .get(format!(
@@ -1174,13 +1321,15 @@ async fn resolve_forge_commit(
     if !resp.status().is_success() {
         return (None, None);
     }
-    let mut total_bytes = 0usize;
-    let body = match read_bounded_response(resp, DEFAULT_MAX_RESPONSE_BYTES, &mut total_bytes).await
-    {
+    let body = match read_with_budget(resp, budget, ForgeRequestKind::CommitResolution).await {
         Ok(b) => b,
         Err(_) => return (None, None),
     };
-    let commit: ForgeCommitInfo = match serde_json::from_str(&body) {
+    let body_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => return (None, None),
+    };
+    let commit: ForgeCommitInfo = match serde_json::from_str(body_str) {
         Ok(c) => c,
         Err(_) => return (None, None),
     };
@@ -1774,6 +1923,11 @@ pub fn build_response(
 
     let warnings = forge_response.warnings;
 
+    let budget_aggregate_limit = forge_response.aggregate_limit;
+    let budget_aggregate_remaining = forge_response.aggregate_remaining;
+    let budget_request_count = forge_response.request_count;
+    let budget_exhausted_by = forge_response.exhausted_by;
+
     let mut response = RepoMapResponse {
         query: request.query.clone(),
         host,
@@ -1818,6 +1972,20 @@ pub fn build_response(
             response_cap_applied: forge_response.response_cap_applied,
             dns_policy_class: forge_response.dns_policy_class,
             aggregate_byte_cap_reached: forge_response.aggregate_byte_cap_reached,
+            aggregate_limit: Some(budget_aggregate_limit),
+            aggregate_remaining: Some(budget_aggregate_remaining),
+            request_count: Some(budget_request_count),
+            exhausted_by: budget_exhausted_by.map(|k| {
+                match k {
+                    ForgeRequestKind::CommitResolution => "commit_resolution",
+                    ForgeRequestKind::DefaultBranchLookup => "default_branch_lookup",
+                    ForgeRequestKind::TreePage => "tree_page",
+                    ForgeRequestKind::ContentsFallback => "contents_fallback",
+                    ForgeRequestKind::RepositoryMetadata => "repository_metadata",
+                    ForgeRequestKind::ErrorPreview => "error_preview",
+                }
+                .to_string()
+            }),
         }),
         freshness_confidence: None,
     };
@@ -1952,6 +2120,10 @@ mod tests {
             response_cap_applied: false,
             dns_policy_class: None,
             aggregate_byte_cap_reached: false,
+            aggregate_limit: 10 * 1024 * 1024,
+            aggregate_remaining: 10 * 1024 * 1024,
+            request_count: 0,
+            exhausted_by: None,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(matches!(resp.mode, RepoMapMode::Native));
@@ -2001,6 +2173,10 @@ mod tests {
             response_cap_applied: false,
             dns_policy_class: None,
             aggregate_byte_cap_reached: false,
+            aggregate_limit: 10 * 1024 * 1024,
+            aggregate_remaining: 10 * 1024 * 1024,
+            request_count: 0,
+            exhausted_by: None,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert_eq!(resp.root_entries.len(), 1);
@@ -2044,6 +2220,10 @@ mod tests {
             response_cap_applied: false,
             dns_policy_class: None,
             aggregate_byte_cap_reached: false,
+            aggregate_limit: 10 * 1024 * 1024,
+            aggregate_remaining: 10 * 1024 * 1024,
+            request_count: 0,
+            exhausted_by: None,
         };
         let resp = build_response(&req, forge, false, true, true, true, None);
         let files: Vec<_> = resp
@@ -2073,6 +2253,10 @@ mod tests {
             response_cap_applied: false,
             dns_policy_class: None,
             aggregate_byte_cap_reached: false,
+            aggregate_limit: 10 * 1024 * 1024,
+            aggregate_remaining: 10 * 1024 * 1024,
+            request_count: 0,
+            exhausted_by: None,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(!resp.warnings.is_empty());
@@ -2161,6 +2345,10 @@ mod tests {
             response_cap_applied: false,
             dns_policy_class: None,
             aggregate_byte_cap_reached: false,
+            aggregate_limit: 10 * 1024 * 1024,
+            aggregate_remaining: 10 * 1024 * 1024,
+            request_count: 0,
+            exhausted_by: None,
         };
         let resp = build_response(&req, forge, true, true, true, true, None);
         assert!(!resp.provenance_pinned);

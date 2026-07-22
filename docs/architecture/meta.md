@@ -67,7 +67,8 @@ MCP Tool → MetadataSearchAdapter
 | `local_backend.rs` | Local workspace search backend with auto-build inventory on first search, bounded file walking, scoring, and SymbolBackend trait |
 | `local_ignore.rs` | Minimal `.gitignore` matcher |
 | `local_inventory.rs` | Git worktree discovery, remote URL normalization, identity matching |
-| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path (`git ls-files -z --cached --others --exclude-standard`), native walking, XXH3 fingerprinting, invalidation. Bounded command runner with timeout, stdout/stderr caps, concurrent pipe drainage, kill-on-timeout watchdog thread |
+| `local_inventory_cache.rs` | File inventory service: cached entries, Git fast path (`git ls-files -z --cached --others --exclude-standard`), native walking, XXH3 fingerprinting, invalidation. Bounded command runner with timeout, stdout/stderr caps, concurrent pipe drainage, `ProcessTerminationController` for immediate kill-on-cap-breach |
+| `safe_open.rs` | Race-resistant file opening via `openat2` with `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS`. Falls back to `openat` with `O_NOFOLLOW` on older kernels. `SafeSymlinkFollowingUnsupported` for follow mode on non-Linux platforms |
 
 ### Test Support
 
@@ -255,6 +256,8 @@ The forge adapter (`forge_adapter.rs`) handles native remote repository tree ret
 ### Response Reading
 
 Primary tree and paginated forge API responses are read through `read_bounded_response()` which enforces a hard byte cap during streaming. The function checks `Content-Length` upfront and accumulates bytes incrementally, returning `response_too_large` when the cap is exceeded. Error-body previews (e.g., rate-limit detection, permission-denied diagnostics) are read through `read_error_preview()` with an 8KB cap and control-character sanitization. Default-branch metadata lookups use bounded response reading.
+
+`ForgeReadBudget` tracks aggregate bytes across all requests within a single tool invocation (operation-wide, not per-response). Pagination stops when the aggregate budget is exhausted. Each response is also capped individually at `per_response_limit` (default 10MB). The budget records which request kind exhausted it for telemetry.
 
 ### Endpoint Safety
 

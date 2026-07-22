@@ -195,10 +195,25 @@ pub struct RetrievalAttempt {
     pub outcome: RetrievalAttemptOutcome,
     /// Number of results returned (0 if failed or timed out).
     pub result_count: usize,
+    /// Coarse error classification if the attempt failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_class: Option<String>,
+    /// Whether the global deadline interrupted this attempt.
+    #[serde(default)]
+    pub deadline_interrupted: bool,
+    /// Whether results or response were truncated by a cap.
+    #[serde(default)]
+    pub truncated: bool,
+    /// Bounded query fingerprint or label for the query that was sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_fingerprint: Option<String>,
+    /// Duration of the attempt in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 impl RetrievalAttempt {
-    /// Convert this attempt to a `RetrievalFailure` if it represents a failure.
+    #[allow(missing_docs)]
     pub fn to_retrieval_failure(&self) -> Option<RetrievalFailure> {
         match self.outcome {
             RetrievalAttemptOutcome::Failed => Some(RetrievalFailure {
@@ -208,7 +223,10 @@ impl RetrievalAttempt {
                     .first()
                     .copied()
                     .unwrap_or(EvidenceRole::UnknownOrWeakContext),
-                message: format!("provider {} failed", self.provider_id),
+                message: match &self.error_class {
+                    Some(cls) => format!("[{}] provider {} failed", cls, self.provider_id),
+                    None => format!("provider {} failed", self.provider_id),
+                },
                 provider_id: Some(self.provider_id.clone()),
             }),
             RetrievalAttemptOutcome::TimedOut => Some(RetrievalFailure {
@@ -218,7 +236,10 @@ impl RetrievalAttempt {
                     .first()
                     .copied()
                     .unwrap_or(EvidenceRole::UnknownOrWeakContext),
-                message: format!("provider {} timed out", self.provider_id),
+                message: match &self.error_class {
+                    Some(cls) => format!("[{}] provider {} timed out", cls, self.provider_id),
+                    None => format!("provider {} timed out", self.provider_id),
+                },
                 provider_id: Some(self.provider_id.clone()),
             }),
             RetrievalAttemptOutcome::RateLimited => Some(RetrievalFailure {
@@ -228,7 +249,12 @@ impl RetrievalAttempt {
                     .first()
                     .copied()
                     .unwrap_or(EvidenceRole::UnknownOrWeakContext),
-                message: format!("provider {} rate limited", self.provider_id),
+                message: match &self.error_class {
+                    Some(cls) => {
+                        format!("[{}] provider {} rate limited", cls, self.provider_id)
+                    }
+                    None => format!("provider {} rate limited", self.provider_id),
+                },
                 provider_id: Some(self.provider_id.clone()),
             }),
             RetrievalAttemptOutcome::InterruptedByDeadline => Some(RetrievalFailure {

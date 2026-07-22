@@ -166,6 +166,11 @@ fn test_zero_results_produce_failure() {
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessZeroResults,
         result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
     }];
     let failures = attempts_to_failures(&attempts);
     // Zero results is NOT a failure — it's a success with no data
@@ -203,6 +208,11 @@ fn test_rate_limit_is_not_policy_skip() {
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::RateLimited,
         result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
     }];
     let failures = attempts_to_failures(&attempts);
     assert_eq!(failures.len(), 1);
@@ -224,6 +234,11 @@ fn test_partial_provider_success_one_fails() {
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 5,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         },
         RetrievalAttempt {
             provider_id: "brave_api".to_string(),
@@ -231,6 +246,11 @@ fn test_partial_provider_success_one_fails() {
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::TimedOut,
             result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         },
     ];
     let failures = attempts_to_failures(&attempts);
@@ -247,6 +267,11 @@ fn test_partial_provider_success_all_succeed() {
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 3,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         },
         RetrievalAttempt {
             provider_id: "startpage".to_string(),
@@ -254,6 +279,11 @@ fn test_partial_provider_success_all_succeed() {
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::SuccessZeroResults,
             result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         },
     ];
     let failures = attempts_to_failures(&attempts);

@@ -328,6 +328,10 @@ pub struct RepoSearchRequest {
     /// token redaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<RepoSearchMode>,
+    /// Optional. Workflow type for coverage model selection. Overrides
+    /// profile-based and mode-based defaults when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<crate::core::workflow_coverage::WorkflowKind>,
     /// Exact-error configuration propagated from server config.
     /// Populated by the MCP layer; not set by callers.
     #[serde(default, skip_serializing_if = "Option::is_none")]

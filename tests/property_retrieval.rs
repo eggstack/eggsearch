@@ -57,6 +57,11 @@ fn attempt_strategy() -> impl Strategy<Value = RetrievalAttempt> {
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome,
             result_count,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         },
     )
 }
@@ -120,6 +125,11 @@ proptest! {
                 intended_roles: vec![EvidenceRole::PrimaryImplementation],
                 outcome,
                 result_count: 0,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                query_fingerprint: None,
+                duration_ms: None,
             }
         }).collect();
 
@@ -236,6 +246,11 @@ proptest! {
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::Failed,
             result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         };
         let failures = attempts_to_failures(&[attempt]);
         prop_assert_eq!(failures.len(), 1);
@@ -252,6 +267,11 @@ proptest! {
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::TimedOut,
             result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         };
         let failures = attempts_to_failures(&[attempt]);
         prop_assert_eq!(failures.len(), 1);
@@ -267,6 +287,11 @@ proptest! {
             intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
             outcome: RetrievalAttemptOutcome::RateLimited,
             result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         };
         let failures = attempts_to_failures(&[attempt]);
         prop_assert_eq!(failures.len(), 1);
@@ -282,6 +307,11 @@ proptest! {
             intended_roles: vec![EvidenceRole::UsageExample],
             outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
             result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         };
         let failures = attempts_to_failures(&[attempt]);
         prop_assert_eq!(failures.len(), 1);
@@ -298,6 +328,11 @@ proptest! {
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome,
             result_count: 5,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
         };
         let failures = attempts_to_failures(&[attempt]);
         prop_assert!(failures.is_empty(), "non-failure outcome must produce no failures");

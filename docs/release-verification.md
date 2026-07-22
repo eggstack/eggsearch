@@ -129,9 +129,9 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 2. Redirect handling (Policy::none, no auto-follow)
 3. DNS pinning strategy (resolve-once, validate-all, no rebinding claim)
 4. Repository identity field semantics (requested_ref vs resolved_commit_sha vs tree_sha vs object_sha)
-5. Subprocess execution model (setsid, process-group kill, bounded streaming reads)
+5. Subprocess execution model (setsid, process-group kill, bounded streaming reads, `ProcessTerminationController` for cap-triggered immediate termination)
 6. Workspace change-token strategy (git status hash + 30s probe + 300s TTL)
-7. Race-resistant local open strategy (component-wise openat, fstat, no-follow)
+7. Race-resistant local open strategy (openat2 with RESOLVE_BENEATH, fstat, `SafeSymlinkFollowingUnsupported` for non-Linux follow mode)
 8. Evidence workflow selection and conflict scoping (entity-key, per-provider roles)
 
 ---

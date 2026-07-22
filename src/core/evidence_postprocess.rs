@@ -9,8 +9,8 @@ use crate::core::retrieval_status::{
 };
 use crate::core::source_card::{SourceCard, SourceKind};
 use crate::core::workflow_coverage::{
-    compute_coverage, CoverageStatus, RetrievalFailure, WorkflowCoverageModel,
-    WorkflowCoverageResult,
+    compute_coverage, CoverageStatus, ResolutionSource, RetrievalFailure, WorkflowCoverageModel,
+    WorkflowCoverageResult, WorkflowResolutionContext,
 };
 
 const MAX_CONFLICTS: usize = 20;
@@ -137,7 +137,12 @@ pub fn build_retrieval_summary_for_search(
     providers_failed: &[crate::meta::response::ProviderFailure],
     provider_ids: &[String],
     cards: &[SourceCard],
+    attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> ResponseRetrievalSummary {
+    if !attempts.is_empty() {
+        return build_attempt_derived_summary(attempts);
+    }
+
     let mut dimensions = Vec::new();
 
     let providers_with_results: std::collections::HashSet<String> = cards
@@ -184,6 +189,88 @@ pub fn build_retrieval_summary_for_search(
     }
 }
 
+fn attempt_outcome_to_absence_kind(
+    outcome: &crate::core::retrieval_status::RetrievalAttemptOutcome,
+) -> EvidenceAbsenceKind {
+    use crate::core::retrieval_status::RetrievalAttemptOutcome;
+    match outcome {
+        RetrievalAttemptOutcome::SuccessWithResults => EvidenceAbsenceKind::NotApplicable,
+        RetrievalAttemptOutcome::SuccessZeroResults => EvidenceAbsenceKind::NoMatchingEvidenceFound,
+        RetrievalAttemptOutcome::Failed => EvidenceAbsenceKind::ProviderFailed,
+        RetrievalAttemptOutcome::TimedOut => EvidenceAbsenceKind::DeadlinePreventedCompletion,
+        RetrievalAttemptOutcome::RateLimited => EvidenceAbsenceKind::ProviderFailed,
+        RetrievalAttemptOutcome::SkippedByPolicy => EvidenceAbsenceKind::ProviderSkippedByPolicy,
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable => {
+            EvidenceAbsenceKind::ProviderCapabilityUnavailable
+        }
+        RetrievalAttemptOutcome::NotApplicable => EvidenceAbsenceKind::NotApplicable,
+        RetrievalAttemptOutcome::InterruptedByDeadline => {
+            EvidenceAbsenceKind::DeadlinePreventedCompletion
+        }
+        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => {
+            EvidenceAbsenceKind::ResultTruncatedByCap
+        }
+    }
+}
+
+fn attempt_message(attempt: &crate::core::retrieval_status::RetrievalAttempt) -> String {
+    use crate::core::retrieval_status::RetrievalAttemptOutcome;
+    match attempt.outcome {
+        RetrievalAttemptOutcome::SuccessWithResults => {
+            format!("{} results", attempt.result_count)
+        }
+        RetrievalAttemptOutcome::SuccessZeroResults => "zero results".to_string(),
+        RetrievalAttemptOutcome::Failed => match &attempt.error_class {
+            Some(cls) => format!("[{}] provider failed", cls),
+            None => "provider failed".to_string(),
+        },
+        RetrievalAttemptOutcome::TimedOut => "provider timed out".to_string(),
+        RetrievalAttemptOutcome::RateLimited => "provider rate limited".to_string(),
+        RetrievalAttemptOutcome::SkippedByPolicy => "skipped by policy".to_string(),
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable => {
+            "capability unavailable".to_string()
+        }
+        RetrievalAttemptOutcome::NotApplicable => "not applicable".to_string(),
+        RetrievalAttemptOutcome::InterruptedByDeadline => {
+            "interrupted by global deadline".to_string()
+        }
+        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => {
+            "truncated after partial success".to_string()
+        }
+    }
+}
+
+fn build_attempt_derived_summary(
+    attempts: &[crate::core::retrieval_status::RetrievalAttempt],
+) -> ResponseRetrievalSummary {
+    let mut dimensions = Vec::with_capacity(attempts.len());
+
+    for attempt in attempts {
+        let role = attempt
+            .intended_roles
+            .first()
+            .copied()
+            .unwrap_or(EvidenceRole::UnknownOrWeakContext);
+
+        let absence_kind = attempt_outcome_to_absence_kind(&attempt.outcome);
+        let message = attempt_message(attempt);
+
+        dimensions.push(RetrievalDimensionStatus {
+            evidence_role: role,
+            absence_kind,
+            provider_id: Some(attempt.provider_id.clone()),
+            message,
+            query: attempt.query_fingerprint.clone(),
+        });
+    }
+
+    if dimensions.is_empty() {
+        ResponseRetrievalSummary::default()
+    } else {
+        summarize_retrieval(dimensions)
+    }
+}
+
 #[allow(missing_docs)]
 pub fn detect_structured_conflicts(cards: &[SourceCard]) -> Vec<EvidenceConflict> {
     let mut conflicts = detect_entity_scoped_conflicts(cards);
@@ -193,14 +280,12 @@ pub fn detect_structured_conflicts(cards: &[SourceCard]) -> Vec<EvidenceConflict
 
     for card in cards {
         let id = card.stable_id.clone().unwrap_or_default();
-        let repo_key =
-            card.metadata
-                .code_evidence
-                .as_ref()
-                .and_then(|c| match (&c.owner, &c.repo) {
-                    (Some(owner), Some(repo)) => Some(format!("{owner}/{repo}")),
-                    _ => None,
-                });
+        let repo_key = card.metadata.code_evidence.as_ref().and_then(|c| {
+            let host = c.host.as_ref().map(|h| format!("{h:?}"))?;
+            let owner = c.owner.as_deref().unwrap_or("");
+            let repo = c.repo.as_deref().unwrap_or("");
+            Some(format!("{host}/{owner}/{repo}"))
+        });
         if let Some(key) = repo_key {
             let is_pinned = card
                 .metadata
@@ -235,10 +320,12 @@ pub fn postprocess(
     provider_ids: &[String],
     workflow_model: Option<&WorkflowCoverageModel>,
     retrieval_failures: &[RetrievalFailure],
+    resolution_source: Option<ResolutionSource>,
+    attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> EvidencePostprocessResult {
     let evidence_role_summary = compute_evidence_role_summary(cards);
     let retrieval_summary =
-        build_retrieval_summary_for_search(providers_failed, provider_ids, cards);
+        build_retrieval_summary_for_search(providers_failed, provider_ids, cards, attempts);
     let conflict_metadata = detect_structured_conflicts(cards);
 
     let workflow_coverage = workflow_model.map(|model| {
@@ -248,7 +335,9 @@ pub fn postprocess(
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
-        compute_coverage(model, &found_roles, retrieval_failures)
+        let mut result = compute_coverage(model, &found_roles, retrieval_failures);
+        result.resolution_source = resolution_source;
+        result
     });
 
     EvidencePostprocessResult {
@@ -294,6 +383,101 @@ pub fn resolve_workflow_model(
         "security_search" => Some(security_review_model()),
         "web_search" => None,
         _ => None,
+    }
+}
+
+#[allow(missing_docs)]
+pub fn resolve_workflow_model_with_context(
+    ctx: &WorkflowResolutionContext<'_>,
+) -> (Option<WorkflowCoverageModel>, Option<ResolutionSource>) {
+    use crate::core::workflow_coverage::*;
+
+    if let Some(workflow) = ctx.workflow {
+        return (
+            Some(workflow.to_model()),
+            Some(ResolutionSource::ExplicitWorkflow),
+        );
+    }
+
+    match ctx.tool {
+        "repo_search" => {
+            if ctx.exact_error {
+                return (
+                    Some(error_investigation_model()),
+                    Some(ResolutionSource::Mode),
+                );
+            }
+            match ctx.profile {
+                Some("security") => {
+                    return (
+                        Some(security_review_model()),
+                        Some(ResolutionSource::Profile),
+                    );
+                }
+                Some("research") => {
+                    return (
+                        Some(comparative_research_model()),
+                        Some(ResolutionSource::Profile),
+                    );
+                }
+                Some("coding") => {
+                    return (
+                        Some(repo_architecture_model()),
+                        Some(ResolutionSource::Profile),
+                    );
+                }
+                _ => {}
+            }
+            (
+                Some(repo_architecture_model()),
+                Some(ResolutionSource::Default),
+            )
+        }
+        "research_search" => {
+            match ctx.research_domain {
+                Some("architecture_decision") | Some("api_design") => {
+                    return (
+                        Some(comparative_research_model()),
+                        Some(ResolutionSource::Domain),
+                    );
+                }
+                Some("error_investigation") => {
+                    return (
+                        Some(error_investigation_model()),
+                        Some(ResolutionSource::Domain),
+                    );
+                }
+                Some("version_migration") => {
+                    return (
+                        Some(version_migration_model()),
+                        Some(ResolutionSource::Domain),
+                    );
+                }
+                Some("security_review") | Some("security") => {
+                    return (
+                        Some(security_review_model()),
+                        Some(ResolutionSource::Domain),
+                    );
+                }
+                Some("performance_investigation") | Some("performance") => {
+                    return (
+                        Some(performance_investigation_model()),
+                        Some(ResolutionSource::Domain),
+                    );
+                }
+                _ => {}
+            }
+            (
+                Some(comparative_research_model()),
+                Some(ResolutionSource::Default),
+            )
+        }
+        "security_search" => (
+            Some(security_review_model()),
+            Some(ResolutionSource::Default),
+        ),
+        "web_search" => (None, None),
+        _ => (None, None),
     }
 }
 
@@ -374,7 +558,7 @@ mod tests {
 
     #[test]
     fn retrieval_summary_from_empty_providers() {
-        let summary = build_retrieval_summary_for_search(&[], &[], &[]);
+        let summary = build_retrieval_summary_for_search(&[], &[], &[], &[]);
         assert!(summary.dimensions.is_empty());
     }
 
@@ -384,7 +568,7 @@ mod tests {
             make_card(SourceKind::SecurityAdvisory, "https://a.com"),
             make_card(SourceKind::OfficialDocs, "https://b.com"),
         ];
-        let result = postprocess(&cards, &[], &["test".to_string()], None, &[]);
+        let result = postprocess(&cards, &[], &["test".to_string()], None, &[], None, &[]);
         assert!(result.evidence_role_summary.is_some());
         assert!(result.conflict_metadata.is_empty());
     }

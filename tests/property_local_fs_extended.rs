@@ -1,4 +1,5 @@
 use eggsearch::core::local::{validate_local_fetch_path, LocalConfig, LocalFetchPathError};
+use eggsearch::meta::safe_open::{safe_open_relative, SafeOpenError};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
@@ -505,5 +506,168 @@ fn search_and_fetch_use_equivalent_path_policy() {
             );
         }
         let _ = accepts;
+    }
+}
+
+#[test]
+fn safe_open_follow_in_root_symlink_succeeds() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("target.txt"), "hello").unwrap();
+    std::os::unix::fs::symlink("target.txt", root.join("link.txt")).unwrap();
+
+    let cfg = LocalConfig {
+        follow_symlinks: true,
+        ..default_cfg()
+    };
+    let result = safe_open_relative(root, "link.txt", &cfg);
+    assert!(
+        result.is_ok(),
+        "in-root symlink should succeed with follow_symlinks=true"
+    );
+    assert_eq!(result.unwrap().size, 5);
+}
+
+#[test]
+fn safe_open_follow_symlink_escaping_root_rejected() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let outside = tmp.path().parent().unwrap().join("escape_target.txt");
+    fs::write(&outside, "escaped").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("escape.txt")).unwrap();
+
+    let cfg = LocalConfig {
+        follow_symlinks: true,
+        ..default_cfg()
+    };
+    let result = safe_open_relative(root, "escape.txt", &cfg);
+    assert!(
+        matches!(
+            result,
+            Err(SafeOpenError::SymlinkDetected(_)) | Err(SafeOpenError::Io(_))
+        ),
+        "symlink escaping root should be rejected with follow_symlinks=true"
+    );
+}
+
+#[test]
+fn safe_open_follow_intermediate_symlink_escaping_root_rejected() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let real_dir = root.join("real");
+    fs::create_dir(&real_dir).unwrap();
+    fs::write(real_dir.join("file.txt"), "content").unwrap();
+    let outside_dir = tmp.path().parent().unwrap().join("outside_dir_int");
+    fs::create_dir_all(&outside_dir).unwrap();
+    std::os::unix::fs::symlink(&outside_dir, root.join("linkdir")).unwrap();
+
+    let cfg = LocalConfig {
+        follow_symlinks: true,
+        ..default_cfg()
+    };
+    let result = safe_open_relative(root, "linkdir/file.txt", &cfg);
+    assert!(
+        matches!(
+            result,
+            Err(SafeOpenError::SymlinkDetected(_)) | Err(SafeOpenError::Io(_))
+        ),
+        "intermediate symlink escaping root should be rejected"
+    );
+}
+
+#[test]
+fn safe_open_follow_chained_symlinks_escaping_root_rejected() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let outside = tmp.path().parent().unwrap().join("escape_target_chain.txt");
+    fs::write(&outside, "escaped").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("link1")).unwrap();
+    std::os::unix::fs::symlink(root.join("link1"), root.join("link2")).unwrap();
+
+    let cfg = LocalConfig {
+        follow_symlinks: true,
+        ..default_cfg()
+    };
+    let result = safe_open_relative(root, "link2", &cfg);
+    assert!(
+        matches!(
+            result,
+            Err(SafeOpenError::SymlinkDetected(_)) | Err(SafeOpenError::Io(_))
+        ),
+        "chained symlinks escaping root should be rejected"
+    );
+}
+
+#[test]
+fn safe_open_follow_fstat_size_check_through_descriptor() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("big.txt"), vec![b'x'; 2048]).unwrap();
+
+    let cfg = LocalConfig {
+        follow_symlinks: true,
+        max_file_bytes: 1024,
+        ..default_cfg()
+    };
+    let result = safe_open_relative(root, "big.txt", &cfg);
+    assert!(
+        matches!(result, Err(SafeOpenError::FileTooLarge(2048, 1024))),
+        "fstat size check should reject oversized file"
+    );
+}
+
+#[test]
+fn safe_open_follow_not_a_file_rejected() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::create_dir(root.join("subdir")).unwrap();
+
+    let cfg = LocalConfig {
+        follow_symlinks: true,
+        ..default_cfg()
+    };
+    let result = safe_open_relative(root, "subdir", &cfg);
+    assert!(
+        matches!(result, Err(SafeOpenError::NotAFile)),
+        "directory should be rejected as not-a-file"
+    );
+}
+
+#[test]
+fn safe_open_no_follow_mode_still_rejects_symlinks() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("target.txt"), "data").unwrap();
+    std::os::unix::fs::symlink(root.join("target.txt"), root.join("link.txt")).unwrap();
+
+    let cfg = default_cfg();
+    assert!(
+        matches!(
+            safe_open_relative(root, "link.txt", &cfg),
+            Err(SafeOpenError::SymlinkDetected(_))
+        ),
+        "no-follow mode should reject symlinks"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn safe_open_follow_magic_link_rejected() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let magic_link = root.join("ns_link");
+    if let Ok(()) = std::os::unix::fs::symlink("/proc/self/ns/mnt", &magic_link) {
+        let cfg = LocalConfig {
+            follow_symlinks: true,
+            ..default_cfg()
+        };
+        let result = safe_open_relative(root, "ns_link", &cfg);
+        assert!(
+            matches!(
+                result,
+                Err(SafeOpenError::SymlinkDetected(_)) | Err(SafeOpenError::Io(_))
+            ),
+            "magic-link path should be rejected by RESOLVE_NO_MAGICLINKS"
+        );
     }
 }

@@ -52,7 +52,7 @@ pub async fn run_security_search_plan(
         req.providers.clone()
     };
 
-    let (results, dispatch_warnings, providers_failed, trust_markers) = adapter
+    let (results, dispatch_warnings, providers_failed, trust_markers, security_attempts) = adapter
         .security_search_subqueries(
             &req.query,
             &effective_providers,
@@ -755,24 +755,30 @@ pub async fn run_security_search_plan(
 
     let structured_warnings = crate::core::warning::convert_warnings(&warnings);
 
+    for group in &mut groups {
+        crate::core::evidence_postprocess::materialize_evidence_roles(&mut group.results);
+    }
+
     let all_cards: Vec<crate::core::SourceCard> = groups
         .iter()
         .flat_map(|g| g.results.iter())
         .cloned()
         .collect();
 
-    let mut all_cards = all_cards;
-    crate::core::evidence_postprocess::materialize_evidence_roles(&mut all_cards);
-
-    let workflow_model = crate::core::evidence_postprocess::resolve_workflow_model(
-        "security_search",
-        None,
-        None,
-        false,
-    );
+    let (workflow_model, resolution_source) =
+        crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+            &crate::core::workflow_coverage::WorkflowResolutionContext {
+                tool: "security_search",
+                workflow: req.workflow,
+                profile: None,
+                research_domain: None,
+                exact_error: false,
+            },
+        );
     let retrieval_failures = crate::meta::adapter::build_retrieval_failures(
         &providers_failed,
         &web_resp.providers_queried,
+        &security_attempts,
     );
     let postprocess_result = crate::core::evidence_postprocess::postprocess(
         &all_cards,
@@ -780,6 +786,8 @@ pub async fn run_security_search_plan(
         &web_resp.providers_queried,
         workflow_model.as_ref(),
         &retrieval_failures,
+        resolution_source,
+        &security_attempts,
     );
 
     SecuritySearchResponse {

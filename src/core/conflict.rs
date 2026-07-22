@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[allow(missing_docs)]
 #[derive(
@@ -91,6 +92,17 @@ impl ConflictDetector {
     pub fn into_conflicts(self) -> Vec<EvidenceConflict> {
         self.conflicts
     }
+}
+
+/// A value annotated with its source provenance for conflict comparison.
+#[derive(Clone, Debug)]
+pub struct SourcedValue {
+    /// The stable ID of the source card this value came from.
+    pub source_id: String,
+    /// The provider IDs that contributed to the source card.
+    pub provider_ids: Vec<String>,
+    /// The comparable value (e.g. a patched version string, a date).
+    pub value: String,
 }
 
 fn compute_conflict_id(source_ids: &[String], field: &str) -> String {
@@ -290,6 +302,75 @@ pub fn detect_mutable_vs_pinned(
     })
 }
 
+fn has_distinct_sources(sourced: &[SourcedValue]) -> bool {
+    let mut seen = BTreeSet::new();
+    for sv in sourced {
+        if !seen.insert(&sv.source_id) {
+            continue;
+        }
+    }
+    seen.len() >= 2
+}
+
+fn sourced_versions_for_cards(
+    group: &[&crate::core::source_card::SourceCard],
+) -> Vec<SourcedValue> {
+    let mut result = Vec::new();
+    for card in group {
+        let source_id = match card.stable_id.as_deref() {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+        let providers = card.providers.clone();
+        if let Some(ref vuln) = card.metadata.vulnerability {
+            for v in &vuln.patched_versions {
+                result.push(SourcedValue {
+                    source_id: source_id.clone(),
+                    provider_ids: providers.clone(),
+                    value: v.clone(),
+                });
+            }
+        }
+    }
+    result
+}
+
+fn sourced_dates_for_cards(group: &[&crate::core::source_card::SourceCard]) -> Vec<SourcedValue> {
+    let mut result = Vec::new();
+    for card in group {
+        let source_id = match card.stable_id.as_deref() {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+        let providers = card.providers.clone();
+        if let Some(ref vuln) = card.metadata.vulnerability {
+            if let Some(ref published) = vuln.published_at {
+                result.push(SourcedValue {
+                    source_id,
+                    provider_ids: providers,
+                    value: published.clone(),
+                });
+            }
+        }
+    }
+    result
+}
+
+fn package_key_for_card(card: &crate::core::source_card::SourceCard) -> Option<(String, String)> {
+    let vuln = card.metadata.vulnerability.as_ref()?;
+    let ecosystem = vuln.ecosystem.as_deref().unwrap_or("");
+    let package = vuln.package.as_deref().unwrap_or("");
+    Some((ecosystem.to_string(), package.to_string()))
+}
+
+fn repo_host_key(card: &crate::core::source_card::SourceCard) -> Option<(String, String, String)> {
+    let code = card.metadata.code_evidence.as_ref()?;
+    let host = code.host.as_ref().map(|h| format!("{h:?}"))?;
+    let owner = code.owner.as_deref().unwrap_or("");
+    let repo = code.repo.as_deref().unwrap_or("");
+    Some((host, owner.to_string(), repo.to_string()))
+}
+
 /// Group source cards by their entity key and detect conflicts within each group.
 ///
 /// Scoped conflict detection avoids false-positive cross-entity conflicts
@@ -298,8 +379,6 @@ pub fn detect_mutable_vs_pinned(
 pub fn detect_entity_scoped_conflicts(
     cards: &[crate::core::source_card::SourceCard],
 ) -> Vec<EvidenceConflict> {
-    use std::collections::BTreeMap;
-
     let mut groups: BTreeMap<
         (ConflictEntityType, String),
         Vec<&crate::core::source_card::SourceCard>,
@@ -327,54 +406,168 @@ pub fn detect_entity_scoped_conflicts(
 
         match entity_type {
             ConflictEntityType::Vulnerability => {
-                let mut affected_versions: Vec<&str> = Vec::new();
+                let mut per_package: BTreeMap<
+                    (String, String),
+                    Vec<&crate::core::source_card::SourceCard>,
+                > = BTreeMap::new();
                 for card in group {
-                    if let Some(ref vuln) = card.metadata.vulnerability {
-                        for v in &vuln.patched_versions {
-                            affected_versions.push(v);
-                        }
-                    }
+                    let key = package_key_for_card(card)
+                        .unwrap_or_else(|| (String::new(), String::new()));
+                    per_package.entry(key).or_default().push(card);
                 }
-                if affected_versions.len() >= 2 {
-                    if let Some(conflict) = detect_version_range_conflicts(
-                        &ids,
-                        &[],
-                        "patched_versions",
-                        affected_versions[0],
-                        affected_versions[1],
-                    ) {
-                        conflicts.push(conflict);
+
+                for pkg_group in per_package.values() {
+                    if pkg_group.len() < 2 {
+                        continue;
+                    }
+
+                    let pkg_ids: Vec<String> = pkg_group
+                        .iter()
+                        .filter_map(|c| c.stable_id.clone())
+                        .collect();
+                    if pkg_ids.len() < 2 {
+                        continue;
+                    }
+
+                    let sourced = sourced_versions_for_cards(pkg_group);
+                    if sourced.is_empty() {
+                        continue;
+                    }
+
+                    let per_source_sets: BTreeMap<String, BTreeSet<String>> = {
+                        let mut map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+                        for sv in &sourced {
+                            map.entry(sv.source_id.clone())
+                                .or_default()
+                                .insert(sv.value.clone());
+                        }
+                        map
+                    };
+
+                    let mut source_set_keys: Vec<(String, BTreeSet<String>)> =
+                        per_source_sets.into_iter().collect();
+                    source_set_keys.sort_by(|a, b| a.0.cmp(&b.0));
+
+                    if source_set_keys.len() >= 2 {
+                        let distinct_ids: Vec<String> =
+                            source_set_keys.iter().map(|(id, _)| id.clone()).collect();
+                        let mut unique_ids = distinct_ids.clone();
+                        unique_ids.sort();
+                        unique_ids.dedup();
+
+                        if unique_ids.len() >= 2 {
+                            let first_set = &source_set_keys[0].1;
+                            let second_set = &source_set_keys[1].1;
+                            if first_set != second_set {
+                                let values: Vec<String> = source_set_keys
+                                    .iter()
+                                    .map(|(_, s)| {
+                                        let mut v: Vec<String> = s.iter().cloned().collect();
+                                        v.sort();
+                                        v.join(", ")
+                                    })
+                                    .collect();
+                                if let Some(conflict) = detect_version_range_conflicts(
+                                    &pkg_ids,
+                                    &[],
+                                    "patched_versions",
+                                    &values[0],
+                                    values.get(1).map(|s| s.as_str()).unwrap_or(""),
+                                ) {
+                                    conflicts.push(conflict);
+                                }
+                            }
+                        }
                     }
                 }
 
-                let mut published_dates: Vec<&str> = Vec::new();
-                for card in group {
-                    if let Some(ref vuln) = card.metadata.vulnerability {
-                        if let Some(ref published) = vuln.published_at {
-                            published_dates.push(published);
+                let sourced_dates = sourced_dates_for_cards(group);
+                if sourced_dates.len() >= 2 && has_distinct_sources(&sourced_dates) {
+                    let date_set: BTreeSet<String> =
+                        sourced_dates.iter().map(|sv| sv.value.clone()).collect();
+                    let per_source_dates: BTreeMap<String, BTreeSet<String>> = {
+                        let mut map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+                        for sv in &sourced_dates {
+                            map.entry(sv.source_id.clone())
+                                .or_default()
+                                .insert(sv.value.clone());
+                        }
+                        map
+                    };
+
+                    let mut date_source_keys: Vec<(String, BTreeSet<String>)> =
+                        per_source_dates.into_iter().collect();
+                    date_source_keys.sort_by(|a, b| a.0.cmp(&b.0));
+
+                    if date_source_keys.len() >= 2 {
+                        let first_dates = &date_source_keys[0].1;
+                        let second_dates = &date_source_keys[1].1;
+                        if first_dates != second_dates {
+                            let all_dates: Vec<String> = date_set.into_iter().collect();
+                            if all_dates.len() >= 2 {
+                                if let Some(conflict) = detect_date_conflicts(
+                                    &ids,
+                                    &[],
+                                    "published_at",
+                                    &all_dates[0],
+                                    &all_dates[1],
+                                ) {
+                                    conflicts.push(conflict);
+                                }
+                            }
                         }
                     }
                 }
-                if published_dates.len() >= 2 {
-                    if let Some(conflict) = detect_date_conflicts(
-                        &ids,
-                        &[],
-                        "published_at",
-                        published_dates[0],
-                        published_dates[1],
-                    ) {
+            }
+            ConflictEntityType::Repository => {
+                let mut per_repo_host: BTreeMap<
+                    (String, String, String),
+                    Vec<&crate::core::source_card::SourceCard>,
+                > = BTreeMap::new();
+                for card in group {
+                    if let Some(key) = repo_host_key(card) {
+                        per_repo_host.entry(key).or_default().push(card);
+                    }
+                }
+
+                for repo_group in per_repo_host.values() {
+                    if repo_group.len() < 2 {
+                        continue;
+                    }
+
+                    let repo_ids: Vec<String> = repo_group
+                        .iter()
+                        .filter_map(|c| c.stable_id.clone())
+                        .collect();
+                    if repo_ids.len() < 2 {
+                        continue;
+                    }
+
+                    let mut mutable_ids = Vec::new();
+                    let mut pinned_ids = Vec::new();
+                    for card in repo_group {
+                        let id = match card.stable_id.as_deref() {
+                            Some(id) => id.to_string(),
+                            None => continue,
+                        };
+                        let is_pinned = card
+                            .metadata
+                            .code_evidence
+                            .as_ref()
+                            .is_some_and(|c| c.commit_sha.is_some());
+                        if is_pinned {
+                            pinned_ids.push(id);
+                        } else {
+                            mutable_ids.push(id);
+                        }
+                    }
+
+                    if let Some(conflict) = detect_mutable_vs_pinned(&mutable_ids, &pinned_ids) {
                         conflicts.push(conflict);
                     }
                 }
             }
-            ConflictEntityType::Benchmark => {
-                // Benchmark conflicts would compare benchmark values across sources
-                // Currently detected via metadata comparison
-            }
-            _ => {
-                // Package, Repository, Documentation conflicts
-                // are detected through version/date comparisons when available
-            }
+            _ => {}
         }
     }
 

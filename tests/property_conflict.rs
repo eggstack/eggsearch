@@ -341,4 +341,251 @@ proptest! {
         prop_assert!(mutable_vs_pinned.is_empty(),
             "mutable-vs-pinned conflict must NOT be reported for cards from unrelated repositories (org-a/{repo_a} vs org-b/{repo_b}). Cross-entity conflicts produce false positives.");
     }
+
+    #[test]
+    fn no_cross_entity_conflict(
+        cards in proptest::collection::vec(card_with_stable_id_and_vuln_strategy(), 0..10),
+    ) {
+        let conflicts = detect_entity_scoped_conflicts(&cards);
+        for conflict in &conflicts {
+            prop_assert!(!conflict.source_ids.is_empty(),
+                "every conflict must have at least one source ID");
+        }
+    }
+}
+
+fn make_vuln_card(
+    stable_id: &str,
+    cve: &str,
+    package: Option<&str>,
+    ecosystem: Option<&str>,
+    patched: Vec<&str>,
+    published: Option<&str>,
+) -> SourceCard {
+    let mut card = SourceCard::new(
+        format!("advisory for {cve}").as_str(),
+        format!("https://example.com/{cve}").as_str(),
+        vec!["osv".to_string()],
+        Some(0.5),
+        TrustLevel::ExternalUntrusted,
+    );
+    card.stable_id = Some(stable_id.to_string());
+    card.metadata.vulnerability =
+        Some(Box::new(eggsearch::core::security::VulnerabilityMetadata {
+            cve_ids: vec![cve.to_string()],
+            package: package.map(String::from),
+            ecosystem: ecosystem.map(String::from),
+            patched_versions: patched.into_iter().map(String::from).collect(),
+            published_at: published.map(String::from),
+            source: VulnerabilitySource::Osv,
+            ..Default::default()
+        }));
+    card
+}
+
+#[test]
+fn one_card_two_versions_no_conflict() {
+    let card = make_vuln_card(
+        "src_a",
+        "CVE-2024-0001",
+        None,
+        None,
+        vec![">=1.0 <2.0", ">=2.0 <3.0"],
+        Some("2024-01-01"),
+    );
+    let conflicts = detect_entity_scoped_conflicts(&[card]);
+    assert!(
+        conflicts.is_empty(),
+        "single card with two patched versions must not produce a conflict"
+    );
+}
+
+#[test]
+fn same_version_set_different_order_no_conflict() {
+    let card1 = make_vuln_card(
+        "src_1",
+        "CVE-2024-0001",
+        None,
+        None,
+        vec![">=1.0 <2.0", ">=2.0 <3.0"],
+        Some("2024-01-01"),
+    );
+    let card2 = make_vuln_card(
+        "src_2",
+        "CVE-2024-0001",
+        None,
+        None,
+        vec![">=2.0 <3.0", ">=1.0 <2.0"],
+        Some("2024-01-01"),
+    );
+    let conflicts = detect_entity_scoped_conflicts(&[card1, card2]);
+    let version_conflicts: Vec<_> = conflicts
+        .iter()
+        .filter(|c| c.compared_fields.iter().any(|f| f == "patched_versions"))
+        .collect();
+    assert!(
+        version_conflicts.is_empty(),
+        "two cards with the same patched-version set in different order must not produce a conflict"
+    );
+}
+
+#[test]
+fn genuinely_different_version_sets_produce_conflict() {
+    let card1 = make_vuln_card(
+        "src_1",
+        "CVE-2024-0001",
+        None,
+        None,
+        vec![">=1.0 <2.0"],
+        Some("2024-01-01"),
+    );
+    let card2 = make_vuln_card(
+        "src_2",
+        "CVE-2024-0001",
+        None,
+        None,
+        vec![">=1.5 <3.0"],
+        Some("2024-01-01"),
+    );
+    let conflicts = detect_entity_scoped_conflicts(&[card1, card2]);
+    let version_conflicts: Vec<_> = conflicts
+        .iter()
+        .filter(|c| c.compared_fields.iter().any(|f| f == "patched_versions"))
+        .collect();
+    assert!(
+        !version_conflicts.is_empty(),
+        "two cards with genuinely different patched-version sets must produce a conflict"
+    );
+}
+
+#[test]
+fn same_cve_different_package_no_conflict() {
+    let card1 = make_vuln_card(
+        "src_1",
+        "CVE-2024-0001",
+        Some("crate-a"),
+        Some("crates.io"),
+        vec![">=1.0 <2.0"],
+        Some("2024-01-01"),
+    );
+    let card2 = make_vuln_card(
+        "src_2",
+        "CVE-2024-0001",
+        Some("crate-b"),
+        Some("crates.io"),
+        vec![">=1.5 <3.0"],
+        Some("2024-01-01"),
+    );
+    let conflicts = detect_entity_scoped_conflicts(&[card1, card2]);
+    let version_conflicts: Vec<_> = conflicts
+        .iter()
+        .filter(|c| c.compared_fields.iter().any(|f| f == "patched_versions"))
+        .collect();
+    assert!(
+        version_conflicts.is_empty(),
+        "same CVE but different package must NOT produce a package-range conflict"
+    );
+}
+
+#[test]
+fn same_owner_repo_different_hosts_no_conflict() {
+    use eggsearch::core::code_metadata::CodeHost;
+
+    let mut card_github = SourceCard::new(
+        "repo on github",
+        "https://github.com/org/repo",
+        vec!["github_code".to_string()],
+        Some(0.8),
+        TrustLevel::ExternalUntrusted,
+    );
+    card_github.stable_id = Some("src_github".to_string());
+    card_github.metadata.code_evidence = Some(eggsearch::core::code_evidence::CodeEvidence {
+        host: Some(CodeHost::Github),
+        owner: Some("org".to_string()),
+        repo: Some("repo".to_string()),
+        ref_name: Some("main".to_string()),
+        path: Some("src/lib.rs".to_string()),
+        commit_sha: Some("abc123".to_string()),
+        ..Default::default()
+    });
+
+    let mut card_gitlab = SourceCard::new(
+        "repo on gitlab",
+        "https://gitlab.com/org/repo",
+        vec!["gitlab_code".to_string()],
+        Some(0.8),
+        TrustLevel::ExternalUntrusted,
+    );
+    card_gitlab.stable_id = Some("src_gitlab".to_string());
+    card_gitlab.metadata.code_evidence = Some(eggsearch::core::code_evidence::CodeEvidence {
+        host: Some(CodeHost::Gitlab),
+        owner: Some("org".to_string()),
+        repo: Some("repo".to_string()),
+        ref_name: Some("main".to_string()),
+        path: Some("src/main.rs".to_string()),
+        commit_sha: None,
+        ..Default::default()
+    });
+
+    let conflicts = detect_entity_scoped_conflicts(&[card_github, card_gitlab]);
+    let mutable_vs_pinned: Vec<_> = conflicts
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.conflict_class,
+                eggsearch::core::conflict::ConflictClass::MutableVsCommitPinnedContent
+            )
+        })
+        .collect();
+    assert!(
+        mutable_vs_pinned.is_empty(),
+        "same owner/repo on different hosts must NOT produce a repository conflict"
+    );
+}
+
+#[test]
+fn duplicate_provider_aggregation_no_extra_source() {
+    let mut card1 = SourceCard::new(
+        "advisory 1",
+        "https://example.com/cve-1",
+        vec!["osv".to_string(), "github_advisory".to_string()],
+        Some(0.5),
+        TrustLevel::ExternalUntrusted,
+    );
+    card1.stable_id = Some("src_1".to_string());
+    card1.metadata.vulnerability =
+        Some(Box::new(eggsearch::core::security::VulnerabilityMetadata {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            patched_versions: vec![">=1.0 <2.0".to_string()],
+            published_at: Some("2024-01-01".to_string()),
+            source: VulnerabilitySource::Osv,
+            ..Default::default()
+        }));
+
+    let mut card2 = SourceCard::new(
+        "advisory 2",
+        "https://example.com/cve-1-other",
+        vec!["osv".to_string()],
+        Some(0.5),
+        TrustLevel::ExternalUntrusted,
+    );
+    card2.stable_id = Some("src_2".to_string());
+    card2.metadata.vulnerability =
+        Some(Box::new(eggsearch::core::security::VulnerabilityMetadata {
+            cve_ids: vec!["CVE-2024-0001".to_string()],
+            patched_versions: vec![">=1.0 <2.0".to_string()],
+            published_at: Some("2024-01-01".to_string()),
+            source: VulnerabilitySource::Osv,
+            ..Default::default()
+        }));
+
+    let conflicts = detect_entity_scoped_conflicts(&[card1, card2]);
+    let version_conflicts: Vec<_> = conflicts
+        .iter()
+        .filter(|c| c.compared_fields.iter().any(|f| f == "patched_versions"))
+        .collect();
+    assert!(
+        version_conflicts.is_empty(),
+        "duplicate aggregated provider contributions with same version must not produce a conflict"
+    );
 }

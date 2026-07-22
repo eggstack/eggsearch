@@ -8220,6 +8220,73 @@ mod repo_search {
     }
 
     #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn security_search_groups_have_materialized_evidence_roles() {
+        let engines = vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "CVE-2024-0001 Advisory",
+                    "https://osv.dev/vulnerability/GHSA-test-1234-abcd",
+                    "mock_a",
+                )
+                .with_snippet("Advisory details"),
+                MockResult::new(
+                    "Exploit Discussion",
+                    "https://exploit-db.com/exploits/12345",
+                    "mock_a",
+                )
+                .with_snippet("Exploit details"),
+                MockResult::new(
+                    "NVD Entry",
+                    "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+                    "mock_a",
+                )
+                .with_snippet("NVD advisory"),
+            ],
+        )];
+        let state = security_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        let v = run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("CVE-2024-0001 vulnerability".into()),
+                include_exploit_context: Some(true),
+                providers: vec!["mock_a".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ok");
+
+        let groups = v["groups"].as_array().expect("groups");
+        assert!(!groups.is_empty(), "should have groups");
+
+        for group in groups {
+            let results = group["results"].as_array().expect("group results");
+            for card in results {
+                let evidence_role = card
+                    .get("metadata")
+                    .and_then(|m| m.get("evidence_role"))
+                    .and_then(|v| v.as_str());
+                assert!(
+                    evidence_role.is_some(),
+                    "every serialized security group card must have a non-null evidence_role, \
+                     card title={:?}, group kind={:?}",
+                    card["title"].as_str(),
+                    group["kind"].as_str(),
+                );
+            }
+        }
+
+        let evidence_role_summary = v.get("evidence_role_summary");
+        assert!(
+            evidence_role_summary.is_some()
+                && evidence_role_summary.unwrap().get("role_counts").is_some(),
+            "evidence_role_summary should be present with role_counts"
+        );
+    }
+
+    #[cfg(feature = "mock")]
     fn security_state_with_engines(
         cfg: AppConfig,
         engines: Vec<MockEngine>,

@@ -177,6 +177,7 @@ pub use workflow::{
     RecipeSupport, MAX_NEXT_ACTIONS,
 };
 pub use workflow_coverage::{
-    CoverageStatus, RetrievalFailure, RetrievalFailureKind, WorkflowCoverageModel,
-    WorkflowCoverageRequest, WorkflowCoverageResult,
+    CoverageStatus, ResolutionSource, RetrievalFailure, RetrievalFailureKind,
+    WorkflowCoverageModel, WorkflowCoverageRequest, WorkflowCoverageResult, WorkflowKind,
+    WorkflowResolutionContext,
 };

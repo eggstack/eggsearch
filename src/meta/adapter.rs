@@ -9,6 +9,7 @@ use std::time::Duration;
 use futures::FutureExt;
 
 use crate::core::config::ApiProviderConfig;
+use crate::core::evidence_role::EvidenceRole;
 use crate::core::provider::{
     built_in_provider_descriptor, provider_configured_state, CapabilityOption, ProviderDescriptor,
     ProviderSkipCode, KNOWN_PROVIDER_IDS,
@@ -775,6 +776,53 @@ impl MetadataSearchAdapter {
             ));
         }
 
+        // Build attempt records from raw results and failures before
+        // consuming them for provider failure classification.
+        let mut web_search_attempts: Vec<crate::core::retrieval_status::RetrievalAttempt> =
+            Vec::new();
+        for (id, results) in &raw_results {
+            web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
+                provider_id: id.clone(),
+                subquery_id: None,
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: if results.is_empty() {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessZeroResults
+                } else {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessWithResults
+                },
+                result_count: results.len(),
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                query_fingerprint: None,
+                duration_ms: None,
+            });
+        }
+        for (id, err) in &raw_failures {
+            let ec = classify(err);
+            let outcome = match ec {
+                ErrorClass::Timeout => {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::TimedOut
+                }
+                ErrorClass::RateLimited => {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::RateLimited
+                }
+                _ => crate::core::retrieval_status::RetrievalAttemptOutcome::Failed,
+            };
+            web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
+                provider_id: id.clone(),
+                subquery_id: None,
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome,
+                result_count: 0,
+                error_class: Some(ec.as_str().to_string()),
+                deadline_interrupted: false,
+                truncated: false,
+                query_fingerprint: None,
+                duration_ms: None,
+            });
+        }
+
         // Collect the set of provider ids that already completed (success
         // or individual failure) so we don't double-count.
         let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -803,6 +851,19 @@ impl MetadataSearchAdapter {
                     error_class: ErrorClass::Timeout.as_str().to_string(),
                     message: "provider timed out".to_string(),
                 });
+                web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
+                    provider_id: id.clone(),
+                    subquery_id: None,
+                    intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                    outcome:
+                        crate::core::retrieval_status::RetrievalAttemptOutcome::InterruptedByDeadline,
+                    result_count: 0,
+                    error_class: None,
+                    deadline_interrupted: true,
+                    truncated: false,
+                    query_fingerprint: None,
+                    duration_ms: None,
+                });
             }
         }
 
@@ -816,13 +877,16 @@ impl MetadataSearchAdapter {
 
         crate::core::evidence_postprocess::materialize_evidence_roles(&mut results);
 
-        let retrieval_failures = build_retrieval_failures(&providers_failed, &providers_queried);
+        let retrieval_failures =
+            build_retrieval_failures(&providers_failed, &providers_queried, &web_search_attempts);
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &results,
             &providers_failed,
             &providers_queried,
             None,
             &retrieval_failures,
+            None,
+            &web_search_attempts,
         );
 
         WebSearchResponse {
@@ -1389,19 +1453,26 @@ impl MetadataSearchAdapter {
             .cloned()
             .collect();
 
-        let workflow_model = crate::core::evidence_postprocess::resolve_workflow_model(
-            "repo_search",
-            None,
-            None,
-            is_exact_error,
-        );
-        let retrieval_failures = build_retrieval_failures(&providers_failed, &providers_queried);
+        let (workflow_model, resolution_source) =
+            crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+                &crate::core::workflow_coverage::WorkflowResolutionContext {
+                    tool: "repo_search",
+                    workflow: req.workflow,
+                    profile: req.profile.as_ref().map(|p| p.as_str()),
+                    research_domain: None,
+                    exact_error: is_exact_error,
+                },
+            );
+        let retrieval_failures =
+            build_retrieval_failures(&providers_failed, &providers_queried, &dispatch.attempts);
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
             &providers_queried,
             workflow_model.as_ref(),
             &retrieval_failures,
+            resolution_source,
+            &dispatch.attempts,
         );
 
         let next_actions = postprocess_result
@@ -1462,6 +1533,7 @@ impl MetadataSearchAdapter {
         Vec<SearchWarning>,
         Vec<ProviderFailure>,
         TrustMarkers,
+        Vec<crate::core::retrieval_status::RetrievalAttempt>,
     ) {
         use crate::core::query::SearchIntent;
         use crate::core::WebSearchRequest;
@@ -1524,7 +1596,13 @@ impl MetadataSearchAdapter {
             trust_markers.merge(&card.trust_markers);
         }
 
-        (cards, warnings, providers_failed, trust_markers)
+        (
+            cards,
+            warnings,
+            providers_failed,
+            trust_markers,
+            dispatch.attempts,
+        )
     }
 
     /// Run a research-oriented multi-source evidence search. This generates bounded subqueries
@@ -1702,19 +1780,43 @@ impl MetadataSearchAdapter {
             ResearchDomain::Performance => Some("performance_investigation"),
             _ => None,
         };
-        let workflow_model = crate::core::evidence_postprocess::resolve_workflow_model(
-            "research_search",
-            None,
-            research_domain_str,
-            false,
-        );
-        let retrieval_failures = build_retrieval_failures(&providers_failed, &queried_ids);
+        let (workflow_model, resolution_source) =
+            crate::core::evidence_postprocess::resolve_workflow_model_with_context(
+                &crate::core::workflow_coverage::WorkflowResolutionContext {
+                    tool: "research_search",
+                    workflow: req.workflow.and_then(|w| match w {
+                        crate::core::research::ResearchWorkflow::ApiEvaluation => {
+                            Some(crate::core::workflow_coverage::WorkflowKind::ApiComprehension)
+                        }
+                        crate::core::research::ResearchWorkflow::ArchitectureDecision => {
+                            Some(crate::core::workflow_coverage::WorkflowKind::ComparativeResearch)
+                        }
+                        crate::core::research::ResearchWorkflow::SecurityReview => {
+                            Some(crate::core::workflow_coverage::WorkflowKind::SecurityReview)
+                        }
+                        crate::core::research::ResearchWorkflow::PerformanceInvestigation => Some(
+                            crate::core::workflow_coverage::WorkflowKind::PerformanceInvestigation,
+                        ),
+                        crate::core::research::ResearchWorkflow::MigrationPlanning => {
+                            Some(crate::core::workflow_coverage::WorkflowKind::VersionMigration)
+                        }
+                        _ => None,
+                    }),
+                    profile: None,
+                    research_domain: research_domain_str,
+                    exact_error: false,
+                },
+            );
+        let retrieval_failures =
+            build_retrieval_failures(&providers_failed, &queried_ids, &dispatch.attempts);
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
             &queried_ids,
             workflow_model.as_ref(),
             &retrieval_failures,
+            resolution_source,
+            &dispatch.attempts,
         );
 
         let next_actions = postprocess_result
@@ -1779,6 +1881,10 @@ async fn dispatch_subqueries(
     let mut jobs = Vec::new();
     for (subquery_idx, subquery) in subqueries.iter().enumerate() {
         for (provider_idx, engine) in engines.iter().enumerate() {
+            let intended_roles = crate::core::retrieval_status::map_provider_to_intended_roles(
+                engine.name(),
+                &subquery.label,
+            );
             jobs.push(DispatchJob {
                 subquery_id: subquery.label.clone(),
                 query: subquery.query.clone(),
@@ -1787,6 +1893,7 @@ async fn dispatch_subqueries(
                 priority: subquery.priority,
                 subquery_order: subquery_idx,
                 provider_order: provider_idx,
+                intended_roles,
             });
         }
     }
@@ -2806,9 +2913,15 @@ fn apply_intent_reranking(
 pub(crate) fn build_retrieval_failures(
     providers_failed: &[ProviderFailure],
     providers_queried: &[String],
+    attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> Vec<crate::core::workflow_coverage::RetrievalFailure> {
-    use crate::core::retrieval_status::map_provider_to_intended_roles;
     use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
+
+    if !attempts.is_empty() {
+        return crate::core::retrieval_status::attempts_to_failures(attempts);
+    }
+
+    use crate::core::retrieval_status::map_provider_to_intended_roles;
 
     let failed_set: std::collections::HashSet<&str> =
         providers_failed.iter().map(|f| f.id.as_str()).collect();

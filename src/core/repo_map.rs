@@ -394,6 +394,18 @@ pub struct RepoMapTelemetry {
     /// Whether the aggregate byte budget was reached.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub aggregate_byte_cap_reached: bool,
+    /// The configured aggregate byte limit for this operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aggregate_limit: Option<usize>,
+    /// Remaining aggregate budget after the operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aggregate_remaining: Option<usize>,
+    /// Number of HTTP requests made during the operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_count: Option<usize>,
+    /// The request kind that exhausted the budget, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exhausted_by: Option<String>,
 }
 
 /// Local checkout metadata for a repo map response.
