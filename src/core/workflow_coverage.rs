@@ -448,10 +448,7 @@ pub fn generate_gap_driven_next_actions(
             Some(*role),
         )
         .with_evidence_gap(format!("missing_recommended_{role:?}"))
-        .with_rationale(format!(
-            "Recommended role {:?} would improve coverage",
-            role
-        ));
+        .with_rationale(format!("Recommended role {role:?} would improve coverage"));
 
         actions.push(action);
     }

@@ -161,9 +161,9 @@ pub fn safe_open_relative(
             if name_bytes.contains(&0u8) {
                 return Err(SafeOpenError::NullByte);
             }
-            let name_str = name.to_str().ok_or_else(|| {
-                SafeOpenError::NotFound(format!("non-UTF8 component: {:?}", comp))
-            })?;
+            let name_str = name
+                .to_str()
+                .ok_or_else(|| SafeOpenError::NotFound(format!("non-UTF8 component: {comp:?}")))?;
             if !config.include_hidden && name_str.starts_with('.') {
                 return Err(SafeOpenError::NotFound(format!(
                     "hidden component: {name_str}"
@@ -288,7 +288,7 @@ pub fn safe_open_relative(
             if config.follow_symlinks {
                 #[cfg(target_os = "linux")]
                 {
-                    let fd_link = format!("/proc/self/fd/{}", new_fd);
+                    let fd_link = format!("/proc/self/fd/{new_fd}");
                     if let Ok(target) = std::fs::read_link(&fd_link) {
                         let root_canonical = root.canonicalize().map_err(|e| {
                             close_fd(new_fd);

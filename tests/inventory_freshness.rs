@@ -29,6 +29,18 @@ mod tests {
             .output()
             .expect("git init");
 
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir)
+            .output()
+            .expect("git config user.name");
+
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir)
+            .output()
+            .expect("git config user.email");
+
         for (name, content) in files {
             std::fs::write(dir.join(name), content).unwrap();
         }
