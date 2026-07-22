@@ -254,19 +254,27 @@ The forge adapter (`forge_adapter.rs`) handles native remote repository tree ret
 
 ### Response Reading
 
-Primary tree and paginated forge API responses are read through `read_bounded_response()` which enforces a hard byte cap during streaming. The function checks `Content-Length` upfront and accumulates bytes incrementally, returning `response_too_large` when the cap is exceeded. Error-body previews (e.g., rate-limit detection, permission-denied diagnostics) and default-branch metadata lookups use `.text().await` or `.json().await` directly — these paths are unbounded but receive small responses from the forge API.
+Primary tree and paginated forge API responses are read through `read_bounded_response()` which enforces a hard byte cap during streaming. The function checks `Content-Length` upfront and accumulates bytes incrementally, returning `response_too_large` when the cap is exceeded. Error-body previews (e.g., rate-limit detection, permission-denied diagnostics) are read through `read_error_preview()` with an 8KB cap and control-character sanitization. Default-branch metadata lookups use bounded response reading.
 
 ### Endpoint Safety
 
 `validate_base_url()` enforces URL safety before any forge API request:
 - Rejects embedded credentials (username/password in URL)
-- Rejects HTTPS URLs pointing to localhost, loopback, or private IPv4/IPv6 ranges
+- Rejects HTTPS URLs pointing to localhost, loopback, or private IPv4/IPv6 ranges (when policy disallows)
 - Rejects HTTP URLs with API keys except for localhost development use
 - Full IPv6 classification: loopback, private (ULA), link-local, documentation, reserved, public
+
+**Architecture decision — ForgeEndpointPolicy:** `ForgeEndpointPolicy` defaults to `allow_loopback: false`, `allow_private_network: false`, `require_https: true`. This makes forge API requests safe by default for general MCP exposure while allowing operator override for localhost development (Gitea, Forgejo). The three independent flags let operators configure exactly which address classes and schemes are permitted without requiring code changes.
+
+**Architecture decision — Redirect handling:** Forge API clients use `Policy::none()`, rejecting all HTTP redirects. Redirects are treated as failure rather than followed. This prevents SSRF via redirect chains and ensures `validate_base_url()` preflight checks are not bypassed. The fetch client also uses `Policy::none()` for outbound requests; redirect revalidation is handled in the fetch layer for user-initiated fetches.
+
+**Architecture decision — DNS pinning:** `validate_base_url()` performs preflight DNS resolution via `std::net::ToSocketAddrs` and classifies every resolved address against the endpoint policy. Literal IP addresses are classified directly. This pins the address set at validation time. **Residual risk:** DNS rebinding can occur between the validation check and the actual HTTP connection, since `reqwest` resolves DNS independently. The preflight check eliminates the most common SSRF vector (direct DNS to private IP) but does not provide TOCTOU-safe DNS pinning. This trade-off is acceptable for the forge adapter's threat model (operator-controlled base URLs, not arbitrary user input).
 
 ### Commit Provenance
 
 `commit_sha` in `RepoMapResponse` is set from `resolved_ref` in the forge API response. For GitHub, this is the tree SHA from the Git Trees API (not a commit SHA). For GitLab, this is the commit SHA from the ref resolution endpoint. The `resolved_ref_name` field records the original branch or tag name used for the tree lookup. Object SHAs and commit SHAs are independently represented in the internal `ForgeRawEntry` type but are not propagated to the public `RepoMapEntry` type.
+
+**Architecture decision — ResolvedRepositoryIdentity:** `ResolvedRepositoryIdentity` separates four distinct fields: `requested_ref` (the caller-supplied branch/tag/commit), `resolved_ref_name` (the provider-resolved branch or tag name), `resolved_commit_sha` (the actual commit SHA from provider resolution), and `tree_sha` (the root tree SHA). This prevents treating tree SHAs, blob SHAs, or branch names as commit SHAs in permalink construction. Each forge provider populates these fields from its own resolution endpoint.
 
 ### Nested Repository Map Assembly
 

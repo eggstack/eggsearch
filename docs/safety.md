@@ -128,10 +128,11 @@ Use `metadata_only` when you need page metadata but do not need the body content
 Forge API base URLs (GitHub, GitLab, Gitea, Forgejo, Codeberg) are validated by `validate_base_url()` before any API request:
 
 - **Embedded credentials** in the URL are always rejected (username or password in URL)
-- **HTTPS URLs** must not point to localhost, loopback, or any private/link-local/reserved IPv4/IPv6 range
+- **HTTPS URLs** pointing to localhost, loopback, or private/link-local/reserved IPv4/IPv6 ranges are rejected by default (configurable via `ForgeEndpointPolicy.allow_loopback` and `allow_private_network`)
 - **HTTP URLs** are only allowed for localhost development use; HTTP with an API key is rejected except on loopback
 - **IPv6 addresses** are fully classified: loopback, ULA (private), link-local, documentation, reserved, multicast, public
+- **DNS resolution** resolves hostnames and classifies all resolved addresses against the policy (residual DNS rebinding risk documented in architecture)
 
 This prevents forge adapters from being redirected to internal services or leaking API keys over plaintext connections.
 
-Primary forge tree and paginated responses are read through `read_bounded_response()` with a hard byte cap (10MB per response, cumulative aggregate cap). Error-body previews and default-branch metadata responses use `resp.text().await` or `resp.json().await` (not yet bounded through the same reader). Forge API clients do not set an explicit redirect policy (reqwest default applies); the fetch client uses `Policy::none()`.
+Primary forge tree and paginated responses are read through `read_bounded_response()` with a hard byte cap (10MB per response, cumulative aggregate cap). Error-body previews (rate-limit detection, permission-denied diagnostics) are read through `read_error_preview()` with an 8KB cap and control-character sanitization. Default-branch metadata lookups use bounded response reading. Forge API clients use `Policy::none()`, rejecting all redirects; the fetch client also uses `Policy::none()` for outbound HTTP requests.

@@ -263,11 +263,11 @@ See [meta.md](meta.md#provider-health) for details.
 
 ### Bounded Everything
 
-Most resources are bounded: timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits, batch sizes, PDF pages, concurrency, forge tree/pagination response bytes. Error-body previews and default-branch metadata lookups in the forge adapter use unbounded `.text().await`/`.json().await`. The untracked-file count (`git ls-files --others`) is also unbounded. File opening uses standard `std::fs` without race-resistant (`openat`/`O_NOFOLLOW`) semantics. Defaults are safe for general MCP exposure.
+Most resources are bounded: timeouts, max_results, max_chars, max_bytes, redirect limits, link caps, import scan limits, batch sizes, PDF pages, concurrency, forge tree/pagination response bytes, forge error-body previews (8KB cap via `read_error_preview()`), and forge metadata lookups (bounded response reading). The untracked-file count (`git ls-files --others`) is read through `run_bounded_command_for_inventory()` with a configurable cap. File opening in the primary search path uses `safe_open.rs` with component-wise no-follow path walking; inventory fallback paths use `std::fs::read()` with size capping. Defaults are safe for general MCP exposure.
 
 ### Forge Endpoint Safety
 
-Forge API base URLs are validated before use: embedded credentials are rejected, HTTPS URLs must not target localhost or private networks, HTTP is only allowed for localhost development, and IPv6 addresses are fully classified. See [meta.md](meta.md#forge-adapter) for details.
+Forge API base URLs are validated by `validate_base_url()` before use: embedded credentials are rejected, DNS names are resolved to classify all resolved addresses, literal IPv4/IPv6 addresses are classified, and HTTP with API keys is rejected. `ForgeEndpointPolicy` controls loopback (`allow_loopback`), private network (`allow_private_network`), and HTTPS requirements (`require_https`). All forge response bodies are read through bounded response readers; error-body previews use `read_error_preview()` with an 8KB cap. Forge API clients use `Policy::none()`, rejecting all redirects. See [meta.md](meta.md#forge-adapter) for details.
 
 ---
 
@@ -287,7 +287,15 @@ Forge API base URLs are validated before use: embedded credentials are rejected,
 
 7. **Three-tier sanitization** — Untrusted text is always stripped/bounded (Tier 1), optionally framed (Tier 2), and optionally scanned for injection markers (Tier 3).
 
-8. **Inventory-first search** — Local workspace search uses a cached file inventory to avoid repeated full-tree walks. Git-aware fast path (`git ls-files -z --cached --others --exclude-standard`) is preferred when available; native directory walking is the fallback. Inventory is auto-built on first search (cache miss). A separate unbounded `git ls-files --others --exclude-standard` call counts untracked files. Per-file validation via XXH3 fingerprinting (path + size + mtime) detects changes between inventory build and search time. Freshness confidence is age-based only: < 5 min = High, < 30 min = Medium, else Low.
+8. **Inventory-first search** — Local workspace search uses a cached file inventory to avoid repeated full-tree walks. Git-aware fast path (`git ls-files -z --cached --others --exclude-standard`) is preferred when available; native directory walking is the fallback. Inventory is auto-built on first search (cache miss). A `git status --porcelain=v2` hash (`status_hash`) is stored alongside the inventory, detecting untracked file creation, staging, branch switches, and ignore-rule changes. Per-file validation via XXH3 fingerprinting (path + size + mtime) detects changes between inventory build and search time. Freshness confidence is based on `FRESHNESS_PROBE_INTERVAL` (30s): inventory age < 30s = High, age < rebuild TTL with unchanged status_hash = Medium, else Low.
+
+9. **Bounded subprocess execution** — `run_bounded_command()` in `local_inventory_cache.rs` enforces timeout (5s), stdout cap (16MB), and stderr cap (64KB) on Git subprocess invocations. Pipe reads are sequential (stdout then stderr) with capped reads during streaming, not read-to-end-then-truncate. Creates a new process group via `setsid()` and kills the process group on timeout using a watchdog thread. This prevents zombie processes, memory exhaustion from large outputs, and indefinite hangs from misbehaving Git commands.
+
+10. **Workspace change-token strategy** — The `status_hash` (XXH3 hash of `git status --porcelain=v2 -z --untracked-files=normal` output) provides lightweight change detection between inventory builds. The 30-second `FRESHNESS_PROBE_INTERVAL` avoids redundant status checks on rapid successive searches. When the status hash matches, the `index_mtime` fallback check is skipped (status_hash is authoritative). When the status hash is unavailable (e.g., non-git directory or truncated output), the fallback `index_mtime` check applies.
+
+11. **Race-resistant local file opening** — `safe_open.rs` provides `safe_open_relative()` which walks each path component with no-follow semantics, rejecting symlink substitution at any point in the path. Intermediate directories are validated with `symlink_metadata()` (no follow), the final target is opened after symlink check, and the file must be a regular file within size limits. This prevents TOCTOU races where a symlink could be swapped between validation and open. The primary search path uses `safe_read_file()`; inventory fallback paths use `std::fs::read()` with size capping.
+
+12. **Evidence workflow selection and conflict scoping** — `resolve_workflow_model()` maps tool name, profile, and research domain to a deterministic `WorkflowCoverageModel` defining required/recommended/optional evidence roles for each of 10 core workflows. `ConflictEntityKey` (entity type + canonical ID + field) provides composite grouping for conflict detection, preventing unrelated sources from being compared. Both are wired into all result conversion paths via `evidence_postprocess.rs`.
 
 ---
 
