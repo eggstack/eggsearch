@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use eggsearch::core::local::LocalConfig;
+use eggsearch::meta::safe_open::{safe_open_relative, SafeOpenError};
 use proptest::prelude::*;
 
 fn arbitrary_path_segment() -> impl Strategy<Value = String> {
@@ -146,5 +148,121 @@ proptest! {
         let query = name.clone();
         let score = if query == name { 100.0 } else { 0.0 };
         prop_assert!(score >= 100.0 || score == 0.0);
+    }
+}
+
+fn safe_open_config() -> LocalConfig {
+    LocalConfig {
+        enabled: true,
+        roots: Vec::new(),
+        max_file_bytes: 1_048_576,
+        max_indexed_files: 50_000,
+        include_hidden: false,
+        respect_gitignore: false,
+        follow_symlinks: false,
+    }
+}
+
+fn relative_path_strategy() -> impl Strategy<Value = String> {
+    "[a-zA-Z0-9._-]{1,20}"
+}
+
+proptest! {
+    #[test]
+    fn safe_open_rejects_dotdot_components(seg in relative_path_strategy()) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = safe_open_config();
+        let rel = format!("../{seg}");
+        let result = safe_open_relative(dir.path(), &rel, &config);
+        prop_assert!(matches!(result, Err(SafeOpenError::PathTraversal)),
+            "path with '..' must be rejected, got error: {}", result.err().unwrap());
+    }
+
+    #[test]
+    fn safe_open_rejects_dotdot_middle(prefix in relative_path_strategy(), suffix in relative_path_strategy()) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = safe_open_config();
+        let rel = format!("{prefix}/../{suffix}");
+        let result = safe_open_relative(dir.path(), &rel, &config);
+        prop_assert!(matches!(result, Err(SafeOpenError::PathTraversal)),
+            "path with embedded '..' must be rejected, got error: {}", result.err().unwrap());
+    }
+
+    #[test]
+    fn safe_open_rejects_absolute_paths(seg in "[a-zA-Z0-9._-]{1,30}") {
+        let dir = tempfile::tempdir().unwrap();
+        let config = safe_open_config();
+        let rel = format!("/{seg}");
+        let result = safe_open_relative(dir.path(), &rel, &config);
+        prop_assert!(matches!(result, Err(SafeOpenError::AbsolutePath)),
+            "absolute path must be rejected, got error: {}", result.err().unwrap());
+    }
+
+    #[test]
+    fn safe_open_rejects_empty_path(empty in prop_oneof!["", " ", "  ", "\t"]) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = safe_open_config();
+        let result = safe_open_relative(dir.path(), &empty, &config);
+        prop_assert!(matches!(result, Err(SafeOpenError::Empty)),
+            "empty/whitespace path must be rejected, got error: {}", result.err().unwrap());
+    }
+
+    #[test]
+    fn safe_open_succeeds_for_valid_regular_file(name in "[a-zA-Z0-9_-]{1,20}", content in "[a-zA-Z0-9 ]{1,100}") {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(&name), &content).unwrap();
+        let config = safe_open_config();
+        let result = safe_open_relative(dir.path(), &name, &config);
+        prop_assert!(result.is_ok(),
+            "valid regular file should be opened, got error: {}", result.err().unwrap());
+        let sf = result.unwrap();
+        prop_assert_eq!(sf.size, content.len() as u64);
+    }
+
+    #[test]
+    fn safe_open_rejects_dotdot_in_nested(segs in proptest::collection::vec(relative_path_strategy(), 2..5)) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = safe_open_config();
+        let path_str = segs.join("/") + "/..";
+        let result = safe_open_relative(dir.path(), &path_str, &config);
+        prop_assert!(result.is_err(),
+            "nested path with trailing '..' must not succeed");
+    }
+
+    #[test]
+    fn safe_open_rejects_hidden_files(name in "[a-zA-Z0-9_-]{1,20}") {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(format!(".{name}")), "secret").unwrap();
+        let config = safe_open_config();
+        let result = safe_open_relative(dir.path(), &format!(".{name}"), &config);
+        prop_assert!(matches!(result, Err(SafeOpenError::NotFound(_)) | Err(SafeOpenError::PathTraversal)),
+            "hidden file must be rejected when include_hidden=false, got error: {}", result.err().unwrap());
+    }
+
+    #[test]
+    fn safe_open_succeeds_for_nested_regular_file(
+        dir_name in "[a-zA-Z0-9_-]{1,15}",
+        file_name in "[a-zA-Z0-9_-]{1,20}",
+        content in "[a-zA-Z0-9 ]{1,50}",
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let subdir = dir.path().join(&dir_name);
+        std::fs::create_dir(&subdir).unwrap();
+        std::fs::write(subdir.join(&file_name), &content).unwrap();
+        let config = safe_open_config();
+        let rel = format!("{dir_name}/{file_name}");
+        let result = safe_open_relative(dir.path(), &rel, &config);
+        prop_assert!(result.is_ok(),
+            "nested regular file should be opened, got error: {}", result.err().unwrap());
+    }
+
+    #[test]
+    fn safe_open_rejects_nonexistent(segs in proptest::collection::vec("[a-zA-Z0-9_-]{1,20}", 1..4)) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = safe_open_config();
+        let rel = segs.join("/");
+        let result = safe_open_relative(dir.path(), &rel, &config);
+        prop_assert!(result.is_err(),
+            "nonexistent path must return an error, got ok");
     }
 }
