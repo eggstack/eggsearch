@@ -158,6 +158,12 @@ pub fn build_retrieval_summary_for_search(
                 provider_id: Some(pid.clone()),
                 message: "success".to_string(),
                 query: None,
+                subquery_id: None,
+                attempt_outcome: None,
+                result_count: None,
+                error_class: None,
+                duration_ms: None,
+                truncated: false,
             });
         } else if let Some(failure) = providers_failed.iter().find(|f| f.id == *pid) {
             dimensions.push(RetrievalDimensionStatus {
@@ -170,6 +176,12 @@ pub fn build_retrieval_summary_for_search(
                 provider_id: Some(pid.clone()),
                 message: failure.message.clone(),
                 query: None,
+                subquery_id: None,
+                attempt_outcome: None,
+                result_count: None,
+                error_class: None,
+                duration_ms: None,
+                truncated: false,
             });
         } else {
             dimensions.push(RetrievalDimensionStatus {
@@ -178,6 +190,12 @@ pub fn build_retrieval_summary_for_search(
                 provider_id: Some(pid.clone()),
                 message: "provider skipped or not queried".to_string(),
                 query: None,
+                subquery_id: None,
+                attempt_outcome: None,
+                result_count: None,
+                error_class: None,
+                duration_ms: None,
+                truncated: false,
             });
         }
     }
@@ -261,6 +279,12 @@ fn build_attempt_derived_summary(
                 provider_id: Some(attempt.provider_id.clone()),
                 message: message.clone(),
                 query: attempt.query_fingerprint.clone(),
+                subquery_id: attempt.subquery_id.clone(),
+                attempt_outcome: Some(attempt.outcome.clone()),
+                result_count: Some(attempt.result_count),
+                error_class: attempt.error_class.clone(),
+                duration_ms: attempt.duration_ms,
+                truncated: attempt.truncated,
             });
         }
     }

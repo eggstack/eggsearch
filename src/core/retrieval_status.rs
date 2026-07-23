@@ -24,7 +24,7 @@ pub enum EvidenceAbsenceKind {
 }
 
 #[allow(missing_docs)]
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct RetrievalDimensionStatus {
     pub evidence_role: EvidenceRole,
     pub absence_kind: EvidenceAbsenceKind,
@@ -33,6 +33,18 @@ pub struct RetrievalDimensionStatus {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subquery_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_outcome: Option<RetrievalAttemptOutcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
 }
 
 #[allow(missing_docs)]
@@ -48,6 +60,26 @@ pub struct ResponseRetrievalSummary {
     pub completed_job_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed_job_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zero_result_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timed_out_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_limited_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_skipped_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_skipped_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_interrupted_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles_attempted: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles_complete: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles_indeterminate: Option<usize>,
 }
 
 #[allow(missing_docs)]
@@ -56,19 +88,67 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
     let mut has_absences = false;
     let mut has_truncation = false;
 
+    let mut zero_result_count = 0usize;
+    let mut failed_count = 0usize;
+    let mut timed_out_count = 0usize;
+    let mut rate_limited_count = 0usize;
+    let mut policy_skipped_count = 0usize;
+    let mut capability_skipped_count = 0usize;
+    let mut deadline_interrupted_count = 0usize;
+    let mut truncated_count = 0usize;
+
+    let mut roles_seen = std::collections::HashSet::new();
+    let mut roles_with_success = std::collections::HashSet::new();
+    let mut roles_indeterminate = std::collections::HashSet::new();
+
     for d in &dimensions {
+        roles_seen.insert(d.evidence_role);
+
         match d.absence_kind {
-            EvidenceAbsenceKind::ProviderFailed
-            | EvidenceAbsenceKind::DeadlinePreventedCompletion => {
+            EvidenceAbsenceKind::ProviderFailed => {
                 has_failures = true;
+                failed_count += 1;
+            }
+            EvidenceAbsenceKind::DeadlinePreventedCompletion => {
+                has_failures = true;
+                deadline_interrupted_count += 1;
             }
             EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound => {
                 has_absences = true;
             }
             EvidenceAbsenceKind::ResultTruncatedByCap => {
                 has_truncation = true;
+                truncated_count += 1;
+            }
+            EvidenceAbsenceKind::NoMatchingEvidenceFound => {
+                zero_result_count += 1;
+            }
+            EvidenceAbsenceKind::ProviderSkippedByPolicy => {
+                policy_skipped_count += 1;
+            }
+            EvidenceAbsenceKind::ProviderCapabilityUnavailable => {
+                capability_skipped_count += 1;
             }
             _ => {}
+        }
+
+        if let Some(ref outcome) = d.attempt_outcome {
+            use RetrievalAttemptOutcome::*;
+            match outcome {
+                TimedOut => timed_out_count += 1,
+                RateLimited => rate_limited_count += 1,
+                InterruptedByDeadline => {
+                    // already counted via absence_kind above
+                }
+                _ => {}
+            }
+        }
+
+        if d.absence_kind == EvidenceAbsenceKind::NotApplicable {
+            roles_with_success.insert(d.evidence_role);
+        }
+        if d.absence_kind == EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed {
+            roles_indeterminate.insert(d.evidence_role);
         }
     }
 
@@ -79,18 +159,7 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
             .filter(|d| d.absence_kind == EvidenceAbsenceKind::NotApplicable)
             .count(),
     );
-    let failed_job_count = Some(
-        dimensions
-            .iter()
-            .filter(|d| {
-                matches!(
-                    d.absence_kind,
-                    EvidenceAbsenceKind::ProviderFailed
-                        | EvidenceAbsenceKind::DeadlinePreventedCompletion
-                )
-            })
-            .count(),
-    );
+    let failed_job_count = Some(failed_count + deadline_interrupted_count);
 
     ResponseRetrievalSummary {
         dimensions,
@@ -100,6 +169,16 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
         attempted_job_count,
         completed_job_count,
         failed_job_count,
+        zero_result_count: Some(zero_result_count),
+        timed_out_count: Some(timed_out_count),
+        rate_limited_count: Some(rate_limited_count),
+        policy_skipped_count: Some(policy_skipped_count),
+        capability_skipped_count: Some(capability_skipped_count),
+        deadline_interrupted_count: Some(deadline_interrupted_count),
+        truncated_count: Some(truncated_count),
+        roles_attempted: Some(roles_seen.len()),
+        roles_complete: Some(roles_with_success.len()),
+        roles_indeterminate: Some(roles_indeterminate.len()),
     }
 }
 
@@ -350,7 +429,12 @@ impl RetrievalAttempt {
         let roles: Vec<EvidenceRole> = if self.intended_roles.is_empty() {
             vec![EvidenceRole::UnknownOrWeakContext]
         } else {
-            self.intended_roles.clone()
+            let mut seen = std::collections::HashSet::new();
+            self.intended_roles
+                .iter()
+                .copied()
+                .filter(|r| seen.insert(*r))
+                .collect()
         };
 
         let provider_id = Some(self.provider_id.clone());
@@ -452,6 +536,19 @@ pub fn map_provider_to_intended_roles(
 mod tests {
     use super::*;
 
+    fn dim(
+        evidence_role: EvidenceRole,
+        absence_kind: EvidenceAbsenceKind,
+        message: &str,
+    ) -> RetrievalDimensionStatus {
+        RetrievalDimensionStatus {
+            evidence_role,
+            absence_kind,
+            message: message.to_string(),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn all_variants_serialize_deserialize() {
         let variants = [
@@ -484,20 +581,16 @@ mod tests {
     #[test]
     fn is_absence_only_true_when_only_absences() {
         let summary = summarize_retrieval(vec![
-            RetrievalDimensionStatus {
-                evidence_role: EvidenceRole::PrimaryImplementation,
-                absence_kind: EvidenceAbsenceKind::NoMatchingEvidenceFound,
-                provider_id: None,
-                message: "none".into(),
-                query: None,
-            },
-            RetrievalDimensionStatus {
-                evidence_role: EvidenceRole::OfficialDocumentation,
-                absence_kind: EvidenceAbsenceKind::EvidenceRoleNotRequested,
-                provider_id: None,
-                message: "not requested".into(),
-                query: None,
-            },
+            dim(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NoMatchingEvidenceFound,
+                "none",
+            ),
+            dim(
+                EvidenceRole::OfficialDocumentation,
+                EvidenceAbsenceKind::EvidenceRoleNotRequested,
+                "not requested",
+            ),
         ]);
         assert!(is_absence_only(&summary));
     }
@@ -505,19 +598,17 @@ mod tests {
     #[test]
     fn is_absence_only_false_when_failures_present() {
         let summary = summarize_retrieval(vec![
-            RetrievalDimensionStatus {
-                evidence_role: EvidenceRole::PrimaryImplementation,
-                absence_kind: EvidenceAbsenceKind::NoMatchingEvidenceFound,
-                provider_id: None,
-                message: "none".into(),
-                query: None,
-            },
+            dim(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NoMatchingEvidenceFound,
+                "none",
+            ),
             RetrievalDimensionStatus {
                 evidence_role: EvidenceRole::OfficialDocumentation,
                 absence_kind: EvidenceAbsenceKind::ProviderFailed,
                 provider_id: Some("duckduckgo".into()),
                 message: "failed".into(),
-                query: None,
+                ..Default::default()
             },
         ]);
         assert!(!is_absence_only(&summary));
@@ -526,19 +617,17 @@ mod tests {
     #[test]
     fn is_failure_only_true_when_failures_present() {
         let summary = summarize_retrieval(vec![
-            RetrievalDimensionStatus {
-                evidence_role: EvidenceRole::PrimaryImplementation,
-                absence_kind: EvidenceAbsenceKind::NoMatchingEvidenceFound,
-                provider_id: None,
-                message: "none".into(),
-                query: None,
-            },
+            dim(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NoMatchingEvidenceFound,
+                "none",
+            ),
             RetrievalDimensionStatus {
                 evidence_role: EvidenceRole::OfficialDocumentation,
                 absence_kind: EvidenceAbsenceKind::ProviderFailed,
                 provider_id: Some("duckduckgo".into()),
                 message: "failed".into(),
-                query: None,
+                ..Default::default()
             },
         ]);
         assert!(is_failure_only(&summary));
@@ -546,61 +635,49 @@ mod tests {
 
     #[test]
     fn is_failure_only_false_when_no_failures() {
-        let summary = summarize_retrieval(vec![RetrievalDimensionStatus {
-            evidence_role: EvidenceRole::PrimaryImplementation,
-            absence_kind: EvidenceAbsenceKind::NoMatchingEvidenceFound,
-            provider_id: None,
-            message: "none".into(),
-            query: None,
-        }]);
+        let summary = summarize_retrieval(vec![dim(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NoMatchingEvidenceFound,
+            "none",
+        )]);
         assert!(!is_failure_only(&summary));
     }
 
     #[test]
     fn has_indeterminate_works() {
-        let summary = summarize_retrieval(vec![RetrievalDimensionStatus {
-            evidence_role: EvidenceRole::PrimaryImplementation,
-            absence_kind: EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed,
-            provider_id: None,
-            message: "indeterminate".into(),
-            query: None,
-        }]);
+        let summary = summarize_retrieval(vec![dim(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed,
+            "indeterminate",
+        )]);
         assert!(has_indeterminate(&summary));
 
-        let summary2 = summarize_retrieval(vec![RetrievalDimensionStatus {
-            evidence_role: EvidenceRole::PrimaryImplementation,
-            absence_kind: EvidenceAbsenceKind::NoMatchingEvidenceFound,
-            provider_id: None,
-            message: "none".into(),
-            query: None,
-        }]);
+        let summary2 = summarize_retrieval(vec![dim(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NoMatchingEvidenceFound,
+            "none",
+        )]);
         assert!(!has_indeterminate(&summary2));
     }
 
     #[test]
     fn absent_roles_returns_only_requested_but_not_found() {
         let summary = summarize_retrieval(vec![
-            RetrievalDimensionStatus {
-                evidence_role: EvidenceRole::PrimaryImplementation,
-                absence_kind: EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound,
-                provider_id: None,
-                message: "not found".into(),
-                query: None,
-            },
-            RetrievalDimensionStatus {
-                evidence_role: EvidenceRole::OfficialDocumentation,
-                absence_kind: EvidenceAbsenceKind::NoMatchingEvidenceFound,
-                provider_id: None,
-                message: "none".into(),
-                query: None,
-            },
-            RetrievalDimensionStatus {
-                evidence_role: EvidenceRole::UsageExample,
-                absence_kind: EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound,
-                provider_id: None,
-                message: "not found".into(),
-                query: None,
-            },
+            dim(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound,
+                "not found",
+            ),
+            dim(
+                EvidenceRole::OfficialDocumentation,
+                EvidenceAbsenceKind::NoMatchingEvidenceFound,
+                "none",
+            ),
+            dim(
+                EvidenceRole::UsageExample,
+                EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound,
+                "not found",
+            ),
         ]);
         let roles = absent_roles(&summary);
         assert_eq!(roles.len(), 2);
@@ -617,28 +694,28 @@ mod tests {
                 absence_kind: EvidenceAbsenceKind::ProviderFailed,
                 provider_id: Some("duckduckgo".into()),
                 message: "failed".into(),
-                query: None,
+                ..Default::default()
             },
             RetrievalDimensionStatus {
                 evidence_role: EvidenceRole::OfficialDocumentation,
                 absence_kind: EvidenceAbsenceKind::ProviderFailed,
                 provider_id: Some("duckduckgo".into()),
                 message: "failed again".into(),
-                query: None,
+                ..Default::default()
             },
             RetrievalDimensionStatus {
                 evidence_role: EvidenceRole::UsageExample,
                 absence_kind: EvidenceAbsenceKind::DeadlinePreventedCompletion,
                 provider_id: Some("startpage".into()),
                 message: "timeout".into(),
-                query: None,
+                ..Default::default()
             },
             RetrievalDimensionStatus {
                 evidence_role: EvidenceRole::BenchmarkOrPerformanceEvidence,
                 absence_kind: EvidenceAbsenceKind::ProviderFailed,
                 provider_id: None,
                 message: "no provider".into(),
-                query: None,
+                ..Default::default()
             },
         ]);
         let providers = failed_providers(&summary);
@@ -699,6 +776,7 @@ mod tests {
             provider_id: Some("duckduckgo".into()),
             message: "connection refused".into(),
             query: Some("rust async runtime".into()),
+            ..Default::default()
         };
         let json = serde_json::to_string(&status).unwrap();
         let parsed: RetrievalDimensionStatus = serde_json::from_str(&json).unwrap();
@@ -718,14 +796,14 @@ mod tests {
                     absence_kind: EvidenceAbsenceKind::ProviderFailed,
                     provider_id: Some("duckduckgo".into()),
                     message: "failed".into(),
-                    query: None,
+                    ..Default::default()
                 },
                 RetrievalDimensionStatus {
                     evidence_role: EvidenceRole::OfficialDocumentation,
                     absence_kind: EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound,
                     provider_id: None,
                     message: "not found".into(),
-                    query: None,
+                    ..Default::default()
                 },
             ],
             has_failures: true,
@@ -734,6 +812,7 @@ mod tests {
             attempted_job_count: Some(2),
             completed_job_count: Some(0),
             failed_job_count: Some(1),
+            ..Default::default()
         };
         let json = serde_json::to_string(&summary).unwrap();
         let parsed: ResponseRetrievalSummary = serde_json::from_str(&json).unwrap();
@@ -771,21 +850,21 @@ mod tests {
                 absence_kind: EvidenceAbsenceKind::ResultTruncatedByCap,
                 provider_id: None,
                 message: "truncated".into(),
-                query: None,
+                ..Default::default()
             },
             RetrievalDimensionStatus {
                 evidence_role: EvidenceRole::OfficialDocumentation,
                 absence_kind: EvidenceAbsenceKind::DeadlinePreventedCompletion,
                 provider_id: Some("startpage".into()),
                 message: "timeout".into(),
-                query: None,
+                ..Default::default()
             },
             RetrievalDimensionStatus {
                 evidence_role: EvidenceRole::UsageExample,
                 absence_kind: EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound,
                 provider_id: None,
                 message: "missing".into(),
-                query: None,
+                ..Default::default()
             },
         ]);
         assert!(summary.has_failures);

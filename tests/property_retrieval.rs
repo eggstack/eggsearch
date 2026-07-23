@@ -363,4 +363,209 @@ proptest! {
             result.status
         );
     }
+
+    #[test]
+    fn b6_10_property_failure_count_matches_unique_intended_role_count(
+        roles in proptest::collection::vec(
+            prop_oneof![
+                Just(EvidenceRole::PrimaryImplementation),
+                Just(EvidenceRole::OfficialDocumentation),
+                Just(EvidenceRole::AuthoritativeSecurityAdvisory),
+                Just(EvidenceRole::UsageExample),
+            ],
+            1..5,
+        ),
+    ) {
+        let attempt = RetrievalAttempt {
+            provider_id: "test_prov".to_string(),
+            subquery_id: None,
+            intended_roles: roles.clone(),
+            outcome: RetrievalAttemptOutcome::Failed,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        };
+        let failures = attempt.to_retrieval_failures();
+        let unique_roles: std::collections::HashSet<_> = roles.into_iter().collect();
+        prop_assert_eq!(failures.len(), unique_roles.len());
+    }
+}
+
+#[test]
+fn b6_01_two_intended_roles_produce_two_failures() {
+    let attempt = RetrievalAttempt {
+        provider_id: "test_prov".to_string(),
+        subquery_id: None,
+        intended_roles: vec![
+            EvidenceRole::OfficialDocumentation,
+            EvidenceRole::PrimaryImplementation,
+        ],
+        outcome: RetrievalAttemptOutcome::Failed,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+    let failures = attempt.to_retrieval_failures();
+    assert_eq!(failures.len(), 2);
+    let roles: std::collections::HashSet<_> = failures.iter().map(|f| f.role).collect();
+    assert!(roles.contains(&EvidenceRole::OfficialDocumentation));
+    assert!(roles.contains(&EvidenceRole::PrimaryImplementation));
+}
+
+#[test]
+fn b6_02_duplicate_intended_roles_produce_one_failure_per_unique_role() {
+    let attempt = RetrievalAttempt {
+        provider_id: "test_prov".to_string(),
+        subquery_id: None,
+        intended_roles: vec![
+            EvidenceRole::PrimaryImplementation,
+            EvidenceRole::PrimaryImplementation,
+            EvidenceRole::PrimaryImplementation,
+        ],
+        outcome: RetrievalAttemptOutcome::TimedOut,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+    let failures = attempt.to_retrieval_failures();
+    assert_eq!(
+        failures.len(),
+        1,
+        "duplicate roles must not create duplicate failures"
+    );
+}
+
+#[test]
+fn b6_03_empty_intended_roles_produce_unknown_role_failure() {
+    let attempt = RetrievalAttempt {
+        provider_id: "test_prov".to_string(),
+        subquery_id: None,
+        intended_roles: vec![],
+        outcome: RetrievalAttemptOutcome::Failed,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+    let failures = attempt.to_retrieval_failures();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].role, EvidenceRole::UnknownOrWeakContext);
+}
+
+#[test]
+fn b6_04_provider_fails_docs_succeeds_source_only_docs_affected() {
+    use eggsearch::core::retrieval_status::attempts_to_failures;
+
+    let docs_attempt = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("docs_sq".to_string()),
+        intended_roles: vec![EvidenceRole::OfficialDocumentation],
+        outcome: RetrievalAttemptOutcome::Failed,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+    let source_attempt = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("source_sq".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 5,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+    let all_failures = attempts_to_failures(&[docs_attempt, source_attempt]);
+    assert_eq!(all_failures.len(), 1);
+    assert_eq!(all_failures[0].role, EvidenceRole::OfficialDocumentation);
+}
+
+#[test]
+fn b6_05_advisory_attempt_fails_both_roles_indeterminate() {
+    use eggsearch::core::retrieval_status::attempts_to_failures;
+    use eggsearch::core::workflow_coverage::{
+        compute_coverage, CoverageStatus, WorkflowCoverageModel,
+    };
+
+    let model = WorkflowCoverageModel {
+        workflow_id: "security_review".to_string(),
+        title: "Security Review".to_string(),
+        required: vec![
+            EvidenceRole::AuthoritativeSecurityAdvisory,
+            EvidenceRole::VendorSecurityGuidance,
+        ],
+        recommended: vec![],
+        optional: vec![],
+    };
+    let attempt = RetrievalAttempt {
+        provider_id: "osv".to_string(),
+        subquery_id: None,
+        intended_roles: vec![
+            EvidenceRole::AuthoritativeSecurityAdvisory,
+            EvidenceRole::VendorSecurityGuidance,
+        ],
+        outcome: RetrievalAttemptOutcome::Failed,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+    let failures = attempts_to_failures(&[attempt]);
+    assert_eq!(failures.len(), 2);
+    let result = compute_coverage(&model, &[], &failures);
+    assert_eq!(result.status, CoverageStatus::IndeterminateDueToFailures);
+}
+
+#[test]
+fn b6_06_role_found_by_another_provider_redundant_failure_not_missing() {
+    use eggsearch::core::retrieval_status::attempts_to_failures;
+    use eggsearch::core::workflow_coverage::{
+        compute_coverage, CoverageStatus, WorkflowCoverageModel,
+    };
+
+    let model = WorkflowCoverageModel {
+        workflow_id: "test".to_string(),
+        title: "Test".to_string(),
+        required: vec![EvidenceRole::OfficialDocumentation],
+        recommended: vec![],
+        optional: vec![],
+    };
+    let failed_attempt = RetrievalAttempt {
+        provider_id: "startpage".to_string(),
+        subquery_id: None,
+        intended_roles: vec![EvidenceRole::OfficialDocumentation],
+        outcome: RetrievalAttemptOutcome::Failed,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+    let failures = attempts_to_failures(&[failed_attempt]);
+    let found_roles = vec![EvidenceRole::OfficialDocumentation];
+    let result = compute_coverage(&model, &found_roles, &failures);
+    assert_eq!(
+        result.status,
+        CoverageStatus::Sufficient,
+        "found role must not be made missing by redundant provider failure"
+    );
 }

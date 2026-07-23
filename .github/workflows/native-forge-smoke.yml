@@ -1,0 +1,59 @@
+name: Native Forge Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  github:
+    name: github native smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run GitHub native smoke tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 github
+        continue-on-error: false
+
+  gitlab:
+    name: gitlab native smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run GitLab native smoke tests
+        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitlab
+        continue-on-error: false
+
+  codeberg:
+    name: codeberg native smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Codeberg native smoke tests
+        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 codeberg
+        continue-on-error: false
+
+  gitea:
+    name: gitea native smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Gitea native smoke tests
+        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitea
+        continue-on-error: false

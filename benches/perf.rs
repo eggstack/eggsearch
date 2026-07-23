@@ -341,6 +341,7 @@ fn bench_summarize_retrieval(c: &mut Criterion) {
             provider_id: Some(format!("provider_{}", i)),
             message: format!("dimension {}", i),
             query: Some(format!("query_{}", i)),
+            ..Default::default()
         })
         .collect();
 
