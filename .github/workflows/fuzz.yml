@@ -40,6 +40,10 @@ jobs:
           - parse_content_length
           - chunk_boundary
           - mixed_utf8_extract
+          - bounded_response_reader
+          - workflow_kind_parse
+          - classify_absence
+          - detect_entity_scoped_conflicts
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -74,6 +78,10 @@ jobs:
           - parse_content_length
           - chunk_boundary
           - mixed_utf8_extract
+          - bounded_response_reader
+          - workflow_kind_parse
+          - classify_absence
+          - detect_entity_scoped_conflicts
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

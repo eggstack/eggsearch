@@ -32,11 +32,12 @@ jobs:
       - run: cargo check ${{ matrix.features }}
 
   test:
-    name: test (${{ matrix.features }})
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, ${{ matrix.features }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         features:
           - "--all-features"
           - "--no-default-features"
@@ -153,6 +154,10 @@ jobs:
           - parse_content_length
           - chunk_boundary
           - mixed_utf8_extract
+          - bounded_response_reader
+          - workflow_kind_parse
+          - classify_absence
+          - detect_entity_scoped_conflicts
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

@@ -9,6 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+serde_json = "1"
 
 [dependencies.eggsearch]
 path = ".."
@@ -122,6 +123,27 @@ bench = false
 [[bin]]
 name = "bounded_response_reader"
 path = "fuzz_targets/bounded_response_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "workflow_kind_parse"
+path = "fuzz_targets/workflow_kind_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "classify_absence"
+path = "fuzz_targets/classify_absence.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "detect_entity_scoped_conflicts"
+path = "fuzz_targets/detect_entity_scoped_conflicts.rs"
 test = false
 doc = false
 bench = false

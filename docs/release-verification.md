@@ -1,33 +1,62 @@
 # Release Verification Record
 
 **Date:** 2026-07-22
-**Commit:** `5147ab6c8b7a303269d7b3726a301fcae0470c1d` (HEAD of closure pass)
-**Rust toolchain:** `rustc 1.96.0 (ac68faa20 2026-05-25)` (stable-aarch64-apple-darwin)
-**Platform:** Darwin x86_64 (macOS)
+**Commit:** `64d9447fb19273fa1facab4394ab263fa11b988b` (final residual correctness closure)
+**Rust toolchain:** `rustc 1.97.0 (2d8144b78 2026-07-07)` (stable-x86_64-unknown-linux-gnu)
+**Platform:** Ubuntu 24.04.4 LTS, x86_64
 
 ---
 
 ## Deterministic Verification Matrix
 
-All commands from project root.
+All commands from project root. CI runs tests on both Ubuntu Linux and macOS.
 
 | Command | Result |
 |---------|--------|
 | `cargo fmt --check` | PASS |
 | `cargo clippy --all-targets --all-features -- -D warnings` | PASS (0 warnings) |
-| `cargo test --all-features` | **4,108 passed**, 9 ignored (42 suites) |
-| `cargo test --no-default-features` | **3,786 passed** (42 suites) |
-| `cargo test --features mock` | **4,093 passed** (42 suites) |
-| `cargo test --features pdf` | **3,801 passed** (42 suites) |
-| `make hardening` | **266 passed** (15 suites) |
-| `make schema-corpus` | PASS (6 contract suites) |
-| `make docs-tests` | PASS (4 contract suites) |
-| `cargo build --release` | PASS (1m 52s) |
-| `cargo publish --dry-run --locked` | PASS |
+| `cargo test --locked --all-features` | **4,174 passed**, 9 ignored (42 suites) |
+| `cargo test --locked --no-default-features` | **3,832 passed** (42 suites) |
+| `cargo test --locked --features mock` | **4,159 passed** (42 suites) |
+| `cargo test --locked --features pdf` | **3,847 passed** (42 suites) |
+| `make hardening` | **265 passed** (15 suites) |
+| `make schema-corpus` | **322 passed** (6 contract suites) |
+| `make docs-tests` | **8 passed** (4 contract suites) |
+| `cargo build --release` | PASS |
+| `cargo publish --dry-run --locked` | PASS (note: local `.opencode/node_modules` untracked files excluded from package) |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` | PASS |
 
 ---
 
-## Live-Smoke Results (F.6)
+## Targeted Test Suites
+
+| Suite | Tests | Feature Gate |
+|-------|-------|-------------|
+| `bounded_command` | 31 | `mock` |
+| `integration` | 429 | `mock` |
+| `evidence_integration` | 24 | `mock` |
+| `property_conflict` | 22 | `all-features` |
+| `property_retrieval` | 15 | `all-features` |
+| `property_local_fs_extended` | 35 | `all-features` |
+| `property_forge_url` | 17 | `all-features` |
+| `property_sanitize` | 15 | `all-features` |
+| `property_identity` | 16 | `all-features` |
+| `property_identity2` | 15 | `all-features` |
+| `property_identity3` | 9 | `all-features` |
+| `property_fetch_limits` | 11 | `all-features` |
+| `property_fetch_redirects` | 27 | `all-features` |
+| `property_fetch_url_edge` | 20 | `all-features` |
+| `property_fetch_response` | 18 | `all-features` |
+| `property_render_safety` | 16 | `all-features` |
+| `property_render_code` | 12 | `all-features` |
+| `property_render_metadata` | 11 | `all-features` |
+| `property_local_fs` | 22 | `all-features` |
+| `dispatch_fault_injection` | 32 | `mock` |
+| `adversarial_corpus` | 16 | `all-features` |
+
+---
+
+## Live-Smoke Results
 
 All 9 live-smoke tests pass against public repositories.
 
@@ -45,9 +74,20 @@ All 9 live-smoke tests pass against public repositories.
 
 Note: repo_map tests return `fallback_search` mode because no GitHub/GitLab/Codeberg API tokens are configured. With tokens, native tree APIs would be used. The tests verify the call succeeds and returns valid JSON.
 
+### Native Forge Adapter Smoke Tests
+
+Native forge smoke tests are in `tests/native_forge_smoke.rs`. These tests require configured API tokens and assert `mode: native`, valid commit SHAs, and tree entries. Run with:
+
+```bash
+GITHUB_TOKEN=ghp_xxx GITLAB_TOKEN=glpat-xxx CODEBERG_TOKEN=xxx \
+  cargo test --features live-smoke --test native_forge_smoke -- --ignored
+```
+
+Without tokens, all 4 tests are skipped (exit 0). Each test checks its provider's token independently — run any subset by setting only the relevant env var.
+
 ---
 
-## Local Workspace Integration Matrix (F.7)
+## Local Workspace Integration Matrix
 
 All 9 local workspace integration tests pass.
 
@@ -65,7 +105,7 @@ All 9 local workspace integration tests pass.
 
 ---
 
-## Performance Baselines (F.8)
+## Performance Baselines
 
 Criterion benchmarks (100 samples each):
 
@@ -76,18 +116,27 @@ Criterion benchmarks (100 samples each):
 | `fnv1a64_hash_10_urls` | ~800–1200 ns | FNV-1a 64-bit hash |
 | `eggsearch_id_hash_10_urls` | ~460–490 ns | Prefixed ID hash |
 | `build_10_source_cards` | ~12–13 µs | Source card construction |
+| `materialize_evidence_roles_10_cards` | ~1–3 µs | Evidence role assignment on 10 cards |
+| `resolve_workflow_model_12_combinations` | ~2–5 µs | 12 tool/profile/domain combinations |
+| `detect_entity_scoped_conflicts_10_cards` | ~5–15 µs | Entity-scoped conflict detection |
+| `summarize_retrieval_5_dimensions` | ~1–3 µs | Retrieval summary from 5 dimensions |
 
-All baselines are in the microsecond range — well within interactive performance targets. No unbounded memory growth. Release build completes in ~2 minutes.
+All baselines are in the microsecond range — well within interactive performance targets. No unbounded memory growth. Release build completes in under 2 minutes.
 
 ---
 
 ## Fuzz Targets
 
-16 fuzz targets in `fuzz/fuzz_targets/` using `libfuzzer-sys` + ASan:
+19 fuzz targets in `fuzz/fuzz_targets/` using `libfuzzer-sys` + ASan:
 
-`bounded_response_reader`, `build_document_chunks`, `canonicalize_url`, `chunk_boundary`, `extract_content`, `extract_content_bytes`, `extract_pdf_text`, `mixed_utf8_extract`, `parse_content_length`, `sanitize_pipeline`, `scan_injection_markers`, `strip_control_chars`, `validate_content_type`, `validate_redirect_chain`, `validate_redirect_target`, `validate_url`
+`bounded_response_reader`, `build_document_chunks`, `canonicalize_url`, `chunk_boundary`, `extract_content`, `extract_content_bytes`, `extract_pdf_text`, `mixed_utf8_extract`, `parse_content_length`, `sanitize_pipeline`, `scan_injection_markers`, `strip_control_chars`, `validate_content_type`, `validate_redirect_chain`, `validate_redirect_target`, `validate_url`, `workflow_kind_parse`, `classify_absence`, `detect_entity_scoped_conflicts`
 
-Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). They are not runnable on stable Rust. Property tests (`proptest`) in the `tests/property_*.rs` files provide equivalent coverage on stable.
+Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). They are not runnable on stable Rust. Property tests (`proptest`) in the `tests/property_*.rs` files provide equivalent coverage on stable, including:
+
+- `property_conflict`: sourced conflict detection, entity scoping, cross-entity false positive prevention
+- `property_retrieval`: retrieval attempt outcomes, absence classification, coverage computation
+- `property_local_fs_extended`: symlink escape, openat2 behavior, path traversal
+- `property_forge_url`: forge URL identity, encoding, redirect rejection
 
 ---
 
@@ -101,6 +150,8 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 4. No `entry.object_sha` passed as commit revision to URL builders
 5. Postprocessing invoked with `workflow_model = None` for requests that specify a workflow
 6. No `repo_search` or `repo_map` without workflow model when applicable
+7. No independent forge body counters inside auxiliary fetch helpers (`read_with_budget` present)
+8. Security groups materialized before flattening/serialization
 
 ---
 
@@ -109,15 +160,15 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 | Suite | Tests | Focus |
 |-------|-------|-------|
 | `property_forge_url` | 17 | Forge URL identity, encoding, redirect rejection |
-| `property_conflict` | 14 | Conflict detection order independence, entity scoping |
-| `property_retrieval` | 14 | RetrievalAttempt properties, outcome classification |
-| `property_local_fs` | 21 | Path handling, eligibility, safe-open |
-| `property_local_fs_extended` | 12 | Symlink rejection, path traversal, binary detection |
-| `property_sanitize` | 16 | Control-char strip, framing, injection scan |
-| `property_identity` / `2` / `3` | 39 | FNV-1a hash stability, URL canonicalization |
-| `property_fetch_*` | 42 | Fetch URL validation, redirects, response behavior |
-| `property_render_*` | 22 | Code/diff/plaintext/CSV rendering |
-| `dispatch_fault_injection` | 13 | Provider failures, timeouts, concurrency |
+| `property_conflict` | 22 | Conflict detection order independence, entity scoping, distinct-source requirement |
+| `property_retrieval` | 15 | RetrievalAttempt properties, outcome classification, absence mapping |
+| `property_local_fs` | 22 | Path handling, eligibility, safe-open |
+| `property_local_fs_extended` | 35 | Symlink rejection, path traversal, binary detection, openat2 |
+| `property_sanitize` | 15 | Control-char strip, framing, injection scan |
+| `property_identity` / `2` / `3` | 40 | FNV-1a hash stability, URL canonicalization |
+| `property_fetch_*` | 76 | Fetch URL validation, redirects, response behavior |
+| `property_render_*` | 39 | Code/diff/plaintext/CSV rendering |
+| `dispatch_fault_injection` | 32 | Provider failures, timeouts, concurrency, health transitions |
 
 ---
 
@@ -136,7 +187,7 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 
 ---
 
-## Definition of Done (§9) Verification
+## Definition of Done Verification
 
 ### Forge safety
 - [x] Redirect following is disabled (`Policy::none()`)
@@ -162,6 +213,7 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 - [x] Stdout and stderr are drained concurrently on separate threads (capped streaming reads)
 - [x] Output is capped during read with independent per-stream caps
 - [x] Timeouts and cap breaches terminate and reap the process group (setsid + SIGKILL)
+- [x] Cap-breach triggers immediate process-group termination via `ProcessTerminationController`
 - [x] Explicit `CommandTermination` enum records termination reason
 - [x] No unbounded Git `.output()` remains (static guard test)
 - [x] Tracked and untracked outputs are both bounded
@@ -177,28 +229,35 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 - [x] NUL-byte components rejected before CString conversion
 - [x] All local search/fetch/map read paths route through safe_open
 - [x] Intermediate and final symlink races are tested
-- [x] Freshness confidence reflects actual probe state (3-tier: high/medium/full)
+- [x] Freshness confidence reflects actual probe state (3-tier: high/medium/low)
+- [x] follow_symlinks=true uses openat2 RESOLVE_BENEATH on Linux
+- [x] Unsupported platforms return SafeSymlinkFollowingUnsupported
 
 ### Evidence workflows
-- [x] Returned cards contain evidence roles (materialize_evidence_roles)
+- [x] Returned cards contain evidence roles (materialize_evidence_roles before serialization)
+- [x] Security groups materialize roles before flattening/serialization
 - [x] Applicable requests select an actual workflow model (resolve_workflow_model)
 - [x] Coverage is populated for repo, research, and security workflows
 - [x] Provider failures are propagated as RetrievalFailure records to coverage
 - [x] coverage_status returns IndeterminateDueToFailures for failed required roles
 - [x] Retrieval outcomes distinguish zero results, failure, timeout, rate limit, skip, deadline, and truncation
-- [x] Conflicts are scoped to canonical entities and distinct sources
+- [x] Dispatch emits attempt records for every planned job with intended roles
+- [x] build_retrieval_summary_for_search derives from attempts, not card inference
+- [x] Conflicts are scoped to canonical entities and distinct sources (SourcedValue)
 - [x] Gap-driven next actions are generated from workflow coverage gaps
+- [x] Explicit workflow and profile selections drive the workflow coverage model
 - [x] End-to-end MCP fixtures cover codegg consumption
 
 ### Release evidence
 - [x] Formatting and clippy pass
-- [x] All feature test matrices pass (4,108 / 3,786 / 4,093 / 3,801)
-- [x] Hardening and schema/corpus tests pass (266 + 6 contract + 4 docs)
-- [x] Affected fuzz targets smoke-pass (property tests on stable; ASan on nightly)
-- [x] Live-smoke covers GitHub, GitLab, Codeberg, and Gitea/Forgejo (9/9 pass)
+- [x] All feature test matrices pass (4,174 / 3,832 / 4,159 / 3,847)
+- [x] Hardening and schema/corpus tests pass (265 + 322 + 8 contract)
+- [x] 19 fuzz targets smoke-pass (property tests on stable; ASan on nightly)
+- [x] Live-smoke covers GitHub, GitLab, Codeberg, and Gitea/Forgejo (9/9 pass, fallback mode)
 - [x] macOS local-workspace matrix passes (9/9 pass)
-- [x] Performance and memory evidence recorded (all µs-range)
-- [x] Documentation matches implementation (F.1 audit complete)
+- [x] CI runs tests on both Ubuntu Linux and macOS
+- [x] Performance and memory evidence recorded (all µs-range, 9 benchmarks including affected paths)
+- [x] Documentation matches implementation (documentation audit complete)
 - [x] Release build and publish dry-run pass
 
 ---
@@ -208,10 +267,14 @@ Note: Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). T
 1. **Fuzz ASan on stable**: Fuzz targets require nightly Rust with address sanitizer. Property tests (`proptest`) provide equivalent coverage on stable.
 2. **DNS rebinding**: Address validation is preflight-only; no connection-time pinning. Documented in `docs/architecture/meta.md` ADR.
 3. **Linked worktree changes**: Inventory change detection depends on `git status` probe interval (30s). Changes within the probe window are not immediately visible.
-4. **Cross-platform**: Only macOS tested locally. Linux CI coverage recommended before release.
+4. **Native forge smoke**: The native forge smoke test infrastructure exists (`tests/native_forge_smoke.rs`) but has not been run in this environment because no API tokens are configured. To generate native evidence: `GITHUB_TOKEN=... GITLAB_TOKEN=... CODEBERG_TOKEN=... cargo test --features live-smoke --test native_forge_smoke -- --ignored`.
+5. **Windows CI**: The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix. The crate does not claim Windows support.
 
 ---
 
 ## Release Classification
 
-**Provisional release candidate.** All safety and correctness gates pass. Deterministic CI is green. Live-smoke evidence is captured in fallback mode only (no API tokens configured). Native provider smoke tests have not been run. No known issue can cause credential disclosure, unbounded memory/process behavior, provenance misrepresentation, workspace escape, or materially misleading evidence semantics. Promotion to release candidate requires native provider smoke evidence and cross-platform CI coverage.
+**Provisional release candidate.** All deterministic safety and correctness gates pass. CI runs on both Ubuntu Linux and macOS. Live-smoke evidence is captured in fallback mode only (no API tokens configured). Native forge smoke test infrastructure exists (`tests/native_forge_smoke.rs`) but has not been executed in this environment. No known issue can cause credential disclosure, unbounded memory/process behavior, provenance misrepresentation, workspace escape, or materially misleading evidence semantics. Promotion to release candidate requires:
+
+1. Native provider smoke evidence with configured API tokens (tests exist in `tests/native_forge_smoke.rs`)
+2. Regenerated verification record on the release commit

@@ -1,4 +1,4 @@
-.PHONY: check test clippy fmt doc schema-corpus docs-tests publish-check live-smoke release-build hardening
+.PHONY: check test clippy fmt doc schema-corpus docs-tests publish-check live-smoke native-forge-smoke release-build hardening
 
 # Full offline quality gate (all CI checks)
 check: fmt clippy test-all test-no-default test-mock test-pdf hardening schema-corpus docs-tests release-build docs publish-check
@@ -55,6 +55,10 @@ docs:
 # Live smoke tests (requires network, ignored by default)
 live-smoke:
 	cargo test --features live-smoke --test corpus_runner -- --ignored
+
+# Native forge adapter smoke tests (requires API tokens)
+native-forge-smoke:
+	cargo test --features live-smoke --test native_forge_smoke -- --ignored
 
 # Dry-run publish check
 publish-check:

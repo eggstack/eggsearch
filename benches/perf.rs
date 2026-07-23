@@ -1,4 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use eggsearch::core::conflict::detect_entity_scoped_conflicts;
+use eggsearch::core::evidence_postprocess::{materialize_evidence_roles, resolve_workflow_model};
+use eggsearch::core::result::TrustLevel;
+use eggsearch::core::retrieval_status::{
+    summarize_retrieval, EvidenceAbsenceKind, RetrievalDimensionStatus,
+};
+use eggsearch::core::source_card::{SourceCard, SourceKind};
 
 fn bench_serialize_web_search_response(c: &mut Criterion) {
     let cards: Vec<serde_json::Value> = (0..10)
@@ -243,11 +250,120 @@ fn bench_metadata_construction(c: &mut Criterion) {
     });
 }
 
+fn make_source_cards(n: usize) -> Vec<SourceCard> {
+    (0..n)
+        .map(|i| {
+            let mut card = SourceCard::new(
+                format!("Result {}", i),
+                format!("https://example{}.com/result/{}", i, i),
+                vec![format!("provider_{}", i % 3)],
+                Some(0.5),
+                TrustLevel::ExternalUntrusted,
+            );
+            card.metadata.source_kind = match i % 4 {
+                0 => SourceKind::OfficialDocs,
+                1 => SourceKind::SourceRepository,
+                2 => SourceKind::IssueThread,
+                _ => SourceKind::SecurityAdvisory,
+            };
+            card
+        })
+        .collect()
+}
+
+fn bench_materialize_evidence_roles(c: &mut Criterion) {
+    c.bench_function("materialize_evidence_roles_10_cards", |b| {
+        b.iter_batched(
+            || make_source_cards(10),
+            |mut cards| {
+                materialize_evidence_roles(black_box(&mut cards));
+                black_box(&cards);
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_resolve_workflow_model(c: &mut Criterion) {
+    let tools = [
+        "repo_search",
+        "research_search",
+        "security_search",
+        "web_search",
+    ];
+    let profiles = [None, Some("security"), Some("research")];
+    let domains = [None, Some("architecture_decision"), Some("security_review")];
+
+    c.bench_function("resolve_workflow_model_12_combinations", |b| {
+        b.iter(|| {
+            for tool in &tools {
+                for profile in &profiles {
+                    for domain in &domains {
+                        black_box(resolve_workflow_model(
+                            black_box(tool),
+                            black_box(*profile),
+                            black_box(*domain),
+                            false,
+                        ));
+                    }
+                }
+            }
+        });
+    });
+}
+
+fn bench_detect_entity_scoped_conflicts(c: &mut Criterion) {
+    c.bench_function("detect_entity_scoped_conflicts_10_cards", |b| {
+        b.iter_batched(
+            || make_source_cards(10),
+            |cards| {
+                black_box(detect_entity_scoped_conflicts(black_box(&cards)));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_summarize_retrieval(c: &mut Criterion) {
+    let dimensions: Vec<RetrievalDimensionStatus> = (0..5)
+        .map(|i| RetrievalDimensionStatus {
+            evidence_role: match i % 3 {
+                0 => eggsearch::core::evidence_role::EvidenceRole::PrimaryImplementation,
+                1 => eggsearch::core::evidence_role::EvidenceRole::AuthoritativeSecurityAdvisory,
+                _ => eggsearch::core::evidence_role::EvidenceRole::OfficialDocumentation,
+            },
+            absence_kind: match i % 4 {
+                0 => EvidenceAbsenceKind::NoMatchingEvidenceFound,
+                1 => EvidenceAbsenceKind::ProviderFailed,
+                2 => EvidenceAbsenceKind::DeadlinePreventedCompletion,
+                _ => EvidenceAbsenceKind::NotApplicable,
+            },
+            provider_id: Some(format!("provider_{}", i)),
+            message: format!("dimension {}", i),
+            query: Some(format!("query_{}", i)),
+        })
+        .collect();
+
+    c.bench_function("summarize_retrieval_5_dimensions", |b| {
+        b.iter_batched(
+            || dimensions.clone(),
+            |dims| {
+                black_box(summarize_retrieval(black_box(dims)));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
 criterion_group!(
     benches,
     bench_serialize_web_search_response,
     bench_serialize_provider_status,
     bench_identity_hash,
     bench_metadata_construction,
+    bench_materialize_evidence_roles,
+    bench_resolve_workflow_model,
+    bench_detect_entity_scoped_conflicts,
+    bench_summarize_retrieval,
 );
 criterion_main!(benches);
