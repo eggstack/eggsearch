@@ -226,6 +226,14 @@ Responses distinguish between evidence absence and retrieval failure:
 
 A host agent must never interpret an empty group as proof of absence when the corresponding retrieval dimension failed.
 
+### Research Subquery Semantic Intent
+
+Research search subqueries carry typed `intended_roles` derived from `ResearchSourceType`. These roles flow from the planner through dispatch into postprocessing, replacing opaque `rq_*` label inference. When a retrieval failure occurs, it expands across all `intended_roles` on the affected subquery.
+
+### Native Security Attempts in Retrieval Summary
+
+`security_search` includes native advisory lookups (CVE/GHSA/OSV/RustSec/KEV) in the retrieval summary. Each native lookup produces a `RetrievalAttempt` record alongside web-search results, providing full failure visibility for all retrieval paths.
+
 ### Retrieval Summaries
 
 Search responses include a `retrieval_summary` field that maps provider outcomes into retrieval dimensions. Each dimension records the evidence role, absence kind, provider ID, and a human-readable message. The summary has three boolean flags: `has_failures`, `has_absences`, and `has_truncation`. Retrieval summaries are populated by `evidence_postprocess.rs` on all result conversion paths.

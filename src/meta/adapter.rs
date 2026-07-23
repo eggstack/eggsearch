@@ -100,6 +100,10 @@ struct PlannedSubquery {
     query: String,
     /// Lower number = higher priority. Ties broken by order.
     priority: i32,
+    /// Pre-computed intended evidence roles for this subquery.
+    /// When non-empty, `dispatch_subqueries` uses these directly
+    /// instead of calling `map_provider_to_intended_roles()`.
+    intended_roles: Vec<crate::core::evidence_role::EvidenceRole>,
 }
 
 /// Constructed once at server startup. Holds the `SearchEngine`
@@ -995,6 +999,7 @@ impl MetadataSearchAdapter {
                         label: subquery.label.to_string(),
                         query: subquery.query.clone(),
                         priority,
+                        intended_roles: Vec::new(),
                     }
                 })
                 .collect(),
@@ -1554,16 +1559,19 @@ impl MetadataSearchAdapter {
                 label: "advisory".to_string(),
                 query: plan.generic_query.clone(),
                 priority: security_subquery_priority("advisory"),
+                intended_roles: Vec::new(),
             },
             PlannedSubquery {
                 label: "vendor".to_string(),
                 query: format!("{query} vendor advisory security bulletin"),
                 priority: security_subquery_priority("vendor"),
+                intended_roles: Vec::new(),
             },
             PlannedSubquery {
                 label: "defensive".to_string(),
                 query: format!("{query} mitigation workaround fix patch"),
                 priority: security_subquery_priority("defensive"),
+                intended_roles: Vec::new(),
             },
         ];
 
@@ -1649,10 +1657,13 @@ impl MetadataSearchAdapter {
                 .iter()
                 .map(|subquery| {
                     let priority = research_subquery_priority(&subquery.source_type);
+                    let intended_roles =
+                        intended_roles_for_research_source_type(subquery.source_type);
                     PlannedSubquery {
                         label: subquery.id.clone(),
                         query: subquery.query.clone(),
                         priority,
+                        intended_roles,
                     }
                 })
                 .collect(),
@@ -1881,10 +1892,14 @@ async fn dispatch_subqueries(
     let mut jobs = Vec::new();
     for (subquery_idx, subquery) in subqueries.iter().enumerate() {
         for (provider_idx, engine) in engines.iter().enumerate() {
-            let intended_roles = crate::core::retrieval_status::map_provider_to_intended_roles(
-                engine.name(),
-                &subquery.label,
-            );
+            let intended_roles = if !subquery.intended_roles.is_empty() {
+                subquery.intended_roles.clone()
+            } else {
+                crate::core::retrieval_status::map_provider_to_intended_roles(
+                    engine.name(),
+                    &subquery.label,
+                )
+            };
             jobs.push(DispatchJob {
                 subquery_id: subquery.label.clone(),
                 query: subquery.query.clone(),
@@ -1948,6 +1963,12 @@ fn research_subquery_priority(source_type: &crate::core::research::ResearchSourc
         ResearchSourceType::Counterpoints => 11,
         ResearchSourceType::AcademicOrFormalSources => 2,
     }
+}
+
+fn intended_roles_for_research_source_type(
+    st: crate::core::research::ResearchSourceType,
+) -> Vec<crate::core::evidence_role::EvidenceRole> {
+    vec![crate::core::evidence_role::EvidenceRole::from_research_source_type(st)]
 }
 
 /// Assign priority for security_search subqueries. Lower = higher priority.

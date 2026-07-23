@@ -722,7 +722,7 @@ pub async fn run_web_search(
         state.config.search.max_results_cap,
     );
 
-    let resp = state
+    let mut resp = state
         .adapter
         .web_search(
             &req,
@@ -835,6 +835,10 @@ pub async fn run_web_search(
         .collect();
     let has_suggestions = !resp.results.is_empty();
     let next_actions = crate::meta::web_search_next_actions(&source_ids, has_suggestions);
+
+    if let Some(ref mut ep) = resp.evidence_postprocess {
+        merge_selection_stage_attempts(&routing_decision, &mut ep.retrieval_summary);
+    }
 
     let payload = serde_json::json!({
         "query": resp.query,
@@ -1189,6 +1193,7 @@ pub async fn run_repo_search(
     );
 
     // Add routing decision telemetry
+    merge_selection_stage_attempts(&routing_decision, &mut response.retrieval_summary);
     response.telemetry.routing_decision = Some(routing_decision);
 
     // Supplement gap-driven next actions with recipe-based hints when
@@ -1332,6 +1337,8 @@ pub async fn run_research_search(
         .adapter
         .research_search(&req, effective_max, state.config.search.max_results_cap)
         .await;
+
+    merge_selection_stage_attempts(&routing_decision, &mut response.retrieval_summary);
 
     // Add routing decision and capability enforcement telemetry
     if let Some(ref mut telem) = response.telemetry {
@@ -1519,6 +1526,90 @@ pub fn run_provider_status(
         }
     }
     Ok(payload)
+}
+
+fn skip_reason_to_attempt(
+    skip: &crate::meta::provider_diagnostics::ProviderSkipReason,
+) -> crate::core::retrieval_status::RetrievalAttempt {
+    use crate::core::provider::ProviderSkipCode;
+    use crate::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
+
+    let outcome = match skip.skip_code {
+        Some(ProviderSkipCode::CooldownActive) => RetrievalAttemptOutcome::SkippedByPolicy,
+        Some(ProviderSkipCode::NotBuilt) => RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+        Some(ProviderSkipCode::DisabledByUser) => RetrievalAttemptOutcome::SkippedByPolicy,
+        Some(ProviderSkipCode::MissingApiKey)
+        | Some(ProviderSkipCode::MissingSearxngConfig)
+        | Some(ProviderSkipCode::MissingBaseUrl)
+        | Some(ProviderSkipCode::InvalidBaseUrl)
+        | Some(ProviderSkipCode::MissingLocalBackend)
+        | Some(ProviderSkipCode::CredentialNotConfigured)
+        | Some(ProviderSkipCode::CredentialEnvMissing)
+        | Some(ProviderSkipCode::CredentialInvalid) => {
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+        }
+        _ => RetrievalAttemptOutcome::SkippedByPolicy,
+    };
+
+    RetrievalAttempt {
+        provider_id: skip.provider_id.clone(),
+        subquery_id: None,
+        intended_roles: vec![],
+        outcome,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: None,
+    }
+}
+
+fn merge_selection_stage_attempts(
+    routing_decision: &crate::meta::provider_diagnostics::ProviderRoutingDecision,
+    response_retrieval_summary: &mut Option<
+        crate::core::retrieval_status::ResponseRetrievalSummary,
+    >,
+) {
+    if routing_decision.skipped_providers.is_empty() {
+        return;
+    }
+
+    let selection_attempts: Vec<crate::core::retrieval_status::RetrievalAttempt> = routing_decision
+        .skipped_providers
+        .iter()
+        .map(skip_reason_to_attempt)
+        .collect();
+
+    if let Some(ref mut summary) = response_retrieval_summary {
+        let selection_dims =
+            crate::core::evidence_postprocess::build_retrieval_summary_from_attempts(
+                &selection_attempts,
+            );
+        for dim in selection_dims.dimensions {
+            summary.dimensions.push(dim);
+        }
+        summary.has_failures = summary.has_failures || selection_dims.has_failures;
+        summary.has_absences = summary.has_absences || selection_dims.has_absences;
+        summary.has_truncation = summary.has_truncation || selection_dims.has_truncation;
+        if let Some(sel_attempted) = selection_dims.attempted_job_count {
+            summary.attempted_job_count =
+                Some(summary.attempted_job_count.unwrap_or(0) + sel_attempted);
+        }
+        if let Some(sel_completed) = selection_dims.completed_job_count {
+            summary.completed_job_count =
+                Some(summary.completed_job_count.unwrap_or(0) + sel_completed);
+        }
+        if let Some(sel_failed) = selection_dims.failed_job_count {
+            summary.failed_job_count = Some(summary.failed_job_count.unwrap_or(0) + sel_failed);
+        }
+    } else {
+        *response_retrieval_summary = Some(
+            crate::core::evidence_postprocess::build_retrieval_summary_from_attempts(
+                &selection_attempts,
+            ),
+        );
+    }
 }
 
 /// Build a `code_hosts` summary grouping providers by host kind.
@@ -3617,6 +3708,8 @@ pub async fn run_security_search(
         state.config.search.max_results_cap,
     )
     .await;
+
+    merge_selection_stage_attempts(&routing_decision, &mut response.retrieval_summary);
 
     response.routing_decision = Some(routing_decision);
 

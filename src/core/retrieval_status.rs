@@ -42,6 +42,12 @@ pub struct ResponseRetrievalSummary {
     pub has_failures: bool,
     pub has_absences: bool,
     pub has_truncation: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempted_job_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_job_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_job_count: Option<usize>,
 }
 
 #[allow(missing_docs)]
@@ -66,11 +72,34 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
         }
     }
 
+    let attempted_job_count = Some(dimensions.len());
+    let completed_job_count = Some(
+        dimensions
+            .iter()
+            .filter(|d| d.absence_kind == EvidenceAbsenceKind::NotApplicable)
+            .count(),
+    );
+    let failed_job_count = Some(
+        dimensions
+            .iter()
+            .filter(|d| {
+                matches!(
+                    d.absence_kind,
+                    EvidenceAbsenceKind::ProviderFailed
+                        | EvidenceAbsenceKind::DeadlinePreventedCompletion
+                )
+            })
+            .count(),
+    );
+
     ResponseRetrievalSummary {
         dimensions,
         has_failures,
         has_absences,
         has_truncation,
+        attempted_job_count,
+        completed_job_count,
+        failed_job_count,
     }
 }
 
@@ -273,6 +302,68 @@ impl RetrievalAttempt {
             _ => None,
         }
     }
+
+    #[allow(missing_docs)]
+    pub fn to_retrieval_failures(&self) -> Vec<RetrievalFailure> {
+        match self.outcome {
+            RetrievalAttemptOutcome::Failed
+            | RetrievalAttemptOutcome::TimedOut
+            | RetrievalAttemptOutcome::RateLimited
+            | RetrievalAttemptOutcome::InterruptedByDeadline => {}
+            _ => return Vec::new(),
+        }
+
+        let (kind, base_msg) = match self.outcome {
+            RetrievalAttemptOutcome::Failed => {
+                let msg = match &self.error_class {
+                    Some(cls) => format!("[{}] provider {} failed", cls, self.provider_id),
+                    None => format!("provider {} failed", self.provider_id),
+                };
+                (RetrievalFailureKind::ProviderFailed, msg)
+            }
+            RetrievalAttemptOutcome::TimedOut => {
+                let msg = match &self.error_class {
+                    Some(cls) => format!("[{}] provider {} timed out", cls, self.provider_id),
+                    None => format!("provider {} timed out", self.provider_id),
+                };
+                (RetrievalFailureKind::DeadlinePreventedCompletion, msg)
+            }
+            RetrievalAttemptOutcome::RateLimited => {
+                let msg = match &self.error_class {
+                    Some(cls) => {
+                        format!("[{}] provider {} rate limited", cls, self.provider_id)
+                    }
+                    None => format!("provider {} rate limited", self.provider_id),
+                };
+                (RetrievalFailureKind::ProviderFailed, msg)
+            }
+            RetrievalAttemptOutcome::InterruptedByDeadline => {
+                let msg = format!(
+                    "provider {} interrupted by global deadline",
+                    self.provider_id
+                );
+                (RetrievalFailureKind::DeadlinePreventedCompletion, msg)
+            }
+            _ => unreachable!(),
+        };
+
+        let roles: Vec<EvidenceRole> = if self.intended_roles.is_empty() {
+            vec![EvidenceRole::UnknownOrWeakContext]
+        } else {
+            self.intended_roles.clone()
+        };
+
+        let provider_id = Some(self.provider_id.clone());
+        roles
+            .into_iter()
+            .map(|role| RetrievalFailure {
+                kind,
+                role,
+                message: base_msg.clone(),
+                provider_id: provider_id.clone(),
+            })
+            .collect()
+    }
 }
 
 /// Convert a slice of `RetrievalAttempt` records into `RetrievalFailure` records
@@ -280,7 +371,7 @@ impl RetrievalAttempt {
 pub fn attempts_to_failures(attempts: &[RetrievalAttempt]) -> Vec<RetrievalFailure> {
     attempts
         .iter()
-        .filter_map(RetrievalAttempt::to_retrieval_failure)
+        .flat_map(RetrievalAttempt::to_retrieval_failures)
         .collect()
 }
 
@@ -640,6 +731,9 @@ mod tests {
             has_failures: true,
             has_absences: true,
             has_truncation: false,
+            attempted_job_count: Some(2),
+            completed_job_count: Some(0),
+            failed_job_count: Some(1),
         };
         let json = serde_json::to_string(&summary).unwrap();
         let parsed: ResponseRetrievalSummary = serde_json::from_str(&json).unwrap();

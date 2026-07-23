@@ -187,6 +187,10 @@ make hardening                                              # all hardening test
 - **Freshness confidence:** `FreshnessConfidence` enum (`high`/`medium`/`low`) in `core/local.rs` is computed from inventory age and propagated through `InventoryTelemetry`, `RepoMapResponse`, and `LocalRepoMatch`. Inventory freshness is also checked via a `git status --porcelain=v2` hash (change token) stored alongside the inventory, detecting untracked file creation, staging, branch switches, and ignore-rule changes without waiting for the age-based TTL.
 - **Race-resistant local file opening:** `safe_open.rs` provides `safe_open_relative()` which uses descriptor-relative file opening via `openat`/`openat2` with `O_NOFOLLOW`. On Linux, it attempts `openat2` with `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS`, falling back to `openat` with `O_NOFOLLOW` on older kernels. For `follow_symlinks=true` on Linux, uses `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS` (omitting `RESOLVE_NO_SYMLINKS`). On non-Linux Unix platforms, `follow_symlinks=true` returns `SafeSymlinkFollowingUnsupported`. Each path component is opened relative to the parent directory descriptor, eliminating TOCTOU races between validation and open.
 - **Evidence workflow selection and conflict scoping:** `resolve_workflow_model()` maps tool name, profile, and research domain to a deterministic `WorkflowCoverageModel` defining required/recommended/optional evidence roles for each of 10 core workflows. `ConflictEntityKey` (entity type + canonical ID + field) provides composite grouping for conflict detection, preventing unrelated sources from being compared. Both are wired into all result conversion paths via `evidence_postprocess.rs`.
+- **Semantic research subquery intent:** Research subqueries carry typed `intended_roles` derived from `ResearchSourceType`, not from opaque `rq_*` labels. The planner emits roles that dispatch and postprocessing consume directly.
+- **Multi-role failure expansion:** Retrieval failures for research subqueries expand across all `intended_roles` — failure conversion never assumes a single role per subquery.
+- **Native security attempt participation:** Native security lookups (CVE/GHSA/OSV/RustSec/KEV) produce `RetrievalAttempt` records that participate in the retrieval ledger alongside web-search results.
+- **Conflict source scoping:** Conflict source IDs identify only the disagreeing cards, not entire entity groups.
 
 ## MCP Tools (10 total)
 
@@ -221,5 +225,8 @@ commit.
 - **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`
 - **Bypassing forge response bounds** — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
 - **Changing commit_sha semantics** — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA
+- **Using opaque rq_* labels as the sole source of role inference** — research planner now provides typed intended roles via `intended_roles`; do not infer roles from `rq_*` subquery IDs
+- **Using .first() on intended_roles for failure conversion** — must expand across all roles when converting retrieval failures
+- **Silently discarding native advisory lookup errors** — all lookups (CVE, GHSA, OSV, RustSec, KEV) produce `RetrievalAttempt` records in the retrieval ledger
 
 

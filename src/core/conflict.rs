@@ -421,14 +421,6 @@ pub fn detect_entity_scoped_conflicts(
                         continue;
                     }
 
-                    let pkg_ids: Vec<String> = pkg_group
-                        .iter()
-                        .filter_map(|c| c.stable_id.clone())
-                        .collect();
-                    if pkg_ids.len() < 2 {
-                        continue;
-                    }
-
                     let sourced = sourced_versions_for_cards(pkg_group);
                     if sourced.is_empty() {
                         continue;
@@ -448,31 +440,25 @@ pub fn detect_entity_scoped_conflicts(
                         per_source_sets.into_iter().collect();
                     source_set_keys.sort_by(|a, b| a.0.cmp(&b.0));
 
-                    if source_set_keys.len() >= 2 {
-                        let distinct_ids: Vec<String> =
-                            source_set_keys.iter().map(|(id, _)| id.clone()).collect();
-                        let mut unique_ids = distinct_ids.clone();
-                        unique_ids.sort();
-                        unique_ids.dedup();
-
-                        if unique_ids.len() >= 2 {
-                            let first_set = &source_set_keys[0].1;
-                            let second_set = &source_set_keys[1].1;
-                            if first_set != second_set {
-                                let values: Vec<String> = source_set_keys
-                                    .iter()
-                                    .map(|(_, s)| {
-                                        let mut v: Vec<String> = s.iter().cloned().collect();
-                                        v.sort();
-                                        v.join(", ")
-                                    })
-                                    .collect();
+                    for i in 0..source_set_keys.len() {
+                        for j in (i + 1)..source_set_keys.len() {
+                            let (ref id_a, ref set_a) = source_set_keys[i];
+                            let (ref id_b, ref set_b) = source_set_keys[j];
+                            if set_a != set_b {
+                                let mut vals_a: Vec<String> = set_a.iter().cloned().collect();
+                                vals_a.sort();
+                                let mut vals_b: Vec<String> = set_b.iter().cloned().collect();
+                                vals_b.sort();
+                                let val_a = vals_a.join(", ");
+                                let val_b = vals_b.join(", ");
+                                let ids_a = vec![id_a.clone()];
+                                let ids_b = vec![id_b.clone()];
                                 if let Some(conflict) = detect_version_range_conflicts(
-                                    &pkg_ids,
-                                    &[],
+                                    &ids_a,
+                                    &ids_b,
                                     "patched_versions",
-                                    &values[0],
-                                    values.get(1).map(|s| s.as_str()).unwrap_or(""),
+                                    &val_a,
+                                    &val_b,
                                 ) {
                                     conflicts.push(conflict);
                                 }
@@ -483,8 +469,6 @@ pub fn detect_entity_scoped_conflicts(
 
                 let sourced_dates = sourced_dates_for_cards(group);
                 if sourced_dates.len() >= 2 && has_distinct_sources(&sourced_dates) {
-                    let date_set: BTreeSet<String> =
-                        sourced_dates.iter().map(|sv| sv.value.clone()).collect();
                     let per_source_dates: BTreeMap<String, BTreeSet<String>> = {
                         let mut map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
                         for sv in &sourced_dates {
@@ -500,19 +484,24 @@ pub fn detect_entity_scoped_conflicts(
                     date_source_keys.sort_by(|a, b| a.0.cmp(&b.0));
 
                     if date_source_keys.len() >= 2 {
-                        let first_dates = &date_source_keys[0].1;
-                        let second_dates = &date_source_keys[1].1;
-                        if first_dates != second_dates {
-                            let all_dates: Vec<String> = date_set.into_iter().collect();
-                            if all_dates.len() >= 2 {
-                                if let Some(conflict) = detect_date_conflicts(
-                                    &ids,
-                                    &[],
-                                    "published_at",
-                                    &all_dates[0],
-                                    &all_dates[1],
-                                ) {
-                                    conflicts.push(conflict);
+                        for i in 0..date_source_keys.len() {
+                            for j in (i + 1)..date_source_keys.len() {
+                                let (ref id_a, ref dates_a) = date_source_keys[i];
+                                let (ref id_b, ref dates_b) = date_source_keys[j];
+                                if dates_a != dates_b {
+                                    let val_a = dates_a.iter().next().unwrap().clone();
+                                    let val_b = dates_b.iter().next().unwrap().clone();
+                                    let ids_a = vec![id_a.clone()];
+                                    let ids_b = vec![id_b.clone()];
+                                    if let Some(conflict) = detect_date_conflicts(
+                                        &ids_a,
+                                        &ids_b,
+                                        "published_at",
+                                        &val_a,
+                                        &val_b,
+                                    ) {
+                                        conflicts.push(conflict);
+                                    }
                                 }
                             }
                         }

@@ -43,7 +43,7 @@ MCP Tool → MetadataSearchAdapter
 | `dependency_parse.rs` | Dependency/lock file parser |
 | `repo_mapper.rs` | Repository map planning and classification for the `repo_map` MCP tool |
 | `forge_adapter.rs` | Native remote repository tree retrieval for GitHub, GitLab, Gitea, Forgejo, and Codeberg. Bounded response reading, endpoint safety validation, nested map assembly |
-| `security_search.rs` | Security search orchestration: coordinates web search, native advisory lookups, KEV enrichment, grouping |
+| `security_search.rs` | Security search orchestration: coordinates web search, native advisory lookups (CVE/GHSA/OSV/RustSec/KEV), KEV enrichment, grouping. Native advisory lookups produce `RetrievalAttempt` records that merge into the retrieval summary. |
 | `security_suggested_fetches.rs` | Suggested fetch generation for security search result groups |
 | `research_evidence_analysis.rs` | Deterministic research evidence analysis: claim extraction, conflict detection, quality classification, gap identification |
 | `research_suggested_fetches.rs` | Suggested fetch generation for research search results |
@@ -198,9 +198,11 @@ The planner rewrites queries based on intent:
 
 1. **Intent detection** — Parse query for intent hints (code, issues, releases, security, etc.)
 2. **Repo hints** — Extract `repo:owner/name` patterns from query text
-3. **Subquery generation** — Generate multiple subqueries for multi-engine dispatch
+3. **Subquery generation** — Generate multiple subqueries for multi-engine dispatch. For research searches, `PlannedSubquery` carries typed `intended_roles` derived from `ResearchSourceType`, not opaque labels.
 4. **Provider selection** — Choose engines based on profile and capabilities
 5. **Freshness routing** — Route freshness hints to engines that support them
+
+`dispatch_subqueries` uses pre-computed `intended_roles` when available, propagating them into failure conversion and retrieval summary construction.
 
 ---
 

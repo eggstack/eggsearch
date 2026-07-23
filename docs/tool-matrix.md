@@ -47,10 +47,10 @@ See [Agent workflows](agent-workflows.md) for the recipe catalog and usage guida
 
 ## Evidence Roles and Coverage
 
-Every `SourceCard` includes an optional `evidence_role` field classifying its role in the workflow. Roles are deterministic and derived from existing metadata — no model inference.
+Every `SourceCard` includes an optional `evidence_role` field classifying its role in the workflow. Roles are deterministic and derived from existing metadata — no model inference. For `research_search`, evidence roles on subquery results are planner-derived via typed `intended_roles` on `PlannedSubquery`, not inferred from opaque `rq_*` labels.
 
-Responses also include `retrieval_summary` when applicable, distinguishing evidence absence (`no_matching_evidence_found`) from retrieval failure (`provider_failed`, `deadline_prevented_completion`). This prevents agents from treating empty results as proof that evidence does not exist.
+Responses also include `retrieval_summary` when applicable, distinguishing evidence absence (`no_matching_evidence_found`) from retrieval failure (`provider_failed`, `deadline_prevented_completion`). Retrieval summaries include native security attempts (CVE/GHSA/OSV/RustSec/KEV lookups) alongside web-search provider results. This prevents agents from treating empty results as proof that evidence does not exist.
 
-Conflict metadata (`conflict_metadata`) appears when sources disagree on structured fields, with severity and resolution recommendations.
+Conflict metadata (`conflict_metadata`) appears when sources disagree on structured fields, with severity and resolution recommendations. Conflict source IDs are exact — they identify only the disagreeing cards, not entire entity groups.
 
 See [Agent workflows](agent-workflows.md) for the full evidence role taxonomy and workflow coverage models.

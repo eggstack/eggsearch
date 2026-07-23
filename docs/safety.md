@@ -125,6 +125,8 @@ Use `metadata_only` when you need page metadata but do not need the body content
 
 `security_search` and the advisory-backed paths return advisory data and severity metadata for triage. They do not decide exploitability for a specific deployment, patch state, or runtime reachability profile.
 
+Native security lookups (CVE/GHSA/OSV/RustSec/KEV) are instrumented for failure visibility — every lookup produces a `RetrievalAttempt` record in the retrieval ledger, including KEV lookup failures. This ensures that failed advisory lookups are never silently discarded and are surfaced alongside successful results.
+
 ## Forge Endpoint Safety
 
 Forge API base URLs (GitHub, GitLab, Gitea, Forgejo, Codeberg) are validated by `validate_base_url()` before any API request:

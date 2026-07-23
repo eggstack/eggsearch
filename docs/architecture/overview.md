@@ -297,6 +297,12 @@ Forge API base URLs are validated by `validate_base_url()` before use: embedded 
 
 12. **Evidence workflow selection and conflict scoping** — `resolve_workflow_model()` maps tool name, profile, and research domain to a deterministic `WorkflowCoverageModel` defining required/recommended/optional evidence roles for each of 10 core workflows. `ConflictEntityKey` (entity type + canonical ID + field) provides composite grouping for conflict detection, preventing unrelated sources from being compared. Evidence roles are materialized onto all source cards via `materialize_evidence_roles()`. `RetrievalAttempt` tracks per-provider outcomes (success, failure, timeout, rate limit, skip, truncation) for attempt-derived retrieval summaries. Both are wired into all result conversion paths via `evidence_postprocess.rs`.
 
+13. **Semantic research subquery intent** — Research planner subqueries carry typed `intended_roles` derived from `ResearchSourceType`, flowing from planner through dispatch into postprocessing. This replaces opaque `rq_*` label inference with explicit role semantics.
+
+14. **Native security attempt collection** — Native advisory lookups (CVE/GHSA/OSV/RustSec/KEV) produce `RetrievalAttempt` records that merge into the retrieval summary alongside web-search results. Lookup failures are not silently discarded; they appear as retrieval-attempt entries.
+
+15. **Multi-role failure expansion** — Retrieval failures for research subqueries expand across all `intended_roles` on the subquery, not just a single role. This prevents incomplete failure attribution when a subquery targets multiple evidence dimensions.
+
 ---
 
 ## Feature Flags

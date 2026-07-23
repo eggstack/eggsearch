@@ -246,22 +246,23 @@ fn build_attempt_derived_summary(
     let mut dimensions = Vec::with_capacity(attempts.len());
 
     for attempt in attempts {
-        let role = attempt
-            .intended_roles
-            .first()
-            .copied()
-            .unwrap_or(EvidenceRole::UnknownOrWeakContext);
-
         let absence_kind = attempt_outcome_to_absence_kind(&attempt.outcome);
         let message = attempt_message(attempt);
+        let roles: Vec<EvidenceRole> = if attempt.intended_roles.is_empty() {
+            vec![EvidenceRole::UnknownOrWeakContext]
+        } else {
+            attempt.intended_roles.clone()
+        };
 
-        dimensions.push(RetrievalDimensionStatus {
-            evidence_role: role,
-            absence_kind,
-            provider_id: Some(attempt.provider_id.clone()),
-            message,
-            query: attempt.query_fingerprint.clone(),
-        });
+        for role in roles {
+            dimensions.push(RetrievalDimensionStatus {
+                evidence_role: role,
+                absence_kind,
+                provider_id: Some(attempt.provider_id.clone()),
+                message: message.clone(),
+                query: attempt.query_fingerprint.clone(),
+            });
+        }
     }
 
     if dimensions.is_empty() {
@@ -269,6 +270,13 @@ fn build_attempt_derived_summary(
     } else {
         summarize_retrieval(dimensions)
     }
+}
+
+#[allow(missing_docs)]
+pub fn build_retrieval_summary_from_attempts(
+    attempts: &[crate::core::retrieval_status::RetrievalAttempt],
+) -> ResponseRetrievalSummary {
+    build_attempt_derived_summary(attempts)
 }
 
 #[allow(missing_docs)]
