@@ -640,6 +640,11 @@ fn run_bounded_command_impl(
 ) -> BoundedCommandResult {
     use std::io::Read;
 
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "safe.directory")
+        .env("GIT_CONFIG_VALUE_0", "*");
+
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
