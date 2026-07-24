@@ -1,3 +1,8 @@
+---
+name: eggsearch-dev
+description: Use when building, testing, or contributing to eggsearch. Covers cargo commands, project structure, test conventions, code style, and common pitfalls.
+---
+
 # eggsearch Development Skill
 
 Use when building, testing, or contributing to eggsearch. Covers cargo commands, project structure, test conventions, code style, and common pitfalls.
