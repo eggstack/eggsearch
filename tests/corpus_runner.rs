@@ -1665,6 +1665,7 @@ async fn corpus_local_repo_match_metadata_present() {
         include_local: Some(true),
         owner: Some("tokio-rs".to_string()),
         repo: Some("axum".to_string()),
+        timeout_ms: Some(30_000),
         ..Default::default()
     };
     let v = run_repo_search(state, args).await.expect("repo_search ok");

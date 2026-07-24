@@ -10309,6 +10309,19 @@ fn git_cmd() -> std::process::Command {
 }
 
 #[cfg(feature = "mock")]
+fn run_git_checked(cmd: &mut std::process::Command, operation: &str) {
+    let output = cmd
+        .output()
+        .unwrap_or_else(|error| panic!("{operation} could not start: {error}"));
+    assert!(
+        output.status.success(),
+        "{operation} failed with status {:?}: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+}
+
+#[cfg(feature = "mock")]
 fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let adapter = MetadataSearchAdapter::from_engines(
@@ -17825,38 +17838,34 @@ async fn repo_search_local_match_metadata_has_all_fields() {
 
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
-    // Initialize git repo
-    git_cmd().arg("init").arg(root).output().ok();
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("remote")
-        .arg("add")
-        .arg("origin")
-        .arg("https://github.com/test-owner/test-repo.git")
-        .output()
-        .ok();
-
-    // Stage and commit
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add should succeed");
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("-c")
-        .arg("user.name=ci")
-        .arg("-c")
-        .arg("user.email=ci@test.com")
-        .arg("commit")
-        .arg("-m")
-        .arg("init")
-        .output()
-        .expect("git commit should succeed");
+    run_git_checked(
+        git_cmd().arg("init").arg("--initial-branch=main").arg(root),
+        "git init",
+    );
+    run_git_checked(
+        git_cmd()
+            .arg("-C")
+            .arg(root)
+            .arg("remote")
+            .arg("add")
+            .arg("origin")
+            .arg("https://github.com/test-owner/test-repo.git"),
+        "git remote add",
+    );
+    run_git_checked(git_cmd().arg("-C").arg(root).arg("add").arg("."), "git add");
+    run_git_checked(
+        git_cmd()
+            .arg("-C")
+            .arg(root)
+            .arg("-c")
+            .arg("user.name=ci")
+            .arg("-c")
+            .arg("user.email=ci@test.com")
+            .arg("commit")
+            .arg("-m")
+            .arg("init"),
+        "git commit",
+    );
 
     let state = state_with_local_backend(root);
     let args = RepoSearchArgs {
@@ -17865,6 +17874,7 @@ async fn repo_search_local_match_metadata_has_all_fields() {
         include_local: Some(true),
         owner: Some("test-owner".to_string()),
         repo: Some("test-repo".to_string()),
+        timeout_ms: Some(30_000),
         ..Default::default()
     };
 
