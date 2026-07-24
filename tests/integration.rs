@@ -11144,12 +11144,15 @@ async fn repo_search_local_results_boosted_when_matching_repo() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Create an initial commit so dirty state is clean
     std::process::Command::new("git")
@@ -11246,12 +11249,34 @@ async fn repo_search_local_results_have_repo_match_metadata() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/tokio-rs/axum.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/tokio-rs/axum.git")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("-c")
+        .arg("user.name=ci")
+        .arg("-c")
+        .arg("user.email=ci@test.com")
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .output()
+        .ok();
 
     let state = state_with_local_backend(root);
     let args = RepoSearchArgs {
@@ -11325,12 +11350,15 @@ async fn repo_search_dirty_checkout_emits_warning() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Create initial commit so dirty state detection works
     std::process::Command::new("git")
@@ -11395,12 +11423,15 @@ async fn repo_search_state_unknown_emits_warning() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Create initial commit so dirty state detection works
     std::process::Command::new("git")
@@ -16556,12 +16587,15 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Create initial commit
     std::process::Command::new("git")
@@ -16644,12 +16678,15 @@ async fn repo_map_with_local_checkout() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Create initial commit
     std::process::Command::new("git")
@@ -16757,12 +16794,15 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .output()
         .ok();
 
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        format!("[remote \"origin\"]\n\turl = {remote_url}\n"),
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg(remote_url)
+        .output()
+        .ok();
 
     // Create initial commit so dirty state detection works
     std::process::Command::new("git")
@@ -17198,12 +17238,34 @@ async fn prefer_local_rejects_path_traversal() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("-c")
+        .arg("user.name=ci")
+        .arg("-c")
+        .arg("user.email=ci@test.com")
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .output()
+        .ok();
 
     let backend = {
         let cfg = eggsearch::core::local::LocalConfig {
@@ -17271,12 +17333,34 @@ async fn local_repo_match_same_owner_repo_different_host_no_redirect() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://gitlab.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://gitlab.com/test-owner/test-repo.git")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("-c")
+        .arg("user.name=ci")
+        .arg("-c")
+        .arg("user.email=ci@test.com")
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .output()
+        .ok();
 
     let state = state_with_local_backend(root);
     // Request with github host but local repo is on gitlab
@@ -17586,12 +17670,15 @@ async fn repo_map_local_checkout_includes_manifests_and_dirty_state() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Initial commit
     std::process::Command::new("git")
@@ -17698,12 +17785,15 @@ async fn repo_search_dirty_state_detected_in_local_match() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Initial commit
     std::process::Command::new("git")
@@ -17887,12 +17977,34 @@ async fn repo_search_local_match_unknown_dirty_state() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("-c")
+        .arg("user.name=ci")
+        .arg("-c")
+        .arg("user.email=ci@test.com")
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .output()
+        .ok();
 
     // Corrupt the git index to make git status fail
     let git_index = root.join(".git").join("index");
@@ -19385,11 +19497,15 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
         .arg(root)
         .output()
         .ok();
-    fs::write(
-        root.join(".git").join("config"),
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
     std::process::Command::new("git")
         .arg("-C")
         .arg(root)
@@ -19585,11 +19701,34 @@ async fn repo_map_off_mode_with_matching_local_checkout_returns_structure() {
         .arg(root)
         .output()
         .ok();
-    fs::write(
-        root.join(".git").join("config"),
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("-c")
+        .arg("user.name=ci")
+        .arg("-c")
+        .arg("user.email=ci@test.com")
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
+        .output()
+        .ok();
 
     let state = state_with_local_backend_mode_off_for_repo_map(root);
     let args = RepoMapArgs {
