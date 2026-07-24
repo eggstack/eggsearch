@@ -17774,12 +17774,15 @@ async fn repo_search_local_match_metadata_has_all_fields() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/test-owner/test-repo.git")
+        .output()
+        .ok();
 
     // Stage and commit
     std::process::Command::new("git")

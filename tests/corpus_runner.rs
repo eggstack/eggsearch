@@ -1624,17 +1624,32 @@ async fn corpus_local_repo_match_metadata_present() {
         .arg(root)
         .output()
         .ok();
-    let git_config = root.join(".git").join("config");
-    std::fs::write(
-        &git_config,
-        "[remote \"origin\"]\n\turl = https://github.com/tokio-rs/axum.git\n",
-    )
-    .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("remote")
+        .arg("add")
+        .arg("origin")
+        .arg("https://github.com/tokio-rs/axum.git")
+        .output()
+        .ok();
     std::process::Command::new("git")
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
+        .output()
+        .ok();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("-c")
+        .arg("user.name=ci")
+        .arg("-c")
+        .arg("user.email=ci@test.com")
+        .arg("commit")
+        .arg("-m")
+        .arg("init")
         .output()
         .ok();
 
