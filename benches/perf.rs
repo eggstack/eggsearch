@@ -13,7 +13,7 @@ fn bench_serialize_web_search_response(c: &mut Criterion) {
             serde_json::json!({
                 "id": format!("src_{:032x}", i),
                 "stable_id": format!("src_{:016x}", i * 7919),
-                "url": format!("https://example.com/result/{}", i),
+                "url": format!("https://example.com/result/{i}"),
                 "title": format!("Result {} - Example Page Title", i),
                 "snippet": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
                 "trust": "external_untrusted",
@@ -225,8 +225,8 @@ fn bench_metadata_construction(c: &mut Criterion) {
                     serde_json::json!({
                         "id": format!("src_{:032x}", i),
                         "url": format!("https://example{}.com/page", i),
-                        "title": format!("Page {}", i),
-                        "snippet": format!("Snippet for result {}", i),
+                        "title": format!("Page {i}"),
+                        "snippet": format!("Snippet for result {i}"),
                         "trust": "external_untrusted",
                         "metadata": {
                             "source_kind": kind,
@@ -254,8 +254,8 @@ fn make_source_cards(n: usize) -> Vec<SourceCard> {
     (0..n)
         .map(|i| {
             let mut card = SourceCard::new(
-                format!("Result {}", i),
-                format!("https://example{}.com/result/{}", i, i),
+                format!("Result {i}"),
+                format!("https://example{i}.com/result/{i}"),
                 vec![format!("provider_{}", i % 3)],
                 Some(0.5),
                 TrustLevel::ExternalUntrusted,
@@ -338,9 +338,9 @@ fn bench_summarize_retrieval(c: &mut Criterion) {
                 2 => EvidenceAbsenceKind::DeadlinePreventedCompletion,
                 _ => EvidenceAbsenceKind::NotApplicable,
             },
-            provider_id: Some(format!("provider_{}", i)),
-            message: format!("dimension {}", i),
-            query: Some(format!("query_{}", i)),
+            provider_id: Some(format!("provider_{i}")),
+            message: format!("dimension {i}"),
+            query: Some(format!("query_{i}")),
             ..Default::default()
         })
         .collect();
@@ -372,9 +372,9 @@ fn bench_summarize_retrieval_20_dimensions(c: &mut Criterion) {
                 2 => EvidenceAbsenceKind::DeadlinePreventedCompletion,
                 _ => EvidenceAbsenceKind::NotApplicable,
             },
-            provider_id: Some(format!("provider_{}", i)),
-            message: format!("dimension {}", i),
-            query: Some(format!("query_{}", i)),
+            provider_id: Some(format!("provider_{i}")),
+            message: format!("dimension {i}"),
+            query: Some(format!("query_{i}")),
             ..Default::default()
         })
         .collect();
@@ -446,8 +446,8 @@ fn bench_build_inventory_100_entries(c: &mut Criterion) {
     let entries: Vec<InventoryEntry> = (0..100)
         .map(|i| InventoryEntry {
             root_index: 0,
-            relative_path: format!("src/module_{}.rs", i),
-            absolute_path: PathBuf::from(format!("/fake/src/module_{}.rs", i)),
+            relative_path: format!("src/module_{i}.rs"),
+            absolute_path: PathBuf::from(format!("/fake/src/module_{i}.rs")),
             size: 1024 + (i * 128) as u64,
             language: Some("rust".to_string()),
             role: SourceRole::Implementation,
@@ -490,8 +490,8 @@ fn bench_inventory_search_100_entries(c: &mut Criterion) {
     let entries: Vec<InventoryEntry> = (0..100)
         .map(|i| InventoryEntry {
             root_index: 0,
-            relative_path: format!("src/module_{}.rs", i),
-            absolute_path: PathBuf::from(format!("/fake/src/module_{}.rs", i)),
+            relative_path: format!("src/module_{i}.rs"),
+            absolute_path: PathBuf::from(format!("/fake/src/module_{i}.rs")),
             size: 1024 + (i * 128) as u64,
             language: Some("rust".to_string()),
             role: SourceRole::Implementation,
