@@ -10329,6 +10329,7 @@ fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
         Duration::from_secs(5),
     );
     let mut cfg = AppConfig::default();
+    cfg.search.timeout_ms = 30_000;
     cfg.search.providers.insert("mock_a".to_string(), true);
     cfg.local.enabled = true;
     cfg.local.roots = vec![temp_dir.to_path_buf()];
