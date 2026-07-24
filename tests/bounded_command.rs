@@ -312,7 +312,7 @@ fn test_bounded_command_concurrent_drainage() {
 fn test_bounded_command_simultaneous_saturation() {
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
-        .arg("yes A 2>/dev/null & yes B >&2 2>/dev/null & sleep 0.1; kill 0; wait");
+        .arg("yes A 2>/dev/null | head -c 10000 & yes B 2>/dev/null | head -c 10000 >&2 & wait");
     let result = bct::run(&mut cmd, Duration::from_secs(5));
     assert!(
         result.status.is_some(),
