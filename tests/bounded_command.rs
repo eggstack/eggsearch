@@ -454,7 +454,7 @@ fn test_bounded_command_worktree_resolution() {
         .iter()
         .map(|e| e.relative_path.as_str())
         .collect();
-    assert!(paths.contains(&"b.rs"), "worktree file found: {:?}", paths);
+    assert!(paths.contains(&"b.rs"), "worktree file found: {paths:?}");
 }
 
 #[test]
@@ -488,8 +488,7 @@ fn test_cap_breach_returns_before_timeout() {
     );
     assert!(
         elapsed < Duration::from_secs(2),
-        "cap breach should return well before 30s timeout, took {:?}",
-        elapsed
+        "cap breach should return well before 30s timeout, took {elapsed:?}",
     );
 }
 
@@ -515,8 +514,7 @@ fn test_sigpipe_ignoring_child_terminated_on_cap_breach() {
     );
     assert!(
         elapsed < Duration::from_secs(2),
-        "should terminate quickly despite SIGPIPE ignored, took {:?}",
-        elapsed
+        "should terminate quickly despite SIGPIPE ignored, took {elapsed:?}",
     );
     #[cfg(unix)]
     {
@@ -549,8 +547,7 @@ fn test_grandchild_terminated_through_process_group() {
     assert!(result.stdout_truncated, "stdout should be truncated");
     assert!(
         elapsed < Duration::from_secs(2),
-        "should terminate quickly, took {:?}",
-        elapsed
+        "should terminate quickly, took {elapsed:?}",
     );
     #[cfg(unix)]
     {
@@ -595,7 +592,7 @@ fn test_no_zombie_after_timeout() {
     #[cfg(target_os = "linux")]
     {
         let self_pid = std::process::id();
-        let proc_self = format!("/proc/{}", self_pid);
+        let proc_self = format!("/proc/{self_pid}");
         assert!(
             std::path::Path::new(&proc_self).exists(),
             "self process should still be alive"
@@ -626,7 +623,7 @@ fn test_no_zombie_after_cap_breach() {
     #[cfg(target_os = "linux")]
     {
         let self_pid = std::process::id();
-        let proc_self = format!("/proc/{}", self_pid);
+        let proc_self = format!("/proc/{self_pid}");
         assert!(
             std::path::Path::new(&proc_self).exists(),
             "self process should still be alive"
@@ -768,7 +765,6 @@ fn test_bounded_command_stderr_cap_breach_terminates_quickly() {
     );
     assert!(
         elapsed < Duration::from_secs(2),
-        "stderr cap breach should terminate quickly, took {:?}",
-        elapsed
+        "stderr cap breach should terminate quickly, took {elapsed:?}",
     );
 }
