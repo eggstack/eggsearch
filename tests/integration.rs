@@ -10300,6 +10300,8 @@ use std::fs;
 fn git_cmd() -> std::process::Command {
     let mut cmd = std::process::Command::new("git");
     cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_COUNT", "1")
         .env("GIT_CONFIG_KEY_0", "safe.directory")
         .env("GIT_CONFIG_VALUE_0", "*");
