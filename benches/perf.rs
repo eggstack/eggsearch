@@ -526,8 +526,8 @@ fn bench_inventory_search_1000_entries(c: &mut Criterion) {
     let entries: Vec<InventoryEntry> = (0..1000)
         .map(|i| InventoryEntry {
             root_index: 0,
-            relative_path: format!("src/module_{:04}.rs", i),
-            absolute_path: PathBuf::from(format!("/fake/src/module_{:04}.rs", i)),
+            relative_path: format!("src/module_{i:04}.rs"),
+            absolute_path: PathBuf::from(format!("/fake/src/module_{i:04}.rs")),
             size: 1024 + (i * 128) as u64,
             language: Some("rust".to_string()),
             role: SourceRole::Implementation,
@@ -681,10 +681,10 @@ fn bench_conflict_detection_20_vuln_cards(c: &mut Criterion) {
         .map(|i| {
             let version = format!("{}.0.0", i + 1);
             SourceCard {
-                id: format!("vuln_{:032x}", i),
-                stable_id: Some(format!("vuln_{:032x}", i)),
+                id: format!("vuln_{i:032x}"),
+                stable_id: Some(format!("vuln_{i:032x}")),
                 title: format!("Advisory for pkg-{}", i % 5),
-                url: format!("https://example.com/CVE-2024-{:04}", i),
+                url: format!("https://example.com/CVE-2024-{i:04}"),
                 providers: vec!["test".to_string()],
                 score: Some(1.0),
                 trust: eggsearch::core::result::TrustLevel::ExternalUntrusted,
@@ -694,7 +694,7 @@ fn bench_conflict_detection_20_vuln_cards(c: &mut Criterion) {
                 metadata: SourceMetadata {
                     source_kind: SourceKind::SecurityAdvisory,
                     vulnerability: Some(Box::new(VulnerabilityMetadata {
-                        cve_ids: vec![format!("CVE-2024-{:04}", i)],
+                        cve_ids: vec![format!("CVE-2024-{i:04}")],
                         ecosystem: Some("npm".to_string()),
                         package: Some(format!("pkg-{}", i % 5)),
                         patched_versions: vec![version],
@@ -812,7 +812,7 @@ fn bench_build_forge_response_200_entries(c: &mut Criterion) {
             let resp = ForgeTreeResponse {
                 entries: (0..200)
                     .map(|i| ForgeRawEntry {
-                        path: format!("src/module_{:04}.rs", i),
+                        path: format!("src/module_{i:04}.rs"),
                         kind: EntryKind::File,
                         size: Some(1024 + i as u64),
                         object_sha: None,
@@ -860,8 +860,8 @@ fn bench_inventory_search_near_cap(c: &mut Criterion) {
     let entries: Vec<InventoryEntry> = (0..cap)
         .map(|i| InventoryEntry {
             root_index: 0,
-            relative_path: format!("src/module_{:04}.rs", i),
-            absolute_path: PathBuf::from(format!("/fake/src/module_{:04}.rs", i)),
+            relative_path: format!("src/module_{i:04}.rs"),
+            absolute_path: PathBuf::from(format!("/fake/src/module_{i:04}.rs")),
             size: 1024 + (i * 128) as u64,
             language: Some("rust".to_string()),
             role: SourceRole::Implementation,
