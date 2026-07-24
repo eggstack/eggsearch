@@ -8,7 +8,7 @@ smoke tests as release evidence.
 ## Current classification
 
 - Classification: **provisional release candidate**
-- Release subject `R`: assigned after the final code-bearing commit
+- Release subject `R`: `97ebae60df6f7b367f9152b32c848a9af0ed8721`
 - Evidence commit `E`: not created; it may contain only verification documents,
   manifests, and generated evidence references after the native workflow passes
 - Native forge workflow run IDs: pending
@@ -18,6 +18,14 @@ smoke tests as release evidence.
 
 The scheduled native-smoke workflow is diagnostic. Release evidence requires a
 manual run against the exact 40-character `R` SHA.
+
+The local deterministic matrix for `R` was run on 2026-07-24 on
+`aarch64-unknown-linux-gnu` with Rust 1.97.1. All test, hardening, schema,
+documentation, benchmark-compilation, release-build, and rustdoc targets
+passed. The publish dry-run was rerun from an isolated clean worktree at `R`
+and passed; the main checkout contains ignored `.opencode/node_modules`
+dependencies that Cargo's dirty-tree guard reports even though they are not
+part of the package.
 
 ## Deterministic local gate
 
