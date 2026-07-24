@@ -1630,6 +1630,13 @@ async fn corpus_local_repo_match_metadata_present() {
         "[remote \"origin\"]\n\turl = https://github.com/tokio-rs/axum.git\n",
     )
     .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("add")
+        .arg(".")
+        .output()
+        .ok();
 
     let state = state_with_local_backend(root);
     let args = RepoSearchArgs {

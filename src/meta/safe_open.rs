@@ -62,7 +62,7 @@ fn openat_sys(
     dirfd: libc::c_int,
     name: &std::ffi::CStr,
     flags: libc::c_int,
-    resolve: Option<u64>,
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] resolve: Option<u64>,
 ) -> Result<libc::c_int, std::io::Error> {
     #[cfg(target_os = "linux")]
     if let Some(resolve_flags) = resolve {

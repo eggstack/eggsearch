@@ -17781,14 +17781,14 @@ async fn repo_search_local_match_metadata_has_all_fields() {
     )
     .unwrap();
 
-    // Initial commit
+    // Stage and commit
     std::process::Command::new("git")
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
-        .ok();
+        .expect("git add should succeed");
     std::process::Command::new("git")
         .arg("-C")
         .arg(root)
@@ -17799,9 +17799,8 @@ async fn repo_search_local_match_metadata_has_all_fields() {
         .arg("commit")
         .arg("-m")
         .arg("init")
-        .arg("--allow-empty")
         .output()
-        .ok();
+        .expect("git commit should succeed");
 
     let state = state_with_local_backend(root);
     let args = RepoSearchArgs {
