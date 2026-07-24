@@ -4,7 +4,7 @@
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::FutureExt;
 
@@ -27,7 +27,7 @@ use tracing::{debug, warn};
 
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::{AggregatedResult, ResultMetadata, SearchResult};
-use crate::meta::engines::{build_http_client, SearchEngine};
+use crate::meta::engines::{build_http_client, AdvisoryCapabilities, SearchEngine};
 use crate::meta::planner::build_search_plan;
 use crate::meta::provider_diagnostics::{FailureClass, ProviderHealthRegistry};
 use crate::meta::research_evidence_analysis::analyze_research_evidence;
@@ -93,6 +93,49 @@ fn classify(err: &EngineError) -> ErrorClass {
 }
 
 type EngineList = Vec<Arc<dyn SearchEngine>>;
+
+/// Native advisory operation executed by a selected provider.
+#[derive(Clone, Debug)]
+pub enum NativeAdvisoryOperation {
+    /// Look up one advisory identifier.
+    LookupById {
+        /// Identifier supplied to the provider.
+        vulnerability_id: String,
+    },
+    /// Query advisories for a package coordinate.
+    QueryByPackage {
+        /// Package ecosystem name.
+        ecosystem: String,
+        /// Package name.
+        package: String,
+        /// Optional package version.
+        version: Option<String>,
+    },
+}
+
+/// Terminal status for a provider-scoped advisory operation.
+#[derive(Debug)]
+pub enum ProviderAdvisoryStatus<T> {
+    /// The selected provider does not implement this operation.
+    CapabilityUnavailable,
+    /// The adapter's global deadline elapsed before this provider ran.
+    InterruptedByDeadline,
+    /// The provider ran and returned a value or an error.
+    Completed(Result<T, EngineError>),
+}
+
+/// Provider identity, operation, result, and duration for one advisory attempt.
+#[derive(Debug)]
+pub struct ProviderAdvisoryOutcome<T> {
+    /// Canonical provider identifier supplied by the executing engine.
+    pub provider_id: String,
+    /// Operation sent to the provider.
+    pub operation: NativeAdvisoryOperation,
+    /// Terminal operation status.
+    pub status: ProviderAdvisoryStatus<T>,
+    /// Elapsed operation time in milliseconds.
+    pub duration_ms: u64,
+}
 
 #[derive(Debug)]
 struct PlannedSubquery {
@@ -353,7 +396,7 @@ impl MetadataSearchAdapter {
         }
     }
 
-    fn effective_timeout(&self, timeout_ms: Option<u64>) -> Duration {
+    pub(crate) fn effective_timeout(&self, timeout_ms: Option<u64>) -> Duration {
         match timeout_ms {
             Some(ms) => Duration::from_millis(ms).min(self.global_timeout),
             None => self.global_timeout,
@@ -376,29 +419,186 @@ impl MetadataSearchAdapter {
         (subset, ids)
     }
 
-    /// Look up a vulnerability by ID using a native advisory provider.
-    /// Returns `Ok(Some(metadata))` if found, `Ok(None)` if not found
-    /// or no native provider supports advisory lookups.
+    fn selected_advisory_engines(&self, allowed_provider_ids: &[String]) -> EngineList {
+        if allowed_provider_ids.is_empty() {
+            self.engines.clone()
+        } else {
+            self.select_engines(allowed_provider_ids).0
+        }
+    }
+
+    /// Return advisory capabilities for the selected provider set.
+    pub fn advisory_provider_capabilities(
+        &self,
+        allowed_provider_ids: &[String],
+    ) -> Vec<(String, AdvisoryCapabilities)> {
+        self.selected_advisory_engines(allowed_provider_ids)
+            .into_iter()
+            .map(|engine| (engine.name().to_string(), engine.advisory_capabilities()))
+            .collect()
+    }
+
+    /// Execute an advisory ID lookup once per selected provider.
+    pub async fn lookup_advisory_scoped(
+        &self,
+        allowed_provider_ids: &[String],
+        vulnerability_id: &str,
+    ) -> Vec<ProviderAdvisoryOutcome<Option<crate::core::security::VulnerabilityMetadata>>> {
+        self.lookup_advisory_scoped_with_timeout(
+            allowed_provider_ids,
+            vulnerability_id,
+            self.global_timeout,
+        )
+        .await
+    }
+
+    pub(crate) async fn lookup_advisory_scoped_with_timeout(
+        &self,
+        allowed_provider_ids: &[String],
+        vulnerability_id: &str,
+        timeout: Duration,
+    ) -> Vec<ProviderAdvisoryOutcome<Option<crate::core::security::VulnerabilityMetadata>>> {
+        let operation = NativeAdvisoryOperation::LookupById {
+            vulnerability_id: vulnerability_id.to_string(),
+        };
+        let deadline = Instant::now() + timeout;
+        let mut outcomes = Vec::new();
+        for engine in self.selected_advisory_engines(allowed_provider_ids) {
+            let provider_id = engine.name().to_string();
+            let capabilities = engine.advisory_capabilities();
+            let start = Instant::now();
+            let status = if !capabilities.lookup_by_id {
+                ProviderAdvisoryStatus::CapabilityUnavailable
+            } else {
+                let timeout = deadline.saturating_duration_since(Instant::now());
+                if timeout.is_zero() {
+                    ProviderAdvisoryStatus::InterruptedByDeadline
+                } else {
+                    match tokio::time::timeout(
+                        timeout,
+                        engine.lookup_advisory(vulnerability_id, timeout),
+                    )
+                    .await
+                    {
+                        Ok(result) => ProviderAdvisoryStatus::Completed(result),
+                        Err(_) => ProviderAdvisoryStatus::InterruptedByDeadline,
+                    }
+                }
+            };
+            outcomes.push(ProviderAdvisoryOutcome {
+                provider_id,
+                operation: operation.clone(),
+                status,
+                duration_ms: start.elapsed().as_millis() as u64,
+            });
+        }
+        outcomes
+    }
+
+    /// Execute a package advisory query once per selected provider.
+    pub async fn query_advisories_by_package_scoped(
+        &self,
+        allowed_provider_ids: &[String],
+        ecosystem: &str,
+        package: &str,
+        version: Option<&str>,
+        max_results: usize,
+    ) -> Vec<ProviderAdvisoryOutcome<Vec<crate::core::security::VulnerabilityMetadata>>> {
+        self.query_advisories_by_package_scoped_with_timeout(
+            allowed_provider_ids,
+            ecosystem,
+            package,
+            version,
+            max_results,
+            self.global_timeout,
+        )
+        .await
+    }
+
+    pub(crate) async fn query_advisories_by_package_scoped_with_timeout(
+        &self,
+        allowed_provider_ids: &[String],
+        ecosystem: &str,
+        package: &str,
+        version: Option<&str>,
+        max_results: usize,
+        timeout: Duration,
+    ) -> Vec<ProviderAdvisoryOutcome<Vec<crate::core::security::VulnerabilityMetadata>>> {
+        let operation = NativeAdvisoryOperation::QueryByPackage {
+            ecosystem: ecosystem.to_string(),
+            package: package.to_string(),
+            version: version.map(str::to_string),
+        };
+        let deadline = Instant::now() + timeout;
+        let mut outcomes = Vec::new();
+        for engine in self.selected_advisory_engines(allowed_provider_ids) {
+            let provider_id = engine.name().to_string();
+            let capabilities = engine.advisory_capabilities();
+            let start = Instant::now();
+            let status = if !capabilities.query_by_package {
+                ProviderAdvisoryStatus::CapabilityUnavailable
+            } else {
+                let timeout = deadline.saturating_duration_since(Instant::now());
+                if timeout.is_zero() {
+                    ProviderAdvisoryStatus::InterruptedByDeadline
+                } else {
+                    match tokio::time::timeout(
+                        timeout,
+                        engine.query_advisories_by_package(
+                            ecosystem,
+                            package,
+                            version,
+                            max_results,
+                            timeout,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(result) => ProviderAdvisoryStatus::Completed(result),
+                        Err(_) => ProviderAdvisoryStatus::InterruptedByDeadline,
+                    }
+                }
+            };
+            outcomes.push(ProviderAdvisoryOutcome {
+                provider_id,
+                operation: operation.clone(),
+                status,
+                duration_ms: start.elapsed().as_millis() as u64,
+            });
+        }
+        outcomes
+    }
+
+    /// Aggregate the first successful advisory lookup across enabled engines.
     pub async fn lookup_advisory(
         &self,
         vuln_id: &str,
     ) -> Result<Option<crate::core::security::VulnerabilityMetadata>, anyhow::Error> {
-        let timeout = self.global_timeout;
-        for engine in &self.engines {
-            let result = engine.lookup_advisory(vuln_id, timeout).await;
-            match result {
-                Ok(Some(metadata)) => return Ok(Some(metadata)),
-                Ok(None) => continue,
-                Err(_) => continue,
+        let mut first_error = None;
+        for outcome in self.lookup_advisory_scoped(&[], vuln_id).await {
+            match outcome.status {
+                ProviderAdvisoryStatus::CapabilityUnavailable => {}
+                ProviderAdvisoryStatus::InterruptedByDeadline => {
+                    if first_error.is_none() {
+                        first_error = Some(EngineError::Timeout { engine: "adapter" });
+                    }
+                }
+                ProviderAdvisoryStatus::Completed(Ok(Some(metadata))) => return Ok(Some(metadata)),
+                ProviderAdvisoryStatus::Completed(Ok(None)) => {}
+                ProviderAdvisoryStatus::Completed(Err(error)) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
             }
         }
-        Ok(None)
+        match first_error {
+            Some(error) => Err(anyhow::anyhow!(error)),
+            None => Ok(None),
+        }
     }
 
-    /// Query vulnerabilities by package name, ecosystem, and optional
-    /// version using a native advisory provider. Returns the list of
-    /// matching vulnerabilities, or an empty list if no native provider
-    /// supports package queries.
+    /// Aggregate package advisories across enabled engines.
     pub async fn query_advisories_by_package(
         &self,
         ecosystem: &str,
@@ -406,18 +606,33 @@ impl MetadataSearchAdapter {
         version: Option<&str>,
         max_results: usize,
     ) -> Result<Vec<crate::core::security::VulnerabilityMetadata>, anyhow::Error> {
-        let timeout = self.global_timeout;
-        for engine in &self.engines {
-            let result = engine
-                .query_advisories_by_package(ecosystem, package, version, max_results, timeout)
-                .await;
-            match result {
-                Ok(vulns) if !vulns.is_empty() => return Ok(vulns),
-                Ok(_) => continue,
-                Err(_) => continue,
+        let mut first_error = None;
+        for outcome in self
+            .query_advisories_by_package_scoped(&[], ecosystem, package, version, max_results)
+            .await
+        {
+            match outcome.status {
+                ProviderAdvisoryStatus::CapabilityUnavailable => {}
+                ProviderAdvisoryStatus::InterruptedByDeadline => {
+                    if first_error.is_none() {
+                        first_error = Some(EngineError::Timeout { engine: "adapter" });
+                    }
+                }
+                ProviderAdvisoryStatus::Completed(Ok(vulns)) if !vulns.is_empty() => {
+                    return Ok(vulns)
+                }
+                ProviderAdvisoryStatus::Completed(Ok(_)) => {}
+                ProviderAdvisoryStatus::Completed(Err(error)) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
             }
         }
-        Ok(Vec::new())
+        match first_error {
+            Some(error) => Err(anyhow::anyhow!(error)),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// Check whether all queried providers support a given capability
@@ -798,6 +1013,7 @@ impl MetadataSearchAdapter {
                 error_class: None,
                 deadline_interrupted: false,
                 truncated: false,
+                truncation_evidence: Default::default(),
                 query_fingerprint: Some(
                     crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
                 ),
@@ -824,6 +1040,7 @@ impl MetadataSearchAdapter {
                 error_class: Some(ec.as_str().to_string()),
                 deadline_interrupted: false,
                 truncated: false,
+                truncation_evidence: Default::default(),
                 query_fingerprint: Some(
                     crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
                 ),
@@ -869,6 +1086,7 @@ impl MetadataSearchAdapter {
                     error_class: None,
                     deadline_interrupted: true,
                     truncated: false,
+                    truncation_evidence: Default::default(),
                     query_fingerprint: Some(crate::core::retrieval_status::query_fingerprint_from_query(&req.query)),
                     duration_ms: None,
                 });
@@ -1883,7 +2101,10 @@ async fn dispatch_subqueries(
     max_concurrent_jobs: usize,
     max_concurrent_per_provider: usize,
 ) -> crate::meta::dispatch::DispatchOutput {
-    use crate::meta::dispatch::{dispatch_parallel, DispatchConfig, DispatchJob};
+    use crate::meta::dispatch::{
+        dispatch_parallel, partition_roles_for_engine, CapabilityDisposition, DispatchConfig,
+        DispatchJob,
+    };
 
     let config = DispatchConfig {
         candidate_limit,
@@ -1904,20 +2125,43 @@ async fn dispatch_subqueries(
                     &subquery.label,
                 )
             };
-            let skip_not_applicable = intended_roles
-                .iter()
-                .any(|role| !engine.supports_role(role));
-            jobs.push(DispatchJob {
-                subquery_id: subquery.label.clone(),
-                query: subquery.query.clone(),
-                provider_id: engine.name().to_string(),
-                provider: Arc::clone(engine),
-                priority: subquery.priority,
-                subquery_order: subquery_idx,
-                provider_order: provider_idx,
-                intended_roles,
-                skip_not_applicable,
-            });
+            let partition = partition_roles_for_engine(engine.as_ref(), &intended_roles);
+            if !partition.supported_roles.is_empty() {
+                let capability_disposition = if partition.unsupported_roles.is_empty() {
+                    CapabilityDisposition::FullySupported
+                } else {
+                    CapabilityDisposition::PartiallySupported {
+                        supported_roles: partition.supported_roles.clone(),
+                        unsupported_roles: partition.unsupported_roles.clone(),
+                    }
+                };
+                jobs.push(DispatchJob {
+                    subquery_id: subquery.label.clone(),
+                    query: subquery.query.clone(),
+                    provider_id: engine.name().to_string(),
+                    provider: Arc::clone(engine),
+                    priority: subquery.priority,
+                    subquery_order: subquery_idx,
+                    provider_order: provider_idx,
+                    intended_roles: partition.supported_roles,
+                    capability_disposition,
+                });
+            }
+            if !partition.unsupported_roles.is_empty() {
+                jobs.push(DispatchJob {
+                    subquery_id: subquery.label.clone(),
+                    query: subquery.query.clone(),
+                    provider_id: engine.name().to_string(),
+                    provider: Arc::clone(engine),
+                    priority: subquery.priority,
+                    subquery_order: subquery_idx,
+                    provider_order: provider_idx,
+                    intended_roles: partition.unsupported_roles.clone(),
+                    capability_disposition: CapabilityDisposition::Unsupported {
+                        unsupported_roles: partition.unsupported_roles,
+                    },
+                });
+            }
         }
     }
 
@@ -3125,6 +3369,109 @@ mod tests {
             let results = self.results.clone();
             Box::pin(async move { Ok(results) })
         }
+    }
+
+    struct AdvisoryMockEngine {
+        name: &'static str,
+        capabilities: AdvisoryCapabilities,
+        fail_lookup: bool,
+    }
+
+    impl SearchEngine for AdvisoryMockEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn advisory_capabilities(&self) -> AdvisoryCapabilities {
+            self.capabilities
+        }
+
+        fn search<'a>(
+            &'a self,
+            _query: &'a str,
+            _max_results: usize,
+            _timeout: Duration,
+        ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn lookup_advisory<'a>(
+            &'a self,
+            _vulnerability_id: &'a str,
+            _timeout: Duration,
+        ) -> crate::meta::engines::BoxFuture<
+            'a,
+            Result<Option<crate::core::security::VulnerabilityMetadata>, EngineError>,
+        > {
+            let fail = self.fail_lookup;
+            let engine = self.name;
+            Box::pin(async move {
+                if fail {
+                    Err(EngineError::NetworkError {
+                        engine,
+                        reason: "mock failure".to_string(),
+                    })
+                } else {
+                    Ok(None)
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn scoped_advisory_lookup_preserves_provider_outcomes_and_routing() {
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            Arc::new(AdvisoryMockEngine {
+                name: "advisory_success",
+                capabilities: AdvisoryCapabilities {
+                    lookup_by_id: true,
+                    query_by_package: false,
+                },
+                fail_lookup: false,
+            }),
+            Arc::new(AdvisoryMockEngine {
+                name: "advisory_failure",
+                capabilities: AdvisoryCapabilities {
+                    lookup_by_id: true,
+                    query_by_package: false,
+                },
+                fail_lookup: true,
+            }),
+            Arc::new(AdvisoryMockEngine {
+                name: "not_advisory",
+                capabilities: AdvisoryCapabilities::default(),
+                fail_lookup: false,
+            }),
+        ];
+        let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(1));
+
+        let allowed = vec![
+            "advisory_success".to_string(),
+            "advisory_failure".to_string(),
+        ];
+        let outcomes = adapter
+            .lookup_advisory_scoped(&allowed, "CVE-2024-0001")
+            .await;
+
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0].provider_id, "advisory_success");
+        assert_eq!(outcomes[1].provider_id, "advisory_failure");
+        assert!(matches!(
+            outcomes[0].status,
+            ProviderAdvisoryStatus::Completed(Ok(None))
+        ));
+        assert!(matches!(
+            outcomes[1].status,
+            ProviderAdvisoryStatus::Completed(Err(EngineError::NetworkError { .. }))
+        ));
+
+        let unsupported = adapter
+            .lookup_advisory_scoped(&["not_advisory".to_string()], "CVE-2024-0001")
+            .await;
+        assert!(matches!(
+            unsupported[0].status,
+            ProviderAdvisoryStatus::CapabilityUnavailable
+        ));
     }
 
     fn mk_result(title: &str, url: &str, engine: &str) -> SearchResult {

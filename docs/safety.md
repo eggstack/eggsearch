@@ -18,7 +18,7 @@ For the full operator threat model — including trust boundaries, configuration
 
 Code-host source-file URLs are rewritten to raw fetch targets, then run through the same validation path as ordinary URLs.
 
-For DNS-backed hosts, eggsearch validates the resolved address set and reuses that validated set for the outbound request attempt. Redirect targets are revalidated and re-pinned before they are followed.
+For DNS-backed hosts, eggsearch performs preflight address classification before the outbound request. The HTTP client resolves DNS independently at connection time, so this is not connection-time DNS pinning and does not eliminate DNS-rebinding TOCTOU risk. Redirect targets are rejected by the forge client and independently revalidated by the user-fetch path.
 
 ## Blocked Address Ranges
 
@@ -125,7 +125,18 @@ Use `metadata_only` when you need page metadata but do not need the body content
 
 `security_search` and the advisory-backed paths return advisory data and severity metadata for triage. They do not decide exploitability for a specific deployment, patch state, or runtime reachability profile.
 
-Native security lookups (CVE/GHSA/OSV/RustSec/KEV) are instrumented for failure visibility — every lookup produces a `RetrievalAttempt` record in the retrieval ledger, including KEV lookup failures. This ensures that failed advisory lookups are never silently discarded and are surfaced alongside successful results.
+Native security lookups (CVE/GHSA/OSV/RustSec/KEV) are instrumented for failure visibility — every selected-provider operation produces a `RetrievalAttempt` record in the retrieval ledger, including capability skips, zero results, failures, deadline interruptions, and KEV lookup failures. Advisory records may deduplicate across providers, but attempts and provider identities are retained.
+
+Capability and absence semantics are intentionally separate. A provider that
+cannot perform an applicable native operation is `provider_capability_unavailable`,
+not a successful zero-result lookup. A provider that completed with no match is
+`no_matching_evidence_found`. A required role skipped by capability or policy
+remains indeterminate for coverage.
+
+Candidate-limit saturation without provider metadata is possible truncation only:
+the attempt uses `truncation_evidence = limit_reached_unknown`, leaves the legacy
+`truncated` flag false, and increments `limit_reached_unknown_count`. Confirmed
+truncation requires an Eggsearch cap or explicit provider evidence.
 
 ## Forge Endpoint Safety
 

@@ -1,7 +1,7 @@
-.PHONY: check test clippy fmt doc schema-corpus docs-tests publish-check live-smoke native-forge-smoke release-build hardening
+.PHONY: check test clippy fmt doc schema-corpus docs-tests publish-check live-smoke native-forge-smoke release-build hardening bench-check
 
 # Full offline quality gate (all CI checks)
-check: fmt clippy test-all test-no-default test-mock test-pdf hardening schema-corpus docs-tests release-build docs publish-check
+check: fmt clippy test-all test-no-default test-mock test-pdf hardening schema-corpus docs-tests bench-check release-build docs publish-check
 
 # Format check
 fmt:
@@ -42,7 +42,11 @@ schema-corpus:
 
 # Documentation contract tests
 docs-tests:
-	cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
+	cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test native_forge_workflow_contract --test release_document_contract --test static_guards
+
+# Affected-path benchmark compilation (measurement artifacts are release-scoped)
+bench-check:
+	cargo bench --locked --all-features --bench perf --no-run
 
 # Release build
 release-build:

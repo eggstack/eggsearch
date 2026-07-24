@@ -24,7 +24,7 @@ cargo test --locked --features mock --test security_applicability_corpus
 cargo test --locked --features mock --test research_evidence_corpus
 cargo test --locked --features mock --test recipes_next_actions
 cargo test --locked --features mock --test evidence_bundle_handoff
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test native_forge_workflow_contract --test release_document_contract --test static_guards
 cargo build --release
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 cargo publish --dry-run --locked
@@ -44,7 +44,7 @@ make check
 | `test` | `cargo test --locked` × 4 feature combos |
 | `clippy` | `cargo clippy --all-targets --all-features -- -D warnings` |
 | `schema-corpus` | 6 regression test binaries |
-| `docs-contract` | 4 documentation contract tests |
+| `docs-contract` | Documentation, workflow/release contract, and static guard tests |
 | `fmt` | `cargo fmt --check` |
 | `release-build` | `cargo build --release` |
 | `publish-check` | `cargo publish --dry-run --locked` |
@@ -96,6 +96,19 @@ cargo test --features live-smoke --test corpus_runner -- --ignored
 
 - A release must not be blocked solely because a live smoke test fails against a third-party provider
 - Reproduce locally to distinguish third-party drift from local regression
+
+## Native Forge Release Evidence
+
+Fallback repository smoke tests do not satisfy release evidence. Run the manual
+`.github/workflows/native-forge-smoke.yml` workflow against the exact 40-character
+release-subject SHA. Each required provider job must receive its credential and
+fixture variables, execute a native assertion, write structured evidence with the
+same release subject, and report exactly `pass`. Missing credentials, malformed or
+missing evidence, skipped tests, and missing provider outputs fail the release gate.
+
+The scheduled workflow is diagnostic only. Keep release subject `R` separate from
+the later documentation/evidence commit `E`; do not describe pending native runs,
+benchmarks, or artifact hashes as completed evidence.
 
 ## Pre-release Checklist
 

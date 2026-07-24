@@ -43,10 +43,12 @@
 
 ### Documentation Contract Tests
 
-**Location:** `tests/docs_config_snippets.rs`, `tests/docs_provider_inventory.rs`, `tests/docs_tool_names.rs`, `tests/docs_safety_vocabulary.rs`
+**Location:** `tests/docs_config_snippets.rs`, `tests/docs_provider_inventory.rs`, `tests/docs_tool_names.rs`, `tests/docs_safety_vocabulary.rs`, `tests/native_forge_workflow_contract.rs`, `tests/release_document_contract.rs`, `tests/static_guards.rs`
 
 - Validate docs snippets against actual types
 - Ensure config examples, provider lists, tool names, safety vocabulary match code
+- Ensure native release workflow checks exact subjects, credentials, evidence, and exact provider pass
+- Ensure provisional release documents cannot claim pending evidence as completed
 - Run with: `cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary`
 
 ### Config Validation Tests

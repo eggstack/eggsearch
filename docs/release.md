@@ -74,7 +74,8 @@ workflow defines; do not weaken or remove them.
 | `clippy` | `cargo clippy --all-targets --all-features -- -D warnings`. |
 | `fmt` | `cargo fmt --check`. |
 | `schema-corpus` | The six regression corpus test binaries. |
-| `docs-contract` | The four documentation contract tests. |
+| `docs-contract` | Documentation snippets, provider/tool/safety contracts, workflow/release contracts, and static guards. |
+| `benchmarks` | `cargo bench --locked --all-features --bench perf --no-run`. |
 | `hardening` | Property tests, dispatch fault injection, and adversarial corpus validation. |
 | `release-build` | `cargo build --release` to confirm the release artifact compiles. |
 | `publish-check` | `cargo publish --dry-run --locked` to confirm packaging. |
@@ -114,6 +115,12 @@ third-party API credentials. The policy is:
   beyond those already documented in `docs/provider-setup.md`.
 
 ## Release steps
+
+Before tagging or promoting a release, complete the separate native forge
+evidence protocol in [`release-verification.md`](release-verification.md). The
+manual workflow must run against the exact code-bearing subject SHA and must
+pass GitHub, GitLab, Codeberg, and Gitea with structured native evidence. A
+scheduled smoke run or fallback repository result is diagnostic only.
 
 The high-level release steps are:
 

@@ -55,6 +55,12 @@ use self::models::SearchResult;
 // A heap-allocated future that is Send — required for dyn trait + tokio multi-thread.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AdvisoryCapabilities {
+    pub lookup_by_id: bool,
+    pub query_by_package: bool,
+}
+
 pub trait SearchEngine: Send + Sync {
     fn name(&self) -> &'static str;
 
@@ -74,6 +80,10 @@ pub trait SearchEngine: Send + Sync {
     /// roles this engine provably cannot serve.
     fn supports_role(&self, _role: &crate::core::evidence_role::EvidenceRole) -> bool {
         true
+    }
+
+    fn advisory_capabilities(&self) -> AdvisoryCapabilities {
+        AdvisoryCapabilities::default()
     }
 
     /// Look up a vulnerability by ID (CVE, GHSA, OSV, etc.).
@@ -597,6 +607,13 @@ impl SearchEngine for GiteaReleasesEngine {
 impl SearchEngine for OsvEngine {
     fn name(&self) -> &'static str {
         "osv"
+    }
+
+    fn advisory_capabilities(&self) -> AdvisoryCapabilities {
+        AdvisoryCapabilities {
+            lookup_by_id: true,
+            query_by_package: true,
+        }
     }
 
     fn search<'a>(

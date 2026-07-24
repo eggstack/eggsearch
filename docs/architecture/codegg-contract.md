@@ -621,7 +621,24 @@ Every search response includes a `routing_decision` field:
 Harnesses should use `routing_decision.degraded` to decide whether to
 warn the user about reduced capability.
 
-### 9.4 `web_fetch` Metadata-Only Mode
+### 9.4 Retrieval outcome semantics
+
+Security responses retain one retrieval attempt per selected native provider
+operation. The attempt's `provider_id` is the executing provider, not an
+identifier-family guess. Interpret outcomes as follows:
+
+- `success_zero_results` means the provider completed and found no match;
+- `failed`, `timed_out`, `rate_limited`, and `interrupted_by_deadline` are retrieval failures;
+- `skipped_capability_unavailable` means the operation applied but the provider cannot perform it;
+- `skipped_by_policy` means an otherwise capable provider was deliberately suppressed;
+- `not_applicable` means the operation did not apply;
+- `limit_reached_unknown` is possible, unconfirmed truncation.
+
+Advisory records may deduplicate across providers, but attempts must not be
+deduplicated away. Required roles with capability or policy skips remain
+indeterminate in workflow coverage.
+
+### 9.5 `web_fetch` Metadata-Only Mode
 
 `web_fetch` supports `extract_mode = "metadata_only"` for explicit URL
 fetches.
@@ -654,6 +671,8 @@ Use `metadata_only` when you need page metadata but not the body.
 - [ ] Replace `<placeholders>` in `input_template` with response context
 - [ ] Use `workspace_id` to track local workspace state across calls
 - [ ] When `injection_hits > 0`, flag content for human review
+- [ ] Inspect provider-scoped retrieval attempts before treating security evidence as complete
+- [ ] Do not treat `limit_reached_unknown` as confirmed truncation
 
 ---
 

@@ -226,17 +226,32 @@ Responses distinguish between evidence absence and retrieval failure:
 
 A host agent must never interpret an empty group as proof of absence when the corresponding retrieval dimension failed.
 
+For native advisory workflows, inspect `retrieval_summary.dimensions` and the
+provider-scoped attempts before making a conclusion:
+
+- `success_zero_results` means that provider completed and found no matching advisory;
+- `failed`, `timed_out`, `rate_limited`, and `interrupted_by_deadline` mean coverage is indeterminate;
+- `skipped_capability_unavailable` means the operation applied but that provider could not perform it;
+- `skipped_by_policy` means an otherwise capable provider was deliberately not run;
+- `not_applicable` means the operation did not apply, such as KEV lookup with no CVE after resolution;
+- `limit_reached_unknown` is possible truncation, not confirmed truncation.
+
+Use the attempt's `provider_id` and operation/subquery identity for provenance.
+Do not infer the provider from a CVE, GHSA, OSV, or RustSec identifier, and do
+not discard a failed provider merely because another provider returned the same
+advisory.
+
 ### Research Subquery Semantic Intent
 
 Research search subqueries carry typed `intended_roles` derived from `ResearchSourceType`. These roles flow from the planner through dispatch into postprocessing, replacing opaque `rq_*` label inference. When a retrieval failure occurs, it expands across all `intended_roles` on the affected subquery.
 
 ### Native Security Attempts in Retrieval Summary
 
-`security_search` includes native advisory lookups (CVE/GHSA/OSV/RustSec/KEV) in the retrieval summary. Each native lookup produces a `RetrievalAttempt` record alongside web-search results, providing full failure visibility for all retrieval paths.
+`security_search` includes native advisory lookups (CVE/GHSA/OSV/RustSec/KEV) in the retrieval summary. Each selected-provider operation produces a `RetrievalAttempt` record alongside web-search results, providing full failure visibility for all retrieval paths. Advisory result deduplication does not remove attempts.
 
 ### Retrieval Summaries
 
-Search responses include a `retrieval_summary` field that maps provider outcomes into retrieval dimensions. Each dimension records the evidence role, absence kind, provider ID, and a human-readable message. The summary has three boolean flags: `has_failures`, `has_absences`, and `has_truncation`. Retrieval summaries are populated by `evidence_postprocess.rs` on all result conversion paths.
+Search responses include a `retrieval_summary` field that maps provider outcomes into retrieval dimensions. Each dimension records the evidence role, absence kind, provider ID, and a human-readable message. The summary has three boolean flags: `has_failures`, `has_absences`, and `has_truncation`, plus `limit_reached_unknown_count` for unconfirmed candidate-limit saturation. Retrieval summaries are populated by `evidence_postprocess.rs` on all result conversion paths.
 
 ### Evidence Role Summary
 

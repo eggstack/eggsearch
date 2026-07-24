@@ -21,6 +21,7 @@ fn native_attempt(
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(50),
     }
@@ -300,6 +301,7 @@ fn d8_15_serialized_security_summary_contains_both_generic_and_native() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(80),
     };

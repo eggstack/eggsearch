@@ -5,7 +5,8 @@ use crate::core::conflict::{
 };
 use crate::core::evidence_role::EvidenceRole;
 use crate::core::retrieval_status::{
-    summarize_retrieval, EvidenceAbsenceKind, ResponseRetrievalSummary, RetrievalDimensionStatus,
+    summarize_retrieval, EvidenceAbsenceKind, ResponseRetrievalSummary, RetrievalAttempt,
+    RetrievalAttemptOutcome, RetrievalDimensionStatus, TruncationEvidence,
 };
 use crate::core::source_card::{SourceCard, SourceKind};
 use crate::core::workflow_coverage::{
@@ -164,6 +165,7 @@ pub fn build_retrieval_summary_for_search(
                 error_class: None,
                 duration_ms: None,
                 truncated: false,
+                truncation_evidence: Default::default(),
             });
         } else if let Some(failure) = providers_failed.iter().find(|f| f.id == *pid) {
             dimensions.push(RetrievalDimensionStatus {
@@ -182,6 +184,7 @@ pub fn build_retrieval_summary_for_search(
                 error_class: None,
                 duration_ms: None,
                 truncated: false,
+                truncation_evidence: Default::default(),
             });
         } else {
             dimensions.push(RetrievalDimensionStatus {
@@ -196,6 +199,7 @@ pub fn build_retrieval_summary_for_search(
                 error_class: None,
                 duration_ms: None,
                 truncated: false,
+                truncation_evidence: Default::default(),
             });
         }
     }
@@ -207,11 +211,15 @@ pub fn build_retrieval_summary_for_search(
     }
 }
 
-fn attempt_outcome_to_absence_kind(
-    outcome: &crate::core::retrieval_status::RetrievalAttemptOutcome,
-) -> EvidenceAbsenceKind {
-    use crate::core::retrieval_status::RetrievalAttemptOutcome;
-    match outcome {
+fn attempt_outcome_to_absence_kind(attempt: &RetrievalAttempt) -> EvidenceAbsenceKind {
+    let truncation_evidence = effective_truncation_evidence(attempt);
+    if matches!(
+        truncation_evidence,
+        TruncationEvidence::ConfirmedByEggsearch | TruncationEvidence::ConfirmedByProvider
+    ) {
+        return EvidenceAbsenceKind::ResultTruncatedByCap;
+    }
+    match &attempt.outcome {
         RetrievalAttemptOutcome::SuccessWithResults => EvidenceAbsenceKind::NotApplicable,
         RetrievalAttemptOutcome::SuccessZeroResults => EvidenceAbsenceKind::NoMatchingEvidenceFound,
         RetrievalAttemptOutcome::Failed => EvidenceAbsenceKind::ProviderFailed,
@@ -225,9 +233,7 @@ fn attempt_outcome_to_absence_kind(
         RetrievalAttemptOutcome::InterruptedByDeadline => {
             EvidenceAbsenceKind::DeadlinePreventedCompletion
         }
-        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => {
-            EvidenceAbsenceKind::ResultTruncatedByCap
-        }
+        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => EvidenceAbsenceKind::NotApplicable,
     }
 }
 
@@ -258,14 +264,31 @@ fn attempt_message(attempt: &crate::core::retrieval_status::RetrievalAttempt) ->
     }
 }
 
+fn effective_truncation_evidence(attempt: &RetrievalAttempt) -> TruncationEvidence {
+    if attempt.truncation_evidence != TruncationEvidence::None {
+        return attempt.truncation_evidence;
+    }
+    if attempt.truncated || attempt.outcome == RetrievalAttemptOutcome::TruncatedAfterPartialSuccess
+    {
+        TruncationEvidence::ConfirmedByEggsearch
+    } else {
+        TruncationEvidence::None
+    }
+}
+
 fn build_attempt_derived_summary(
     attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> ResponseRetrievalSummary {
     let mut dimensions = Vec::with_capacity(attempts.len());
 
     for attempt in attempts {
-        let absence_kind = attempt_outcome_to_absence_kind(&attempt.outcome);
-        let message = attempt_message(attempt);
+        let truncation_evidence = effective_truncation_evidence(attempt);
+        let absence_kind = attempt_outcome_to_absence_kind(attempt);
+        let message = if truncation_evidence == TruncationEvidence::LimitReachedUnknown {
+            "candidate limit reached; additional results unknown".to_string()
+        } else {
+            attempt_message(attempt)
+        };
         let roles: Vec<EvidenceRole> = if attempt.intended_roles.is_empty() {
             vec![EvidenceRole::UnknownOrWeakContext]
         } else {
@@ -284,7 +307,12 @@ fn build_attempt_derived_summary(
                 result_count: Some(attempt.result_count),
                 error_class: attempt.error_class.clone(),
                 duration_ms: attempt.duration_ms,
-                truncated: attempt.truncated,
+                truncated: matches!(
+                    truncation_evidence,
+                    TruncationEvidence::ConfirmedByEggsearch
+                        | TruncationEvidence::ConfirmedByProvider
+                ),
+                truncation_evidence,
             });
         }
     }

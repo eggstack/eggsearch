@@ -9,6 +9,10 @@ sequence, the required CI checks, and the live-smoke policy — lives in
 
 - [ ] All required CI jobs are green on the exact release commit
       (see [`docs/release.md`](release.md#required-ci-checks))
+- [ ] Manual native forge smoke workflow passes every required provider on the
+      exact release subject and emits the combined evidence manifest
+- [ ] `docs/release-verification.md` records the exact R/E SHAs and artifact
+      hashes, or explicitly remains provisional while evidence is pending
 - [ ] `make check` passes locally
 - [ ] `cargo publish --dry-run --locked` passes
 - [ ] Version bumped in `Cargo.toml`

@@ -16,11 +16,15 @@ use crate::core::security::{
     SecuritySearchResponse, VulnerabilityMetadata, VulnerabilitySummary,
 };
 use crate::core::SearchWarning;
+use crate::meta::engines::error::EngineError;
 use crate::meta::engines::kev::KevClient;
 use crate::meta::response::WebSearchResponse;
 use crate::meta::security_grouping::group_security_results;
 use crate::meta::security_suggested_fetches::generate_security_suggested_fetches;
 use crate::meta::MetadataSearchAdapter;
+use crate::meta::{ProviderAdvisoryOutcome, ProviderAdvisoryStatus};
+
+const MAX_NATIVE_ADVISORY_OPERATIONS: usize = 32;
 
 #[allow(clippy::too_many_arguments)]
 fn native_advisory_attempt(
@@ -42,10 +46,240 @@ fn native_advisory_attempt(
         error_class,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: Some(crate::core::retrieval_status::query_fingerprint_from_query(
             query_text,
         )),
         duration_ms: Some(start.elapsed().as_millis() as u64),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_advisory_attempt_with_duration(
+    provider_id: &str,
+    subquery_id: &str,
+    intended_roles: Vec<EvidenceRole>,
+    outcome: RetrievalAttemptOutcome,
+    result_count: usize,
+    error_class: Option<String>,
+    query_text: &str,
+    duration_ms: u64,
+) -> RetrievalAttempt {
+    RetrievalAttempt {
+        provider_id: provider_id.to_string(),
+        subquery_id: Some(subquery_id.to_string()),
+        intended_roles,
+        outcome,
+        result_count,
+        error_class,
+        deadline_interrupted: false,
+        truncated: false,
+        truncation_evidence: Default::default(),
+        query_fingerprint: Some(crate::core::retrieval_status::query_fingerprint_from_query(
+            query_text,
+        )),
+        duration_ms: Some(duration_ms),
+    }
+}
+
+fn native_error_outcome(error: &EngineError) -> (RetrievalAttemptOutcome, String) {
+    match error {
+        EngineError::Timeout { .. } => (RetrievalAttemptOutcome::TimedOut, "timeout".to_string()),
+        EngineError::BadStatus { status: 429, .. } => (
+            RetrievalAttemptOutcome::RateLimited,
+            "rate_limited".to_string(),
+        ),
+        EngineError::BadStatus { .. } => {
+            (RetrievalAttemptOutcome::Failed, "http_status".to_string())
+        }
+        EngineError::ParseFailed { .. } => {
+            (RetrievalAttemptOutcome::Failed, "parse_error".to_string())
+        }
+        EngineError::NetworkError { .. } | EngineError::Http { .. } => {
+            (RetrievalAttemptOutcome::Failed, "network_error".to_string())
+        }
+    }
+}
+
+fn record_lookup_outcomes(
+    outcomes: Vec<ProviderAdvisoryOutcome<Option<VulnerabilityMetadata>>>,
+    subquery_id: &str,
+    query_text: &str,
+    vulnerabilities: &mut Vec<VulnerabilityMetadata>,
+    attempts: &mut Vec<RetrievalAttempt>,
+) {
+    let roles = vec![EvidenceRole::AuthoritativeSecurityAdvisory];
+    for outcome in outcomes {
+        let attempt = match outcome.status {
+            ProviderAdvisoryStatus::CapabilityUnavailable => native_advisory_attempt_with_duration(
+                &outcome.provider_id,
+                subquery_id,
+                roles.clone(),
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                0,
+                None,
+                query_text,
+                outcome.duration_ms,
+            ),
+            ProviderAdvisoryStatus::InterruptedByDeadline => {
+                let mut attempt = native_advisory_attempt_with_duration(
+                    &outcome.provider_id,
+                    subquery_id,
+                    roles.clone(),
+                    RetrievalAttemptOutcome::InterruptedByDeadline,
+                    0,
+                    Some("deadline".to_string()),
+                    query_text,
+                    outcome.duration_ms,
+                );
+                attempt.deadline_interrupted = true;
+                attempt
+            }
+            ProviderAdvisoryStatus::Completed(Ok(Some(metadata))) => {
+                if !vulnerabilities
+                    .iter()
+                    .any(|existing| ids_overlap(existing, &metadata))
+                {
+                    vulnerabilities.push(metadata);
+                }
+                native_advisory_attempt_with_duration(
+                    &outcome.provider_id,
+                    subquery_id,
+                    roles.clone(),
+                    RetrievalAttemptOutcome::SuccessWithResults,
+                    1,
+                    None,
+                    query_text,
+                    outcome.duration_ms,
+                )
+            }
+            ProviderAdvisoryStatus::Completed(Ok(None)) => native_advisory_attempt_with_duration(
+                &outcome.provider_id,
+                subquery_id,
+                roles.clone(),
+                RetrievalAttemptOutcome::SuccessZeroResults,
+                0,
+                None,
+                query_text,
+                outcome.duration_ms,
+            ),
+            ProviderAdvisoryStatus::Completed(Err(error)) => {
+                let (attempt_outcome, error_class) = native_error_outcome(&error);
+                native_advisory_attempt_with_duration(
+                    &outcome.provider_id,
+                    subquery_id,
+                    roles.clone(),
+                    attempt_outcome,
+                    0,
+                    Some(error_class),
+                    query_text,
+                    outcome.duration_ms,
+                )
+            }
+        };
+        attempts.push(attempt);
+    }
+}
+
+fn record_package_outcomes(
+    outcomes: Vec<ProviderAdvisoryOutcome<Vec<VulnerabilityMetadata>>>,
+    query_text: &str,
+    vulnerabilities: &mut Vec<VulnerabilityMetadata>,
+    attempts: &mut Vec<RetrievalAttempt>,
+) {
+    let advisory_role = vec![EvidenceRole::AuthoritativeSecurityAdvisory];
+    let dependency_role = vec![EvidenceRole::ManifestOrDependencyMetadata];
+    for outcome in outcomes {
+        let attempt = match outcome.status {
+            ProviderAdvisoryStatus::CapabilityUnavailable => native_advisory_attempt_with_duration(
+                &outcome.provider_id,
+                "advisory_by_package",
+                vec![
+                    EvidenceRole::AuthoritativeSecurityAdvisory,
+                    EvidenceRole::ManifestOrDependencyMetadata,
+                ],
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                0,
+                None,
+                query_text,
+                outcome.duration_ms,
+            ),
+            ProviderAdvisoryStatus::InterruptedByDeadline => {
+                let mut attempt = native_advisory_attempt_with_duration(
+                    &outcome.provider_id,
+                    "advisory_by_package",
+                    advisory_role.clone(),
+                    RetrievalAttemptOutcome::InterruptedByDeadline,
+                    0,
+                    Some("deadline".to_string()),
+                    query_text,
+                    outcome.duration_ms,
+                );
+                attempt.deadline_interrupted = true;
+                attempt
+            }
+            ProviderAdvisoryStatus::Completed(Ok(package_vulns)) => {
+                let count = package_vulns.len();
+                for vuln in package_vulns {
+                    if !vulnerabilities
+                        .iter()
+                        .any(|existing| ids_overlap(existing, &vuln))
+                    {
+                        vulnerabilities.push(vuln);
+                    }
+                }
+                native_advisory_attempt_with_duration(
+                    &outcome.provider_id,
+                    "advisory_by_package",
+                    advisory_role.clone(),
+                    if count > 0 {
+                        RetrievalAttemptOutcome::SuccessWithResults
+                    } else {
+                        RetrievalAttemptOutcome::SuccessZeroResults
+                    },
+                    count,
+                    None,
+                    query_text,
+                    outcome.duration_ms,
+                )
+            }
+            ProviderAdvisoryStatus::Completed(Err(error)) => {
+                let (attempt_outcome, error_class) = native_error_outcome(&error);
+                native_advisory_attempt_with_duration(
+                    &outcome.provider_id,
+                    "advisory_by_package",
+                    advisory_role.clone(),
+                    attempt_outcome,
+                    0,
+                    Some(error_class),
+                    query_text,
+                    outcome.duration_ms,
+                )
+            }
+        };
+        let dependency_interrupted =
+            attempt.outcome == RetrievalAttemptOutcome::InterruptedByDeadline;
+        attempts.push(attempt);
+        let mut dependency_attempt = native_advisory_attempt_with_duration(
+            &outcome.provider_id,
+            "advisory_by_package",
+            dependency_role.clone(),
+            if dependency_interrupted {
+                RetrievalAttemptOutcome::InterruptedByDeadline
+            } else {
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+            },
+            0,
+            if dependency_interrupted {
+                Some("deadline".to_string())
+            } else {
+                Some("native_advisory_provider_does_not_supply_manifest_metadata".to_string())
+            },
+            query_text,
+            outcome.duration_ms,
+        );
+        dependency_attempt.deadline_interrupted = dependency_interrupted;
+        attempts.push(dependency_attempt);
     }
 }
 
@@ -104,8 +338,11 @@ pub async fn run_security_search_plan(
         evidence_postprocess: None,
     };
 
-    // 3. Check if any native security provider (OSV) is available
-    let has_native_advisory = effective_providers.iter().any(|id| id == "osv");
+    // 3. Check whether any selected provider exposes native advisory capability.
+    let has_native_advisory = adapter
+        .advisory_provider_capabilities(&effective_providers)
+        .into_iter()
+        .any(|(_, capabilities)| capabilities.lookup_by_id || capabilities.query_by_package);
 
     let mut warnings: Vec<SearchWarning> = web_resp.warnings;
 
@@ -137,243 +374,80 @@ pub async fn run_security_search_plan(
     let mut vulnerabilities: Vec<VulnerabilityMetadata> = Vec::new();
     let mut looked_up_ids: HashSet<String> = HashSet::new();
     let mut native_attempts: Vec<RetrievalAttempt> = Vec::new();
+    let native_deadline = Instant::now() + adapter.effective_timeout(req.timeout_ms);
+    let mut native_operation_count = 0usize;
+    let mut native_operation_cap_warned = false;
 
-    for cve_id in &resolved_ids.cve_ids {
-        if looked_up_ids.insert(cve_id.clone()) {
-            let start = Instant::now();
-            match adapter.lookup_advisory(cve_id).await {
-                Ok(Some(meta)) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_cve",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessWithResults,
-                        1,
-                        None,
-                        cve_id,
-                        start,
-                    ));
-                    vulnerabilities.push(meta);
-                }
-                Ok(None) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_cve",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessZeroResults,
-                        0,
-                        None,
-                        cve_id,
-                        start,
-                    ));
-                }
-                Err(e) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_cve",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::Failed,
-                        0,
-                        Some(format!("{e}")),
-                        cve_id,
-                        start,
-                    ));
-                }
+    for (ids, subquery_id) in [
+        (&resolved_ids.cve_ids, "advisory_by_cve"),
+        (&resolved_ids.ghsa_ids, "advisory_by_ghsa"),
+        (&resolved_ids.osv_ids, "advisory_by_osv"),
+        (&resolved_ids.rustsec_ids, "advisory_by_rustsec"),
+    ] {
+        for vulnerability_id in ids {
+            if native_operation_count >= MAX_NATIVE_ADVISORY_OPERATIONS {
+                native_operation_cap_warned = true;
+                break;
             }
+            if looked_up_ids.insert(vulnerability_id.clone()) {
+                native_operation_count += 1;
+                let remaining = native_deadline.saturating_duration_since(Instant::now());
+                let outcomes = adapter
+                    .lookup_advisory_scoped_with_timeout(
+                        &effective_providers,
+                        vulnerability_id,
+                        remaining,
+                    )
+                    .await;
+                record_lookup_outcomes(
+                    outcomes,
+                    subquery_id,
+                    vulnerability_id,
+                    &mut vulnerabilities,
+                    &mut native_attempts,
+                );
+            }
+        }
+        if native_operation_count >= MAX_NATIVE_ADVISORY_OPERATIONS {
+            native_operation_cap_warned = true;
+            break;
         }
     }
 
-    for ghsa_id in &resolved_ids.ghsa_ids {
-        if looked_up_ids.insert(ghsa_id.clone()) {
-            let start = Instant::now();
-            match adapter.lookup_advisory(ghsa_id).await {
-                Ok(Some(meta)) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "github_advisory",
-                        "advisory_by_ghsa",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessWithResults,
-                        1,
-                        None,
-                        ghsa_id,
-                        start,
-                    ));
-                    vulnerabilities.push(meta);
-                }
-                Ok(None) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "github_advisory",
-                        "advisory_by_ghsa",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessZeroResults,
-                        0,
-                        None,
-                        ghsa_id,
-                        start,
-                    ));
-                }
-                Err(e) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "github_advisory",
-                        "advisory_by_ghsa",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::Failed,
-                        0,
-                        Some(format!("{e}")),
-                        ghsa_id,
-                        start,
-                    ));
-                }
-            }
-        }
-    }
-
-    for osv_id in &resolved_ids.osv_ids {
-        if looked_up_ids.insert(osv_id.clone()) {
-            let start = Instant::now();
-            match adapter.lookup_advisory(osv_id).await {
-                Ok(Some(meta)) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_osv",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessWithResults,
-                        1,
-                        None,
-                        osv_id,
-                        start,
-                    ));
-                    vulnerabilities.push(meta);
-                }
-                Ok(None) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_osv",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessZeroResults,
-                        0,
-                        None,
-                        osv_id,
-                        start,
-                    ));
-                }
-                Err(e) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_osv",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::Failed,
-                        0,
-                        Some(format!("{e}")),
-                        osv_id,
-                        start,
-                    ));
-                }
-            }
-        }
-    }
-
-    for rustsec_id in &resolved_ids.rustsec_ids {
-        if looked_up_ids.insert(rustsec_id.clone()) {
-            let start = Instant::now();
-            match adapter.lookup_advisory(rustsec_id).await {
-                Ok(Some(meta)) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "rustsec",
-                        "advisory_by_rustsec",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessWithResults,
-                        1,
-                        None,
-                        rustsec_id,
-                        start,
-                    ));
-                    vulnerabilities.push(meta);
-                }
-                Ok(None) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "rustsec",
-                        "advisory_by_rustsec",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SuccessZeroResults,
-                        0,
-                        None,
-                        rustsec_id,
-                        start,
-                    ));
-                }
-                Err(e) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "rustsec",
-                        "advisory_by_rustsec",
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::Failed,
-                        0,
-                        Some(format!("{e}")),
-                        rustsec_id,
-                        start,
-                    ));
-                }
-            }
-        }
-    }
-
-    // 5. Native OSV package query when both package and ecosystem are present
+    // 5. Native package advisory queries when both package and ecosystem are present
     if let (Some(ref package), Some(ref ecosystem)) =
         (&resolved_ids.package, &resolved_ids.ecosystem)
     {
-        if has_native_advisory {
-            let version = resolved_ids.version.as_deref();
-            let start = Instant::now();
-            match adapter
-                .query_advisories_by_package(ecosystem, package, version, effective_max)
-                .await
-            {
-                Ok(package_vulns) => {
-                    let count = package_vulns.len();
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_package",
-                        vec![
-                            EvidenceRole::AuthoritativeSecurityAdvisory,
-                            EvidenceRole::ManifestOrDependencyMetadata,
-                        ],
-                        if count > 0 {
-                            RetrievalAttemptOutcome::SuccessWithResults
-                        } else {
-                            RetrievalAttemptOutcome::SuccessZeroResults
-                        },
-                        count,
-                        None,
-                        package,
-                        start,
-                    ));
-                    for vuln in package_vulns {
-                        if !vulnerabilities
-                            .iter()
-                            .any(|existing| ids_overlap(existing, &vuln))
-                        {
-                            vulnerabilities.push(vuln);
-                        }
-                    }
-                }
-                Err(e) => {
-                    native_attempts.push(native_advisory_attempt(
-                        "osv",
-                        "advisory_by_package",
-                        vec![
-                            EvidenceRole::AuthoritativeSecurityAdvisory,
-                            EvidenceRole::ManifestOrDependencyMetadata,
-                        ],
-                        RetrievalAttemptOutcome::Failed,
-                        0,
-                        Some(format!("{e}")),
-                        package,
-                        start,
-                    ));
-                }
-            }
+        if native_operation_count < MAX_NATIVE_ADVISORY_OPERATIONS {
+            let remaining = native_deadline.saturating_duration_since(Instant::now());
+            let outcomes = adapter
+                .query_advisories_by_package_scoped_with_timeout(
+                    &effective_providers,
+                    ecosystem,
+                    package,
+                    resolved_ids.version.as_deref(),
+                    effective_max,
+                    remaining,
+                )
+                .await;
+            record_package_outcomes(
+                outcomes,
+                package,
+                &mut vulnerabilities,
+                &mut native_attempts,
+            );
+        } else {
+            native_operation_cap_warned = true;
         }
+    }
+
+    if native_operation_cap_warned {
+        warnings.push(SearchWarning::new(
+            "_system",
+            format!(
+                "native_advisory_operation_cap_reached: at most {MAX_NATIVE_ADVISORY_OPERATIONS} native advisory operations were attempted"
+            ),
+        ));
     }
 
     // 6. Enrich vulnerabilities with KEV data if requested
@@ -384,6 +458,16 @@ pub async fn run_security_search_plan(
             .collect();
 
         if cve_ids_for_kev.is_empty() {
+            native_attempts.push(native_advisory_attempt(
+                "cisa_kev",
+                "kev_by_cve",
+                vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                RetrievalAttemptOutcome::NotApplicable,
+                0,
+                None,
+                &req.query,
+                Instant::now(),
+            ));
             warnings.push(SearchWarning::new(
                 "_system",
                 "kev_lookup_skipped: KEV lookup requires CVE identifiers",

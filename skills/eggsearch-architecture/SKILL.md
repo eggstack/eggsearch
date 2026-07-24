@@ -36,6 +36,8 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - Provider health tracking (3 failures → cooldown)
 - Sanitization and result grouping
 - Evidence postprocessing (roles, coverage, conflicts, retrieval summaries)
+- Capability-partitioned dispatch (supported roles execute; unsupported roles become explicit capability-skip attempts)
+- Provider-scoped advisory operations with explicit `AdvisoryCapabilities` and preserved provider outcomes
 
 ## Provider Model
 
@@ -81,6 +83,12 @@ Production defaults `sanitize_output = true`.
 - Computes workflow coverage from the requested model
 - Detects conflicts scoped to canonical entities
 - Generates retrieval summaries distinguishing success-zero, failure, timeout, rate limit, skip
+- Records `TruncationEvidence`; exact candidate-limit saturation is `LimitReachedUnknown` unless truncation is confirmed
+
+Native advisory lookups are scoped to the adapter's resolved provider set. Each
+selected provider yields a terminal outcome, including capability unavailable,
+deadline, zero results, success, or failure. Deduplicating advisory records does
+not remove the underlying attempts.
 
 ## Key Invariants
 
@@ -90,3 +98,4 @@ Production defaults `sanitize_output = true`.
 - Partial failures are soft (adapter returns `WebSearchResponse`, never errors)
 - MCP tools return `Result<serde_json::Value, ToolError>`
 - Additive schema evolution (new optional fields, never removal)
+- `NotApplicable` is reserved for operations that do not apply; provider incapability is `SkippedCapabilityUnavailable`

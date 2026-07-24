@@ -156,6 +156,9 @@ All engines implement the `SearchEngine` trait:
 ```rust
 trait SearchEngine: Send + Sync {
     fn name(&self) -> &'static str;
+    fn advisory_capabilities(&self) -> AdvisoryCapabilities {
+        AdvisoryCapabilities::default()
+    }
     fn search<'a>(
         &'a self,
         query: &str,
@@ -170,7 +173,23 @@ trait SearchEngine: Send + Sync {
         max_results: usize, timeout: Duration,
     ) -> BoxFuture<'_, Result<Vec<VulnerabilityMetadata>, EngineError>>;
 }
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct AdvisoryCapabilities {
+    lookup_by_id: bool,
+    query_by_package: bool,
+}
 ```
+
+OSV, GitHub Advisory, RustSec, and NVD override the capability declaration for
+the native operations they implement. Generic engines retain the default of no
+native advisory capability; support is never inferred from a provider name.
+
+Native advisory calls use `MetadataSearchAdapter` scoped entry points. The caller
+passes the already-resolved provider set and receives one terminal outcome per
+selected engine: capability unavailable, deadline interrupted, successful zero or
+non-zero results, or a classified provider error. Result deduplication happens
+after attempts are recorded, so provider provenance and failures remain visible.
 
 Engine types are classified by `ProviderKind`:
 - `HtmlScrape` — HTML scraping with conservative capabilities
@@ -202,7 +221,12 @@ The planner rewrites queries based on intent:
 4. **Provider selection** — Choose engines based on profile and capabilities
 5. **Freshness routing** — Route freshness hints to engines that support them
 
-`dispatch_subqueries` uses pre-computed `intended_roles` when available, propagating them into failure conversion and retrieval summary construction.
+`dispatch_subqueries` uses pre-computed `intended_roles` when available, propagating them into failure conversion and retrieval summary construction. Before enqueueing a job it deduplicates and partitions roles in input order. A partially capable provider gets one real call for supported roles and one synthetic `SkippedCapabilityUnavailable` attempt for unsupported roles; the unsupported subset never suppresses supported work.
+
+Retrieval attempts preserve additive truncation evidence. Returning exactly the
+candidate limit without provider metadata yields `LimitReachedUnknown`, while
+`truncated` and `ResultTruncatedByCap` are reserved for confirmed Eggsearch or
+provider truncation. The summary exposes possible limit saturation separately.
 
 ---
 
@@ -273,11 +297,15 @@ Primary tree and paginated forge API responses are read through `read_bounded_re
 
 **Architecture decision — Redirect handling:** Forge API clients use `Policy::none()`, rejecting all HTTP redirects. Redirects are treated as failure rather than followed. This prevents SSRF via redirect chains and ensures `validate_base_url()` preflight checks are not bypassed. The fetch client also uses `Policy::none()` for outbound requests; redirect revalidation is handled in the fetch layer for user-initiated fetches.
 
-**Architecture decision — DNS pinning:** `validate_base_url()` performs preflight DNS resolution via `std::net::ToSocketAddrs` and classifies every resolved address against the endpoint policy. Literal IP addresses are classified directly. This pins the address set at validation time. **Residual risk:** DNS rebinding can occur between the validation check and the actual HTTP connection, since `reqwest` resolves DNS independently. The preflight check eliminates the most common SSRF vector (direct DNS to private IP) but does not provide TOCTOU-safe DNS pinning. This trade-off is acceptable for the forge adapter's threat model (operator-controlled base URLs, not arbitrary user input).
+**Architecture decision — DNS validation:** `validate_base_url()` performs preflight DNS resolution via `std::net::ToSocketAddrs` and classifies every resolved address against the endpoint policy. Literal IP addresses are classified directly. This is preflight validation only; `reqwest` resolves DNS independently when it connects, so no connection-time DNS pinning or rebinding guarantee is claimed. The preflight check eliminates direct DNS-to-private-IP configuration mistakes, with residual TOCTOU risk documented for operator-controlled endpoints.
 
 ### Commit Provenance
 
-`commit_sha` in `RepoMapResponse` is set from `resolved_ref` in the forge API response. For GitHub, this is the tree SHA from the Git Trees API (not a commit SHA). For GitLab, this is the commit SHA from the ref resolution endpoint. The `resolved_ref_name` field records the original branch or tag name used for the tree lookup. Object SHAs and commit SHAs are independently represented in the internal `ForgeRawEntry` type but are not propagated to the public `RepoMapEntry` type.
+`commit_sha` in `RepoMapResponse` is the resolved commit identity returned by
+the native forge path, never an entry object SHA. `resolved_ref_name` preserves
+the requested branch or tag name when the provider returns it. Tree and object
+identities remain distinct internally, and immutable entry URLs use the resolved
+commit identity.
 
 **Architecture decision — ResolvedRepositoryIdentity:** `ResolvedRepositoryIdentity` separates four distinct fields: `requested_ref` (the caller-supplied branch/tag/commit), `resolved_ref_name` (the provider-resolved branch or tag name), `resolved_commit_sha` (the actual commit SHA from provider resolution), and `tree_sha` (the root tree SHA). This prevents treating tree SHAs, blob SHAs, or branch names as commit SHAs in permalink construction. Each forge provider populates these fields from its own resolution endpoint.
 

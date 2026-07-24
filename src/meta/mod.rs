@@ -11,7 +11,7 @@ pub mod advisory_range;
 /// Dependency/lock file parser for extracting dependency coordinates.
 pub mod dependency_parse;
 /// Bounded parallel dispatch for multi-subquery searches.
-pub(crate) mod dispatch;
+pub mod dispatch;
 /// Vendored HTML search engines. Internal; not part of the stable
 /// public API.
 pub mod engines;
@@ -61,7 +61,10 @@ pub mod suggested_fetches;
 /// Version comparison utilities for package ecosystems.
 pub mod version_compare;
 
-pub use adapter::{ErrorClass, MetadataSearchAdapter};
+pub use adapter::{
+    ErrorClass, MetadataSearchAdapter, NativeAdvisoryOperation, ProviderAdvisoryOutcome,
+    ProviderAdvisoryStatus,
+};
 pub use evidence_bundle::build_evidence_bundle;
 pub use planner::{build_search_plan, SearchPlan};
 pub use provider_diagnostics::{

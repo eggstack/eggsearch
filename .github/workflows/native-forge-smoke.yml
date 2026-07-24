@@ -2,6 +2,11 @@ name: Native Forge Smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      release_subject:
+        description: Full commit SHA to verify
+        required: true
+        type: string
   schedule:
     - cron: "0 6 * * 1"
 
@@ -23,43 +28,72 @@ jobs:
     timeout-minutes: 10
     outputs:
       result: ${{ steps.smoke.outputs.result }}
+    env:
+      EGGSEARCH_RELEASE_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_subject || github.sha }}
+      EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/native-smoke-github
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_SLASH_REF: ${{ vars.NATIVE_SMOKE_GITHUB_SLASH_REF }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact release subject
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_subject }}
+          fetch-depth: 1
+      - name: Checkout scheduled diagnostic subject
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run GitHub native smoke tests
-        id: smoke
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate release subject and configuration
         run: |
-          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 github 2>&1 | tee smoke-output.log; then
-            echo "result=pass" >> "$GITHUB_OUTPUT"
-          else
+          set -euo pipefail
+          [[ "$EGGSEARCH_RELEASE_SUBJECT" =~ ^[0-9a-fA-F]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EGGSEARCH_RELEASE_SUBJECT" ]]
+          test -n "$GITHUB_TOKEN"
+          test -n "$GITHUB_SLASH_REF"
+          [[ "$GITHUB_SLASH_REF" == */* ]]
+      - name: Run GitHub native smoke tests and validate evidence
+        id: smoke
+        run: |
+          set -euo pipefail
+          if ! cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 github 2>&1 | tee smoke-output-github.log; then
             echo "result=fail" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-      - name: Generate evidence manifest
-        if: always()
-        run: |
-          SHA=$(git rev-parse HEAD)
-          RUN_ID=${{ github.run_id }}
-          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
-          cat > native-smoke-github.json <<EOF
-          {
-            "release_subject": "${SHA}",
-            "workflow_run_id": ${RUN_ID},
-            "provider": "github",
-            "target": "tokio-rs/axum",
-            "requested_ref": "main",
-            "result": "${RESULT}",
-            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-      - name: Upload evidence manifest
+          mapfile -d '' evidence_files < <(find "$EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR" -maxdepth 1 -type f -name '*.json' -print0)
+          ((${#evidence_files[@]} > 0))
+          for file in "${evidence_files[@]}"; do
+            jq -e --arg subject "$EGGSEARCH_RELEASE_SUBJECT" --arg provider github '
+              .schema_version == 1 and
+              .release_subject == $subject and
+              .provider == $provider and
+              .mode == "native" and
+              .result == "pass" and
+              (.target | type == "string" and length > 0) and
+              (.requested_ref | type == "string" and length > 0) and
+              (.resolved_ref | type == "string" and length > 0) and
+              (.resolved_commit_sha | type == "string" and test("^[0-9a-fA-F]{40}$")) and
+              (.entry_count | type == "number" and . > 0) and
+              (.request_count | type == "number" and . > 0) and
+              (.response_bytes_observed | type == "number" and . > 0) and
+              (.aggregate_limit | type == "number" and . > 0) and
+              (.response_bytes_observed <= .aggregate_limit) and
+              .provenance_pinned == true
+            ' "$file" >/dev/null
+          done
+          echo "result=pass" >> "$GITHUB_OUTPUT"
+      - name: Upload GitHub evidence and bounded log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-smoke-github
-          path: native-smoke-github.json
+          path: |
+            ${{ runner.temp }}/native-smoke-github/*.json
+            smoke-output-github.log
+          if-no-files-found: error
           retention-days: 90
 
   gitlab:
@@ -68,41 +102,65 @@ jobs:
     timeout-minutes: 10
     outputs:
       result: ${{ steps.smoke.outputs.result }}
+    env:
+      EGGSEARCH_RELEASE_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_subject || github.sha }}
+      EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/native-smoke-gitlab
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact release subject
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_subject }}
+          fetch-depth: 1
+      - name: Checkout scheduled diagnostic subject
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run GitLab native smoke tests
+      - name: Validate release subject and configuration
+        run: |
+          set -euo pipefail
+          [[ "$EGGSEARCH_RELEASE_SUBJECT" =~ ^[0-9a-fA-F]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EGGSEARCH_RELEASE_SUBJECT" ]]
+          test -n "$GITLAB_TOKEN"
+      - name: Run GitLab native smoke tests and validate evidence
         id: smoke
         run: |
-          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitlab 2>&1 | tee smoke-output.log; then
-            echo "result=pass" >> "$GITHUB_OUTPUT"
-          else
+          set -euo pipefail
+          if ! cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitlab 2>&1 | tee smoke-output-gitlab.log; then
             echo "result=fail" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-      - name: Generate evidence manifest
-        if: always()
-        run: |
-          SHA=$(git rev-parse HEAD)
-          RUN_ID=${{ github.run_id }}
-          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
-          cat > native-smoke-gitlab.json <<EOF
-          {
-            "release_subject": "${SHA}",
-            "workflow_run_id": ${RUN_ID},
-            "provider": "gitlab",
-            "target": "gitlab-org/gitlab-runner",
-            "requested_ref": "main",
-            "result": "${RESULT}",
-            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-      - name: Upload evidence manifest
+          mapfile -d '' evidence_files < <(find "$EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR" -maxdepth 1 -type f -name '*.json' -print0)
+          ((${#evidence_files[@]} > 0))
+          for file in "${evidence_files[@]}"; do
+            jq -e --arg subject "$EGGSEARCH_RELEASE_SUBJECT" --arg provider gitlab '
+              .schema_version == 1 and .release_subject == $subject and .provider == $provider and
+              .mode == "native" and .result == "pass" and
+              (.target | type == "string" and length > 0) and
+              (.requested_ref | type == "string" and length > 0) and
+              (.resolved_ref | type == "string" and length > 0) and
+              (.resolved_commit_sha | type == "string" and test("^[0-9a-fA-F]{40}$")) and
+              (.entry_count | type == "number" and . > 0) and
+              (.request_count | type == "number" and . > 0) and
+              (.response_bytes_observed | type == "number" and . > 0) and
+              (.aggregate_limit | type == "number" and . > 0) and
+              (.response_bytes_observed <= .aggregate_limit) and .provenance_pinned == true
+            ' "$file" >/dev/null
+          done
+          echo "result=pass" >> "$GITHUB_OUTPUT"
+      - name: Upload GitLab evidence and bounded log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-smoke-gitlab
-          path: native-smoke-gitlab.json
+          path: |
+            ${{ runner.temp }}/native-smoke-gitlab/*.json
+            smoke-output-gitlab.log
+          if-no-files-found: error
           retention-days: 90
 
   codeberg:
@@ -111,41 +169,65 @@ jobs:
     timeout-minutes: 10
     outputs:
       result: ${{ steps.smoke.outputs.result }}
+    env:
+      EGGSEARCH_RELEASE_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_subject || github.sha }}
+      EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/native-smoke-codeberg
+      CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact release subject
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_subject }}
+          fetch-depth: 1
+      - name: Checkout scheduled diagnostic subject
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run Codeberg native smoke tests
+      - name: Validate release subject and configuration
+        run: |
+          set -euo pipefail
+          [[ "$EGGSEARCH_RELEASE_SUBJECT" =~ ^[0-9a-fA-F]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EGGSEARCH_RELEASE_SUBJECT" ]]
+          test -n "$CODEBERG_TOKEN"
+      - name: Run Codeberg native smoke tests and validate evidence
         id: smoke
         run: |
-          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 codeberg 2>&1 | tee smoke-output.log; then
-            echo "result=pass" >> "$GITHUB_OUTPUT"
-          else
+          set -euo pipefail
+          if ! cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 codeberg 2>&1 | tee smoke-output-codeberg.log; then
             echo "result=fail" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-      - name: Generate evidence manifest
-        if: always()
-        run: |
-          SHA=$(git rev-parse HEAD)
-          RUN_ID=${{ github.run_id }}
-          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
-          cat > native-smoke-codeberg.json <<EOF
-          {
-            "release_subject": "${SHA}",
-            "workflow_run_id": ${RUN_ID},
-            "provider": "codeberg",
-            "target": "Codeberg/Forgejo",
-            "requested_ref": "main",
-            "result": "${RESULT}",
-            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-      - name: Upload evidence manifest
+          mapfile -d '' evidence_files < <(find "$EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR" -maxdepth 1 -type f -name '*.json' -print0)
+          ((${#evidence_files[@]} > 0))
+          for file in "${evidence_files[@]}"; do
+            jq -e --arg subject "$EGGSEARCH_RELEASE_SUBJECT" --arg provider codeberg '
+              .schema_version == 1 and .release_subject == $subject and .provider == $provider and
+              .mode == "native" and .result == "pass" and
+              (.target | type == "string" and length > 0) and
+              (.requested_ref | type == "string" and length > 0) and
+              (.resolved_ref | type == "string" and length > 0) and
+              (.resolved_commit_sha | type == "string" and test("^[0-9a-fA-F]{40}$")) and
+              (.entry_count | type == "number" and . > 0) and
+              (.request_count | type == "number" and . > 0) and
+              (.response_bytes_observed | type == "number" and . > 0) and
+              (.aggregate_limit | type == "number" and . > 0) and
+              (.response_bytes_observed <= .aggregate_limit) and .provenance_pinned == true
+            ' "$file" >/dev/null
+          done
+          echo "result=pass" >> "$GITHUB_OUTPUT"
+      - name: Upload Codeberg evidence and bounded log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-smoke-codeberg
-          path: native-smoke-codeberg.json
+          path: |
+            ${{ runner.temp }}/native-smoke-codeberg/*.json
+            smoke-output-codeberg.log
+          if-no-files-found: error
           retention-days: 90
 
   gitea:
@@ -154,41 +236,68 @@ jobs:
     timeout-minutes: 10
     outputs:
       result: ${{ steps.smoke.outputs.result }}
+    env:
+      EGGSEARCH_RELEASE_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_subject || github.sha }}
+      EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/native-smoke-gitea
+      GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+      GITEA_INSTANCE_URL: ${{ vars.GITEA_INSTANCE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact release subject
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_subject }}
+          fetch-depth: 1
+      - name: Checkout scheduled diagnostic subject
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run Gitea native smoke tests
+      - name: Validate release subject and configuration
+        run: |
+          set -euo pipefail
+          [[ "$EGGSEARCH_RELEASE_SUBJECT" =~ ^[0-9a-fA-F]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EGGSEARCH_RELEASE_SUBJECT" ]]
+          test -n "$GITEA_TOKEN"
+          test -n "$GITEA_INSTANCE_URL"
+          [[ "$GITEA_INSTANCE_URL" == https://* ]]
+      - name: Run Gitea native smoke tests and validate evidence
         id: smoke
         run: |
-          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitea 2>&1 | tee smoke-output.log; then
-            echo "result=pass" >> "$GITHUB_OUTPUT"
-          else
+          set -euo pipefail
+          if ! cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitea 2>&1 | tee smoke-output-gitea.log; then
             echo "result=fail" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-      - name: Generate evidence manifest
-        if: always()
-        run: |
-          SHA=$(git rev-parse HEAD)
-          RUN_ID=${{ github.run_id }}
-          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
-          cat > native-smoke-gitea.json <<EOF
-          {
-            "release_subject": "${SHA}",
-            "workflow_run_id": ${RUN_ID},
-            "provider": "gitea",
-            "target": "go-gitea/gitea",
-            "requested_ref": "main",
-            "result": "${RESULT}",
-            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-      - name: Upload evidence manifest
+          mapfile -d '' evidence_files < <(find "$EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR" -maxdepth 1 -type f -name '*.json' -print0)
+          ((${#evidence_files[@]} > 0))
+          for file in "${evidence_files[@]}"; do
+            jq -e --arg subject "$EGGSEARCH_RELEASE_SUBJECT" --arg provider gitea '
+              .schema_version == 1 and .release_subject == $subject and .provider == $provider and
+              .mode == "native" and .result == "pass" and
+              (.target | type == "string" and length > 0) and
+              (.requested_ref | type == "string" and length > 0) and
+              (.resolved_ref | type == "string" and length > 0) and
+              (.resolved_commit_sha | type == "string" and test("^[0-9a-fA-F]{40}$")) and
+              (.entry_count | type == "number" and . > 0) and
+              (.request_count | type == "number" and . > 0) and
+              (.response_bytes_observed | type == "number" and . > 0) and
+              (.aggregate_limit | type == "number" and . > 0) and
+              (.response_bytes_observed <= .aggregate_limit) and .provenance_pinned == true
+            ' "$file" >/dev/null
+          done
+          echo "result=pass" >> "$GITHUB_OUTPUT"
+      - name: Upload Gitea evidence and bounded log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-smoke-gitea
-          path: native-smoke-gitea.json
+          path: |
+            ${{ runner.temp }}/native-smoke-gitea/*.json
+            smoke-output-gitea.log
+          if-no-files-found: error
           retention-days: 90
 
   summary:
@@ -198,16 +307,57 @@ jobs:
     needs: [github, gitlab, codeberg, gitea]
     if: always()
     steps:
-      - name: Check results
+      - name: Require exact pass for release evidence
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "GitHub: ${{ needs.github.outputs.result || 'not run' }}"
-          echo "GitLab: ${{ needs.gitlab.outputs.result || 'not run' }}"
-          echo "Codeberg: ${{ needs.codeberg.outputs.result || 'not run' }}"
-          echo "Gitea: ${{ needs.gitea.outputs.result || 'not run' }}"
-          if [[ "${{ needs.github.outputs.result }}" == "fail" ]] || \
-             [[ "${{ needs.gitlab.outputs.result }}" == "fail" ]] || \
-             [[ "${{ needs.codeberg.outputs.result }}" == "fail" ]] || \
-             [[ "${{ needs.gitea.outputs.result }}" == "fail" ]]; then
-            echo "One or more native smoke tests failed"
-            exit 1
-          fi
+          set -euo pipefail
+          [[ "${{ needs.github.result }}" == success && "${{ needs.github.outputs.result }}" == pass ]]
+          [[ "${{ needs.gitlab.result }}" == success && "${{ needs.gitlab.outputs.result }}" == pass ]]
+          [[ "${{ needs.codeberg.result }}" == success && "${{ needs.codeberg.outputs.result }}" == pass ]]
+          [[ "${{ needs.gitea.result }}" == success && "${{ needs.gitea.outputs.result }}" == pass ]]
+      - name: Report scheduled diagnostic results
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          echo "GitHub: ${{ needs.github.result }} / ${{ needs.github.outputs.result || 'missing' }}"
+          echo "GitLab: ${{ needs.gitlab.result }} / ${{ needs.gitlab.outputs.result || 'missing' }}"
+          echo "Codeberg: ${{ needs.codeberg.result }} / ${{ needs.codeberg.outputs.result || 'missing' }}"
+          echo "Gitea: ${{ needs.gitea.result }} / ${{ needs.gitea.outputs.result || 'missing' }}"
+          [[ "${{ needs.github.result }}" == success ]]
+          [[ "${{ needs.gitlab.result }}" == success ]]
+          [[ "${{ needs.codeberg.result }}" == success ]]
+          [[ "${{ needs.gitea.result }}" == success ]]
+      - name: Download release evidence
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-smoke-*
+          path: native-smoke-artifacts
+          merge-multiple: true
+      - name: Build combined evidence manifest
+        if: always() && github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_SUBJECT: ${{ inputs.release_subject }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' evidence_files < <(find native-smoke-artifacts -type f -name '*.json' -print0 | sort -z)
+          ((${#evidence_files[@]} > 0))
+          hashes='[]'
+          for file in "${evidence_files[@]}"; do
+            sha256=$(sha256sum "$file" | cut -d' ' -f1)
+            hashes=$(jq -c --arg file "$file" --arg sha256 "$sha256" '. + [{file: $file, sha256: $sha256}]' <<<"$hashes")
+          done
+          jq -n --arg subject "$RELEASE_SUBJECT" --argjson hashes "$hashes" \
+            '{schema_version: 1, release_subject: $subject, evidence: $hashes}' \
+            > native-smoke-release-manifest.json
+          jq -e --arg subject "$RELEASE_SUBJECT" \
+            '.schema_version == 1 and .release_subject == $subject and (.evidence | length > 0)' \
+            native-smoke-release-manifest.json >/dev/null
+      - name: Upload combined release evidence manifest
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-release-manifest
+          path: native-smoke-release-manifest.json
+          if-no-files-found: error
+          retention-days: 90

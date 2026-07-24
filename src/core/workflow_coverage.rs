@@ -403,10 +403,13 @@ pub fn coverage_status(
     failures: &[RetrievalFailure],
 ) -> CoverageStatus {
     let has_indeterminate = failures.iter().any(|f| {
-        matches!(
-            f.kind,
-            RetrievalFailureKind::EvidenceRoleIndeterminateBecauseRetrievalFailed
-        )
+        f.kind == RetrievalFailureKind::EvidenceRoleIndeterminateBecauseRetrievalFailed
+            || (model.required.contains(&f.role)
+                && matches!(
+                    f.kind,
+                    RetrievalFailureKind::ProviderCapabilityUnavailable
+                        | RetrievalFailureKind::ProviderSkippedByPolicy
+                ))
     });
     if has_indeterminate {
         return CoverageStatus::IndeterminateDueToFailures;
@@ -427,6 +430,8 @@ pub fn coverage_status(
             f.kind,
             RetrievalFailureKind::ProviderFailed
                 | RetrievalFailureKind::DeadlinePreventedCompletion
+                | RetrievalFailureKind::ProviderCapabilityUnavailable
+                | RetrievalFailureKind::ProviderSkippedByPolicy
         ) && model.required.contains(&f.role)
     });
     if has_provider_failure {

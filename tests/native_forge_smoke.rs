@@ -4,27 +4,113 @@
 //! Codeberg, Gitea) against live public repositories. They require configured
 //! API tokens and are classified as release-blocking evidence.
 //!
-//! Each test is independent: a missing token for one provider does not prevent
-//! other provider tests from executing.
-//!
 //! Run with:
 //! ```bash
-//! GITHUB_TOKEN=ghp_xxx cargo test --features live-smoke --test native_forge_smoke -- --ignored
+//! GITHUB_TOKEN=ghp_xxx \
+//! GITHUB_SLASH_REF=fixture/slash-ref \
+//! EGGSEARCH_RELEASE_SUBJECT=$(git rev-parse HEAD) \
+//! EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR=/tmp/eggsearch-native-evidence \
+//! cargo test --features live-smoke --test native_forge_smoke -- --ignored
 //! ```
 
 #![cfg(feature = "live-smoke")]
 
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use chrono::Utc;
 use eggsearch::core::config::{ApiProviderConfig, AppConfig};
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{run_repo_map, RepoMapArgs};
 
-fn build_state_with_github() -> Option<Arc<ServerState>> {
-    let token = std::env::var("GITHUB_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
+fn required_env(name: &str) -> String {
+    match std::env::var(name) {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => panic!("{name} is required for native forge smoke evidence"),
     }
+}
+
+fn release_subject() -> String {
+    let value = required_env("EGGSEARCH_RELEASE_SUBJECT");
+    assert!(
+        value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "EGGSEARCH_RELEASE_SUBJECT must be a full 40-character hexadecimal commit SHA"
+    );
+    value
+}
+
+fn evidence_dir() -> PathBuf {
+    let path = PathBuf::from(required_env("EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR"));
+    fs::create_dir_all(&path).expect("create native forge evidence directory");
+    path
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_evidence(
+    provider: &str,
+    test_name: &str,
+    target: &str,
+    requested_ref: &str,
+    resolved_ref: &str,
+    resolved_commit_sha: &str,
+    entry_count: usize,
+    request_count: usize,
+    response_bytes_observed: usize,
+    aggregate_limit: usize,
+    provenance_pinned: bool,
+) {
+    assert!(
+        !resolved_commit_sha.is_empty()
+            && resolved_commit_sha.len() == 40
+            && resolved_commit_sha
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit()),
+        "native evidence requires a full resolved commit SHA"
+    );
+    assert!(
+        entry_count > 0,
+        "native evidence requires repository entries"
+    );
+    assert!(request_count > 0, "native evidence requires HTTP requests");
+    assert!(
+        response_bytes_observed > 0 && response_bytes_observed <= aggregate_limit,
+        "native evidence requires bounded non-zero response bytes"
+    );
+    assert!(
+        provenance_pinned,
+        "native evidence requires pinned provenance"
+    );
+
+    let evidence = serde_json::json!({
+        "schema_version": 1,
+        "release_subject": release_subject(),
+        "provider": provider,
+        "target": target,
+        "requested_ref": requested_ref,
+        "resolved_ref": resolved_ref,
+        "resolved_commit_sha": resolved_commit_sha,
+        "mode": "native",
+        "entry_count": entry_count,
+        "request_count": request_count,
+        "response_bytes_observed": response_bytes_observed,
+        "aggregate_limit": aggregate_limit,
+        "provenance_pinned": true,
+        "result": "pass",
+        "executed_at": Utc::now().to_rfc3339(),
+    });
+    let path = evidence_dir().join(format!("{provider}-{test_name}.json"));
+    let temporary_path = path.with_extension("json.tmp");
+    fs::write(
+        &temporary_path,
+        serde_json::to_vec_pretty(&evidence).expect("serialize native evidence"),
+    )
+    .expect("write native evidence");
+    fs::rename(temporary_path, path).expect("publish native evidence");
+}
+
+fn build_state_with_github() -> Arc<ServerState> {
+    required_env("GITHUB_TOKEN");
     let mut cfg = AppConfig::default();
     cfg.search.mode = eggsearch::core::config::Mode::Live;
     cfg.search.api.insert(
@@ -35,14 +121,11 @@ fn build_state_with_github() -> Option<Arc<ServerState>> {
             base_url: None,
         },
     );
-    ServerState::build(cfg).ok().map(Arc::new)
+    Arc::new(ServerState::build(cfg).expect("build GitHub native smoke state"))
 }
 
-fn build_state_with_gitlab() -> Option<Arc<ServerState>> {
-    let token = std::env::var("GITLAB_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
-    }
+fn build_state_with_gitlab() -> Arc<ServerState> {
+    required_env("GITLAB_TOKEN");
     let mut cfg = AppConfig::default();
     cfg.search.mode = eggsearch::core::config::Mode::Live;
     cfg.search.api.insert(
@@ -53,14 +136,11 @@ fn build_state_with_gitlab() -> Option<Arc<ServerState>> {
             base_url: None,
         },
     );
-    ServerState::build(cfg).ok().map(Arc::new)
+    Arc::new(ServerState::build(cfg).expect("build GitLab native smoke state"))
 }
 
-fn build_state_with_codeberg() -> Option<Arc<ServerState>> {
-    let token = std::env::var("CODEBERG_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
-    }
+fn build_state_with_codeberg() -> Arc<ServerState> {
+    required_env("CODEBERG_TOKEN");
     let mut cfg = AppConfig::default();
     cfg.search.mode = eggsearch::core::config::Mode::Live;
     cfg.search.api.insert(
@@ -71,16 +151,12 @@ fn build_state_with_codeberg() -> Option<Arc<ServerState>> {
             base_url: Some("https://codeberg.org/api/v1".to_string()),
         },
     );
-    ServerState::build(cfg).ok().map(Arc::new)
+    Arc::new(ServerState::build(cfg).expect("build Codeberg native smoke state"))
 }
 
-fn build_state_with_gitea() -> Option<Arc<ServerState>> {
-    let token = std::env::var("GITEA_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
-    }
-    let base_url = std::env::var("GITEA_INSTANCE_URL")
-        .unwrap_or_else(|_| "https://gitea.com/api/v1".to_string());
+fn build_state_with_gitea() -> Arc<ServerState> {
+    required_env("GITEA_TOKEN");
+    let base_url = required_env("GITEA_INSTANCE_URL");
     let mut cfg = AppConfig::default();
     cfg.search.mode = eggsearch::core::config::Mode::Live;
     cfg.search.api.insert(
@@ -91,19 +167,54 @@ fn build_state_with_gitea() -> Option<Arc<ServerState>> {
             base_url: Some(base_url),
         },
     );
-    ServerState::build(cfg).ok().map(Arc::new)
+    Arc::new(ServerState::build(cfg).expect("build Gitea native smoke state"))
+}
+
+fn write_repo_map_evidence(
+    provider: &str,
+    test_name: &str,
+    target: &str,
+    requested_ref: &str,
+    response: &serde_json::Value,
+) {
+    let resolved_ref = response["resolved_ref_name"]
+        .as_str()
+        .or_else(|| response["ref_name"].as_str())
+        .expect("resolved_ref_name present");
+    let commit_sha = response["commit_sha"].as_str().expect("commit_sha present");
+    let entries = response["entries"]
+        .as_array()
+        .or_else(|| response["root_entries"].as_array())
+        .expect("native entries present");
+    let request_count = response["request_count"]
+        .as_u64()
+        .expect("request_count present") as usize;
+    let response_bytes_observed = response["response_bytes_observed"]
+        .as_u64()
+        .expect("response_bytes_observed present") as usize;
+    let aggregate_limit = response["aggregate_limit"]
+        .as_u64()
+        .expect("aggregate_limit present") as usize;
+
+    write_evidence(
+        provider,
+        test_name,
+        target,
+        requested_ref,
+        resolved_ref,
+        commit_sha,
+        entries.len(),
+        request_count,
+        response_bytes_observed,
+        aggregate_limit,
+        response["provenance_pinned"].as_bool() == Some(true),
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITHUB_TOKEN"]
 async fn native_github_public_repo() {
-    let state = match build_state_with_github() {
-        Some(s) => s,
-        None => {
-            eprintln!("SKIP: GITHUB_TOKEN not configured");
-            return;
-        }
-    };
+    let state = build_state_with_github();
 
     let v = run_repo_map(
         state,
@@ -173,21 +284,22 @@ async fn native_github_public_repo() {
         request_count > 0,
         "request_count should be > 0, got {request_count}"
     );
+    write_repo_map_evidence(
+        "github",
+        "native_github_public_repo",
+        "tokio-rs/axum",
+        "main",
+        &v,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITHUB_TOKEN"]
 async fn native_github_slash_ref() {
-    let state = match build_state_with_github() {
-        Some(s) => s,
-        None => {
-            eprintln!("SKIP: GITHUB_TOKEN not configured");
-            return;
-        }
-    };
+    let state = build_state_with_github();
 
-    let slash_ref =
-        std::env::var("GITHUB_SLASH_REF").unwrap_or_else(|_| "smoke/slash-ref".to_string());
+    let slash_ref = required_env("GITHUB_SLASH_REF");
+    assert!(slash_ref.contains('/'), "GITHUB_SLASH_REF must contain '/'");
 
     let v = run_repo_map(
         state,
@@ -224,8 +336,8 @@ async fn native_github_slash_ref() {
 
     let ref_name = v["ref_name"].as_str().unwrap_or("");
     assert!(
-        ref_name.contains('/'),
-        "resolved ref should contain a slash, got ref_name={ref_name}"
+        ref_name == slash_ref,
+        "requested ref must be preserved, got ref_name={ref_name}, requested={slash_ref}"
     );
 
     let bytes_observed = v["response_bytes_observed"]
@@ -253,18 +365,27 @@ async fn native_github_slash_ref() {
         request_count > 0,
         "request_count should be > 0, got {request_count}"
     );
+    let resolved_ref = v["resolved_ref_name"]
+        .as_str()
+        .or_else(|| v["ref_name"].as_str())
+        .expect("resolved_ref_name present");
+    assert!(
+        resolved_ref.contains('/'),
+        "resolved ref should contain a slash, got resolved_ref={resolved_ref}"
+    );
+    write_repo_map_evidence(
+        "github",
+        "native_github_slash_ref",
+        "tokio-rs/axum",
+        &slash_ref,
+        &v,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITLAB_TOKEN"]
 async fn native_gitlab_public_repo() {
-    let state = match build_state_with_gitlab() {
-        Some(s) => s,
-        None => {
-            eprintln!("SKIP: GITLAB_TOKEN not configured");
-            return;
-        }
-    };
+    let state = build_state_with_gitlab();
 
     let v = run_repo_map(
         state,
@@ -329,18 +450,19 @@ async fn native_gitlab_public_repo() {
         request_count > 0,
         "request_count should be > 0, got {request_count}"
     );
+    write_repo_map_evidence(
+        "gitlab",
+        "native_gitlab_public_repo",
+        "gitlab-org/gitlab-runner",
+        "main",
+        &v,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and CODEBERG_TOKEN"]
 async fn native_codeberg_public_repo() {
-    let state = match build_state_with_codeberg() {
-        Some(s) => s,
-        None => {
-            eprintln!("SKIP: CODEBERG_TOKEN not configured");
-            return;
-        }
-    };
+    let state = build_state_with_codeberg();
 
     let v = run_repo_map(
         state,
@@ -405,21 +527,21 @@ async fn native_codeberg_public_repo() {
         request_count > 0,
         "request_count should be > 0, got {request_count}"
     );
+    write_repo_map_evidence(
+        "codeberg",
+        "native_codeberg_public_repo",
+        "Codeberg/Forgejo",
+        "main",
+        &v,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITEA_TOKEN"]
 async fn native_gitea_public_repo() {
-    let state = match build_state_with_gitea() {
-        Some(s) => s,
-        None => {
-            eprintln!("SKIP: GITEA_TOKEN not configured");
-            return;
-        }
-    };
+    let state = build_state_with_gitea();
 
-    let base_url = std::env::var("GITEA_INSTANCE_URL")
-        .unwrap_or_else(|_| "https://gitea.com/api/v1".to_string());
+    let base_url = required_env("GITEA_INSTANCE_URL");
 
     let v = run_repo_map(
         state,
@@ -483,6 +605,13 @@ async fn native_gitea_public_repo() {
         request_count > 0,
         "request_count should be > 0, got {request_count}"
     );
+    write_repo_map_evidence(
+        "gitea",
+        "native_gitea_public_repo",
+        "go-gitea/gitea",
+        "main",
+        &v,
+    );
 }
 
 // ===========================================================================
@@ -496,58 +625,77 @@ use eggsearch::core::code_metadata::CodeHost;
 use eggsearch::core::repo_map::RepoMapRequest;
 use eggsearch::meta::forge_adapter::{fetch_tree, ForgeEndpointPolicy, ForgeTreeConfig};
 
-fn direct_fetch_config_github() -> Option<ForgeTreeConfig> {
-    let token = std::env::var("GITHUB_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
-    }
-    Some(ForgeTreeConfig {
+fn direct_fetch_config_github() -> ForgeTreeConfig {
+    let token = required_env("GITHUB_TOKEN");
+    ForgeTreeConfig {
         api_key: Some(token),
         base_url: None,
         endpoint_policy: ForgeEndpointPolicy::default(),
         forge_budget_limit: None,
-    })
+    }
 }
 
-fn direct_fetch_config_gitlab() -> Option<ForgeTreeConfig> {
-    let token = std::env::var("GITLAB_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
-    }
-    Some(ForgeTreeConfig {
+fn direct_fetch_config_gitlab() -> ForgeTreeConfig {
+    let token = required_env("GITLAB_TOKEN");
+    ForgeTreeConfig {
         api_key: Some(token),
         base_url: None,
         endpoint_policy: ForgeEndpointPolicy::default(),
         forge_budget_limit: None,
-    })
+    }
 }
 
-fn direct_fetch_config_codeberg() -> Option<ForgeTreeConfig> {
-    let token = std::env::var("CODEBERG_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
-    }
-    Some(ForgeTreeConfig {
+fn direct_fetch_config_codeberg() -> ForgeTreeConfig {
+    let token = required_env("CODEBERG_TOKEN");
+    ForgeTreeConfig {
         api_key: Some(token),
         base_url: Some("https://codeberg.org/api/v1".to_string()),
         endpoint_policy: ForgeEndpointPolicy::default(),
         forge_budget_limit: None,
-    })
+    }
 }
 
-fn direct_fetch_config_gitea() -> Option<ForgeTreeConfig> {
-    let token = std::env::var("GITEA_TOKEN").ok()?;
-    if token.is_empty() {
-        return None;
-    }
-    let base_url = std::env::var("GITEA_INSTANCE_URL")
-        .unwrap_or_else(|_| "https://gitea.com/api/v1".to_string());
-    Some(ForgeTreeConfig {
+fn direct_fetch_config_gitea() -> ForgeTreeConfig {
+    let token = required_env("GITEA_TOKEN");
+    let base_url = required_env("GITEA_INSTANCE_URL");
+    ForgeTreeConfig {
         api_key: Some(token),
         base_url: Some(base_url),
         endpoint_policy: ForgeEndpointPolicy::default(),
         forge_budget_limit: None,
-    })
+    }
+}
+
+fn write_direct_evidence(
+    provider: &str,
+    test_name: &str,
+    target: &str,
+    requested_ref: &str,
+    response: &eggsearch::meta::forge_adapter::ForgeTreeResponse,
+) {
+    let resolved_ref = response
+        .identity
+        .resolved_ref_name
+        .as_deref()
+        .expect("resolved_ref_name present");
+    let commit_sha = response
+        .identity
+        .resolved_commit_sha
+        .as_deref()
+        .expect("resolved_commit_sha present");
+    write_evidence(
+        provider,
+        test_name,
+        target,
+        requested_ref,
+        resolved_ref,
+        commit_sha,
+        response.entries.len(),
+        response.request_count,
+        response.response_bytes_observed,
+        response.aggregate_limit,
+        true,
+    );
 }
 
 fn default_request(host: CodeHost, owner: &str, repo: &str, ref_name: &str) -> RepoMapRequest {
@@ -564,13 +712,7 @@ fn default_request(host: CodeHost, owner: &str, repo: &str, ref_name: &str) -> R
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITHUB_TOKEN"]
 async fn direct_fetch_tree_github() {
-    let config = match direct_fetch_config_github() {
-        Some(c) => c,
-        None => {
-            eprintln!("SKIP: GITHUB_TOKEN not configured");
-            return;
-        }
-    };
+    let config = direct_fetch_config_github();
     let req = default_request(CodeHost::Github, "tokio-rs", "axum", "main");
     let response = fetch_tree(CodeHost::Github, "tokio-rs", "axum", &req, &config)
         .await
@@ -612,18 +754,19 @@ async fn direct_fetch_tree_github() {
         response.response_bytes_observed,
         response.aggregate_limit
     );
+    write_direct_evidence(
+        "github",
+        "direct_fetch_tree_github",
+        "tokio-rs/axum",
+        "main",
+        &response,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITLAB_TOKEN"]
 async fn direct_fetch_tree_gitlab() {
-    let config = match direct_fetch_config_gitlab() {
-        Some(c) => c,
-        None => {
-            eprintln!("SKIP: GITLAB_TOKEN not configured");
-            return;
-        }
-    };
+    let config = direct_fetch_config_gitlab();
     let req = default_request(CodeHost::Gitlab, "gitlab-org", "gitlab-runner", "main");
     let response = fetch_tree(
         CodeHost::Gitlab,
@@ -663,18 +806,19 @@ async fn direct_fetch_tree_gitlab() {
         response.response_bytes_observed,
         response.aggregate_limit
     );
+    write_direct_evidence(
+        "gitlab",
+        "direct_fetch_tree_gitlab",
+        "gitlab-org/gitlab-runner",
+        "main",
+        &response,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and CODEBERG_TOKEN"]
 async fn direct_fetch_tree_codeberg() {
-    let config = match direct_fetch_config_codeberg() {
-        Some(c) => c,
-        None => {
-            eprintln!("SKIP: CODEBERG_TOKEN not configured");
-            return;
-        }
-    };
+    let config = direct_fetch_config_codeberg();
     let req = default_request(CodeHost::Codeberg, "Codeberg", "Forgejo", "main");
     let response = fetch_tree(CodeHost::Codeberg, "Codeberg", "Forgejo", &req, &config)
         .await
@@ -708,18 +852,19 @@ async fn direct_fetch_tree_codeberg() {
         response.response_bytes_observed,
         response.aggregate_limit
     );
+    write_direct_evidence(
+        "codeberg",
+        "direct_fetch_tree_codeberg",
+        "Codeberg/Forgejo",
+        "main",
+        &response,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITEA_TOKEN"]
 async fn direct_fetch_tree_gitea() {
-    let config = match direct_fetch_config_gitea() {
-        Some(c) => c,
-        None => {
-            eprintln!("SKIP: GITEA_TOKEN not configured");
-            return;
-        }
-    };
+    let config = direct_fetch_config_gitea();
     let req = default_request(CodeHost::Gitea, "go-gitea", "gitea", "main");
     let response = fetch_tree(CodeHost::Gitea, "go-gitea", "gitea", &req, &config)
         .await
@@ -751,19 +896,22 @@ async fn direct_fetch_tree_gitea() {
         response.response_bytes_observed,
         response.aggregate_limit
     );
+    write_direct_evidence(
+        "gitea",
+        "direct_fetch_tree_gitea",
+        "go-gitea/gitea",
+        "main",
+        &response,
+    );
 }
 
 #[tokio::test]
 #[ignore = "requires live network, live-smoke feature, and GITHUB_TOKEN"]
 async fn direct_fetch_tree_github_slash_ref() {
-    let config = match direct_fetch_config_github() {
-        Some(c) => c,
-        None => {
-            eprintln!("SKIP: GITHUB_TOKEN not configured");
-            return;
-        }
-    };
-    let req = default_request(CodeHost::Github, "tokio-rs", "axum", "v0.7.x");
+    let config = direct_fetch_config_github();
+    let slash_ref = required_env("GITHUB_SLASH_REF");
+    assert!(slash_ref.contains('/'), "GITHUB_SLASH_REF must contain '/'");
+    let req = default_request(CodeHost::Github, "tokio-rs", "axum", &slash_ref);
     let response = fetch_tree(CodeHost::Github, "tokio-rs", "axum", &req, &config)
         .await
         .expect("direct fetch_tree for GitHub slash-ref must succeed");
@@ -786,12 +934,27 @@ async fn direct_fetch_tree_github_slash_ref() {
         "commit_sha should be a full SHA, got {commit_sha}"
     );
     assert!(
-        response.identity.requested_ref.as_deref() == Some("v0.7.x"),
-        "requested_ref must be preserved as v0.7.x"
+        response.identity.requested_ref.as_deref() == Some(slash_ref.as_str()),
+        "requested_ref must preserve GITHUB_SLASH_REF"
     );
     assert!(
         response.response_bytes_observed > 0,
         "response_bytes_observed must be > 0"
     );
     assert!(response.request_count > 0, "request_count must be > 0");
+    assert!(
+        response
+            .identity
+            .resolved_ref_name
+            .as_deref()
+            .is_some_and(|value| value.contains('/')),
+        "resolved_ref_name must contain a slash"
+    );
+    write_direct_evidence(
+        "github",
+        "direct_fetch_tree_github_slash_ref",
+        "tokio-rs/axum",
+        &slash_ref,
+        &response,
+    );
 }

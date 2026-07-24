@@ -59,6 +59,9 @@ pub struct RetrievalDimensionStatus {
     pub duration_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
+    /// Evidence supporting a confirmed or possible truncation signal.
+    #[serde(default, skip_serializing_if = "is_none_truncation_evidence")]
+    pub truncation_evidence: TruncationEvidence,
 }
 
 #[allow(missing_docs)]
@@ -89,6 +92,8 @@ pub struct ResponseRetrievalSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_reached_unknown_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roles_attempted: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roles_complete: Option<usize>,
@@ -110,6 +115,7 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
     let mut capability_skipped_count = 0usize;
     let mut deadline_interrupted_count = 0usize;
     let mut truncated_count = 0usize;
+    let mut limit_reached_unknown_count = 0usize;
 
     let mut roles_seen = std::collections::HashSet::new();
     let mut roles_with_success = std::collections::HashSet::new();
@@ -144,6 +150,17 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
                 capability_skipped_count += 1;
             }
             _ => {}
+        }
+
+        match d.truncation_evidence {
+            TruncationEvidence::LimitReachedUnknown => limit_reached_unknown_count += 1,
+            TruncationEvidence::ConfirmedByEggsearch | TruncationEvidence::ConfirmedByProvider => {
+                has_truncation = true;
+                if d.absence_kind != EvidenceAbsenceKind::ResultTruncatedByCap {
+                    truncated_count += 1;
+                }
+            }
+            TruncationEvidence::None => {}
         }
 
         if let Some(ref outcome) = d.attempt_outcome {
@@ -190,6 +207,7 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
         capability_skipped_count: Some(capability_skipped_count),
         deadline_interrupted_count: Some(deadline_interrupted_count),
         truncated_count: Some(truncated_count),
+        limit_reached_unknown_count: Some(limit_reached_unknown_count),
         roles_attempted: Some(roles_seen.len()),
         roles_complete: Some(roles_with_success.len()),
         roles_indeterminate: Some(roles_indeterminate.len()),
@@ -302,6 +320,21 @@ pub enum RetrievalAttemptOutcome {
     TruncatedAfterPartialSuccess,
 }
 
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TruncationEvidence {
+    #[default]
+    None,
+    LimitReachedUnknown,
+    ConfirmedByEggsearch,
+    ConfirmedByProvider,
+}
+
+fn is_none_truncation_evidence(value: &TruncationEvidence) -> bool {
+    *value == TruncationEvidence::None
+}
+
 /// Record of a single provider/subquery retrieval attempt.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RetrievalAttempt {
@@ -326,6 +359,9 @@ pub struct RetrievalAttempt {
     /// Whether results or response were truncated by a cap.
     #[serde(default)]
     pub truncated: bool,
+    /// Evidence supporting a confirmed or possible truncation signal.
+    #[serde(default, skip_serializing_if = "is_none_truncation_evidence")]
+    pub truncation_evidence: TruncationEvidence,
     /// Bounded query fingerprint or label for the query that was sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query_fingerprint: Option<String>,
@@ -341,7 +377,9 @@ impl RetrievalAttempt {
             RetrievalAttemptOutcome::Failed
             | RetrievalAttemptOutcome::TimedOut
             | RetrievalAttemptOutcome::RateLimited
-            | RetrievalAttemptOutcome::InterruptedByDeadline => {}
+            | RetrievalAttemptOutcome::InterruptedByDeadline
+            | RetrievalAttemptOutcome::SkippedByPolicy
+            | RetrievalAttemptOutcome::SkippedCapabilityUnavailable => {}
             _ => return Vec::new(),
         }
 
@@ -376,6 +414,17 @@ impl RetrievalAttempt {
                 );
                 (RetrievalFailureKind::DeadlinePreventedCompletion, msg)
             }
+            RetrievalAttemptOutcome::SkippedByPolicy => (
+                RetrievalFailureKind::ProviderSkippedByPolicy,
+                format!("provider {} skipped by policy", self.provider_id),
+            ),
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable => (
+                RetrievalFailureKind::ProviderCapabilityUnavailable,
+                format!(
+                    "provider {} lacks the requested capability",
+                    self.provider_id
+                ),
+            ),
             _ => unreachable!(),
         };
 

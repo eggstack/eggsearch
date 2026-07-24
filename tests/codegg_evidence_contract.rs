@@ -3,6 +3,9 @@ use eggsearch::core::evidence_role::EvidenceRole;
 use eggsearch::core::retrieval_status::{
     ResponseRetrievalSummary, RetrievalAttempt, RetrievalAttemptOutcome,
 };
+use eggsearch::core::workflow_coverage::{
+    coverage_status, CoverageStatus, RetrievalFailureKind, WorkflowCoverageModel,
+};
 
 fn make_attempt(
     provider: &str,
@@ -19,6 +22,7 @@ fn make_attempt(
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: Some("fp_abc123".to_string()),
         duration_ms: Some(150),
     }
@@ -101,6 +105,111 @@ fn codegg_consumes_deadline_dimension() {
     a.deadline_interrupted = true;
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(summary.deadline_interrupted_count, Some(1));
+}
+
+#[test]
+fn codegg_distinguishes_capability_and_policy_skips_from_no_match() {
+    let capability = make_attempt(
+        "legacy",
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+        vec![EvidenceRole::PrimaryImplementation],
+        0,
+    );
+    let policy = make_attempt(
+        "suppressed",
+        RetrievalAttemptOutcome::SkippedByPolicy,
+        vec![EvidenceRole::PrimaryImplementation],
+        0,
+    );
+    let zero = make_attempt(
+        "provider",
+        RetrievalAttemptOutcome::SuccessZeroResults,
+        vec![EvidenceRole::PrimaryImplementation],
+        0,
+    );
+
+    let capability_summary =
+        build_retrieval_summary_from_attempts(std::slice::from_ref(&capability));
+    assert_eq!(capability_summary.capability_skipped_count, Some(1));
+    assert_eq!(
+        capability_summary.dimensions[0].absence_kind,
+        eggsearch::core::retrieval_status::EvidenceAbsenceKind::ProviderCapabilityUnavailable
+    );
+    assert_eq!(
+        capability.to_retrieval_failures()[0].kind,
+        RetrievalFailureKind::ProviderCapabilityUnavailable
+    );
+
+    let policy_summary = build_retrieval_summary_from_attempts(std::slice::from_ref(&policy));
+    assert_eq!(policy_summary.policy_skipped_count, Some(1));
+    assert_eq!(
+        policy.to_retrieval_failures()[0].kind,
+        RetrievalFailureKind::ProviderSkippedByPolicy
+    );
+
+    let zero_summary = build_retrieval_summary_from_attempts(std::slice::from_ref(&zero));
+    assert_eq!(zero_summary.zero_result_count, Some(1));
+    assert!(zero.to_retrieval_failures().is_empty());
+}
+
+#[test]
+fn codegg_required_skips_are_indeterminate_but_optional_skips_are_not() {
+    let required = WorkflowCoverageModel {
+        workflow_id: "required".to_string(),
+        title: "Required".to_string(),
+        required: vec![EvidenceRole::PrimaryImplementation],
+        recommended: vec![],
+        optional: vec![],
+    };
+    let required_skip = make_attempt(
+        "provider",
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+        vec![EvidenceRole::PrimaryImplementation],
+        0,
+    );
+    assert_eq!(
+        coverage_status(&required, &[], &required_skip.to_retrieval_failures()),
+        CoverageStatus::IndeterminateDueToFailures
+    );
+
+    let optional = WorkflowCoverageModel {
+        workflow_id: "optional".to_string(),
+        title: "Optional".to_string(),
+        required: vec![EvidenceRole::PrimaryImplementation],
+        recommended: vec![],
+        optional: vec![EvidenceRole::OfficialDocumentation],
+    };
+    let optional_skip = make_attempt(
+        "provider",
+        RetrievalAttemptOutcome::SkippedByPolicy,
+        vec![EvidenceRole::OfficialDocumentation],
+        0,
+    );
+    assert_eq!(
+        coverage_status(
+            &optional,
+            &[EvidenceRole::PrimaryImplementation],
+            &optional_skip.to_retrieval_failures()
+        ),
+        CoverageStatus::Sufficient
+    );
+}
+
+#[test]
+fn codegg_unknown_limit_is_not_confirmed_truncation() {
+    let mut unknown = make_attempt(
+        "provider",
+        RetrievalAttemptOutcome::SuccessWithResults,
+        vec![EvidenceRole::PrimaryImplementation],
+        10,
+    );
+    unknown.truncation_evidence =
+        eggsearch::core::retrieval_status::TruncationEvidence::LimitReachedUnknown;
+    let summary = build_retrieval_summary_from_attempts(&[unknown]);
+    assert!(!summary.has_truncation);
+    assert_eq!(summary.truncated_count, Some(0));
+    assert_eq!(summary.limit_reached_unknown_count, Some(1));
+    assert!(!summary.dimensions[0].truncated);
 }
 
 #[test]
@@ -246,6 +355,7 @@ fn codegg_subquery_id_preserved() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -296,6 +406,7 @@ fn codegg_native_security_attempt_dimensions_consumed() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: Some("fp_native_abc".to_string()),
         duration_ms: Some(50),
     };
@@ -308,6 +419,7 @@ fn codegg_native_security_attempt_dimensions_consumed() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: Some("fp_kev_abc".to_string()),
         duration_ms: Some(30),
     };

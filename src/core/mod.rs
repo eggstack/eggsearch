@@ -148,7 +148,7 @@ pub use result::{SearchWarning, TrustLevel};
 pub use retrieval_status::{
     absent_roles, classify_absence, failed_providers, has_indeterminate, is_absence_only,
     is_failure_only, summarize_retrieval, EvidenceAbsenceKind, ResponseRetrievalSummary,
-    RetrievalDimensionStatus,
+    RetrievalAttempt, RetrievalAttemptOutcome, RetrievalDimensionStatus, TruncationEvidence,
 };
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,

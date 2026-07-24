@@ -181,6 +181,39 @@ fn no_silent_if_let_ok_around_native_advisory() {
 }
 
 #[test]
+fn native_advisory_outcomes_are_provider_scoped_and_error_visible() {
+    let source = read_source("src/meta/adapter.rs");
+    let scoped_start = source
+        .find("pub async fn lookup_advisory_scoped")
+        .expect("scoped lookup exists");
+    let aggregate_start = source[scoped_start..]
+        .find("pub async fn lookup_advisory(")
+        .map(|offset| scoped_start + offset)
+        .expect("aggregate lookup exists");
+    let scoped = &source[scoped_start..aggregate_start];
+    assert!(!scoped.contains("Err(_) => continue"));
+    assert!(!scoped.contains("Ok(None) => continue"));
+    assert!(scoped.contains("provider_id"));
+    assert!(scoped.contains("CapabilityUnavailable"));
+    assert!(scoped.contains("InterruptedByDeadline"));
+
+    let security = read_source("src/meta/security_search.rs");
+    assert!(!security.contains("Err(_) => continue"));
+    assert!(security.contains("outcome.provider_id"));
+    assert!(security.contains("SkippedCapabilityUnavailable"));
+}
+
+#[test]
+fn capability_dispatch_preserves_partial_roles() {
+    let source = read_source("src/meta/dispatch.rs");
+    assert!(source.contains("CapabilityDisposition::PartiallySupported"));
+    assert!(source.contains("CapabilityDisposition::Unsupported"));
+    assert!(source.contains("SkippedCapabilityUnavailable"));
+    assert!(!source.contains("any(|role| !engine.supports_role(role))"));
+    assert!(!source.contains("any(|r| !engine.supports_role(r))"));
+}
+
+#[test]
 fn no_fallback_mode_in_native_smoke() {
     let source = read_source("tests/native_forge_smoke.rs");
     let lower = source.to_lowercase();

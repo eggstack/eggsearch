@@ -62,6 +62,7 @@ docs/
   tool-matrix.md     # compact tool reference table
   release.md         # authoritative release process and pre-release command sequence
   release-checklist.md # short operational checklist (links to release.md)
+  release-verification.md # provisional R/E native-evidence record
 plans/               # historical roadmap and phase documentation (archived, not actively maintained)
 ```
 
@@ -75,7 +76,8 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | **test** | `cargo test --locked` × 4 feature combos |
 | **clippy** | `cargo clippy --all-targets --all-features -- -D warnings` |
 | **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
-| **docs-contract** | 4 documentation contract tests: `docs_config_snippets`, `docs_provider_inventory`, `docs_tool_names`, `docs_safety_vocabulary` |
+| **docs-contract** | Documentation and source-contract tests, including workflow/release guards |
+| **benchmarks** | `cargo bench --locked --all-features --bench perf --no-run` |
 | **fmt** | `cargo fmt --check` |
 | **release-build** | `cargo build --release` |
 | **publish-check** | `cargo publish --dry-run --locked` |
@@ -172,6 +174,9 @@ make hardening                                              # all hardening test
 - **Bounded git execution:** `run_bounded_command()` drains stdout and stderr concurrently with independent capped reads, creates a new process group via `setsid()`, and kills the process group on timeout. Cap breaches (stdout or stderr limit exceeded) trigger immediate process group termination. `CommandTermination` enum records the termination reason (`Exited`, `TimedOut`, `StdoutLimitExceeded`, `StderrLimitExceeded`, `SpawnFailed`, `Signaled`). Untracked file counts derive from bounded `git ls-files -z --others` output. `git status`, `git check-ignore`, and other auxiliary Git commands also use bounded execution.
 - **Evidence postprocessing:** `evidence_postprocess.rs` populates evidence roles (materialized onto cards), workflow coverage (selected per tool/profile/domain), retrieval summaries, and structured conflicts on all result conversion paths. Rate limiting is classified as provider failure, not policy skip. Security responses include workflow coverage and conflict metadata. All new fields are additive and optional.
 - **Attempt outcomes vs absence kinds:** `RetrievalAttemptOutcome` (success, failure, timeout, rate limit, skip, truncation) and `EvidenceAbsenceKind` (no evidence, provider failed, deadline, insufficient, indeterminate, not applicable) are related but distinct. An attempt outcome describes what happened during retrieval; an absence kind describes the impact on evidence coverage. One outcome can map to different absence kinds depending on the workflow model and role requirements.
+- **Capability partitioning:** `dispatch_subqueries` deduplicates and partitions intended roles per provider. Supported roles execute in one provider call; unsupported roles receive a separate `SkippedCapabilityUnavailable` attempt. `NotApplicable` is reserved for operations that do not apply to the request, and `SkippedByPolicy` is reserved for deliberate policy or routing suppression.
+- **Provider-scoped advisories:** `AdvisoryCapabilities` declares native advisory operations. Scoped lookups return one terminal outcome per selected provider, preserve the executing provider ID, surface errors and deadlines, and never invoke unsupported no-op methods. Native operations honor the request's resolved provider set.
+- **Truncation evidence:** Exact candidate-limit saturation without provider metadata is `LimitReachedUnknown`, with `truncated = false` and a separate summary counter. Confirmed truncation requires Eggsearch or provider evidence.
 
 ## Key Architecture
 
@@ -193,7 +198,7 @@ make hardening                                              # all hardening test
 - **Native security attempt participation:** Native security lookups (CVE/GHSA/OSV/RustSec/KEV) produce `RetrievalAttempt` records that participate in the retrieval ledger alongside web-search results.
 - **Conflict source scoping:** Conflict source IDs identify only the disagreeing cards, not entire entity groups.
 - **Release evidence R/E protocol:** Release evidence uses a two-commit protocol: release subject commit `R` (code-bearing) and evidence commit `E` (only docs/manifests). `docs/release-verification.md` records both `R` and `E` and the CI run IDs for `R`. Classification remains provisional until native and CI evidence is present.
-- **Native smoke tests are distinct from fallback:** Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. Live-smoke tests (`--features live-smoke`) use fallback mode. Native evidence is required for release; fallback evidence alone is insufficient.
+- **Native smoke tests are distinct from fallback:** Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. Live-smoke fallback tests are diagnostic only. Release evidence requires the manual fail-closed workflow, exact release-subject checkout, required credentials and fixture variables, a passing native assertion, structured evidence, and exact pass from every required provider job.
 - **DNS validation is preflight-only:** DNS address classification happens before connection. No connection-time DNS pinning is enforced. Documented in `docs/architecture/meta.md`.
 - **Windows is unsupported:** The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix and is not claimed as supported.
 
@@ -233,5 +238,5 @@ commit.
 - **Using opaque rq_* labels as the sole source of role inference** — research planner now provides typed intended roles via `intended_roles`; do not infer roles from `rq_*` subquery IDs
 - **Using .first() on intended_roles for failure conversion** — must expand across all roles when converting retrieval failures
 - **Silently discarding native advisory lookup errors** — all lookups (CVE, GHSA, OSV, RustSec, KEV) produce `RetrievalAttempt` records in the retrieval ledger
-
-
+- **Treating limit saturation as proof of truncation** — use `TruncationEvidence`; `LimitReachedUnknown` does not set `truncated` or `has_truncation`
+- **Allowing native smoke skips to promote a release** — missing credentials, fixture refs, malformed evidence, or missing provider outputs must fail the manual release workflow

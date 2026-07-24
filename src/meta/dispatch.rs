@@ -43,8 +43,56 @@ pub(crate) struct DispatchJob {
     pub provider_order: usize,
     /// Evidence roles this job was intended to produce.
     pub intended_roles: Vec<EvidenceRole>,
-    /// If set, the job is skipped at dispatch with this outcome instead of being executed.
-    pub skip_not_applicable: bool,
+    pub capability_disposition: CapabilityDisposition,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CapabilityDisposition {
+    FullySupported,
+    PartiallySupported {
+        supported_roles: Vec<EvidenceRole>,
+        unsupported_roles: Vec<EvidenceRole>,
+    },
+    Unsupported {
+        unsupported_roles: Vec<EvidenceRole>,
+    },
+    #[allow(dead_code)]
+    NotApplicable {
+        roles: Vec<EvidenceRole>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Deterministic supported and unsupported role subsets for one provider.
+pub struct RoleCapabilityPartition {
+    /// Roles this provider can execute.
+    pub supported_roles: Vec<EvidenceRole>,
+    /// Roles this provider cannot execute.
+    pub unsupported_roles: Vec<EvidenceRole>,
+}
+
+/// Deduplicate and partition intended roles according to provider capability.
+pub fn partition_roles_for_engine(
+    engine: &dyn SearchEngine,
+    intended_roles: &[EvidenceRole],
+) -> RoleCapabilityPartition {
+    let mut seen = std::collections::HashSet::new();
+    let mut supported_roles = Vec::new();
+    let mut unsupported_roles = Vec::new();
+    for role in intended_roles {
+        if !seen.insert(*role) {
+            continue;
+        }
+        if engine.supports_role(role) {
+            supported_roles.push(*role);
+        } else {
+            unsupported_roles.push(*role);
+        }
+    }
+    RoleCapabilityPartition {
+        supported_roles,
+        unsupported_roles,
+    }
 }
 
 /// Configuration for parallel dispatch.
@@ -122,8 +170,12 @@ struct TaskResult {
     subquery_order: usize,
     provider_id: String,
     provider_order: usize,
+    intended_roles: Vec<EvidenceRole>,
+    query_fingerprint: String,
     result: Result<Vec<SearchResult>, EngineError>,
 }
+
+type JobKey = (String, String, Vec<EvidenceRole>);
 
 /// Dispatch `(subquery, provider)` jobs with bounded parallelism.
 ///
@@ -188,7 +240,7 @@ pub(crate) async fn dispatch_parallel(
     let mut collected_failures: Vec<DispatchedFailure> = Vec::with_capacity(sorted_jobs.len());
 
     // Track spawn time per (subquery_id, provider_id) for duration measurement.
-    let mut job_start_times: HashMap<(String, String), tokio::time::Instant> = HashMap::new();
+    let mut job_start_times: HashMap<JobKey, tokio::time::Instant> = HashMap::new();
     // Attempt records for every dispatched job.
     let mut collected_attempts: Vec<RetrievalAttempt> = Vec::with_capacity(sorted_jobs.len());
 
@@ -216,25 +268,42 @@ pub(crate) async fn dispatch_parallel(
                 let idx = pending_queue[i];
                 let provider_id = &sorted_jobs[idx].provider_id;
 
-                // Jobs explicitly marked as not applicable are skipped without
-                // dispatch, producing a terminal NotApplicable attempt.
-                if sorted_jobs[idx].skip_not_applicable {
+                if !matches!(
+                    sorted_jobs[idx].capability_disposition,
+                    CapabilityDisposition::FullySupported
+                        | CapabilityDisposition::PartiallySupported { .. }
+                ) {
                     let job = &sorted_jobs[idx];
                     let duration_ms = job_start_times
-                        .remove(&(job.subquery_id.clone(), job.provider_id.clone()))
+                        .remove(&(
+                            job.subquery_id.clone(),
+                            job.provider_id.clone(),
+                            job.intended_roles.clone(),
+                        ))
                         .map(|t| t.elapsed().as_millis() as u64);
                     *terminal_subquery_counts
                         .entry(job.subquery_id.clone())
                         .or_insert(0) += 1;
+                    let (outcome, intended_roles) = match &job.capability_disposition {
+                        CapabilityDisposition::Unsupported { unsupported_roles } => (
+                            RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                            unsupported_roles.clone(),
+                        ),
+                        CapabilityDisposition::NotApplicable { roles } => {
+                            (RetrievalAttemptOutcome::NotApplicable, roles.clone())
+                        }
+                        _ => unreachable!("supported jobs are dispatched"),
+                    };
                     collected_attempts.push(RetrievalAttempt {
                         provider_id: job.provider_id.clone(),
                         subquery_id: Some(job.subquery_id.clone()),
-                        intended_roles: job.intended_roles.clone(),
-                        outcome: RetrievalAttemptOutcome::NotApplicable,
+                        intended_roles,
+                        outcome,
                         result_count: 0,
                         error_class: None,
                         deadline_interrupted: false,
                         truncated: false,
+                        truncation_evidence: Default::default(),
                         query_fingerprint: Some(query_fingerprint_from_query(&job.query)),
                         duration_ms,
                     });
@@ -251,9 +320,15 @@ pub(crate) async fn dispatch_parallel(
                     let subquery_id = job.subquery_id.clone();
                     let subquery_id_panic = subquery_id.clone();
                     let subquery_order = job.subquery_order;
+                    let subquery_order_panic = subquery_order;
                     let provider_id_str = job.provider_id.clone();
                     let provider_id_str_panic = provider_id_str.clone();
                     let provider_order = job.provider_order;
+                    let provider_order_panic = provider_order;
+                    let intended_roles = job.intended_roles.clone();
+                    let intended_roles_panic = intended_roles.clone();
+                    let query_fingerprint = query_fingerprint_from_query(&query);
+                    let query_fingerprint_panic = query_fingerprint.clone();
                     let job_remaining =
                         overall_deadline.saturating_duration_since(tokio::time::Instant::now());
 
@@ -267,7 +342,11 @@ pub(crate) async fn dispatch_parallel(
                         .or_insert(0) += 1;
 
                     job_start_times.insert(
-                        (job.subquery_id.clone(), job.provider_id.clone()),
+                        (
+                            job.subquery_id.clone(),
+                            job.provider_id.clone(),
+                            job.intended_roles.clone(),
+                        ),
                         tokio::time::Instant::now(),
                     );
 
@@ -280,6 +359,8 @@ pub(crate) async fn dispatch_parallel(
                                     subquery_order,
                                     provider_id: provider_id_str_for_inner,
                                     provider_order,
+                                    intended_roles,
+                                    query_fingerprint,
                                     result: Err(EngineError::Timeout {
                                         engine: provider.name(),
                                     }),
@@ -294,6 +375,8 @@ pub(crate) async fn dispatch_parallel(
                                 subquery_order,
                                 provider_id: provider_id_str_for_inner,
                                 provider_order,
+                                intended_roles,
+                                query_fingerprint,
                                 result,
                             }
                         };
@@ -308,9 +391,11 @@ pub(crate) async fn dispatch_parallel(
                                 );
                                 TaskResult {
                                     subquery_id: subquery_id_panic,
-                                    subquery_order: 0,
+                                    subquery_order: subquery_order_panic,
                                     provider_id: provider_id_str_panic,
-                                    provider_order: 0,
+                                    provider_order: provider_order_panic,
+                                    intended_roles: intended_roles_panic,
+                                    query_fingerprint: query_fingerprint_panic,
                                     result: Err(EngineError::NetworkError {
                                         engine: "dispatch",
                                         reason: "task panicked during dispatch".to_string(),
@@ -418,28 +503,14 @@ pub(crate) async fn dispatch_parallel(
                             *count = count.saturating_sub(1);
                         }
 
-                        // Look up intended roles from the original job
-                        let intended_roles = sorted_jobs
-                            .iter()
-                            .find(|j| {
-                                j.subquery_order == tr.subquery_order
-                                    && j.provider_order == tr.provider_order
-                            })
-                            .map(|j| j.intended_roles.clone())
-                            .unwrap_or_default();
-
-                        let start_key = (tr.subquery_id.clone(), tr.provider_id.clone());
+                        let start_key = (
+                            tr.subquery_id.clone(),
+                            tr.provider_id.clone(),
+                            tr.intended_roles.clone(),
+                        );
                         let duration_ms = job_start_times
                             .remove(&start_key)
                             .map(|t| t.elapsed().as_millis() as u64);
-                        let job_query = sorted_jobs
-                            .iter()
-                            .find(|j| {
-                                j.subquery_order == tr.subquery_order
-                                    && j.provider_order == tr.provider_order
-                            })
-                            .map(|j| j.query.as_str())
-                            .unwrap_or("");
 
                         match tr.result {
                             Ok(results) => {
@@ -454,11 +525,9 @@ pub(crate) async fn dispatch_parallel(
                                     provider_order: tr.provider_order,
                                     results,
                                 });
-                                let truncated_by_cap =
+                                let limit_reached_unknown =
                                     result_count > 0 && result_count >= config.candidate_limit;
-                                let outcome = if truncated_by_cap {
-                                    RetrievalAttemptOutcome::TruncatedAfterPartialSuccess
-                                } else if result_count == 0 {
+                                let outcome = if result_count == 0 {
                                     RetrievalAttemptOutcome::SuccessZeroResults
                                 } else {
                                     RetrievalAttemptOutcome::SuccessWithResults
@@ -466,15 +535,18 @@ pub(crate) async fn dispatch_parallel(
                                 collected_attempts.push(RetrievalAttempt {
                                     provider_id: tr.provider_id,
                                     subquery_id: Some(tr.subquery_id),
-                                    intended_roles,
+                                    intended_roles: tr.intended_roles,
                                     outcome,
                                     result_count,
                                     error_class: None,
                                     deadline_interrupted: false,
-                                    truncated: truncated_by_cap,
-                                    query_fingerprint: Some(query_fingerprint_from_query(
-                                        job_query,
-                                    )),
+                                    truncated: false,
+                                    truncation_evidence: if limit_reached_unknown {
+                                        crate::core::retrieval_status::TruncationEvidence::LimitReachedUnknown
+                                    } else {
+                                        Default::default()
+                                    },
+                                    query_fingerprint: Some(tr.query_fingerprint),
                                     duration_ms,
                                 });
                             }
@@ -518,15 +590,14 @@ pub(crate) async fn dispatch_parallel(
                                 collected_attempts.push(RetrievalAttempt {
                                     provider_id: tr.provider_id,
                                     subquery_id: Some(tr.subquery_id),
-                                    intended_roles,
+                                    intended_roles: tr.intended_roles,
                                     outcome,
                                     result_count: 0,
                                     error_class,
                                     deadline_interrupted: false,
                                     truncated: false,
-                                    query_fingerprint: Some(query_fingerprint_from_query(
-                                        job_query,
-                                    )),
+                                    truncation_evidence: Default::default(),
+                                    query_fingerprint: Some(tr.query_fingerprint),
                                     duration_ms,
                                 });
                             }
@@ -625,20 +696,28 @@ pub(crate) async fn dispatch_parallel(
     // Synthesize InterruptedByDeadline attempts for jobs that were never
     // dispatched (still in pending_queue) or that were running when the
     // deadline hit (aborted by join_set.abort_all()).
-    let dispatched_keys: std::collections::HashSet<(String, String)> = collected_attempts
+    let dispatched_keys: std::collections::HashSet<JobKey> = collected_attempts
         .iter()
         .filter_map(|a| {
             a.subquery_id
                 .as_ref()
-                .map(|sid| (sid.clone(), a.provider_id.clone()))
+                .map(|sid| (sid.clone(), a.provider_id.clone(), a.intended_roles.clone()))
         })
         .collect();
 
     for &idx in &pending_queue {
         let job = &sorted_jobs[idx];
-        let key = (job.subquery_id.clone(), job.provider_id.clone());
+        let key = (
+            job.subquery_id.clone(),
+            job.provider_id.clone(),
+            job.intended_roles.clone(),
+        );
         if !dispatched_keys.contains(&key) {
-            let start_key = (job.subquery_id.clone(), job.provider_id.clone());
+            let start_key = (
+                job.subquery_id.clone(),
+                job.provider_id.clone(),
+                job.intended_roles.clone(),
+            );
             let duration_ms = job_start_times
                 .remove(&start_key)
                 .map(|t| t.elapsed().as_millis() as u64);
@@ -651,6 +730,7 @@ pub(crate) async fn dispatch_parallel(
                 error_class: None,
                 deadline_interrupted: true,
                 truncated: false,
+                truncation_evidence: Default::default(),
                 query_fingerprint: Some(query_fingerprint_from_query(&job.query)),
                 duration_ms,
             });
@@ -659,20 +739,13 @@ pub(crate) async fn dispatch_parallel(
 
     // Synthesize attempts for remaining start times (jobs that were
     // running when the deadline hit and were not collected).
-    for ((sid, pid), start) in job_start_times.drain() {
-        let key = (sid.clone(), pid.clone());
+    for ((sid, pid, intended_roles), start) in job_start_times.drain() {
+        let matching_job = sorted_jobs.iter().find(|j| {
+            j.subquery_id == sid && j.provider_id == pid && j.intended_roles == intended_roles
+        });
+        let key = (sid.clone(), pid.clone(), intended_roles.clone());
         if !dispatched_keys.contains(&key) {
-            // Find the intended roles from sorted_jobs
-            let intended_roles = sorted_jobs
-                .iter()
-                .find(|j| j.subquery_id == sid && j.provider_id == pid)
-                .map(|j| j.intended_roles.clone())
-                .unwrap_or_default();
-            let job_query = sorted_jobs
-                .iter()
-                .find(|j| j.subquery_id == sid && j.provider_id == pid)
-                .map(|j| j.query.clone())
-                .unwrap_or_default();
+            let job_query = matching_job.map(|j| j.query.clone()).unwrap_or_default();
             collected_attempts.push(RetrievalAttempt {
                 provider_id: pid,
                 subquery_id: Some(sid),
@@ -682,6 +755,7 @@ pub(crate) async fn dispatch_parallel(
                 error_class: None,
                 deadline_interrupted: true,
                 truncated: false,
+                truncation_evidence: Default::default(),
                 query_fingerprint: Some(query_fingerprint_from_query(&job_query)),
                 duration_ms: Some(start.elapsed().as_millis() as u64),
             });
@@ -698,6 +772,13 @@ pub(crate) async fn dispatch_parallel(
         a.subquery_order
             .cmp(&b.subquery_order)
             .then(a.provider_order.cmp(&b.provider_order))
+    });
+    collected_attempts.sort_by(|a, b| {
+        a.subquery_id
+            .cmp(&b.subquery_id)
+            .then(a.provider_id.cmp(&b.provider_id))
+            .then(format!("{:?}", a.intended_roles).cmp(&format!("{:?}", b.intended_roles)))
+            .then(format!("{:?}", a.outcome).cmp(&format!("{:?}", b.outcome)))
     });
 
     // Convert to the flat format expected by aggregate_rrf
@@ -786,6 +867,145 @@ mod tests {
         }
     }
 
+    struct RoleEngine {
+        unsupported: EvidenceRole,
+    }
+
+    impl SearchEngine for RoleEngine {
+        fn name(&self) -> &'static str {
+            "role_engine"
+        }
+
+        fn supports_role(&self, role: &EvidenceRole) -> bool {
+            *role != self.unsupported
+        }
+
+        fn search<'a>(
+            &'a self,
+            _query: &'a str,
+            _max_results: usize,
+            _timeout: Duration,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
+        {
+            Box::pin(async {
+                Ok(vec![SearchResult {
+                    title: "supported result".to_string(),
+                    url: "https://example.test/result".to_string(),
+                    snippet: None,
+                    source_engine: "role_engine".to_string(),
+                    metadata: crate::meta::engines::models::ResultMetadata::None,
+                }])
+            })
+        }
+    }
+
+    #[test]
+    fn role_partition_is_ordered_and_duplicate_safe() {
+        let unsupported = EvidenceRole::OfficialDocumentation;
+        let engine = RoleEngine { unsupported };
+        let input = [
+            EvidenceRole::PrimaryImplementation,
+            unsupported,
+            EvidenceRole::PrimaryImplementation,
+            EvidenceRole::OfficialDocumentation,
+        ];
+
+        let partition = partition_roles_for_engine(&engine, &input);
+        assert_eq!(
+            partition.supported_roles,
+            vec![EvidenceRole::PrimaryImplementation]
+        );
+        assert_eq!(partition.unsupported_roles, vec![unsupported]);
+    }
+
+    #[tokio::test]
+    async fn partial_capability_emits_supported_and_capability_skip_attempts() {
+        let engine: Arc<dyn SearchEngine> = Arc::new(RoleEngine {
+            unsupported: EvidenceRole::OfficialDocumentation,
+        });
+        let jobs = vec![
+            DispatchJob {
+                subquery_id: "partial".to_string(),
+                query: "query".to_string(),
+                provider_id: "role_engine".to_string(),
+                provider: Arc::clone(&engine),
+                priority: 0,
+                subquery_order: 0,
+                provider_order: 0,
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                capability_disposition: CapabilityDisposition::PartiallySupported {
+                    supported_roles: vec![EvidenceRole::PrimaryImplementation],
+                    unsupported_roles: vec![EvidenceRole::OfficialDocumentation],
+                },
+            },
+            DispatchJob {
+                subquery_id: "partial".to_string(),
+                query: "query".to_string(),
+                provider_id: "role_engine".to_string(),
+                provider: Arc::clone(&engine),
+                priority: 0,
+                subquery_order: 0,
+                provider_order: 0,
+                intended_roles: vec![EvidenceRole::OfficialDocumentation],
+                capability_disposition: CapabilityDisposition::Unsupported {
+                    unsupported_roles: vec![EvidenceRole::OfficialDocumentation],
+                },
+            },
+        ];
+        let output = dispatch_parallel(
+            jobs,
+            DispatchConfig {
+                candidate_limit: 10,
+                global_timeout: Duration::from_secs(1),
+                max_concurrent_jobs: 2,
+                max_concurrent_per_provider: 2,
+            },
+            "test",
+        )
+        .await;
+
+        assert_eq!(output.raw_results.len(), 1);
+        assert_eq!(output.attempts.len(), 2);
+        assert!(output.attempts.iter().any(|attempt| {
+            attempt.intended_roles == vec![EvidenceRole::OfficialDocumentation]
+                && attempt.outcome == RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+        }));
+        assert!(output.attempts.iter().any(|attempt| {
+            attempt.intended_roles == vec![EvidenceRole::PrimaryImplementation]
+                && attempt.outcome == RetrievalAttemptOutcome::SuccessWithResults
+        }));
+    }
+
+    #[tokio::test]
+    async fn candidate_limit_saturation_is_unknown_truncation() {
+        let engine: Arc<dyn SearchEngine> = Arc::new(RoleEngine {
+            unsupported: EvidenceRole::OfficialDocumentation,
+        });
+        let mut job = make_job("saturated", "query", "role_engine", engine, 0, 0, 0);
+        job.intended_roles = vec![EvidenceRole::PrimaryImplementation];
+
+        let output = dispatch_parallel(
+            vec![job],
+            DispatchConfig {
+                candidate_limit: 1,
+                global_timeout: Duration::from_secs(1),
+                max_concurrent_jobs: 1,
+                max_concurrent_per_provider: 1,
+            },
+            "test",
+        )
+        .await;
+
+        let attempt = output.attempts.first().expect("one retrieval attempt");
+        assert_eq!(attempt.outcome, RetrievalAttemptOutcome::SuccessWithResults);
+        assert_eq!(attempt.result_count, 1);
+        assert!(!attempt.truncated);
+        assert_eq!(
+            attempt.truncation_evidence,
+            crate::core::retrieval_status::TruncationEvidence::LimitReachedUnknown
+        );
+    }
+
     fn make_job(
         subquery_id: &str,
         query: &str,
@@ -804,7 +1024,7 @@ mod tests {
             subquery_order,
             provider_order,
             intended_roles: vec![],
-            skip_not_applicable: false,
+            capability_disposition: CapabilityDisposition::FullySupported,
         }
     }
 

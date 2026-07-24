@@ -34,6 +34,12 @@ Search tools return machine-readable `next_actions` hints. `web_fetch` supports 
 - Fetch targets are validated against blocked address ranges (private networks, loopback, link-local, multicast, reserved, and documentation addresses). Redirect targets are revalidated before being followed.
 - `provider_status` is diagnostic only; it reports configured providers, routability, skip reasons and codes, capabilities, cached health, and workflow recipes.
 
+Retrieval responses expose provider-scoped attempts. A zero-result attempt means the
+provider completed successfully; `provider_failed`, `deadline_prevented_completion`,
+`provider_capability_unavailable`, and `provider_skipped_by_policy` are distinct
+states. A candidate limit reached without proof of more results is reported as
+`limit_reached_unknown`, not confirmed truncation.
+
 For the full operator threat model, including fetch network boundaries, trust classes, prompt-injection handling, local workspace caveats, provider disclosure notes, and escape-hatch risks, see [`docs/threat-model.md`](docs/threat-model.md).
 
 ## Install
@@ -66,6 +72,12 @@ That runs the full local CI gate: formatting, clippy, all feature matrix tests, 
 
 Documentation contract tests verify that code snippets in docs stay in sync with the codebase.
 
+Native forge smoke tests are separate from fallback repository search. Release evidence
+requires the manual [`Native Forge Smoke`](.github/workflows/native-forge-smoke.yml)
+workflow with an exact 40-character release-subject SHA, provider credentials, the
+slash-containing GitHub fixture ref, and structured native evidence from every required
+provider. Scheduled smoke runs are diagnostics and do not promote a release.
+
 ## Docs
 
 - [Provider setup](docs/provider-setup.md)
@@ -76,3 +88,4 @@ Documentation contract tests verify that code snippets in docs stay in sync with
 - [Agent workflows](docs/agent-workflows.md)
 - [Architecture contract](docs/architecture/codegg-contract.md)
 - [Release checklist](docs/release-checklist.md)
+- [Release verification protocol](docs/release-verification.md)

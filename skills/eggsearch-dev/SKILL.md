@@ -22,6 +22,8 @@ cargo test --locked --features mock
 cargo test --locked --features pdf
 cargo build --release
 cargo publish --dry-run --locked
+# Workflow and release-evidence contracts
+cargo test --locked --all-features --test native_forge_workflow_contract --test static_guards
 ```
 
 ## Critical: Feature Flags
@@ -88,6 +90,9 @@ make hardening
 - **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`
 - **Bypassing forge response bounds** — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
 - **Changing commit_sha semantics** — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA
+- **Collapsing provider-scoped advisory outcomes** — preserve every selected provider's identity, zero result, capability skip, deadline, and error attempt
+- **Treating exact candidate-limit saturation as confirmed truncation** — use `TruncationEvidence::LimitReachedUnknown` unless missing data is proven
+- **Using fallback smoke results as native release evidence** — native smoke requires credentials, fixture configuration, exact release-subject checkout, and structured evidence
 
 ## Fuzz Targets
 

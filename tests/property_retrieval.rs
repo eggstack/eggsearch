@@ -3,6 +3,7 @@ use eggsearch::core::evidence_role::EvidenceRole;
 use eggsearch::core::retrieval_status::{
     attempts_to_failures, classify_absence, map_provider_to_intended_roles,
     query_fingerprint_from_query, EvidenceAbsenceKind, RetrievalAttempt, RetrievalAttemptOutcome,
+    TruncationEvidence,
 };
 use eggsearch::core::workflow_coverage::{
     compute_coverage, CoverageStatus, RetrievalFailureKind, WorkflowCoverageModel,
@@ -61,6 +62,7 @@ fn attempt_strategy() -> impl Strategy<Value = RetrievalAttempt> {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -80,8 +82,6 @@ fn non_failure_outcome() -> impl Strategy<Value = RetrievalAttemptOutcome> {
     prop_oneof![
         Just(RetrievalAttemptOutcome::SuccessWithResults),
         Just(RetrievalAttemptOutcome::SuccessZeroResults),
-        Just(RetrievalAttemptOutcome::SkippedByPolicy),
-        Just(RetrievalAttemptOutcome::SkippedCapabilityUnavailable),
         Just(RetrievalAttemptOutcome::NotApplicable),
         Just(RetrievalAttemptOutcome::TruncatedAfterPartialSuccess),
     ]
@@ -96,8 +96,10 @@ proptest! {
         for failure in &failures {
             prop_assert!(
                 failure.kind == eggsearch::core::workflow_coverage::RetrievalFailureKind::ProviderFailed
-                    || failure.kind == eggsearch::core::workflow_coverage::RetrievalFailureKind::DeadlinePreventedCompletion,
-                "failure kind must be ProviderFailed or DeadlinePreventedCompletion, got {:?}",
+                    || failure.kind == eggsearch::core::workflow_coverage::RetrievalFailureKind::DeadlinePreventedCompletion
+                    || failure.kind == eggsearch::core::workflow_coverage::RetrievalFailureKind::ProviderSkippedByPolicy
+                    || failure.kind == eggsearch::core::workflow_coverage::RetrievalFailureKind::ProviderCapabilityUnavailable,
+                "unexpected failure kind: {:?}",
                 failure.kind
             );
         }
@@ -129,6 +131,7 @@ proptest! {
                 error_class: None,
                 deadline_interrupted: false,
                 truncated: false,
+                truncation_evidence: Default::default(),
                 query_fingerprint: None,
                 duration_ms: None,
             }
@@ -142,6 +145,8 @@ proptest! {
                     | RetrievalAttemptOutcome::TimedOut
                     | RetrievalAttemptOutcome::RateLimited
                     | RetrievalAttemptOutcome::InterruptedByDeadline
+                    | RetrievalAttemptOutcome::SkippedByPolicy
+                    | RetrievalAttemptOutcome::SkippedCapabilityUnavailable
             ))
             .count();
         prop_assert_eq!(result.len(), expected_count);
@@ -250,6 +255,7 @@ proptest! {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -271,6 +277,7 @@ proptest! {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -291,6 +298,7 @@ proptest! {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -311,6 +319,7 @@ proptest! {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -332,6 +341,7 @@ proptest! {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -386,6 +396,7 @@ proptest! {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -409,6 +420,7 @@ fn b6_01_two_intended_roles_produce_two_failures() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -434,6 +446,7 @@ fn b6_02_duplicate_intended_roles_produce_one_failure_per_unique_role() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -456,6 +469,7 @@ fn b6_03_empty_intended_roles_produce_unknown_role_failure() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -477,6 +491,7 @@ fn b6_04_provider_fails_docs_succeeds_source_only_docs_affected() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -489,6 +504,7 @@ fn b6_04_provider_fails_docs_succeeds_source_only_docs_affected() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -526,6 +542,7 @@ fn b6_05_advisory_attempt_fails_both_roles_indeterminate() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -558,6 +575,7 @@ fn b6_06_role_found_by_another_provider_redundant_failure_not_missing() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -584,6 +602,7 @@ fn b6_07_rate_limit_remains_rate_limited_in_attempt_data() {
         error_class: Some("rate_limited".to_string()),
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(120),
     };
@@ -626,6 +645,7 @@ fn b6_08_deadline_interruption_distinct_from_provider_timeout() {
         error_class: Some("timeout".to_string()),
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(5000),
     };
@@ -638,6 +658,7 @@ fn b6_08_deadline_interruption_distinct_from_provider_timeout() {
         error_class: None,
         deadline_interrupted: true,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(2000),
     };
@@ -687,6 +708,7 @@ fn e14_multi_role_attempt_creates_dimensions_for_all_roles() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(200),
     };
@@ -743,6 +765,7 @@ fn e14_property_multi_role_dimensions_preserve_all_intended_roles() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -785,6 +808,7 @@ fn a11_absence_kind_populated_for_all_absence_paths() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         };
@@ -818,6 +842,7 @@ fn a13_truncation_emitted_on_partial_success() {
         error_class: None,
         deadline_interrupted: false,
         truncated: true,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(200),
     };
@@ -832,6 +857,82 @@ fn a13_truncation_emitted_on_partial_success() {
     );
     assert!(dim.truncated, "dimension must have truncated=true");
     assert_eq!(dim.result_count, Some(5), "result count must be preserved");
+}
+
+#[test]
+fn candidate_limit_reach_is_possible_truncation_only() {
+    let attempt = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("sq_limit".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 10,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        truncation_evidence: TruncationEvidence::LimitReachedUnknown,
+        query_fingerprint: None,
+        duration_ms: None,
+    };
+
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    assert!(!summary.has_truncation);
+    assert_eq!(summary.truncated_count, Some(0));
+    assert_eq!(summary.limit_reached_unknown_count, Some(1));
+    assert!(!summary.dimensions[0].truncated);
+    assert_eq!(
+        summary.dimensions[0].truncation_evidence,
+        TruncationEvidence::LimitReachedUnknown
+    );
+}
+
+#[test]
+fn summary_distinguishes_unknown_and_confirmed_truncation() {
+    let attempts = [
+        RetrievalAttempt {
+            provider_id: "provider_a".to_string(),
+            subquery_id: Some("sq_unknown".to_string()),
+            intended_roles: vec![EvidenceRole::PrimaryImplementation],
+            outcome: RetrievalAttemptOutcome::SuccessWithResults,
+            result_count: 10,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            truncation_evidence: TruncationEvidence::LimitReachedUnknown,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+        RetrievalAttempt {
+            provider_id: "provider_b".to_string(),
+            subquery_id: Some("sq_confirmed".to_string()),
+            intended_roles: vec![EvidenceRole::OfficialDocumentation],
+            outcome: RetrievalAttemptOutcome::SuccessWithResults,
+            result_count: 3,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: true,
+            truncation_evidence: TruncationEvidence::ConfirmedByProvider,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+    ];
+
+    let summary = build_retrieval_summary_from_attempts(&attempts);
+    assert!(summary.has_truncation);
+    assert_eq!(summary.truncated_count, Some(1));
+    assert_eq!(summary.limit_reached_unknown_count, Some(1));
+}
+
+#[test]
+fn old_attempt_payload_defaults_new_truncation_field() {
+    let payload = serde_json::json!({
+        "provider_id": "provider",
+        "outcome": "success_with_results",
+        "result_count": 1,
+        "truncated": false
+    });
+    let attempt: RetrievalAttempt = serde_json::from_value(payload).expect("old payload");
+    assert_eq!(attempt.truncation_evidence, TruncationEvidence::None);
 }
 
 #[test]
@@ -859,6 +960,7 @@ fn c3_query_fingerprint_populated_in_all_attempts() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: Some(query_fingerprint_from_query("test query")),
             duration_ms: None,
         };
@@ -918,6 +1020,7 @@ fn e4_zero_result_summary_retains_result_count_and_outcome() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(50),
     };
@@ -945,6 +1048,7 @@ fn e5_rate_limit_retains_rate_limited_and_coarse_mapping() {
         error_class: Some("rate_limited".to_string()),
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(100),
     };
@@ -970,6 +1074,7 @@ fn e6_provider_timeout_and_global_deadline_serialize_differently() {
         error_class: Some("timeout".to_string()),
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(5000),
     };
@@ -982,6 +1087,7 @@ fn e6_provider_timeout_and_global_deadline_serialize_differently() {
         error_class: None,
         deadline_interrupted: true,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(2000),
     };
@@ -1018,6 +1124,7 @@ fn e7_truncation_is_explicit() {
         error_class: None,
         deadline_interrupted: false,
         truncated: true,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(150),
     };
@@ -1040,6 +1147,7 @@ fn e8_subquery_id_is_retained() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(100),
     };
@@ -1063,6 +1171,7 @@ fn e9_fallback_summary_not_used_when_attempts_exist() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(80),
     };
@@ -1087,6 +1196,7 @@ fn e10_summary_ordering_deterministic_by_subquery_provider_role() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -1099,6 +1209,7 @@ fn e10_summary_ordering_deterministic_by_subquery_provider_role() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -1111,6 +1222,7 @@ fn e10_summary_ordering_deterministic_by_subquery_provider_role() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -1137,6 +1249,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -1149,6 +1262,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -1161,6 +1275,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -1173,6 +1288,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
             error_class: None,
             deadline_interrupted: false,
             truncated: false,
+            truncation_evidence: Default::default(),
             query_fingerprint: None,
             duration_ms: None,
         },
@@ -1200,6 +1316,7 @@ fn e12_codegg_fixture_consumes_enriched_summary() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: Some("fp_aabbccdd11223344".to_string()),
         duration_ms: Some(150),
     };
@@ -1225,6 +1342,7 @@ fn e13_next_actions_avoid_identical_failed_provider_query() {
         error_class: Some("connection_refused".to_string()),
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(1000),
     };

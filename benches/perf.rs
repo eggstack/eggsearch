@@ -3,7 +3,7 @@ use eggsearch::core::conflict::detect_entity_scoped_conflicts;
 use eggsearch::core::evidence_postprocess::{materialize_evidence_roles, resolve_workflow_model};
 use eggsearch::core::result::TrustLevel;
 use eggsearch::core::retrieval_status::{
-    summarize_retrieval, EvidenceAbsenceKind, RetrievalDimensionStatus,
+    summarize_retrieval, EvidenceAbsenceKind, RetrievalDimensionStatus, TruncationEvidence,
 };
 use eggsearch::core::source_card::{SourceCard, SourceKind};
 
@@ -419,6 +419,11 @@ fn bench_attempt_ledger_construction(c: &mut Criterion) {
             },
             deadline_interrupted: i % 7 == 0,
             truncated: i % 5 == 0,
+            truncation_evidence: if i % 5 == 0 {
+                TruncationEvidence::ConfirmedByEggsearch
+            } else {
+                TruncationEvidence::None
+            },
             query_fingerprint: None,
             duration_ms: Some((i as u64) * 10),
         })
@@ -652,6 +657,11 @@ fn bench_retrieval_summary_50_attempts(c: &mut Criterion) {
             },
             deadline_interrupted: i % 7 == 0,
             truncated: i % 5 == 0,
+            truncation_evidence: if i % 5 == 0 {
+                TruncationEvidence::ConfirmedByEggsearch
+            } else {
+                TruncationEvidence::None
+            },
             query_fingerprint: None,
             duration_ms: Some((i as u64) * 10),
         })
@@ -888,6 +898,154 @@ fn bench_inventory_search_near_cap(c: &mut Criterion) {
     });
 }
 
+fn bench_capability_partition(c: &mut Criterion) {
+    use eggsearch::core::evidence_role::EvidenceRole;
+    use eggsearch::meta::dispatch::partition_roles_for_engine;
+    use eggsearch::meta::engines::{error::EngineError, models::SearchResult};
+    use eggsearch::meta::engines::{BoxFuture, SearchEngine};
+    use std::time::Duration;
+
+    struct BenchEngine;
+
+    impl SearchEngine for BenchEngine {
+        fn name(&self) -> &'static str {
+            "bench"
+        }
+
+        fn search<'a>(
+            &'a self,
+            _query: &'a str,
+            _max_results: usize,
+            _timeout: Duration,
+        ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn supports_role(&self, role: &EvidenceRole) -> bool {
+            !matches!(role, EvidenceRole::CommunityDiscussion)
+        }
+    }
+
+    let engine = BenchEngine;
+    let role_cycle = [
+        EvidenceRole::PrimaryImplementation,
+        EvidenceRole::OfficialDocumentation,
+        EvidenceRole::ManifestOrDependencyMetadata,
+        EvidenceRole::CommunityDiscussion,
+    ];
+    let mut group = c.benchmark_group("capability_partition");
+    for size in [1usize, 4, 16, 64] {
+        let roles: Vec<_> = (0..size)
+            .map(|i| role_cycle[i % role_cycle.len()])
+            .collect();
+        group.bench_function(format!("{size}_roles"), |b| {
+            b.iter(|| {
+                black_box(partition_roles_for_engine(&engine, black_box(&roles)));
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_mixed_retrieval_summary(c: &mut Criterion) {
+    use eggsearch::core::evidence_role::EvidenceRole;
+    use eggsearch::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
+
+    let outcomes = [
+        RetrievalAttemptOutcome::SuccessWithResults,
+        RetrievalAttemptOutcome::SuccessZeroResults,
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+        RetrievalAttemptOutcome::SkippedByPolicy,
+        RetrievalAttemptOutcome::Failed,
+        RetrievalAttemptOutcome::InterruptedByDeadline,
+        RetrievalAttemptOutcome::SuccessWithResults,
+    ];
+    let attempts: Vec<RetrievalAttempt> = outcomes
+        .into_iter()
+        .enumerate()
+        .map(|(index, outcome)| RetrievalAttempt {
+            provider_id: format!("provider_{}", index % 4),
+            subquery_id: Some(format!("advisory_{index}")),
+            intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            outcome,
+            result_count: if index == 0 { 1 } else { 0 },
+            error_class: None,
+            deadline_interrupted: index == 5,
+            truncated: index == 6,
+            truncation_evidence: if index == 6 {
+                TruncationEvidence::ConfirmedByProvider
+            } else {
+                TruncationEvidence::None
+            },
+            query_fingerprint: None,
+            duration_ms: Some(index as u64),
+        })
+        .collect();
+
+    c.bench_function("retrieval_summary_mixed_outcomes", |b| {
+        b.iter_batched(
+            || attempts.clone(),
+            |attempts| {
+                black_box(
+                    eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts(
+                        black_box(&attempts),
+                    ),
+                );
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_provider_scoped_advisory_conversion(c: &mut Criterion) {
+    use eggsearch::core::evidence_role::EvidenceRole;
+    use eggsearch::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
+
+    let mut group = c.benchmark_group("provider_scoped_advisory_conversion");
+    for provider_count in [1usize, 4, 8, 16] {
+        group.bench_function(format!("{provider_count}_providers"), |b| {
+            b.iter_batched(
+                || {
+                    (0..provider_count)
+                        .map(|index| RetrievalAttempt {
+                            provider_id: format!("advisory_{index}"),
+                            subquery_id: Some("advisory_by_cve".to_string()),
+                            intended_roles: vec![
+                                EvidenceRole::AuthoritativeSecurityAdvisory,
+                            ],
+                            outcome: if index % 4 == 0 {
+                                RetrievalAttemptOutcome::SuccessZeroResults
+                            } else if index % 4 == 1 {
+                                RetrievalAttemptOutcome::SuccessWithResults
+                            } else if index % 4 == 2 {
+                                RetrievalAttemptOutcome::Failed
+                            } else {
+                                RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+                            },
+                            result_count: if index % 4 == 1 { 1 } else { 0 },
+                            error_class: None,
+                            deadline_interrupted: false,
+                            truncated: false,
+                            truncation_evidence: TruncationEvidence::None,
+                            query_fingerprint: None,
+                            duration_ms: Some(index as u64),
+                        })
+                        .collect::<Vec<_>>()
+                },
+                |attempts| {
+                    black_box(
+                        eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts(
+                            black_box(&attempts),
+                        ),
+                    );
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_serialize_web_search_response,
@@ -909,5 +1067,8 @@ criterion_group!(
     bench_build_forge_response_50_entries,
     bench_build_forge_response_200_entries,
     bench_inventory_search_near_cap,
+    bench_capability_partition,
+    bench_mixed_retrieval_summary,
+    bench_provider_scoped_advisory_conversion,
 );
 criterion_main!(benches);

@@ -81,6 +81,13 @@ impl super::SearchEngine for RustSecEngine {
         ENGINE
     }
 
+    fn advisory_capabilities(&self) -> super::AdvisoryCapabilities {
+        super::AdvisoryCapabilities {
+            lookup_by_id: true,
+            query_by_package: true,
+        }
+    }
+
     fn search<'a>(
         &'a self,
         query: &'a str,

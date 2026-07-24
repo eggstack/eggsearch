@@ -18,6 +18,7 @@ fn attempt(
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(100),
     }
@@ -220,6 +221,7 @@ fn c8_13_same_provider_multiple_subqueries_produce_distinct_attempts() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(50),
     };
@@ -232,6 +234,7 @@ fn c8_13_same_provider_multiple_subqueries_produce_distinct_attempts() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: Some(30),
     };
@@ -320,6 +323,7 @@ fn c8_17_provider_panic_yields_failed_attempt() {
         error_class: Some("panic".to_string()),
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: None,
         duration_ms: None,
     };
@@ -572,6 +576,7 @@ fn b15_attempt_ledger_empty_query() {
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
+        truncation_evidence: Default::default(),
         query_fingerprint: Some(
             eggsearch::core::retrieval_status::query_fingerprint_from_query(""),
         ),
