@@ -56,7 +56,7 @@ fn card_with_stable_id_and_vuln_strategy() -> impl Strategy<Value = SourceCard> 
                 Some(0.5),
                 TrustLevel::ExternalUntrusted,
             );
-            card.stable_id = Some(format!("src_{:016x}", id_hash));
+            card.stable_id = Some(format!("src_{id_hash:016x}"));
             card.metadata.vulnerability =
                 Some(Box::new(eggsearch::core::security::VulnerabilityMetadata {
                     cve_ids: vec![cve],

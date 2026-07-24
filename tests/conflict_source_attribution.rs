@@ -136,8 +136,7 @@ fn f7_09_three_or_more_distinct_normalized_values_represented_deterministically(
         all_values.contains("1.0.0")
             && all_values.contains("2.0.0")
             && all_values.contains("3.0.0"),
-        "all 3 distinct values (1.0.0, 2.0.0, 3.0.0) must appear across conflict values, got: {:?}",
-        all_values
+        "all 3 distinct values (1.0.0, 2.0.0, 3.0.0) must appear across conflict values, got: {all_values:?}",
     );
 }
 
