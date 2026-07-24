@@ -11225,11 +11225,11 @@ async fn repo_search_local_results_boosted_when_matching_repo() {
 
     assert!(
         score_match.is_some(),
-        "should have local results with score"
+        "should have local results with score; groups_match={groups_match:#?}"
     );
     assert!(
         score_no_match.is_some(),
-        "should have local results without match"
+        "should have local results without match; groups_no_match={groups_no_match:#?}"
     );
     let diff = score_match.unwrap() - score_no_match.unwrap();
     assert!(
