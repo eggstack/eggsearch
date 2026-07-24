@@ -10297,6 +10297,15 @@ async fn repo_fetch_tool_in_server_capabilities() {
 
 use std::fs;
 
+fn git_cmd() -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "safe.directory")
+        .env("GIT_CONFIG_VALUE_0", "*");
+    cmd
+}
+
 #[cfg(feature = "mock")]
 fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
     let engines = vec![MockEngine::success("mock_a", vec![])];
@@ -11139,12 +11148,8 @@ async fn repo_search_local_results_boosted_when_matching_repo() {
     .unwrap();
 
     // Initialize git repo with a remote URL
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -11155,14 +11160,14 @@ async fn repo_search_local_results_boosted_when_matching_repo() {
         .ok();
 
     // Create an initial commit so dirty state is clean
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -11244,12 +11249,8 @@ async fn repo_search_local_results_have_repo_match_metadata() {
     .unwrap();
 
     // Initialize git repo with a remote URL
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -11258,14 +11259,14 @@ async fn repo_search_local_results_have_repo_match_metadata() {
         .arg("https://github.com/tokio-rs/axum.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -11345,12 +11346,8 @@ async fn repo_search_dirty_checkout_emits_warning() {
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
     // Initialize git repo with a remote URL
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -11361,14 +11358,14 @@ async fn repo_search_dirty_checkout_emits_warning() {
         .ok();
 
     // Create initial commit so dirty state detection works
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -11418,12 +11415,8 @@ async fn repo_search_state_unknown_emits_warning() {
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
     // Initialize git repo with a remote URL
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -11434,14 +11427,14 @@ async fn repo_search_state_unknown_emits_warning() {
         .ok();
 
     // Create initial commit so dirty state detection works
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -16181,7 +16174,7 @@ mod security_context_safety {
         let dir = tempfile::tempdir().expect("tempdir");
         let hidden_repo = dir.path().join(".hidden_repo");
         std::fs::create_dir_all(&hidden_repo).expect("hidden dir");
-        std::process::Command::new("git")
+        git_cmd()
             .arg("init")
             .arg(&hidden_repo)
             .output()
@@ -16582,12 +16575,8 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
     .unwrap();
 
     // Initialize git repo with a remote URL
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -16598,14 +16587,14 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
         .ok();
 
     // Create initial commit
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -16673,12 +16662,8 @@ async fn repo_map_with_local_checkout() {
     .unwrap();
 
     // Initialize git repo with a remote URL
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -16689,14 +16674,14 @@ async fn repo_map_with_local_checkout() {
         .ok();
 
     // Create initial commit
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -16788,13 +16773,9 @@ async fn repo_map_with_local_checkout() {
 fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
+    git_cmd().arg("init").arg(root).output().ok();
 
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -16805,14 +16786,14 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .ok();
 
     // Create initial commit so dirty state detection works
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -17233,12 +17214,8 @@ async fn prefer_local_rejects_path_traversal() {
     .unwrap();
 
     // Initialize git repo with a remote URL
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -17247,14 +17224,14 @@ async fn prefer_local_rejects_path_traversal() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -17328,12 +17305,8 @@ async fn local_repo_match_same_owner_repo_different_host_no_redirect() {
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
     // Initialize git repo with a GitLab remote
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -17342,14 +17315,14 @@ async fn local_repo_match_same_owner_repo_different_host_no_redirect() {
         .arg("https://gitlab.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -17665,12 +17638,8 @@ async fn repo_map_local_checkout_includes_manifests_and_dirty_state() {
     fs::write(root.join("package.json"), "{\"name\":\"test-npm\"}\n").unwrap();
 
     // Initialize git repo
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -17681,14 +17650,14 @@ async fn repo_map_local_checkout_includes_manifests_and_dirty_state() {
         .ok();
 
     // Initial commit
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -17780,12 +17749,8 @@ async fn repo_search_dirty_state_detected_in_local_match() {
     fs::write(root.join("lib.rs"), "pub fn helper() {}").unwrap();
 
     // Initialize git repo
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -17796,14 +17761,14 @@ async fn repo_search_dirty_state_detected_in_local_match() {
         .ok();
 
     // Initial commit
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -17859,12 +17824,8 @@ async fn repo_search_local_match_metadata_has_all_fields() {
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
     // Initialize git repo
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -17875,14 +17836,14 @@ async fn repo_search_local_match_metadata_has_all_fields() {
         .ok();
 
     // Stage and commit
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .expect("git add should succeed");
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -17972,12 +17933,8 @@ async fn repo_search_local_match_unknown_dirty_state() {
     fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
     // Initialize git repo
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -17986,14 +17943,14 @@ async fn repo_search_local_match_unknown_dirty_state() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -19492,12 +19449,8 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
     let root = dir.path();
 
     fs::write(root.join("lib.rs"), "pub fn add() {}").unwrap();
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -19506,14 +19459,14 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -19696,12 +19649,8 @@ async fn repo_map_off_mode_with_matching_local_checkout_returns_structure() {
     fs::create_dir(root.join("src")).unwrap();
     fs::write(root.join("src").join("lib.rs"), "// src/lib").unwrap();
 
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -19710,14 +19659,14 @@ async fn repo_map_off_mode_with_matching_local_checkout_returns_structure() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")

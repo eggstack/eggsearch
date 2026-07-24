@@ -31,6 +31,15 @@ use eggsearch::mcp::tools::{
 use eggsearch::meta::mock::{mock_engines, MockEngine, MockResult};
 use eggsearch::meta::MetadataSearchAdapter;
 
+fn git_cmd() -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "safe.directory")
+        .env("GIT_CONFIG_VALUE_0", "*");
+    cmd
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -1494,12 +1503,8 @@ async fn corpus_local_clean_checkout_no_dirty_warning() {
     let root = dir.path();
     std::fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -1508,14 +1513,14 @@ async fn corpus_local_clean_checkout_no_dirty_warning() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -1557,12 +1562,8 @@ async fn corpus_local_dirty_checkout_emits_warning() {
     let root = dir.path();
     std::fs::write(root.join("main.rs"), "fn main() {}").unwrap();
 
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -1571,14 +1572,14 @@ async fn corpus_local_dirty_checkout_emits_warning() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -1625,12 +1626,8 @@ async fn corpus_local_repo_match_metadata_present() {
     )
     .unwrap();
 
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -1639,14 +1636,14 @@ async fn corpus_local_repo_match_metadata_present() {
         .arg("https://github.com/tokio-rs/axum.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -1704,12 +1701,8 @@ async fn corpus_prefer_local_redirects_to_workspace() {
     )
     .unwrap();
 
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -1718,14 +1711,14 @@ async fn corpus_prefer_local_redirects_to_workspace() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
@@ -1784,12 +1777,8 @@ async fn corpus_prefer_local_rejects_path_traversal() {
     )
     .unwrap();
 
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(root)
-        .output()
-        .ok();
-    std::process::Command::new("git")
+    git_cmd().arg("init").arg(root).output().ok();
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("remote")
@@ -1798,14 +1787,14 @@ async fn corpus_prefer_local_rejects_path_traversal() {
         .arg("https://github.com/test-owner/test-repo.git")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("add")
         .arg(".")
         .output()
         .ok();
-    std::process::Command::new("git")
+    git_cmd()
         .arg("-C")
         .arg(root)
         .arg("-c")
