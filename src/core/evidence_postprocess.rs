@@ -239,7 +239,7 @@ fn attempt_message(attempt: &crate::core::retrieval_status::RetrievalAttempt) ->
         }
         RetrievalAttemptOutcome::SuccessZeroResults => "zero results".to_string(),
         RetrievalAttemptOutcome::Failed => match &attempt.error_class {
-            Some(cls) => format!("[{}] provider failed", cls),
+            Some(cls) => format!("[{cls}] provider failed"),
             None => "provider failed".to_string(),
         },
         RetrievalAttemptOutcome::TimedOut => "provider timed out".to_string(),

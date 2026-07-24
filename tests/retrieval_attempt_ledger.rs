@@ -360,3 +360,299 @@ fn c8_18_property_selected_job_has_one_terminal_outcome() {
         );
     }
 }
+
+#[test]
+fn b6_attempt_ledger_completeness() {
+    let attempts = vec![
+        attempt(
+            "duckduckgo",
+            RetrievalAttemptOutcome::SuccessWithResults,
+            vec![EvidenceRole::PrimaryImplementation],
+        ),
+        attempt(
+            "startpage",
+            RetrievalAttemptOutcome::Failed,
+            vec![EvidenceRole::OfficialDocumentation],
+        ),
+        attempt(
+            "brave",
+            RetrievalAttemptOutcome::TimedOut,
+            vec![EvidenceRole::UsageExample],
+        ),
+        attempt(
+            "osv",
+            RetrievalAttemptOutcome::SuccessZeroResults,
+            vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+        ),
+    ];
+    let summary = build_retrieval_summary_from_attempts(&attempts);
+    assert_eq!(
+        summary.dimensions.len(),
+        4,
+        "every attempt must produce a dimension"
+    );
+    assert_eq!(summary.attempted_job_count, Some(4));
+}
+
+#[test]
+fn b7_attempt_ledger_deadline_interrupted() {
+    let mut a = attempt(
+        "duckduckgo",
+        RetrievalAttemptOutcome::InterruptedByDeadline,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    a.deadline_interrupted = true;
+    let summary = build_retrieval_summary_from_attempts(&[a]);
+    assert!(summary.has_failures);
+    assert_eq!(summary.deadline_interrupted_count, Some(1));
+    assert_eq!(
+        summary.dimensions[0].attempt_outcome,
+        Some(RetrievalAttemptOutcome::InterruptedByDeadline)
+    );
+}
+
+#[test]
+fn b8_attempt_ledger_early_termination() {
+    let a1 = attempt(
+        "duckduckgo",
+        RetrievalAttemptOutcome::SuccessWithResults,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let mut a2 = attempt(
+        "startpage",
+        RetrievalAttemptOutcome::InterruptedByDeadline,
+        vec![EvidenceRole::OfficialDocumentation],
+    );
+    a2.deadline_interrupted = true;
+    let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
+    assert_eq!(summary.dimensions.len(), 2);
+    let success_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| d.provider_id.as_deref() == Some("duckduckgo"))
+        .unwrap();
+    let deadline_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| d.provider_id.as_deref() == Some("startpage"))
+        .unwrap();
+    assert_eq!(
+        success_dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::SuccessWithResults)
+    );
+    assert_eq!(
+        deadline_dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::InterruptedByDeadline)
+    );
+}
+
+#[test]
+fn b9_attempt_ledger_not_applicable() {
+    let a = attempt(
+        "duckduckgo",
+        RetrievalAttemptOutcome::NotApplicable,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let summary = build_retrieval_summary_from_attempts(&[a]);
+    assert!(!summary.has_failures);
+    assert_eq!(
+        summary.dimensions[0].absence_kind,
+        eggsearch::core::retrieval_status::EvidenceAbsenceKind::NotApplicable
+    );
+    assert_eq!(summary.policy_skipped_count, Some(0));
+}
+
+#[test]
+fn b10_attempt_ledger_health_degradation() {
+    let a1 = attempt(
+        "duckduckgo",
+        RetrievalAttemptOutcome::SuccessWithResults,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let mut a2 = attempt(
+        "duckduckgo",
+        RetrievalAttemptOutcome::Failed,
+        vec![EvidenceRole::OfficialDocumentation],
+    );
+    a2.error_class = Some("connection_refused".to_string());
+    let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
+    assert!(summary.has_failures);
+    assert_eq!(summary.failed_job_count, Some(1));
+    let failed_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| {
+            d.absence_kind == eggsearch::core::retrieval_status::EvidenceAbsenceKind::ProviderFailed
+        })
+        .unwrap();
+    assert_eq!(
+        failed_dim.error_class.as_deref(),
+        Some("connection_refused")
+    );
+}
+
+#[test]
+fn b11_attempt_ledger_concurrency_limit() {
+    let a = attempt(
+        "rate_limited_provider",
+        RetrievalAttemptOutcome::RateLimited,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let summary = build_retrieval_summary_from_attempts(&[a]);
+    assert!(summary.has_failures);
+    assert_eq!(summary.rate_limited_count, Some(1));
+    assert_eq!(
+        summary.dimensions[0].absence_kind,
+        eggsearch::core::retrieval_status::EvidenceAbsenceKind::ProviderFailed
+    );
+}
+
+#[test]
+fn b12_attempt_ledger_network_error() {
+    let mut a = attempt(
+        "failing_provider",
+        RetrievalAttemptOutcome::Failed,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    a.error_class = Some("dns_resolution_failed".to_string());
+    let summary = build_retrieval_summary_from_attempts(&[a]);
+    assert!(summary.has_failures);
+    assert_eq!(summary.failed_job_count, Some(1));
+    assert_eq!(
+        summary.dimensions[0].error_class.as_deref(),
+        Some("dns_resolution_failed")
+    );
+}
+
+#[test]
+fn b13_attempt_ledger_no_error_suppression() {
+    let a1 = attempt(
+        "provider_a",
+        RetrievalAttemptOutcome::Failed,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let a2 = attempt(
+        "provider_b",
+        RetrievalAttemptOutcome::SuccessWithResults,
+        vec![EvidenceRole::OfficialDocumentation],
+    );
+    let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
+    assert!(
+        summary.has_failures,
+        "failure must not be suppressed by success of another provider"
+    );
+    assert_eq!(summary.failed_job_count, Some(1));
+    assert_eq!(summary.completed_job_count, Some(1));
+}
+
+#[test]
+fn b14_attempt_ledger_metadata_only() {
+    let a = attempt(
+        "provider_meta",
+        RetrievalAttemptOutcome::SuccessZeroResults,
+        vec![EvidenceRole::OfficialDocumentation],
+    );
+    let summary = build_retrieval_summary_from_attempts(&[a]);
+    assert!(!summary.has_failures);
+    assert_eq!(summary.zero_result_count, Some(1));
+    assert_eq!(
+        summary.dimensions[0].absence_kind,
+        eggsearch::core::retrieval_status::EvidenceAbsenceKind::NoMatchingEvidenceFound
+    );
+}
+
+#[test]
+fn b15_attempt_ledger_empty_query() {
+    let a = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("sq_empty".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::SuccessZeroResults,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: Some(
+            eggsearch::core::retrieval_status::query_fingerprint_from_query(""),
+        ),
+        duration_ms: Some(10),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[a]);
+    assert_eq!(summary.dimensions.len(), 1);
+    let dim = &summary.dimensions[0];
+    assert!(
+        dim.query.is_some(),
+        "empty query must still produce a fingerprint"
+    );
+}
+
+#[test]
+fn b16_attempt_ledger_skipped_providers_not_in_attempted() {
+    let a1 = attempt(
+        "selected_provider",
+        RetrievalAttemptOutcome::SuccessWithResults,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let a2 = attempt(
+        "skipped_provider",
+        RetrievalAttemptOutcome::SkippedByPolicy,
+        vec![EvidenceRole::OfficialDocumentation],
+    );
+    let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
+    assert_eq!(summary.dimensions.len(), 2);
+    assert_eq!(summary.policy_skipped_count, Some(1));
+    assert_eq!(summary.completed_job_count, Some(1));
+    let skipped_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| d.provider_id.as_deref() == Some("skipped_provider"))
+        .unwrap();
+    assert_eq!(
+        skipped_dim.absence_kind,
+        eggsearch::core::retrieval_status::EvidenceAbsenceKind::ProviderSkippedByPolicy
+    );
+}
+
+#[test]
+fn b17_attempt_ledger_deadline_prevents_all_queries() {
+    let a1 = attempt(
+        "provider_a",
+        RetrievalAttemptOutcome::InterruptedByDeadline,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let mut a2 = attempt(
+        "provider_b",
+        RetrievalAttemptOutcome::InterruptedByDeadline,
+        vec![EvidenceRole::OfficialDocumentation],
+    );
+    a2.deadline_interrupted = true;
+    let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
+    assert!(summary.has_failures);
+    assert_eq!(summary.deadline_interrupted_count, Some(2));
+    assert_eq!(summary.completed_job_count, Some(0));
+}
+
+#[test]
+fn b18_attempt_ledger_partial_completion() {
+    let a1 = attempt(
+        "provider_a",
+        RetrievalAttemptOutcome::SuccessWithResults,
+        vec![EvidenceRole::PrimaryImplementation],
+    );
+    let mut a2 = attempt(
+        "provider_b",
+        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
+        vec![EvidenceRole::OfficialDocumentation],
+    );
+    a2.truncated = true;
+    a2.result_count = 3;
+    let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
+    assert!(summary.has_truncation);
+    assert_eq!(summary.truncated_count, Some(1));
+    assert_eq!(summary.completed_job_count, Some(1));
+    let trunc_dim = summary.dimensions.iter().find(|d| d.truncated).unwrap();
+    assert_eq!(
+        trunc_dim.absence_kind,
+        eggsearch::core::retrieval_status::EvidenceAbsenceKind::ResultTruncatedByCap
+    );
+}

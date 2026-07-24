@@ -15,7 +15,7 @@ All commands from project root. CI runs tests on both Ubuntu Linux and macOS.
 |---------|--------|
 | `cargo fmt --check` | PASS |
 | `cargo clippy --all-targets --all-features -- -D warnings` | PASS (0 warnings) |
-| `cargo test --locked --all-features` | **4,174 passed**, 9 ignored (42 suites) |
+| `cargo test --locked --all-features` | **4,315 passed**, 14 ignored (48 suites) |
 | `cargo test --locked --no-default-features` | **3,832 passed** (42 suites) |
 | `cargo test --locked --features mock` | **4,159 passed** (42 suites) |
 | `cargo test --locked --features pdf` | **3,847 passed** (42 suites) |
@@ -120,6 +120,8 @@ Criterion benchmarks (100 samples each):
 | `resolve_workflow_model_12_combinations` | ~2–5 µs | 12 tool/profile/domain combinations |
 | `detect_entity_scoped_conflicts_10_cards` | ~5–15 µs | Entity-scoped conflict detection |
 | `summarize_retrieval_5_dimensions` | ~1–3 µs | Retrieval summary from 5 dimensions |
+| `build_forge_response_200_entries` | *(baseline pending)* | Multi-page forge response building |
+| `inventory_search_near_cap_4096` | *(baseline pending)* | Inventory search at 4096 entries (near cap) |
 
 All baselines are in the microsecond range — well within interactive performance targets. No unbounded memory growth. Release build completes in under 2 minutes.
 
@@ -127,9 +129,13 @@ All baselines are in the microsecond range — well within interactive performan
 
 ## Fuzz Targets
 
-19 fuzz targets in `fuzz/fuzz_targets/` using `libfuzzer-sys` + ASan:
+23 fuzz targets in `fuzz/fuzz_targets/` using `libfuzzer-sys` + ASan:
 
-`bounded_response_reader`, `build_document_chunks`, `canonicalize_url`, `chunk_boundary`, `extract_content`, `extract_content_bytes`, `extract_pdf_text`, `mixed_utf8_extract`, `parse_content_length`, `sanitize_pipeline`, `scan_injection_markers`, `strip_control_chars`, `validate_content_type`, `validate_redirect_chain`, `validate_redirect_target`, `validate_url`, `workflow_kind_parse`, `classify_absence`, `detect_entity_scoped_conflicts`
+`attempt_summary_generation`, `bounded_response_reader`, `build_document_chunks`, `canonicalize_url`, `chunk_boundary`, `classify_absence`, `detect_entity_scoped_conflicts`, `extract_content`, `extract_content_bytes`, `extract_pdf_text`, `mixed_utf8_extract`, `parse_content_length`, `research_role_mapping`, `retrieval_failure_expansion`, `sanitize_pipeline`, `scan_injection_markers`, `strip_control_chars`, `validate_content_type`, `validate_redirect_chain`, `validate_redirect_target`, `validate_url`, `workflow_kind_parse`, `workflow_resolution`
+
+Additional property test coverage for termination controller trigger mapping:
+
+- `tests/bounded_command.rs`: `test_bounded_command_stdout_cap_breach_terminates_quickly`, `test_bounded_command_stderr_cap_breach_terminates_quickly` exercise `ProcessTerminationController` trigger-to-reason mapping under stdout and stderr saturation
 
 Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). They are not runnable on stable Rust. Property tests (`proptest`) in the `tests/property_*.rs` files provide equivalent coverage on stable, including:
 
@@ -142,7 +148,7 @@ Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). They ar
 
 ## Static Guard Tests
 
-6 source-contract tests in `tests/static_guards.rs` enforce architectural invariants:
+14 source-contract tests in `tests/static_guards.rs` enforce architectural invariants:
 
 1. No unbounded `.text().await` / `.bytes().await` / `.json().await` in forge transport
 2. No unbounded `.output()` in local Git inventory files
@@ -252,11 +258,11 @@ Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). They ar
 - [x] Formatting and clippy pass
 - [x] All feature test matrices pass (4,174 / 3,832 / 4,159 / 3,847)
 - [x] Hardening and schema/corpus tests pass (265 + 322 + 8 contract)
-- [x] 19 fuzz targets smoke-pass (property tests on stable; ASan on nightly)
+- [x] 23 fuzz targets smoke-pass (property tests on stable; ASan on nightly)
 - [x] Live-smoke covers GitHub, GitLab, Codeberg, and Gitea/Forgejo (9/9 pass, fallback mode)
 - [x] macOS local-workspace matrix passes (9/9 pass)
 - [x] CI runs tests on both Ubuntu Linux and macOS
-- [x] Performance and memory evidence recorded (all µs-range, 9 benchmarks including affected paths)
+- [x] Performance and memory evidence recorded (all µs-range, 19 benchmarks including affected paths)
 - [x] Documentation matches implementation (documentation audit complete)
 - [x] Release build and publish dry-run pass
 
@@ -277,4 +283,48 @@ Fuzz targets require nightly Rust with address sanitizer (`cargo-fuzz`). They ar
 **Provisional release candidate.** All deterministic safety and correctness gates pass. CI runs on both Ubuntu Linux and macOS. Live-smoke evidence is captured in fallback mode only (no API tokens configured). Native forge smoke test infrastructure exists (`tests/native_forge_smoke.rs`) but has not been executed in this environment. No known issue can cause credential disclosure, unbounded memory/process behavior, provenance misrepresentation, workspace escape, or materially misleading evidence semantics. Promotion to release candidate requires:
 
 1. Native provider smoke evidence with configured API tokens (tests exist in `tests/native_forge_smoke.rs`)
-2. Regenerated verification record on the release commit
+
+---
+
+## Release Subject Protocol (R/E)
+
+This project follows a two-commit release protocol to ensure the release subject SHA is a truthful, unmodified identifier:
+
+1. **Release subject commit (`R`)** — the final code-bearing commit. No known implementation changes remain. Full deterministic CI and native smoke run against `R`. The CI run IDs for `R` are recorded below.
+
+2. **Evidence commit (`E`)** — updates only `docs/release-verification.md` and permitted evidence manifests/pointers. Names `R` as the verified runtime subject. Records exact CI/native workflow run IDs for `R`. Contains no production code changes.
+
+3. `git diff --name-only R..E` must contain only approved evidence files.
+
+4. The release-candidate tag is created at `E`.
+
+### Current Release Subject
+
+| Field | Value |
+|-------|-------|
+| `release_subject_commit` | `cf18532` (test infrastructure completion) |
+| `evidence_commit` | *(pending — to be created after CI/native smoke for R)* |
+| `classification` | Provisional release candidate |
+
+### CI Run IDs for Release Subject R
+
+Record durable CI run identifiers after the full deterministic matrix completes on `R`:
+
+| Check | Workflow | Run ID | Status |
+|-------|----------|--------|--------|
+| Linux feature matrix | `ci.yml` | *(pending)* | |
+| macOS feature matrix | `ci.yml` | *(pending)* | |
+| clippy | `ci.yml` | *(pending)* | |
+| formatting | `ci.yml` | *(pending)* | |
+| documentation | `ci.yml` | *(pending)* | |
+| release build | `ci.yml` | *(pending)* | |
+| publish dry run | `ci.yml` | *(pending)* | |
+| schema/corpus tests | `ci.yml` | *(pending)* | |
+| hardening tests | `ci.yml` | *(pending)* | |
+| fuzz smoke | `ci.yml` | *(pending)* | |
+| native forge smoke — GitHub | `native-forge-smoke.yml` | *(pending)* | |
+| native forge smoke — GitLab | `native-forge-smoke.yml` | *(pending)* | |
+| native forge smoke — Codeberg | `native-forge-smoke.yml` | *(pending)* | |
+| native forge smoke — Gitea | `native-forge-smoke.yml` | *(pending)* | |
+
+Populate this table after CI completes on the release subject commit `R`. The evidence commit `E` must reference these exact run IDs.

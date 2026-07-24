@@ -147,6 +147,32 @@ async fn native_github_public_repo() {
         v["provenance_pinned"].as_bool() == Some(true),
         "native mode should have provenance_pinned=true"
     );
+
+    let bytes_observed = v["response_bytes_observed"]
+        .as_u64()
+        .expect("response_bytes_observed present");
+    assert!(
+        bytes_observed > 0,
+        "response_bytes_observed should be > 0 for native mode, got {bytes_observed}"
+    );
+
+    let aggregate_limit = v["aggregate_limit"]
+        .as_u64()
+        .expect("aggregate_limit present");
+    assert!(
+        aggregate_limit > 0,
+        "aggregate_limit should be > 0, got {aggregate_limit}"
+    );
+    assert!(
+        bytes_observed <= aggregate_limit,
+        "response_bytes_observed ({bytes_observed}) must not exceed aggregate_limit ({aggregate_limit})"
+    );
+
+    let request_count = v["request_count"].as_u64().expect("request_count present");
+    assert!(
+        request_count > 0,
+        "request_count should be > 0, got {request_count}"
+    );
 }
 
 #[tokio::test]
@@ -201,6 +227,32 @@ async fn native_github_slash_ref() {
         ref_name.contains('/'),
         "resolved ref should contain a slash, got ref_name={ref_name}"
     );
+
+    let bytes_observed = v["response_bytes_observed"]
+        .as_u64()
+        .expect("response_bytes_observed present");
+    assert!(
+        bytes_observed > 0,
+        "response_bytes_observed should be > 0 for native slash-ref, got {bytes_observed}"
+    );
+
+    let aggregate_limit = v["aggregate_limit"]
+        .as_u64()
+        .expect("aggregate_limit present");
+    assert!(
+        aggregate_limit > 0,
+        "aggregate_limit should be > 0, got {aggregate_limit}"
+    );
+    assert!(
+        bytes_observed <= aggregate_limit,
+        "response_bytes_observed ({bytes_observed}) must not exceed aggregate_limit ({aggregate_limit})"
+    );
+
+    let request_count = v["request_count"].as_u64().expect("request_count present");
+    assert!(
+        request_count > 0,
+        "request_count should be > 0, got {request_count}"
+    );
 }
 
 #[tokio::test]
@@ -251,6 +303,32 @@ async fn native_gitlab_public_repo() {
     let has_entries = v["root_entries"].as_array().is_some_and(|a| !a.is_empty())
         || v["entries"].as_array().is_some_and(|a| !a.is_empty());
     assert!(has_entries, "native mode should return tree entries");
+
+    let bytes_observed = v["response_bytes_observed"]
+        .as_u64()
+        .expect("response_bytes_observed present");
+    assert!(
+        bytes_observed > 0,
+        "response_bytes_observed should be > 0 for native GitLab, got {bytes_observed}"
+    );
+
+    let aggregate_limit = v["aggregate_limit"]
+        .as_u64()
+        .expect("aggregate_limit present");
+    assert!(
+        aggregate_limit > 0,
+        "aggregate_limit should be > 0, got {aggregate_limit}"
+    );
+    assert!(
+        bytes_observed <= aggregate_limit,
+        "response_bytes_observed ({bytes_observed}) must not exceed aggregate_limit ({aggregate_limit})"
+    );
+
+    let request_count = v["request_count"].as_u64().expect("request_count present");
+    assert!(
+        request_count > 0,
+        "request_count should be > 0, got {request_count}"
+    );
 }
 
 #[tokio::test]
@@ -301,6 +379,32 @@ async fn native_codeberg_public_repo() {
     let has_entries = v["root_entries"].as_array().is_some_and(|a| !a.is_empty())
         || v["entries"].as_array().is_some_and(|a| !a.is_empty());
     assert!(has_entries, "native mode should return tree entries");
+
+    let bytes_observed = v["response_bytes_observed"]
+        .as_u64()
+        .expect("response_bytes_observed present");
+    assert!(
+        bytes_observed > 0,
+        "response_bytes_observed should be > 0 for native Codeberg, got {bytes_observed}"
+    );
+
+    let aggregate_limit = v["aggregate_limit"]
+        .as_u64()
+        .expect("aggregate_limit present");
+    assert!(
+        aggregate_limit > 0,
+        "aggregate_limit should be > 0, got {aggregate_limit}"
+    );
+    assert!(
+        bytes_observed <= aggregate_limit,
+        "response_bytes_observed ({bytes_observed}) must not exceed aggregate_limit ({aggregate_limit})"
+    );
+
+    let request_count = v["request_count"].as_u64().expect("request_count present");
+    assert!(
+        request_count > 0,
+        "request_count should be > 0, got {request_count}"
+    );
 }
 
 #[tokio::test]
@@ -354,4 +458,340 @@ async fn native_gitea_public_repo() {
     let has_entries = v["root_entries"].as_array().is_some_and(|a| !a.is_empty())
         || v["entries"].as_array().is_some_and(|a| !a.is_empty());
     assert!(has_entries, "native mode should return tree entries");
+
+    let bytes_observed = v["response_bytes_observed"]
+        .as_u64()
+        .expect("response_bytes_observed present");
+    assert!(
+        bytes_observed > 0,
+        "response_bytes_observed should be > 0 for native Gitea, got {bytes_observed}"
+    );
+
+    let aggregate_limit = v["aggregate_limit"]
+        .as_u64()
+        .expect("aggregate_limit present");
+    assert!(
+        aggregate_limit > 0,
+        "aggregate_limit should be > 0, got {aggregate_limit}"
+    );
+    assert!(
+        bytes_observed <= aggregate_limit,
+        "response_bytes_observed ({bytes_observed}) must not exceed aggregate_limit ({aggregate_limit})"
+    );
+    let request_count = v["request_count"].as_u64().expect("request_count present");
+    assert!(
+        request_count > 0,
+        "request_count should be > 0, got {request_count}"
+    );
+}
+
+// ===========================================================================
+// Direct forge_adapter::fetch_tree tests
+//
+// These call the adapter directly, proving the native path without
+// MCP tool routing. They run independently of provider registration.
+// ===========================================================================
+
+use eggsearch::core::code_metadata::CodeHost;
+use eggsearch::core::repo_map::RepoMapRequest;
+use eggsearch::meta::forge_adapter::{fetch_tree, ForgeEndpointPolicy, ForgeTreeConfig};
+
+fn direct_fetch_config_github() -> Option<ForgeTreeConfig> {
+    let token = std::env::var("GITHUB_TOKEN").ok()?;
+    if token.is_empty() {
+        return None;
+    }
+    Some(ForgeTreeConfig {
+        api_key: Some(token),
+        base_url: None,
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
+    })
+}
+
+fn direct_fetch_config_gitlab() -> Option<ForgeTreeConfig> {
+    let token = std::env::var("GITLAB_TOKEN").ok()?;
+    if token.is_empty() {
+        return None;
+    }
+    Some(ForgeTreeConfig {
+        api_key: Some(token),
+        base_url: None,
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
+    })
+}
+
+fn direct_fetch_config_codeberg() -> Option<ForgeTreeConfig> {
+    let token = std::env::var("CODEBERG_TOKEN").ok()?;
+    if token.is_empty() {
+        return None;
+    }
+    Some(ForgeTreeConfig {
+        api_key: Some(token),
+        base_url: Some("https://codeberg.org/api/v1".to_string()),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
+    })
+}
+
+fn direct_fetch_config_gitea() -> Option<ForgeTreeConfig> {
+    let token = std::env::var("GITEA_TOKEN").ok()?;
+    if token.is_empty() {
+        return None;
+    }
+    let base_url = std::env::var("GITEA_INSTANCE_URL")
+        .unwrap_or_else(|_| "https://gitea.com/api/v1".to_string());
+    Some(ForgeTreeConfig {
+        api_key: Some(token),
+        base_url: Some(base_url),
+        endpoint_policy: ForgeEndpointPolicy::default(),
+        forge_budget_limit: None,
+    })
+}
+
+fn default_request(host: CodeHost, owner: &str, repo: &str, ref_name: &str) -> RepoMapRequest {
+    RepoMapRequest {
+        query: String::new(),
+        host: Some(host),
+        owner: owner.into(),
+        repo: repo.into(),
+        ref_name: Some(ref_name.into()),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires live network, live-smoke feature, and GITHUB_TOKEN"]
+async fn direct_fetch_tree_github() {
+    let config = match direct_fetch_config_github() {
+        Some(c) => c,
+        None => {
+            eprintln!("SKIP: GITHUB_TOKEN not configured");
+            return;
+        }
+    };
+    let req = default_request(CodeHost::Github, "tokio-rs", "axum", "main");
+    let response = fetch_tree(CodeHost::Github, "tokio-rs", "axum", &req, &config)
+        .await
+        .expect("direct fetch_tree for GitHub must succeed");
+
+    assert_eq!(
+        response.provider_id, "github_tree",
+        "adapter must identify as github_tree"
+    );
+    assert!(
+        !response.entries.is_empty(),
+        "GitHub tree must have entries"
+    );
+    let commit_sha = response
+        .identity
+        .resolved_commit_sha
+        .as_deref()
+        .expect("resolved_commit_sha present");
+    assert!(
+        commit_sha.len() >= 40,
+        "commit_sha should be a full SHA, got {commit_sha}"
+    );
+    assert!(
+        response.identity.requested_ref.is_some(),
+        "requested_ref must be preserved"
+    );
+    assert!(
+        response.identity.resolved_ref_name.is_some(),
+        "resolved_ref_name must be present"
+    );
+    assert!(
+        response.response_bytes_observed > 0,
+        "response_bytes_observed must be > 0"
+    );
+    assert!(response.request_count > 0, "request_count must be > 0");
+    assert!(
+        response.response_bytes_observed <= response.aggregate_limit,
+        "response_bytes_observed ({}) must not exceed aggregate_limit ({})",
+        response.response_bytes_observed,
+        response.aggregate_limit
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires live network, live-smoke feature, and GITLAB_TOKEN"]
+async fn direct_fetch_tree_gitlab() {
+    let config = match direct_fetch_config_gitlab() {
+        Some(c) => c,
+        None => {
+            eprintln!("SKIP: GITLAB_TOKEN not configured");
+            return;
+        }
+    };
+    let req = default_request(CodeHost::Gitlab, "gitlab-org", "gitlab-runner", "main");
+    let response = fetch_tree(
+        CodeHost::Gitlab,
+        "gitlab-org",
+        "gitlab-runner",
+        &req,
+        &config,
+    )
+    .await
+    .expect("direct fetch_tree for GitLab must succeed");
+
+    assert_eq!(
+        response.provider_id, "gitlab_tree",
+        "adapter must identify as gitlab_tree"
+    );
+    assert!(
+        !response.entries.is_empty(),
+        "GitLab tree must have entries"
+    );
+    let commit_sha = response
+        .identity
+        .resolved_commit_sha
+        .as_deref()
+        .expect("resolved_commit_sha present");
+    assert!(
+        commit_sha.len() >= 40,
+        "commit_sha should be a full SHA, got {commit_sha}"
+    );
+    assert!(
+        response.response_bytes_observed > 0,
+        "response_bytes_observed must be > 0"
+    );
+    assert!(response.request_count > 0, "request_count must be > 0");
+    assert!(
+        response.response_bytes_observed <= response.aggregate_limit,
+        "response_bytes_observed ({}) must not exceed aggregate_limit ({})",
+        response.response_bytes_observed,
+        response.aggregate_limit
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires live network, live-smoke feature, and CODEBERG_TOKEN"]
+async fn direct_fetch_tree_codeberg() {
+    let config = match direct_fetch_config_codeberg() {
+        Some(c) => c,
+        None => {
+            eprintln!("SKIP: CODEBERG_TOKEN not configured");
+            return;
+        }
+    };
+    let req = default_request(CodeHost::Codeberg, "Codeberg", "Forgejo", "main");
+    let response = fetch_tree(CodeHost::Codeberg, "Codeberg", "Forgejo", &req, &config)
+        .await
+        .expect("direct fetch_tree for Codeberg must succeed");
+
+    assert_eq!(
+        response.provider_id, "codeberg_tree",
+        "adapter must identify as codeberg_tree"
+    );
+    assert!(
+        !response.entries.is_empty(),
+        "Codeberg tree must have entries"
+    );
+    let commit_sha = response
+        .identity
+        .resolved_commit_sha
+        .as_deref()
+        .expect("resolved_commit_sha present");
+    assert!(
+        commit_sha.len() >= 40,
+        "commit_sha should be a full SHA, got {commit_sha}"
+    );
+    assert!(
+        response.response_bytes_observed > 0,
+        "response_bytes_observed must be > 0"
+    );
+    assert!(response.request_count > 0, "request_count must be > 0");
+    assert!(
+        response.response_bytes_observed <= response.aggregate_limit,
+        "response_bytes_observed ({}) must not exceed aggregate_limit ({})",
+        response.response_bytes_observed,
+        response.aggregate_limit
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires live network, live-smoke feature, and GITEA_TOKEN"]
+async fn direct_fetch_tree_gitea() {
+    let config = match direct_fetch_config_gitea() {
+        Some(c) => c,
+        None => {
+            eprintln!("SKIP: GITEA_TOKEN not configured");
+            return;
+        }
+    };
+    let req = default_request(CodeHost::Gitea, "go-gitea", "gitea", "main");
+    let response = fetch_tree(CodeHost::Gitea, "go-gitea", "gitea", &req, &config)
+        .await
+        .expect("direct fetch_tree for Gitea must succeed");
+
+    assert!(
+        response.provider_id.starts_with("gitea"),
+        "adapter must identify as gitea, got {}",
+        response.provider_id
+    );
+    assert!(!response.entries.is_empty(), "Gitea tree must have entries");
+    let commit_sha = response
+        .identity
+        .resolved_commit_sha
+        .as_deref()
+        .expect("resolved_commit_sha present");
+    assert!(
+        commit_sha.len() >= 40,
+        "commit_sha should be a full SHA, got {commit_sha}"
+    );
+    assert!(
+        response.response_bytes_observed > 0,
+        "response_bytes_observed must be > 0"
+    );
+    assert!(response.request_count > 0, "request_count must be > 0");
+    assert!(
+        response.response_bytes_observed <= response.aggregate_limit,
+        "response_bytes_observed ({}) must not exceed aggregate_limit ({})",
+        response.response_bytes_observed,
+        response.aggregate_limit
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires live network, live-smoke feature, and GITHUB_TOKEN"]
+async fn direct_fetch_tree_github_slash_ref() {
+    let config = match direct_fetch_config_github() {
+        Some(c) => c,
+        None => {
+            eprintln!("SKIP: GITHUB_TOKEN not configured");
+            return;
+        }
+    };
+    let req = default_request(CodeHost::Github, "tokio-rs", "axum", "v0.7.x");
+    let response = fetch_tree(CodeHost::Github, "tokio-rs", "axum", &req, &config)
+        .await
+        .expect("direct fetch_tree for GitHub slash-ref must succeed");
+
+    assert_eq!(
+        response.provider_id, "github_tree",
+        "adapter must identify as github_tree"
+    );
+    assert!(
+        !response.entries.is_empty(),
+        "GitHub tree must have entries for slash ref"
+    );
+    let commit_sha = response
+        .identity
+        .resolved_commit_sha
+        .as_deref()
+        .expect("resolved_commit_sha present");
+    assert!(
+        commit_sha.len() >= 40,
+        "commit_sha should be a full SHA, got {commit_sha}"
+    );
+    assert!(
+        response.identity.requested_ref.as_deref() == Some("v0.7.x"),
+        "requested_ref must be preserved as v0.7.x"
+    );
+    assert!(
+        response.response_bytes_observed > 0,
+        "response_bytes_observed must be > 0"
+    );
+    assert!(response.request_count > 0, "request_count must be > 0");
 }

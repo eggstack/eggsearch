@@ -7,6 +7,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: native-forge-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,44 +21,193 @@ jobs:
     name: github native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      result: ${{ steps.smoke.outputs.result }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Run GitHub native smoke tests
+        id: smoke
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 github
-        continue-on-error: false
+        run: |
+          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 github 2>&1 | tee smoke-output.log; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+      - name: Generate evidence manifest
+        if: always()
+        run: |
+          SHA=$(git rev-parse HEAD)
+          RUN_ID=${{ github.run_id }}
+          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
+          cat > native-smoke-github.json <<EOF
+          {
+            "release_subject": "${SHA}",
+            "workflow_run_id": ${RUN_ID},
+            "provider": "github",
+            "target": "tokio-rs/axum",
+            "requested_ref": "main",
+            "result": "${RESULT}",
+            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+      - name: Upload evidence manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-github
+          path: native-smoke-github.json
+          retention-days: 90
 
   gitlab:
     name: gitlab native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      result: ${{ steps.smoke.outputs.result }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Run GitLab native smoke tests
-        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitlab
-        continue-on-error: false
+        id: smoke
+        run: |
+          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitlab 2>&1 | tee smoke-output.log; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+      - name: Generate evidence manifest
+        if: always()
+        run: |
+          SHA=$(git rev-parse HEAD)
+          RUN_ID=${{ github.run_id }}
+          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
+          cat > native-smoke-gitlab.json <<EOF
+          {
+            "release_subject": "${SHA}",
+            "workflow_run_id": ${RUN_ID},
+            "provider": "gitlab",
+            "target": "gitlab-org/gitlab-runner",
+            "requested_ref": "main",
+            "result": "${RESULT}",
+            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+      - name: Upload evidence manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-gitlab
+          path: native-smoke-gitlab.json
+          retention-days: 90
 
   codeberg:
     name: codeberg native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      result: ${{ steps.smoke.outputs.result }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Run Codeberg native smoke tests
-        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 codeberg
-        continue-on-error: false
+        id: smoke
+        run: |
+          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 codeberg 2>&1 | tee smoke-output.log; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+      - name: Generate evidence manifest
+        if: always()
+        run: |
+          SHA=$(git rev-parse HEAD)
+          RUN_ID=${{ github.run_id }}
+          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
+          cat > native-smoke-codeberg.json <<EOF
+          {
+            "release_subject": "${SHA}",
+            "workflow_run_id": ${RUN_ID},
+            "provider": "codeberg",
+            "target": "Codeberg/Forgejo",
+            "requested_ref": "main",
+            "result": "${RESULT}",
+            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+      - name: Upload evidence manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-codeberg
+          path: native-smoke-codeberg.json
+          retention-days: 90
 
   gitea:
     name: gitea native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      result: ${{ steps.smoke.outputs.result }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Run Gitea native smoke tests
-        run: cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitea
-        continue-on-error: false
+        id: smoke
+        run: |
+          if cargo test --locked --all-features --test native_forge_smoke -- --ignored --test-threads=1 gitea 2>&1 | tee smoke-output.log; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+      - name: Generate evidence manifest
+        if: always()
+        run: |
+          SHA=$(git rev-parse HEAD)
+          RUN_ID=${{ github.run_id }}
+          RESULT=${{ steps.smoke.outputs.result || 'skip' }}
+          cat > native-smoke-gitea.json <<EOF
+          {
+            "release_subject": "${SHA}",
+            "workflow_run_id": ${RUN_ID},
+            "provider": "gitea",
+            "target": "go-gitea/gitea",
+            "requested_ref": "main",
+            "result": "${RESULT}",
+            "executed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+      - name: Upload evidence manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-gitea
+          path: native-smoke-gitea.json
+          retention-days: 90
+
+  summary:
+    name: native smoke summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [github, gitlab, codeberg, gitea]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo "GitHub: ${{ needs.github.outputs.result || 'not run' }}"
+          echo "GitLab: ${{ needs.gitlab.outputs.result || 'not run' }}"
+          echo "Codeberg: ${{ needs.codeberg.outputs.result || 'not run' }}"
+          echo "Gitea: ${{ needs.gitea.outputs.result || 'not run' }}"
+          if [[ "${{ needs.github.outputs.result }}" == "fail" ]] || \
+             [[ "${{ needs.gitlab.outputs.result }}" == "fail" ]] || \
+             [[ "${{ needs.codeberg.outputs.result }}" == "fail" ]] || \
+             [[ "${{ needs.gitea.outputs.result }}" == "fail" ]]; then
+            echo "One or more native smoke tests failed"
+            exit 1
+          fi

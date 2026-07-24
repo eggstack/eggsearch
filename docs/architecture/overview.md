@@ -295,13 +295,21 @@ Forge API base URLs are validated by `validate_base_url()` before use: embedded 
 
 11. **Race-resistant local file opening** — `safe_open.rs` provides `safe_open_relative()` which uses descriptor-relative file opening via `openat`/`openat2` with `O_NOFOLLOW`. On Linux, it attempts `openat2` with `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS`, falling back to `openat` with `O_NOFOLLOW` on older kernels. For `follow_symlinks=true` on Linux, uses `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS` (omitting `RESOLVE_NO_SYMLINKS`) to let the kernel enforce containment while allowing symlinks. On non-Linux Unix platforms, `follow_symlinks=true` returns `SafeSymlinkFollowingUnsupported` because no race-safe containment primitive is available. Each path component is opened relative to the parent directory descriptor, eliminating TOCTOU races between validation and open. The final file descriptor is verified via `fstat` for regular file type and size limits.
 
-12. **Evidence workflow selection and conflict scoping** — `resolve_workflow_model()` maps tool name, profile, and research domain to a deterministic `WorkflowCoverageModel` defining required/recommended/optional evidence roles for each of 10 core workflows. `ConflictEntityKey` (entity type + canonical ID + field) provides composite grouping for conflict detection, preventing unrelated sources from being compared. Evidence roles are materialized onto all source cards via `materialize_evidence_roles()`. `RetrievalAttempt` tracks per-provider outcomes (success, failure, timeout, rate limit, skip, truncation) for attempt-derived retrieval summaries. Both are wired into all result conversion paths via `evidence_postprocess.rs`.
+12. **Evidence workflow selection and conflict scoping** — `resolve_workflow_model()` maps tool name, profile, and research domain to a deterministic `WorkflowCoverageModel` defining required/recommended/optional evidence roles for each of 10 core workflows. `ConflictEntityKey` (entity type + canonical ID + field) provides composite grouping for conflict detection, preventing unrelated sources from being compared. Conflict source IDs identify only the disagreeing cards, not entire entity groups. Evidence roles are materialized onto all source cards via `materialize_evidence_roles()`. `RetrievalAttempt` tracks per-provider outcomes (success, failure, timeout, rate limit, skip, truncation) for attempt-derived retrieval summaries. Attempt outcomes and absence kinds are related but distinct: outcomes describe what happened during retrieval, while absence kinds describe the impact on evidence coverage. Both are wired into all result conversion paths via `evidence_postprocess.rs`.
 
 13. **Semantic research subquery intent** — Research planner subqueries carry typed `intended_roles` derived from `ResearchSourceType`, flowing from planner through dispatch into postprocessing. This replaces opaque `rq_*` label inference with explicit role semantics.
 
 14. **Native security attempt collection** — Native advisory lookups (CVE/GHSA/OSV/RustSec/KEV) produce `RetrievalAttempt` records that merge into the retrieval summary alongside web-search results. Lookup failures are not silently discarded; they appear as retrieval-attempt entries.
 
 15. **Multi-role failure expansion** — Retrieval failures for research subqueries expand across all `intended_roles` on the subquery, not just a single role. This prevents incomplete failure attribution when a subquery targets multiple evidence dimensions.
+
+16. **Release evidence R/E protocol** — Release evidence uses a two-commit protocol: release subject commit `R` (code-bearing) and evidence commit `E` (docs/manifests only). `docs/release-verification.md` records both `R` and `E` and the CI run IDs for `R`. Classification remains provisional until native and CI evidence is present.
+
+17. **Native smoke tests are distinct from fallback** — Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. Live-smoke tests (`--features live-smoke`) use fallback mode. Native evidence is required for release; fallback evidence alone is insufficient.
+
+18. **DNS validation is preflight-only** — DNS address classification happens before connection. No connection-time DNS pinning is enforced. Documented in `docs/architecture/meta.md`.
+
+19. **Windows is unsupported** — The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix and is not claimed as supported.
 
 ---
 

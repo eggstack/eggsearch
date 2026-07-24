@@ -284,3 +284,65 @@ fn codegg_aggregate_counts_match_dimensions() {
     assert_eq!(summary.failed_job_count, Some(1));
     assert_eq!(summary.zero_result_count, Some(1));
 }
+
+#[test]
+fn codegg_native_security_attempt_dimensions_consumed() {
+    let native_attempt = RetrievalAttempt {
+        provider_id: "osv".to_string(),
+        subquery_id: Some("advisory_by_cve".to_string()),
+        intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 1,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: Some("fp_native_abc".to_string()),
+        duration_ms: Some(50),
+    };
+    let kev_attempt = RetrievalAttempt {
+        provider_id: "cisa_kev".to_string(),
+        subquery_id: Some("kev_by_cve".to_string()),
+        intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 1,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: Some("fp_kev_abc".to_string()),
+        duration_ms: Some(30),
+    };
+    let web_attempt = make_attempt(
+        "duckduckgo",
+        RetrievalAttemptOutcome::SuccessWithResults,
+        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+        3,
+    );
+    let summary =
+        build_retrieval_summary_from_attempts(&[native_attempt, kev_attempt, web_attempt]);
+
+    let native_dims: Vec<_> = summary
+        .dimensions
+        .iter()
+        .filter(|d| d.provider_id.as_deref() == Some("osv"))
+        .collect();
+    assert_eq!(
+        native_dims.len(),
+        1,
+        "native OSV attempt must produce a dimension"
+    );
+    assert_eq!(
+        native_dims[0].subquery_id.as_deref(),
+        Some("advisory_by_cve")
+    );
+
+    let kev_dims: Vec<_> = summary
+        .dimensions
+        .iter()
+        .filter(|d| d.provider_id.as_deref() == Some("cisa_kev"))
+        .collect();
+    assert_eq!(kev_dims.len(), 1, "KEV attempt must produce a dimension");
+    assert_eq!(kev_dims[0].subquery_id.as_deref(), Some("kev_by_cve"));
+
+    assert_eq!(summary.attempted_job_count, Some(3));
+    assert_eq!(summary.completed_job_count, Some(3));
+}

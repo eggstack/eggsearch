@@ -2355,3 +2355,92 @@ mod tests {
         assert!(resp.commit_sha.is_none());
     }
 }
+
+#[cfg(test)]
+mod forge_budget_property_tests {
+    use super::*;
+
+    #[test]
+    fn remaining_never_underflows() {
+        let limits = [1, 100, 10_000, 1_000_000];
+        let byte_sets: Vec<Vec<usize>> = vec![
+            vec![],
+            vec![0],
+            vec![50, 30, 20],
+            vec![100_000, 200_000, 300_000],
+            vec![0, 0, 0, 0, 0],
+        ];
+        for limit in limits {
+            for bytes in &byte_sets {
+                let mut budget = ForgeReadBudget::new(limit);
+                for b in bytes {
+                    budget.consume(*b, ForgeRequestKind::TreePage);
+                }
+                assert!(
+                    budget.remaining() <= limit,
+                    "remaining {} must be <= limit {}",
+                    budget.remaining(),
+                    limit
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn exhausted_set_exactly_once() {
+        let mut budget = ForgeReadBudget::new(100);
+        let mut exhaust_count = 0;
+        for b in &[10, 20, 30, 40, 50, 60] {
+            let was_exhausted = budget.exceeded();
+            budget.consume(*b, ForgeRequestKind::TreePage);
+            if !was_exhausted && budget.exceeded() {
+                exhaust_count += 1;
+            }
+        }
+        assert!(
+            exhaust_count <= 1,
+            "exhausted must be set at most once, was set {} times",
+            exhaust_count
+        );
+    }
+
+    #[test]
+    fn request_count_matches_consume_count() {
+        let mut budget = ForgeReadBudget::new(1_000_000);
+        for b in &[10, 20, 30, 40, 50] {
+            budget.consume(*b, ForgeRequestKind::TreePage);
+        }
+        assert_eq!(budget.request_count, 5);
+    }
+
+    #[test]
+    fn aggregate_observed_saturating_add() {
+        let mut budget = ForgeReadBudget::new(100);
+        budget.consume(50, ForgeRequestKind::TreePage);
+        budget.consume(60, ForgeRequestKind::TreePage);
+        assert_eq!(budget.aggregate_observed, 110);
+        assert!(budget.exceeded());
+    }
+
+    #[test]
+    fn telemetry_reflects_actual_state() {
+        let mut budget = ForgeReadBudget::new(1000);
+        budget.consume(100, ForgeRequestKind::TreePage);
+        budget.consume(200, ForgeRequestKind::TreePage);
+        let tel = budget.telemetry();
+        assert_eq!(tel.aggregate_limit, 1000);
+        assert_eq!(tel.aggregate_observed, 300);
+        assert_eq!(tel.remaining, 700);
+        assert_eq!(tel.request_count, 2);
+        assert!(!budget.exceeded());
+    }
+
+    #[test]
+    fn zero_byte_consume_does_not_exhaust() {
+        let mut budget = ForgeReadBudget::new(100);
+        for _ in 0..50 {
+            budget.consume(0, ForgeRequestKind::TreePage);
+        }
+        assert!(!budget.exceeded());
+    }
+}

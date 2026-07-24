@@ -1560,7 +1560,9 @@ fn skip_reason_to_attempt(
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
-        query_fingerprint: None,
+        query_fingerprint: Some(crate::core::retrieval_status::query_fingerprint_from_query(
+            &skip.provider_id,
+        )),
         duration_ms: None,
     }
 }

@@ -18,7 +18,9 @@ use tokio::task::JoinSet;
 use tracing::warn;
 
 use crate::core::evidence_role::EvidenceRole;
-use crate::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
+use crate::core::retrieval_status::{
+    query_fingerprint_from_query, RetrievalAttempt, RetrievalAttemptOutcome,
+};
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::SearchResult;
 use crate::meta::engines::SearchEngine;
@@ -41,6 +43,8 @@ pub(crate) struct DispatchJob {
     pub provider_order: usize,
     /// Evidence roles this job was intended to produce.
     pub intended_roles: Vec<EvidenceRole>,
+    /// If set, the job is skipped at dispatch with this outcome instead of being executed.
+    pub skip_not_applicable: bool,
 }
 
 /// Configuration for parallel dispatch.
@@ -211,6 +215,33 @@ pub(crate) async fn dispatch_parallel(
             while i < pending_queue.len() {
                 let idx = pending_queue[i];
                 let provider_id = &sorted_jobs[idx].provider_id;
+
+                // Jobs explicitly marked as not applicable are skipped without
+                // dispatch, producing a terminal NotApplicable attempt.
+                if sorted_jobs[idx].skip_not_applicable {
+                    let job = &sorted_jobs[idx];
+                    let duration_ms = job_start_times
+                        .remove(&(job.subquery_id.clone(), job.provider_id.clone()))
+                        .map(|t| t.elapsed().as_millis() as u64);
+                    *terminal_subquery_counts
+                        .entry(job.subquery_id.clone())
+                        .or_insert(0) += 1;
+                    collected_attempts.push(RetrievalAttempt {
+                        provider_id: job.provider_id.clone(),
+                        subquery_id: Some(job.subquery_id.clone()),
+                        intended_roles: job.intended_roles.clone(),
+                        outcome: RetrievalAttemptOutcome::NotApplicable,
+                        result_count: 0,
+                        error_class: None,
+                        deadline_interrupted: false,
+                        truncated: false,
+                        query_fingerprint: Some(query_fingerprint_from_query(&job.query)),
+                        duration_ms,
+                    });
+                    pending_queue.remove(i);
+                    continue;
+                }
+
                 if can_start(provider_id, &provider_active, global_active) {
                     // Start this job
                     let job = &sorted_jobs[idx];
@@ -401,6 +432,14 @@ pub(crate) async fn dispatch_parallel(
                         let duration_ms = job_start_times
                             .remove(&start_key)
                             .map(|t| t.elapsed().as_millis() as u64);
+                        let job_query = sorted_jobs
+                            .iter()
+                            .find(|j| {
+                                j.subquery_order == tr.subquery_order
+                                    && j.provider_order == tr.provider_order
+                            })
+                            .map(|j| j.query.as_str())
+                            .unwrap_or("");
 
                         match tr.result {
                             Ok(results) => {
@@ -415,7 +454,11 @@ pub(crate) async fn dispatch_parallel(
                                     provider_order: tr.provider_order,
                                     results,
                                 });
-                                let outcome = if result_count == 0 {
+                                let truncated_by_cap =
+                                    result_count > 0 && result_count >= config.candidate_limit;
+                                let outcome = if truncated_by_cap {
+                                    RetrievalAttemptOutcome::TruncatedAfterPartialSuccess
+                                } else if result_count == 0 {
                                     RetrievalAttemptOutcome::SuccessZeroResults
                                 } else {
                                     RetrievalAttemptOutcome::SuccessWithResults
@@ -428,8 +471,10 @@ pub(crate) async fn dispatch_parallel(
                                     result_count,
                                     error_class: None,
                                     deadline_interrupted: false,
-                                    truncated: false,
-                                    query_fingerprint: None,
+                                    truncated: truncated_by_cap,
+                                    query_fingerprint: Some(query_fingerprint_from_query(
+                                        job_query,
+                                    )),
                                     duration_ms,
                                 });
                             }
@@ -479,7 +524,9 @@ pub(crate) async fn dispatch_parallel(
                                     error_class,
                                     deadline_interrupted: false,
                                     truncated: false,
-                                    query_fingerprint: None,
+                                    query_fingerprint: Some(query_fingerprint_from_query(
+                                        job_query,
+                                    )),
                                     duration_ms,
                                 });
                             }
@@ -604,7 +651,7 @@ pub(crate) async fn dispatch_parallel(
                 error_class: None,
                 deadline_interrupted: true,
                 truncated: false,
-                query_fingerprint: None,
+                query_fingerprint: Some(query_fingerprint_from_query(&job.query)),
                 duration_ms,
             });
         }
@@ -621,6 +668,11 @@ pub(crate) async fn dispatch_parallel(
                 .find(|j| j.subquery_id == sid && j.provider_id == pid)
                 .map(|j| j.intended_roles.clone())
                 .unwrap_or_default();
+            let job_query = sorted_jobs
+                .iter()
+                .find(|j| j.subquery_id == sid && j.provider_id == pid)
+                .map(|j| j.query.clone())
+                .unwrap_or_default();
             collected_attempts.push(RetrievalAttempt {
                 provider_id: pid,
                 subquery_id: Some(sid),
@@ -630,7 +682,7 @@ pub(crate) async fn dispatch_parallel(
                 error_class: None,
                 deadline_interrupted: true,
                 truncated: false,
-                query_fingerprint: None,
+                query_fingerprint: Some(query_fingerprint_from_query(&job_query)),
                 duration_ms: Some(start.elapsed().as_millis() as u64),
             });
         }
@@ -752,6 +804,7 @@ mod tests {
             subquery_order,
             provider_order,
             intended_roles: vec![],
+            skip_not_applicable: false,
         }
     }
 

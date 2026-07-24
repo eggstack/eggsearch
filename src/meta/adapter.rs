@@ -798,7 +798,9 @@ impl MetadataSearchAdapter {
                 error_class: None,
                 deadline_interrupted: false,
                 truncated: false,
-                query_fingerprint: None,
+                query_fingerprint: Some(
+                    crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
+                ),
                 duration_ms: None,
             });
         }
@@ -822,7 +824,9 @@ impl MetadataSearchAdapter {
                 error_class: Some(ec.as_str().to_string()),
                 deadline_interrupted: false,
                 truncated: false,
-                query_fingerprint: None,
+                query_fingerprint: Some(
+                    crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
+                ),
                 duration_ms: None,
             });
         }
@@ -865,7 +869,7 @@ impl MetadataSearchAdapter {
                     error_class: None,
                     deadline_interrupted: true,
                     truncated: false,
-                    query_fingerprint: None,
+                    query_fingerprint: Some(crate::core::retrieval_status::query_fingerprint_from_query(&req.query)),
                     duration_ms: None,
                 });
             }
@@ -1900,6 +1904,9 @@ async fn dispatch_subqueries(
                     &subquery.label,
                 )
             };
+            let skip_not_applicable = intended_roles
+                .iter()
+                .any(|role| !engine.supports_role(role));
             jobs.push(DispatchJob {
                 subquery_id: subquery.label.clone(),
                 query: subquery.query.clone(),
@@ -1909,6 +1916,7 @@ async fn dispatch_subqueries(
                 subquery_order: subquery_idx,
                 provider_order: provider_idx,
                 intended_roles,
+                skip_not_applicable,
             });
         }
     }

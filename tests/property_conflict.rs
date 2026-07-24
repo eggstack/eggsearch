@@ -352,6 +352,36 @@ proptest! {
                 "every conflict must have at least one source ID");
         }
     }
+
+    #[test]
+    fn every_source_id_corresponds_to_emitted_value(
+        cards in proptest::collection::vec(card_with_stable_id_and_vuln_strategy(), 2..8),
+    ) {
+        let conflicts = detect_entity_scoped_conflicts(&cards);
+        for conflict in &conflicts {
+            prop_assert!(!conflict.values.is_empty(),
+                "conflict must have at least one value");
+            prop_assert!(conflict.source_ids.len() >= 2,
+                "conflict must reference at least 2 sources");
+            prop_assert!(conflict.values.len() <= conflict.source_ids.len(),
+                "number of distinct values must not exceed number of sources");
+        }
+    }
+
+    #[test]
+    fn conflict_id_stable_under_card_permutation(
+        card1 in card_with_stable_id_and_vuln_strategy(),
+        card2 in card_with_stable_id_and_vuln_strategy(),
+    ) {
+        let conflicts_ab = detect_entity_scoped_conflicts(&[card1.clone(), card2.clone()]);
+        let conflicts_ba = detect_entity_scoped_conflicts(&[card2, card1]);
+        let mut ids_ab: Vec<String> = conflicts_ab.iter().map(|c| c.id.clone()).collect();
+        let mut ids_ba: Vec<String> = conflicts_ba.iter().map(|c| c.id.clone()).collect();
+        ids_ab.sort();
+        ids_ba.sort();
+        prop_assert_eq!(ids_ab, ids_ba,
+            "conflict IDs must be stable under card permutation");
+    }
 }
 
 fn make_vuln_card(

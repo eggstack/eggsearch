@@ -1,7 +1,8 @@
+use eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts;
 use eggsearch::core::evidence_role::EvidenceRole;
 use eggsearch::core::retrieval_status::{
-    attempts_to_failures, classify_absence, map_provider_to_intended_roles, EvidenceAbsenceKind,
-    RetrievalAttempt, RetrievalAttemptOutcome,
+    attempts_to_failures, classify_absence, map_provider_to_intended_roles,
+    query_fingerprint_from_query, EvidenceAbsenceKind, RetrievalAttempt, RetrievalAttemptOutcome,
 };
 use eggsearch::core::workflow_coverage::{
     compute_coverage, CoverageStatus, RetrievalFailureKind, WorkflowCoverageModel,
@@ -567,5 +568,684 @@ fn b6_06_role_found_by_another_provider_redundant_failure_not_missing() {
         result.status,
         CoverageStatus::Sufficient,
         "found role must not be made missing by redundant provider failure"
+    );
+}
+
+#[test]
+fn b6_07_rate_limit_remains_rate_limited_in_attempt_data() {
+    use eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts;
+
+    let attempt = RetrievalAttempt {
+        provider_id: "startpage".to_string(),
+        subquery_id: Some("sq_rate".to_string()),
+        intended_roles: vec![EvidenceRole::OfficialDocumentation],
+        outcome: RetrievalAttemptOutcome::RateLimited,
+        result_count: 0,
+        error_class: Some("rate_limited".to_string()),
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(120),
+    };
+    let failures = attempts_to_failures(std::slice::from_ref(&attempt));
+    assert_eq!(failures.len(), 1);
+    assert_eq!(
+        failures[0].kind,
+        RetrievalFailureKind::ProviderFailed,
+        "rate limit must map to ProviderFailed in failure kind"
+    );
+
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    assert!(!summary.dimensions.is_empty());
+    let dim = &summary.dimensions[0];
+    assert_eq!(
+        dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::RateLimited),
+        "attempt_outcome must preserve RateLimited, not collapse to generic failure"
+    );
+    assert_eq!(
+        dim.error_class.as_deref(),
+        Some("rate_limited"),
+        "error_class must be preserved"
+    );
+    assert_eq!(summary.rate_limited_count, Some(1));
+    assert_eq!(summary.zero_result_count, Some(0));
+    assert_eq!(summary.timed_out_count, Some(0));
+}
+
+#[test]
+fn b6_08_deadline_interruption_distinct_from_provider_timeout() {
+    use eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts;
+
+    let timeout_attempt = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("sq_timeout".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::TimedOut,
+        result_count: 0,
+        error_class: Some("timeout".to_string()),
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(5000),
+    };
+    let deadline_attempt = RetrievalAttempt {
+        provider_id: "startpage".to_string(),
+        subquery_id: Some("sq_deadline".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: true,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(2000),
+    };
+
+    let summary = build_retrieval_summary_from_attempts(&[timeout_attempt, deadline_attempt]);
+    assert_eq!(summary.timed_out_count, Some(1));
+    assert_eq!(summary.deadline_interrupted_count, Some(2));
+
+    let timeout_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| d.subquery_id.as_deref() == Some("sq_timeout"))
+        .expect("timeout dimension must exist");
+    let deadline_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| d.subquery_id.as_deref() == Some("sq_deadline"))
+        .expect("deadline dimension must exist");
+
+    assert_eq!(
+        timeout_dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::TimedOut)
+    );
+    assert_eq!(
+        deadline_dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::InterruptedByDeadline)
+    );
+    assert_ne!(
+        timeout_dim.attempt_outcome, deadline_dim.attempt_outcome,
+        "provider timeout and global deadline must serialize differently"
+    );
+}
+
+#[test]
+fn e14_multi_role_attempt_creates_dimensions_for_all_roles() {
+    use eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts;
+
+    let attempt = RetrievalAttempt {
+        provider_id: "osv".to_string(),
+        subquery_id: Some("sq_multi".to_string()),
+        intended_roles: vec![
+            EvidenceRole::AuthoritativeSecurityAdvisory,
+            EvidenceRole::ManifestOrDependencyMetadata,
+        ],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 3,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(200),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    let roles_in_dims: std::collections::HashSet<_> = summary
+        .dimensions
+        .iter()
+        .map(|d| &d.evidence_role)
+        .collect();
+    assert!(
+        roles_in_dims.contains(&EvidenceRole::AuthoritativeSecurityAdvisory),
+        "summary must contain AuthoritativeSecurityAdvisory dimension"
+    );
+    assert!(
+        roles_in_dims.contains(&EvidenceRole::ManifestOrDependencyMetadata),
+        "summary must contain ManifestOrDependencyMetadata dimension"
+    );
+    assert_eq!(summary.dimensions.len(), 2);
+}
+
+#[test]
+fn e14_property_multi_role_dimensions_preserve_all_intended_roles() {
+    use eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts;
+
+    let all_roles = vec![
+        EvidenceRole::OfficialDocumentation,
+        EvidenceRole::PrimaryImplementation,
+        EvidenceRole::BenchmarkOrPerformanceEvidence,
+        EvidenceRole::AuthoritativeSecurityAdvisory,
+        EvidenceRole::ManifestOrDependencyMetadata,
+        EvidenceRole::IndependentCorroboration,
+        EvidenceRole::CommunityDiscussion,
+        EvidenceRole::InterfaceOrApiDefinition,
+        EvidenceRole::UsageExample,
+        EvidenceRole::TestOrBehavioralSpecification,
+        EvidenceRole::ConfigurationOrFeatureGate,
+        EvidenceRole::ArchitectureOrDesignDocument,
+        EvidenceRole::ReleaseNoteOrChangelog,
+        EvidenceRole::MigrationGuidance,
+        EvidenceRole::IssueOrIncidentDiscussion,
+        EvidenceRole::PullRequestOrDesignReview,
+        EvidenceRole::VendorSecurityGuidance,
+        EvidenceRole::CounterpointOrConflictingEvidence,
+        EvidenceRole::UnknownOrWeakContext,
+    ];
+
+    for role in &all_roles {
+        let attempt = RetrievalAttempt {
+            provider_id: "test_provider".to_string(),
+            subquery_id: Some(format!("sq_{role:?}")),
+            intended_roles: vec![*role],
+            outcome: RetrievalAttemptOutcome::SuccessWithResults,
+            result_count: 1,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        };
+        let summary = build_retrieval_summary_from_attempts(&[attempt]);
+        let found: Vec<_> = summary
+            .dimensions
+            .iter()
+            .filter(|d| &d.evidence_role == role)
+            .collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "role {role:?} must appear exactly once in summary dimensions"
+        );
+    }
+}
+
+#[test]
+fn a11_absence_kind_populated_for_all_absence_paths() {
+    let outcomes = [
+        RetrievalAttemptOutcome::SuccessWithResults,
+        RetrievalAttemptOutcome::SuccessZeroResults,
+        RetrievalAttemptOutcome::Failed,
+        RetrievalAttemptOutcome::TimedOut,
+        RetrievalAttemptOutcome::RateLimited,
+        RetrievalAttemptOutcome::SkippedByPolicy,
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+        RetrievalAttemptOutcome::NotApplicable,
+        RetrievalAttemptOutcome::InterruptedByDeadline,
+        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
+    ];
+
+    for outcome in outcomes {
+        let attempt = RetrievalAttempt {
+            provider_id: "test_prov".to_string(),
+            subquery_id: Some("sq_test".to_string()),
+            intended_roles: vec![EvidenceRole::PrimaryImplementation],
+            outcome: outcome.clone(),
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        };
+        let summary = build_retrieval_summary_from_attempts(&[attempt]);
+        assert_eq!(
+            summary.dimensions.len(),
+            1,
+            "each outcome must produce exactly one dimension"
+        );
+        let dim = &summary.dimensions[0];
+        assert!(
+            !dim.message.is_empty(),
+            "absence_kind must produce a non-empty message for outcome {outcome:?}"
+        );
+        let classified = classify_absence(dim.absence_kind);
+        assert!(
+            !classified.is_empty(),
+            "absence_kind must classify to a non-empty label for outcome {outcome:?}"
+        );
+    }
+}
+
+#[test]
+fn a13_truncation_emitted_on_partial_success() {
+    let attempt = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("sq_trunc".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
+        result_count: 5,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: true,
+        query_fingerprint: None,
+        duration_ms: Some(200),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    assert!(summary.has_truncation, "truncation must be detected");
+    assert_eq!(summary.truncated_count, Some(1));
+    let dim = &summary.dimensions[0];
+    assert_eq!(
+        dim.absence_kind,
+        EvidenceAbsenceKind::ResultTruncatedByCap,
+        "truncated attempt must map to ResultTruncatedByCap"
+    );
+    assert!(dim.truncated, "dimension must have truncated=true");
+    assert_eq!(dim.result_count, Some(5), "result count must be preserved");
+}
+
+#[test]
+fn c3_query_fingerprint_populated_in_all_attempts() {
+    let outcomes = [
+        RetrievalAttemptOutcome::SuccessWithResults,
+        RetrievalAttemptOutcome::SuccessZeroResults,
+        RetrievalAttemptOutcome::Failed,
+        RetrievalAttemptOutcome::TimedOut,
+        RetrievalAttemptOutcome::RateLimited,
+        RetrievalAttemptOutcome::SkippedByPolicy,
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+        RetrievalAttemptOutcome::NotApplicable,
+        RetrievalAttemptOutcome::InterruptedByDeadline,
+        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
+    ];
+
+    for outcome in outcomes {
+        let attempt = RetrievalAttempt {
+            provider_id: "test_prov".to_string(),
+            subquery_id: Some("sq_fp".to_string()),
+            intended_roles: vec![EvidenceRole::PrimaryImplementation],
+            outcome: outcome.clone(),
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: Some(query_fingerprint_from_query("test query")),
+            duration_ms: None,
+        };
+        let summary = build_retrieval_summary_from_attempts(&[attempt]);
+        assert_eq!(summary.dimensions.len(), 1);
+        let dim = &summary.dimensions[0];
+        assert!(
+            dim.query.is_some(),
+            "query_fingerprint must be populated in dimension for outcome {outcome:?}"
+        );
+        let fp = dim.query.as_ref().unwrap();
+        assert!(
+            fp.starts_with("fp_"),
+            "fingerprint must start with fp_ prefix, got: {fp}"
+        );
+    }
+}
+
+#[test]
+fn c4_query_fingerprint_deterministic() {
+    let fp1 = query_fingerprint_from_query("axum router middleware");
+    let fp2 = query_fingerprint_from_query("axum router middleware");
+    assert_eq!(fp1, fp2, "same query must produce same fingerprint");
+
+    let fp3 = query_fingerprint_from_query("different query entirely");
+    assert_ne!(
+        fp1, fp3,
+        "different queries must produce different fingerprints"
+    );
+}
+
+#[test]
+fn c5_query_fingerprint_not_empty() {
+    let fp = query_fingerprint_from_query("any query");
+    assert!(!fp.is_empty(), "fingerprint must not be empty");
+    assert!(
+        fp.starts_with("fp_"),
+        "fingerprint must start with fp_ prefix"
+    );
+    assert_eq!(fp.len(), 19, "fingerprint must be fp_ + 16 hex chars");
+
+    let fp_empty = query_fingerprint_from_query("");
+    assert!(
+        !fp_empty.is_empty(),
+        "fingerprint for empty query must not be empty"
+    );
+}
+
+#[test]
+fn e4_zero_result_summary_retains_result_count_and_outcome() {
+    let attempt = RetrievalAttempt {
+        provider_id: "osv".to_string(),
+        subquery_id: Some("sq_zero".to_string()),
+        intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+        outcome: RetrievalAttemptOutcome::SuccessZeroResults,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(50),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    let dim = &summary.dimensions[0];
+    assert_eq!(dim.result_count, Some(0));
+    assert_eq!(
+        dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::SuccessZeroResults)
+    );
+    assert_eq!(
+        dim.absence_kind,
+        EvidenceAbsenceKind::NoMatchingEvidenceFound
+    );
+}
+
+#[test]
+fn e5_rate_limit_retains_rate_limited_and_coarse_mapping() {
+    let attempt = RetrievalAttempt {
+        provider_id: "startpage".to_string(),
+        subquery_id: Some("sq_rl".to_string()),
+        intended_roles: vec![EvidenceRole::OfficialDocumentation],
+        outcome: RetrievalAttemptOutcome::RateLimited,
+        result_count: 0,
+        error_class: Some("rate_limited".to_string()),
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(100),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    let dim = &summary.dimensions[0];
+    assert_eq!(
+        dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::RateLimited)
+    );
+    assert_eq!(dim.absence_kind, EvidenceAbsenceKind::ProviderFailed);
+    assert_eq!(dim.error_class.as_deref(), Some("rate_limited"));
+    assert_eq!(summary.rate_limited_count, Some(1));
+}
+
+#[test]
+fn e6_provider_timeout_and_global_deadline_serialize_differently() {
+    let timeout = RetrievalAttempt {
+        provider_id: "prov_a".to_string(),
+        subquery_id: Some("sq_t".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::TimedOut,
+        result_count: 0,
+        error_class: Some("timeout".to_string()),
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(5000),
+    };
+    let deadline = RetrievalAttempt {
+        provider_id: "prov_b".to_string(),
+        subquery_id: Some("sq_d".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
+        result_count: 0,
+        error_class: None,
+        deadline_interrupted: true,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(2000),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[timeout, deadline]);
+    let t_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| d.subquery_id.as_deref() == Some("sq_t"))
+        .unwrap();
+    let d_dim = summary
+        .dimensions
+        .iter()
+        .find(|d| d.subquery_id.as_deref() == Some("sq_d"))
+        .unwrap();
+    assert_eq!(
+        t_dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::TimedOut)
+    );
+    assert_eq!(
+        d_dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::InterruptedByDeadline)
+    );
+    assert_ne!(t_dim.attempt_outcome, d_dim.attempt_outcome);
+}
+
+#[test]
+fn e7_truncation_is_explicit() {
+    let attempt = RetrievalAttempt {
+        provider_id: "gitea".to_string(),
+        subquery_id: Some("sq_trunc".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
+        result_count: 3,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: true,
+        query_fingerprint: None,
+        duration_ms: Some(150),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    assert!(summary.has_truncation);
+    assert_eq!(summary.truncated_count, Some(1));
+    let dim = &summary.dimensions[0];
+    assert!(dim.truncated);
+    assert_eq!(dim.absence_kind, EvidenceAbsenceKind::ResultTruncatedByCap);
+}
+
+#[test]
+fn e8_subquery_id_is_retained() {
+    let attempt = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("sq_my_subquery".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 5,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(100),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    let dim = &summary.dimensions[0];
+    assert_eq!(
+        dim.subquery_id.as_deref(),
+        Some("sq_my_subquery"),
+        "subquery_id must be retained in summary"
+    );
+}
+
+#[test]
+fn e9_fallback_summary_not_used_when_attempts_exist() {
+    let attempt = RetrievalAttempt {
+        provider_id: "duckduckgo".to_string(),
+        subquery_id: Some("sq_fb".to_string()),
+        intended_roles: vec![EvidenceRole::PrimaryImplementation],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 3,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(80),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    let dim = &summary.dimensions[0];
+    assert_eq!(
+        dim.attempt_outcome,
+        Some(RetrievalAttemptOutcome::SuccessWithResults),
+        "attempt-derived summary must use attempt outcome, not infer from card membership"
+    );
+}
+
+#[test]
+fn e10_summary_ordering_deterministic_by_subquery_provider_role() {
+    let attempts = vec![
+        RetrievalAttempt {
+            provider_id: "c_prov".to_string(),
+            subquery_id: Some("sq_2".to_string()),
+            intended_roles: vec![EvidenceRole::OfficialDocumentation],
+            outcome: RetrievalAttemptOutcome::SuccessWithResults,
+            result_count: 1,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+        RetrievalAttempt {
+            provider_id: "a_prov".to_string(),
+            subquery_id: Some("sq_1".to_string()),
+            intended_roles: vec![EvidenceRole::PrimaryImplementation],
+            outcome: RetrievalAttemptOutcome::Failed,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+        RetrievalAttempt {
+            provider_id: "b_prov".to_string(),
+            subquery_id: Some("sq_0".to_string()),
+            intended_roles: vec![EvidenceRole::UsageExample],
+            outcome: RetrievalAttemptOutcome::RateLimited,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+    ];
+    let s1 = build_retrieval_summary_from_attempts(&attempts);
+    let s2 = build_retrieval_summary_from_attempts(&attempts);
+    assert_eq!(s1.dimensions.len(), s2.dimensions.len());
+    for (d1, d2) in s1.dimensions.iter().zip(s2.dimensions.iter()) {
+        assert_eq!(d1.provider_id, d2.provider_id);
+        assert_eq!(d1.subquery_id, d2.subquery_id);
+        assert_eq!(d1.evidence_role, d2.evidence_role);
+    }
+}
+
+#[test]
+fn e11_aggregate_counts_equal_dimension_derived_counts() {
+    let attempts = vec![
+        RetrievalAttempt {
+            provider_id: "p1".to_string(),
+            subquery_id: Some("sq_0".to_string()),
+            intended_roles: vec![EvidenceRole::PrimaryImplementation],
+            outcome: RetrievalAttemptOutcome::SuccessWithResults,
+            result_count: 5,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+        RetrievalAttempt {
+            provider_id: "p2".to_string(),
+            subquery_id: Some("sq_1".to_string()),
+            intended_roles: vec![EvidenceRole::OfficialDocumentation],
+            outcome: RetrievalAttemptOutcome::Failed,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+        RetrievalAttempt {
+            provider_id: "p3".to_string(),
+            subquery_id: Some("sq_2".to_string()),
+            intended_roles: vec![EvidenceRole::UsageExample],
+            outcome: RetrievalAttemptOutcome::TimedOut,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+        RetrievalAttempt {
+            provider_id: "p4".to_string(),
+            subquery_id: Some("sq_3".to_string()),
+            intended_roles: vec![EvidenceRole::BenchmarkOrPerformanceEvidence],
+            outcome: RetrievalAttemptOutcome::RateLimited,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            query_fingerprint: None,
+            duration_ms: None,
+        },
+    ];
+    let summary = build_retrieval_summary_from_attempts(&attempts);
+    let dim_count = summary.dimensions.len();
+    assert_eq!(
+        summary.attempted_job_count,
+        Some(dim_count),
+        "attempted_job_count must equal dimension count"
+    );
+}
+
+#[test]
+fn e12_codegg_fixture_consumes_enriched_summary() {
+    let attempt = RetrievalAttempt {
+        provider_id: "osv".to_string(),
+        subquery_id: Some("sq_codegg".to_string()),
+        intended_roles: vec![
+            EvidenceRole::AuthoritativeSecurityAdvisory,
+            EvidenceRole::ManifestOrDependencyMetadata,
+        ],
+        outcome: RetrievalAttemptOutcome::SuccessWithResults,
+        result_count: 2,
+        error_class: None,
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: Some("fp_aabbccdd11223344".to_string()),
+        duration_ms: Some(150),
+    };
+    let summary = build_retrieval_summary_from_attempts(&[attempt]);
+    let json = serde_json::to_value(&summary).unwrap();
+    assert!(json.is_object());
+    assert!(json["dimensions"].is_array());
+    assert_eq!(json["dimensions"].as_array().unwrap().len(), 2);
+    let dim0 = &json["dimensions"][0];
+    assert!(dim0["provider_id"].is_string());
+    assert!(dim0["attempt_outcome"].is_string());
+    assert!(dim0["result_count"].is_number());
+}
+
+#[test]
+fn e13_next_actions_avoid_identical_failed_provider_query() {
+    let failed_attempt = RetrievalAttempt {
+        provider_id: "startpage".to_string(),
+        subquery_id: Some("sq_retry".to_string()),
+        intended_roles: vec![EvidenceRole::OfficialDocumentation],
+        outcome: RetrievalAttemptOutcome::Failed,
+        result_count: 0,
+        error_class: Some("connection_refused".to_string()),
+        deadline_interrupted: false,
+        truncated: false,
+        query_fingerprint: None,
+        duration_ms: Some(1000),
+    };
+    let failures = attempts_to_failures(&[failed_attempt]);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(
+        failures[0].kind,
+        RetrievalFailureKind::ProviderFailed,
+        "failed attempt must produce ProviderFailed"
+    );
+    let model = WorkflowCoverageModel {
+        workflow_id: "test".to_string(),
+        title: "Test".to_string(),
+        required: vec![EvidenceRole::OfficialDocumentation],
+        recommended: vec![],
+        optional: vec![],
+    };
+    let result = compute_coverage(&model, &[], &failures);
+    assert_eq!(
+        result.status,
+        CoverageStatus::IndeterminateDueToFailures,
+        "missing required role with failed attempt must be indeterminate"
     );
 }

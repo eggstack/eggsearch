@@ -22,6 +22,7 @@ use crate::meta::security_grouping::group_security_results;
 use crate::meta::security_suggested_fetches::generate_security_suggested_fetches;
 use crate::meta::MetadataSearchAdapter;
 
+#[allow(clippy::too_many_arguments)]
 fn native_advisory_attempt(
     provider_id: &str,
     subquery_id: &str,
@@ -29,6 +30,7 @@ fn native_advisory_attempt(
     outcome: RetrievalAttemptOutcome,
     result_count: usize,
     error_class: Option<String>,
+    query_text: &str,
     start: Instant,
 ) -> RetrievalAttempt {
     RetrievalAttempt {
@@ -40,7 +42,9 @@ fn native_advisory_attempt(
         error_class,
         deadline_interrupted: false,
         truncated: false,
-        query_fingerprint: None,
+        query_fingerprint: Some(crate::core::retrieval_status::query_fingerprint_from_query(
+            query_text,
+        )),
         duration_ms: Some(start.elapsed().as_millis() as u64),
     }
 }
@@ -146,6 +150,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessWithResults,
                         1,
                         None,
+                        cve_id,
                         start,
                     ));
                     vulnerabilities.push(meta);
@@ -158,6 +163,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessZeroResults,
                         0,
                         None,
+                        cve_id,
                         start,
                     ));
                 }
@@ -169,6 +175,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::Failed,
                         0,
                         Some(format!("{e}")),
+                        cve_id,
                         start,
                     ));
                 }
@@ -188,6 +195,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessWithResults,
                         1,
                         None,
+                        ghsa_id,
                         start,
                     ));
                     vulnerabilities.push(meta);
@@ -200,6 +208,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessZeroResults,
                         0,
                         None,
+                        ghsa_id,
                         start,
                     ));
                 }
@@ -211,6 +220,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::Failed,
                         0,
                         Some(format!("{e}")),
+                        ghsa_id,
                         start,
                     ));
                 }
@@ -230,6 +240,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessWithResults,
                         1,
                         None,
+                        osv_id,
                         start,
                     ));
                     vulnerabilities.push(meta);
@@ -242,6 +253,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessZeroResults,
                         0,
                         None,
+                        osv_id,
                         start,
                     ));
                 }
@@ -253,6 +265,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::Failed,
                         0,
                         Some(format!("{e}")),
+                        osv_id,
                         start,
                     ));
                 }
@@ -272,6 +285,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessWithResults,
                         1,
                         None,
+                        rustsec_id,
                         start,
                     ));
                     vulnerabilities.push(meta);
@@ -284,6 +298,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::SuccessZeroResults,
                         0,
                         None,
+                        rustsec_id,
                         start,
                     ));
                 }
@@ -295,6 +310,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::Failed,
                         0,
                         Some(format!("{e}")),
+                        rustsec_id,
                         start,
                     ));
                 }
@@ -329,6 +345,7 @@ pub async fn run_security_search_plan(
                         },
                         count,
                         None,
+                        package,
                         start,
                     ));
                     for vuln in package_vulns {
@@ -351,6 +368,7 @@ pub async fn run_security_search_plan(
                         RetrievalAttemptOutcome::Failed,
                         0,
                         Some(format!("{e}")),
+                        package,
                         start,
                     ));
                 }
@@ -385,6 +403,7 @@ pub async fn run_security_search_plan(
                             RetrievalAttemptOutcome::SuccessWithResults,
                             1,
                             None,
+                            cve_id,
                             start,
                         ));
                         for vuln in &mut vulnerabilities {
@@ -402,6 +421,7 @@ pub async fn run_security_search_plan(
                             RetrievalAttemptOutcome::SuccessZeroResults,
                             0,
                             None,
+                            cve_id,
                             start,
                         ));
                     }
@@ -414,6 +434,7 @@ pub async fn run_security_search_plan(
                             RetrievalAttemptOutcome::Failed,
                             0,
                             Some(format!("{e}")),
+                            cve_id,
                             start,
                         ));
                     }

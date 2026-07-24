@@ -204,6 +204,7 @@ pub fn safe_open_relative(
         let mut current_fd: libc::c_int = root_fd;
         let num_components = components.len();
 
+        #[cfg(target_os = "linux")]
         let resolve_flags: u64 = libc::RESOLVE_BENEATH
             | libc::RESOLVE_NO_MAGICLINKS
             | if config.follow_symlinks {
@@ -233,7 +234,12 @@ pub fn safe_open_relative(
                 flags |= libc::O_NOFOLLOW;
             }
 
-            let fd = match openat_sys(current_fd, &name_cstr, flags, Some(resolve_flags)) {
+            #[cfg(target_os = "linux")]
+            let resolve_arg = Some(resolve_flags);
+            #[cfg(not(target_os = "linux"))]
+            let resolve_arg = None;
+
+            let fd = match openat_sys(current_fd, &name_cstr, flags, resolve_arg) {
                 Ok(fd) => fd,
                 Err(e) => {
                     let code = e.raw_os_error().unwrap_or(0);

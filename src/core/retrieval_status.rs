@@ -6,6 +6,20 @@ use serde::{Deserialize, Serialize};
 use crate::core::evidence_role::EvidenceRole;
 use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
 
+/// Compute a bounded, non-recoverable query fingerprint from raw query text.
+///
+/// Uses FNV-1a 64-bit hash formatted as a hex string. The fingerprint
+/// preserves no recoverable query content (credentials, file paths, tokens,
+/// or proprietary fragments are not leaked).
+pub fn query_fingerprint_from_query(query: &str) -> String {
+    let mut state: u64 = 14_695_981_039_346_656_037;
+    for &byte in query.as_bytes() {
+        state ^= byte as u64;
+        state = state.wrapping_mul(1_099_511_628_211);
+    }
+    format!("fp_{:016x}", state)
+}
+
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -321,67 +335,6 @@ pub struct RetrievalAttempt {
 }
 
 impl RetrievalAttempt {
-    #[allow(missing_docs)]
-    pub fn to_retrieval_failure(&self) -> Option<RetrievalFailure> {
-        match self.outcome {
-            RetrievalAttemptOutcome::Failed => Some(RetrievalFailure {
-                kind: RetrievalFailureKind::ProviderFailed,
-                role: self
-                    .intended_roles
-                    .first()
-                    .copied()
-                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
-                message: match &self.error_class {
-                    Some(cls) => format!("[{}] provider {} failed", cls, self.provider_id),
-                    None => format!("provider {} failed", self.provider_id),
-                },
-                provider_id: Some(self.provider_id.clone()),
-            }),
-            RetrievalAttemptOutcome::TimedOut => Some(RetrievalFailure {
-                kind: RetrievalFailureKind::DeadlinePreventedCompletion,
-                role: self
-                    .intended_roles
-                    .first()
-                    .copied()
-                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
-                message: match &self.error_class {
-                    Some(cls) => format!("[{}] provider {} timed out", cls, self.provider_id),
-                    None => format!("provider {} timed out", self.provider_id),
-                },
-                provider_id: Some(self.provider_id.clone()),
-            }),
-            RetrievalAttemptOutcome::RateLimited => Some(RetrievalFailure {
-                kind: RetrievalFailureKind::ProviderFailed,
-                role: self
-                    .intended_roles
-                    .first()
-                    .copied()
-                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
-                message: match &self.error_class {
-                    Some(cls) => {
-                        format!("[{}] provider {} rate limited", cls, self.provider_id)
-                    }
-                    None => format!("provider {} rate limited", self.provider_id),
-                },
-                provider_id: Some(self.provider_id.clone()),
-            }),
-            RetrievalAttemptOutcome::InterruptedByDeadline => Some(RetrievalFailure {
-                kind: RetrievalFailureKind::DeadlinePreventedCompletion,
-                role: self
-                    .intended_roles
-                    .first()
-                    .copied()
-                    .unwrap_or(EvidenceRole::UnknownOrWeakContext),
-                message: format!(
-                    "provider {} interrupted by global deadline",
-                    self.provider_id
-                ),
-                provider_id: Some(self.provider_id.clone()),
-            }),
-            _ => None,
-        }
-    }
-
     #[allow(missing_docs)]
     pub fn to_retrieval_failures(&self) -> Vec<RetrievalFailure> {
         match self.outcome {

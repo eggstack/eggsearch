@@ -147,3 +147,31 @@ path = "fuzz_targets/detect_entity_scoped_conflicts.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "retrieval_failure_expansion"
+path = "fuzz_targets/retrieval_failure_expansion.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "attempt_summary_generation"
+path = "fuzz_targets/attempt_summary_generation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "workflow_resolution"
+path = "fuzz_targets/workflow_resolution.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "research_role_mapping"
+path = "fuzz_targets/research_role_mapping.rs"
+test = false
+doc = false
+bench = false

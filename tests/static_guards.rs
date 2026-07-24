@@ -113,6 +113,88 @@ fn no_object_sha_in_commit_urls() {
 }
 
 #[test]
+fn no_process_exit_in_native_smoke_tests() {
+    let source = read_source("tests/native_forge_smoke.rs");
+    assert!(
+        !source.contains("std::process::exit(0)"),
+        "native smoke tests must not call std::process::exit(0); \
+         each test must skip independently without terminating the process"
+    );
+}
+
+#[test]
+fn no_first_only_intended_roles_conversion() {
+    let sources = [
+        read_source("src/core/retrieval_status.rs"),
+        read_source("src/core/evidence_postprocess.rs"),
+    ];
+    for source in &sources {
+        let non_test = strip_test_code(source);
+        let lines: Vec<&str> = non_test.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.contains("intended_roles") && line.contains(".first()") {
+                let context_start = i.saturating_sub(2);
+                let context_end = (i + 3).min(lines.len());
+                let context: Vec<&str> = lines[context_start..context_end].to_vec();
+                panic!(
+                    "found .first() on intended_roles at line {}: {:?}. \
+                     Must expand across all roles, not only the first.",
+                    i + 1,
+                    context
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn no_rq_label_role_derivation_in_dispatch() {
+    let source = read_source("src/meta/dispatch.rs");
+    let non_test = strip_test_code(&source);
+    assert!(
+        !non_test.contains("rq_"),
+        "dispatch.rs must not derive roles from rq_ labels; \
+         roles must come from PlannedSubquery.intended_roles"
+    );
+}
+
+#[test]
+fn no_silent_if_let_ok_around_native_advisory() {
+    let source = read_source("src/meta/security_search.rs");
+    let non_test = strip_test_code(&source);
+
+    let lines: Vec<&str> = non_test.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        if line.contains("lookup_advisory") || line.contains("query_advisories_by_package") {
+            let context_start = i.saturating_sub(1);
+            let context_end = (i + 5).min(lines.len());
+            let context_block: String = lines[context_start..context_end].join("\n");
+            if context_block.contains("if let Ok") {
+                panic!(
+                    "native advisory operation at line {} uses if let Ok pattern; \
+                     must handle Ok(Some), Ok(None), and Err explicitly",
+                    i + 1
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn no_fallback_mode_in_native_smoke() {
+    let source = read_source("tests/native_forge_smoke.rs");
+    let lower = source.to_lowercase();
+    let forbidden = ["fallback", "fallback_mode", "generic fallback"];
+    for pattern in &forbidden {
+        assert!(
+            !lower.contains(pattern),
+            "native smoke tests must not accept fallback mode; \
+             found '{pattern}' in native_forge_smoke.rs"
+        );
+    }
+}
+
+#[test]
 fn postprocess_called_with_workflow_model_for_non_web_tools() {
     // Check adapter.rs: repo_search and research_search must pass Some(model)
     let adapter_source = read_source("src/meta/adapter.rs");
@@ -194,6 +276,22 @@ fn forge_has_aggregate_byte_budget_type() {
         non_test.contains("struct ForgeReadBudget"),
         "forge_adapter.rs must define ForgeReadBudget for aggregate byte enforcement. \
          Currently uses bare total_bytes: &mut usize without formal budget."
+    );
+}
+
+#[test]
+fn no_release_classification_without_native_evidence() {
+    let source = read_source("docs/release-verification.md");
+    let lower = source.to_lowercase();
+    assert!(
+        lower.contains("provisional"),
+        "release-verification.md must classify the release as provisional \
+         until native evidence is present"
+    );
+    assert!(
+        lower.contains("native") && lower.contains("evidence"),
+        "release-verification.md must reference native evidence as a \
+         requirement for release promotion"
     );
 }
 

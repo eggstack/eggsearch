@@ -68,6 +68,14 @@ pub trait SearchEngine: Send + Sync {
         timeout: Duration,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
 
+    /// Whether this engine can serve the given evidence role.
+    /// Returns `true` by default (conservative: assume all roles are
+    /// reachable via generic search). Override to return `false` for
+    /// roles this engine provably cannot serve.
+    fn supports_role(&self, _role: &crate::core::evidence_role::EvidenceRole) -> bool {
+        true
+    }
+
     /// Look up a vulnerability by ID (CVE, GHSA, OSV, etc.).
     /// Returns `Ok(None)` if not found or not supported by this engine.
     fn lookup_advisory<'a>(
