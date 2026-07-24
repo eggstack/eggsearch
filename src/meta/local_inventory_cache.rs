@@ -1750,8 +1750,7 @@ mod tests {
             .collect();
         assert!(
             paths.contains(&"my folder/file.rs"),
-            "NUL-delimited path with spaces should be parsed correctly: {:?}",
-            paths
+            "NUL-delimited path with spaces should be parsed correctly: {paths:?}",
         );
     }
 

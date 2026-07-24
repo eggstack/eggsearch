@@ -528,6 +528,7 @@ fn safe_open_follow_in_root_symlink_succeeds() {
     assert_eq!(result.unwrap().size, 5);
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn safe_open_follow_symlink_escaping_root_rejected() {
     let tmp = TempDir::new().unwrap();
@@ -550,6 +551,7 @@ fn safe_open_follow_symlink_escaping_root_rejected() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn safe_open_follow_intermediate_symlink_escaping_root_rejected() {
     let tmp = TempDir::new().unwrap();
@@ -575,6 +577,7 @@ fn safe_open_follow_intermediate_symlink_escaping_root_rejected() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn safe_open_follow_chained_symlinks_escaping_root_rejected() {
     let tmp = TempDir::new().unwrap();

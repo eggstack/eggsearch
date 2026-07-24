@@ -17,7 +17,7 @@ pub fn query_fingerprint_from_query(query: &str) -> String {
         state ^= byte as u64;
         state = state.wrapping_mul(1_099_511_628_211);
     }
-    format!("fp_{:016x}", state)
+    format!("fp_{state:016x}")
 }
 
 #[allow(missing_docs)]

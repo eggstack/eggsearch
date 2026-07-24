@@ -2399,8 +2399,7 @@ mod forge_budget_property_tests {
         }
         assert!(
             exhaust_count <= 1,
-            "exhausted must be set at most once, was set {} times",
-            exhaust_count
+            "exhausted must be set at most once, was set {exhaust_count} times",
         );
     }
 
