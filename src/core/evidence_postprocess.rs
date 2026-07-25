@@ -166,6 +166,7 @@ pub fn build_retrieval_summary_for_search(
                 duration_ms: None,
                 truncated: false,
                 truncation_evidence: Default::default(),
+                state: None,
             });
         } else if let Some(failure) = providers_failed.iter().find(|f| f.id == *pid) {
             dimensions.push(RetrievalDimensionStatus {
@@ -185,6 +186,7 @@ pub fn build_retrieval_summary_for_search(
                 duration_ms: None,
                 truncated: false,
                 truncation_evidence: Default::default(),
+                state: None,
             });
         } else {
             dimensions.push(RetrievalDimensionStatus {
@@ -200,6 +202,7 @@ pub fn build_retrieval_summary_for_search(
                 duration_ms: None,
                 truncated: false,
                 truncation_evidence: Default::default(),
+                state: None,
             });
         }
     }
@@ -212,7 +215,7 @@ pub fn build_retrieval_summary_for_search(
 }
 
 fn attempt_outcome_to_absence_kind(attempt: &RetrievalAttempt) -> EvidenceAbsenceKind {
-    let truncation_evidence = effective_truncation_evidence(attempt);
+    let truncation_evidence = crate::core::retrieval_status::effective_truncation_evidence(attempt);
     if matches!(
         truncation_evidence,
         TruncationEvidence::ConfirmedByEggsearch | TruncationEvidence::ConfirmedByProvider
@@ -264,25 +267,14 @@ fn attempt_message(attempt: &crate::core::retrieval_status::RetrievalAttempt) ->
     }
 }
 
-fn effective_truncation_evidence(attempt: &RetrievalAttempt) -> TruncationEvidence {
-    if attempt.truncation_evidence != TruncationEvidence::None {
-        return attempt.truncation_evidence;
-    }
-    if attempt.truncated || attempt.outcome == RetrievalAttemptOutcome::TruncatedAfterPartialSuccess
-    {
-        TruncationEvidence::ConfirmedByEggsearch
-    } else {
-        TruncationEvidence::None
-    }
-}
-
 fn build_attempt_derived_summary(
     attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> ResponseRetrievalSummary {
     let mut dimensions = Vec::with_capacity(attempts.len());
 
     for attempt in attempts {
-        let truncation_evidence = effective_truncation_evidence(attempt);
+        let truncation_evidence =
+            crate::core::retrieval_status::effective_truncation_evidence(attempt);
         let absence_kind = attempt_outcome_to_absence_kind(attempt);
         let message = if truncation_evidence == TruncationEvidence::LimitReachedUnknown {
             "candidate limit reached; additional results unknown".to_string()
@@ -294,6 +286,7 @@ fn build_attempt_derived_summary(
         } else {
             attempt.intended_roles.clone()
         };
+        let state = crate::core::retrieval_status::attempt_outcome_to_dimension_state(attempt);
 
         for role in roles {
             dimensions.push(RetrievalDimensionStatus {
@@ -313,6 +306,7 @@ fn build_attempt_derived_summary(
                         | TruncationEvidence::ConfirmedByProvider
                 ),
                 truncation_evidence,
+                state: Some(state),
             });
         }
     }
@@ -320,7 +314,7 @@ fn build_attempt_derived_summary(
     if dimensions.is_empty() {
         ResponseRetrievalSummary::default()
     } else {
-        summarize_retrieval(dimensions)
+        crate::core::retrieval_status::summarize_retrieval_with_attempts(attempts, dimensions)
     }
 }
 

@@ -390,7 +390,7 @@ fn codegg_aggregate_counts_match_dimensions() {
     ];
     let summary = build_retrieval_summary_from_attempts(&attempts);
     assert_eq!(summary.attempted_job_count, Some(3));
-    assert_eq!(summary.completed_job_count, Some(1));
+    assert_eq!(summary.completed_job_count, Some(2));
     assert_eq!(summary.failed_job_count, Some(1));
     assert_eq!(summary.zero_result_count, Some(1));
 }

@@ -146,9 +146,12 @@ pub use research::{
 };
 pub use result::{SearchWarning, TrustLevel};
 pub use retrieval_status::{
-    absent_roles, classify_absence, failed_providers, has_indeterminate, is_absence_only,
-    is_failure_only, summarize_retrieval, EvidenceAbsenceKind, ResponseRetrievalSummary,
-    RetrievalAttempt, RetrievalAttemptOutcome, RetrievalDimensionStatus, TruncationEvidence,
+    absent_roles, attempt_outcome_to_dimension_state, attempts_to_failures, classify_absence,
+    failed_providers, has_indeterminate, is_absence_only, is_failure_only, summarize_retrieval,
+    summarize_retrieval_with_attempts, validate_attempt_ledger, AttemptLedgerViolation,
+    AttemptSummaryCounts, EvidenceAbsenceKind, ResponseRetrievalSummary, RetrievalAttempt,
+    RetrievalAttemptOutcome, RetrievalDimensionState, RetrievalDimensionStatus,
+    RetrievalOperationIdentity, TruncationEvidence,
 };
 pub use sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, MarkerHit, TrustMarkers,

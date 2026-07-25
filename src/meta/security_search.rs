@@ -24,7 +24,118 @@ use crate::meta::security_suggested_fetches::generate_security_suggested_fetches
 use crate::meta::MetadataSearchAdapter;
 use crate::meta::{ProviderAdvisoryOutcome, ProviderAdvisoryStatus};
 
-const MAX_NATIVE_ADVISORY_OPERATIONS: usize = 32;
+const MAX_NATIVE_ADVISORY_IDENTIFIERS: usize = 32;
+const MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS: usize = 64;
+
+/// Bounded resource for native advisory provider operations.
+///
+/// Tracks two independent limits:
+/// - identifier budget: maximum unique advisory identifiers accepted
+/// - provider-operation budget: maximum selected-provider calls across
+///   identifier and package advisory operations
+///
+/// The provider-operation budget is the release-material bound. It
+/// counts actual provider calls, not only input identifier groups.
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct NativeOperationBudget {
+    max_identifiers: usize,
+    max_provider_operations: usize,
+    identifiers_seen: usize,
+    provider_operations_reserved: usize,
+}
+
+impl Default for NativeOperationBudget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NativeOperationBudget {
+    #[allow(missing_docs)]
+    pub fn new() -> Self {
+        NativeOperationBudget {
+            max_identifiers: MAX_NATIVE_ADVISORY_IDENTIFIERS,
+            max_provider_operations: MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS,
+            identifiers_seen: 0,
+            provider_operations_reserved: 0,
+        }
+    }
+
+    /// Returns true if a new unique identifier can be accepted.
+    pub fn reserve_identifier(&mut self) -> bool {
+        if self.identifiers_seen >= self.max_identifiers {
+            return false;
+        }
+        self.identifiers_seen += 1;
+        true
+    }
+
+    /// Reserve provider operations for a set of providers.
+    ///
+    /// Returns the providers that were allowed (within budget), the
+    /// providers that were skipped due to budget exhaustion, and the
+    /// remaining provider-operation capacity.
+    pub fn reserve_providers(&mut self, provider_ids: &[String]) -> ProviderReservation {
+        let mut allowed = Vec::new();
+        let mut skipped = Vec::new();
+        for pid in provider_ids {
+            if self.provider_operations_reserved >= self.max_provider_operations {
+                skipped.push(pid.clone());
+            } else {
+                self.provider_operations_reserved += 1;
+                allowed.push(pid.clone());
+            }
+        }
+        ProviderReservation {
+            allowed,
+            skipped_by_budget: skipped,
+            remaining_capacity: self
+                .max_provider_operations
+                .saturating_sub(self.provider_operations_reserved),
+        }
+    }
+
+    #[allow(missing_docs)]
+    pub fn identifiers_seen(&self) -> usize {
+        self.identifiers_seen
+    }
+
+    #[allow(missing_docs)]
+    pub fn provider_operations_reserved(&self) -> usize {
+        self.provider_operations_reserved
+    }
+
+    #[allow(missing_docs)]
+    pub fn max_identifiers(&self) -> usize {
+        self.max_identifiers
+    }
+
+    #[allow(missing_docs)]
+    pub fn max_provider_operations(&self) -> usize {
+        self.max_provider_operations
+    }
+}
+
+/// Result of reserving provider operations within a budget.
+#[derive(Debug, Clone, Default)]
+#[allow(missing_docs)]
+pub struct ProviderReservation {
+    pub allowed: Vec<String>,
+    pub skipped_by_budget: Vec<String>,
+    pub remaining_capacity: usize,
+}
+
+/// Summary of native advisory budget accounting.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[allow(missing_docs)]
+pub struct NativeAdvisoryBudgetSummary {
+    pub identifiers_planned: usize,
+    pub identifiers_scheduled: usize,
+    pub provider_operations_planned: usize,
+    pub provider_operations_dispatched: usize,
+    pub provider_operations_skipped_by_budget: usize,
+}
 
 #[allow(clippy::too_many_arguments)]
 fn native_advisory_attempt(
@@ -190,14 +301,11 @@ fn record_package_outcomes(
     let advisory_role = vec![EvidenceRole::AuthoritativeSecurityAdvisory];
     let dependency_role = vec![EvidenceRole::ManifestOrDependencyMetadata];
     for outcome in outcomes {
-        let attempt = match outcome.status {
+        let advisory_attempt = match outcome.status {
             ProviderAdvisoryStatus::CapabilityUnavailable => native_advisory_attempt_with_duration(
                 &outcome.provider_id,
                 "advisory_by_package",
-                vec![
-                    EvidenceRole::AuthoritativeSecurityAdvisory,
-                    EvidenceRole::ManifestOrDependencyMetadata,
-                ],
+                advisory_role.clone(),
                 RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
                 0,
                 None,
@@ -257,10 +365,12 @@ fn record_package_outcomes(
                 )
             }
         };
+
         let dependency_interrupted =
-            attempt.outcome == RetrievalAttemptOutcome::InterruptedByDeadline;
-        attempts.push(attempt);
-        let mut dependency_attempt = native_advisory_attempt_with_duration(
+            advisory_attempt.outcome == RetrievalAttemptOutcome::InterruptedByDeadline;
+        attempts.push(advisory_attempt);
+
+        let dependency_attempt = native_advisory_attempt_with_duration(
             &outcome.provider_id,
             "advisory_by_package",
             dependency_role.clone(),
@@ -278,6 +388,7 @@ fn record_package_outcomes(
             query_text,
             outcome.duration_ms,
         );
+        let mut dependency_attempt = dependency_attempt;
         dependency_attempt.deadline_interrupted = dependency_interrupted;
         attempts.push(dependency_attempt);
     }
@@ -375,8 +486,23 @@ pub async fn run_security_search_plan(
     let mut looked_up_ids: HashSet<String> = HashSet::new();
     let mut native_attempts: Vec<RetrievalAttempt> = Vec::new();
     let native_deadline = Instant::now() + adapter.effective_timeout(req.timeout_ms);
-    let mut native_operation_count = 0usize;
-    let mut native_operation_cap_warned = false;
+    let mut budget = NativeOperationBudget::new();
+    let mut budget_summary = NativeAdvisoryBudgetSummary::default();
+
+    let advisory_caps = adapter.advisory_provider_capabilities(&effective_providers);
+    let capable_lookup_providers: Vec<String> = advisory_caps
+        .iter()
+        .filter(|(_, caps)| caps.lookup_by_id)
+        .map(|(id, _)| id.clone())
+        .collect();
+    let incapable_lookup_providers: Vec<String> = advisory_caps
+        .iter()
+        .filter(|(_, caps)| !caps.lookup_by_id)
+        .map(|(id, _)| id.clone())
+        .collect();
+
+    let mut identifier_cap_reached = false;
+    let mut provider_op_cap_reached = false;
 
     for (ids, subquery_id) in [
         (&resolved_ids.cve_ids, "advisory_by_cve"),
@@ -385,44 +511,146 @@ pub async fn run_security_search_plan(
         (&resolved_ids.rustsec_ids, "advisory_by_rustsec"),
     ] {
         for vulnerability_id in ids {
-            if native_operation_count >= MAX_NATIVE_ADVISORY_OPERATIONS {
-                native_operation_cap_warned = true;
+            if !budget.reserve_identifier() {
+                identifier_cap_reached = true;
                 break;
             }
             if looked_up_ids.insert(vulnerability_id.clone()) {
-                native_operation_count += 1;
-                let remaining = native_deadline.saturating_duration_since(Instant::now());
-                let outcomes = adapter
-                    .lookup_advisory_scoped_with_timeout(
-                        &effective_providers,
+                let reservation = budget.reserve_providers(&capable_lookup_providers);
+                budget_summary.provider_operations_planned += capable_lookup_providers.len();
+                budget_summary.provider_operations_dispatched += reservation.allowed.len();
+                budget_summary.provider_operations_skipped_by_budget +=
+                    reservation.skipped_by_budget.len();
+
+                for skipped_pid in &reservation.skipped_by_budget {
+                    native_attempts.push(native_advisory_attempt_with_duration(
+                        skipped_pid,
+                        subquery_id,
+                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                        RetrievalAttemptOutcome::SkippedByPolicy,
+                        0,
+                        Some("native_operation_budget_exhausted".to_string()),
                         vulnerability_id,
-                        remaining,
-                    )
-                    .await;
-                record_lookup_outcomes(
-                    outcomes,
-                    subquery_id,
-                    vulnerability_id,
-                    &mut vulnerabilities,
-                    &mut native_attempts,
-                );
+                        0,
+                    ));
+                }
+
+                for incapable_pid in &incapable_lookup_providers {
+                    native_attempts.push(native_advisory_attempt_with_duration(
+                        incapable_pid,
+                        subquery_id,
+                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                        RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                        0,
+                        None,
+                        vulnerability_id,
+                        0,
+                    ));
+                }
+
+                if reservation.allowed.is_empty() {
+                    provider_op_cap_reached = true;
+                } else {
+                    let remaining = native_deadline.saturating_duration_since(Instant::now());
+                    let outcomes = adapter
+                        .lookup_advisory_scoped_with_timeout(
+                            &reservation.allowed,
+                            vulnerability_id,
+                            remaining,
+                        )
+                        .await;
+                    record_lookup_outcomes(
+                        outcomes,
+                        subquery_id,
+                        vulnerability_id,
+                        &mut vulnerabilities,
+                        &mut native_attempts,
+                    );
+                }
             }
         }
-        if native_operation_count >= MAX_NATIVE_ADVISORY_OPERATIONS {
-            native_operation_cap_warned = true;
+        if identifier_cap_reached || provider_op_cap_reached {
             break;
         }
     }
+
+    budget_summary.identifiers_planned = resolved_ids.cve_ids.len()
+        + resolved_ids.ghsa_ids.len()
+        + resolved_ids.osv_ids.len()
+        + resolved_ids.rustsec_ids.len();
+    budget_summary.identifiers_scheduled = budget.identifiers_seen();
 
     // 5. Native package advisory queries when both package and ecosystem are present
     if let (Some(ref package), Some(ref ecosystem)) =
         (&resolved_ids.package, &resolved_ids.ecosystem)
     {
-        if native_operation_count < MAX_NATIVE_ADVISORY_OPERATIONS {
+        let capable_package_providers: Vec<String> = advisory_caps
+            .iter()
+            .filter(|(_, caps)| caps.query_by_package)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let incapable_package_providers: Vec<String> = advisory_caps
+            .iter()
+            .filter(|(_, caps)| !caps.query_by_package)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        let reservation = budget.reserve_providers(&capable_package_providers);
+        budget_summary.provider_operations_planned += capable_package_providers.len();
+        budget_summary.provider_operations_dispatched += reservation.allowed.len();
+        budget_summary.provider_operations_skipped_by_budget += reservation.skipped_by_budget.len();
+
+        for skipped_pid in &reservation.skipped_by_budget {
+            native_attempts.push(native_advisory_attempt_with_duration(
+                skipped_pid,
+                "advisory_by_package",
+                vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                RetrievalAttemptOutcome::SkippedByPolicy,
+                0,
+                Some("native_operation_budget_exhausted".to_string()),
+                package,
+                0,
+            ));
+            native_attempts.push(native_advisory_attempt_with_duration(
+                skipped_pid,
+                "advisory_by_package",
+                vec![EvidenceRole::ManifestOrDependencyMetadata],
+                RetrievalAttemptOutcome::SkippedByPolicy,
+                0,
+                Some("native_operation_budget_exhausted".to_string()),
+                package,
+                0,
+            ));
+        }
+
+        for incapable_pid in &incapable_package_providers {
+            native_attempts.push(native_advisory_attempt_with_duration(
+                incapable_pid,
+                "advisory_by_package",
+                vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                0,
+                None,
+                package,
+                0,
+            ));
+            native_attempts.push(native_advisory_attempt_with_duration(
+                incapable_pid,
+                "advisory_by_package",
+                vec![EvidenceRole::ManifestOrDependencyMetadata],
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                0,
+                None,
+                package,
+                0,
+            ));
+        }
+
+        if !reservation.allowed.is_empty() {
             let remaining = native_deadline.saturating_duration_since(Instant::now());
             let outcomes = adapter
                 .query_advisories_by_package_scoped_with_timeout(
-                    &effective_providers,
+                    &reservation.allowed,
                     ecosystem,
                     package,
                     resolved_ids.version.as_deref(),
@@ -437,15 +665,28 @@ pub async fn run_security_search_plan(
                 &mut native_attempts,
             );
         } else {
-            native_operation_cap_warned = true;
+            provider_op_cap_reached = true;
         }
     }
 
-    if native_operation_cap_warned {
+    if identifier_cap_reached {
         warnings.push(SearchWarning::new(
             "_system",
             format!(
-                "native_advisory_operation_cap_reached: at most {MAX_NATIVE_ADVISORY_OPERATIONS} native advisory operations were attempted"
+                "native_advisory_identifier_cap_reached: processed {} unique identifiers; {} additional identifiers were not scheduled",
+                budget_summary.identifiers_scheduled,
+                budget_summary.identifiers_planned.saturating_sub(budget_summary.identifiers_scheduled)
+            ),
+        ));
+    }
+
+    if provider_op_cap_reached {
+        warnings.push(SearchWarning::new(
+            "_system",
+            format!(
+                "native_advisory_provider_operation_cap_reached: executed or reserved {} provider operations; {} provider operations were skipped by policy",
+                budget_summary.provider_operations_dispatched,
+                budget_summary.provider_operations_skipped_by_budget
             ),
         ));
     }
@@ -1219,6 +1460,7 @@ fn read_bounded_file(path: &str) -> Result<String, std::io::Error> {
 mod tests {
     use super::*;
     use crate::core::security::VulnerabilitySource;
+    use crate::meta::NativeAdvisoryOperation;
 
     fn make_vuln(cve_id: &str) -> VulnerabilityMetadata {
         VulnerabilityMetadata {
@@ -1370,5 +1612,244 @@ mod tests {
             msg.starts_with("dependency_file_read_error:"),
             "dependency_file_read_error warning must use stable prefix: {msg}"
         );
+    }
+
+    fn pkg_outcome(
+        provider_id: &str,
+        status: ProviderAdvisoryStatus<Vec<VulnerabilityMetadata>>,
+    ) -> ProviderAdvisoryOutcome<Vec<VulnerabilityMetadata>> {
+        ProviderAdvisoryOutcome {
+            provider_id: provider_id.to_string(),
+            operation: NativeAdvisoryOperation::QueryByPackage {
+                ecosystem: "crates_io".to_string(),
+                package: "test-pkg".to_string(),
+                version: None,
+            },
+            status,
+            duration_ms: 10,
+        }
+    }
+
+    fn assert_ledger_unique(attempts: &[RetrievalAttempt]) {
+        crate::core::retrieval_status::validate_attempt_ledger(attempts)
+            .expect("ledger must be valid");
+    }
+
+    #[test]
+    fn a1_capability_unavailable_emits_two_attempts_one_per_role() {
+        let outcomes = vec![pkg_outcome(
+            "osv",
+            ProviderAdvisoryStatus::CapabilityUnavailable,
+        )];
+        let mut vulns = Vec::new();
+        let mut attempts = Vec::new();
+        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(
+            attempts[0].intended_roles,
+            vec![EvidenceRole::AuthoritativeSecurityAdvisory]
+        );
+        assert_eq!(
+            attempts[1].intended_roles,
+            vec![EvidenceRole::ManifestOrDependencyMetadata]
+        );
+        assert_eq!(
+            attempts[0].outcome,
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+        );
+        assert_eq!(
+            attempts[1].outcome,
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+        );
+        assert_ledger_unique(&attempts);
+    }
+
+    #[test]
+    fn a2_success_with_results_emits_two_attempts() {
+        let outcomes = vec![pkg_outcome(
+            "osv",
+            ProviderAdvisoryStatus::Completed(Ok(vec![make_vuln("CVE-2024-0001")])),
+        )];
+        let mut vulns = Vec::new();
+        let mut attempts = Vec::new();
+        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(
+            attempts[0].outcome,
+            RetrievalAttemptOutcome::SuccessWithResults
+        );
+        assert_eq!(
+            attempts[1].outcome,
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+        );
+        assert_eq!(attempts[0].result_count, 1);
+        assert_eq!(attempts[1].result_count, 0);
+        assert_ledger_unique(&attempts);
+    }
+
+    #[test]
+    fn a3_zero_result_emits_two_attempts() {
+        let outcomes = vec![pkg_outcome(
+            "osv",
+            ProviderAdvisoryStatus::Completed(Ok(vec![])),
+        )];
+        let mut vulns = Vec::new();
+        let mut attempts = Vec::new();
+        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(
+            attempts[0].outcome,
+            RetrievalAttemptOutcome::SuccessZeroResults
+        );
+        assert_eq!(
+            attempts[1].outcome,
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+        );
+        assert_ledger_unique(&attempts);
+    }
+
+    #[test]
+    fn a4_failed_provider_emits_two_attempts_no_fabricated_dependency_failure() {
+        let outcomes = vec![pkg_outcome(
+            "osv",
+            ProviderAdvisoryStatus::Completed(Err(EngineError::NetworkError {
+                engine: "osv",
+                reason: "connection refused".to_string(),
+            })),
+        )];
+        let mut vulns = Vec::new();
+        let mut attempts = Vec::new();
+        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].outcome, RetrievalAttemptOutcome::Failed);
+        assert_eq!(
+            attempts[1].outcome,
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+        );
+        assert_eq!(
+            attempts[1].error_class.as_deref(),
+            Some("native_advisory_provider_does_not_supply_manifest_metadata")
+        );
+        assert_ledger_unique(&attempts);
+    }
+
+    #[test]
+    fn a5_deadline_emits_no_duplicate_role_tuple() {
+        let outcomes = vec![pkg_outcome(
+            "osv",
+            ProviderAdvisoryStatus::InterruptedByDeadline,
+        )];
+        let mut vulns = Vec::new();
+        let mut attempts = Vec::new();
+        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(
+            attempts[0].outcome,
+            RetrievalAttemptOutcome::InterruptedByDeadline
+        );
+        assert!(attempts[0].deadline_interrupted);
+        assert_eq!(
+            attempts[1].outcome,
+            RetrievalAttemptOutcome::InterruptedByDeadline
+        );
+        assert!(attempts[1].deadline_interrupted);
+        assert_ledger_unique(&attempts);
+    }
+
+    #[test]
+    fn a6_two_providers_produce_four_unique_tuples() {
+        let outcomes = vec![
+            pkg_outcome(
+                "osv",
+                ProviderAdvisoryStatus::Completed(Ok(vec![make_vuln("CVE-2024-0001")])),
+            ),
+            pkg_outcome(
+                "github_advisory",
+                ProviderAdvisoryStatus::Completed(Ok(vec![])),
+            ),
+        ];
+        let mut vulns = Vec::new();
+        let mut attempts = Vec::new();
+        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        assert_eq!(attempts.len(), 4);
+        assert_ledger_unique(&attempts);
+    }
+
+    #[test]
+    fn b1_budget_one_identifier_one_provider() {
+        let mut budget = NativeOperationBudget::new();
+        assert!(budget.reserve_identifier());
+        let reservation = budget.reserve_providers(&["osv".to_string()]);
+        assert_eq!(reservation.allowed, vec!["osv".to_string()]);
+        assert!(reservation.skipped_by_budget.is_empty());
+        assert_eq!(reservation.remaining_capacity, 63);
+    }
+
+    #[test]
+    fn b2_budget_one_identifier_four_providers() {
+        let mut budget = NativeOperationBudget::new();
+        assert!(budget.reserve_identifier());
+        let providers = vec![
+            "osv".to_string(),
+            "github_advisory".to_string(),
+            "gitlab_advisory".to_string(),
+            "rustsec".to_string(),
+        ];
+        let reservation = budget.reserve_providers(&providers);
+        assert_eq!(reservation.allowed.len(), 4);
+        assert!(reservation.skipped_by_budget.is_empty());
+        assert_eq!(reservation.remaining_capacity, 60);
+    }
+
+    #[test]
+    fn b3_budget_smaller_than_fan_out() {
+        let mut budget = NativeOperationBudget::new();
+        budget.provider_operations_reserved = 63;
+        let providers = vec![
+            "osv".to_string(),
+            "github_advisory".to_string(),
+            "gitlab_advisory".to_string(),
+            "rustsec".to_string(),
+        ];
+        let reservation = budget.reserve_providers(&providers);
+        assert_eq!(reservation.allowed.len(), 1);
+        assert_eq!(reservation.skipped_by_budget.len(), 3);
+    }
+
+    #[test]
+    fn b4_budget_skipped_produce_skipped_by_policy() {
+        let mut budget = NativeOperationBudget::new();
+        budget.provider_operations_reserved = 63;
+        let providers = vec!["osv".to_string(), "github_advisory".to_string()];
+        let reservation = budget.reserve_providers(&providers);
+        assert_eq!(reservation.allowed.len(), 1);
+        assert_eq!(reservation.skipped_by_budget.len(), 1);
+        assert_eq!(reservation.skipped_by_budget[0], "github_advisory");
+    }
+
+    #[test]
+    fn b5_duplicate_identifier_consumes_one_slot() {
+        let mut budget = NativeOperationBudget::new();
+        assert!(budget.reserve_identifier());
+        assert!(budget.reserve_identifier());
+        assert_eq!(budget.identifiers_seen(), 2);
+    }
+
+    #[test]
+    fn b6_capability_unavailable_not_charged_to_dispatch_budget() {
+        let mut budget = NativeOperationBudget::new();
+        let capable = vec!["osv".to_string()];
+        let reservation = budget.reserve_providers(&capable);
+        assert_eq!(reservation.allowed.len(), 1);
+        assert_eq!(budget.provider_operations_reserved(), 1);
+    }
+
+    #[test]
+    fn b7_identifier_cap_exhaustion_stops_scheduling() {
+        let mut budget = NativeOperationBudget::new();
+        for _ in 0..MAX_NATIVE_ADVISORY_IDENTIFIERS {
+            assert!(budget.reserve_identifier());
+        }
+        assert!(!budget.reserve_identifier());
     }
 }

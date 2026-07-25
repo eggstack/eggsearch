@@ -50,6 +50,30 @@ The capability-partition, mixed retrieval-summary, provider-scoped advisory,
 forge-response, and near-cap local-inventory paths are bounded-input
 measurements; they are not a proof of zero memory growth.
 
+### Telemetry accounting and ledger closure
+
+The local gate includes the following test suites that validate the
+retrieval-attempt ledger, dimension-state accounting, and native advisory
+budget partitioning:
+
+- `tests/retrieval_attempt_ledger.rs` — 46 tests covering attempt/dimension
+  summary counts, dimension-state mapping for all 10 outcomes, and
+  `validate_attempt_ledger` uniqueness invariants.
+- `tests/static_guards.rs` — 24 static guards verifying no single
+  `MAX_NATIVE_ADVISORY_OPERATIONS` constant, `NativeOperationBudget` reserve
+  methods, `record_package_outcomes` two-attempt-per-provider invariant,
+  `RetrievalDimensionState` variant completeness, and public visibility of
+  `validate_attempt_ledger`, `summarize_retrieval_with_attempts`, and
+  `AttemptSummaryCounts`.
+- `src/meta/security_search.rs` unit tests — 28 tests covering
+  `record_package_outcomes` for every `ProviderAdvisoryStatus`,
+  `NativeOperationBudget` boundary conditions, and identifier deduplication.
+- `tests/property_retrieval.rs` — property tests for deadline vs. timeout
+  distinction and summary-count partition invariants.
+
+All tests pass across all four feature combinations: `--all-features`,
+`--no-default-features`, `--features mock`, and `--features pdf`.
+
 ## Native forge evidence protocol
 
 Run `.github/workflows/native-forge-smoke.yml` with:

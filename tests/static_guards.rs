@@ -372,3 +372,139 @@ fn all_forge_response_paths_bounded() {
         }
     }
 }
+
+#[test]
+fn no_single_native_advisory_operations_constant() {
+    let source = read_source("src/meta/security_search.rs");
+    let non_test = strip_test_code(&source);
+    assert!(
+        !non_test.contains("MAX_NATIVE_ADVISORY_OPERATIONS"),
+        "security_search.rs must use separate MAX_NATIVE_ADVISORY_IDENTIFIERS and \
+         MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS constants, not a single \
+         MAX_NATIVE_ADVISORY_OPERATIONS constant"
+    );
+    assert!(
+        non_test.contains("MAX_NATIVE_ADVISORY_IDENTIFIERS"),
+        "security_search.rs must define MAX_NATIVE_ADVISORY_IDENTIFIERS"
+    );
+    assert!(
+        non_test.contains("MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS"),
+        "security_search.rs must define MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS"
+    );
+}
+
+#[test]
+fn native_operation_budget_has_reserve_methods() {
+    let source = read_source("src/meta/security_search.rs");
+    let non_test = strip_test_code(&source);
+    assert!(
+        non_test.contains("struct NativeOperationBudget"),
+        "security_search.rs must define NativeOperationBudget struct"
+    );
+    assert!(
+        non_test.contains("fn reserve_identifier"),
+        "NativeOperationBudget must have reserve_identifier method"
+    );
+    assert!(
+        non_test.contains("fn reserve_providers"),
+        "NativeOperationBudget must have reserve_providers method"
+    );
+}
+
+#[test]
+fn record_package_outcomes_emits_two_attempts_per_provider() {
+    let source = read_source("src/meta/security_search.rs");
+    let non_test = strip_test_code(&source);
+    let fn_start = non_test
+        .find("fn record_package_outcomes(")
+        .expect("record_package_outcomes not found");
+    let fn_body = &non_test[fn_start..];
+    assert!(
+        fn_body.contains("ManifestOrDependencyMetadata"),
+        "record_package_outcomes must emit a dependency attempt with \
+         ManifestOrDependencyMetadata role"
+    );
+    assert!(
+        fn_body.contains("AuthoritativeSecurityAdvisory"),
+        "record_package_outcomes must emit an advisory attempt with \
+         AuthoritativeSecurityAdvisory role"
+    );
+    assert!(
+        !fn_body.contains("vec![EvidenceRole::AuthoritativeSecurityAdvisory, EvidenceRole::ManifestOrDependencyMetadata]"),
+        "record_package_outcomes must not create a single attempt with both roles; \
+         each role must be a separate attempt"
+    );
+}
+
+#[test]
+fn retrieval_dimension_state_has_all_variants() {
+    let source = read_source("src/core/retrieval_status.rs");
+    let required = [
+        "Satisfied",
+        "CompletedNoMatch",
+        "Failed",
+        "SkippedByPolicy",
+        "CapabilityUnavailable",
+        "Interrupted",
+        "Partial",
+        "NotApplicable",
+    ];
+    for variant in &required {
+        assert!(
+            source.contains(variant),
+            "RetrievalDimensionState must include variant: {variant}"
+        );
+    }
+}
+
+#[test]
+fn validate_attempt_ledger_is_public() {
+    let source = read_source("src/core/retrieval_status.rs");
+    assert!(
+        source.contains("pub fn validate_attempt_ledger"),
+        "validate_attempt_ledger must be public"
+    );
+    assert!(
+        source.contains("pub enum AttemptLedgerViolation"),
+        "AttemptLedgerViolation must be public"
+    );
+}
+
+#[test]
+fn summarize_retrieval_with_attempts_is_public() {
+    let source = read_source("src/core/retrieval_status.rs");
+    assert!(
+        source.contains("pub fn summarize_retrieval_with_attempts"),
+        "summarize_retrieval_with_attempts must be public"
+    );
+    assert!(
+        source.contains("pub struct AttemptSummaryCounts"),
+        "AttemptSummaryCounts must be public"
+    );
+}
+
+#[test]
+fn dimension_status_has_state_field() {
+    let source = read_source("src/core/retrieval_status.rs");
+    assert!(
+        source.contains("state: Option<RetrievalDimensionState>"),
+        "RetrievalDimensionStatus must have state: Option<RetrievalDimensionState> field"
+    );
+}
+
+#[test]
+fn response_summary_has_dimension_count_fields() {
+    let source = read_source("src/core/retrieval_status.rs");
+    let required = [
+        "attempted_dimension_count",
+        "completed_dimension_count",
+        "failed_dimension_count",
+        "not_applicable_count",
+    ];
+    for field in &required {
+        assert!(
+            source.contains(field),
+            "ResponseRetrievalSummary must have field: {field}"
+        );
+    }
+}

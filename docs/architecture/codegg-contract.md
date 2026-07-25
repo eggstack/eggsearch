@@ -500,6 +500,128 @@ additional identity and state metadata.
 |-------|---------|----------------|
 | `clean` | No uncommitted changes | Proceed normally |
 | `dirty` | Uncommitted changes exist | Warn user; content may be stale relative to HEAD |
+
+---
+
+## 9. Retrieval Dimension State
+
+Search and security responses include a `retrieval_summary` with
+per-dimension `state` fields. Each dimension represents a single
+`(provider, evidence role)` terminal outcome.
+
+### 9.1 Dimension State Variants
+
+| State | Meaning | Harness Action |
+|-------|---------|----------------|
+| `Satisfied` | Evidence was retrieved (results found) | Use evidence; fetch full source before final use |
+| `CompletedNoMatch` | Provider responded successfully with zero results | Mark role as attempted; no evidence available |
+| `Failed` | Provider returned an error | Flag provider as degraded; consider retry |
+| `SkippedByPolicy` | Provider was excluded by budget or configuration | Note budget exhaustion; no retry needed |
+| `CapabilityUnavailable` | Provider does not support the requested capability | Do not retry this provider for this capability |
+| `Interrupted` | Global deadline prevented completion | Note deadline; remaining providers may still succeed |
+| `Partial` | Results were truncated after partial success | Fetch additional pages or sources if available |
+| `NotApplicable` | Role was not requested for this operation | Ignore for evidence purposes |
+
+### 9.2 State Interpretation Order
+
+When multiple dimensions exist for the same evidence role, harnesses
+should interpret states in this priority order (highest to lowest):
+
+1. `Satisfied` — evidence exists, use it
+2. `Partial` — partial evidence exists, supplement if possible
+3. `Failed` — provider error, flag for retry
+4. `Interrupted` — deadline, may succeed on retry with more time
+5. `CompletedNoMatch` — no evidence from this provider
+6. `SkippedByPolicy` — excluded by policy/budget
+7. `CapabilityUnavailable` — provider cannot serve this role
+8. `NotApplicable` — role not requested
+
+### 9.3 Dimension Count Fields
+
+The `retrieval_summary` includes both attempt-level and dimension-level
+count fields:
+
+| Field | Level | Meaning |
+|-------|-------|---------|
+| `attempted_job_count` | Attempt | Total terminal retrieval attempts |
+| `completed_job_count` | Attempt | Attempts with success or not-applicable |
+| `failed_job_count` | Attempt | Attempts that failed, timed out, rate-limited, or were interrupted |
+| `policy_skipped_count` | Attempt | Attempts skipped by policy |
+| `capability_skipped_count` | Attempt | Attempts skipped due to unavailable capability |
+| `attempted_dimension_count` | Dimension | Total role-expanded dimensions |
+| `completed_dimension_count` | Dimension | Dimensions with evidence or no-match |
+| `failed_dimension_count` | Dimension | Dimensions with failure or deadline interruption |
+| `not_applicable_count` | Dimension | Dimensions where the role was not applicable |
+
+**Invariant:** `attempted_job_count == completed_job_count + failed_job_count + policy_skipped_count + capability_skipped_count`.
+
+### 9.4 Dimension State Fixtures
+
+```json
+{
+  "retrieval_summary": {
+    "attempted_job_count": 4,
+    "completed_job_count": 2,
+    "failed_job_count": 1,
+    "policy_skipped_count": 1,
+    "capability_skipped_count": 0,
+    "attempted_dimension_count": 4,
+    "completed_dimension_count": 2,
+    "failed_dimension_count": 1,
+    "not_applicable_count": 0,
+    "dimensions": [
+      {
+        "evidence_role": "primary_implementation",
+        "provider_id": "duckduckgo",
+        "state": "satisfied",
+        "absence_kind": "not_applicable",
+        "attempt_outcome": "success_with_results",
+        "result_count": 5,
+        "truncated": false
+      },
+      {
+        "evidence_role": "official_documentation",
+        "provider_id": "startpage",
+        "state": "failed",
+        "absence_kind": "provider_failed",
+        "attempt_outcome": "failed",
+        "error_class": "connection_refused",
+        "truncated": false
+      },
+      {
+        "evidence_role": "usage_example",
+        "provider_id": "brave",
+        "state": "skipped_by_policy",
+        "absence_kind": "provider_skipped_by_policy",
+        "attempt_outcome": "skipped_by_policy",
+        "truncated": false
+      },
+      {
+        "evidence_role": "authoritative_security_advisory",
+        "provider_id": "osv",
+        "state": "completed_no_match",
+        "absence_kind": "no_matching_evidence_found",
+        "attempt_outcome": "success_zero_results",
+        "truncated": false
+      }
+    ]
+  }
+}
+```
+
+### 9.5 Native Advisory Budget Warnings
+
+Security responses may include budget-related warnings:
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `native_advisory_identifier_cap_reached` | Warning | Unique identifier limit reached; additional identifiers not scheduled |
+| `native_advisory_provider_operation_cap_reached` | Warning | Provider-operation limit reached; provider operations skipped by policy |
+| `native_advisory_provider_does_not_supply_manifest_metadata` | Warning | Advisory provider does not provide dependency manifest metadata |
+
+These warnings are advisory. The retrieval summary's dimension states
+(`SkippedByPolicy` for budget-excluded providers) provide the
+machine-readable signal.
 | `unknown` | Could not determine dirty state | Treat as dirty (conservative) |
 | `not_git` | Not a git repository | Ignore dirty state |
 

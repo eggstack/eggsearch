@@ -62,6 +62,14 @@ pub struct RetrievalDimensionStatus {
     /// Evidence supporting a confirmed or possible truncation signal.
     #[serde(default, skip_serializing_if = "is_none_truncation_evidence")]
     pub truncation_evidence: TruncationEvidence,
+    /// Authoritative coarse terminal state for this dimension.
+    ///
+    /// This field is additive and optional for backward compatibility.
+    /// Consumers should prefer `state` for coarse terminal interpretation,
+    /// `attempt_outcome` for exact operation outcome, and
+    /// `truncation_evidence` for completeness qualification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<RetrievalDimensionState>,
 }
 
 #[allow(missing_docs)]
@@ -99,6 +107,18 @@ pub struct ResponseRetrievalSummary {
     pub roles_complete: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roles_indeterminate: Option<usize>,
+    /// Number of role-expanded dimensions (attempt level × role expansion).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempted_dimension_count: Option<usize>,
+    /// Dimensions whose attempt completed (success, zero-result, not-applicable, partial).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_dimension_count: Option<usize>,
+    /// Dimensions whose attempt failed, timed out, or was rate-limited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_dimension_count: Option<usize>,
+    /// Dimensions whose attempt outcome was `NotApplicable`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_applicable_count: Option<usize>,
 }
 
 #[allow(missing_docs)]
@@ -192,6 +212,40 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
     );
     let failed_job_count = Some(failed_count + deadline_interrupted_count);
 
+    let dimension_count = dimensions.len();
+    let completed_dimension_count = Some(
+        dimensions
+            .iter()
+            .filter(|d| {
+                matches!(
+                    d.absence_kind,
+                    EvidenceAbsenceKind::NotApplicable
+                        | EvidenceAbsenceKind::NoMatchingEvidenceFound
+                        | EvidenceAbsenceKind::ResultTruncatedByCap
+                )
+            })
+            .count(),
+    );
+    let failed_dimension_count = Some(
+        dimensions
+            .iter()
+            .filter(|d| {
+                matches!(
+                    d.absence_kind,
+                    EvidenceAbsenceKind::ProviderFailed
+                        | EvidenceAbsenceKind::DeadlinePreventedCompletion
+                        | EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed
+                )
+            })
+            .count(),
+    );
+    let not_applicable_count = Some(
+        dimensions
+            .iter()
+            .filter(|d| d.absence_kind == EvidenceAbsenceKind::NotApplicable)
+            .count(),
+    );
+
     ResponseRetrievalSummary {
         dimensions,
         has_failures,
@@ -211,7 +265,129 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
         roles_attempted: Some(roles_seen.len()),
         roles_complete: Some(roles_with_success.len()),
         roles_indeterminate: Some(roles_indeterminate.len()),
+        attempted_dimension_count: Some(dimension_count),
+        completed_dimension_count,
+        failed_dimension_count,
+        not_applicable_count,
     }
+}
+
+/// Accumulator for attempt-level summary counts.
+///
+/// Attempt-level counts are derived directly from `&[RetrievalAttempt]`,
+/// not from expanded role dimensions. This prevents multi-role attempts
+/// from inflating job counts.
+#[derive(Default, Clone, Debug)]
+#[allow(missing_docs)]
+pub struct AttemptSummaryCounts {
+    pub attempted: usize,
+    pub completed: usize,
+    pub failed: usize,
+    pub zero_result: usize,
+    pub timed_out: usize,
+    pub rate_limited: usize,
+    pub policy_skipped: usize,
+    pub capability_skipped: usize,
+    pub deadline_interrupted: usize,
+    pub confirmed_truncated: usize,
+    pub limit_reached_unknown: usize,
+    pub not_applicable: usize,
+}
+
+impl AttemptSummaryCounts {
+    /// Compute attempt-level counts from a slice of retrieval attempts.
+    pub fn from_attempts(attempts: &[RetrievalAttempt]) -> Self {
+        let mut counts = AttemptSummaryCounts::default();
+        for attempt in attempts {
+            counts.attempted += 1;
+            match attempt.outcome {
+                RetrievalAttemptOutcome::SuccessWithResults => {
+                    counts.completed += 1;
+                }
+                RetrievalAttemptOutcome::SuccessZeroResults => {
+                    counts.completed += 1;
+                    counts.zero_result += 1;
+                }
+                RetrievalAttemptOutcome::Failed => {
+                    counts.failed += 1;
+                }
+                RetrievalAttemptOutcome::TimedOut => {
+                    counts.failed += 1;
+                    counts.timed_out += 1;
+                }
+                RetrievalAttemptOutcome::RateLimited => {
+                    counts.failed += 1;
+                    counts.rate_limited += 1;
+                }
+                RetrievalAttemptOutcome::InterruptedByDeadline => {
+                    counts.failed += 1;
+                    counts.deadline_interrupted += 1;
+                }
+                RetrievalAttemptOutcome::SkippedByPolicy => {
+                    counts.policy_skipped += 1;
+                }
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable => {
+                    counts.capability_skipped += 1;
+                }
+                RetrievalAttemptOutcome::NotApplicable => {
+                    counts.completed += 1;
+                    counts.not_applicable += 1;
+                }
+                RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => {
+                    counts.completed += 1;
+                }
+            }
+
+            let eff_truncation = effective_truncation_evidence(attempt);
+            if matches!(
+                eff_truncation,
+                TruncationEvidence::ConfirmedByEggsearch | TruncationEvidence::ConfirmedByProvider
+            ) {
+                counts.confirmed_truncated += 1;
+            }
+            if attempt.truncation_evidence == TruncationEvidence::LimitReachedUnknown {
+                counts.limit_reached_unknown += 1;
+            }
+        }
+        counts
+    }
+}
+
+/// Summarize retrieval with both attempt-level and dimension-level counts.
+///
+/// This is the authoritative summary path used when retrieval attempts
+/// are available. Job counts (`attempted_job_count`, `completed_job_count`,
+/// `failed_job_count`) are derived from `&[RetrievalAttempt]`, while
+/// dimension counts (`attempted_dimension_count`, etc.) are derived from
+/// the role-expanded dimensions.
+///
+/// Invariants:
+/// - `attempted_job_count == attempts.len()`
+/// - `attempted_dimension_count == dimensions.len()`
+/// - `attempted_dimension_count >= attempted_job_count`
+/// - `attempted_job_count == completed + failed + policy_skipped + capability_skipped`
+pub fn summarize_retrieval_with_attempts(
+    attempts: &[RetrievalAttempt],
+    dimensions: Vec<RetrievalDimensionStatus>,
+) -> ResponseRetrievalSummary {
+    let attempt_counts = AttemptSummaryCounts::from_attempts(attempts);
+
+    let mut summary = summarize_retrieval(dimensions);
+
+    summary.attempted_job_count = Some(attempt_counts.attempted);
+    summary.completed_job_count = Some(attempt_counts.completed);
+    summary.failed_job_count = Some(attempt_counts.failed);
+    summary.zero_result_count = Some(attempt_counts.zero_result);
+    summary.timed_out_count = Some(attempt_counts.timed_out);
+    summary.rate_limited_count = Some(attempt_counts.rate_limited);
+    summary.policy_skipped_count = Some(attempt_counts.policy_skipped);
+    summary.capability_skipped_count = Some(attempt_counts.capability_skipped);
+    summary.deadline_interrupted_count = Some(attempt_counts.deadline_interrupted);
+    summary.truncated_count = Some(attempt_counts.confirmed_truncated);
+    summary.limit_reached_unknown_count = Some(attempt_counts.limit_reached_unknown);
+    summary.not_applicable_count = Some(attempt_counts.not_applicable);
+
+    summary
 }
 
 #[allow(missing_docs)]
@@ -333,6 +509,297 @@ pub enum TruncationEvidence {
 
 fn is_none_truncation_evidence(value: &TruncationEvidence) -> bool {
     *value == TruncationEvidence::None
+}
+
+/// Compute the effective truncation evidence for an attempt.
+///
+/// If the attempt explicitly carries truncation evidence, use it.
+/// Otherwise, infer from the `truncated` flag or
+/// `TruncatedAfterPartialSuccess` outcome.
+pub fn effective_truncation_evidence(attempt: &RetrievalAttempt) -> TruncationEvidence {
+    if attempt.truncation_evidence != TruncationEvidence::None {
+        return attempt.truncation_evidence;
+    }
+    if attempt.truncated || attempt.outcome == RetrievalAttemptOutcome::TruncatedAfterPartialSuccess
+    {
+        TruncationEvidence::ConfirmedByEggsearch
+    } else {
+        TruncationEvidence::None
+    }
+}
+
+/// Coarse terminal state for a single evidence dimension.
+///
+/// This is the authoritative field for terminal interpretation.
+/// `absence_kind` describes absence/failure context and is not a
+/// complete success-state enum. Consumers should prefer `state` for
+/// coarse terminal status, `attempt_outcome` for exact operation
+/// outcome, and `truncation_evidence` for completeness qualification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalDimensionState {
+    /// Retrieval completed and evidence was found.
+    Satisfied,
+    /// Retrieval completed but no evidence was found.
+    CompletedNoMatch,
+    /// The provider operation failed, timed out, or was rate-limited.
+    Failed,
+    /// The provider was deliberately suppressed by operator policy.
+    SkippedByPolicy,
+    /// The provider cannot perform the requested operation.
+    CapabilityUnavailable,
+    /// The global deadline prevented completion.
+    Interrupted,
+    /// Results were truncated; the dimension is partially satisfied.
+    Partial,
+    /// The operation did not apply to this request.
+    NotApplicable,
+}
+
+/// Map a retrieval attempt outcome to its authoritative dimension state.
+///
+/// Confirmed truncation (via `truncation_evidence` or `truncated` flag)
+/// takes precedence and maps to `Partial`. Uncertain limit reached
+/// (`LimitReachedUnknown`) leaves the state as `Satisfied` because the
+/// provider call completed and returned evidence.
+pub fn attempt_outcome_to_dimension_state(attempt: &RetrievalAttempt) -> RetrievalDimensionState {
+    let truncation_evidence = effective_truncation_evidence(attempt);
+    if matches!(
+        truncation_evidence,
+        TruncationEvidence::ConfirmedByEggsearch | TruncationEvidence::ConfirmedByProvider
+    ) {
+        return RetrievalDimensionState::Partial;
+    }
+    match attempt.outcome {
+        RetrievalAttemptOutcome::SuccessWithResults => RetrievalDimensionState::Satisfied,
+        RetrievalAttemptOutcome::SuccessZeroResults => RetrievalDimensionState::CompletedNoMatch,
+        RetrievalAttemptOutcome::Failed
+        | RetrievalAttemptOutcome::TimedOut
+        | RetrievalAttemptOutcome::RateLimited => RetrievalDimensionState::Failed,
+        RetrievalAttemptOutcome::SkippedByPolicy => RetrievalDimensionState::SkippedByPolicy,
+        RetrievalAttemptOutcome::SkippedCapabilityUnavailable => {
+            RetrievalDimensionState::CapabilityUnavailable
+        }
+        RetrievalAttemptOutcome::InterruptedByDeadline => RetrievalDimensionState::Interrupted,
+        RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => RetrievalDimensionState::Partial,
+        RetrievalAttemptOutcome::NotApplicable => RetrievalDimensionState::NotApplicable,
+    }
+}
+
+/// Internal operation identity used for ledger deduplication.
+///
+/// This is a deterministic, provider-independent identifier for a
+/// retrieval operation. It is used internally for deduplication and
+/// testing. It does not contain raw query text.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[allow(missing_docs)]
+pub enum RetrievalOperationIdentity {
+    /// A generic search subquery.
+    SearchSubquery { subquery_id: String },
+    /// A native advisory identifier lookup.
+    AdvisoryLookupById {
+        vulnerability_id_fingerprint: String,
+    },
+    /// A native advisory package query.
+    AdvisoryQueryByPackage {
+        ecosystem: String,
+        package_fingerprint: String,
+        version_fingerprint: Option<String>,
+    },
+    /// A CISA KEV lookup by CVE ID.
+    KevLookup { cve_id_fingerprint: String },
+}
+
+impl RetrievalOperationIdentity {
+    /// Compute a bounded, non-recoverable fingerprint for an identifier.
+    fn fingerprint(value: &str) -> String {
+        crate::core::retrieval_status::query_fingerprint_from_query(value)
+    }
+
+    /// Build an operation identity from a subquery label and ID.
+    pub fn from_search_subquery(subquery_id: &str) -> Self {
+        RetrievalOperationIdentity::SearchSubquery {
+            subquery_id: subquery_id.to_string(),
+        }
+    }
+
+    /// Build an operation identity from an advisory identifier.
+    pub fn from_advisory_id(vulnerability_id: &str) -> Self {
+        RetrievalOperationIdentity::AdvisoryLookupById {
+            vulnerability_id_fingerprint: Self::fingerprint(vulnerability_id),
+        }
+    }
+
+    /// Build an operation identity from a package coordinate.
+    pub fn from_package(ecosystem: &str, package: &str, version: Option<&str>) -> Self {
+        RetrievalOperationIdentity::AdvisoryQueryByPackage {
+            ecosystem: ecosystem.to_string(),
+            package_fingerprint: Self::fingerprint(package),
+            version_fingerprint: version.map(Self::fingerprint),
+        }
+    }
+
+    /// Build an operation identity from a CVE ID for KEV lookup.
+    pub fn from_kev_cve(cve_id: &str) -> Self {
+        RetrievalOperationIdentity::KevLookup {
+            cve_id_fingerprint: Self::fingerprint(cve_id),
+        }
+    }
+}
+
+/// Violation detected by [`validate_attempt_ledger`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum AttemptLedgerViolation {
+    /// A provider/operation/role tuple appeared more than once.
+    DuplicateProviderOperationRole {
+        provider_id: String,
+        subquery_id: Option<String>,
+        role: String,
+    },
+    /// An attempt has an empty provider ID.
+    EmptyProviderId,
+    /// An attempt's role vector contains a duplicate role.
+    DuplicateRoleInAttempt { provider_id: String, role: String },
+    /// A failure or skip outcome has a nonzero result count.
+    ResultCountWithFailure {
+        provider_id: String,
+        result_count: usize,
+    },
+    /// `SuccessZeroResults` has a nonzero result count.
+    ZeroResultWithCount {
+        provider_id: String,
+        result_count: usize,
+    },
+    /// `SuccessWithResults` has a zero result count.
+    SuccessWithZeroResults { provider_id: String },
+    /// A deadline outcome lacks `deadline_interrupted = true`.
+    DeadlineWithoutFlag { provider_id: String },
+    /// Confirmed truncation without a success/partial-success outcome.
+    TruncationWithoutSuccess { provider_id: String },
+    /// A capability skip has an empty role set.
+    CapabilitySkipWithEmptyRoles { provider_id: String },
+}
+
+/// Validate the terminal-attempt ledger invariant.
+///
+/// The canonical invariant is: for a given request, there may be at most
+/// one terminal retrieval attempt for each distinct
+/// `(provider_id, operation identity, evidence role)` tuple.
+///
+/// This is a pure validation helper used by tests and optionally by
+/// debug assertions. It does not fail production responses.
+pub fn validate_attempt_ledger(
+    attempts: &[RetrievalAttempt],
+) -> Result<(), AttemptLedgerViolation> {
+    let mut seen: std::collections::HashSet<(String, Option<String>, String)> =
+        std::collections::HashSet::new();
+
+    for attempt in attempts {
+        if attempt.provider_id.is_empty() {
+            return Err(AttemptLedgerViolation::EmptyProviderId);
+        }
+
+        let mut role_seen: std::collections::HashSet<EvidenceRole> =
+            std::collections::HashSet::new();
+        for role in &attempt.intended_roles {
+            if !role_seen.insert(*role) {
+                return Err(AttemptLedgerViolation::DuplicateRoleInAttempt {
+                    provider_id: attempt.provider_id.clone(),
+                    role: role.label().to_string(),
+                });
+            }
+        }
+
+        if attempt.intended_roles.is_empty()
+            && matches!(
+                attempt.outcome,
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+            )
+        {
+            return Err(AttemptLedgerViolation::CapabilitySkipWithEmptyRoles {
+                provider_id: attempt.provider_id.clone(),
+            });
+        }
+
+        let roles: Vec<EvidenceRole> = if attempt.intended_roles.is_empty() {
+            vec![EvidenceRole::UnknownOrWeakContext]
+        } else {
+            attempt.intended_roles.clone()
+        };
+
+        for role in &roles {
+            let key = (
+                attempt.provider_id.clone(),
+                attempt.subquery_id.clone(),
+                role.label().to_string(),
+            );
+            if !seen.insert(key) {
+                return Err(AttemptLedgerViolation::DuplicateProviderOperationRole {
+                    provider_id: attempt.provider_id.clone(),
+                    subquery_id: attempt.subquery_id.clone(),
+                    role: role.label().to_string(),
+                });
+            }
+        }
+
+        match attempt.outcome {
+            RetrievalAttemptOutcome::Failed
+            | RetrievalAttemptOutcome::TimedOut
+            | RetrievalAttemptOutcome::RateLimited
+            | RetrievalAttemptOutcome::SkippedByPolicy
+            | RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+            | RetrievalAttemptOutcome::InterruptedByDeadline => {
+                if attempt.result_count > 0 {
+                    return Err(AttemptLedgerViolation::ResultCountWithFailure {
+                        provider_id: attempt.provider_id.clone(),
+                        result_count: attempt.result_count,
+                    });
+                }
+            }
+            RetrievalAttemptOutcome::SuccessZeroResults => {
+                if attempt.result_count > 0 {
+                    return Err(AttemptLedgerViolation::ZeroResultWithCount {
+                        provider_id: attempt.provider_id.clone(),
+                        result_count: attempt.result_count,
+                    });
+                }
+            }
+            RetrievalAttemptOutcome::SuccessWithResults => {
+                if attempt.result_count == 0 {
+                    return Err(AttemptLedgerViolation::SuccessWithZeroResults {
+                        provider_id: attempt.provider_id.clone(),
+                    });
+                }
+            }
+            RetrievalAttemptOutcome::NotApplicable
+            | RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => {}
+        }
+
+        if attempt.outcome == RetrievalAttemptOutcome::InterruptedByDeadline
+            && !attempt.deadline_interrupted
+        {
+            return Err(AttemptLedgerViolation::DeadlineWithoutFlag {
+                provider_id: attempt.provider_id.clone(),
+            });
+        }
+
+        let truncation_evidence = effective_truncation_evidence(attempt);
+        if matches!(
+            truncation_evidence,
+            TruncationEvidence::ConfirmedByEggsearch | TruncationEvidence::ConfirmedByProvider
+        ) && !matches!(
+            attempt.outcome,
+            RetrievalAttemptOutcome::SuccessWithResults
+                | RetrievalAttemptOutcome::TruncatedAfterPartialSuccess
+        ) {
+            return Err(AttemptLedgerViolation::TruncationWithoutSuccess {
+                provider_id: attempt.provider_id.clone(),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Record of a single provider/subquery retrieval attempt.

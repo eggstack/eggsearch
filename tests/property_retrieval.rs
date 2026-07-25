@@ -665,7 +665,7 @@ fn b6_08_deadline_interruption_distinct_from_provider_timeout() {
 
     let summary = build_retrieval_summary_from_attempts(&[timeout_attempt, deadline_attempt]);
     assert_eq!(summary.timed_out_count, Some(1));
-    assert_eq!(summary.deadline_interrupted_count, Some(2));
+    assert_eq!(summary.deadline_interrupted_count, Some(1));
 
     let timeout_dim = summary
         .dimensions
