@@ -500,10 +500,10 @@ additional identity and state metadata.
 |-------|---------|----------------|
 | `clean` | No uncommitted changes | Proceed normally |
 | `dirty` | Uncommitted changes exist | Warn user; content may be stale relative to HEAD |
+| `unknown` | Could not determine dirty state | Treat as dirty (conservative) |
+| `not_git` | Not a git repository | Ignore dirty state |
 
----
-
-## 9. Retrieval Dimension State
+### 8.4 File Classification Flags
 
 Search and security responses include a `retrieval_summary` with
 per-dimension `state` fields. Each dimension represents a single
@@ -622,36 +622,10 @@ Security responses may include budget-related warnings:
 These warnings are advisory. The retrieval summary's dimension states
 (`SkippedByPolicy` for budget-excluded providers) provide the
 machine-readable signal.
-| `unknown` | Could not determine dirty state | Treat as dirty (conservative) |
-| `not_git` | Not a git repository | Ignore dirty state |
-
-### 8.4 File Classification Flags
-
-Local workspace results include boolean classification flags:
-
-| Flag | Meaning | Harness Action |
-|------|---------|----------------|
-| `is_generated` | Auto-generated file (build output, protobuf, etc.) | Deprioritize; likely not first-party logic |
-| `is_vendor` | Vendored third-party code | Treat as external untrusted |
-| `is_test` | Test file | Link to corresponding implementation |
-| `is_example` | Example/demo code | Treat as supplementary |
-| `is_config` | Configuration file | Treat as operational context |
-| `is_lockfile` | Dependency lockfile | Use for reproducibility, not logic |
-
-### 8.5 Workspace ID
-
-`workspace_id` is a deterministic FNV-1a hash of:
-- Root directory path
-- Remote URLs
-- HEAD commit
-
-Use this to track workspace state across calls without re-discovering
-the repository each time. If `workspace_id` changes, re-fetch workspace
-metadata.
 
 ---
 
-## 9. Capability Discovery
+## 10. Capability Discovery
 
 `provider_status` returns provider descriptors, cached health snapshots,
 `code_hosts`, `server_capabilities`, `tool_capabilities`, and
@@ -668,7 +642,7 @@ code from the `ProviderSkipCode` enum). Stable `skip_code` values:
 `credential_env_missing`, `credential_invalid`, `cooldown_active`,
 `not_built`, `unknown`.
 
-### 9.1 Server Capabilities
+### 10.1 Server Capabilities
 
 ```json
 {
@@ -691,7 +665,7 @@ Harnesses should check capabilities before invoking specialized tools.
 If a capability is `false`, fall back to `web_search` with appropriate
 `intent` hints.
 
-### 9.2 Tool Capabilities
+### 10.2 Tool Capabilities
 
 Per-tool feature details:
 
@@ -717,7 +691,7 @@ Per-tool feature details:
 }
 ```
 
-### 9.3 Routing Decision
+### 10.3 Routing Decision
 
 Every search response includes a `routing_decision` field:
 
@@ -743,7 +717,7 @@ Every search response includes a `routing_decision` field:
 Harnesses should use `routing_decision.degraded` to decide whether to
 warn the user about reduced capability.
 
-### 9.4 Retrieval outcome semantics
+### 10.4 Retrieval outcome semantics
 
 Security responses retain one retrieval attempt per selected native provider
 operation. The attempt's `provider_id` is the executing provider, not an
@@ -760,7 +734,7 @@ Advisory records may deduplicate across providers, but attempts must not be
 deduplicated away. Required roles with capability or policy skips remain
 indeterminate in workflow coverage.
 
-### 9.5 `web_fetch` Metadata-Only Mode
+### 10.5 `web_fetch` Metadata-Only Mode
 
 `web_fetch` supports `extract_mode = "metadata_only"` for explicit URL
 fetches.
@@ -776,7 +750,7 @@ Use `metadata_only` when you need page metadata but not the body.
 
 ---
 
-## 10. Implementation Checklist
+## 11. Implementation Checklist
 
 - [ ] Read `structured_warnings`, not `warnings`, for programmatic decisions
 - [ ] Use `stable_id` for deduplication across tool calls
@@ -798,7 +772,7 @@ Use `metadata_only` when you need page metadata but not the body.
 
 ---
 
-## 11. Schema Stability Rules
+## 12. Schema Stability Rules
 
 The following are **breaking changes** that require a major version bump:
 

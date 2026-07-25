@@ -12,6 +12,7 @@ fn attempt(
     RetrievalAttempt {
         provider_id: provider_id.to_string(),
         subquery_id: Some("sq_0".to_string()),
+        operation_id: None,
         intended_roles: roles,
         outcome,
         result_count: 0,
@@ -215,6 +216,7 @@ fn c8_13_same_provider_multiple_subqueries_produce_distinct_attempts() {
     let a1 = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_0".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 5,
@@ -228,6 +230,7 @@ fn c8_13_same_provider_multiple_subqueries_produce_distinct_attempts() {
     let a2 = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_1".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::OfficialDocumentation],
         outcome: RetrievalAttemptOutcome::SuccessZeroResults,
         result_count: 0,
@@ -317,6 +320,7 @@ fn c8_17_provider_panic_yields_failed_attempt() {
     let a = RetrievalAttempt {
         provider_id: "panicking_provider".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::Failed,
         result_count: 0,
@@ -570,6 +574,7 @@ fn b15_attempt_ledger_empty_query() {
     let a = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_empty".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessZeroResults,
         result_count: 0,
@@ -747,7 +752,7 @@ fn c2_dimension_state_set_on_all_dimensions() {
     assert_eq!(summary.attempted_dimension_count, Some(7));
     assert_eq!(summary.completed_dimension_count, Some(3));
     assert_eq!(summary.failed_dimension_count, Some(2));
-    assert_eq!(summary.not_applicable_count, Some(1));
+    assert_eq!(summary.not_applicable_count, Some(2));
     for dim in &summary.dimensions {
         assert!(dim.state.is_some(), "every dimension must have a state set");
     }
@@ -940,7 +945,7 @@ fn c11_dimension_counts_partition_invariant_mixed() {
     assert_eq!(summary.attempted_dimension_count, Some(10));
     assert_eq!(summary.completed_dimension_count, Some(4));
     assert_eq!(summary.failed_dimension_count, Some(4));
-    assert_eq!(summary.not_applicable_count, Some(1));
+    assert_eq!(summary.not_applicable_count, Some(2));
 }
 
 #[test]

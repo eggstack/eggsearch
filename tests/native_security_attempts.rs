@@ -15,6 +15,7 @@ fn native_attempt(
     RetrievalAttempt {
         provider_id: provider_id.to_string(),
         subquery_id: Some(subquery_id.to_string()),
+        operation_id: None,
         intended_roles: roles,
         outcome,
         result_count,
@@ -295,6 +296,7 @@ fn d8_15_serialized_security_summary_contains_both_generic_and_native() {
     let generic = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_generic".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 3,

@@ -20,6 +20,7 @@ use tracing::warn;
 use crate::core::evidence_role::EvidenceRole;
 use crate::core::retrieval_status::{
     query_fingerprint_from_query, RetrievalAttempt, RetrievalAttemptOutcome,
+    RetrievalOperationIdentity,
 };
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::SearchResult;
@@ -297,6 +298,10 @@ pub(crate) async fn dispatch_parallel(
                     collected_attempts.push(RetrievalAttempt {
                         provider_id: job.provider_id.clone(),
                         subquery_id: Some(job.subquery_id.clone()),
+                        operation_id: Some(
+                            RetrievalOperationIdentity::from_search_subquery(&job.subquery_id)
+                                .stable_id(),
+                        ),
                         intended_roles,
                         outcome,
                         result_count: 0,
@@ -534,7 +539,13 @@ pub(crate) async fn dispatch_parallel(
                                 };
                                 collected_attempts.push(RetrievalAttempt {
                                     provider_id: tr.provider_id,
-                                    subquery_id: Some(tr.subquery_id),
+                                    subquery_id: Some(tr.subquery_id.clone()),
+                                    operation_id: Some(
+                                        RetrievalOperationIdentity::from_search_subquery(
+                                            &tr.subquery_id,
+                                        )
+                                        .stable_id(),
+                                    ),
                                     intended_roles: tr.intended_roles,
                                     outcome,
                                     result_count,
@@ -589,7 +600,13 @@ pub(crate) async fn dispatch_parallel(
                                 });
                                 collected_attempts.push(RetrievalAttempt {
                                     provider_id: tr.provider_id,
-                                    subquery_id: Some(tr.subquery_id),
+                                    subquery_id: Some(tr.subquery_id.clone()),
+                                    operation_id: Some(
+                                        RetrievalOperationIdentity::from_search_subquery(
+                                            &tr.subquery_id,
+                                        )
+                                        .stable_id(),
+                                    ),
                                     intended_roles: tr.intended_roles,
                                     outcome,
                                     result_count: 0,
@@ -724,6 +741,9 @@ pub(crate) async fn dispatch_parallel(
             collected_attempts.push(RetrievalAttempt {
                 provider_id: job.provider_id.clone(),
                 subquery_id: Some(job.subquery_id.clone()),
+                operation_id: Some(
+                    RetrievalOperationIdentity::from_search_subquery(&job.subquery_id).stable_id(),
+                ),
                 intended_roles: job.intended_roles.clone(),
                 outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
                 result_count: 0,
@@ -747,8 +767,11 @@ pub(crate) async fn dispatch_parallel(
         if !dispatched_keys.contains(&key) {
             let job_query = matching_job.map(|j| j.query.clone()).unwrap_or_default();
             collected_attempts.push(RetrievalAttempt {
-                provider_id: pid,
-                subquery_id: Some(sid),
+                provider_id: pid.clone(),
+                subquery_id: Some(sid.clone()),
+                operation_id: Some(
+                    RetrievalOperationIdentity::from_search_subquery(&sid).stable_id(),
+                ),
                 intended_roles,
                 outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
                 result_count: 0,

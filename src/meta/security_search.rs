@@ -10,7 +10,9 @@ use std::time::Instant;
 
 use crate::core::code_evidence::EvidenceConfidence;
 use crate::core::evidence_role::EvidenceRole;
-use crate::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
+use crate::core::retrieval_status::{
+    RetrievalAttempt, RetrievalAttemptOutcome, RetrievalOperationIdentity,
+};
 use crate::core::security::{
     self, AffectedPackageSummary, SecurityContext, SecurityIdentifiers, SecuritySearchRequest,
     SecuritySearchResponse, VulnerabilityMetadata, VulnerabilitySummary,
@@ -141,6 +143,7 @@ pub struct NativeAdvisoryBudgetSummary {
 fn native_advisory_attempt(
     provider_id: &str,
     subquery_id: &str,
+    operation: &RetrievalOperationIdentity,
     intended_roles: Vec<EvidenceRole>,
     outcome: RetrievalAttemptOutcome,
     result_count: usize,
@@ -151,6 +154,7 @@ fn native_advisory_attempt(
     RetrievalAttempt {
         provider_id: provider_id.to_string(),
         subquery_id: Some(subquery_id.to_string()),
+        operation_id: Some(operation.stable_id()),
         intended_roles,
         outcome,
         result_count,
@@ -169,6 +173,7 @@ fn native_advisory_attempt(
 fn native_advisory_attempt_with_duration(
     provider_id: &str,
     subquery_id: &str,
+    operation: &RetrievalOperationIdentity,
     intended_roles: Vec<EvidenceRole>,
     outcome: RetrievalAttemptOutcome,
     result_count: usize,
@@ -179,6 +184,7 @@ fn native_advisory_attempt_with_duration(
     RetrievalAttempt {
         provider_id: provider_id.to_string(),
         subquery_id: Some(subquery_id.to_string()),
+        operation_id: Some(operation.stable_id()),
         intended_roles,
         outcome,
         result_count,
@@ -215,6 +221,7 @@ fn native_error_outcome(error: &EngineError) -> (RetrievalAttemptOutcome, String
 fn record_lookup_outcomes(
     outcomes: Vec<ProviderAdvisoryOutcome<Option<VulnerabilityMetadata>>>,
     subquery_id: &str,
+    operation: &RetrievalOperationIdentity,
     query_text: &str,
     vulnerabilities: &mut Vec<VulnerabilityMetadata>,
     attempts: &mut Vec<RetrievalAttempt>,
@@ -225,6 +232,7 @@ fn record_lookup_outcomes(
             ProviderAdvisoryStatus::CapabilityUnavailable => native_advisory_attempt_with_duration(
                 &outcome.provider_id,
                 subquery_id,
+                operation,
                 roles.clone(),
                 RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
                 0,
@@ -236,6 +244,7 @@ fn record_lookup_outcomes(
                 let mut attempt = native_advisory_attempt_with_duration(
                     &outcome.provider_id,
                     subquery_id,
+                    operation,
                     roles.clone(),
                     RetrievalAttemptOutcome::InterruptedByDeadline,
                     0,
@@ -256,6 +265,7 @@ fn record_lookup_outcomes(
                 native_advisory_attempt_with_duration(
                     &outcome.provider_id,
                     subquery_id,
+                    operation,
                     roles.clone(),
                     RetrievalAttemptOutcome::SuccessWithResults,
                     1,
@@ -267,6 +277,7 @@ fn record_lookup_outcomes(
             ProviderAdvisoryStatus::Completed(Ok(None)) => native_advisory_attempt_with_duration(
                 &outcome.provider_id,
                 subquery_id,
+                operation,
                 roles.clone(),
                 RetrievalAttemptOutcome::SuccessZeroResults,
                 0,
@@ -279,6 +290,7 @@ fn record_lookup_outcomes(
                 native_advisory_attempt_with_duration(
                     &outcome.provider_id,
                     subquery_id,
+                    operation,
                     roles.clone(),
                     attempt_outcome,
                     0,
@@ -294,6 +306,7 @@ fn record_lookup_outcomes(
 
 fn record_package_outcomes(
     outcomes: Vec<ProviderAdvisoryOutcome<Vec<VulnerabilityMetadata>>>,
+    operation: &RetrievalOperationIdentity,
     query_text: &str,
     vulnerabilities: &mut Vec<VulnerabilityMetadata>,
     attempts: &mut Vec<RetrievalAttempt>,
@@ -305,6 +318,7 @@ fn record_package_outcomes(
             ProviderAdvisoryStatus::CapabilityUnavailable => native_advisory_attempt_with_duration(
                 &outcome.provider_id,
                 "advisory_by_package",
+                operation,
                 advisory_role.clone(),
                 RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
                 0,
@@ -316,6 +330,7 @@ fn record_package_outcomes(
                 let mut attempt = native_advisory_attempt_with_duration(
                     &outcome.provider_id,
                     "advisory_by_package",
+                    operation,
                     advisory_role.clone(),
                     RetrievalAttemptOutcome::InterruptedByDeadline,
                     0,
@@ -339,6 +354,7 @@ fn record_package_outcomes(
                 native_advisory_attempt_with_duration(
                     &outcome.provider_id,
                     "advisory_by_package",
+                    operation,
                     advisory_role.clone(),
                     if count > 0 {
                         RetrievalAttemptOutcome::SuccessWithResults
@@ -356,6 +372,7 @@ fn record_package_outcomes(
                 native_advisory_attempt_with_duration(
                     &outcome.provider_id,
                     "advisory_by_package",
+                    operation,
                     advisory_role.clone(),
                     attempt_outcome,
                     0,
@@ -373,6 +390,7 @@ fn record_package_outcomes(
         let dependency_attempt = native_advisory_attempt_with_duration(
             &outcome.provider_id,
             "advisory_by_package",
+            operation,
             dependency_role.clone(),
             if dependency_interrupted {
                 RetrievalAttemptOutcome::InterruptedByDeadline
@@ -502,7 +520,6 @@ pub async fn run_security_search_plan(
         .collect();
 
     let mut identifier_cap_reached = false;
-    let mut provider_op_cap_reached = false;
 
     for (ids, subquery_id) in [
         (&resolved_ids.cve_ids, "advisory_by_cve"),
@@ -511,79 +528,85 @@ pub async fn run_security_search_plan(
         (&resolved_ids.rustsec_ids, "advisory_by_rustsec"),
     ] {
         for vulnerability_id in ids {
+            if !looked_up_ids.insert(vulnerability_id.clone()) {
+                continue;
+            }
             if !budget.reserve_identifier() {
                 identifier_cap_reached = true;
                 break;
             }
-            if looked_up_ids.insert(vulnerability_id.clone()) {
-                let reservation = budget.reserve_providers(&capable_lookup_providers);
-                budget_summary.provider_operations_planned += capable_lookup_providers.len();
-                budget_summary.provider_operations_dispatched += reservation.allowed.len();
-                budget_summary.provider_operations_skipped_by_budget +=
-                    reservation.skipped_by_budget.len();
+            let operation = RetrievalOperationIdentity::from_advisory_id(vulnerability_id);
+            let reservation = budget.reserve_providers(&capable_lookup_providers);
+            budget_summary.provider_operations_planned += capable_lookup_providers.len();
+            budget_summary.provider_operations_dispatched += reservation.allowed.len();
+            budget_summary.provider_operations_skipped_by_budget +=
+                reservation.skipped_by_budget.len();
 
-                for skipped_pid in &reservation.skipped_by_budget {
-                    native_attempts.push(native_advisory_attempt_with_duration(
-                        skipped_pid,
-                        subquery_id,
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SkippedByPolicy,
-                        0,
-                        Some("native_operation_budget_exhausted".to_string()),
-                        vulnerability_id,
-                        0,
-                    ));
-                }
+            for skipped_pid in &reservation.skipped_by_budget {
+                native_attempts.push(native_advisory_attempt_with_duration(
+                    skipped_pid,
+                    subquery_id,
+                    &operation,
+                    vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                    RetrievalAttemptOutcome::SkippedByPolicy,
+                    0,
+                    Some("native_operation_budget_exhausted".to_string()),
+                    vulnerability_id,
+                    0,
+                ));
+            }
 
-                for incapable_pid in &incapable_lookup_providers {
-                    native_attempts.push(native_advisory_attempt_with_duration(
-                        incapable_pid,
-                        subquery_id,
-                        vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                        RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
-                        0,
-                        None,
-                        vulnerability_id,
-                        0,
-                    ));
-                }
+            for incapable_pid in &incapable_lookup_providers {
+                native_attempts.push(native_advisory_attempt_with_duration(
+                    incapable_pid,
+                    subquery_id,
+                    &operation,
+                    vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                    RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                    0,
+                    None,
+                    vulnerability_id,
+                    0,
+                ));
+            }
 
-                if reservation.allowed.is_empty() {
-                    provider_op_cap_reached = true;
-                } else {
-                    let remaining = native_deadline.saturating_duration_since(Instant::now());
-                    let outcomes = adapter
-                        .lookup_advisory_scoped_with_timeout(
-                            &reservation.allowed,
-                            vulnerability_id,
-                            remaining,
-                        )
-                        .await;
-                    record_lookup_outcomes(
-                        outcomes,
-                        subquery_id,
+            if !reservation.allowed.is_empty() {
+                let remaining = native_deadline.saturating_duration_since(Instant::now());
+                let outcomes = adapter
+                    .lookup_advisory_scoped_with_timeout(
+                        &reservation.allowed,
                         vulnerability_id,
-                        &mut vulnerabilities,
-                        &mut native_attempts,
-                    );
-                }
+                        remaining,
+                    )
+                    .await;
+                record_lookup_outcomes(
+                    outcomes,
+                    subquery_id,
+                    &operation,
+                    vulnerability_id,
+                    &mut vulnerabilities,
+                    &mut native_attempts,
+                );
             }
         }
-        if identifier_cap_reached || provider_op_cap_reached {
+        if identifier_cap_reached {
             break;
         }
     }
 
-    budget_summary.identifiers_planned = resolved_ids.cve_ids.len()
-        + resolved_ids.ghsa_ids.len()
-        + resolved_ids.osv_ids.len()
-        + resolved_ids.rustsec_ids.len();
+    budget_summary.identifiers_planned = looked_up_ids.len();
     budget_summary.identifiers_scheduled = budget.identifiers_seen();
 
     // 5. Native package advisory queries when both package and ecosystem are present
     if let (Some(ref package), Some(ref ecosystem)) =
         (&resolved_ids.package, &resolved_ids.ecosystem)
     {
+        let package_operation = RetrievalOperationIdentity::from_package(
+            ecosystem,
+            package,
+            resolved_ids.version.as_deref(),
+        );
+
         let capable_package_providers: Vec<String> = advisory_caps
             .iter()
             .filter(|(_, caps)| caps.query_by_package)
@@ -604,6 +627,7 @@ pub async fn run_security_search_plan(
             native_attempts.push(native_advisory_attempt_with_duration(
                 skipped_pid,
                 "advisory_by_package",
+                &package_operation,
                 vec![EvidenceRole::AuthoritativeSecurityAdvisory],
                 RetrievalAttemptOutcome::SkippedByPolicy,
                 0,
@@ -614,6 +638,7 @@ pub async fn run_security_search_plan(
             native_attempts.push(native_advisory_attempt_with_duration(
                 skipped_pid,
                 "advisory_by_package",
+                &package_operation,
                 vec![EvidenceRole::ManifestOrDependencyMetadata],
                 RetrievalAttemptOutcome::SkippedByPolicy,
                 0,
@@ -627,6 +652,7 @@ pub async fn run_security_search_plan(
             native_attempts.push(native_advisory_attempt_with_duration(
                 incapable_pid,
                 "advisory_by_package",
+                &package_operation,
                 vec![EvidenceRole::AuthoritativeSecurityAdvisory],
                 RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
                 0,
@@ -637,6 +663,7 @@ pub async fn run_security_search_plan(
             native_attempts.push(native_advisory_attempt_with_duration(
                 incapable_pid,
                 "advisory_by_package",
+                &package_operation,
                 vec![EvidenceRole::ManifestOrDependencyMetadata],
                 RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
                 0,
@@ -660,12 +687,11 @@ pub async fn run_security_search_plan(
                 .await;
             record_package_outcomes(
                 outcomes,
+                &package_operation,
                 package,
                 &mut vulnerabilities,
                 &mut native_attempts,
             );
-        } else {
-            provider_op_cap_reached = true;
         }
     }
 
@@ -680,11 +706,12 @@ pub async fn run_security_search_plan(
         ));
     }
 
+    let provider_op_cap_reached = budget_summary.provider_operations_skipped_by_budget > 0;
     if provider_op_cap_reached {
         warnings.push(SearchWarning::new(
             "_system",
             format!(
-                "native_advisory_provider_operation_cap_reached: executed or reserved {} provider operations; {} provider operations were skipped by policy",
+                "native_advisory_provider_operation_cap_reached: dispatched {} provider operations; {} capable provider operations were skipped by policy after the provider-operation cap was reached",
                 budget_summary.provider_operations_dispatched,
                 budget_summary.provider_operations_skipped_by_budget
             ),
@@ -699,9 +726,12 @@ pub async fn run_security_search_plan(
             .collect();
 
         if cve_ids_for_kev.is_empty() {
+            let kev_na_operation =
+                RetrievalOperationIdentity::from_search_subquery("kev-not-applicable");
             native_attempts.push(native_advisory_attempt(
                 "cisa_kev",
                 "kev_by_cve",
+                &kev_na_operation,
                 vec![EvidenceRole::AuthoritativeSecurityAdvisory],
                 RetrievalAttemptOutcome::NotApplicable,
                 0,
@@ -718,12 +748,14 @@ pub async fn run_security_search_plan(
             let mut kev_lookup_failed = false;
 
             for cve_id in &cve_ids_for_kev {
+                let kev_operation = RetrievalOperationIdentity::from_kev_cve(cve_id);
                 let start = Instant::now();
                 match kev_client.lookup(cve_id).await {
                     Ok(Some(kev_meta)) => {
                         native_attempts.push(native_advisory_attempt(
                             "cisa_kev",
                             "kev_by_cve",
+                            &kev_operation,
                             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
                             RetrievalAttemptOutcome::SuccessWithResults,
                             1,
@@ -742,6 +774,7 @@ pub async fn run_security_search_plan(
                         native_attempts.push(native_advisory_attempt(
                             "cisa_kev",
                             "kev_by_cve",
+                            &kev_operation,
                             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
                             RetrievalAttemptOutcome::SuccessZeroResults,
                             0,
@@ -755,6 +788,7 @@ pub async fn run_security_search_plan(
                         native_attempts.push(native_advisory_attempt(
                             "cisa_kev",
                             "kev_by_cve",
+                            &kev_operation,
                             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
                             RetrievalAttemptOutcome::Failed,
                             0,
@@ -1643,7 +1677,8 @@ mod tests {
         )];
         let mut vulns = Vec::new();
         let mut attempts = Vec::new();
-        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
+        record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
         assert_eq!(
             attempts[0].intended_roles,
@@ -1672,7 +1707,8 @@ mod tests {
         )];
         let mut vulns = Vec::new();
         let mut attempts = Vec::new();
-        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
+        record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
         assert_eq!(
             attempts[0].outcome,
@@ -1695,7 +1731,8 @@ mod tests {
         )];
         let mut vulns = Vec::new();
         let mut attempts = Vec::new();
-        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
+        record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
         assert_eq!(
             attempts[0].outcome,
@@ -1719,7 +1756,8 @@ mod tests {
         )];
         let mut vulns = Vec::new();
         let mut attempts = Vec::new();
-        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
+        record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
         assert_eq!(attempts[0].outcome, RetrievalAttemptOutcome::Failed);
         assert_eq!(
@@ -1741,7 +1779,8 @@ mod tests {
         )];
         let mut vulns = Vec::new();
         let mut attempts = Vec::new();
-        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
+        record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
         assert_eq!(
             attempts[0].outcome,
@@ -1770,7 +1809,8 @@ mod tests {
         ];
         let mut vulns = Vec::new();
         let mut attempts = Vec::new();
-        record_package_outcomes(outcomes, "test-pkg", &mut vulns, &mut attempts);
+        let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
+        record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 4);
         assert_ledger_unique(&attempts);
     }

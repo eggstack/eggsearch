@@ -163,6 +163,7 @@ fn test_zero_results_produce_failure() {
     let attempts = vec![RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessZeroResults,
         result_count: 0,
@@ -206,6 +207,7 @@ fn test_rate_limit_is_not_policy_skip() {
     let attempts = vec![RetrievalAttempt {
         provider_id: "brave_api".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::RateLimited,
         result_count: 0,
@@ -233,6 +235,7 @@ fn test_partial_provider_success_one_fails() {
         RetrievalAttempt {
             provider_id: "duckduckgo".to_string(),
             subquery_id: Some("source".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 5,
@@ -246,6 +249,7 @@ fn test_partial_provider_success_one_fails() {
         RetrievalAttempt {
             provider_id: "brave_api".to_string(),
             subquery_id: Some("source".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::TimedOut,
             result_count: 0,
@@ -268,6 +272,7 @@ fn test_partial_provider_success_all_succeed() {
         RetrievalAttempt {
             provider_id: "duckduckgo".to_string(),
             subquery_id: None,
+            operation_id: None,
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 3,
@@ -281,6 +286,7 @@ fn test_partial_provider_success_all_succeed() {
         RetrievalAttempt {
             provider_id: "startpage".to_string(),
             subquery_id: None,
+            operation_id: None,
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::SuccessZeroResults,
             result_count: 0,

@@ -1554,6 +1554,7 @@ fn skip_reason_to_attempt(
     RetrievalAttempt {
         provider_id: skip.provider_id.clone(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![],
         outcome,
         result_count: 0,

@@ -99,3 +99,6 @@ not remove the underlying attempts.
 - MCP tools return `Result<serde_json::Value, ToolError>`
 - Additive schema evolution (new optional fields, never removal)
 - `NotApplicable` is reserved for operations that do not apply; provider incapability is `SkippedCapabilityUnavailable`
+- `RetrievalAttempt` carries an optional `operation_id` field; ledger uniqueness is `(provider_id, operation_id, role)`
+- State-aware helpers prefer `RetrievalDimensionState` when present, falling back to `absence_kind` for legacy dimensions
+- `not_applicable_job_count` is attempt-level; `not_applicable_count` is dimension-level; subtype counts are subsets, not partitions

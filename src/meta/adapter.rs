@@ -1003,6 +1003,7 @@ impl MetadataSearchAdapter {
             web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
                 provider_id: id.clone(),
                 subquery_id: None,
+                operation_id: None,
                 intended_roles: vec![EvidenceRole::PrimaryImplementation],
                 outcome: if results.is_empty() {
                     crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessZeroResults
@@ -1034,6 +1035,7 @@ impl MetadataSearchAdapter {
             web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
                 provider_id: id.clone(),
                 subquery_id: None,
+                operation_id: None,
                 intended_roles: vec![EvidenceRole::PrimaryImplementation],
                 outcome,
                 result_count: 0,
@@ -1079,6 +1081,7 @@ impl MetadataSearchAdapter {
                 web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
                     provider_id: id.clone(),
                     subquery_id: None,
+                    operation_id: None,
                     intended_roles: vec![EvidenceRole::PrimaryImplementation],
                     outcome:
                         crate::core::retrieval_status::RetrievalAttemptOutcome::InterruptedByDeadline,

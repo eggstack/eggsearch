@@ -397,6 +397,7 @@ fn bench_attempt_ledger_construction(c: &mut Criterion) {
         .map(|i| RetrievalAttempt {
             provider_id: format!("provider_{}", i % 5),
             subquery_id: Some(format!("subquery_{}", i % 10)),
+            operation_id: None,
             intended_roles: vec![match i % 4 {
                 0 => eggsearch::core::evidence_role::EvidenceRole::PrimaryImplementation,
                 1 => eggsearch::core::evidence_role::EvidenceRole::AuthoritativeSecurityAdvisory,
@@ -635,6 +636,7 @@ fn bench_retrieval_summary_50_attempts(c: &mut Criterion) {
         .map(|i| RetrievalAttempt {
             provider_id: format!("provider_{}", i % 5),
             subquery_id: Some(format!("subquery_{}", i % 10)),
+            operation_id: None,
             intended_roles: vec![match i % 4 {
                 0 => eggsearch::core::evidence_role::EvidenceRole::PrimaryImplementation,
                 1 => eggsearch::core::evidence_role::EvidenceRole::AuthoritativeSecurityAdvisory,
@@ -966,6 +968,7 @@ fn bench_mixed_retrieval_summary(c: &mut Criterion) {
         .map(|(index, outcome)| RetrievalAttempt {
             provider_id: format!("provider_{}", index % 4),
             subquery_id: Some(format!("advisory_{index}")),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
             outcome,
             result_count: if index == 0 { 1 } else { 0 },
@@ -1010,6 +1013,7 @@ fn bench_provider_scoped_advisory_conversion(c: &mut Criterion) {
                         .map(|index| RetrievalAttempt {
                             provider_id: format!("advisory_{index}"),
                             subquery_id: Some("advisory_by_cve".to_string()),
+            operation_id: None,
                             intended_roles: vec![
                                 EvidenceRole::AuthoritativeSecurityAdvisory,
                             ],

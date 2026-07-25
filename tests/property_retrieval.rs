@@ -56,6 +56,7 @@ fn attempt_strategy() -> impl Strategy<Value = RetrievalAttempt> {
         |(provider_id, outcome, result_count)| RetrievalAttempt {
             provider_id,
             subquery_id: None,
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome,
             result_count,
@@ -125,6 +126,7 @@ proptest! {
             RetrievalAttempt {
                 provider_id: format!("prov_{i}"),
                 subquery_id: None,
+                operation_id: None,
                 intended_roles: vec![EvidenceRole::PrimaryImplementation],
                 outcome,
                 result_count: 0,
@@ -249,6 +251,7 @@ proptest! {
         let attempt = RetrievalAttempt {
             provider_id: provider_id.clone(),
             subquery_id: None,
+                operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::Failed,
             result_count: 0,
@@ -271,6 +274,7 @@ proptest! {
         let attempt = RetrievalAttempt {
             provider_id: provider_id.clone(),
             subquery_id: None,
+                operation_id: None,
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::TimedOut,
             result_count: 0,
@@ -292,6 +296,7 @@ proptest! {
         let attempt = RetrievalAttempt {
             provider_id: provider_id.clone(),
             subquery_id: None,
+                operation_id: None,
             intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
             outcome: RetrievalAttemptOutcome::RateLimited,
             result_count: 0,
@@ -313,6 +318,7 @@ proptest! {
         let attempt = RetrievalAttempt {
             provider_id: provider_id.clone(),
             subquery_id: None,
+                operation_id: None,
             intended_roles: vec![EvidenceRole::UsageExample],
             outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
             result_count: 0,
@@ -335,6 +341,7 @@ proptest! {
         let attempt = RetrievalAttempt {
             provider_id,
             subquery_id: None,
+                operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome,
             result_count: 5,
@@ -390,6 +397,7 @@ proptest! {
         let attempt = RetrievalAttempt {
             provider_id: "test_prov".to_string(),
             subquery_id: None,
+                operation_id: None,
             intended_roles: roles.clone(),
             outcome: RetrievalAttemptOutcome::Failed,
             result_count: 0,
@@ -411,6 +419,7 @@ fn b6_01_two_intended_roles_produce_two_failures() {
     let attempt = RetrievalAttempt {
         provider_id: "test_prov".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![
             EvidenceRole::OfficialDocumentation,
             EvidenceRole::PrimaryImplementation,
@@ -436,6 +445,7 @@ fn b6_02_duplicate_intended_roles_produce_one_failure_per_unique_role() {
     let attempt = RetrievalAttempt {
         provider_id: "test_prov".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![
             EvidenceRole::PrimaryImplementation,
             EvidenceRole::PrimaryImplementation,
@@ -463,6 +473,7 @@ fn b6_03_empty_intended_roles_produce_unknown_role_failure() {
     let attempt = RetrievalAttempt {
         provider_id: "test_prov".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![],
         outcome: RetrievalAttemptOutcome::Failed,
         result_count: 0,
@@ -485,6 +496,7 @@ fn b6_04_provider_fails_docs_succeeds_source_only_docs_affected() {
     let docs_attempt = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("docs_sq".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::OfficialDocumentation],
         outcome: RetrievalAttemptOutcome::Failed,
         result_count: 0,
@@ -498,6 +510,7 @@ fn b6_04_provider_fails_docs_succeeds_source_only_docs_affected() {
     let source_attempt = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("source_sq".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 5,
@@ -533,6 +546,7 @@ fn b6_05_advisory_attempt_fails_both_roles_indeterminate() {
     let attempt = RetrievalAttempt {
         provider_id: "osv".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![
             EvidenceRole::AuthoritativeSecurityAdvisory,
             EvidenceRole::VendorSecurityGuidance,
@@ -569,6 +583,7 @@ fn b6_06_role_found_by_another_provider_redundant_failure_not_missing() {
     let failed_attempt = RetrievalAttempt {
         provider_id: "startpage".to_string(),
         subquery_id: None,
+        operation_id: None,
         intended_roles: vec![EvidenceRole::OfficialDocumentation],
         outcome: RetrievalAttemptOutcome::Failed,
         result_count: 0,
@@ -596,6 +611,7 @@ fn b6_07_rate_limit_remains_rate_limited_in_attempt_data() {
     let attempt = RetrievalAttempt {
         provider_id: "startpage".to_string(),
         subquery_id: Some("sq_rate".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::OfficialDocumentation],
         outcome: RetrievalAttemptOutcome::RateLimited,
         result_count: 0,
@@ -639,6 +655,7 @@ fn b6_08_deadline_interruption_distinct_from_provider_timeout() {
     let timeout_attempt = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_timeout".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::TimedOut,
         result_count: 0,
@@ -652,6 +669,7 @@ fn b6_08_deadline_interruption_distinct_from_provider_timeout() {
     let deadline_attempt = RetrievalAttempt {
         provider_id: "startpage".to_string(),
         subquery_id: Some("sq_deadline".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
         result_count: 0,
@@ -699,6 +717,7 @@ fn e14_multi_role_attempt_creates_dimensions_for_all_roles() {
     let attempt = RetrievalAttempt {
         provider_id: "osv".to_string(),
         subquery_id: Some("sq_multi".to_string()),
+        operation_id: None,
         intended_roles: vec![
             EvidenceRole::AuthoritativeSecurityAdvisory,
             EvidenceRole::ManifestOrDependencyMetadata,
@@ -759,6 +778,7 @@ fn e14_property_multi_role_dimensions_preserve_all_intended_roles() {
         let attempt = RetrievalAttempt {
             provider_id: "test_provider".to_string(),
             subquery_id: Some(format!("sq_{role:?}")),
+            operation_id: None,
             intended_roles: vec![*role],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 1,
@@ -802,6 +822,7 @@ fn a11_absence_kind_populated_for_all_absence_paths() {
         let attempt = RetrievalAttempt {
             provider_id: "test_prov".to_string(),
             subquery_id: Some("sq_test".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: outcome.clone(),
             result_count: 0,
@@ -836,6 +857,7 @@ fn a13_truncation_emitted_on_partial_success() {
     let attempt = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_trunc".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
         result_count: 5,
@@ -864,6 +886,7 @@ fn candidate_limit_reach_is_possible_truncation_only() {
     let attempt = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_limit".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 10,
@@ -892,6 +915,7 @@ fn summary_distinguishes_unknown_and_confirmed_truncation() {
         RetrievalAttempt {
             provider_id: "provider_a".to_string(),
             subquery_id: Some("sq_unknown".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 10,
@@ -905,6 +929,7 @@ fn summary_distinguishes_unknown_and_confirmed_truncation() {
         RetrievalAttempt {
             provider_id: "provider_b".to_string(),
             subquery_id: Some("sq_confirmed".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 3,
@@ -954,6 +979,7 @@ fn c3_query_fingerprint_populated_in_all_attempts() {
         let attempt = RetrievalAttempt {
             provider_id: "test_prov".to_string(),
             subquery_id: Some("sq_fp".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: outcome.clone(),
             result_count: 0,
@@ -1014,6 +1040,7 @@ fn e4_zero_result_summary_retains_result_count_and_outcome() {
     let attempt = RetrievalAttempt {
         provider_id: "osv".to_string(),
         subquery_id: Some("sq_zero".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
         outcome: RetrievalAttemptOutcome::SuccessZeroResults,
         result_count: 0,
@@ -1042,6 +1069,7 @@ fn e5_rate_limit_retains_rate_limited_and_coarse_mapping() {
     let attempt = RetrievalAttempt {
         provider_id: "startpage".to_string(),
         subquery_id: Some("sq_rl".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::OfficialDocumentation],
         outcome: RetrievalAttemptOutcome::RateLimited,
         result_count: 0,
@@ -1068,6 +1096,7 @@ fn e6_provider_timeout_and_global_deadline_serialize_differently() {
     let timeout = RetrievalAttempt {
         provider_id: "prov_a".to_string(),
         subquery_id: Some("sq_t".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::TimedOut,
         result_count: 0,
@@ -1081,6 +1110,7 @@ fn e6_provider_timeout_and_global_deadline_serialize_differently() {
     let deadline = RetrievalAttempt {
         provider_id: "prov_b".to_string(),
         subquery_id: Some("sq_d".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::InterruptedByDeadline,
         result_count: 0,
@@ -1118,6 +1148,7 @@ fn e7_truncation_is_explicit() {
     let attempt = RetrievalAttempt {
         provider_id: "gitea".to_string(),
         subquery_id: Some("sq_trunc".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
         result_count: 3,
@@ -1141,6 +1172,7 @@ fn e8_subquery_id_is_retained() {
     let attempt = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_my_subquery".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 5,
@@ -1165,6 +1197,7 @@ fn e9_fallback_summary_not_used_when_attempts_exist() {
     let attempt = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("sq_fb".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 3,
@@ -1190,6 +1223,7 @@ fn e10_summary_ordering_deterministic_by_subquery_provider_role() {
         RetrievalAttempt {
             provider_id: "c_prov".to_string(),
             subquery_id: Some("sq_2".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 1,
@@ -1203,6 +1237,7 @@ fn e10_summary_ordering_deterministic_by_subquery_provider_role() {
         RetrievalAttempt {
             provider_id: "a_prov".to_string(),
             subquery_id: Some("sq_1".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::Failed,
             result_count: 0,
@@ -1216,6 +1251,7 @@ fn e10_summary_ordering_deterministic_by_subquery_provider_role() {
         RetrievalAttempt {
             provider_id: "b_prov".to_string(),
             subquery_id: Some("sq_0".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::UsageExample],
             outcome: RetrievalAttemptOutcome::RateLimited,
             result_count: 0,
@@ -1243,6 +1279,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
         RetrievalAttempt {
             provider_id: "p1".to_string(),
             subquery_id: Some("sq_0".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: RetrievalAttemptOutcome::SuccessWithResults,
             result_count: 5,
@@ -1256,6 +1293,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
         RetrievalAttempt {
             provider_id: "p2".to_string(),
             subquery_id: Some("sq_1".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::OfficialDocumentation],
             outcome: RetrievalAttemptOutcome::Failed,
             result_count: 0,
@@ -1269,6 +1307,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
         RetrievalAttempt {
             provider_id: "p3".to_string(),
             subquery_id: Some("sq_2".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::UsageExample],
             outcome: RetrievalAttemptOutcome::TimedOut,
             result_count: 0,
@@ -1282,6 +1321,7 @@ fn e11_aggregate_counts_equal_dimension_derived_counts() {
         RetrievalAttempt {
             provider_id: "p4".to_string(),
             subquery_id: Some("sq_3".to_string()),
+            operation_id: None,
             intended_roles: vec![EvidenceRole::BenchmarkOrPerformanceEvidence],
             outcome: RetrievalAttemptOutcome::RateLimited,
             result_count: 0,
@@ -1307,6 +1347,7 @@ fn e12_codegg_fixture_consumes_enriched_summary() {
     let attempt = RetrievalAttempt {
         provider_id: "osv".to_string(),
         subquery_id: Some("sq_codegg".to_string()),
+        operation_id: None,
         intended_roles: vec![
             EvidenceRole::AuthoritativeSecurityAdvisory,
             EvidenceRole::ManifestOrDependencyMetadata,
@@ -1336,6 +1377,7 @@ fn e13_next_actions_avoid_identical_failed_provider_query() {
     let failed_attempt = RetrievalAttempt {
         provider_id: "startpage".to_string(),
         subquery_id: Some("sq_retry".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::OfficialDocumentation],
         outcome: RetrievalAttemptOutcome::Failed,
         result_count: 0,

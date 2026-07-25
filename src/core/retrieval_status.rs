@@ -119,6 +119,9 @@ pub struct ResponseRetrievalSummary {
     /// Dimensions whose attempt outcome was `NotApplicable`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_applicable_count: Option<usize>,
+    /// Attempts whose outcome was `NotApplicable`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_applicable_job_count: Option<usize>,
 }
 
 #[allow(missing_docs)]
@@ -201,6 +204,24 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
         if d.absence_kind == EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed {
             roles_indeterminate.insert(d.evidence_role);
         }
+
+        if let Some(ref state) = d.state {
+            match state {
+                RetrievalDimensionState::Satisfied | RetrievalDimensionState::CompletedNoMatch => {
+                    roles_with_success.insert(d.evidence_role);
+                }
+                RetrievalDimensionState::Failed
+                | RetrievalDimensionState::SkippedByPolicy
+                | RetrievalDimensionState::CapabilityUnavailable
+                | RetrievalDimensionState::Interrupted
+                | RetrievalDimensionState::Partial => {
+                    roles_indeterminate.insert(d.evidence_role);
+                }
+                RetrievalDimensionState::NotApplicable => {
+                    // Not applicable roles are not attempted, not complete
+                }
+            }
+        }
     }
 
     let attempted_job_count = Some(dimensions.len());
@@ -269,6 +290,7 @@ pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> Respons
         completed_dimension_count,
         failed_dimension_count,
         not_applicable_count,
+        not_applicable_job_count: None,
     }
 }
 
@@ -385,7 +407,7 @@ pub fn summarize_retrieval_with_attempts(
     summary.deadline_interrupted_count = Some(attempt_counts.deadline_interrupted);
     summary.truncated_count = Some(attempt_counts.confirmed_truncated);
     summary.limit_reached_unknown_count = Some(attempt_counts.limit_reached_unknown);
-    summary.not_applicable_count = Some(attempt_counts.not_applicable);
+    summary.not_applicable_job_count = Some(attempt_counts.not_applicable);
 
     summary
 }
@@ -393,40 +415,68 @@ pub fn summarize_retrieval_with_attempts(
 #[allow(missing_docs)]
 pub fn is_absence_only(summary: &ResponseRetrievalSummary) -> bool {
     summary.dimensions.iter().all(|d| {
-        matches!(
-            d.absence_kind,
-            EvidenceAbsenceKind::NoMatchingEvidenceFound
-                | EvidenceAbsenceKind::EvidenceRoleNotRequested
-                | EvidenceAbsenceKind::NotApplicable
-        )
+        if let Some(ref state) = d.state {
+            matches!(
+                state,
+                RetrievalDimensionState::CompletedNoMatch | RetrievalDimensionState::NotApplicable
+            )
+        } else {
+            matches!(
+                d.absence_kind,
+                EvidenceAbsenceKind::NoMatchingEvidenceFound
+                    | EvidenceAbsenceKind::EvidenceRoleNotRequested
+                    | EvidenceAbsenceKind::NotApplicable
+            )
+        }
     })
 }
 
 #[allow(missing_docs)]
 pub fn is_failure_only(summary: &ResponseRetrievalSummary) -> bool {
     summary.dimensions.iter().any(|d| {
-        matches!(
-            d.absence_kind,
-            EvidenceAbsenceKind::ProviderFailed | EvidenceAbsenceKind::DeadlinePreventedCompletion
-        )
+        if let Some(ref state) = d.state {
+            matches!(
+                state,
+                RetrievalDimensionState::Failed | RetrievalDimensionState::Interrupted
+            )
+        } else {
+            matches!(
+                d.absence_kind,
+                EvidenceAbsenceKind::ProviderFailed
+                    | EvidenceAbsenceKind::DeadlinePreventedCompletion
+            )
+        }
     })
 }
 
 #[allow(missing_docs)]
 pub fn has_indeterminate(summary: &ResponseRetrievalSummary) -> bool {
     summary.dimensions.iter().any(|d| {
-        d.absence_kind == EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed
+        if d.state.is_some() {
+            dimension_is_indeterminate(d)
+        } else {
+            d.absence_kind == EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed
+        }
     })
 }
 
 #[allow(missing_docs)]
 pub fn absent_roles(summary: &ResponseRetrievalSummary) -> Vec<EvidenceRole> {
-    summary
-        .dimensions
-        .iter()
-        .filter(|d| d.absence_kind == EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound)
-        .map(|d| d.evidence_role)
-        .collect()
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+
+    for d in &summary.dimensions {
+        let is_absent = if let Some(ref state) = d.state {
+            *state == RetrievalDimensionState::CompletedNoMatch
+        } else {
+            d.absence_kind == EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound
+        };
+        if is_absent && seen.insert(d.evidence_role) {
+            result.push(d.evidence_role);
+        }
+    }
+
+    result
 }
 
 #[allow(missing_docs)]
@@ -435,10 +485,19 @@ pub fn failed_providers(summary: &ResponseRetrievalSummary) -> Vec<String> {
     let mut result = Vec::new();
 
     for d in &summary.dimensions {
-        if matches!(
-            d.absence_kind,
-            EvidenceAbsenceKind::ProviderFailed | EvidenceAbsenceKind::DeadlinePreventedCompletion
-        ) {
+        let is_failed = if let Some(ref state) = d.state {
+            matches!(
+                state,
+                RetrievalDimensionState::Failed | RetrievalDimensionState::Interrupted
+            )
+        } else {
+            matches!(
+                d.absence_kind,
+                EvidenceAbsenceKind::ProviderFailed
+                    | EvidenceAbsenceKind::DeadlinePreventedCompletion
+            )
+        };
+        if is_failed {
             if let Some(ref pid) = d.provider_id {
                 if seen.insert(pid.clone()) {
                     result.push(pid.clone());
@@ -586,6 +645,42 @@ pub fn attempt_outcome_to_dimension_state(attempt: &RetrievalAttempt) -> Retriev
     }
 }
 
+#[allow(dead_code)]
+fn dimension_is_satisfied(d: &RetrievalDimensionStatus) -> bool {
+    d.state == Some(RetrievalDimensionState::Satisfied)
+}
+
+#[allow(dead_code)]
+fn dimension_is_completed_no_match(d: &RetrievalDimensionStatus) -> bool {
+    d.state == Some(RetrievalDimensionState::CompletedNoMatch)
+}
+
+#[allow(dead_code)]
+fn dimension_is_not_applicable(d: &RetrievalDimensionStatus) -> bool {
+    d.state == Some(RetrievalDimensionState::NotApplicable)
+}
+
+#[allow(dead_code)]
+fn dimension_is_failed_or_interrupted(d: &RetrievalDimensionStatus) -> bool {
+    matches!(
+        d.state,
+        Some(RetrievalDimensionState::Failed | RetrievalDimensionState::Interrupted)
+    )
+}
+
+fn dimension_is_indeterminate(d: &RetrievalDimensionStatus) -> bool {
+    matches!(
+        d.state,
+        Some(
+            RetrievalDimensionState::Failed
+                | RetrievalDimensionState::SkippedByPolicy
+                | RetrievalDimensionState::CapabilityUnavailable
+                | RetrievalDimensionState::Interrupted
+                | RetrievalDimensionState::Partial
+        )
+    )
+}
+
 /// Internal operation identity used for ledger deduplication.
 ///
 /// This is a deterministic, provider-independent identifier for a
@@ -633,7 +728,7 @@ impl RetrievalOperationIdentity {
     /// Build an operation identity from a package coordinate.
     pub fn from_package(ecosystem: &str, package: &str, version: Option<&str>) -> Self {
         RetrievalOperationIdentity::AdvisoryQueryByPackage {
-            ecosystem: ecosystem.to_string(),
+            ecosystem: ecosystem.to_lowercase(),
             package_fingerprint: Self::fingerprint(package),
             version_fingerprint: version.map(Self::fingerprint),
         }
@@ -645,6 +740,34 @@ impl RetrievalOperationIdentity {
             cve_id_fingerprint: Self::fingerprint(cve_id),
         }
     }
+
+    /// Deterministic bounded identifier string for this operation instance.
+    ///
+    /// Distinguishes multiple operations sharing one subquery label.
+    /// Does not contain raw query text, tokens, file contents, or secrets.
+    pub fn stable_id(&self) -> String {
+        match self {
+            RetrievalOperationIdentity::SearchSubquery { subquery_id } => {
+                format!("search:{subquery_id}")
+            }
+            RetrievalOperationIdentity::AdvisoryLookupById {
+                vulnerability_id_fingerprint,
+            } => {
+                format!("advisory-id:{vulnerability_id_fingerprint}")
+            }
+            RetrievalOperationIdentity::AdvisoryQueryByPackage {
+                ecosystem,
+                package_fingerprint,
+                version_fingerprint,
+            } => match version_fingerprint {
+                Some(vf) => format!("advisory-package:{ecosystem}:{package_fingerprint}:{vf}"),
+                None => format!("advisory-package:{ecosystem}:{package_fingerprint}:none"),
+            },
+            RetrievalOperationIdentity::KevLookup { cve_id_fingerprint } => {
+                format!("kev:{cve_id_fingerprint}")
+            }
+        }
+    }
 }
 
 /// Violation detected by [`validate_attempt_ledger`].
@@ -654,6 +777,7 @@ pub enum AttemptLedgerViolation {
     /// A provider/operation/role tuple appeared more than once.
     DuplicateProviderOperationRole {
         provider_id: String,
+        operation_id: Option<String>,
         subquery_id: Option<String>,
         role: String,
     },
@@ -692,7 +816,7 @@ pub enum AttemptLedgerViolation {
 pub fn validate_attempt_ledger(
     attempts: &[RetrievalAttempt],
 ) -> Result<(), AttemptLedgerViolation> {
-    let mut seen: std::collections::HashSet<(String, Option<String>, String)> =
+    let mut seen: std::collections::HashSet<(String, String, String)> =
         std::collections::HashSet::new();
 
     for attempt in attempts {
@@ -728,15 +852,27 @@ pub fn validate_attempt_ledger(
             attempt.intended_roles.clone()
         };
 
+        let operation_id = attempt
+            .operation_id
+            .clone()
+            .or_else(|| {
+                attempt
+                    .subquery_id
+                    .as_ref()
+                    .map(|s| format!("legacy-subquery:{s}"))
+            })
+            .unwrap_or_else(|| "legacy-unknown".to_string());
+
         for role in &roles {
             let key = (
                 attempt.provider_id.clone(),
-                attempt.subquery_id.clone(),
+                operation_id.clone(),
                 role.label().to_string(),
             );
             if !seen.insert(key) {
                 return Err(AttemptLedgerViolation::DuplicateProviderOperationRole {
                     provider_id: attempt.provider_id.clone(),
+                    operation_id: attempt.operation_id.clone(),
                     subquery_id: attempt.subquery_id.clone(),
                     role: role.label().to_string(),
                 });
@@ -810,6 +946,12 @@ pub struct RetrievalAttempt {
     /// Optional subquery identifier for multi-query workflows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subquery_id: Option<String>,
+    /// Deterministic bounded identifier for this operation instance.
+    ///
+    /// Distinguishes multiple operations sharing one subquery label.
+    /// It must not contain raw query text, tokens, file contents, or secrets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
     /// Evidence roles this attempt was intended to produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub intended_roles: Vec<EvidenceRole>,

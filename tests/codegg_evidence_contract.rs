@@ -16,6 +16,7 @@ fn make_attempt(
     RetrievalAttempt {
         provider_id: provider.to_string(),
         subquery_id: Some("codegg_sq_0".to_string()),
+        operation_id: None,
         intended_roles: roles,
         outcome,
         result_count,
@@ -349,6 +350,7 @@ fn codegg_subquery_id_preserved() {
     let a = RetrievalAttempt {
         provider_id: "duckduckgo".to_string(),
         subquery_id: Some("codegg_sub_42".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::PrimaryImplementation],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 2,
@@ -400,6 +402,7 @@ fn codegg_native_security_attempt_dimensions_consumed() {
     let native_attempt = RetrievalAttempt {
         provider_id: "osv".to_string(),
         subquery_id: Some("advisory_by_cve".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 1,
@@ -413,6 +416,7 @@ fn codegg_native_security_attempt_dimensions_consumed() {
     let kev_attempt = RetrievalAttempt {
         provider_id: "cisa_kev".to_string(),
         subquery_id: Some("kev_by_cve".to_string()),
+        operation_id: None,
         intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
         outcome: RetrievalAttemptOutcome::SuccessWithResults,
         result_count: 1,
