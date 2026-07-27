@@ -10335,6 +10335,7 @@ fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
     cfg.local.roots = vec![temp_dir.to_path_buf()];
     let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
         .expect("backend builds");
+    backend.get_or_build_inventory();
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
     state.local_backend = Some(Arc::new(backend));
     Arc::new(state)
@@ -12703,6 +12704,7 @@ fn state_with_local_backend_sanitize(
     cfg.fetch.sanitize_output = sanitize;
     let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
         .expect("backend builds");
+    backend.get_or_build_inventory();
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
     state.local_backend = Some(Arc::new(backend));
     Arc::new(state)
@@ -19539,6 +19541,7 @@ fn state_with_local_backend_mode_off(temp_dir: &std::path::Path) -> Arc<ServerSt
     cfg.local.roots = vec![temp_dir.to_path_buf()];
     let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
         .expect("backend builds");
+    backend.get_or_build_inventory();
     let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
     state.local_backend = Some(Arc::new(backend));
     Arc::new(state)
@@ -19644,6 +19647,7 @@ fn state_with_local_backend_mode_off_for_repo_map(temp_dir: &std::path::Path) ->
     cfg.local.roots = vec![temp_dir.to_path_buf()];
     let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
         .expect("backend builds");
+    backend.get_or_build_inventory();
     let state = ServerState::build(cfg).expect("state");
     let mut state = state;
     state.local_backend = Some(Arc::new(backend));
