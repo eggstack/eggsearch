@@ -8,6 +8,7 @@ fn attempt(
     provider_id: &str,
     outcome: RetrievalAttemptOutcome,
     roles: Vec<EvidenceRole>,
+    result_count: usize,
 ) -> RetrievalAttempt {
     RetrievalAttempt {
         provider_id: provider_id.to_string(),
@@ -15,7 +16,7 @@ fn attempt(
         operation_id: None,
         intended_roles: roles,
         outcome,
-        result_count: 0,
+        result_count,
         error_class: None,
         deadline_interrupted: false,
         truncated: false,
@@ -31,6 +32,7 @@ fn c8_01_complete_success_with_results() {
         "duckduckgo",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(summary.dimensions.len(), 1);
@@ -38,7 +40,7 @@ fn c8_01_complete_success_with_results() {
         summary.dimensions[0].absence_kind,
         eggsearch::core::retrieval_status::EvidenceAbsenceKind::NotApplicable
     );
-    assert_eq!(summary.dimensions[0].result_count, Some(0));
+    assert_eq!(summary.dimensions[0].result_count, Some(1));
     assert!(!summary.has_failures);
 }
 
@@ -48,6 +50,7 @@ fn c8_02_complete_success_with_zero_results() {
         "duckduckgo",
         RetrievalAttemptOutcome::SuccessZeroResults,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(summary.dimensions.len(), 1);
@@ -64,6 +67,7 @@ fn c8_03_provider_failure() {
         "duckduckgo",
         RetrievalAttemptOutcome::Failed,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(summary.has_failures);
@@ -79,6 +83,7 @@ fn c8_04_provider_local_timeout() {
         "startpage",
         RetrievalAttemptOutcome::TimedOut,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(summary.has_failures);
@@ -94,6 +99,7 @@ fn c8_05_http_429_rate_limit() {
         "duckduckgo",
         RetrievalAttemptOutcome::RateLimited,
         vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(summary.has_failures);
@@ -109,6 +115,7 @@ fn c8_06_explicit_policy_exclusion() {
         "brave",
         RetrievalAttemptOutcome::SkippedByPolicy,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(!summary.has_failures);
@@ -124,6 +131,7 @@ fn c8_07_capability_exclusion() {
         "brave",
         RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(!summary.has_failures);
@@ -139,6 +147,7 @@ fn c8_08_planner_not_applicable() {
         "duckduckgo",
         RetrievalAttemptOutcome::NotApplicable,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(!summary.has_failures);
@@ -154,6 +163,7 @@ fn c8_09_pending_job_interrupted_by_global_deadline() {
         "duckduckgo",
         RetrievalAttemptOutcome::InterruptedByDeadline,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     a.deadline_interrupted = true;
     let summary = build_retrieval_summary_from_attempts(&[a]);
@@ -170,6 +180,7 @@ fn c8_10_running_job_interrupted_by_global_deadline() {
         "startpage",
         RetrievalAttemptOutcome::InterruptedByDeadline,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     a.deadline_interrupted = true;
     let summary = build_retrieval_summary_from_attempts(&[a]);
@@ -186,6 +197,7 @@ fn c8_11_partial_results_truncated_by_candidate_cap() {
         "duckduckgo",
         RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     a.truncated = true;
     a.result_count = 5;
@@ -203,6 +215,7 @@ fn c8_12_forge_partial_results_truncated_by_byte_budget() {
         "gitea",
         RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     a.truncated = true;
     a.result_count = 3;
@@ -256,16 +269,19 @@ fn c8_14_selected_job_produces_exactly_one_terminal_record() {
             "duckduckgo",
             RetrievalAttemptOutcome::SuccessWithResults,
             vec![EvidenceRole::PrimaryImplementation],
+            1,
         ),
         attempt(
             "startpage",
             RetrievalAttemptOutcome::Failed,
             vec![EvidenceRole::OfficialDocumentation],
+            0,
         ),
         attempt(
             "brave",
             RetrievalAttemptOutcome::RateLimited,
             vec![EvidenceRole::UsageExample],
+            0,
         ),
     ];
     let summary = build_retrieval_summary_from_attempts(&attempts);
@@ -279,6 +295,7 @@ fn c8_15_query_fingerprint_does_not_expose_raw_text() {
         "duckduckgo",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     a.query_fingerprint = Some("abc123def456".to_string());
     let summary = build_retrieval_summary_from_attempts(&[a]);
@@ -295,16 +312,19 @@ fn c8_16_attempt_ordering_deterministic() {
             "c_provider",
             RetrievalAttemptOutcome::Failed,
             vec![EvidenceRole::PrimaryImplementation],
+            0,
         ),
         attempt(
             "a_provider",
             RetrievalAttemptOutcome::SuccessWithResults,
             vec![EvidenceRole::OfficialDocumentation],
+            1,
         ),
         attempt(
             "b_provider",
             RetrievalAttemptOutcome::RateLimited,
             vec![EvidenceRole::UsageExample],
+            0,
         ),
     ];
     let s1 = build_retrieval_summary_from_attempts(&attempts);
@@ -355,11 +375,19 @@ fn c8_18_property_selected_job_has_one_terminal_outcome() {
     ];
 
     for outcome in outcomes {
-        let a = attempt(
+        let rc = match outcome {
+            RetrievalAttemptOutcome::SuccessWithResults => 1,
+            _ => 0,
+        };
+        let mut a = attempt(
             "test_provider",
             outcome.clone(),
             vec![EvidenceRole::PrimaryImplementation],
+            rc,
         );
+        if outcome == RetrievalAttemptOutcome::InterruptedByDeadline {
+            a.deadline_interrupted = true;
+        }
         let summary = build_retrieval_summary_from_attempts(&[a]);
         assert_eq!(
             summary.dimensions.len(),
@@ -376,21 +404,25 @@ fn b6_attempt_ledger_completeness() {
             "duckduckgo",
             RetrievalAttemptOutcome::SuccessWithResults,
             vec![EvidenceRole::PrimaryImplementation],
+            1,
         ),
         attempt(
             "startpage",
             RetrievalAttemptOutcome::Failed,
             vec![EvidenceRole::OfficialDocumentation],
+            0,
         ),
         attempt(
             "brave",
             RetrievalAttemptOutcome::TimedOut,
             vec![EvidenceRole::UsageExample],
+            0,
         ),
         attempt(
             "osv",
             RetrievalAttemptOutcome::SuccessZeroResults,
             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            0,
         ),
     ];
     let summary = build_retrieval_summary_from_attempts(&attempts);
@@ -408,6 +440,7 @@ fn b7_attempt_ledger_deadline_interrupted() {
         "duckduckgo",
         RetrievalAttemptOutcome::InterruptedByDeadline,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     a.deadline_interrupted = true;
     let summary = build_retrieval_summary_from_attempts(&[a]);
@@ -425,11 +458,13 @@ fn b8_attempt_ledger_early_termination() {
         "duckduckgo",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     let mut a2 = attempt(
         "startpage",
         RetrievalAttemptOutcome::InterruptedByDeadline,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     a2.deadline_interrupted = true;
     let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
@@ -460,6 +495,7 @@ fn b9_attempt_ledger_not_applicable() {
         "duckduckgo",
         RetrievalAttemptOutcome::NotApplicable,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(!summary.has_failures);
@@ -476,11 +512,13 @@ fn b10_attempt_ledger_health_degradation() {
         "duckduckgo",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     let mut a2 = attempt(
         "duckduckgo",
         RetrievalAttemptOutcome::Failed,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     a2.error_class = Some("connection_refused".to_string());
     let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
@@ -505,6 +543,7 @@ fn b11_attempt_ledger_concurrency_limit() {
         "rate_limited_provider",
         RetrievalAttemptOutcome::RateLimited,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(summary.has_failures);
@@ -521,6 +560,7 @@ fn b12_attempt_ledger_network_error() {
         "failing_provider",
         RetrievalAttemptOutcome::Failed,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     a.error_class = Some("dns_resolution_failed".to_string());
     let summary = build_retrieval_summary_from_attempts(&[a]);
@@ -538,11 +578,13 @@ fn b13_attempt_ledger_no_error_suppression() {
         "provider_a",
         RetrievalAttemptOutcome::Failed,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let a2 = attempt(
         "provider_b",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::OfficialDocumentation],
+        1,
     );
     let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
     assert!(
@@ -559,6 +601,7 @@ fn b14_attempt_ledger_metadata_only() {
         "provider_meta",
         RetrievalAttemptOutcome::SuccessZeroResults,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert!(!summary.has_failures);
@@ -602,11 +645,13 @@ fn b16_attempt_ledger_skipped_providers_not_in_attempted() {
         "selected_provider",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     let a2 = attempt(
         "skipped_provider",
         RetrievalAttemptOutcome::SkippedByPolicy,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
     assert_eq!(summary.dimensions.len(), 2);
@@ -625,15 +670,18 @@ fn b16_attempt_ledger_skipped_providers_not_in_attempted() {
 
 #[test]
 fn b17_attempt_ledger_deadline_prevents_all_queries() {
-    let a1 = attempt(
+    let mut a1 = attempt(
         "provider_a",
         RetrievalAttemptOutcome::InterruptedByDeadline,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
+    a1.deadline_interrupted = true;
     let mut a2 = attempt(
         "provider_b",
         RetrievalAttemptOutcome::InterruptedByDeadline,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     a2.deadline_interrupted = true;
     let summary = build_retrieval_summary_from_attempts(&[a1, a2]);
@@ -648,11 +696,13 @@ fn b18_attempt_ledger_partial_completion() {
         "provider_a",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     let mut a2 = attempt(
         "provider_b",
         RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     a2.truncated = true;
     a2.result_count = 3;
@@ -674,21 +724,25 @@ fn c1_dimension_counts_match_attempt_partition() {
             "p_a",
             RetrievalAttemptOutcome::SuccessWithResults,
             vec![EvidenceRole::PrimaryImplementation],
+            1,
         ),
         attempt(
             "p_b",
             RetrievalAttemptOutcome::Failed,
             vec![EvidenceRole::OfficialDocumentation],
+            0,
         ),
         attempt(
             "p_c",
             RetrievalAttemptOutcome::SkippedByPolicy,
             vec![EvidenceRole::UsageExample],
+            0,
         ),
         attempt(
             "p_d",
             RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            0,
         ),
     ];
     let summary = build_retrieval_summary_from_attempts(&attempts);
@@ -716,43 +770,59 @@ fn c2_dimension_state_set_on_all_dimensions() {
             "p_a",
             RetrievalAttemptOutcome::SuccessWithResults,
             vec![EvidenceRole::PrimaryImplementation],
+            1,
         ),
         attempt(
             "p_b",
             RetrievalAttemptOutcome::Failed,
             vec![EvidenceRole::OfficialDocumentation],
+            0,
         ),
         attempt(
             "p_c",
             RetrievalAttemptOutcome::SkippedByPolicy,
             vec![EvidenceRole::UsageExample],
+            0,
         ),
         attempt(
             "p_d",
             RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            0,
         ),
         attempt(
             "p_e",
             RetrievalAttemptOutcome::NotApplicable,
             vec![EvidenceRole::PrimaryImplementation],
+            0,
         ),
-        attempt(
-            "p_f",
-            RetrievalAttemptOutcome::InterruptedByDeadline,
-            vec![EvidenceRole::OfficialDocumentation],
-        ),
-        attempt(
-            "p_g",
-            RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
-            vec![EvidenceRole::UsageExample],
-        ),
+        {
+            let mut a = attempt(
+                "p_f",
+                RetrievalAttemptOutcome::InterruptedByDeadline,
+                vec![EvidenceRole::OfficialDocumentation],
+                0,
+            );
+            a.deadline_interrupted = true;
+            a
+        },
+        {
+            let mut a = attempt(
+                "p_g",
+                RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
+                vec![EvidenceRole::UsageExample],
+                0,
+            );
+            a.truncated = true;
+            a.result_count = 3;
+            a
+        },
     ];
     let summary = build_retrieval_summary_from_attempts(&attempts);
     assert_eq!(summary.attempted_dimension_count, Some(7));
     assert_eq!(summary.completed_dimension_count, Some(3));
     assert_eq!(summary.failed_dimension_count, Some(2));
-    assert_eq!(summary.not_applicable_count, Some(2));
+    assert_eq!(summary.not_applicable_count, Some(1));
     for dim in &summary.dimensions {
         assert!(dim.state.is_some(), "every dimension must have a state set");
     }
@@ -764,6 +834,7 @@ fn c3_dimension_state_satisfied_for_success_with_results() {
         "p_a",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(
@@ -778,6 +849,7 @@ fn c4_dimension_state_failed_for_provider_failure() {
         "p_a",
         RetrievalAttemptOutcome::Failed,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(
@@ -792,6 +864,7 @@ fn c5_dimension_state_skipped_by_policy() {
         "p_a",
         RetrievalAttemptOutcome::SkippedByPolicy,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(
@@ -806,6 +879,7 @@ fn c6_dimension_state_capability_unavailable() {
         "p_a",
         RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(
@@ -820,6 +894,7 @@ fn c7_dimension_state_interrupted() {
         "p_a",
         RetrievalAttemptOutcome::InterruptedByDeadline,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     a.deadline_interrupted = true;
     let summary = build_retrieval_summary_from_attempts(&[a]);
@@ -835,6 +910,7 @@ fn c8_dimension_state_not_applicable() {
         "p_a",
         RetrievalAttemptOutcome::NotApplicable,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(
@@ -849,6 +925,7 @@ fn c9_dimension_state_partial_for_truncated() {
         "p_a",
         RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     a.truncated = true;
     a.result_count = 3;
@@ -865,6 +942,7 @@ fn c10_dimension_state_completed_no_match_for_zero_results() {
         "p_a",
         RetrievalAttemptOutcome::SuccessZeroResults,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let summary = build_retrieval_summary_from_attempts(&[a]);
     assert_eq!(
@@ -880,52 +958,71 @@ fn c11_dimension_counts_partition_invariant_mixed() {
             "p_a",
             RetrievalAttemptOutcome::SuccessWithResults,
             vec![EvidenceRole::PrimaryImplementation],
+            1,
         ),
         attempt(
             "p_b",
             RetrievalAttemptOutcome::SuccessZeroResults,
             vec![EvidenceRole::OfficialDocumentation],
+            0,
         ),
         attempt(
             "p_c",
             RetrievalAttemptOutcome::Failed,
             vec![EvidenceRole::UsageExample],
+            0,
         ),
         attempt(
             "p_d",
             RetrievalAttemptOutcome::TimedOut,
             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            0,
         ),
         attempt(
             "p_e",
             RetrievalAttemptOutcome::RateLimited,
             vec![EvidenceRole::PrimaryImplementation],
+            0,
         ),
         attempt(
             "p_f",
             RetrievalAttemptOutcome::SkippedByPolicy,
             vec![EvidenceRole::OfficialDocumentation],
+            0,
         ),
         attempt(
             "p_g",
             RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
             vec![EvidenceRole::UsageExample],
+            0,
         ),
         attempt(
             "p_h",
             RetrievalAttemptOutcome::NotApplicable,
             vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            0,
         ),
-        attempt(
-            "p_i",
-            RetrievalAttemptOutcome::InterruptedByDeadline,
-            vec![EvidenceRole::PrimaryImplementation],
-        ),
-        attempt(
-            "p_j",
-            RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
-            vec![EvidenceRole::OfficialDocumentation],
-        ),
+        {
+            let mut a = attempt(
+                "p_i",
+                RetrievalAttemptOutcome::InterruptedByDeadline,
+                vec![EvidenceRole::PrimaryImplementation],
+                0,
+            );
+            a.deadline_interrupted = true;
+            a
+        },
+        {
+            let mut a = attempt(
+                "p_j",
+                RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
+                vec![EvidenceRole::OfficialDocumentation],
+                0,
+            );
+            a.truncated = true;
+            a.result_count = 3;
+            a
+        },
     ];
     let summary = build_retrieval_summary_from_attempts(&attempts);
     let attempted = summary.attempted_job_count.unwrap_or(0);
@@ -945,7 +1042,7 @@ fn c11_dimension_counts_partition_invariant_mixed() {
     assert_eq!(summary.attempted_dimension_count, Some(10));
     assert_eq!(summary.completed_dimension_count, Some(4));
     assert_eq!(summary.failed_dimension_count, Some(4));
-    assert_eq!(summary.not_applicable_count, Some(2));
+    assert_eq!(summary.not_applicable_count, Some(1));
 }
 
 #[test]
@@ -954,12 +1051,14 @@ fn c12_validate_attempt_ledger_rejects_duplicate_provider_operation() {
         "p_a",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     a1.result_count = 5;
     let a2 = attempt(
         "p_a",
         RetrievalAttemptOutcome::SuccessZeroResults,
         vec![EvidenceRole::PrimaryImplementation],
+        0,
     );
     let result = eggsearch::core::retrieval_status::validate_attempt_ledger(&[a1, a2]);
     assert!(
@@ -974,12 +1073,14 @@ fn c13_validate_attempt_ledger_accepts_distinct_operations() {
         "p_a",
         RetrievalAttemptOutcome::SuccessWithResults,
         vec![EvidenceRole::PrimaryImplementation],
+        1,
     );
     a1.result_count = 5;
     let a2 = attempt(
         "p_a",
         RetrievalAttemptOutcome::SuccessZeroResults,
         vec![EvidenceRole::OfficialDocumentation],
+        0,
     );
     let result = eggsearch::core::retrieval_status::validate_attempt_ledger(&[a1, a2]);
     assert!(result.is_ok(), "distinct operations must be accepted");
@@ -1006,11 +1107,19 @@ fn c15_dimension_state_mapping_is_deterministic() {
         RetrievalAttemptOutcome::TruncatedAfterPartialSuccess,
     ];
     for outcome in outcomes {
-        let a = attempt(
+        let rc = match outcome {
+            RetrievalAttemptOutcome::SuccessWithResults => 1,
+            _ => 0,
+        };
+        let mut a = attempt(
             "p",
             outcome.clone(),
             vec![EvidenceRole::PrimaryImplementation],
+            rc,
         );
+        if outcome == RetrievalAttemptOutcome::InterruptedByDeadline {
+            a.deadline_interrupted = true;
+        }
         let summary = build_retrieval_summary_from_attempts(&[a]);
         assert!(
             summary.dimensions[0].state.is_some(),

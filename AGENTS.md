@@ -129,6 +129,8 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 | `tests/property_render_metadata.rs` | None | Property tests for TrustMarkers consistency and outline-reference bounds |
 | `tests/property_local_fs.rs` | None | Property tests for filesystem path handling and scoring |
 | `tests/property_local_fs_extended.rs` | None | Property tests for symlinks, path traversal, skip dirs, root containment |
+| `tests/keyless_core.rs` | None | Keyless-core runtime contract: no-config startup, keyless profiles, provider status, credential isolation |
+| `tests/property_retrieval.rs` | None | Property tests for retrieval summary construction, dimension state, attempt ledger |
 | `src/meta/local_inventory_cache.rs` `#[cfg(test)]` | None | Unit tests for inventory building, invalidation, git fast path |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure, timeout, hang, dedup, concurrency, health transitions tests |
 | `tests/adversarial_corpus.rs` | None | Adversarial corpus structural validation |
@@ -147,6 +149,7 @@ cargo test --locked --all-features --test docs_config_snippets --test docs_provi
 cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended  # property tests
 cargo test --locked --all-features --test dispatch_fault_injection  # dispatch fault injection (requires mock)
 cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation (117+ cases across 9 files)
+cargo test --locked --all-features --test keyless_core  # keyless-core runtime contract tests
 make hardening                                              # all hardening tests
 ```
 
@@ -178,6 +181,10 @@ make hardening                                              # all hardening test
 - **Provider-scoped advisories:** `AdvisoryCapabilities` declares native advisory operations. Scoped lookups return one terminal outcome per selected provider, preserve the executing provider ID, surface errors and deadlines, and never invoke unsupported no-op methods. Native operations honor the request's resolved provider set.
 - **Truncation evidence:** Exact candidate-limit saturation without provider metadata is `LimitReachedUnknown`, with `truncated = false` and a separate summary counter. Confirmed truncation requires Eggsearch or provider evidence.
 - **Attempt counts vs dimension counts:** `not_applicable_job_count` is the attempt-level count of `NotApplicable` outcomes; `not_applicable_count` is the dimension-level count of `NotApplicable` dimensions. Attempt-level subtype counts are subsets of `completed_job_count` or `failed_job_count` and do not add to the partition equation.
+- **State-authoritative summaries:** `summarize_retrieval` classifies dimensions using `state` when present, falling back to legacy `absence_kind`. `dimension_state_or_legacy()` is the single classification path. `is_failure_only` means all applicable dimensions are failed/interrupted. Dimension-only summaries (`summarize_retrieval`) return `None` for all job counters; only `summarize_retrieval_with_attempts` populates job counters from `&[RetrievalAttempt]`.
+- **Debug ledger validation:** `debug_validate_attempt_ledger()` panics in debug/test builds when the assembled attempt vector violates invariants. Applied at `build_attempt_derived_summary` and `postprocess` entry points. No-op in release builds.
+- **Advisory identifier planning:** `plan_unique_advisory_identifiers()` produces a complete deduplicated list before budget reservation. `identifiers_planned` reflects total unique input IDs; `identifiers_scheduled` reflects IDs that consumed budget slots.
+- **Keyless core invariant:** No config and no credential environment variables must produce a healthy, useful server. Missing optional credentials are provider-scoped skips, never global failures. Credentialed adapters are optional enhancements.
 
 ## Key Architecture
 

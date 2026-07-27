@@ -124,172 +124,157 @@ pub struct ResponseRetrievalSummary {
     pub not_applicable_job_count: Option<usize>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EffectiveDimensionState {
+    Satisfied,
+    CompletedNoMatch,
+    Failed,
+    SkippedByPolicy,
+    CapabilityUnavailable,
+    Interrupted,
+    Partial,
+    NotApplicable,
+    LegacyOtherAbsence,
+}
+
+fn dimension_state_or_legacy(d: &RetrievalDimensionStatus) -> EffectiveDimensionState {
+    if let Some(state) = d.state {
+        match state {
+            RetrievalDimensionState::Satisfied => EffectiveDimensionState::Satisfied,
+            RetrievalDimensionState::CompletedNoMatch => EffectiveDimensionState::CompletedNoMatch,
+            RetrievalDimensionState::Failed => EffectiveDimensionState::Failed,
+            RetrievalDimensionState::SkippedByPolicy => EffectiveDimensionState::SkippedByPolicy,
+            RetrievalDimensionState::CapabilityUnavailable => {
+                EffectiveDimensionState::CapabilityUnavailable
+            }
+            RetrievalDimensionState::Interrupted => EffectiveDimensionState::Interrupted,
+            RetrievalDimensionState::Partial => EffectiveDimensionState::Partial,
+            RetrievalDimensionState::NotApplicable => EffectiveDimensionState::NotApplicable,
+        }
+    } else {
+        match d.absence_kind {
+            EvidenceAbsenceKind::NotApplicable => EffectiveDimensionState::LegacyOtherAbsence,
+            EvidenceAbsenceKind::NoMatchingEvidenceFound => {
+                EffectiveDimensionState::CompletedNoMatch
+            }
+            EvidenceAbsenceKind::ProviderFailed => EffectiveDimensionState::Failed,
+            EvidenceAbsenceKind::DeadlinePreventedCompletion => {
+                EffectiveDimensionState::Interrupted
+            }
+            EvidenceAbsenceKind::ProviderSkippedByPolicy => {
+                EffectiveDimensionState::SkippedByPolicy
+            }
+            EvidenceAbsenceKind::ProviderCapabilityUnavailable => {
+                EffectiveDimensionState::CapabilityUnavailable
+            }
+            EvidenceAbsenceKind::ResultTruncatedByCap => EffectiveDimensionState::Partial,
+            EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound => {
+                EffectiveDimensionState::CompletedNoMatch
+            }
+            EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed => {
+                EffectiveDimensionState::Failed
+            }
+            EvidenceAbsenceKind::EvidenceRoleNotRequested => EffectiveDimensionState::NotApplicable,
+        }
+    }
+}
+
 #[allow(missing_docs)]
 pub fn summarize_retrieval(dimensions: Vec<RetrievalDimensionStatus>) -> ResponseRetrievalSummary {
     let mut has_failures = false;
     let mut has_absences = false;
     let mut has_truncation = false;
 
-    let mut zero_result_count = 0usize;
-    let mut failed_count = 0usize;
-    let mut timed_out_count = 0usize;
-    let mut rate_limited_count = 0usize;
-    let mut policy_skipped_count = 0usize;
-    let mut capability_skipped_count = 0usize;
-    let mut deadline_interrupted_count = 0usize;
-    let mut truncated_count = 0usize;
-    let mut limit_reached_unknown_count = 0usize;
-
     let mut roles_seen = std::collections::HashSet::new();
     let mut roles_with_success = std::collections::HashSet::new();
     let mut roles_indeterminate = std::collections::HashSet::new();
 
+    let mut completed_dimension_count = 0usize;
+    let mut failed_dimension_count = 0usize;
+    let mut not_applicable_count = 0usize;
+
     for d in &dimensions {
         roles_seen.insert(d.evidence_role);
 
-        match d.absence_kind {
-            EvidenceAbsenceKind::ProviderFailed => {
+        let effective_state = dimension_state_or_legacy(d);
+
+        match effective_state {
+            EffectiveDimensionState::Satisfied => {
+                roles_with_success.insert(d.evidence_role);
+                completed_dimension_count += 1;
+            }
+            EffectiveDimensionState::CompletedNoMatch => {
+                roles_with_success.insert(d.evidence_role);
+                completed_dimension_count += 1;
+            }
+            EffectiveDimensionState::Failed => {
+                roles_indeterminate.insert(d.evidence_role);
                 has_failures = true;
-                failed_count += 1;
+                failed_dimension_count += 1;
             }
-            EvidenceAbsenceKind::DeadlinePreventedCompletion => {
+            EffectiveDimensionState::SkippedByPolicy => {
+                roles_indeterminate.insert(d.evidence_role);
+            }
+            EffectiveDimensionState::CapabilityUnavailable => {
+                roles_indeterminate.insert(d.evidence_role);
+            }
+            EffectiveDimensionState::Interrupted => {
+                roles_indeterminate.insert(d.evidence_role);
                 has_failures = true;
-                deadline_interrupted_count += 1;
+                failed_dimension_count += 1;
             }
-            EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound => {
-                has_absences = true;
-            }
-            EvidenceAbsenceKind::ResultTruncatedByCap => {
+            EffectiveDimensionState::Partial => {
+                roles_indeterminate.insert(d.evidence_role);
                 has_truncation = true;
-                truncated_count += 1;
+                completed_dimension_count += 1;
             }
-            EvidenceAbsenceKind::NoMatchingEvidenceFound => {
-                zero_result_count += 1;
+            EffectiveDimensionState::NotApplicable => {
+                not_applicable_count += 1;
+                completed_dimension_count += 1;
             }
-            EvidenceAbsenceKind::ProviderSkippedByPolicy => {
-                policy_skipped_count += 1;
+            EffectiveDimensionState::LegacyOtherAbsence => {
+                completed_dimension_count += 1;
             }
-            EvidenceAbsenceKind::ProviderCapabilityUnavailable => {
-                capability_skipped_count += 1;
-            }
-            _ => {}
         }
 
         match d.truncation_evidence {
-            TruncationEvidence::LimitReachedUnknown => limit_reached_unknown_count += 1,
+            TruncationEvidence::LimitReachedUnknown => {}
             TruncationEvidence::ConfirmedByEggsearch | TruncationEvidence::ConfirmedByProvider => {
                 has_truncation = true;
-                if d.absence_kind != EvidenceAbsenceKind::ResultTruncatedByCap {
-                    truncated_count += 1;
-                }
             }
             TruncationEvidence::None => {}
         }
 
-        if let Some(ref outcome) = d.attempt_outcome {
-            use RetrievalAttemptOutcome::*;
-            match outcome {
-                TimedOut => timed_out_count += 1,
-                RateLimited => rate_limited_count += 1,
-                InterruptedByDeadline => {
-                    // already counted via absence_kind above
-                }
-                _ => {}
-            }
-        }
-
-        if d.absence_kind == EvidenceAbsenceKind::NotApplicable {
-            roles_with_success.insert(d.evidence_role);
-        }
-        if d.absence_kind == EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed {
-            roles_indeterminate.insert(d.evidence_role);
-        }
-
-        if let Some(ref state) = d.state {
-            match state {
-                RetrievalDimensionState::Satisfied | RetrievalDimensionState::CompletedNoMatch => {
-                    roles_with_success.insert(d.evidence_role);
-                }
-                RetrievalDimensionState::Failed
-                | RetrievalDimensionState::SkippedByPolicy
-                | RetrievalDimensionState::CapabilityUnavailable
-                | RetrievalDimensionState::Interrupted
-                | RetrievalDimensionState::Partial => {
-                    roles_indeterminate.insert(d.evidence_role);
-                }
-                RetrievalDimensionState::NotApplicable => {
-                    // Not applicable roles are not attempted, not complete
-                }
-            }
+        if d.absence_kind == EvidenceAbsenceKind::EvidenceRoleRequestedButNotFound {
+            has_absences = true;
         }
     }
 
-    let attempted_job_count = Some(dimensions.len());
-    let completed_job_count = Some(
-        dimensions
-            .iter()
-            .filter(|d| d.absence_kind == EvidenceAbsenceKind::NotApplicable)
-            .count(),
-    );
-    let failed_job_count = Some(failed_count + deadline_interrupted_count);
-
     let dimension_count = dimensions.len();
-    let completed_dimension_count = Some(
-        dimensions
-            .iter()
-            .filter(|d| {
-                matches!(
-                    d.absence_kind,
-                    EvidenceAbsenceKind::NotApplicable
-                        | EvidenceAbsenceKind::NoMatchingEvidenceFound
-                        | EvidenceAbsenceKind::ResultTruncatedByCap
-                )
-            })
-            .count(),
-    );
-    let failed_dimension_count = Some(
-        dimensions
-            .iter()
-            .filter(|d| {
-                matches!(
-                    d.absence_kind,
-                    EvidenceAbsenceKind::ProviderFailed
-                        | EvidenceAbsenceKind::DeadlinePreventedCompletion
-                        | EvidenceAbsenceKind::EvidenceRoleIndeterminateBecauseRetrievalFailed
-                )
-            })
-            .count(),
-    );
-    let not_applicable_count = Some(
-        dimensions
-            .iter()
-            .filter(|d| d.absence_kind == EvidenceAbsenceKind::NotApplicable)
-            .count(),
-    );
 
     ResponseRetrievalSummary {
         dimensions,
         has_failures,
         has_absences,
         has_truncation,
-        attempted_job_count,
-        completed_job_count,
-        failed_job_count,
-        zero_result_count: Some(zero_result_count),
-        timed_out_count: Some(timed_out_count),
-        rate_limited_count: Some(rate_limited_count),
-        policy_skipped_count: Some(policy_skipped_count),
-        capability_skipped_count: Some(capability_skipped_count),
-        deadline_interrupted_count: Some(deadline_interrupted_count),
-        truncated_count: Some(truncated_count),
-        limit_reached_unknown_count: Some(limit_reached_unknown_count),
+        attempted_job_count: None,
+        completed_job_count: None,
+        failed_job_count: None,
+        zero_result_count: None,
+        timed_out_count: None,
+        rate_limited_count: None,
+        policy_skipped_count: None,
+        capability_skipped_count: None,
+        deadline_interrupted_count: None,
+        truncated_count: None,
+        limit_reached_unknown_count: None,
         roles_attempted: Some(roles_seen.len()),
         roles_complete: Some(roles_with_success.len()),
         roles_indeterminate: Some(roles_indeterminate.len()),
         attempted_dimension_count: Some(dimension_count),
-        completed_dimension_count,
-        failed_dimension_count,
-        not_applicable_count,
+        completed_dimension_count: Some(completed_dimension_count),
+        failed_dimension_count: Some(failed_dimension_count),
+        not_applicable_count: Some(not_applicable_count),
         not_applicable_job_count: None,
     }
 }
@@ -431,22 +416,26 @@ pub fn is_absence_only(summary: &ResponseRetrievalSummary) -> bool {
     })
 }
 
+/// Returns true when every applicable dimension is failed or interrupted.
+///
+/// An applicable dimension is one that is not NotApplicable or SkippedByPolicy.
+/// Returns false if there are no applicable dimensions.
 #[allow(missing_docs)]
 pub fn is_failure_only(summary: &ResponseRetrievalSummary) -> bool {
-    summary.dimensions.iter().any(|d| {
-        if let Some(ref state) = d.state {
-            matches!(
-                state,
-                RetrievalDimensionState::Failed | RetrievalDimensionState::Interrupted
-            )
-        } else {
-            matches!(
-                d.absence_kind,
-                EvidenceAbsenceKind::ProviderFailed
-                    | EvidenceAbsenceKind::DeadlinePreventedCompletion
-            )
+    let mut has_applicable = false;
+    for d in &summary.dimensions {
+        let state = dimension_state_or_legacy(d);
+        match state {
+            EffectiveDimensionState::NotApplicable
+            | EffectiveDimensionState::SkippedByPolicy
+            | EffectiveDimensionState::CapabilityUnavailable => {}
+            EffectiveDimensionState::Failed | EffectiveDimensionState::Interrupted => {
+                has_applicable = true;
+            }
+            _ => return false,
         }
-    })
+    }
+    has_applicable
 }
 
 #[allow(missing_docs)]
@@ -938,6 +927,21 @@ pub fn validate_attempt_ledger(
     Ok(())
 }
 
+/// Validate a complete attempt ledger in debug/test builds.
+///
+/// Panics in debug and test builds if the ledger violates invariants.
+/// No-op in release builds.
+#[inline]
+pub fn debug_validate_attempt_ledger(context: &str, attempts: &[RetrievalAttempt]) {
+    if cfg!(debug_assertions) || cfg!(test) {
+        if let Err(err) = validate_attempt_ledger(attempts) {
+            panic!(
+                "{context}: assembled retrieval attempt ledger must satisfy invariants: {err:?}"
+            );
+        }
+    }
+}
+
 /// Record of a single provider/subquery retrieval attempt.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RetrievalAttempt {
@@ -1226,7 +1230,28 @@ mod tests {
     }
 
     #[test]
-    fn is_failure_only_true_when_failures_present() {
+    fn is_failure_only_true_when_all_applicable_are_failures() {
+        let summary = summarize_retrieval(vec![
+            RetrievalDimensionStatus {
+                evidence_role: EvidenceRole::PrimaryImplementation,
+                absence_kind: EvidenceAbsenceKind::ProviderFailed,
+                provider_id: Some("duckduckgo".into()),
+                message: "failed".into(),
+                ..Default::default()
+            },
+            RetrievalDimensionStatus {
+                evidence_role: EvidenceRole::OfficialDocumentation,
+                absence_kind: EvidenceAbsenceKind::DeadlinePreventedCompletion,
+                provider_id: Some("startpage".into()),
+                message: "timeout".into(),
+                ..Default::default()
+            },
+        ]);
+        assert!(is_failure_only(&summary));
+    }
+
+    #[test]
+    fn is_failure_only_false_when_mixed_success_and_failure() {
         let summary = summarize_retrieval(vec![
             dim(
                 EvidenceRole::PrimaryImplementation,
@@ -1241,7 +1266,7 @@ mod tests {
                 ..Default::default()
             },
         ]);
-        assert!(is_failure_only(&summary));
+        assert!(!is_failure_only(&summary));
     }
 
     #[test]
@@ -1252,6 +1277,27 @@ mod tests {
             "none",
         )]);
         assert!(!is_failure_only(&summary));
+    }
+
+    #[test]
+    fn is_failure_only_ignores_skipped_dimensions() {
+        let summary = summarize_retrieval(vec![
+            RetrievalDimensionStatus {
+                evidence_role: EvidenceRole::PrimaryImplementation,
+                absence_kind: EvidenceAbsenceKind::ProviderFailed,
+                provider_id: Some("duckduckgo".into()),
+                message: "failed".into(),
+                ..Default::default()
+            },
+            RetrievalDimensionStatus {
+                evidence_role: EvidenceRole::OfficialDocumentation,
+                absence_kind: EvidenceAbsenceKind::ProviderSkippedByPolicy,
+                provider_id: Some("startpage".into()),
+                message: "skipped".into(),
+                ..Default::default()
+            },
+        ]);
+        assert!(is_failure_only(&summary));
     }
 
     #[test]
@@ -1481,5 +1527,495 @@ mod tests {
         assert!(summary.has_failures);
         assert!(summary.has_absences);
         assert!(summary.has_truncation);
+    }
+
+    fn dim_with_state(
+        evidence_role: EvidenceRole,
+        absence_kind: EvidenceAbsenceKind,
+        state: RetrievalDimensionState,
+        message: &str,
+    ) -> RetrievalDimensionStatus {
+        RetrievalDimensionStatus {
+            evidence_role,
+            absence_kind,
+            state: Some(state),
+            message: message.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn gate_a_success_not_counted_as_non_applicable() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NotApplicable,
+            RetrievalDimensionState::Satisfied,
+            "success",
+        )]);
+        assert_eq!(summary.not_applicable_count, Some(0));
+        assert_eq!(summary.completed_dimension_count, Some(1));
+    }
+
+    #[test]
+    fn gate_a_one_success_one_na_gives_correct_counts() {
+        let summary = summarize_retrieval(vec![
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::Satisfied,
+                "success",
+            ),
+            dim_with_state(
+                EvidenceRole::OfficialDocumentation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::NotApplicable,
+                "na",
+            ),
+        ]);
+        assert_eq!(summary.not_applicable_count, Some(1));
+        assert_eq!(summary.completed_dimension_count, Some(2));
+    }
+
+    #[test]
+    fn gate_a_na_only_role_not_complete() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NotApplicable,
+            RetrievalDimensionState::NotApplicable,
+            "na",
+        )]);
+        assert!(!roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert!(
+            !roles_attempted_from_summary(&summary).contains(&EvidenceRole::PrimaryImplementation)
+        );
+    }
+
+    #[test]
+    fn gate_a_satisfied_role_is_complete() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NotApplicable,
+            RetrievalDimensionState::Satisfied,
+            "found",
+        )]);
+        assert!(roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+    }
+
+    #[test]
+    fn gate_a_zero_result_role_is_complete_but_absent() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NoMatchingEvidenceFound,
+            RetrievalDimensionState::CompletedNoMatch,
+            "none",
+        )]);
+        assert!(roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert_eq!(summary.completed_dimension_count, Some(1));
+    }
+
+    #[test]
+    fn gate_a_partial_role_is_indeterminate() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::ResultTruncatedByCap,
+            RetrievalDimensionState::Partial,
+            "partial",
+        )]);
+        assert!(roles_indeterminate_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert!(!roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+    }
+
+    #[test]
+    fn gate_a_capability_skip_is_indeterminate_not_failed() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::ProviderCapabilityUnavailable,
+            RetrievalDimensionState::CapabilityUnavailable,
+            "unavailable",
+        )]);
+        assert!(roles_indeterminate_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert!(!roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert_eq!(summary.failed_dimension_count, Some(0));
+    }
+
+    #[test]
+    fn gate_a_policy_skip_is_indeterminate_not_failed() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::ProviderSkippedByPolicy,
+            RetrievalDimensionState::SkippedByPolicy,
+            "skipped",
+        )]);
+        assert!(roles_indeterminate_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert_eq!(summary.failed_dimension_count, Some(0));
+    }
+
+    #[test]
+    fn gate_a_failed_dimension_is_failed_and_indeterminate() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::ProviderFailed,
+            RetrievalDimensionState::Failed,
+            "error",
+        )]);
+        assert!(roles_indeterminate_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert_eq!(summary.failed_dimension_count, Some(1));
+        assert!(summary.has_failures);
+    }
+
+    #[test]
+    fn gate_a_interrupted_dimension_is_failed_and_indeterminate() {
+        let summary = summarize_retrieval(vec![dim_with_state(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::DeadlinePreventedCompletion,
+            RetrievalDimensionState::Interrupted,
+            "deadline",
+        )]);
+        assert!(roles_indeterminate_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert_eq!(summary.failed_dimension_count, Some(1));
+    }
+
+    #[test]
+    fn gate_a_mixed_satisfied_and_failed_preserve_both() {
+        let summary = summarize_retrieval(vec![
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::Satisfied,
+                "ok",
+            ),
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::ProviderFailed,
+                RetrievalDimensionState::Failed,
+                "error",
+            ),
+        ]);
+        assert!(roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert!(roles_indeterminate_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert_eq!(summary.not_applicable_count, Some(0));
+        assert_eq!(summary.failed_dimension_count, Some(1));
+    }
+
+    #[test]
+    fn gate_a_legacy_dimension_without_state_compatible() {
+        let summary = summarize_retrieval(vec![dim(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NoMatchingEvidenceFound,
+            "none",
+        )]);
+        assert!(roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+        assert_eq!(summary.completed_dimension_count, Some(1));
+    }
+
+    #[test]
+    fn gate_a_state_overrides_contradictory_legacy() {
+        let summary = summarize_retrieval(vec![RetrievalDimensionStatus {
+            evidence_role: EvidenceRole::PrimaryImplementation,
+            absence_kind: EvidenceAbsenceKind::NotApplicable,
+            state: Some(RetrievalDimensionState::Satisfied),
+            message: "success".into(),
+            ..Default::default()
+        }]);
+        assert_eq!(summary.not_applicable_count, Some(0));
+        assert!(roles_with_success_from_summary(&summary)
+            .contains(&EvidenceRole::PrimaryImplementation));
+    }
+
+    fn roles_with_success_from_summary(
+        s: &ResponseRetrievalSummary,
+    ) -> std::collections::HashSet<EvidenceRole> {
+        let mut set = std::collections::HashSet::new();
+        for d in &s.dimensions {
+            let state = dimension_state_or_legacy(d);
+            match state {
+                EffectiveDimensionState::Satisfied | EffectiveDimensionState::CompletedNoMatch => {
+                    set.insert(d.evidence_role);
+                }
+                _ => {}
+            }
+        }
+        set
+    }
+
+    fn roles_indeterminate_from_summary(
+        s: &ResponseRetrievalSummary,
+    ) -> std::collections::HashSet<EvidenceRole> {
+        let mut set = std::collections::HashSet::new();
+        for d in &s.dimensions {
+            let state = dimension_state_or_legacy(d);
+            match state {
+                EffectiveDimensionState::Failed
+                | EffectiveDimensionState::SkippedByPolicy
+                | EffectiveDimensionState::CapabilityUnavailable
+                | EffectiveDimensionState::Interrupted
+                | EffectiveDimensionState::Partial => {
+                    set.insert(d.evidence_role);
+                }
+                _ => {}
+            }
+        }
+        set
+    }
+
+    fn roles_attempted_from_summary(
+        s: &ResponseRetrievalSummary,
+    ) -> std::collections::HashSet<EvidenceRole> {
+        let mut set = std::collections::HashSet::new();
+        for d in &s.dimensions {
+            let state = dimension_state_or_legacy(d);
+            if state != EffectiveDimensionState::NotApplicable {
+                set.insert(d.evidence_role);
+            }
+        }
+        set
+    }
+
+    fn test_attempt_to_absence_kind(attempt: &RetrievalAttempt) -> EvidenceAbsenceKind {
+        match attempt.outcome {
+            RetrievalAttemptOutcome::SuccessWithResults => EvidenceAbsenceKind::NotApplicable,
+            RetrievalAttemptOutcome::SuccessZeroResults => {
+                EvidenceAbsenceKind::NoMatchingEvidenceFound
+            }
+            RetrievalAttemptOutcome::Failed => EvidenceAbsenceKind::ProviderFailed,
+            RetrievalAttemptOutcome::TimedOut => EvidenceAbsenceKind::DeadlinePreventedCompletion,
+            RetrievalAttemptOutcome::RateLimited => EvidenceAbsenceKind::ProviderFailed,
+            RetrievalAttemptOutcome::SkippedByPolicy => {
+                EvidenceAbsenceKind::ProviderSkippedByPolicy
+            }
+            RetrievalAttemptOutcome::SkippedCapabilityUnavailable => {
+                EvidenceAbsenceKind::ProviderCapabilityUnavailable
+            }
+            RetrievalAttemptOutcome::NotApplicable => EvidenceAbsenceKind::NotApplicable,
+            RetrievalAttemptOutcome::InterruptedByDeadline => {
+                EvidenceAbsenceKind::DeadlinePreventedCompletion
+            }
+            RetrievalAttemptOutcome::TruncatedAfterPartialSuccess => {
+                EvidenceAbsenceKind::NotApplicable
+            }
+        }
+    }
+
+    #[test]
+    fn gate_b_dimension_only_has_no_job_counters() {
+        let summary = summarize_retrieval(vec![
+            dim(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NoMatchingEvidenceFound,
+                "none",
+            ),
+            dim(
+                EvidenceRole::OfficialDocumentation,
+                EvidenceAbsenceKind::ProviderFailed,
+                "failed",
+            ),
+        ]);
+        assert!(summary.attempted_job_count.is_none());
+        assert!(summary.completed_job_count.is_none());
+        assert!(summary.failed_job_count.is_none());
+        assert!(summary.zero_result_count.is_none());
+        assert!(summary.timed_out_count.is_none());
+        assert!(summary.rate_limited_count.is_none());
+        assert!(summary.policy_skipped_count.is_none());
+        assert!(summary.capability_skipped_count.is_none());
+        assert!(summary.deadline_interrupted_count.is_none());
+        assert!(summary.truncated_count.is_none());
+        assert!(summary.limit_reached_unknown_count.is_none());
+        assert!(summary.not_applicable_job_count.is_none());
+    }
+
+    #[test]
+    fn gate_b_dimension_only_still_has_dimension_counters() {
+        let summary = summarize_retrieval(vec![
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::Satisfied,
+                "ok",
+            ),
+            dim_with_state(
+                EvidenceRole::OfficialDocumentation,
+                EvidenceAbsenceKind::ProviderFailed,
+                RetrievalDimensionState::Failed,
+                "error",
+            ),
+        ]);
+        assert_eq!(summary.attempted_dimension_count, Some(2));
+        assert_eq!(summary.completed_dimension_count, Some(1));
+        assert_eq!(summary.failed_dimension_count, Some(1));
+    }
+
+    #[test]
+    fn gate_b_attempt_derived_populates_job_counters() {
+        let attempts = vec![
+            RetrievalAttempt {
+                provider_id: "duckduckgo".into(),
+                subquery_id: Some("q1".into()),
+                operation_id: Some("op1".into()),
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                result_count: 3,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "startpage".into(),
+                subquery_id: Some("q1".into()),
+                operation_id: Some("op2".into()),
+                intended_roles: vec![
+                    EvidenceRole::PrimaryImplementation,
+                    EvidenceRole::OfficialDocumentation,
+                ],
+                outcome: RetrievalAttemptOutcome::Failed,
+                result_count: 0,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+        ];
+        let summary = summarize_retrieval_with_attempts(
+            &attempts,
+            vec![
+                dim_with_state(
+                    EvidenceRole::PrimaryImplementation,
+                    EvidenceAbsenceKind::NotApplicable,
+                    RetrievalDimensionState::Satisfied,
+                    "ok",
+                ),
+                dim_with_state(
+                    EvidenceRole::PrimaryImplementation,
+                    EvidenceAbsenceKind::ProviderFailed,
+                    RetrievalDimensionState::Failed,
+                    "error",
+                ),
+                dim_with_state(
+                    EvidenceRole::OfficialDocumentation,
+                    EvidenceAbsenceKind::ProviderFailed,
+                    RetrievalDimensionState::Failed,
+                    "error",
+                ),
+            ],
+        );
+        assert_eq!(summary.attempted_job_count, Some(2));
+        assert_eq!(summary.completed_job_count, Some(1));
+        assert_eq!(summary.failed_job_count, Some(1));
+        assert_eq!(summary.attempted_dimension_count, Some(3));
+    }
+
+    #[test]
+    fn gate_b_attempt_partition_invariant() {
+        let attempts = vec![
+            RetrievalAttempt {
+                provider_id: "a".into(),
+                outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                result_count: 1,
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                subquery_id: None,
+                operation_id: None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "b".into(),
+                outcome: RetrievalAttemptOutcome::SkippedByPolicy,
+                result_count: 0,
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                subquery_id: None,
+                operation_id: None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "c".into(),
+                outcome: RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                result_count: 0,
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                subquery_id: None,
+                operation_id: None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "d".into(),
+                outcome: RetrievalAttemptOutcome::Failed,
+                result_count: 0,
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                subquery_id: None,
+                operation_id: None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+        ];
+        let dims: Vec<_> = attempts
+            .iter()
+            .flat_map(|a| {
+                let state = crate::core::retrieval_status::attempt_outcome_to_dimension_state(a);
+                let absence = test_attempt_to_absence_kind(a);
+                vec![RetrievalDimensionStatus {
+                    evidence_role: EvidenceRole::PrimaryImplementation,
+                    absence_kind: absence,
+                    provider_id: Some(a.provider_id.clone()),
+                    state: Some(state),
+                    ..Default::default()
+                }]
+            })
+            .collect();
+        let summary = summarize_retrieval_with_attempts(&attempts, dims);
+        let attempted = summary.attempted_job_count.unwrap();
+        let completed = summary.completed_job_count.unwrap();
+        let failed = summary.failed_job_count.unwrap();
+        let policy_skipped = summary.policy_skipped_count.unwrap();
+        let cap_skipped = summary.capability_skipped_count.unwrap();
+        assert_eq!(attempted, completed + failed + policy_skipped + cap_skipped);
+    }
+
+    #[test]
+    fn gate_b_serde_omits_none_job_counters() {
+        let summary = summarize_retrieval(vec![dim(
+            EvidenceRole::PrimaryImplementation,
+            EvidenceAbsenceKind::NoMatchingEvidenceFound,
+            "none",
+        )]);
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(!json.contains("attempted_job_count"));
+        assert!(!json.contains("completed_job_count"));
+        assert!(!json.contains("failed_job_count"));
+        assert!(json.contains("attempted_dimension_count"));
     }
 }

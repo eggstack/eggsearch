@@ -79,7 +79,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 | `evidence_role.rs` | `EvidenceRole` | 19-variant deterministic evidence role taxonomy mapping across source kinds, roles, classes, and tiers |
 | `workflow_coverage.rs` | `WorkflowCoverageModel`, `WorkflowCoverageResult`, `CoverageStatus`, `RetrievalFailure`, `RetrievalFailureKind` | Deterministic coverage structures for 10 core workflows; required/recommended/optional role coverage |
 | `conflict.rs` | `EvidenceConflict`, `ConflictClass`, `ConflictSeverity`, `ConflictResolution` | Contradiction and conflict metadata for source disagreement detection (version ranges, release dates, benchmarks, mutable vs pinned) |
-| `retrieval_status.rs` | `ResponseRetrievalSummary`, `RetrievalDimensionStatus`, `EvidenceAbsenceKind` | Failure and absence semantics distinguishing evidence absence from retrieval failure |
+| `retrieval_status.rs` | `ResponseRetrievalSummary`, `RetrievalDimensionStatus`, `EvidenceAbsenceKind`, `RetrievalDimensionState`, `RetrievalAttempt`, `AttemptSummaryCounts`, `validate_attempt_ledger`, `debug_validate_attempt_ledger`, `plan_unique_advisory_identifiers` | State-authoritative retrieval semantics. `dimension_state_or_legacy()` classifies dimensions using `state` when present, falling back to `absence_kind`. Dimension-only summaries return `None` for all job counters; only `summarize_retrieval_with_attempts` populates job counters. `debug_validate_attempt_ledger()` panics in debug/test builds on invariant violations. `plan_unique_advisory_identifiers()` produces complete deduplicated ID plans before budget reservation. |
 | `evidence_postprocess.rs` | `EvidencePostprocessResult`, `EvidenceRoleSummary`, `RoleCount` | Phase 5 response integration: populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths |
 
 ### Workflow Guidance
@@ -166,6 +166,12 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 6. **Evidence postprocessing** — `evidence_postprocess.rs` populates evidence roles, workflow coverage, retrieval summaries, and structured conflicts on all result conversion paths. All new fields are additive and optional.
 
 7. **Centralized path policy** — `local.rs` centralizes path-component rules (hidden, SKIP_DIRS, binary, symlinks, size) used by both inventory building and fetch validation.
+
+8. **State-authoritative summaries** — `summarize_retrieval` classifies dimensions using `RetrievalDimensionState` when present, falling back to legacy `absence_kind`. This prevents dual classification through both legacy and state paths. `is_failure_only` means all applicable dimensions are failed/interrupted.
+
+9. **Debug ledger validation** — `debug_validate_attempt_ledger()` panics in debug/test builds when assembled attempt vectors violate invariants (empty provider IDs, duplicate tuples, mismatched result counts). Applied at production assembly boundaries. No-op in release builds.
+
+10. **Keyless core invariant** — No config and no credential environment variables must produce a healthy, useful server. Missing optional credentials are provider-scoped skips, never global failures. Credentialed adapters are optional enhancements.
 
 ---
 

@@ -1531,6 +1531,7 @@ pub fn run_provider_status(
 fn skip_reason_to_attempt(
     skip: &crate::meta::provider_diagnostics::ProviderSkipReason,
 ) -> crate::core::retrieval_status::RetrievalAttempt {
+    use crate::core::evidence_role::EvidenceRole;
     use crate::core::provider::ProviderSkipCode;
     use crate::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
 
@@ -1555,7 +1556,7 @@ fn skip_reason_to_attempt(
         provider_id: skip.provider_id.clone(),
         subquery_id: None,
         operation_id: None,
-        intended_roles: vec![],
+        intended_roles: vec![EvidenceRole::UnknownOrWeakContext],
         outcome,
         result_count: 0,
         error_class: None,

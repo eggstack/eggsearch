@@ -139,6 +139,43 @@ pub struct NativeAdvisoryBudgetSummary {
     pub provider_operations_skipped_by_budget: usize,
 }
 
+/// Planned advisory identifier after deduplication.
+#[derive(Debug, Clone)]
+struct PlannedAdvisoryIdentifier {
+    identifier: String,
+    subquery_id: &'static str,
+}
+
+/// Plan all unique advisory identifiers from resolved IDs.
+///
+/// Produces a stable, deduplicated list in family order (CVE, GHSA, OSV, RustSec).
+/// Duplicates across families are eliminated. This function performs no
+/// network calls and no budget reservation.
+fn plan_unique_advisory_identifiers(
+    resolved: &SecurityIdentifiers,
+) -> Vec<PlannedAdvisoryIdentifier> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut planned: Vec<PlannedAdvisoryIdentifier> = Vec::new();
+
+    for (ids, subquery_id) in [
+        (&resolved.cve_ids, "advisory_by_cve"),
+        (&resolved.ghsa_ids, "advisory_by_ghsa"),
+        (&resolved.osv_ids, "advisory_by_osv"),
+        (&resolved.rustsec_ids, "advisory_by_rustsec"),
+    ] {
+        for id in ids {
+            if seen.insert(id.clone()) {
+                planned.push(PlannedAdvisoryIdentifier {
+                    identifier: id.clone(),
+                    subquery_id,
+                });
+            }
+        }
+    }
+
+    planned
+}
+
 #[allow(clippy::too_many_arguments)]
 fn native_advisory_attempt(
     provider_id: &str,
@@ -501,7 +538,6 @@ pub async fn run_security_search_plan(
 
     // 4. Native advisory ID lookups for identified CVE/GHSA/RustSec/OSV IDs
     let mut vulnerabilities: Vec<VulnerabilityMetadata> = Vec::new();
-    let mut looked_up_ids: HashSet<String> = HashSet::new();
     let mut native_attempts: Vec<RetrievalAttempt> = Vec::new();
     let native_deadline = Instant::now() + adapter.effective_timeout(req.timeout_ms);
     let mut budget = NativeOperationBudget::new();
@@ -521,80 +557,70 @@ pub async fn run_security_search_plan(
 
     let mut identifier_cap_reached = false;
 
-    for (ids, subquery_id) in [
-        (&resolved_ids.cve_ids, "advisory_by_cve"),
-        (&resolved_ids.ghsa_ids, "advisory_by_ghsa"),
-        (&resolved_ids.osv_ids, "advisory_by_osv"),
-        (&resolved_ids.rustsec_ids, "advisory_by_rustsec"),
-    ] {
-        for vulnerability_id in ids {
-            if !looked_up_ids.insert(vulnerability_id.clone()) {
-                continue;
-            }
-            if !budget.reserve_identifier() {
-                identifier_cap_reached = true;
-                break;
-            }
-            let operation = RetrievalOperationIdentity::from_advisory_id(vulnerability_id);
-            let reservation = budget.reserve_providers(&capable_lookup_providers);
-            budget_summary.provider_operations_planned += capable_lookup_providers.len();
-            budget_summary.provider_operations_dispatched += reservation.allowed.len();
-            budget_summary.provider_operations_skipped_by_budget +=
-                reservation.skipped_by_budget.len();
+    let planned_ids = plan_unique_advisory_identifiers(&resolved_ids);
+    budget_summary.identifiers_planned = planned_ids.len();
 
-            for skipped_pid in &reservation.skipped_by_budget {
-                native_attempts.push(native_advisory_attempt_with_duration(
-                    skipped_pid,
-                    subquery_id,
-                    &operation,
-                    vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                    RetrievalAttemptOutcome::SkippedByPolicy,
-                    0,
-                    Some("native_operation_budget_exhausted".to_string()),
-                    vulnerability_id,
-                    0,
-                ));
-            }
-
-            for incapable_pid in &incapable_lookup_providers {
-                native_attempts.push(native_advisory_attempt_with_duration(
-                    incapable_pid,
-                    subquery_id,
-                    &operation,
-                    vec![EvidenceRole::AuthoritativeSecurityAdvisory],
-                    RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
-                    0,
-                    None,
-                    vulnerability_id,
-                    0,
-                ));
-            }
-
-            if !reservation.allowed.is_empty() {
-                let remaining = native_deadline.saturating_duration_since(Instant::now());
-                let outcomes = adapter
-                    .lookup_advisory_scoped_with_timeout(
-                        &reservation.allowed,
-                        vulnerability_id,
-                        remaining,
-                    )
-                    .await;
-                record_lookup_outcomes(
-                    outcomes,
-                    subquery_id,
-                    &operation,
-                    vulnerability_id,
-                    &mut vulnerabilities,
-                    &mut native_attempts,
-                );
-            }
-        }
-        if identifier_cap_reached {
+    for planned in &planned_ids {
+        if !budget.reserve_identifier() {
+            identifier_cap_reached = true;
             break;
+        }
+        let vulnerability_id = &planned.identifier;
+        let subquery_id = planned.subquery_id;
+        let operation = RetrievalOperationIdentity::from_advisory_id(vulnerability_id);
+        let reservation = budget.reserve_providers(&capable_lookup_providers);
+        budget_summary.provider_operations_planned += capable_lookup_providers.len();
+        budget_summary.provider_operations_dispatched += reservation.allowed.len();
+        budget_summary.provider_operations_skipped_by_budget += reservation.skipped_by_budget.len();
+
+        for skipped_pid in &reservation.skipped_by_budget {
+            native_attempts.push(native_advisory_attempt_with_duration(
+                skipped_pid,
+                subquery_id,
+                &operation,
+                vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                RetrievalAttemptOutcome::SkippedByPolicy,
+                0,
+                Some("native_operation_budget_exhausted".to_string()),
+                vulnerability_id,
+                0,
+            ));
+        }
+
+        for incapable_pid in &incapable_lookup_providers {
+            native_attempts.push(native_advisory_attempt_with_duration(
+                incapable_pid,
+                subquery_id,
+                &operation,
+                vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                0,
+                None,
+                vulnerability_id,
+                0,
+            ));
+        }
+
+        if !reservation.allowed.is_empty() {
+            let remaining = native_deadline.saturating_duration_since(Instant::now());
+            let outcomes = adapter
+                .lookup_advisory_scoped_with_timeout(
+                    &reservation.allowed,
+                    vulnerability_id,
+                    remaining,
+                )
+                .await;
+            record_lookup_outcomes(
+                outcomes,
+                subquery_id,
+                &operation,
+                vulnerability_id,
+                &mut vulnerabilities,
+                &mut native_attempts,
+            );
         }
     }
 
-    budget_summary.identifiers_planned = looked_up_ids.len();
     budget_summary.identifiers_scheduled = budget.identifiers_seen();
 
     // 5. Native package advisory queries when both package and ecosystem are present
@@ -1891,5 +1917,213 @@ mod tests {
             assert!(budget.reserve_identifier());
         }
         assert!(!budget.reserve_identifier());
+    }
+
+    #[test]
+    fn gate_c_plan_unique_deduplicates_across_families() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0001".into()],
+            ghsa_ids: vec!["CVE-2024-0001".into()],
+            osv_ids: vec!["CVE-2024-0001".into()],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].identifier, "CVE-2024-0001");
+    }
+
+    #[test]
+    fn gate_c_plan_unique_stable_family_order() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0002".into(), "CVE-2024-0001".into()],
+            ghsa_ids: vec!["GHSA-test-1234-abcd".into()],
+            osv_ids: vec!["PYSEC-2024-1".into()],
+            rustsec_ids: vec!["RUSTSEC-2024-0001".into()],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        assert_eq!(planned.len(), 5);
+        assert_eq!(planned[0].subquery_id, "advisory_by_cve");
+        assert_eq!(planned[1].subquery_id, "advisory_by_cve");
+        assert_eq!(planned[2].subquery_id, "advisory_by_ghsa");
+        assert_eq!(planned[3].subquery_id, "advisory_by_osv");
+        assert_eq!(planned[4].subquery_id, "advisory_by_rustsec");
+    }
+
+    #[test]
+    fn gate_c_plan_unique_40_ids_report_correct_planned_count() {
+        let mut cve_ids: Vec<String> = (0..40).map(|i| format!("CVE-2024-{i:04}")).collect();
+        cve_ids.dedup();
+        let resolved = SecurityIdentifiers {
+            cve_ids,
+            ghsa_ids: vec![],
+            osv_ids: vec![],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        assert_eq!(planned.len(), 40);
+    }
+
+    #[test]
+    fn gate_c_plan_unique_repeated_ids_count_as_one() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: vec![
+                "CVE-2024-0001".into(),
+                "CVE-2024-0001".into(),
+                "CVE-2024-0001".into(),
+            ],
+            ghsa_ids: vec![],
+            osv_ids: vec![],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        assert_eq!(planned.len(), 1);
+    }
+
+    #[test]
+    fn gate_c_budget_summary_exact_omitted_count() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: (0..40).map(|i| format!("CVE-2024-{i:04}")).collect(),
+            ghsa_ids: vec![],
+            osv_ids: vec![],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        let mut budget = NativeOperationBudget::new();
+        let mut scheduled = 0usize;
+        for _ in planned.iter().take(MAX_NATIVE_ADVISORY_IDENTIFIERS) {
+            if budget.reserve_identifier() {
+                scheduled += 1;
+            }
+        }
+        let identifiers_planned = planned.len();
+        let identifiers_scheduled = scheduled;
+        let omitted = identifiers_planned.saturating_sub(identifiers_scheduled);
+        assert_eq!(identifiers_planned, 40);
+        assert_eq!(identifiers_scheduled, 32);
+        assert_eq!(omitted, 8);
+    }
+
+    #[test]
+    fn gate_c_no_cap_no_warning() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0001".into(), "CVE-2024-0002".into()],
+            ghsa_ids: vec![],
+            osv_ids: vec![],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        let mut budget = NativeOperationBudget::new();
+        for _ in &planned {
+            assert!(budget.reserve_identifier());
+        }
+        assert_eq!(budget.identifiers_seen(), planned.len());
+    }
+
+    #[test]
+    fn gate_c_exact_cap_no_warning() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: (0..32).map(|i| format!("CVE-2024-{i:04}")).collect(),
+            ghsa_ids: vec![],
+            osv_ids: vec![],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        let mut budget = NativeOperationBudget::new();
+        for _ in &planned {
+            assert!(budget.reserve_identifier());
+        }
+        assert_eq!(budget.identifiers_seen(), 32);
+    }
+
+    #[test]
+    fn gate_c_cap_plus_one_emits_omitted_one() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: (0..33).map(|i| format!("CVE-2024-{i:04}")).collect(),
+            ghsa_ids: vec![],
+            osv_ids: vec![],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let planned = plan_unique_advisory_identifiers(&resolved);
+        let mut budget = NativeOperationBudget::new();
+        let mut scheduled = 0usize;
+        for _ in planned.iter().take(MAX_NATIVE_ADVISORY_IDENTIFIERS) {
+            if budget.reserve_identifier() {
+                scheduled += 1;
+            }
+        }
+        assert_eq!(planned.len(), 33);
+        assert_eq!(scheduled, 32);
+        assert_eq!(planned.len().saturating_sub(scheduled), 1);
+    }
+
+    #[test]
+    fn gate_c_planning_is_deterministic() {
+        let resolved = SecurityIdentifiers {
+            cve_ids: vec!["CVE-2024-0002".into(), "CVE-2024-0001".into()],
+            ghsa_ids: vec!["GHSA-b".into(), "GHSA-a".into()],
+            osv_ids: vec![],
+            rustsec_ids: vec![],
+            cwe_ids: vec![],
+            package: None,
+            ecosystem: None,
+            version: None,
+            function_or_api: None,
+            residual_query: String::new(),
+        };
+        let p1 = plan_unique_advisory_identifiers(&resolved);
+        let p2 = plan_unique_advisory_identifiers(&resolved);
+        assert_eq!(p1.len(), p2.len());
+        for (a, b) in p1.iter().zip(p2.iter()) {
+            assert_eq!(a.identifier, b.identifier);
+            assert_eq!(a.subquery_id, b.subquery_id);
+        }
     }
 }

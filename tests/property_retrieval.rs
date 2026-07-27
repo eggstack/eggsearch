@@ -819,15 +819,20 @@ fn a11_absence_kind_populated_for_all_absence_paths() {
     ];
 
     for outcome in outcomes {
+        let result_count = match outcome {
+            RetrievalAttemptOutcome::SuccessWithResults => 1,
+            _ => 0,
+        };
+        let deadline_interrupted = outcome == RetrievalAttemptOutcome::InterruptedByDeadline;
         let attempt = RetrievalAttempt {
             provider_id: "test_prov".to_string(),
             subquery_id: Some("sq_test".to_string()),
             operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: outcome.clone(),
-            result_count: 0,
+            result_count,
             error_class: None,
-            deadline_interrupted: false,
+            deadline_interrupted,
             truncated: false,
             truncation_evidence: Default::default(),
             query_fingerprint: None,
@@ -976,15 +981,20 @@ fn c3_query_fingerprint_populated_in_all_attempts() {
     ];
 
     for outcome in outcomes {
+        let result_count = match outcome {
+            RetrievalAttemptOutcome::SuccessWithResults => 1,
+            _ => 0,
+        };
+        let deadline_interrupted = outcome == RetrievalAttemptOutcome::InterruptedByDeadline;
         let attempt = RetrievalAttempt {
             provider_id: "test_prov".to_string(),
             subquery_id: Some("sq_fp".to_string()),
             operation_id: None,
             intended_roles: vec![EvidenceRole::PrimaryImplementation],
             outcome: outcome.clone(),
-            result_count: 0,
+            result_count,
             error_class: None,
-            deadline_interrupted: false,
+            deadline_interrupted,
             truncated: false,
             truncation_evidence: Default::default(),
             query_fingerprint: Some(query_fingerprint_from_query("test query")),

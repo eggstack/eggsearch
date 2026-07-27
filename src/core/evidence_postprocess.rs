@@ -270,6 +270,11 @@ fn attempt_message(attempt: &crate::core::retrieval_status::RetrievalAttempt) ->
 fn build_attempt_derived_summary(
     attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> ResponseRetrievalSummary {
+    crate::core::retrieval_status::debug_validate_attempt_ledger(
+        "build_attempt_derived_summary",
+        attempts,
+    );
+
     let mut dimensions = Vec::with_capacity(attempts.len());
 
     for attempt in attempts {
@@ -377,6 +382,10 @@ pub fn postprocess(
     resolution_source: Option<ResolutionSource>,
     attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> EvidencePostprocessResult {
+    if !attempts.is_empty() {
+        crate::core::retrieval_status::debug_validate_attempt_ledger("postprocess", attempts);
+    }
+
     let evidence_role_summary = compute_evidence_role_summary(cards);
     let retrieval_summary =
         build_retrieval_summary_for_search(providers_failed, provider_ids, cards, attempts);
@@ -625,5 +634,169 @@ mod tests {
         let result = postprocess(&cards, &[], &["test".to_string()], None, &[], None, &[]);
         assert!(result.evidence_role_summary.is_some());
         assert!(result.conflict_metadata.is_empty());
+    }
+
+    #[test]
+    fn gate_d_valid_multi_provider_ledger() {
+        use crate::core::retrieval_status::{
+            RetrievalAttempt, RetrievalAttemptOutcome, RetrievalOperationIdentity,
+            TruncationEvidence,
+        };
+        let attempts = vec![
+            RetrievalAttempt {
+                provider_id: "osv".into(),
+                subquery_id: Some("advisory".into()),
+                operation_id: Some(
+                    RetrievalOperationIdentity::from_advisory_id("CVE-2024-0001").stable_id(),
+                ),
+                intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                result_count: 1,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "github_advisory".into(),
+                subquery_id: Some("advisory".into()),
+                operation_id: Some(
+                    RetrievalOperationIdentity::from_advisory_id("CVE-2024-0001").stable_id(),
+                ),
+                intended_roles: vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+                outcome: RetrievalAttemptOutcome::SuccessZeroResults,
+                result_count: 0,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+        ];
+        let result = crate::core::retrieval_status::validate_attempt_ledger(&attempts);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn gate_d_postprocess_validates_nonempty_attempts() {
+        use crate::core::retrieval_status::{
+            RetrievalAttempt, RetrievalAttemptOutcome, TruncationEvidence,
+        };
+        let attempts = vec![RetrievalAttempt {
+            provider_id: "osv".into(),
+            subquery_id: Some("q".into()),
+            operation_id: Some("op1".into()),
+            intended_roles: vec![EvidenceRole::PrimaryImplementation],
+            outcome: RetrievalAttemptOutcome::SuccessWithResults,
+            result_count: 1,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            truncation_evidence: TruncationEvidence::None,
+            query_fingerprint: None,
+            duration_ms: None,
+        }];
+        let cards = vec![make_card(SourceKind::SecurityAdvisory, "https://a.com")];
+        let result = postprocess(
+            &cards,
+            &[],
+            &["osv".to_string()],
+            None,
+            &[],
+            None,
+            &attempts,
+        );
+        assert!(result.retrieval_summary.is_some());
+    }
+
+    #[test]
+    fn gate_d_duplicate_provider_operation_role_panics() {
+        use crate::core::retrieval_status::{
+            RetrievalAttempt, RetrievalAttemptOutcome, TruncationEvidence,
+        };
+        let attempts = vec![
+            RetrievalAttempt {
+                provider_id: "osv".into(),
+                subquery_id: Some("q".into()),
+                operation_id: Some("op1".into()),
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                result_count: 1,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "osv".into(),
+                subquery_id: Some("q".into()),
+                operation_id: Some("op1".into()),
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: RetrievalAttemptOutcome::Failed,
+                result_count: 0,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+        ];
+        let result = std::panic::catch_unwind(|| {
+            crate::core::retrieval_status::debug_validate_attempt_ledger("test", &attempts);
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_d_validation_diagnostic_contains_provider_and_role() {
+        use crate::core::retrieval_status::{
+            AttemptLedgerViolation, RetrievalAttempt, RetrievalAttemptOutcome, TruncationEvidence,
+        };
+        let attempts = vec![
+            RetrievalAttempt {
+                provider_id: "osv".into(),
+                subquery_id: Some("q".into()),
+                operation_id: Some("op1".into()),
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                result_count: 1,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "osv".into(),
+                subquery_id: Some("q".into()),
+                operation_id: Some("op1".into()),
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: RetrievalAttemptOutcome::Failed,
+                result_count: 0,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+        ];
+        let err = crate::core::retrieval_status::validate_attempt_ledger(&attempts).unwrap_err();
+        match err {
+            AttemptLedgerViolation::DuplicateProviderOperationRole {
+                provider_id, role, ..
+            } => {
+                assert_eq!(provider_id, "osv");
+                assert_eq!(role, "Primary Implementation");
+            }
+            other => panic!("expected DuplicateProviderOperationRole, got {other:?}"),
+        }
     }
 }
