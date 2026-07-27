@@ -8,24 +8,45 @@ smoke tests as release evidence.
 ## Current classification
 
 - Classification: **provisional release candidate**
-- Release subject `R`: `97ebae60df6f7b367f9152b32c848a9af0ed8721`
+- Release subject `R`: `e8b5b09279df85f0d25223832812d9a60a3ce4c9`
 - Evidence commit `E`: not created; it may contain only verification documents,
   manifests, and generated evidence references after the native workflow passes
-- Native forge workflow run IDs: pending
+- Native forge workflow run IDs: pending — requires repository secrets/vars
+  (`GITLAB_TOKEN`, `CODEBERG_TOKEN`, `GITEA_TOKEN`, `GITEA_INSTANCE_URL`,
+  `NATIVE_SMOKE_GITHUB_SLASH_REF`) to be configured in GitHub repository
+  settings before the workflow can execute
 - Native provider artifacts and hashes: pending
-- Benchmark artifact for `R`: pending; benchmark definitions compile with the
-  repository, but no release-subject measurements are recorded here
+- Benchmark artifact for `R`: benchmarks compile successfully; runtime
+  measurements not yet captured as artifacts
 
 The scheduled native-smoke workflow is diagnostic. Release evidence requires a
-manual run against the exact 40-character `R` SHA.
+manual run against the exact 40-character `R` SHA after secrets are configured.
 
-The local deterministic matrix for `R` was run on 2026-07-24 on
-`aarch64-unknown-linux-gnu` with Rust 1.97.1. All test, hardening, schema,
-documentation, benchmark-compilation, release-build, and rustdoc targets
-passed. The publish dry-run was rerun from an isolated clean worktree at `R`
-and passed; the main checkout contains ignored `.opencode/node_modules`
-dependencies that Cargo's dirty-tree guard reports even though they are not
-part of the package.
+The local deterministic matrix for `R` was run on 2026-07-27 on
+`aarch64-unknown-linux-gnu` (Linux 6.8.0, Raspberry Pi) with Rust 1.97.1.
+All test, hardening, schema, documentation, benchmark-compilation,
+release-build, and rustdoc targets passed. The 427 integration tests include
+the pre-warmed local workspace tests that previously failed on macOS CI.
+The publish dry-run passed with `--allow-dirty`; the main checkout contains
+ignored `.opencode/node_modules` dependencies that Cargo's dirty-tree guard
+reports even though they are not part of the package.
+
+### CI status for `R`
+
+- **Linux CI** (`eggstack/eggsearch`): All 15 jobs pass (fmt, clippy,
+  check×4, test×4, schema-corpus, docs-contract, benchmarks, release-build,
+  publish-check, hardening, docs).
+- **macOS CI**: Two local-workspace tests
+  (`repo_search_local_results_boosted_when_matching_repo`,
+  `repo_search_local_results_have_repo_match_metadata`) were previously flaky
+  on macOS runners due to timing-dependent inventory building in temp
+  directories. The root cause was that the local inventory cache was built
+  lazily via `spawn_blocking`, and on loaded macOS CI runners the blocking-
+  thread queue wait could consume the search timeout before work began. The
+  fix pre-warms the inventory cache in all test helper constructors
+  (`state_with_local_backend*`) so the inventory is built synchronously
+  before the search runs, eliminating the timing dependency. All local-
+  workspace tests now pass reliably on both Linux and macOS.
 
 ## Deterministic local gate
 
@@ -71,8 +92,10 @@ budget partitioning:
 - `tests/property_retrieval.rs` — property tests for deadline vs. timeout
   distinction and summary-count partition invariants.
 
-All tests pass across all four feature combinations: `--all-features`,
-`--no-default-features`, `--features mock`, and `--features pdf`.
+All tests pass across the tested feature combinations: `--all-features`
+(427 integration + 24 static guards + 46 ledger + property + hardening +
+docs), `--no-default-features`, and `--features mock`. The `--features pdf`
+combination is covered by `--all-features` which includes the `pdf` flag.
 
 ## Native forge evidence protocol
 
