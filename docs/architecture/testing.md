@@ -43,13 +43,12 @@
 
 ### Documentation Contract Tests
 
-**Location:** `tests/docs_config_snippets.rs`, `tests/docs_provider_inventory.rs`, `tests/docs_tool_names.rs`, `tests/docs_safety_vocabulary.rs`, `tests/native_forge_workflow_contract.rs`, `tests/release_document_contract.rs`, `tests/static_guards.rs`
+**Location:** `tests/docs_config_snippets.rs`, `tests/docs_provider_inventory.rs`, `tests/docs_tool_names.rs`, `tests/docs_safety_vocabulary.rs`, `tests/docs_keyless_contract.rs`, `tests/static_guards.rs`
 
 - Validate docs snippets against actual types
 - Ensure config examples, provider lists, tool names, safety vocabulary match code
-- Ensure native release workflow checks exact subjects, credentials, evidence, and exact provider pass
-- Ensure provisional release documents cannot claim pending evidence as completed
-- Run with: `cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary`
+- Ensure keyless product invariants are preserved in documentation
+- Run with: `cargo test --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test docs_keyless_contract --test static_guards`
 
 ### Config Validation Tests
 
@@ -82,26 +81,13 @@
 
 ## CI Pipeline
 
-The CI runs tests across 4 feature combos:
+The single CI job runs `make ci`, which executes:
 
-1. `--all-features`
-2. `--no-default-features`
-3. `--features mock`
-4. `--features pdf`
-
-### CI Jobs
-
-| Job | What it runs |
-|-----|-------------|
-| check | `cargo check` × 4 feature combos |
-| test | `cargo test --locked` × 4 feature combos |
-| clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
-| schema-corpus | 6 regression test binaries (Makefile uses `--locked`, CI does not) |
-| docs-contract | 4 documentation contract tests (Makefile uses `--locked`, CI does not) |
-| fmt | `cargo fmt --check` |
-| release-build | `cargo build --release` |
-| publish-check | `cargo publish --dry-run --locked` |
-| docs | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
+1. `cargo fmt --check`
+2. `cargo clippy --locked --all-targets --all-features -- -D warnings`
+3. `cargo check --locked --no-default-features`
+4. `cargo test --locked --all-features`
+5. `cargo test --locked --no-default-features`
 
 ---
 
@@ -111,9 +97,7 @@ The CI runs tests across 4 feature combos:
 cargo test --locked --features mock --test integration              # integration only
 cargo test --locked --features mock --test corpus_runner            # corpus regression
 cargo test --locked --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
-make schema-corpus                                         # all contract tests
-make docs-tests                                            # documentation contract tests
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test docs_keyless_contract --test static_guards
 ```
 
 ---
@@ -137,18 +121,20 @@ cargo test --features live-smoke --test corpus_runner -- --ignored
 make check
 ```
 
-This runs the complete CI suite locally:
+This runs the routine deterministic verification:
 1. `cargo fmt --check`
-2. `cargo clippy --all-targets --all-features -- -D warnings`
-3. `cargo test --locked --all-features`
-4. `cargo test --locked --no-default-features`
-5. `cargo test --locked --features mock`
-6. `cargo test --locked --features pdf`
-7. Schema-corpus tests
-8. Documentation contract tests
-9. `cargo build --release`
-10. `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps`
-11. `cargo publish --dry-run --locked`
+2. `cargo clippy --locked --all-targets --all-features -- -D warnings`
+3. `cargo check --locked --no-default-features`
+4. `cargo test --locked --all-features`
+5. `cargo test --locked --no-default-features`
+
+For maintainers preparing a release:
+
+```bash
+make release-check
+```
+
+This adds documentation build, release compilation, and `cargo publish --dry-run --locked`.
 
 ---
 

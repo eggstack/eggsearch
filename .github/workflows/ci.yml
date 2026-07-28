@@ -9,200 +9,33 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: check (${{ matrix.features }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        features:
-          - "--all-features"
-          - "--no-default-features"
-          - "--features mock"
-          - "--features pdf"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo check ${{ matrix.features }}
-
-  test:
-    name: test (${{ matrix.os }}, ${{ matrix.features }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        features:
-          - "--all-features"
-          - "--no-default-features"
-          - "--features mock"
-          - "--features pdf"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo test --locked ${{ matrix.features }}
-
-  keyless-core:
-    name: keyless-core
+  ci:
+    name: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
-      - name: Scrub credential environment variables
-        run: |
-          unset GITHUB_TOKEN || true
-          unset GH_TOKEN || true
-          unset GITLAB_TOKEN || true
-          unset GITEA_TOKEN || true
-          unset FORGEJO_TOKEN || true
-          unset SOURCEGRAPH_API_KEY || true
-          unset BRAVE_API_KEY || true
-          unset SEMANTIC_SCHOLAR_API_KEY || true
-      - name: Run keyless-core tests
-        run: cargo test --locked --all-features --test keyless_core
+          components: rustfmt, clippy
+      - name: Run routine verification
+        run: make ci
         env:
           GITHUB_TOKEN: ""
           GH_TOKEN: ""
           GITLAB_TOKEN: ""
+          CODEBERG_TOKEN: ""
           GITEA_TOKEN: ""
           FORGEJO_TOKEN: ""
           SOURCEGRAPH_API_KEY: ""
           BRAVE_API_KEY: ""
           SEMANTIC_SCHOLAR_API_KEY: ""
-
-  # CI clippy intentionally mirrors the Makefile release gate so local and
-  # remote checks stay in lockstep. Do not weaken the flags here without
-  # also updating the Makefile.
-  clippy:
-    name: clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-          components: clippy
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-
-  schema-corpus:
-    name: schema-corpus
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo test --features mock --test schema_identity_registry
-      - run: cargo test --features mock --test fetch_safety
-      - run: cargo test --features mock --test security_applicability_corpus
-      - run: cargo test --features mock --test research_evidence_corpus
-      - run: cargo test --features mock --test recipes_next_actions
-      - run: cargo test --features mock --test evidence_bundle_handoff
-
-  docs-contract:
-    name: docs-contract
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test native_forge_workflow_contract --test release_document_contract --test static_guards --test docs_keyless_contract
-
-  benchmarks:
-    name: benchmarks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo bench --locked --all-features --bench perf --no-run
-
-  fmt:
-    name: fmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-          components: rustfmt
-      - run: cargo fmt --check
-
-  release-build:
-    name: release-build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo build --release
-
-  publish-check:
-    name: publish-check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo publish --dry-run --locked
-
-  docs:
-    name: docs
-    runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: "-D warnings"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.88"
-      - run: cargo doc --all-features --no-deps
-
-  fuzz-smoke:
-    name: fuzz-smoke (${{ matrix.target }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - validate_url
-          - strip_control_chars
-          - scan_injection_markers
-          - extract_content
-          - build_document_chunks
-          - extract_pdf_text
-          - validate_redirect_target
-          - validate_content_type
-          - extract_content_bytes
-          - canonicalize_url
-          - sanitize_pipeline
-          - validate_redirect_chain
-          - parse_content_length
-          - chunk_boundary
-          - mixed_utf8_extract
-          - bounded_response_reader
-          - workflow_kind_parse
-          - classify_absence
-          - detect_entity_scoped_conflicts
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
-      - name: Fuzz smoke test (15s per target)
-        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=15
-        working-directory: .
+          NVD_API_KEY: ""

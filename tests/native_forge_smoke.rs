@@ -1,25 +1,7 @@
-//! Native forge adapter smoke tests.
-//!
-//! These tests exercise the native forge tree API adapters (GitHub, GitLab,
-//! Codeberg, Gitea) against live public repositories. They require configured
-//! API tokens and are classified as release-blocking evidence.
-//!
-//! Run with:
-//! ```bash
-//! GITHUB_TOKEN=ghp_xxx \
-//! GITHUB_SLASH_REF=fixture/slash-ref \
-//! EGGSEARCH_RELEASE_SUBJECT=$(git rev-parse HEAD) \
-//! EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR=/tmp/eggsearch-native-evidence \
-//! cargo test --features live-smoke --test native_forge_smoke -- --ignored
-//! ```
-
 #![cfg(feature = "live-smoke")]
 
-use std::fs;
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::Utc;
 use eggsearch::core::config::{ApiProviderConfig, AppConfig};
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{run_repo_map, RepoMapArgs};
@@ -27,86 +9,8 @@ use eggsearch::mcp::tools::{run_repo_map, RepoMapArgs};
 fn required_env(name: &str) -> String {
     match std::env::var(name) {
         Ok(value) if !value.trim().is_empty() => value,
-        _ => panic!("{name} is required for native forge smoke evidence"),
+        _ => panic!("{name} is required for native forge smoke test"),
     }
-}
-
-fn release_subject() -> String {
-    let value = required_env("EGGSEARCH_RELEASE_SUBJECT");
-    assert!(
-        value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
-        "EGGSEARCH_RELEASE_SUBJECT must be a full 40-character hexadecimal commit SHA"
-    );
-    value
-}
-
-fn evidence_dir() -> PathBuf {
-    let path = PathBuf::from(required_env("EGGSEARCH_NATIVE_SMOKE_EVIDENCE_DIR"));
-    fs::create_dir_all(&path).expect("create native forge evidence directory");
-    path
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_evidence(
-    provider: &str,
-    test_name: &str,
-    target: &str,
-    requested_ref: &str,
-    resolved_ref: &str,
-    resolved_commit_sha: &str,
-    entry_count: usize,
-    request_count: usize,
-    response_bytes_observed: usize,
-    aggregate_limit: usize,
-    provenance_pinned: bool,
-) {
-    assert!(
-        !resolved_commit_sha.is_empty()
-            && resolved_commit_sha.len() == 40
-            && resolved_commit_sha
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit()),
-        "native evidence requires a full resolved commit SHA"
-    );
-    assert!(
-        entry_count > 0,
-        "native evidence requires repository entries"
-    );
-    assert!(request_count > 0, "native evidence requires HTTP requests");
-    assert!(
-        response_bytes_observed > 0 && response_bytes_observed <= aggregate_limit,
-        "native evidence requires bounded non-zero response bytes"
-    );
-    assert!(
-        provenance_pinned,
-        "native evidence requires pinned provenance"
-    );
-
-    let evidence = serde_json::json!({
-        "schema_version": 1,
-        "release_subject": release_subject(),
-        "provider": provider,
-        "target": target,
-        "requested_ref": requested_ref,
-        "resolved_ref": resolved_ref,
-        "resolved_commit_sha": resolved_commit_sha,
-        "mode": "native",
-        "entry_count": entry_count,
-        "request_count": request_count,
-        "response_bytes_observed": response_bytes_observed,
-        "aggregate_limit": aggregate_limit,
-        "provenance_pinned": true,
-        "result": "pass",
-        "executed_at": Utc::now().to_rfc3339(),
-    });
-    let path = evidence_dir().join(format!("{provider}-{test_name}.json"));
-    let temporary_path = path.with_extension("json.tmp");
-    fs::write(
-        &temporary_path,
-        serde_json::to_vec_pretty(&evidence).expect("serialize native evidence"),
-    )
-    .expect("write native evidence");
-    fs::rename(temporary_path, path).expect("publish native evidence");
 }
 
 fn build_state_with_github() -> Arc<ServerState> {
@@ -168,47 +72,6 @@ fn build_state_with_gitea() -> Arc<ServerState> {
         },
     );
     Arc::new(ServerState::build(cfg).expect("build Gitea native smoke state"))
-}
-
-fn write_repo_map_evidence(
-    provider: &str,
-    test_name: &str,
-    target: &str,
-    requested_ref: &str,
-    response: &serde_json::Value,
-) {
-    let resolved_ref = response["resolved_ref_name"]
-        .as_str()
-        .or_else(|| response["ref_name"].as_str())
-        .expect("resolved_ref_name present");
-    let commit_sha = response["commit_sha"].as_str().expect("commit_sha present");
-    let entries = response["entries"]
-        .as_array()
-        .or_else(|| response["root_entries"].as_array())
-        .expect("native entries present");
-    let request_count = response["request_count"]
-        .as_u64()
-        .expect("request_count present") as usize;
-    let response_bytes_observed = response["response_bytes_observed"]
-        .as_u64()
-        .expect("response_bytes_observed present") as usize;
-    let aggregate_limit = response["aggregate_limit"]
-        .as_u64()
-        .expect("aggregate_limit present") as usize;
-
-    write_evidence(
-        provider,
-        test_name,
-        target,
-        requested_ref,
-        resolved_ref,
-        commit_sha,
-        entries.len(),
-        request_count,
-        response_bytes_observed,
-        aggregate_limit,
-        response["provenance_pinned"].as_bool() == Some(true),
-    );
 }
 
 #[tokio::test]
@@ -283,13 +146,6 @@ async fn native_github_public_repo() {
     assert!(
         request_count > 0,
         "request_count should be > 0, got {request_count}"
-    );
-    write_repo_map_evidence(
-        "github",
-        "native_github_public_repo",
-        "tokio-rs/axum",
-        "main",
-        &v,
     );
 }
 
@@ -373,13 +229,6 @@ async fn native_github_slash_ref() {
         resolved_ref.contains('/'),
         "resolved ref should contain a slash, got resolved_ref={resolved_ref}"
     );
-    write_repo_map_evidence(
-        "github",
-        "native_github_slash_ref",
-        "tokio-rs/axum",
-        &slash_ref,
-        &v,
-    );
 }
 
 #[tokio::test]
@@ -450,13 +299,6 @@ async fn native_gitlab_public_repo() {
         request_count > 0,
         "request_count should be > 0, got {request_count}"
     );
-    write_repo_map_evidence(
-        "gitlab",
-        "native_gitlab_public_repo",
-        "gitlab-org/gitlab-runner",
-        "main",
-        &v,
-    );
 }
 
 #[tokio::test]
@@ -526,13 +368,6 @@ async fn native_codeberg_public_repo() {
     assert!(
         request_count > 0,
         "request_count should be > 0, got {request_count}"
-    );
-    write_repo_map_evidence(
-        "codeberg",
-        "native_codeberg_public_repo",
-        "Codeberg/Forgejo",
-        "main",
-        &v,
     );
 }
 
@@ -605,21 +440,7 @@ async fn native_gitea_public_repo() {
         request_count > 0,
         "request_count should be > 0, got {request_count}"
     );
-    write_repo_map_evidence(
-        "gitea",
-        "native_gitea_public_repo",
-        "go-gitea/gitea",
-        "main",
-        &v,
-    );
 }
-
-// ===========================================================================
-// Direct forge_adapter::fetch_tree tests
-//
-// These call the adapter directly, proving the native path without
-// MCP tool routing. They run independently of provider registration.
-// ===========================================================================
 
 use eggsearch::core::code_metadata::CodeHost;
 use eggsearch::core::repo_map::RepoMapRequest;
@@ -664,38 +485,6 @@ fn direct_fetch_config_gitea() -> ForgeTreeConfig {
         endpoint_policy: ForgeEndpointPolicy::default(),
         forge_budget_limit: None,
     }
-}
-
-fn write_direct_evidence(
-    provider: &str,
-    test_name: &str,
-    target: &str,
-    requested_ref: &str,
-    response: &eggsearch::meta::forge_adapter::ForgeTreeResponse,
-) {
-    let resolved_ref = response
-        .identity
-        .resolved_ref_name
-        .as_deref()
-        .expect("resolved_ref_name present");
-    let commit_sha = response
-        .identity
-        .resolved_commit_sha
-        .as_deref()
-        .expect("resolved_commit_sha present");
-    write_evidence(
-        provider,
-        test_name,
-        target,
-        requested_ref,
-        resolved_ref,
-        commit_sha,
-        response.entries.len(),
-        response.request_count,
-        response.response_bytes_observed,
-        response.aggregate_limit,
-        true,
-    );
 }
 
 fn default_request(host: CodeHost, owner: &str, repo: &str, ref_name: &str) -> RepoMapRequest {
@@ -754,13 +543,6 @@ async fn direct_fetch_tree_github() {
         response.response_bytes_observed,
         response.aggregate_limit
     );
-    write_direct_evidence(
-        "github",
-        "direct_fetch_tree_github",
-        "tokio-rs/axum",
-        "main",
-        &response,
-    );
 }
 
 #[tokio::test]
@@ -806,13 +588,6 @@ async fn direct_fetch_tree_gitlab() {
         response.response_bytes_observed,
         response.aggregate_limit
     );
-    write_direct_evidence(
-        "gitlab",
-        "direct_fetch_tree_gitlab",
-        "gitlab-org/gitlab-runner",
-        "main",
-        &response,
-    );
 }
 
 #[tokio::test]
@@ -852,13 +627,6 @@ async fn direct_fetch_tree_codeberg() {
         response.response_bytes_observed,
         response.aggregate_limit
     );
-    write_direct_evidence(
-        "codeberg",
-        "direct_fetch_tree_codeberg",
-        "Codeberg/Forgejo",
-        "main",
-        &response,
-    );
 }
 
 #[tokio::test]
@@ -895,13 +663,6 @@ async fn direct_fetch_tree_gitea() {
         "response_bytes_observed ({}) must not exceed aggregate_limit ({})",
         response.response_bytes_observed,
         response.aggregate_limit
-    );
-    write_direct_evidence(
-        "gitea",
-        "direct_fetch_tree_gitea",
-        "go-gitea/gitea",
-        "main",
-        &response,
     );
 }
 
@@ -949,12 +710,5 @@ async fn direct_fetch_tree_github_slash_ref() {
             .as_deref()
             .is_some_and(|value| value.contains('/')),
         "resolved_ref_name must contain a slash"
-    );
-    write_direct_evidence(
-        "github",
-        "direct_fetch_tree_github_slash_ref",
-        "tokio-rs/axum",
-        &slash_ref,
-        &response,
     );
 }

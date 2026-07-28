@@ -303,9 +303,9 @@ Forge API base URLs are validated by `validate_base_url()` before use: embedded 
 
 15. **Multi-role failure expansion** — Retrieval failures for research subqueries expand across all `intended_roles` on the subquery, not just a single role. This prevents incomplete failure attribution when a subquery targets multiple evidence dimensions.
 
-16. **Release evidence R/E protocol** — Release evidence uses a two-commit protocol: release subject commit `R` (code-bearing) and evidence commit `E` (docs/manifests only). `docs/release-verification.md` records both `R` and `E` and the CI run IDs for `R`. Classification remains provisional until native and CI evidence is present.
+16. **Manual release** — Release cadence is maintainer-controlled. `make release-check` is the local packaging gate; `cargo publish --locked` publishes to crates.io. GitHub Actions has no publication role. Optional provider conformance does not block core releases.
 
-17. **Native smoke tests are distinct from fallback** — Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. Live-smoke tests (`--features live-smoke`) use fallback mode. Native evidence is required for release; fallback evidence alone is insufficient.
+17. **Native smoke tests are distinct from fallback** — Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. Live-smoke tests (`--features live-smoke`) use fallback mode. Native smoke tests are maintainer-only diagnostics, not release evidence.
 
 18. **DNS validation is preflight-only** — DNS address classification happens before connection. No connection-time DNS pinning is enforced. Documented in `docs/architecture/meta.md`.
 

@@ -313,22 +313,6 @@ fn forge_has_aggregate_byte_budget_type() {
 }
 
 #[test]
-fn no_release_classification_without_native_evidence() {
-    let source = read_source("docs/release-verification.md");
-    let lower = source.to_lowercase();
-    assert!(
-        lower.contains("provisional"),
-        "release-verification.md must classify the release as provisional \
-         until native evidence is present"
-    );
-    assert!(
-        lower.contains("native") && lower.contains("evidence"),
-        "release-verification.md must reference native evidence as a \
-         requirement for release promotion"
-    );
-}
-
-#[test]
 fn all_forge_response_paths_bounded() {
     let source = read_source("src/meta/forge_adapter.rs");
     let non_test = strip_test_code(&source);

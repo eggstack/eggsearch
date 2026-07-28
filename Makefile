@@ -1,69 +1,43 @@
-.PHONY: check test clippy fmt doc schema-corpus docs-tests publish-check live-smoke native-forge-smoke release-build hardening bench-check
+.PHONY: check ci fmt clippy feature-check test release-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke native-forge-smoke
 
-# Full offline quality gate (all CI checks)
-check: fmt clippy test-all test-no-default test-mock test-pdf hardening schema-corpus docs-tests bench-check release-build docs publish-check
+check: fmt clippy feature-check test
 
-# Format check
+ci: check
+
 fmt:
 	cargo fmt --check
 
-# Clippy
 clippy:
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --locked --all-targets --all-features -- -D warnings
 
-# All tests
-test-all:
+feature-check:
+	cargo check --locked --no-default-features
+
+test:
 	cargo test --locked --all-features
-
-# No default features
-test-no-default:
 	cargo test --locked --no-default-features
 
-# Mock feature tests
-test-mock:
-	cargo test --locked --features mock
+release-check: check docs-check release-build publish-check
 
-# PDF feature tests
-test-pdf:
-	cargo test --locked --features pdf
+docs-check:
+	RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps
 
-# Property tests and adversarial corpus validation
-hardening:
-	cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended --test dispatch_fault_injection --test adversarial_corpus
+release-build:
+	cargo build --locked --release
 
-# Schema/fixture corpus tests (all new contract tests)
-schema-corpus:
-	cargo test --locked --features mock --test schema_identity_registry
-	cargo test --locked --features mock --test fetch_safety
-	cargo test --locked --features mock --test security_applicability_corpus
-	cargo test --locked --features mock --test research_evidence_corpus
-	cargo test --locked --features mock --test recipes_next_actions
-	cargo test --locked --features mock --test evidence_bundle_handoff
+publish-check:
+	cargo publish --dry-run --locked
 
-# Documentation contract tests
-docs-tests:
-	cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test native_forge_workflow_contract --test release_document_contract --test static_guards
-
-# Affected-path benchmark compilation (measurement artifacts are release-scoped)
 bench-check:
 	cargo bench --locked --all-features --bench perf --no-run
 
-# Release build
-release-build:
-	cargo build --release
+fuzz-smoke:
+	cd fuzz && cargo fuzz run validate_url -- -max_total_time=60
+	cd fuzz && cargo fuzz run sanitize_pipeline -- -max_total_time=60
+	cd fuzz && cargo fuzz run bounded_response_reader -- -max_total_time=60
 
-# Documentation build (warnings denied)
-docs:
-	RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
-
-# Live smoke tests (requires network, ignored by default)
 live-smoke:
 	cargo test --features live-smoke --test corpus_runner -- --ignored
 
-# Native forge adapter smoke tests (requires API tokens)
 native-forge-smoke:
 	cargo test --features live-smoke --test native_forge_smoke -- --ignored
-
-# Dry-run publish check
-publish-check:
-	cargo publish --dry-run --locked

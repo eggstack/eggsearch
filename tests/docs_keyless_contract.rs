@@ -114,36 +114,6 @@ fn codegg_contract_contains_keyless_core_section() {
 }
 
 #[test]
-fn release_verification_separates_core_and_adapter_evidence() {
-    let text = read_file("docs/release-verification.md");
-    assert!(
-        text.contains("Core Keyless Release Evidence"),
-        "release-verification must separate core keyless release evidence"
-    );
-    assert!(
-        text.contains("Optional Adapter Conformance Evidence"),
-        "release-verification must separate optional adapter conformance evidence"
-    );
-    assert!(
-        text.contains("unverified"),
-        "release-verification must define 'unverified' adapter status"
-    );
-}
-
-#[test]
-fn no_docs_state_every_provider_required_for_core_release() {
-    let text = read_file("docs/release-verification.md");
-    assert!(
-        !text.contains("all four provider jobs") || text.contains("selected"),
-        "release-verification must not require all four adapters for core release"
-    );
-    assert!(
-        text.contains("does not block the core release"),
-        "release-verification must state that missing adapter evidence does not block core release"
-    );
-}
-
-#[test]
 fn no_default_install_command_includes_credential_setup() {
     let text = read_file("README.md");
     let install_start = text.find("## Install").unwrap_or(0);

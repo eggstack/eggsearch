@@ -18,12 +18,8 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --locked --all-features
 cargo test --locked --no-default-features
-cargo test --locked --features mock
-cargo test --locked --features pdf
 cargo build --release
 cargo publish --dry-run --locked
-# Workflow and release-evidence contracts
-cargo test --locked --all-features --test native_forge_workflow_contract --test static_guards
 ```
 
 ## Critical: Feature Flags
@@ -58,9 +54,7 @@ cargo test --locked --features mock --test corpus_runner
 cargo test --locked --all-features --test forge_adapter
 cargo test --locked --all-features --test dispatch_fault_injection
 cargo test --locked --all-features --test adversarial_corpus
-make schema-corpus
-make docs-tests
-make hardening
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test static_guards
 ```
 
 ## Code Style
@@ -92,7 +86,7 @@ make hardening
 - **Changing commit_sha semantics** — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA
 - **Collapsing provider-scoped advisory outcomes** — preserve every selected provider's identity, zero result, capability skip, deadline, and error attempt
 - **Treating exact candidate-limit saturation as confirmed truncation** — use `TruncationEvidence::LimitReachedUnknown` unless missing data is proven
-- **Using fallback smoke results as native release evidence** — native smoke requires credentials, fixture configuration, exact release-subject checkout, and structured evidence
+- **Using fallback smoke results as native release evidence** — native smoke requires credentials and fixture configuration; these are maintainer-only diagnostics, not release evidence
 
 ## Fuzz Targets
 

@@ -9,21 +9,22 @@ eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for 
 All commands from project root. CI pins **Rust 1.88** (`rust-version = "1.88"` in Cargo.toml). **Run `make check` to replicate the full CI suite locally.**
 
 ```bash
-# Full CI gate (fmt + clippy + all tests + schema-corpus + docs + publish-check)
+# Routine gate (fmt + clippy + feature-check + tests)
 make check
+
+# Release gate (routine + docs + release-build + publish-dry-run)
+make release-check
 
 # Individual targets
 cargo fmt --check            # format check (CI fails on this)
 cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required
 cargo test --locked --all-features    # all tests
 cargo test --locked --no-default-features  # no-default compilation + tests
-cargo test --locked --features mock  # mock feature tests (all)
-cargo test --locked --features pdf   # pdf feature tests (all)
 cargo build --release        # release build
 cargo publish --dry-run --locked  # pre-publish check
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. The CI runs tests across 4 feature combos: `--all-features`, `--no-default-features`, `--features mock`, `--features pdf`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock` and `pdf`.
 
 ## Project Structure
 
@@ -62,7 +63,6 @@ docs/
   tool-matrix.md     # compact tool reference table
   release.md         # authoritative release process and pre-release command sequence
   release-checklist.md # short operational checklist (links to release.md)
-  release-verification.md # provisional R/E native-evidence record
 plans/               # historical roadmap and phase documentation (archived, not actively maintained)
 ```
 
@@ -72,17 +72,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 
 | Job | What it runs |
 |-----|-------------|
-| **check** | `cargo check` × 4 feature combos |
-| **test** | `cargo test --locked` × 4 feature combos |
-| **clippy** | `cargo clippy --all-targets --all-features -- -D warnings` |
-| **schema-corpus** | 6 regression test binaries: `schema_identity_registry`, `fetch_safety`, `security_applicability_corpus`, `research_evidence_corpus`, `recipes_next_actions`, `evidence_bundle_handoff` |
-| **docs-contract** | Documentation and source-contract tests, including workflow/release guards |
-| **benchmarks** | `cargo bench --locked --all-features --bench perf --no-run` |
-| **fmt** | `cargo fmt --check` |
-| **release-build** | `cargo build --release` |
-| **publish-check** | `cargo publish --dry-run --locked` |
-| **hardening** | Property tests (sanitize, identity, fetch limits, fetch redirects, fetch URL edges, render safety, render code, local FS), dispatch fault injection, and adversarial corpus validation |
-| **docs** | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
+| **ci** | `make ci` — fmt, clippy, feature-check, all-features tests, no-default-features tests |
 
 ## Feature Flags
 
@@ -207,8 +197,8 @@ make hardening                                              # all hardening test
 - **Operation identity:** `RetrievalAttempt` carries an optional `operation_id` field that distinguishes operation instances sharing one subquery label. Ledger uniqueness is enforced by `(provider_id, operation_id, role)`. Legacy attempts without `operation_id` use a deterministic fallback based on `subquery_id`.
 - **State-aware retrieval helpers:** Helper functions (`is_absence_only`, `is_failure_only`, `has_indeterminate`, `absent_roles`, `failed_providers`) prefer the authoritative `RetrievalDimensionState` field when present, falling back to `absence_kind` for legacy dimensions without state.
 - **Conflict source scoping:** Conflict source IDs identify only the disagreeing cards, not entire entity groups.
-- **Release evidence R/E protocol:** Release evidence uses a two-commit protocol: release subject commit `R` (code-bearing) and evidence commit `E` (only docs/manifests). `docs/release-verification.md` records both `R` and `E` and the CI run IDs for `R`. Classification remains provisional until native and CI evidence is present.
-- **Native smoke tests are distinct from fallback:** Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. Live-smoke fallback tests are diagnostic only. Release evidence requires the manual fail-closed workflow, exact release-subject checkout, required credentials and fixture variables, a passing native assertion, structured evidence, and exact pass from every required provider job.
+- **Manual release:** Release cadence is maintainer-controlled. `make release-check` is the local packaging gate; `cargo publish --locked` publishes to crates.io. GitHub Actions has no publication role. Optional provider conformance does not block core releases.
+- **Native smoke tests are distinct from fallback:** Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. Live-smoke fallback tests are diagnostic only. These are maintainer-only diagnostics, not release evidence.
 - **DNS validation is preflight-only:** DNS address classification happens before connection. No connection-time DNS pinning is enforced. Documented in `docs/architecture/meta.md`.
 - **Windows is unsupported:** The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix and is not claimed as supported.
 

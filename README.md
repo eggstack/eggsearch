@@ -70,18 +70,9 @@ The binary is written to `target/release/eggsearch`.
 make check
 ```
 
-That runs the full local CI gate: formatting, clippy, all feature matrix tests, schema-corpus checks, documentation contract tests, release build, docs build, and publish dry-run.
+That runs formatting, clippy, feature compilation, and the deterministic test suite. `make release-check` adds documentation, release-build, and package dry-run checks for maintainers preparing a crates.io release.
 
-Documentation contract tests verify that code snippets in docs stay in sync with the codebase.
-
-Native forge smoke tests (`tests/native_forge_smoke.rs`) are separate from
-fallback repository search. They exercise the adapter path directly with
-configured API tokens. These tests verify optional adapters and are
-**maintainer-only** — users do not need these credentials. Missing adapter
-credentials limit adapter-specific release claims but do not invalidate
-keyless-core release evidence. Scheduled smoke runs are diagnostics and do
-not promote a release. See [`docs/release-verification.md`](docs/release-verification.md)
-for the core vs. adapter evidence model.
+Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. These are **maintainer-only** diagnostics — users do not need these credentials.
 
 ## Docs
 
@@ -93,4 +84,3 @@ for the core vs. adapter evidence model.
 - [Agent workflows](docs/agent-workflows.md)
 - [Architecture contract](docs/architecture/codegg-contract.md)
 - [Release checklist](docs/release-checklist.md)
-- [Release verification protocol](docs/release-verification.md)

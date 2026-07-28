@@ -12,57 +12,45 @@ Use when preparing or cutting an eggsearch release. Covers pre-release checks, v
 Run from repository root. Every command must pass. Do not skip steps.
 
 ```bash
+make release-check
+```
+
+This runs the full routine gate (fmt, clippy, feature-check, all-features tests, no-default-features tests), plus documentation build, release compilation, and `cargo publish --dry-run --locked`.
+
+Or run the individual commands:
+
+```bash
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --locked --all-features
 cargo test --locked --no-default-features
-cargo test --locked --features mock
-cargo test --locked --features pdf
-cargo test --locked --features mock --test schema_identity_registry
-cargo test --locked --features mock --test fetch_safety
-cargo test --locked --features mock --test security_applicability_corpus
-cargo test --locked --features mock --test research_evidence_corpus
-cargo test --locked --features mock --test recipes_next_actions
-cargo test --locked --features mock --test evidence_bundle_handoff
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test native_forge_workflow_contract --test release_document_contract --test static_guards
 cargo build --release
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 cargo publish --dry-run --locked
 ```
 
-Or use the single-command CI gate:
+## Publication
 
 ```bash
-make check
+cargo publish --locked
 ```
+
+Once crates.io accepts a version, that version cannot be overwritten. Any correction requires a new version bump and another changelog entry.
+
+## Post-publication
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+Creating a GitHub release from the changelog is optional and manual.
 
 ## CI Pipeline
 
 | Job | What it runs |
 |-----|-------------|
-| `check` | `cargo check` × 4 feature combos |
-| `test` | `cargo test --locked` × 4 feature combos |
-| `clippy` | `cargo clippy --all-targets --all-features -- -D warnings` |
-| `schema-corpus` | 6 regression test binaries |
-| `docs-contract` | Documentation, workflow/release contract, and static guard tests |
-| `fmt` | `cargo fmt --check` |
-| `release-build` | `cargo build --release` |
-| `publish-check` | `cargo publish --dry-run --locked` |
-| `hardening` | Property tests, fault injection, adversarial corpus |
-| `docs` | `RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps` |
-
-## Required CI Checks for Release
-
-Before tagging, these must be green on the exact commit:
-
-- Formatting (`cargo fmt --check`)
-- Clippy (zero warnings)
-- Default tests, all-features tests, no-default-features tests, mock feature tests, PDF feature tests
-- Schema/corpus tests
-- Documentation contract tests
-- Release build
-- Docs build (no warnings)
-- Publish dry-run
+| `ci` | `make ci` — fmt, clippy, feature-check, all-features tests, no-default-features tests |
 
 ## Feature Flags
 
@@ -82,10 +70,9 @@ Before tagging, these must be green on the exact commit:
 
 ## Branch Protection
 
-Recommended required checks for `main`:
-- All CI jobs listed above
-- `check` and `test` matrices must fully succeed (all feature combinations)
-- Configure in GitHub UI; pre-release command sequence substitutes if settings cannot be modified
+Recommended required check for `main`:
+- `CI / ci` — the single required CI job
+- Configure in GitHub UI; the pre-release command sequence substitutes if settings cannot be modified
 
 ## Live-smoke Policy
 
@@ -97,28 +84,21 @@ cargo test --features live-smoke --test corpus_runner -- --ignored
 - A release must not be blocked solely because a live smoke test fails against a third-party provider
 - Reproduce locally to distinguish third-party drift from local regression
 
-## Native Forge Release Evidence
+## Native Forge Smoke Tests
 
-Fallback repository smoke tests do not satisfy release evidence. Run the manual
-`.github/workflows/native-forge-smoke.yml` workflow against the exact 40-character
-release-subject SHA. Each required provider job must receive its credential and
-fixture variables, execute a native assertion, write structured evidence with the
-same release subject, and report exactly `pass`. Missing credentials, malformed or
-missing evidence, skipped tests, and missing provider outputs fail the release gate.
+Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. These are maintainer-only diagnostics, not release evidence. Run manually:
 
-The scheduled workflow is diagnostic only. Keep release subject `R` separate from
-the later documentation/evidence commit `E`; do not describe pending native runs,
-benchmarks, or artifact hashes as completed evidence.
+```bash
+GITHUB_TOKEN=... \
+GITHUB_SLASH_REF=fixture/slash-ref \
+cargo test --features live-smoke --test native_forge_smoke -- --ignored
+```
 
 ## Pre-release Checklist
 
 1. All CI checks green
 2. Version bumped in Cargo.toml
 3. CHANGELOG.md updated
-4. `make check` passes locally
-5. Release build compiles
-6. Publish dry-run passes
-7. Documentation is current
-8. No unbounded response bodies in forge paths
-9. No unbounded Git subprocess output
-10. Evidence roles populated on all search result cards
+4. `make release-check` passes from a clean tree
+5. `cargo publish --locked` succeeds
+6. `git tag vX.Y.Z` created and pushed
