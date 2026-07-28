@@ -8,7 +8,7 @@ smoke tests as release evidence.
 ## Current classification
 
 - Classification: **provisional release candidate**
-- Release subject `R`: `e8b5b09279df85f0d25223832812d9a60a3ce4c9`
+- Release subject `R`: `2268971087beb5f54bf6244da159ff97a913a7bf`
 - Evidence commit `E`: not created; it may contain only verification documents,
   manifests, and generated evidence references after the native workflow passes
 - Native forge workflow run IDs: pending — requires repository secrets/vars
@@ -16,37 +16,29 @@ smoke tests as release evidence.
   `NATIVE_SMOKE_GITHUB_SLASH_REF`) to be configured in GitHub repository
   settings before the workflow can execute
 - Native provider artifacts and hashes: pending
-- Benchmark artifact for `R`: benchmarks compile successfully; runtime
-  measurements not yet captured as artifacts
+- Benchmark artifact for `R`: benchmarks compile in CI (`cargo bench --locked --all-features --bench perf --no-run`); runtime measurements require more capable hardware than the current CI runners
 
 The scheduled native-smoke workflow is diagnostic. Release evidence requires a
 manual run against the exact 40-character `R` SHA after secrets are configured.
 
-The local deterministic matrix for `R` was run on 2026-07-27 on
+The local deterministic matrix for `R` was run on 2026-07-28 on
 `aarch64-unknown-linux-gnu` (Linux 6.8.0, Raspberry Pi) with Rust 1.97.1.
 All test, hardening, schema, documentation, benchmark-compilation,
-release-build, and rustdoc targets passed. The 427 integration tests include
-the pre-warmed local workspace tests that previously failed on macOS CI.
+release-build, and rustdoc targets passed. The 429 integration tests include
+the pre-warmed local workspace tests and 11 documentation contract tests.
 The publish dry-run passed with `--allow-dirty`; the main checkout contains
 ignored `.opencode/node_modules` dependencies that Cargo's dirty-tree guard
 reports even though they are not part of the package.
 
 ### CI status for `R`
 
-- **Linux CI** (`eggstack/eggsearch`): All 15 jobs pass (fmt, clippy,
-  check×4, test×4, schema-corpus, docs-contract, benchmarks, release-build,
-  publish-check, hardening, docs).
-- **macOS CI**: Two local-workspace tests
-  (`repo_search_local_results_boosted_when_matching_repo`,
-  `repo_search_local_results_have_repo_match_metadata`) were previously flaky
-  on macOS runners due to timing-dependent inventory building in temp
-  directories. The root cause was that the local inventory cache was built
-  lazily via `spawn_blocking`, and on loaded macOS CI runners the blocking-
-  thread queue wait could consume the search timeout before work began. The
-  fix pre-warms the inventory cache in all test helper constructors
-  (`state_with_local_backend*`) so the inventory is built synchronously
-  before the search runs, eliminating the timing dependency. All local-
-  workspace tests now pass reliably on both Linux and macOS.
+- **Linux CI** (`eggstack/eggsearch`): All 40 jobs pass (fmt, clippy,
+  check×4, test×4, schema-corpus, docs-contract, keyless-core, benchmarks,
+  release-build, publish-check, hardening, docs, fuzz-smoke×16).
+  CI run ID: `30358641132`.
+- **macOS CI**: All local-workspace tests pass. The pre-warm fix
+  (commit `e8b5b09`) resolved the timing-dependent inventory building flakiness.
+  CI run ID: `30358641132` (same run, macOS matrix jobs).
 
 ---
 
@@ -143,7 +135,7 @@ budget partitioning:
   distinction and summary-count partition invariants.
 
 All tests pass across the tested feature combinations: `--all-features`
-(427 integration + 24 static guards + 46 ledger + property + hardening +
+(429 integration + 11 docs-contract + 24 static guards + 46 ledger + property + hardening +
 docs), `--no-default-features`, and `--features mock`. The `--features pdf`
 combination is covered by `--all-features` which includes the `pdf` flag.
 
