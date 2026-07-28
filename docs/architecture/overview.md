@@ -326,7 +326,7 @@ Forge API base URLs are validated by `validate_base_url()` before use: embedded 
 ## Build & Verification
 
 ```bash
-make check            # routine gate (fmt + clippy + feature-check + tests)
+make check            # routine gate (fmt + clippy + no-default compile check + all-features tests)
 make release-check    # release gate (routine + docs + release-build + publish-dry-run)
 cargo fmt --check     # format check
 cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required

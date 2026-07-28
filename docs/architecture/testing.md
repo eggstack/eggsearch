@@ -87,7 +87,6 @@ The single CI job runs `make ci`, which executes:
 2. `cargo clippy --locked --all-targets --all-features -- -D warnings`
 3. `cargo check --locked --no-default-features`
 4. `cargo test --locked --all-features`
-5. `cargo test --locked --no-default-features`
 
 ---
 
@@ -126,7 +125,6 @@ This runs the routine deterministic verification:
 2. `cargo clippy --locked --all-targets --all-features -- -D warnings`
 3. `cargo check --locked --no-default-features`
 4. `cargo test --locked --all-features`
-5. `cargo test --locked --no-default-features`
 
 For maintainers preparing a release:
 

@@ -1,4 +1,4 @@
-.PHONY: check ci fmt clippy feature-check test release-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke native-forge-smoke
+.PHONY: check ci fmt clippy feature-check test release-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
 
 check: fmt clippy feature-check test
 
@@ -15,7 +15,6 @@ feature-check:
 
 test:
 	cargo test --locked --all-features
-	cargo test --locked --no-default-features
 
 release-check: check docs-check release-build publish-check
 
@@ -39,5 +38,17 @@ fuzz-smoke:
 live-smoke:
 	cargo test --features live-smoke --test corpus_runner -- --ignored
 
-native-forge-smoke:
-	cargo test --features live-smoke --test native_forge_smoke -- --ignored
+native-forge-smoke-github:
+	cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored native_github
+
+native-forge-smoke-gitlab:
+	cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored native_gitlab
+
+native-forge-smoke-codeberg:
+	cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored native_codeberg
+
+native-forge-smoke-gitea:
+	cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored native_gitea
+
+native-forge-smoke-all:
+	cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored

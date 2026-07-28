@@ -9,7 +9,7 @@ eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for 
 All commands from project root. CI pins **Rust 1.88** (`rust-version = "1.88"` in Cargo.toml). **Run `make check` to replicate the full CI suite locally.**
 
 ```bash
-# Routine gate (fmt + clippy + feature-check + tests)
+# Routine gate (fmt + clippy + no-default compile check + all-features tests)
 make check
 
 # Release gate (routine + docs + release-build + publish-dry-run)
@@ -18,8 +18,8 @@ make release-check
 # Individual targets
 cargo fmt --check            # format check (CI fails on this)
 cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required
+cargo check --locked --no-default-features  # no-default compilation check
 cargo test --locked --all-features    # all tests
-cargo test --locked --no-default-features  # no-default compilation + tests
 cargo build --release        # release build
 cargo publish --dry-run --locked  # pre-publish check
 ```
@@ -72,7 +72,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 
 | Job | What it runs |
 |-----|-------------|
-| **ci** | `make ci` — fmt, clippy, feature-check, all-features tests, no-default-features tests |
+| **ci** | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
 
 ## Feature Flags
 
@@ -133,14 +133,12 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 cargo test --locked --features mock --test integration              # integration only
 cargo test --locked --features mock --test corpus_runner            # corpus regression
 cargo test --locked --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
-make schema-corpus                                         # all contract tests
-make docs-tests                                            # documentation contract tests
+cargo test --locked --all-features --test schema_identity_registry --test fetch_safety --test security_applicability_corpus --test research_evidence_corpus --test recipes_next_actions --test evidence_bundle_handoff
 cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary
-cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended  # property tests
+cargo test --locked --all-features --test property_sanitize --test property_identity --test property_identity2 --test property_identity3 --test property_fetch_limits --test property_fetch_redirects --test property_fetch_url_edge --test property_fetch_response --test property_render_safety --test property_render_code --test property_render_metadata --test property_local_fs --test property_local_fs_extended
 cargo test --locked --all-features --test dispatch_fault_injection  # dispatch fault injection (requires mock)
-cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation (117+ cases across 9 files)
+cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation
 cargo test --locked --all-features --test keyless_core  # keyless-core runtime contract tests
-make hardening                                              # all hardening tests
 ```
 
 ### Adding tests
@@ -153,7 +151,7 @@ make hardening                                              # all hardening test
 - **Property tests** in `tests/property_*.rs` for pure functions (sanitize, identity, fetch limits, render) using `proptest`
 - **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs; validate structure in `tests/adversarial_corpus.rs`
 - **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency, and health transitions
-- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, redirect validation, Content-Type handling, HTML extraction, PDF parsing, sanitization pipeline, document chunking, Content-Length parsing, chunk boundary splitting, mixed UTF-8 extraction, redirect chain validation, and bounded response reader (16 targets)
+- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer` for URL validation, redirect validation, Content-Type handling, HTML extraction, PDF parsing, sanitization pipeline, document chunking, Content-Length parsing, chunk boundary splitting, mixed UTF-8 extraction, redirect chain validation, and bounded response reader. Fuzz targets are registered in `fuzz/Cargo.toml` and implemented under `fuzz/fuzz_targets/`.
 
 ## Code Conventions
 
@@ -213,10 +211,10 @@ Search tools return `evidence_role` on source cards and `conflict_metadata` when
 ## Publishing
 
 ```bash
-make publish-check  # runs cargo publish --dry-run --locked
+cargo publish --locked  # manual maintainer publication
 ```
 
-Pre-publish: clippy clean, tests pass, fmt clean, version bumped in Cargo.toml, CHANGELOG.md updated.
+Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated.
 
 The authoritative pre-release command sequence, required CI checks, and
 live-smoke policy live in [`docs/release.md`](docs/release.md). The short

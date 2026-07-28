@@ -73,7 +73,9 @@ Last updated: Phase 3-5 production closure.
 | `pdf_extended.json` | 28 | PDF magic bytes, encrypted, malformed xref, cyclic refs |
 | `filesystem_extended.json` | 30 | Symlinks, path traversal, hidden paths, binary files |
 
-## Fuzz Targets (16 targets)
+## Fuzz Targets (23 targets)
+
+Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 
 | Target | Focus |
 |--------|-------|
@@ -93,6 +95,13 @@ Last updated: Phase 3-5 production closure.
 | `canonicalize_url` | URL canonicalization via source_id |
 | `sanitize_pipeline` | Full sanitize pipeline: strip → bound → scan |
 | `bounded_response_reader` | Forge response bounded reader (UTF-8 + byte cap) |
+| `workflow_kind_parse` | Workflow kind parsing |
+| `classify_absence` | Absence classification |
+| `detect_entity_scoped_conflicts` | Entity-scoped conflict detection |
+| `retrieval_failure_expansion` | Retrieval failure expansion across roles |
+| `attempt_summary_generation` | Attempt summary generation |
+| `workflow_resolution` | Workflow resolution |
+| `research_role_mapping` | Research role mapping |
 
 ## Schema/Contract Tests (6 suites)
 
@@ -118,4 +127,4 @@ Last updated: Phase 3-5 production closure.
 
 | Job | Duration | Feature Combos |
 |-----|----------|----------------|
-| `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests + no-default-features tests |
+| `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests |

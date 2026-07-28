@@ -19,10 +19,10 @@ publish eggsearch. The crate is published directly to crates.io with
 make release-check
 ```
 
-This runs the full routine gate (formatting, clippy, feature compilation,
-deterministic tests), plus documentation build, release compilation, and
-`cargo publish --dry-run --locked`. The publish dry-run requires a clean
-working tree; commit or stash changes before running this step.
+This runs the full routine gate (formatting, clippy, no-default-features compile
+check, all-features deterministic tests), plus documentation build, release
+compilation, and `cargo publish --dry-run --locked`. The publish dry-run
+requires a clean working tree; commit or stash changes before running this step.
 
 ## Publication
 

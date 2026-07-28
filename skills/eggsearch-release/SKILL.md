@@ -15,17 +15,17 @@ Run from repository root. Every command must pass. Do not skip steps.
 make release-check
 ```
 
-This runs the full routine gate (fmt, clippy, feature-check, all-features tests, no-default-features tests), plus documentation build, release compilation, and `cargo publish --dry-run --locked`.
+This runs the full routine gate (fmt, clippy, no-default-features compile check, all-features tests), plus documentation build, release compilation, and `cargo publish --dry-run --locked`.
 
 Or run the individual commands:
 
 ```bash
 cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo check --locked --no-default-features
 cargo test --locked --all-features
-cargo test --locked --no-default-features
-cargo build --release
-RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps
+cargo build --locked --release
 cargo publish --dry-run --locked
 ```
 
@@ -50,7 +50,7 @@ Creating a GitHub release from the changelog is optional and manual.
 
 | Job | What it runs |
 |-----|-------------|
-| `ci` | `make ci` — fmt, clippy, feature-check, all-features tests, no-default-features tests |
+| `ci` | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
 
 ## Feature Flags
 
@@ -86,12 +86,29 @@ cargo test --features live-smoke --test corpus_runner -- --ignored
 
 ## Native Forge Smoke Tests
 
-Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. These are maintainer-only diagnostics, not release evidence. Run manually:
+Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. These are maintainer-only diagnostics, not release evidence. Run provider-specific tests:
 
 ```bash
+# GitHub (requires GITHUB_TOKEN and GITHUB_SLASH_REF)
 GITHUB_TOKEN=... \
 GITHUB_SLASH_REF=fixture/slash-ref \
-cargo test --features live-smoke --test native_forge_smoke -- --ignored
+make native-forge-smoke-github
+
+# GitLab (requires GITLAB_TOKEN)
+GITLAB_TOKEN=... \
+make native-forge-smoke-gitlab
+
+# Codeberg (requires CODEBERG_TOKEN)
+CODEBERG_TOKEN=... \
+make native-forge-smoke-codeberg
+
+# Gitea/Forgejo (requires GITEA_TOKEN and GITEA_INSTANCE_URL)
+GITEA_TOKEN=... \
+GITEA_INSTANCE_URL=... \
+make native-forge-smoke-gitea
+
+# All providers (requires every credential)
+make native-forge-smoke-all
 ```
 
 ## Pre-release Checklist

@@ -242,7 +242,6 @@ JSON corpus files in `tests/corpus/adversarial/`:
 ## Running
 
 ```bash
-make hardening                          # all property tests + fault injection + corpus validation
 cargo test --locked --all-features --test property_sanitize  # sanitize only
 cargo test --locked --all-features --test property_identity  # identity only
 cargo test --locked --all-features --test property_fetch_limits  # fetch URL validation
@@ -283,7 +282,7 @@ cargo +nightly fuzz run validate_url -- -max_total_time=15
 # Full campaign (5 minutes)
 cargo +nightly fuzz run validate_url -- -max_total_time=300
 
-# List all targets (16)
+# List all targets
 cargo +nightly fuzz list
 ```
 
@@ -312,7 +311,7 @@ When fuzzing (local or CI) finds a minimizing input that triggers a panic, hang,
    - For pure-function crashes: add to the appropriate `tests/property_*.rs` file with an explicit `#[test]` that asserts the expected behavior.
    - For adversarial corpus cases: add a new entry to the appropriate `tests/corpus/adversarial/*.json` file.
    - For integration-level crashes: add to `tests/integration.rs` or `tests/corpus_runner.rs`.
-5. **Verify.** Run `make hardening` and `make check` to confirm the regression test passes and no existing tests break.
+5. **Verify.** Run `make check` to confirm the regression test passes and no existing tests break.
 6. **Never re-fuzz blindly.** After promotion, add the minimized input to the fuzz target's seed corpus (if applicable) to prevent regression.
 
 Fuzz-only dependencies (`libfuzzer-sys`) do not enter the runtime dependency graph.

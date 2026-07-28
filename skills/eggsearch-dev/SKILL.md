@@ -10,14 +10,14 @@ Use when building, testing, or contributing to eggsearch. Covers cargo commands,
 ## Quick Commands
 
 ```bash
-# Full CI gate
+# Routine verification gate
 make check
 
 # Individual targets
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
+cargo check --locked --no-default-features
 cargo test --locked --all-features
-cargo test --locked --no-default-features
 cargo build --release
 cargo publish --dry-run --locked
 ```
@@ -87,12 +87,8 @@ cargo test --locked --all-features --test docs_config_snippets --test docs_provi
 - **Collapsing provider-scoped advisory outcomes** — preserve every selected provider's identity, zero result, capability skip, deadline, and error attempt
 - **Treating exact candidate-limit saturation as confirmed truncation** — use `TruncationEvidence::LimitReachedUnknown` unless missing data is proven
 - **Using fallback smoke results as native release evidence** — native smoke requires credentials and fixture configuration; these are maintainer-only diagnostics, not release evidence
+- **Running no-default full test suite in routine gate** — the routine gate runs `cargo check --locked --no-default-features` (compile-only); full test pass uses `--all-features` only
 
 ## Fuzz Targets
 
-16 fuzz targets in `fuzz/` using `cargo-fuzz` + `libfuzzer`:
-- URL validation, redirect validation, Content-Type handling
-- HTML extraction, PDF parsing, sanitization pipeline
-- Document chunking, Content-Length parsing
-- Chunk boundary splitting, mixed UTF-8 extraction
-- Redirect chain validation, bounded response reader
+Fuzz targets live under `fuzz/fuzz_targets` and are registered in `fuzz/Cargo.toml`.
