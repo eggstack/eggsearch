@@ -118,14 +118,4 @@ Last updated: Phase 3-5 production closure.
 
 | Job | Duration | Feature Combos |
 |-----|----------|----------------|
-| `check` | ~2min | 4 combos |
-| `test` | ~30s × 4 | all-features, no-default, mock, pdf |
-| `clippy` | ~30s | all-features |
-| `schema-corpus` | ~10s | mock |
-| `docs-contract` | ~5s | all-features |
-| `fmt` | ~2s | N/A |
-| `release-build` | ~60s | all-features |
-| `publish-check` | ~30s | all-features |
-| `hardening` | ~15s | all-features (Makefile target, not a CI job) |
-| `fuzz-smoke` | ~50s | all-features (16 targets × 15s) |
-| `docs` | ~30s | all-features |
+| `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests + no-default-features tests |

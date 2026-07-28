@@ -39,7 +39,7 @@
 
 - 6 regression test binaries
 - Validate schema stability, deterministic IDs, safety properties
-- Run with: `make schema-corpus`
+- Run with: `cargo test --all-features --test schema_identity_registry --test fetch_safety --test security_applicability_corpus --test research_evidence_corpus --test recipes_next_actions --test evidence_bundle_handoff`
 
 ### Documentation Contract Tests
 
