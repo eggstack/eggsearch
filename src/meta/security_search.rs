@@ -1920,7 +1920,7 @@ mod tests {
     }
 
     #[test]
-    fn gate_c_plan_unique_deduplicates_across_families() {
+    fn gate_c_cross_family_deduplication_with_normalization() {
         let resolved = SecurityIdentifiers {
             cve_ids: vec!["CVE-2024-0001".into()],
             ghsa_ids: vec!["CVE-2024-0001".into()],
@@ -1934,7 +1934,11 @@ mod tests {
             residual_query: String::new(),
         };
         let planned = plan_unique_advisory_identifiers(&resolved);
-        assert_eq!(planned.len(), 1);
+        assert_eq!(
+            planned.len(),
+            1,
+            "same ID across CVE/GHSA/OSV families should collapse to 1 unique ID"
+        );
         assert_eq!(planned[0].identifier, "CVE-2024-0001");
     }
 

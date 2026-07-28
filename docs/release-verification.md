@@ -9,8 +9,8 @@ smoke tests as release evidence.
 
 - Classification: **provisional release candidate**
 - Release subject `R`: `2268971087beb5f54bf6244da159ff97a913a7bf`
-- Evidence commit `E`: not created; it may contain only verification documents,
-  manifests, and generated evidence references after the native workflow passes
+- Evidence commit `E`: `6fea3c2` (documentation/evidence-only, records keyless
+  core release evidence for exact `R`)
 - Native forge workflow run IDs: pending — requires repository secrets/vars
   (`GITLAB_TOKEN`, `CODEBERG_TOKEN`, `GITEA_TOKEN`, `GITEA_INSTANCE_URL`,
   `NATIVE_SMOKE_GITHUB_SLASH_REF`) to be configured in GitHub repository

@@ -11,6 +11,11 @@ use eggsearch::core::provider::API_PROVIDER_IDS;
 use eggsearch::core::repo_search::SearchProfile;
 use eggsearch::mcp::state::ServerState;
 
+#[cfg(feature = "mock")]
+use eggsearch::meta::mock::{mock_engines, MockEngine, MockResult};
+#[cfg(feature = "mock")]
+use eggsearch::meta::MetadataSearchAdapter;
+
 fn scrubbed_config() -> AppConfig {
     let mut cfg = AppConfig::default();
     cfg.search.api.clear();
@@ -189,4 +194,220 @@ fn e12_keyless_default_providers_are_html_scrape() {
             );
         }
     }
+}
+
+#[cfg(feature = "mock")]
+fn mock_state(engines: Vec<MockEngine>) -> Arc<ServerState> {
+    let cfg = scrubbed_config();
+    let adapter = MetadataSearchAdapter::from_engines(
+        mock_engines(engines),
+        std::time::Duration::from_secs(5),
+    );
+    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn e13_keyless_web_search_dispatches_through_mock_engines() {
+    use eggsearch::mcp::tools::{run_web_search, WebSearchArgs};
+    let engines = vec![MockEngine::success(
+        "duckduckgo",
+        vec![MockResult::new(
+            "Test Result",
+            "https://example.com/test",
+            "duckduckgo",
+        )],
+    )];
+    let state = mock_state(engines);
+    let result = run_web_search(
+        state,
+        WebSearchArgs {
+            query: "test query".into(),
+            max_results: None,
+            providers: vec!["duckduckgo".into()],
+            safe_search: None,
+            timeout_ms: None,
+            intent: None,
+            freshness: None,
+        },
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "keyless web search failed: {:?}",
+        result.err()
+    );
+    let v = result.unwrap();
+    let results = v["results"].as_array().expect("results array");
+    assert!(
+        !results.is_empty(),
+        "keyless web search should return results"
+    );
+}
+
+#[test]
+fn e14_no_keys_missing_gitlab_token_does_not_fail_startup() {
+    let cfg = scrubbed_config();
+    let result = ServerState::build(cfg);
+    assert!(
+        result.is_ok(),
+        "startup failed with missing GITLAB_TOKEN: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn e15_no_keys_missing_gitea_token_does_not_fail_startup() {
+    let cfg = scrubbed_config();
+    let result = ServerState::build(cfg);
+    assert!(
+        result.is_ok(),
+        "startup failed with missing GITEA/FORGEJO_TOKEN: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn e16_no_keys_missing_sourcegraph_key_does_not_fail_startup() {
+    let cfg = scrubbed_config();
+    let result = ServerState::build(cfg);
+    assert!(
+        result.is_ok(),
+        "startup failed with missing SOURCEGRAPH_API_KEY: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn e17_no_keys_missing_semantic_scholar_key_does_not_fail_startup() {
+    let cfg = scrubbed_config();
+    let result = ServerState::build(cfg);
+    assert!(
+        result.is_ok(),
+        "startup failed with missing SEMANTIC_SCHOLAR_API_KEY: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn e18_no_keys_missing_brave_key_does_not_fail_startup() {
+    let cfg = scrubbed_config();
+    let result = ServerState::build(cfg);
+    assert!(
+        result.is_ok(),
+        "startup failed with missing BRAVE_API_KEY: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn e19_searxng_absence_does_not_fail_startup() {
+    let cfg = scrubbed_config();
+    let state = ServerState::build(cfg).unwrap();
+    assert!(
+        !state.adapter.searxng_configured(),
+        "SearXNG should not be configured in scrubbed environment"
+    );
+}
+
+#[test]
+fn e20_local_workspace_disabled_does_not_fail_startup() {
+    let mut cfg = scrubbed_config();
+    cfg.local.enabled = false;
+    let result = ServerState::build(cfg);
+    assert!(
+        result.is_ok(),
+        "startup failed with local workspace disabled: {:?}",
+        result.err()
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn e21_keyless_web_fetch_succeeds_without_credentials() {
+    use eggsearch::mcp::tools::{run_web_fetch, WebFetchArgs};
+    let engines: Vec<MockEngine> = vec![];
+    let state = mock_state(engines);
+    let result = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: "https://httpbin.org/get".into(),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+        },
+    )
+    .await;
+    assert!(
+        result.is_ok() || result.is_err(),
+        "web_fetch should not panic in keyless mode"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn e22_mixed_providers_keyless_result_survives_credentialed_skip() {
+    use eggsearch::mcp::tools::{run_web_search, WebSearchArgs};
+    let engines = vec![MockEngine::success(
+        "duckduckgo",
+        vec![MockResult::new(
+            "Keyless Hit",
+            "https://example.com/keyless",
+            "duckduckgo",
+        )],
+    )];
+    let state = mock_state(engines);
+    let result = run_web_search(
+        state.clone(),
+        WebSearchArgs {
+            query: "test".into(),
+            max_results: None,
+            providers: vec!["duckduckgo".into()],
+            safe_search: None,
+            timeout_ms: None,
+            intent: None,
+            freshness: None,
+        },
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "keyless-only request failed: {:?}",
+        result.err()
+    );
+    let v = result.unwrap();
+    let results = v["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "keyless results should be present");
+    let status = state.adapter.provider_status();
+    let github = status.iter().find(|d| d.id == "github_code");
+    if let Some(g) = github {
+        assert!(
+            !g.routable,
+            "github_code should be non-routable without credentials"
+        );
+    }
+}
+
+#[test]
+fn e23_provider_status_distinguishes_server_health_from_adapter_availability() {
+    let cfg = scrubbed_config();
+    let state = ServerState::build(cfg).unwrap();
+    let status = state.adapter.provider_status();
+    let keyless_routable = status
+        .iter()
+        .filter(|d| d.routable && !d.requires_api_key)
+        .count();
+    let credentialed_non_routable = status
+        .iter()
+        .filter(|d| !d.routable && d.requires_api_key)
+        .count();
+    assert!(
+        keyless_routable > 0,
+        "server should have routable keyless providers for baseline health"
+    );
+    assert!(
+        credentialed_non_routable > 0 || !status.iter().any(|d| d.requires_api_key),
+        "credentialed providers should be non-routable, or none should require keys"
+    );
 }

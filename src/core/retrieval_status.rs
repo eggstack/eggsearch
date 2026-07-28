@@ -1735,6 +1735,100 @@ mod tests {
             .contains(&EvidenceRole::PrimaryImplementation));
     }
 
+    #[test]
+    fn gate_a_multi_role_na_attempt_gives_correct_dimension_and_job_count() {
+        let summary = summarize_retrieval_with_attempts(
+            &[RetrievalAttempt {
+                provider_id: "duckduckgo".into(),
+                subquery_id: Some("q1".into()),
+                operation_id: Some("op1".into()),
+                intended_roles: vec![
+                    EvidenceRole::PrimaryImplementation,
+                    EvidenceRole::OfficialDocumentation,
+                ],
+                outcome: RetrievalAttemptOutcome::NotApplicable,
+                result_count: 0,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            }],
+            vec![
+                dim_with_state(
+                    EvidenceRole::PrimaryImplementation,
+                    EvidenceAbsenceKind::NotApplicable,
+                    RetrievalDimensionState::NotApplicable,
+                    "na",
+                ),
+                dim_with_state(
+                    EvidenceRole::OfficialDocumentation,
+                    EvidenceAbsenceKind::NotApplicable,
+                    RetrievalDimensionState::NotApplicable,
+                    "na",
+                ),
+            ],
+        );
+        assert_eq!(summary.attempted_dimension_count, Some(2));
+        assert_eq!(summary.not_applicable_count, Some(2));
+        assert_eq!(summary.attempted_job_count, Some(1));
+        assert_eq!(summary.not_applicable_job_count, Some(1));
+    }
+
+    #[test]
+    fn gate_a_single_role_multi_attempt_attempted_count() {
+        let summary = summarize_retrieval_with_attempts(
+            &[
+                RetrievalAttempt {
+                    provider_id: "a".into(),
+                    subquery_id: Some("q1".into()),
+                    operation_id: Some("op1".into()),
+                    intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                    outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                    result_count: 1,
+                    error_class: None,
+                    deadline_interrupted: false,
+                    truncated: false,
+                    truncation_evidence: TruncationEvidence::None,
+                    query_fingerprint: None,
+                    duration_ms: None,
+                },
+                RetrievalAttempt {
+                    provider_id: "b".into(),
+                    subquery_id: Some("q1".into()),
+                    operation_id: Some("op2".into()),
+                    intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                    outcome: RetrievalAttemptOutcome::Failed,
+                    result_count: 0,
+                    error_class: None,
+                    deadline_interrupted: false,
+                    truncated: false,
+                    truncation_evidence: TruncationEvidence::None,
+                    query_fingerprint: None,
+                    duration_ms: None,
+                },
+            ],
+            vec![
+                dim_with_state(
+                    EvidenceRole::PrimaryImplementation,
+                    EvidenceAbsenceKind::NotApplicable,
+                    RetrievalDimensionState::Satisfied,
+                    "ok",
+                ),
+                dim_with_state(
+                    EvidenceRole::PrimaryImplementation,
+                    EvidenceAbsenceKind::ProviderFailed,
+                    RetrievalDimensionState::Failed,
+                    "error",
+                ),
+            ],
+        );
+        assert_eq!(summary.attempted_job_count, Some(2));
+        assert_eq!(summary.attempted_dimension_count, Some(2));
+        assert_eq!(roles_attempted_from_summary(&summary).len(), 1);
+    }
+
     fn roles_with_success_from_summary(
         s: &ResponseRetrievalSummary,
     ) -> std::collections::HashSet<EvidenceRole> {
@@ -2017,5 +2111,134 @@ mod tests {
         assert!(!json.contains("completed_job_count"));
         assert!(!json.contains("failed_job_count"));
         assert!(json.contains("attempted_dimension_count"));
+    }
+
+    #[test]
+    fn gate_b_one_multi_role_attempt_produces_one_job_and_multiple_dims() {
+        let attempts = vec![RetrievalAttempt {
+            provider_id: "duckduckgo".into(),
+            subquery_id: Some("q1".into()),
+            operation_id: Some("op1".into()),
+            intended_roles: vec![
+                EvidenceRole::PrimaryImplementation,
+                EvidenceRole::OfficialDocumentation,
+            ],
+            outcome: RetrievalAttemptOutcome::SuccessWithResults,
+            result_count: 3,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            truncation_evidence: TruncationEvidence::None,
+            query_fingerprint: None,
+            duration_ms: None,
+        }];
+        let dims = vec![
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::Satisfied,
+                "ok",
+            ),
+            dim_with_state(
+                EvidenceRole::OfficialDocumentation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::Satisfied,
+                "ok",
+            ),
+        ];
+        let summary = summarize_retrieval_with_attempts(&attempts, dims);
+        assert_eq!(summary.attempted_job_count, Some(1));
+        assert_eq!(summary.attempted_dimension_count, Some(2));
+    }
+
+    #[test]
+    fn gate_b_two_attempts_shared_role_produce_two_jobs_and_two_dims() {
+        let attempts = vec![
+            RetrievalAttempt {
+                provider_id: "a".into(),
+                subquery_id: Some("q1".into()),
+                operation_id: Some("op1".into()),
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                result_count: 1,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+            RetrievalAttempt {
+                provider_id: "b".into(),
+                subquery_id: Some("q1".into()),
+                operation_id: Some("op2".into()),
+                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                outcome: RetrievalAttemptOutcome::SuccessWithResults,
+                result_count: 1,
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: TruncationEvidence::None,
+                query_fingerprint: None,
+                duration_ms: None,
+            },
+        ];
+        let dims = vec![
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::Satisfied,
+                "ok",
+            ),
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::Satisfied,
+                "ok",
+            ),
+        ];
+        let summary = summarize_retrieval_with_attempts(&attempts, dims);
+        assert_eq!(summary.attempted_job_count, Some(2));
+        assert_eq!(summary.attempted_dimension_count, Some(2));
+    }
+
+    #[test]
+    fn gate_b_nonapplicable_multi_role_attempt_gives_correct_counts() {
+        let attempts = vec![RetrievalAttempt {
+            provider_id: "github_code".into(),
+            subquery_id: Some("q1".into()),
+            operation_id: Some("op1".into()),
+            intended_roles: vec![
+                EvidenceRole::PrimaryImplementation,
+                EvidenceRole::OfficialDocumentation,
+            ],
+            outcome: RetrievalAttemptOutcome::NotApplicable,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            truncation_evidence: TruncationEvidence::None,
+            query_fingerprint: None,
+            duration_ms: None,
+        }];
+        let dims = vec![
+            dim_with_state(
+                EvidenceRole::PrimaryImplementation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::NotApplicable,
+                "na",
+            ),
+            dim_with_state(
+                EvidenceRole::OfficialDocumentation,
+                EvidenceAbsenceKind::NotApplicable,
+                RetrievalDimensionState::NotApplicable,
+                "na",
+            ),
+        ];
+        let summary = summarize_retrieval_with_attempts(&attempts, dims);
+        assert_eq!(summary.not_applicable_job_count, Some(1));
+        assert_eq!(summary.not_applicable_count, Some(2));
+        assert_eq!(summary.attempted_job_count, Some(1));
+        assert_eq!(summary.completed_job_count, Some(1));
     }
 }
