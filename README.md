@@ -6,6 +6,8 @@
 
 eggsearch is a lightweight MCP (Model Context Protocol) search and fetch server for AI agents. It combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio.
 
+**No API keys are required for the default installation.** eggsearch ships with keyless web, fetch, advisory, registry, and scholarly paths. Credentialed forge and search adapters are optional enhancements.
+
 Generic search uses the server's configured default provider list. The shipped defaults favor DuckDuckGo, Startpage, and Yahoo; other providers such as Brave, SearXNG, GitHub/GitLab/Gitea code and issue search, OSV, local workspace search, security advisory databases (GitHub Advisory, NVD, CISA KEV, RustSec), package registries (crates.io, PyPI, npm, Go Proxy, Maven Central, NuGet, RubyGems, Packagist), scholarly search (OpenAlex, Crossref, Semantic Scholar), and Sourcegraph code search are available when configured.
 
 ## Stable MCP Surface
@@ -72,11 +74,14 @@ That runs the full local CI gate: formatting, clippy, all feature matrix tests, 
 
 Documentation contract tests verify that code snippets in docs stay in sync with the codebase.
 
-Native forge smoke tests are separate from fallback repository search. Release evidence
-requires the manual [`Native Forge Smoke`](.github/workflows/native-forge-smoke.yml)
-workflow with an exact 40-character release-subject SHA, provider credentials, the
-slash-containing GitHub fixture ref, and structured native evidence from every required
-provider. Scheduled smoke runs are diagnostics and do not promote a release.
+Native forge smoke tests (`tests/native_forge_smoke.rs`) are separate from
+fallback repository search. They exercise the adapter path directly with
+configured API tokens. These tests verify optional adapters and are
+**maintainer-only** — users do not need these credentials. Missing adapter
+credentials limit adapter-specific release claims but do not invalidate
+keyless-core release evidence. Scheduled smoke runs are diagnostics and do
+not promote a release. See [`docs/release-verification.md`](docs/release-verification.md)
+for the core vs. adapter evidence model.
 
 ## Docs
 

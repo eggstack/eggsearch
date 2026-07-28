@@ -80,13 +80,15 @@ All 34 built-in providers:
 
 ## Search Defaults
 
-The shipped generic search defaults favor:
+The shipped generic search defaults require no API keys:
 
 - `duckduckgo`
 - `startpage`
 - `yahoo`
 
-Other built-in providers can be enabled explicitly.
+Other built-in providers can be enabled explicitly. Credentialed providers
+are disabled by default and produce provider-scoped skip telemetry when
+credentials are absent.
 
 | Setting | Default |
 |---------|---------|
@@ -103,7 +105,106 @@ Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`
 
 ## Provider Profiles
 
-### Coding Agent
+All profiles are advisory routing preferences. Unavailable providers are skipped with warnings, never errors. **Profiles never require API keys to produce useful results.** Missing optional credentials result in provider-scoped skips and degraded coverage, not request failure.
+
+### Keyless Default
+
+The shipped default configuration. No configuration file or API keys needed.
+
+```toml eggsearch-config
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage", "yahoo"]
+sanitize_output = true
+
+[search.providers]
+duckduckgo = true
+startpage = true
+yahoo = true
+
+[fetch]
+enabled = true
+timeout_ms = 8000
+max_bytes = 2000000
+max_chars_default = 12000
+max_chars_cap = 50000
+redirect_limit = 5
+allow_private_network = false
+allow_localhost = false
+sanitize_output = true
+
+[local]
+enabled = false
+roots = []
+```
+
+### Keyless Coding
+
+Uses keyless web providers. Local workspace may be enabled without credentials. Forge-native adapters are optional enhancements.
+
+```toml eggsearch-config
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage", "yahoo"]
+
+[search.providers]
+duckduckgo = true
+startpage = true
+yahoo = true
+
+[local]
+enabled = false
+roots = []
+```
+
+### Keyless Security
+
+Uses OSV, NVD, CISA KEV, RustSec, and keyless web context. GitHub Advisory is optional.
+
+```toml eggsearch-config
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["osv", "duckduckgo", "startpage"]
+
+[search.providers]
+duckduckgo = true
+startpage = true
+osv = true
+```
+
+### Keyless Research
+
+Uses keyless web plus OpenAlex and Crossref. Brave API, SearXNG, and Semantic Scholar are optional.
+
+```toml eggsearch-config
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage"]
+
+[search.providers]
+duckduckgo = true
+startpage = true
+```
+
+### Enhanced Coding
+
+Optional GitHub/GitLab/Gitea/Sourcegraph adapters improve forge-native precision and provenance. These are **not required** for baseline coding search.
 
 ```toml eggsearch-config
 [search]
@@ -137,7 +238,9 @@ api_key_env = "GITHUB_TOKEN"
 
 Repeat the same `search.api` pattern for `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`, `gitea_issues`, and `gitea_releases` with the token environment variable used by your forge.
 
-### Security Search
+### Enhanced Security
+
+GitHub Advisory token is optional. Improves advisory coverage with GitHub-sourced advisories.
 
 ```toml eggsearch-config
 [search]
@@ -153,11 +256,14 @@ duckduckgo = true
 startpage = true
 osv = true
 
-[search.api]
-# optional fallback providers
+[search.api.github_advisory]
+enabled = true
+api_key_env = "GITHUB_TOKEN"
 ```
 
-### Research Search
+### Enhanced Research
+
+Brave API, SearXNG, and Semantic Scholar are optional enhancements for richer scholarly search.
 
 ```toml eggsearch-config
 [search]

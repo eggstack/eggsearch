@@ -22,6 +22,25 @@ Compact reference for the ten stable MCP tools.
 3. `web_fetch`, `repo_fetch`, `repo_map`, or `batch_fetch` to inspect selected targets
 4. `build_evidence_bundle` to package the evidence for reuse or handoff
 
+## Keyless Baseline
+
+All tools work without API keys. The keyless baseline provides:
+
+| Tool | Keyless Path |
+|------|-------------|
+| `web_search` | DuckDuckGo, Startpage, Yahoo |
+| `web_fetch` | Direct HTTP(S) URL fetch |
+| `batch_fetch` | Direct HTTP(S) URL batch fetch |
+| `provider_status` | Reports all providers, routability, skip codes |
+| `repo_search` | Keyless web search + local workspace (if configured) |
+| `repo_fetch` | Public HTTP(S) URLs or local workspace paths |
+| `repo_map` | Public HTTP(S) URLs or local workspace paths |
+| `security_search` | OSV, NVD, CISA KEV, RustSec + keyless web context |
+| `research_search` | Keyless web + OpenAlex, Crossref |
+| `build_evidence_bundle` | Operates on supplied evidence, no credentials needed |
+
+Optional credentialed adapters (GitHub, GitLab, Gitea, Sourcegraph, Brave API, Semantic Scholar) improve precision and provenance but are not required for baseline operation.
+
 ## Search Hints
 
 - `web_search`, `repo_search`, `security_search`, and `research_search` all emit `next_actions`.

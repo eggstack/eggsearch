@@ -116,11 +116,10 @@ third-party API credentials. The policy is:
 
 ## Release steps
 
-Before tagging or promoting a release, complete the separate native forge
-evidence protocol in [`release-verification.md`](release-verification.md). The
-manual workflow must run against the exact code-bearing subject SHA and must
-pass GitHub, GitLab, Codeberg, and Gitea with structured native evidence. A
-scheduled smoke run or fallback repository result is diagnostic only.
+Before tagging or promoting a release, complete the evidence protocol in
+[`release-verification.md`](release-verification.md). The core release
+requires keyless CI evidence. Optional adapter evidence is separate and
+does not block core promotion.
 
 The high-level release steps are:
 
@@ -138,6 +137,17 @@ The high-level release steps are:
    already verified the dry-run; this is the real publish).
 8. Create a GitHub release with the changelog excerpt for the new version.
 9. Verify the crates.io listing at <https://crates.io/crates/eggsearch>.
+
+### Release classification
+
+The release may claim:
+
+- **Core keyless release verified** — when the core keyless release gate passes
+- **Adapter verified** (per adapter) — only when adapter evidence exists for exact `R`
+
+Missing adapter credentials prevent adapter-specific claims but do not block
+the core release. See [`release-verification.md`](release-verification.md)
+for the full evidence model.
 
 ## After the release
 

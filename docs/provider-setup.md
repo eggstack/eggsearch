@@ -2,6 +2,18 @@
 
 eggsearch supports 34 search providers across six categories: web search (HTML scrapers), API-key providers, aggregators, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
+## Provider Categories at a Glance
+
+| Category | Examples | User Requirement |
+|----------|----------|-----------------|
+| **Keyless defaults** | DuckDuckGo, Startpage, Yahoo | none |
+| **Keyless specialist** | OSV, NVD, CISA KEV, RustSec, OpenAlex, Crossref, all package registries | none |
+| **Optional configured endpoint** | SearXNG, self-hosted forge base URL | operator configuration |
+| **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Semantic Scholar, GitHub Advisory | opt-in credential |
+| **Optional local** | local workspace | configured local root |
+
+All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy.
+
 ## Web Search Providers
 
 These providers require no API key and work via HTML scraping.

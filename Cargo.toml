@@ -20,6 +20,12 @@ include = [
     "LICENSE",
     "CHANGELOG.md",
 ]
+exclude = [
+    ".opencode/",
+    ".github/",
+    "plans/",
+    "fuzz/",
+]
 
 [lib]
 name = "eggsearch"

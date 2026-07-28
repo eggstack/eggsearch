@@ -48,7 +48,45 @@ reports even though they are not part of the package.
   before the search runs, eliminating the timing dependency. All local-
   workspace tests now pass reliably on both Linux and macOS.
 
-## Deterministic local gate
+---
+
+## Core Keyless Release Evidence
+
+The core release can be promoted without third-party API keys, provided the
+mandatory keyless release matrix passes. Optional adapters remain fail-closed
+when tested, but their absence does not block the core release.
+
+### Required core evidence
+
+For exact final code subject `R`, capture:
+
+1. Clean source checkout identity
+2. Linux keyless CI run ID and job results
+3. macOS keyless CI run ID and job results
+4. Local `make check` from clean checkout with credentials scrubbed
+5. Standalone feature combinations required by the project
+6. Release build
+7. Rustdoc
+8. Package/publish dry-run from a clean exact-`R` checkout without `--allow-dirty`
+9. Affected benchmark runtime artifact
+10. SHA-256 hashes for evidence artifacts
+
+### Keyless CI preamble
+
+The keyless CI job must scrub all credential variables:
+
+```bash
+unset GITHUB_TOKEN || true
+unset GH_TOKEN || true
+unset GITLAB_TOKEN || true
+unset GITEA_TOKEN || true
+unset FORGEJO_TOKEN || true
+unset SOURCEGRAPH_API_KEY || true
+unset BRAVE_API_KEY || true
+unset SEMANTIC_SCHOLAR_API_KEY || true
+```
+
+### Deterministic local gate
 
 Run from the repository root on `R`:
 
@@ -59,6 +97,18 @@ make check
 The gate covers formatting, clippy, all four feature combinations, schema and
 corpus tests, documentation contracts, release build, rustdoc, and publish
 dry-run. The individual commands are documented in [`release.md`](release.md).
+
+**Important:** The publish dry-run (`cargo publish --dry-run --locked`) requires
+a clean working tree. If the checkout contains uncommitted changes or untracked
+files (including editor temporaries, build artifacts, or dependency caches),
+the publish check will fail with a dirty-tree error. To run the publish check:
+
+1. Commit or stash all changes first
+2. Run `make check` or `cargo publish --dry-run --locked`
+3. Restore stashed changes if needed
+
+The `--allow-dirty` flag should not be used in CI or release evidence. It
+bypasses the dirty-tree check and may include unintended files in the package.
 
 The affected-path benchmark suite is:
 
@@ -97,7 +147,15 @@ All tests pass across the tested feature combinations: `--all-features`
 docs), `--no-default-features`, and `--features mock`. The `--features pdf`
 combination is covered by `--all-features` which includes the `pdf` flag.
 
-## Native forge evidence protocol
+---
+
+## Optional Adapter Conformance Evidence
+
+Optional adapter evidence verifies specific adapter functionality. It is
+**not required** for core release promotion. Adapters with no evidence
+remain `unverified` and are omitted from verified-adapter claims.
+
+### Adapter evidence protocol
 
 Run `.github/workflows/native-forge-smoke.yml` with:
 
@@ -129,23 +187,81 @@ must contain at least:
 ```
 
 Missing or malformed evidence, a skipped test, a fallback mode, a subject
-mismatch, or a missing provider output fails the release gate. The summary job
-requires exact `pass` from all four provider jobs and uploads a combined
-SHA-256 evidence manifest.
+mismatch, or a missing provider output fails only that adapter's claim.
+The summary job requires exact `pass` from every **selected** provider job
+and uploads a combined SHA-256 evidence manifest.
 
-## R/E protocol
+### Adapter conformance table
+
+| Adapter | Status | Exact `R` | Run ID | Artifact/hash | Claim Allowed |
+|---------|--------|-----------|--------|---------------|---------------|
+| GitHub | unverified | — | — | — | no |
+| GitLab | unverified | — | — | — | no |
+| Codeberg | unverified | — | — | — | no |
+| Gitea/Forgejo | unverified | — | — | — | no |
+
+`unverified` means no release evidence was captured for that adapter. It
+does not mean the adapter is broken. Missing adapter credentials prevent
+adapter-specific claims but do not block the core release.
+
+---
+
+## R/E Protocol
+
+### Core release (mandatory)
 
 `R` is the final immutable code-bearing commit. Any production-code correction
-creates a new `R` and invalidates native evidence for the old subject. After
-the workflow passes, create `E` as a documentation/evidence-only commit that
-records:
+creates a new `R` and invalidates evidence for the old subject. After the
+keyless CI gate passes, create `E` as a documentation/evidence-only commit
+that records:
 
 - the exact `R` and `E` SHAs;
-- the native workflow run ID;
-- every provider job result and artifact identifier;
-- the combined manifest and evidence-file SHA-256 hashes;
+- keyless Linux/macOS run IDs;
+- local gate environment and command;
 - benchmark artifact identity and status;
-- the final classification.
+- publish dry-run evidence;
+- final core classification;
+- optional adapter table with verified/unverified state;
+- adapter artifacts only for adapters actually tested.
+
+No code, tests, workflow, schema, config, benchmark definition, or contract
+changes may occur in `E`.
+
+### Adapter evidence (optional)
+
+Adapter evidence is appended to `E` only for adapters that were actually
+tested and passed. The adapter evidence section records:
+
+- adapter name and version;
+- exact `R` used;
+- run ID and artifact identifiers;
+- fixture identity and native mode proof;
+- credential scope (CI secret storage only, no values in artifacts).
+
+Adapters not tested or not passing are listed as `unverified` in the adapter
+conformance table. Their absence does not block the core release.
+
+### Release classification rules
+
+The release may claim:
+
+```text
+eggsearch core is release-verified in keyless mode
+```
+
+when the core keyless release gate passes.
+
+The release may claim:
+
+```text
+GitHub native adapter verified
+```
+
+only when GitHub adapter evidence exists for exact release subject `R`.
+
+The absence of GitLab, Codeberg, or Gitea credentials must not block the
+core release. It only prevents claiming those individual adapters as
+release-verified.
 
 Until those values exist, this document remains provisional and uses `pending`
 only in the explicitly pending sections above.

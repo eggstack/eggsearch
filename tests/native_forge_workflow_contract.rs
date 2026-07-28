@@ -249,14 +249,14 @@ fn native_forge_workflow_is_fail_closed() {
     let summary_runs = job_run_blocks(summary);
     assert!(
         summary_runs.iter().any(|block| {
-            block.contains("needs.github.result")
+            (block.contains("needs.github.result")
                 && block.contains("needs.github.outputs.result")
-                && block.contains("== pass")
-                && block.contains("needs.gitlab")
-                && block.contains("needs.codeberg")
-                && block.contains("needs.gitea")
+                && block.contains("== pass"))
+                || (block.contains("adapters")
+                    && block.contains("ADAPTER_LIST")
+                    && block.contains("result_var"))
         }),
-        "release summary must require exact pass and successful jobs for all providers"
+        "release summary must require exact pass for selected providers"
     );
     assert!(
         summary_runs

@@ -505,36 +505,70 @@ additional identity and state metadata.
 
 ### 8.4 File Classification Flags
 
-Search and security responses include a `retrieval_summary` with
-per-dimension `state` fields. Each dimension represents a single
-`(provider, evidence role)` terminal outcome.
+Source cards from local workspace results include file classification metadata:
 
-### 9.1 Dimension State Variants
+```json
+{
+  "file_classification": {
+    "is_source": true,
+    "is_test": false,
+    "is_config": false,
+    "is_documentation": false,
+    "is_generated": false,
+    "language": "rust",
+    "size_bytes": 4096
+  }
+}
+```
+
+Harnesses can use classification flags to:
+- Filter results by file type (source, test, config, docs)
+- Detect generated files that may be stale
+- Apply language-specific tooling
+
+### 8.5 Workspace ID
+
+Local workspace results include a `workspace_id` string that identifies the
+local checkout across calls. Use this to:
+- Track local workspace state across tool invocations
+- Deduplicate results from the same workspace
+- Correlate `repo_search`, `repo_fetch`, and `repo_map` calls
+
+```json
+{
+  "workspace_id": "ws_a1b2c3d4e5f6a7b8"
+}
+```
+
+The workspace ID is deterministic and derived from the workspace root path.
+It does not change between calls unless the workspace configuration changes.
+
+### 9. Retrieval Dimension State
 
 | State | Meaning | Harness Action |
 |-------|---------|----------------|
-| `Satisfied` | Evidence was retrieved (results found) | Use evidence; fetch full source before final use |
-| `CompletedNoMatch` | Provider responded successfully with zero results | Mark role as attempted; no evidence available |
-| `Failed` | Provider returned an error | Flag provider as degraded; consider retry |
-| `SkippedByPolicy` | Provider was excluded by budget or configuration | Note budget exhaustion; no retry needed |
-| `CapabilityUnavailable` | Provider does not support the requested capability | Do not retry this provider for this capability |
-| `Interrupted` | Global deadline prevented completion | Note deadline; remaining providers may still succeed |
-| `Partial` | Results were truncated after partial success | Fetch additional pages or sources if available |
-| `NotApplicable` | Role was not requested for this operation | Ignore for evidence purposes |
+| `satisfied` | Evidence was retrieved (results found) | Use evidence; fetch full source before final use |
+| `completed_no_match` | Provider responded successfully with zero results | Mark role as attempted; no evidence available |
+| `failed` | Provider returned an error | Flag provider as degraded; consider retry |
+| `skipped_by_policy` | Provider was excluded by budget or configuration | Note budget exhaustion; no retry needed |
+| `capability_unavailable` | Provider does not support the requested capability | Do not retry this provider for this capability |
+| `interrupted` | Global deadline prevented completion | Note deadline; remaining providers may still succeed |
+| `partial` | Results were truncated after partial success | Fetch additional pages or sources if available |
+| `not_applicable` | Role was not requested for this operation | Ignore for evidence purposes |
 
 ### 9.2 State Interpretation Order
 
 When multiple dimensions exist for the same evidence role, harnesses
 should interpret states in this priority order (highest to lowest):
 
-1. `Satisfied` — evidence exists, use it
-2. `Partial` — partial evidence exists, supplement if possible
-3. `Failed` — provider error, flag for retry
-4. `Interrupted` — deadline, may succeed on retry with more time
-5. `CompletedNoMatch` — no evidence from this provider
-6. `SkippedByPolicy` — excluded by policy/budget
-7. `CapabilityUnavailable` — provider cannot serve this role
-8. `NotApplicable` — role not requested
+1. `satisfied` — evidence exists, use it
+2. `partial` — partial evidence exists, supplement if possible
+3. `failed` — provider error, flag for retry
+4. `interrupted` — deadline, may succeed on retry with more time
+5. `completed_no_match` — no evidence from this provider
+6. `skipped_by_policy` — excluded by policy/budget
+7. `capability_unavailable` — provider cannot serve this role
+8. `not_applicable` — role not requested
 
 ### 9.3 Dimension Count Fields
 
@@ -769,10 +803,78 @@ Use `metadata_only` when you need page metadata but not the body.
 - [ ] When `injection_hits > 0`, flag content for human review
 - [ ] Inspect provider-scoped retrieval attempts before treating security evidence as complete
 - [ ] Do not treat `limit_reached_unknown` as confirmed truncation
+- [ ] Do not require credentials for baseline search (keyless-core invariant)
+- [ ] Use `provider_status` to check routability before invoking specialized tools
+- [ ] Prefer native adapters when routable; fall back to keyless providers
+- [ ] Preserve provenance distinctions; never label web results as native forge evidence
+- [ ] Do not prompt for API keys on baseline operations
+- [ ] Suggest optional credentials only when user explicitly needs native capability
 
 ---
 
-## 12. Schema Stability Rules
+## 12. Keyless-Core Invariant
+
+eggsearch guarantees that a clean installation with no configuration file and
+no provider credential environment variables starts successfully and provides
+a useful keyless MCP search/fetch service. Harnesses must implement the
+following:
+
+### 12.1 Do Not Require Credentialed Providers
+
+Baseline search, fetch, security, and research operations must work without
+API keys. Harnesses must NOT:
+- Prompt the user for API keys to perform baseline search
+- Require credentials before attempting a tool call
+- Treat missing credentials as a global server failure
+
+### 12.2 Inspect Provider Status
+
+Before routing, check `provider_status` to determine:
+- Whether the server core is healthy
+- Which providers are routable
+- Whether missing credentials are provider-scoped
+
+### 12.3 Prefer Native Adapters When Routable
+
+When a native adapter (GitHub, GitLab, etc.) is routable, prefer it for
+specialized operations. This provides better provenance and precision.
+
+### 12.4 Continue with Keyless Providers When Adapters Unavailable
+
+When optional adapters are not routable (missing credentials, disabled),
+continue with keyless web providers. The response may be degraded but must
+not fail.
+
+### 12.5 Preserve Provenance Distinctions
+
+Never label a generic web search result as native forge evidence. Use
+`evidence_role` and `routing_decision` to distinguish provenance modes:
+- `native forge adapter used` — adapter provided the result
+- `keyless public HTTP/local route used` — explicit fetch, no adapter
+- `generic web discovery used` — keyless web search result
+- `provider capability unavailable` — adapter not routable
+- `provider skipped because credential missing` — provider-scoped skip
+
+### 12.6 Do Not Prompt for Keys on Baseline Operations
+
+Harnesses must not display "API key required" warnings or prompts for
+baseline search operations. Credential-related prompts are appropriate only
+when the user explicitly requests a capability that requires native adapter
+access (e.g., private repository access, exact code search on a specific
+forge).
+
+### 12.7 Suggest Optional Credentials Contextually
+
+When a user's workflow would benefit from native adapter access (e.g.,
+searching a private GitHub repository), suggest the optional credential
+configuration. This suggestion must be:
+- Contextual to the specific workflow, not a global prompt
+- Labeled as optional enhancement, not a requirement
+- Accompanied by a keyless fallback alternative
+
+---
+
+## 13. Schema Stability Rules
 
 The following are **breaking changes** that require a major version bump:
 

@@ -7,6 +7,11 @@ on:
         description: Full commit SHA to verify
         required: true
         type: string
+      adapters:
+        description: 'Comma-separated list of adapters to test (github,gitlab,codeberg,gitea). Empty or "all" runs all.'
+        required: false
+        type: string
+        default: "all"
   schedule:
     - cron: "0 6 * * 1"
 
@@ -26,6 +31,13 @@ jobs:
     name: github native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && (
+        inputs.adapters == 'all' ||
+        inputs.adapters == '' ||
+        contains(inputs.adapters, 'github')
+      )
     outputs:
       result: ${{ steps.smoke.outputs.result }}
     env:
@@ -100,6 +112,13 @@ jobs:
     name: gitlab native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && (
+        inputs.adapters == 'all' ||
+        inputs.adapters == '' ||
+        contains(inputs.adapters, 'gitlab')
+      )
     outputs:
       result: ${{ steps.smoke.outputs.result }}
     env:
@@ -167,6 +186,13 @@ jobs:
     name: codeberg native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && (
+        inputs.adapters == 'all' ||
+        inputs.adapters == '' ||
+        contains(inputs.adapters, 'codeberg')
+      )
     outputs:
       result: ${{ steps.smoke.outputs.result }}
     env:
@@ -234,6 +260,13 @@ jobs:
     name: gitea native smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && (
+        inputs.adapters == 'all' ||
+        inputs.adapters == '' ||
+        contains(inputs.adapters, 'gitea')
+      )
     outputs:
       result: ${{ steps.smoke.outputs.result }}
     env:
@@ -307,14 +340,28 @@ jobs:
     needs: [github, gitlab, codeberg, gitea]
     if: always()
     steps:
-      - name: Require exact pass for release evidence
+      - name: Require exact pass for selected adapters
         if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
-          [[ "${{ needs.github.result }}" == success && "${{ needs.github.outputs.result }}" == pass ]]
-          [[ "${{ needs.gitlab.result }}" == success && "${{ needs.gitlab.outputs.result }}" == pass ]]
-          [[ "${{ needs.codeberg.result }}" == success && "${{ needs.codeberg.outputs.result }}" == pass ]]
-          [[ "${{ needs.gitea.result }}" == success && "${{ needs.gitea.outputs.result }}" == pass ]]
+          adapters="${{ inputs.adapters }}"
+          if [[ -z "$adapters" || "$adapters" == "all" ]]; then
+            adapters="github,gitlab,codeberg,gitea"
+          fi
+          IFS=',' read -ra ADAPTER_LIST <<< "$adapters"
+          for adapter in "${ADAPTER_LIST[@]}"; do
+            adapter=$(echo "$adapter" | xargs)
+            result_var="needs.${adapter}.result"
+            output_var="needs.${adapter}.outputs.result"
+            result="${!result_var}"
+            output="${!output_var:-missing}"
+            if [[ "$result" != "success" || "$output" != "pass" ]]; then
+              echo "ERROR: $adapter failed (result=$result, output=$output)"
+              exit 1
+            fi
+            echo "OK: $adapter passed"
+          done
+          echo "All selected adapters passed: $adapters"
       - name: Report scheduled diagnostic results
         if: github.event_name == 'schedule'
         run: |
