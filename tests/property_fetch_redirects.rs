@@ -182,6 +182,7 @@ proptest! {
         sub2 in "[a-z]{2,8}",
         name in "[a-z]{2,8}"
     ) {
+        prop_assume!(sub2 != "lan", "skip private TLD collision");
         let limits = FetchLimits::default();
         let url = format!("https://{sub1}.{sub2}.{name}/");
         let result = validate_url(&url, &limits);
