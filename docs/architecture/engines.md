@@ -1,7 +1,7 @@
 # Search Engines Deep Dive
 
 **Path:** `src/meta/engines/`
-**Purpose:** 38 vendored search engine implementations — the upstream data sources for the metasearch adapter.
+**Purpose:** 34 vendored search engine implementations — the upstream data sources for the metasearch adapter.
 
 ---
 

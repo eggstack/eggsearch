@@ -68,7 +68,7 @@ The four top-level library modules (`core`, `meta`, `fetch`, `mcp`) plus the `co
 | Module | Path | Responsibility | Deep Dive |
 |--------|------|----------------|-----------|
 | **core** | `src/core/` | Pure domain types, config model, error types, identity system, sanitization, warnings, source cards, quality heuristics, security/research/repo/local/package/evidence types | [core.md](core.md) |
-| **meta** | `src/meta/` | Metasearch adapter + 38 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
+| **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
 | **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection, code-host URL rewriting | [fetch.md](fetch.md) |
 | **mcp** | `src/mcp/` | MCP server over stdio (rmcp), 10 tool definitions, shared server state, policy enforcement | [mcp.md](mcp.md) |
 | **commands** | `src/commands/` | CLI subcommands: doctor, search, mcp, fetch, providers | [commands.md](commands.md) |
@@ -352,7 +352,7 @@ For detailed analysis of each component:
 ### Core Modules
 
 1. [core.md](core.md) — Domain types, config, identity, sanitization, warnings, source cards, quality, security/research/repo/local/evidence types
-2. [meta.md](meta.md) — Metasearch adapter, 38 engines, RRF aggregation, query planning, provider health, local workspace
+2. [meta.md](meta.md) — Metasearch adapter, 34 engines, RRF aggregation, query planning, provider health, local workspace
 3. [fetch.md](fetch.md) — HTTP client, content extraction, SSRF protection, code-host rewriting, span selection, PDF
 4. [mcp.md](mcp.md) — MCP server, 10 tool definitions, state management, policy enforcement
 5. [commands.md](commands.md) — CLI subcommands (doctor, search, mcp, fetch, providers)
@@ -360,7 +360,7 @@ For detailed analysis of each component:
 ### Subsystem Deep Dives
 
 6. [config.md](config.md) — TOML config model, provider resolution, validation, CLI loading
-7. [engines.md](engines.md) — Search engine trait, 38 engine implementations, shared infrastructure
+7. [engines.md](engines.md) — Search engine trait, 34 engine implementations, shared infrastructure
 8. [security.md](security.md) — Security advisory search, version applicability, remediation, KEV
 9. [research.md](research.md) — Research evidence discovery, claims, conflicts, gaps, workflows
 10. [evidence-workflow.md](evidence-workflow.md) — Evidence bundles, role taxonomy, workflow recipes, conflict detection, retrieval tracking

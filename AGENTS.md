@@ -37,10 +37,11 @@ src/
   config.rs        # CLI config loader
   commands/        # subcommands: doctor, search, providers, mcp, fetch
   core/            # types, config, error, query, sanitize, identity, warning
-  meta/            # MetadataSearchAdapter + vendored engines + forge adapter + local inventory cache
+  meta/            # MetadataSearchAdapter + 34 vendored engines + forge adapter + local workspace cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection
   mcp/             # MCP server (rmcp), tool definitions, server state
-tests/             # integration, corpus, and contract tests
+tests/             # integration, corpus, contract, property, and adversarial tests
+fuzz/              # cargo-fuzz + libfuzzer targets (21 registered)
 ```
 
 Read `src/lib.rs` for the module map, then explore submodules as needed.
@@ -102,7 +103,7 @@ cargo test --locked --all-features --test keyless_core  # keyless-core runtime c
 
 - **Adapter pattern:** `MetadataSearchAdapter` wraps all search engines, handles RRF aggregation, sanitization, and provider health. MCP tools call the adapter, never engines directly.
 - **Provider model:** `ProviderKind` enum (`HtmlScrape`, `JsonApi`, `ApiKey`, `Local`). Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
-- **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors.
+- **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors. Defined in `src/core/repo_search.rs`.
 - **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`.
 - **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`.
 - **Windows is unsupported:** The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix.

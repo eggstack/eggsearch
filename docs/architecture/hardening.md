@@ -254,7 +254,7 @@ cargo test --locked --all-features --test adversarial_corpus # corpus validation
 
 ## Fuzz Harness
 
-Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys`:
+Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys` (21 registered targets):
 
 | Target | What it fuzzes |
 |--------|---------------|
@@ -274,6 +274,13 @@ Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys`:
 | `canonicalize_url` | URL canonicalization via source_id |
 | `sanitize_pipeline` | Full sanitize pipeline: strip → bound → scan |
 | `bounded_response_reader` | Forge response bounded reader (UTF-8 validation + byte cap) |
+| `workflow_kind_parse` | Workflow kind parsing |
+| `classify_absence` | Absence classification |
+| `detect_entity_scoped_conflicts` | Entity-scoped conflict detection |
+| `retrieval_failure_expansion` | Retrieval failure expansion across roles |
+| `attempt_summary_generation` | Attempt summary generation |
+| `workflow_resolution` | Workflow resolution |
+| `research_role_mapping` | Research role mapping |
 
 ```bash
 # Smoke test (15s per target)
