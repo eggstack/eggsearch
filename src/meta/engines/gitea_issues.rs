@@ -90,39 +90,28 @@ pub async fn search(
     let url = format!("{base}/api/v1/search");
     let limit = max_results.clamp(1, 50);
 
-    let response = tokio::time::timeout(
-        timeout,
-        client
+    let bytes = tokio::time::timeout(timeout, async {
+        let resp = client
             .get(&url)
             .query(&[("q", query), ("limit", &limit.to_string())])
             .header("Authorization", format!("token {api_key}"))
-            .send(),
-    )
+            .send()
+            .await
+            .map_err(|e| EngineError::Http {
+                engine: ENGINE,
+                source: e,
+            })?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: status.as_u16(),
+            });
+        }
+        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
+    })
     .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-
-    let status = response.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
 
     let parsed: GiteaSearchResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

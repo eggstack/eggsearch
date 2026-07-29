@@ -355,12 +355,17 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
     });
 
     let resolve_target = format!("{host}:{port}");
-    let resolved = tokio::task::spawn_blocking(move || {
-        resolve_target
-            .to_socket_addrs()
-            .map(|it| it.collect::<Vec<_>>())
-    })
+    let dns_timeout = std::time::Duration::from_millis(limits.timeout_ms);
+    let resolved = tokio::time::timeout(
+        dns_timeout,
+        tokio::task::spawn_blocking(move || {
+            resolve_target
+                .to_socket_addrs()
+                .map(|it| it.collect::<Vec<_>>())
+        }),
+    )
     .await
+    .map_err(|_| FetchError::NetworkError(format!("DNS resolution timed out for {host}")))?
     .map_err(|e| FetchError::NetworkError(format!("DNS resolution task panicked: {e}")))?;
 
     let addrs = resolved

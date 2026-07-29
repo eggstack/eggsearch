@@ -167,14 +167,32 @@ pub fn canonicalize_url(url: &str) -> String {
         (authority, suffix)
     };
 
-    // Lowercase host (authority without userinfo/port)
-    let authority = authority.to_ascii_lowercase();
+    // Lowercase only the host portion of the authority, preserving
+    // case-sensitive userinfo (usernames and passwords).
+    let authority = if let Some(at_pos) = authority.find('@') {
+        let (userinfo, host_port) = authority.split_at(at_pos);
+        let host_port = host_port[1..].to_ascii_lowercase();
+        format!("{userinfo}@{host_port}")
+    } else {
+        authority.to_ascii_lowercase()
+    };
 
     // Strip www. prefix
-    let authority = authority.strip_prefix("www.").unwrap_or(&authority);
+    let authority = if let Some(at_pos) = authority.find('@') {
+        let (userinfo, host_port) = authority.split_at(at_pos);
+        let host_port = host_port[1..]
+            .strip_prefix("www.")
+            .unwrap_or(&host_port[1..]);
+        format!("{userinfo}@{host_port}")
+    } else {
+        authority
+            .strip_prefix("www.")
+            .unwrap_or(&authority)
+            .to_string()
+    };
 
     // Strip default ports
-    let authority = strip_default_port(authority, &scheme);
+    let authority = strip_default_port(&authority, &scheme);
 
     // Strip fragment from path+query+fragment
     let path_query_frag = if let Some(hash_pos) = path_query_frag.find('#') {
@@ -187,13 +205,17 @@ pub fn canonicalize_url(url: &str) -> String {
     // re-encode with consistent casing. Query params are left as-is.
     let path_query_frag = normalize_percent_encoding(path_query_frag);
 
-    // Strip trailing slashes (but not for bare root "/")
     let path_query_frag = {
-        let trimmed = path_query_frag.trim_end_matches('/');
-        if trimmed.is_empty() || trimmed == "?" {
-            "/".to_string()
+        let (path, query) = if let Some(qpos) = path_query_frag.find('?') {
+            (&path_query_frag[..qpos], &path_query_frag[qpos..])
         } else {
-            trimmed.to_string()
+            (path_query_frag.as_str(), "")
+        };
+        let trimmed = path.trim_end_matches('/');
+        if trimmed.is_empty() || trimmed == "?" {
+            format!("/{query}")
+        } else {
+            format!("{trimmed}{query}")
         }
     };
 
@@ -201,11 +223,11 @@ pub fn canonicalize_url(url: &str) -> String {
 }
 
 /// Strip default port from a host string.
-fn strip_default_port<'a>(host: &'a str, scheme: &str) -> &'a str {
+fn strip_default_port(host: &str, scheme: &str) -> String {
     match scheme {
-        "http" => host.strip_suffix(":80").unwrap_or(host),
-        "https" => host.strip_suffix(":443").unwrap_or(host),
-        _ => host,
+        "http" => host.strip_suffix(":80").unwrap_or(host).to_string(),
+        "https" => host.strip_suffix(":443").unwrap_or(host).to_string(),
+        _ => host.to_string(),
     }
 }
 

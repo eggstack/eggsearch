@@ -31,9 +31,8 @@ pub async fn search(
 ) -> Result<Vec<SearchResult>, EngineError> {
     let endpoint = build_endpoint(base_url);
 
-    let response = tokio::time::timeout(
-        timeout,
-        client
+    let bytes = tokio::time::timeout(timeout, async {
+        let resp = client
             .get(&endpoint)
             .query(&[
                 ("q", query),
@@ -43,39 +42,29 @@ pub async fn search(
             ])
             .header("Accept", "application/json")
             .header("Accept-Language", "en-US,en;q=0.9")
-            .send(),
-    )
+            .send()
+            .await
+            .map_err(|e| EngineError::Http {
+                engine: ENGINE,
+                source: e,
+            })?;
+        let status = resp.status();
+        if status.as_u16() == 403 || status.as_u16() == 400 {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: status.as_u16(),
+            });
+        }
+        if !status.is_success() {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: status.as_u16(),
+            });
+        }
+        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
+    })
     .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-
-    let status = response.status();
-    if status.as_u16() == 403 || status.as_u16() == 400 {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
 
     let parsed: SearxngResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

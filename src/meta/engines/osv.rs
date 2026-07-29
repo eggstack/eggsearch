@@ -274,35 +274,35 @@ pub async fn lookup_by_id(
 ) -> Result<Option<VulnerabilityMetadata>, EngineError> {
     let url = format!("{DEFAULT_BASE_URL}/vulns/{vuln_id}");
 
-    let response = tokio::time::timeout(timeout, client.get(&url).send())
-        .await
-        .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-        .map_err(|e| EngineError::Http {
-            engine: ENGINE,
-            source: e,
-        })?;
+    let bytes = tokio::time::timeout(timeout, async {
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| EngineError::Http {
+                engine: ENGINE,
+                source: e,
+            })?;
+        let status = resp.status();
+        if status.as_u16() == 404 {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: status.as_u16(),
+            });
+        }
+        Ok(Some(
+            super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?,
+        ))
+    })
+    .await
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
 
-    let status = response.status();
-    if status.as_u16() == 404 {
+    let Some(bytes) = bytes else {
         return Ok(None);
-    }
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
+    };
 
     let vuln: OsvVulnerability =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
@@ -343,39 +343,28 @@ pub async fn query_package(
         body["version"] = serde_json::Value::String(v.to_string());
     }
 
-    let response = tokio::time::timeout(
-        timeout,
-        client
+    let bytes = tokio::time::timeout(timeout, async {
+        let resp = client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&body)
-            .send(),
-    )
+            .send()
+            .await
+            .map_err(|e| EngineError::Http {
+                engine: ENGINE,
+                source: e,
+            })?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: status.as_u16(),
+            });
+        }
+        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
+    })
     .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-
-    let status = response.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
 
     let parsed: OsvQueryResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

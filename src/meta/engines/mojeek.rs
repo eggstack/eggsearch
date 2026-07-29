@@ -16,38 +16,28 @@ pub async fn search(
     max_results: usize,
     timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
-    let response = tokio::time::timeout(
-        timeout,
-        client
+    let bytes = tokio::time::timeout(timeout, async {
+        let resp = client
             .get(MOJEEK_URL)
             .query(&[("q", query)])
             .header("Accept-Language", "en-US,en;q=0.9")
-            .send(),
-    )
+            .send()
+            .await
+            .map_err(|e| EngineError::Http {
+                engine: ENGINE,
+                source: e,
+            })?;
+        if !resp.status().is_success() {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: resp.status().as_u16(),
+            });
+        }
+        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
+    })
     .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
 
-    if !response.status().is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: response.status().as_u16(),
-        });
-    }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
     let body = String::from_utf8_lossy(&bytes).into_owned();
 
     parse(&body, max_results)
