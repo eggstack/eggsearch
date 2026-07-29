@@ -2819,7 +2819,7 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
     if a.url.is_empty() {
         return None;
     }
-    if url::Url::parse(&a.url).is_err() {
+    if !crate::meta::engines::is_http_url(&a.url) {
         return None;
     }
     let providers: Vec<String> = a.engines.into_iter().collect();

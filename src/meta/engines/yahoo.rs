@@ -74,7 +74,7 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
 
         let raw_href = link_el.value().attr("href").unwrap_or("");
         let url = parse_yahoo_url(raw_href);
-        if url.is_empty() || !url.starts_with("http") {
+        if !super::is_http_url(&url) {
             continue;
         }
 

@@ -161,7 +161,7 @@ fn convert(items: Vec<GithubIssueItem>, max_results: usize) -> Vec<SearchResult>
         let Some(html_url) = &item.html_url else {
             continue;
         };
-        if html_url.is_empty() || !html_url.starts_with("http") {
+        if !super::is_http_url(html_url) {
             continue;
         }
         let Some(title) = &item.title else {

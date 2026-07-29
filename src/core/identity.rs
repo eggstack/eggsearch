@@ -150,18 +150,31 @@ pub fn canonicalize_url(url: &str) -> String {
         return normalize_path(url);
     };
 
-    // Split host from path+query+fragment
-    let (host_part, path_query_frag) = if let Some(slash_pos) = rest.find('/') {
+    // Split authority from path+query+fragment
+    let (authority, path_query_frag) = if let Some(slash_pos) = rest.find('/') {
         (&rest[..slash_pos], &rest[slash_pos..])
     } else {
-        (rest, "")
+        // No slash after authority: entire rest is authority.
+        // Split fragment and query from authority.
+        let authority = if let Some(hash_pos) = rest.find('#') {
+            &rest[..hash_pos]
+        } else if let Some(qmark_pos) = rest.find('?') {
+            &rest[..qmark_pos]
+        } else {
+            rest
+        };
+        let suffix = &rest[authority.len()..];
+        (authority, suffix)
     };
 
+    // Lowercase host (authority without userinfo/port)
+    let authority = authority.to_ascii_lowercase();
+
     // Strip www. prefix
-    let host_part = host_part.strip_prefix("www.").unwrap_or(host_part);
+    let authority = authority.strip_prefix("www.").unwrap_or(&authority);
 
     // Strip default ports
-    let host_part = strip_default_port(host_part, &scheme);
+    let authority = strip_default_port(authority, &scheme);
 
     // Strip fragment from path+query+fragment
     let path_query_frag = if let Some(hash_pos) = path_query_frag.find('#') {
@@ -184,7 +197,7 @@ pub fn canonicalize_url(url: &str) -> String {
         }
     };
 
-    format!("{scheme}://{host_part}{path_query_frag}")
+    format!("{scheme}://{authority}{path_query_frag}")
 }
 
 /// Strip default port from a host string.

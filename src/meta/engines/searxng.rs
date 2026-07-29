@@ -98,7 +98,7 @@ fn convert(raw: Vec<SearxngResult>, max_results: usize) -> Vec<SearchResult> {
             break;
         }
         let Some(url) = r.url else { continue };
-        if url.is_empty() || !url.starts_with("http") {
+        if !super::is_http_url(&url) {
             continue;
         }
         let title = r

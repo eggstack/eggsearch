@@ -72,7 +72,7 @@ pub fn generate_research_suggested_fetches(
             evidence_confidence,
             is_pinned_permalink: false,
             is_raw_url: false,
-            is_browser_url: card.url.starts_with("http"),
+            is_browser_url: crate::meta::engines::is_http_url(&card.url),
             domain,
             score: 0,
             reasons: Vec::new(),

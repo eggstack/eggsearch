@@ -34,7 +34,7 @@ pub fn normalize(raw: &str) -> Option<String> {
         sorted.sort_by(|a, b| a.0.cmp(&b.0));
         let qs = sorted
             .iter()
-            .map(|(k, v)| format!("{k}={v}"))
+            .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
             .collect::<Vec<_>>()
             .join("&");
         url.set_query(Some(&qs));
@@ -52,7 +52,23 @@ pub fn normalize(raw: &str) -> Option<String> {
 
     url.set_path(&path);
 
-    Some(url.to_string().to_lowercase())
+    let mut result = String::with_capacity(url.as_str().len());
+    result.push_str(&url.scheme().to_ascii_lowercase());
+    result.push_str("://");
+    if let Some(host) = url.host_str() {
+        result.push_str(&host.to_ascii_lowercase());
+    }
+    if let Some(port) = url.port() {
+        result.push(':');
+        result.push_str(&port.to_string());
+    }
+    result.push_str(url.path());
+    if let Some(query) = url.query() {
+        result.push('?');
+        result.push_str(query);
+    }
+
+    Some(result)
 }
 
 fn strip_locale_prefix(path: &str) -> &str {

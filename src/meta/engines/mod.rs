@@ -47,6 +47,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::StreamExt;
 use reqwest::Client;
 
 use self::error::EngineError;
@@ -872,6 +873,56 @@ pub use rustsec::RustSecEngine;
 const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \
      Chrome/124.0.0.0 Safari/537.36";
+
+/// Read an HTTP response body with a streaming byte cap.
+///
+/// Checks `Content-Length` upfront and streams at most `max_bytes + 1`
+/// bytes, aborting when the cap is crossed. Returns the buffered body
+/// on success or `EngineError::ParseFailed` on overflow.
+pub async fn read_bounded_body(
+    response: reqwest::Response,
+    engine: &'static str,
+    max_bytes: usize,
+) -> Result<Vec<u8>, EngineError> {
+    if let Some(content_length) = response.content_length() {
+        if content_length as usize > max_bytes {
+            return Err(EngineError::ParseFailed {
+                engine,
+                reason: format!(
+                    "response body too large (Content-Length: {} bytes, limit: {max_bytes} bytes)",
+                    content_length
+                ),
+            });
+        }
+    }
+    let mut body = Vec::with_capacity(max_bytes.min(64 * 1024));
+    let mut stream = response.bytes_stream();
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| EngineError::Http { engine, source: e })?;
+        let remaining = max_bytes.saturating_sub(body.len());
+        if chunk.len() > remaining {
+            if remaining > 0 {
+                body.extend_from_slice(&chunk[..remaining]);
+            }
+            return Err(EngineError::ParseFailed {
+                engine,
+                reason: format!(
+                    "response body too large: read {} bytes, limit is {max_bytes} bytes",
+                    body.len().max(chunk.len())
+                ),
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+/// Returns `true` if `url` parses as an HTTP or HTTPS URL.
+pub fn is_http_url(url: &str) -> bool {
+    url::Url::parse(url)
+        .ok()
+        .is_some_and(|u| matches!(u.scheme(), "http" | "https"))
+}
 
 /// Build the reqwest client used by the vendored search engines.
 ///

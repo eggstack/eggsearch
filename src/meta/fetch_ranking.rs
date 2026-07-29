@@ -732,7 +732,7 @@ mod tests {
             evidence_confidence: None,
             is_pinned_permalink: false,
             is_raw_url: false,
-            is_browser_url: url.starts_with("http"),
+            is_browser_url: crate::meta::engines::is_http_url(url),
             domain: extract_domain(url),
             score: 0,
             reasons: Vec::new(),

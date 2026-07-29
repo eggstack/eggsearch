@@ -66,7 +66,7 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
         };
 
         let url = link_el.value().attr("href").unwrap_or("").to_string();
-        if url.is_empty() || !url.starts_with("http") {
+        if !super::is_http_url(&url) {
             continue;
         }
 

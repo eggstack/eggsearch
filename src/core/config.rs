@@ -674,13 +674,25 @@ impl AppConfig {
                         "[search].searxng.enabled is true but [search].searxng.base_url is missing or empty".to_string(),
                     ));
                 }
-                Some(url) => {
-                    if url::Url::parse(url).is_err() {
+                Some(url) => match url::Url::parse(url) {
+                    Err(_) => {
                         return Err(CoreError::Config(format!(
                             "[search].searxng.base_url is not a valid URL: {url}"
                         )));
                     }
-                }
+                    Ok(parsed) if !matches!(parsed.scheme(), "http" | "https") => {
+                        return Err(CoreError::Config(format!(
+                            "[search].searxng.base_url must use http or https scheme, got: {}",
+                            parsed.scheme()
+                        )));
+                    }
+                    Ok(parsed) if parsed.host_str().is_none() => {
+                        return Err(CoreError::Config(format!(
+                            "[search].searxng.base_url must have a host: {url}"
+                        )));
+                    }
+                    _ => {}
+                },
             }
         }
 
@@ -712,10 +724,24 @@ impl AppConfig {
                     }
                 }
                 if let Some(ref url) = api_cfg.base_url {
-                    if url::Url::parse(url).is_err() {
-                        return Err(CoreError::Config(format!(
-                            "[search].api.{id}.base_url is not a valid URL: {url}"
-                        )));
+                    match url::Url::parse(url) {
+                        Err(_) => {
+                            return Err(CoreError::Config(format!(
+                                "[search].api.{id}.base_url is not a valid URL: {url}"
+                            )));
+                        }
+                        Ok(parsed) if !matches!(parsed.scheme(), "http" | "https") => {
+                            return Err(CoreError::Config(format!(
+                                "[search].api.{id}.base_url must use http or https scheme, got: {}",
+                                parsed.scheme()
+                            )));
+                        }
+                        Ok(parsed) if parsed.host_str().is_none() => {
+                            return Err(CoreError::Config(format!(
+                                "[search].api.{id}.base_url must have a host: {url}"
+                            )));
+                        }
+                        _ => {}
                     }
                 }
             }

@@ -1755,7 +1755,7 @@ pub fn derive_gitea_instance_root(api_base: &str) -> String {
     let base = api_base.trim_end_matches('/');
     if let Some(pos) = base.rfind("/api") {
         let root = &base[..pos];
-        if root.starts_with("http") {
+        if super::engines::is_http_url(root) {
             return root.to_string();
         }
     }

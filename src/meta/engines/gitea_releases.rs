@@ -146,7 +146,7 @@ fn convert(
         let Some(html_url) = &item.html_url else {
             continue;
         };
-        if html_url.is_empty() || !html_url.starts_with("http") {
+        if !super::is_http_url(html_url) {
             continue;
         }
 

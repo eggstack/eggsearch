@@ -132,7 +132,7 @@ fn convert(response: GiteaSearchResponse, base_url: &str, max_results: usize) ->
                 continue;
             }
 
-            let url = if raw_url.starts_with("http") {
+            let url = if super::is_http_url(raw_url) {
                 raw_url.clone()
             } else {
                 format!("{base_url}{raw_url}")

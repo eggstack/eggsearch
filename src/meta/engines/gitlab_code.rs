@@ -158,7 +158,7 @@ fn convert(items: Vec<GitlabCodeBlob>, max_results: usize) -> Vec<SearchResult> 
         let Some(url) = &item.url else {
             continue;
         };
-        if url.is_empty() || !url.starts_with("http") {
+        if !super::is_http_url(url) {
             continue;
         }
         let path = match item.path.as_deref() {

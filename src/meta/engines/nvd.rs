@@ -181,34 +181,24 @@ async fn fetch_json(
         }
     }
 
-    let response = tokio::time::timeout(timeout, builder.send())
-        .await
-        .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-        .map_err(|e| EngineError::Http {
+    let bytes = tokio::time::timeout(timeout, async {
+        let resp = builder.send().await.map_err(|e| EngineError::Http {
             engine: ENGINE,
             source: e,
         })?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: status.as_u16(),
+            });
+        }
+        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
+    })
+    .await
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
 
-    let status = response.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
-
-    Ok(bytes.to_vec())
+    Ok(bytes)
 }
 
 async fn lookup_by_cve(

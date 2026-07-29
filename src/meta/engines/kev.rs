@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use futures::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -11,6 +12,7 @@ const KEV_CATALOG_URL: &str =
     "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
 const MAX_BODY_BYTES: usize = 100 * 1024 * 1024; // 100MB
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600); // 1 hour
+const KEV_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Deserialize)]
 struct KeCatalog {
@@ -120,22 +122,40 @@ impl KevClient {
 
     /// Fetch the entire KEV catalog and populate the cache.
     async fn fetch_catalog(&self) -> Result<(), anyhow::Error> {
-        let response = self.client.get(KEV_CATALOG_URL).send().await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return Err(anyhow::anyhow!(
-                "KEV catalog fetch failed with status: {status}"
-            ));
-        }
-
-        let bytes = response.bytes().await?;
-        if bytes.len() > MAX_BODY_BYTES {
-            return Err(anyhow::anyhow!(
-                "KEV catalog too large: {} bytes",
-                bytes.len()
-            ));
-        }
+        let bytes = tokio::time::timeout(KEV_TIMEOUT, async {
+            let resp = self.client.get(KEV_CATALOG_URL).send().await?;
+            let status = resp.status();
+            if !status.is_success() {
+                return Err(anyhow::anyhow!(
+                    "KEV catalog fetch failed with status: {status}"
+                ));
+            }
+            if let Some(content_length) = resp.content_length() {
+                if content_length as usize > MAX_BODY_BYTES {
+                    return Err(anyhow::anyhow!(
+                        "KEV catalog too large (Content-Length: {} bytes)",
+                        content_length
+                    ));
+                }
+            }
+            let mut body = Vec::with_capacity(MAX_BODY_BYTES.min(64 * 1024));
+            let mut stream = resp.bytes_stream();
+            while let Some(chunk_result) = stream.next().await {
+                let chunk = chunk_result
+                    .map_err(|e| anyhow::anyhow!("KEV catalog stream read error: {e}"))?;
+                let remaining = MAX_BODY_BYTES.saturating_sub(body.len());
+                if chunk.len() > remaining {
+                    return Err(anyhow::anyhow!(
+                        "KEV catalog too large: read {} bytes, limit is {MAX_BODY_BYTES} bytes",
+                        body.len().max(chunk.len())
+                    ));
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok::<Vec<u8>, anyhow::Error>(body)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("KEV catalog fetch timed out"))??;
 
         let catalog: KeCatalog = serde_json::from_slice(&bytes)
             .map_err(|e| anyhow::anyhow!("Failed to parse KEV catalog: {e}"))?;

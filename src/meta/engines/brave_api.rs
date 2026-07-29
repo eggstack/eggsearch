@@ -47,41 +47,30 @@ pub async fn search(
 ) -> Result<Vec<SearchResult>, EngineError> {
     let url = base_url.unwrap_or(DEFAULT_BASE_URL);
 
-    let response = tokio::time::timeout(
-        timeout,
-        client
+    let bytes = tokio::time::timeout(timeout, async {
+        let resp = client
             .get(url)
             .query(&[("q", query), ("count", &max_results.to_string())])
             .header("Accept", "application/json")
             .header("Accept", "application/x-ndjson")
             .header("X-Subscription-Token", api_key)
-            .send(),
-    )
+            .send()
+            .await
+            .map_err(|e| EngineError::Http {
+                engine: ENGINE,
+                source: e,
+            })?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(EngineError::BadStatus {
+                engine: ENGINE,
+                status: status.as_u16(),
+            });
+        }
+        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
+    })
     .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })?
-    .map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-
-    let status = response.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-
-    let bytes = response.bytes().await.map_err(|e| EngineError::Http {
-        engine: ENGINE,
-        source: e,
-    })?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("response body too large: {} bytes", bytes.len()),
-        });
-    }
+    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
 
     let parsed: BraveApiResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
@@ -100,7 +89,7 @@ fn convert(raw: Vec<BraveResult>, max_results: usize) -> Vec<SearchResult> {
             break;
         }
         let Some(url) = r.url else { continue };
-        if url.is_empty() || !url.starts_with("http") {
+        if !super::is_http_url(&url) {
             continue;
         }
         let title = r

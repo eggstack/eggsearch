@@ -169,7 +169,7 @@ fn build_asset_snippet(assets: &GitlabReleaseAssets) -> Option<String> {
 /// the first asset link URL.
 fn release_url(item: &GitlabReleaseItem) -> Option<String> {
     if let Some(url) = &item.web_url {
-        if !url.is_empty() && url.starts_with("http") {
+        if super::is_http_url(url) {
             return Some(url.clone());
         }
     }
@@ -177,7 +177,7 @@ fn release_url(item: &GitlabReleaseItem) -> Option<String> {
         .as_ref()
         .and_then(|a| a.links.first())
         .and_then(|l| l.url.clone())
-        .filter(|u| !u.is_empty() && u.starts_with("http"))
+        .filter(|u| super::is_http_url(u))
 }
 
 /// Extract owner and repo from a GitLab web_url.

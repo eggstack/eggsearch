@@ -174,7 +174,7 @@ pub fn generate_suggested_fetches_with_mode(
                 evidence_confidence,
                 is_pinned_permalink: is_pinned_permalink(&fetch_url),
                 is_raw_url: is_raw_url(&fetch_url),
-                is_browser_url: fetch_url.starts_with("http"),
+                is_browser_url: crate::meta::engines::is_http_url(&fetch_url),
                 domain: extract_domain(&fetch_url),
                 score: 0,
                 reasons: Vec::new(),
