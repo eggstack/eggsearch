@@ -68,22 +68,29 @@ The four top-level library modules (`core`, `meta`, `fetch`, `mcp`) plus the `co
 | Module | Path | Responsibility | Deep Dive |
 |--------|------|----------------|-----------|
 | **core** | `src/core/` | Pure domain types, config model, error types, identity system, sanitization, warnings, source cards, quality heuristics, security/research/repo/local/package/evidence types | [core.md](core.md) |
-| `evidence_role.rs` | `src/core/evidence_role.rs` | Unified evidence role taxonomy mapping across source kinds, roles, classes, and tiers | |
-| `workflow_coverage.rs` | `src/core/workflow_coverage.rs` | Deterministic coverage structures for workflow evidence models | |
-| `conflict.rs` | `src/core/conflict.rs` | Contradiction and conflict metadata for source disagreement detection | |
-| `retrieval_status.rs` | `src/core/retrieval_status.rs` | Failure and absence semantics distinguishing evidence absence from retrieval failure | |
-| `evidence_postprocess.rs` | `src/core/evidence_postprocess.rs` | Phase 5 response integration: evidence roles, workflow coverage, retrieval summaries, structured conflicts on all conversion paths | |
-| **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
+| **meta** | `src/meta/` | Metasearch adapter + 38 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
 | **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection, code-host URL rewriting | [fetch.md](fetch.md) |
 | **mcp** | `src/mcp/` | MCP server over stdio (rmcp), 10 tool definitions, shared server state, policy enforcement | [mcp.md](mcp.md) |
 | **commands** | `src/commands/` | CLI subcommands: doctor, search, mcp, fetch, providers | [commands.md](commands.md) |
 | **testing** | `tests/` | Integration, corpus, schema/contract, and documentation contract tests | [testing.md](testing.md) |
+
+### Subsystem Deep Dives
+
+| Subsystem | Files | Responsibility | Deep Dive |
+|-----------|-------|----------------|-----------|
+| **config** | `src/core/config.rs`, `src/config.rs` | TOML config model, provider resolution, validation, CLI loading | [config.md](config.md) |
+| **engines** | `src/meta/engines/` (38 files) | Vendored search engine implementations, `SearchEngine` trait, result normalization | [engines.md](engines.md) |
+| **security** | `src/core/security.rs`, `src/meta/security_*.rs` | Security advisory search, version applicability, remediation, KEV enrichment | [security.md](security.md) |
+| **research** | `src/core/research.rs`, `src/meta/research_*.rs` | Research evidence discovery, claims, conflicts, gaps, workflow scaffolding | [research.md](research.md) |
+| **evidence & workflow** | `src/core/evidence_*.rs`, `src/core/workflow*.rs`, `src/core/conflict.rs`, `src/core/retrieval_status.rs` | Evidence bundles, role taxonomy, workflow recipes, conflict detection, retrieval tracking | [evidence-workflow.md](evidence-workflow.md) |
+| **local workspace** | `src/core/local.rs`, `src/meta/local_*.rs`, `src/meta/safe_open.rs` | Filesystem search, cached inventory, git-aware fast path, race-resistant file opening | [local-workspace.md](local-workspace.md) |
 
 ### Supporting Documentation
 
 | Document | Purpose |
 |----------|---------|
 | [codegg-contract.md](codegg-contract.md) | Stable MCP response contract for harness developers (deterministic IDs, warnings, trust model, next actions, security applicability, research evidence) |
+| [hardening.md](hardening.md) | Property testing, adversarial corpus, fuzz harness, crash promotion |
 | [../../docs/threat-model.md](../../docs/threat-model.md) | Operator threat model, trust boundaries, prompt-injection handling, configuration escape hatches |
 | [../../docs/safety.md](../../docs/safety.md) | Fetch safety, blocked address ranges, sanitization tiers, trust markers |
 | [../../docs/config.md](../../docs/config.md) | Config defaults, provider requirements, profile examples |
@@ -342,19 +349,34 @@ cargo publish --dry-run  # pre-publish check
 
 For detailed analysis of each component:
 
+### Core Modules
+
 1. [core.md](core.md) — Domain types, config, identity, sanitization, warnings, source cards, quality, security/research/repo/local/evidence types
-2. [meta.md](meta.md) — Metasearch adapter, 34 engines, RRF aggregation, query planning, provider health, local workspace
+2. [meta.md](meta.md) — Metasearch adapter, 38 engines, RRF aggregation, query planning, provider health, local workspace
 3. [fetch.md](fetch.md) — HTTP client, content extraction, SSRF protection, code-host rewriting, span selection, PDF
 4. [mcp.md](mcp.md) — MCP server, 10 tool definitions, state management, policy enforcement
 5. [commands.md](commands.md) — CLI subcommands (doctor, search, mcp, fetch, providers)
-6. [testing.md](testing.md) — Test strategy, CI pipeline, feature flags, mock engine
-7. [codegg-contract.md](codegg-contract.md) — Stable MCP response contract (deterministic IDs, warnings, trust model, next actions, security applicability, research evidence, local workspace metadata)
+
+### Subsystem Deep Dives
+
+6. [config.md](config.md) — TOML config model, provider resolution, validation, CLI loading
+7. [engines.md](engines.md) — Search engine trait, 38 engine implementations, shared infrastructure
+8. [security.md](security.md) — Security advisory search, version applicability, remediation, KEV
+9. [research.md](research.md) — Research evidence discovery, claims, conflicts, gaps, workflows
+10. [evidence-workflow.md](evidence-workflow.md) — Evidence bundles, role taxonomy, workflow recipes, conflict detection, retrieval tracking
+11. [local-workspace.md](local-workspace.md) — Filesystem search, cached inventory, git-aware fast path, race-resistant file opening
+
+### Testing & Hardening
+
+12. [testing.md](testing.md) — Test strategy, CI pipeline, feature flags, mock engine
+13. [hardening.md](hardening.md) — Property testing, adversarial corpus, fuzz harness, crash promotion
+14. [codegg-contract.md](codegg-contract.md) — Stable MCP response contract (deterministic IDs, warnings, trust model, next actions, security applicability, research evidence, local workspace metadata)
 
 ### External References
 
-8. [../../docs/threat-model.md](../../docs/threat-model.md) — Operator threat model, trust boundaries, prompt-injection handling, configuration escape hatches, recommended host-agent policy
-9. [../../docs/safety.md](../../docs/safety.md) — Fetch safety, blocked address ranges, sanitization tiers, trust markers
-10. [../../docs/config.md](../../docs/config.md) — Config defaults, provider requirements, profile examples
-11. [../../docs/tool-matrix.md](../../docs/tool-matrix.md) — Compact tool reference with trust semantics
-12. [../../docs/agent-workflows.md](../../docs/agent-workflows.md) — Recommended tool call sequences and recipe catalog
-13. [../../docs/provider-setup.md](../../docs/provider-setup.md) — Provider configuration guide
+15. [../../docs/threat-model.md](../../docs/threat-model.md) — Operator threat model, trust boundaries, prompt-injection handling, configuration escape hatches, recommended host-agent policy
+16. [../../docs/safety.md](../../docs/safety.md) — Fetch safety, blocked address ranges, sanitization tiers, trust markers
+17. [../../docs/config.md](../../docs/config.md) — Config defaults, provider requirements, profile examples
+18. [../../docs/tool-matrix.md](../../docs/tool-matrix.md) — Compact tool reference with trust semantics
+19. [../../docs/agent-workflows.md](../../docs/agent-workflows.md) — Recommended tool call sequences and recipe catalog
+20. [../../docs/provider-setup.md](../../docs/provider-setup.md) — Provider configuration guide
