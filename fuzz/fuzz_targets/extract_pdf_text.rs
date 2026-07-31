@@ -10,5 +10,5 @@ fuzz_target!(|data: &[u8]| {
         max_chars_per_page: 1000,
         max_total_chars: 5000,
     };
-    let _ = extract_pdf_text(data, 5000, &limits);
+    let _ = extract_pdf_text(data, 5000, &limits, None);
 });

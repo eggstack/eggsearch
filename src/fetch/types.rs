@@ -81,6 +81,32 @@ pub enum FetchError {
     #[error("PDF has little or no extractable text; OCR is not supported")]
     PdfNoExtractableText,
 
+    /// PDF page specification is invalid.
+    #[error("invalid PDF page specification: {0}")]
+    PdfPageSpecInvalid(String),
+
+    /// Requested page numbers exceed the document's page count.
+    #[error("requested pages {requested:?} exceed document page count ({total_pages})")]
+    PdfPageOutOfRange {
+        /// Pages that were requested but exceed the document length.
+        requested: Vec<u32>,
+        /// Total pages in the document.
+        total_pages: usize,
+    },
+
+    /// Selected page count exceeds the configured maximum.
+    #[error("selected page count ({selected}) exceeds configured maximum ({max_pages})")]
+    PdfPageCapExceeded {
+        /// Number of pages selected.
+        selected: usize,
+        /// Configured maximum.
+        max_pages: usize,
+    },
+
+    /// OCR was requested but is not available in this build.
+    #[error("OCR was requested but is not available; enable an OCR provider or set pdf_ocr to \"never\"")]
+    PdfOcrUnavailable,
+
     /// Unknown error.
     #[error("{0}")]
     Unknown(String),
@@ -125,6 +151,14 @@ pub enum FetchErrorKind {
     PdfEncrypted,
     /// PDF no extractable text.
     PdfNoExtractableText,
+    /// PDF page specification invalid.
+    PdfPageSpecInvalid,
+    /// PDF page out of range.
+    PdfPageOutOfRange,
+    /// PDF page cap exceeded.
+    PdfPageCapExceeded,
+    /// PDF OCR unavailable.
+    PdfOcrUnavailable,
     /// Unknown error.
     Unknown,
 }
@@ -152,6 +186,10 @@ impl FetchError {
             FetchError::PdfParseError(_) => FetchErrorKind::PdfParseError,
             FetchError::PdfEncrypted => FetchErrorKind::PdfEncrypted,
             FetchError::PdfNoExtractableText => FetchErrorKind::PdfNoExtractableText,
+            FetchError::PdfPageSpecInvalid(_) => FetchErrorKind::PdfPageSpecInvalid,
+            FetchError::PdfPageOutOfRange { .. } => FetchErrorKind::PdfPageOutOfRange,
+            FetchError::PdfPageCapExceeded { .. } => FetchErrorKind::PdfPageCapExceeded,
+            FetchError::PdfOcrUnavailable => FetchErrorKind::PdfOcrUnavailable,
             FetchError::Unknown(_) => FetchErrorKind::Unknown,
         }
     }
@@ -177,6 +215,10 @@ impl FetchError {
             FetchErrorKind::PdfParseError => "pdf_parse_error",
             FetchErrorKind::PdfEncrypted => "pdf_encrypted",
             FetchErrorKind::PdfNoExtractableText => "pdf_no_extractable_text",
+            FetchErrorKind::PdfPageSpecInvalid => "pdf_page_spec_invalid",
+            FetchErrorKind::PdfPageOutOfRange => "pdf_page_out_of_range",
+            FetchErrorKind::PdfPageCapExceeded => "pdf_page_cap_exceeded",
+            FetchErrorKind::PdfOcrUnavailable => "pdf_ocr_unavailable",
             FetchErrorKind::Unknown => "unknown",
         }
     }

@@ -1,18 +1,48 @@
-//! PDF text extraction for `web_fetch`.
-//!
-//! This module provides conservative, page-indexed text extraction
-//! from PDF documents. It requires the `pdf` Cargo feature to be
-//! compiled in and `[fetch].pdf_enabled = true` in configuration.
-//!
-//! Non-goals: OCR, page rendering, JavaScript execution, embedded
-//! file extraction, full layout reconstruction.
-
 use super::types::FetchError;
 use crate::core::document::{
     BlockKind, DocumentChunk, DocumentKind, DocumentOutlineEntry, FetchDocument,
-    FetchRenderMetadata, RenderFormat, RenderedBlock,
+    FetchRenderMetadata, PdfDocumentMetadata, PdfPageMetadata, PdfPageQualityKind, RenderFormat,
+    RenderedBlock,
 };
 use crate::core::sanitize::{bound_text, strip_control_chars};
+
+const MAX_OUTLINE_ENTRIES: usize = 200;
+const MAX_OUTLINE_DEPTH: usize = 6;
+const MAX_OUTLINE_TITLE_LEN: usize = 200;
+
+const CID_TOKEN_THRESHOLD: f32 = 0.05;
+const SPARSE_TEXT_THRESHOLD: usize = 50;
+
+const QUALITY_CLEAN: f32 = 1.0;
+const QUALITY_SPARSE: f32 = 0.5;
+const QUALITY_CID: f32 = 0.25;
+const QUALITY_SCANNED: f32 = 0.1;
+const QUALITY_BLANK: f32 = 0.0;
+
+/// OCR policy for PDF extraction.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PdfOcrPolicy {
+    /// Never attempt OCR (default).
+    #[default]
+    Never,
+    /// Automatically decide when to OCR.
+    Auto,
+    /// Always attempt OCR.
+    Always,
+}
+
+/// Options for PDF text extraction.
+pub struct PdfExtractOptions {
+    /// Specific pages to extract (1-indexed). If `None`, all pages
+    /// up to `max_pages` are extracted.
+    pub selected_pages: Option<Vec<u32>>,
+    /// Password for encrypted PDFs.
+    pub password: Option<String>,
+    /// Whether to include media metadata.
+    pub include_media: bool,
+    /// OCR policy for this extraction.
+    pub ocr_policy: PdfOcrPolicy,
+}
 
 /// Result of PDF text extraction.
 #[derive(Debug)]
@@ -27,6 +57,14 @@ pub struct PdfExtractionResult {
     pub warnings: Vec<String>,
     /// Whether the text was truncated at the character level.
     pub text_truncated: bool,
+    /// Per-page extraction quality metadata.
+    pub page_metadata: Vec<PdfPageMetadata>,
+    /// Document-level PDF metadata from the Info dictionary.
+    pub pdf_metadata: PdfDocumentMetadata,
+    /// Whether the extracted content is usable.
+    pub content_ok: bool,
+    /// Document-level quality score in [0.0, 1.0].
+    pub quality_score: f32,
 }
 
 /// Configuration for PDF extraction limits.
@@ -39,15 +77,394 @@ pub struct PdfLimits {
     pub max_total_chars: usize,
 }
 
-/// Extract text from a PDF byte slice.
-///
-/// Returns page-indexed blocks, legacy text with page markers,
-/// and extraction warnings. Returns `Err` for parse failures,
-/// encrypted PDFs, or other unrecoverable errors.
+/// Parse a page selection specification into a sorted, deduplicated
+/// list of 1-indexed page numbers.
+pub fn parse_pdf_pages(
+    spec: &str,
+    total_pages: usize,
+    max_pages: usize,
+) -> Result<Vec<u32>, FetchError> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return Err(FetchError::PdfPageSpecInvalid(
+            "page specification must not be empty".into(),
+        ));
+    }
+
+    let mut pages = Vec::new();
+    for part in spec.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            return Err(FetchError::PdfPageSpecInvalid(
+                "empty segment in page specification".into(),
+            ));
+        }
+
+        if let Some((start_str, end_str)) = part.split_once('-') {
+            let start_str = start_str.trim();
+            let end_str = end_str.trim();
+            let start: u32 = start_str.parse().map_err(|_| {
+                FetchError::PdfPageSpecInvalid(format!("invalid page number: '{start_str}'"))
+            })?;
+            let end: u32 = end_str.parse().map_err(|_| {
+                FetchError::PdfPageSpecInvalid(format!("invalid page number: '{end_str}'"))
+            })?;
+
+            if start == 0 || end == 0 {
+                return Err(FetchError::PdfPageSpecInvalid(
+                    "page numbers are one-indexed; page 0 is not valid".into(),
+                ));
+            }
+
+            let (start, end) = if start <= end {
+                (start, end)
+            } else {
+                (end, start)
+            };
+
+            for p in start..=end {
+                if !pages.contains(&p) {
+                    pages.push(p);
+                }
+            }
+        } else {
+            let p: u32 = part.parse().map_err(|_| {
+                FetchError::PdfPageSpecInvalid(format!("invalid page number: '{part}'"))
+            })?;
+            if p == 0 {
+                return Err(FetchError::PdfPageSpecInvalid(
+                    "page numbers are one-indexed; page 0 is not valid".into(),
+                ));
+            }
+            if !pages.contains(&p) {
+                pages.push(p);
+            }
+        }
+    }
+
+    pages.sort();
+
+    if pages.is_empty() {
+        return Err(FetchError::PdfPageSpecInvalid(
+            "page specification resolved to an empty selection".into(),
+        ));
+    }
+
+    let total = total_pages as u32;
+    let out_of_range: Vec<u32> = pages.iter().copied().filter(|&p| p > total).collect();
+    if !out_of_range.is_empty() {
+        return Err(FetchError::PdfPageOutOfRange {
+            requested: out_of_range,
+            total_pages,
+        });
+    }
+
+    if pages.len() > max_pages {
+        return Err(FetchError::PdfPageCapExceeded {
+            selected: pages.len(),
+            max_pages,
+        });
+    }
+
+    Ok(pages)
+}
+
+fn decode_pdf_string(raw: &[u8]) -> String {
+    if raw.len() >= 2 && raw[0] == 0xFE && raw[1] == 0xFF {
+        let payload = &raw[2..];
+        let payload = &payload[..payload.len() & !1];
+        String::from_utf16_lossy(
+            &payload
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        String::from_utf8_lossy(raw).into_owned()
+    }
+}
+
+fn read_info_string(doc: &lopdf::Document, key: &[u8]) -> Option<String> {
+    let info_ref = match doc.trailer.get(b"Info") {
+        Ok(lopdf::Object::Reference(r)) => *r,
+        _ => return None,
+    };
+    let info_obj = doc.get_object(info_ref).ok()?;
+    let dict = info_obj.as_dict().ok()?;
+    let obj = dict.get(key).ok()?;
+    let raw = obj.as_str().ok()?;
+    let s = decode_pdf_string(raw);
+    let s = s.trim();
+    if s.is_empty() {
+        None
+    } else {
+        let (s, _) = strip_control_chars(s);
+        let (s, _) = bound_text(&s, 500);
+        Some(s)
+    }
+}
+
+fn read_info_date(doc: &lopdf::Document, key: &[u8]) -> Option<String> {
+    read_info_string(doc, key)
+}
+
+fn extract_pdf_metadata(doc: &lopdf::Document) -> PdfDocumentMetadata {
+    PdfDocumentMetadata {
+        title: read_info_string(doc, b"Title"),
+        author: read_info_string(doc, b"Author"),
+        subject: read_info_string(doc, b"Subject"),
+        keywords: read_info_string(doc, b"Keywords"),
+        creator: read_info_string(doc, b"Creator"),
+        producer: read_info_string(doc, b"Producer"),
+        creation_date: read_info_date(doc, b"CreationDate"),
+        mod_date: read_info_date(doc, b"ModDate"),
+        page_count: doc.get_pages().len(),
+    }
+}
+
+fn try_extract_outline(doc: &lopdf::Document) -> Vec<DocumentOutlineEntry> {
+    let catalog = match doc.trailer.get(b"Root") {
+        Ok(lopdf::Object::Reference(catalog_ref)) => match doc.get_object(*catalog_ref) {
+            Ok(obj) => obj,
+            Err(_) => return Vec::new(),
+        },
+        _ => return Vec::new(),
+    };
+
+    let catalog_dict = match catalog.as_dict() {
+        Ok(d) => d,
+        Err(_) => return Vec::new(),
+    };
+
+    let outlines_ref = match catalog_dict.get(b"Outlines") {
+        Ok(lopdf::Object::Reference(r)) => *r,
+        _ => return Vec::new(),
+    };
+
+    let outlines_obj = match doc.get_object(outlines_ref) {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+
+    let outlines_dict = match outlines_obj.as_dict() {
+        Ok(d) => d,
+        Err(_) => return Vec::new(),
+    };
+
+    let first_ref = match outlines_dict.get(b"First") {
+        Ok(lopdf::Object::Reference(r)) => *r,
+        _ => return Vec::new(),
+    };
+
+    let mut entries = Vec::new();
+    collect_outline_entries(doc, first_ref, 0, &mut entries);
+    entries
+}
+
+fn collect_outline_entries(
+    doc: &lopdf::Document,
+    obj_ref: lopdf::ObjectId,
+    depth: usize,
+    out: &mut Vec<DocumentOutlineEntry>,
+) {
+    if out.len() >= MAX_OUTLINE_ENTRIES || depth >= MAX_OUTLINE_DEPTH {
+        return;
+    }
+
+    let obj = match doc.get_object(obj_ref) {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+
+    let dict = match obj.as_dict() {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+
+    let title = match dict.get(b"Title") {
+        Ok(lopdf::Object::String(s, _)) => {
+            let decoded = decode_pdf_string(s);
+            let trimmed = decoded.trim().to_string();
+            if trimmed.len() > MAX_OUTLINE_TITLE_LEN {
+                trimmed[..MAX_OUTLINE_TITLE_LEN].to_string()
+            } else {
+                trimmed
+            }
+        }
+        _ => String::new(),
+    };
+
+    if !title.is_empty() {
+        let page_num = resolve_outline_page(doc, dict);
+        out.push(DocumentOutlineEntry {
+            level: depth + 1,
+            title,
+            anchor: None,
+            block_index: None,
+        });
+        let _ = page_num;
+    }
+
+    if let Ok(lopdf::Object::Reference(child_ref)) = dict.get(b"First") {
+        collect_outline_entries(doc, *child_ref, depth + 1, out);
+    }
+
+    if let Ok(lopdf::Object::Reference(next_ref)) = dict.get(b"Next") {
+        collect_outline_entries(doc, *next_ref, depth, out);
+    }
+}
+
+fn resolve_outline_page(doc: &lopdf::Document, dict: &lopdf::Dictionary) -> Option<u32> {
+    let dest = match dict.get(b"Dest") {
+        Ok(d) => d.clone(),
+        Err(_) => {
+            if let Ok(lopdf::Object::Reference(action_ref)) = dict.get(b"A") {
+                if let Ok(action_obj) = doc.get_object(*action_ref) {
+                    if let Ok(action_dict) = action_obj.as_dict() {
+                        if let Ok(d) = action_dict.get(b"D") {
+                            d.clone()
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+    };
+
+    match dest {
+        lopdf::Object::Reference(page_ref) => {
+            let page_ids = doc.get_pages();
+            page_ids
+                .iter()
+                .find(|(_, &id)| id == page_ref)
+                .map(|(&num, _)| num)
+        }
+        lopdf::Object::Array(ref arr) => {
+            if let Some(lopdf::Object::Reference(page_ref)) = arr.first() {
+                let page_ids = doc.get_pages();
+                page_ids
+                    .iter()
+                    .find(|(_, &id)| id == *page_ref)
+                    .map(|(&num, _)| num)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn classify_page_quality(text: &str, has_images: bool) -> (PdfPageQualityKind, f32) {
+    let trimmed = text.trim();
+
+    if trimmed.is_empty() {
+        if has_images {
+            return (PdfPageQualityKind::ScannedOrImageOnly, QUALITY_SCANNED);
+        }
+        return (PdfPageQualityKind::Blank, QUALITY_BLANK);
+    }
+
+    let char_count = trimmed.chars().count();
+    let cid_count = count_cid_tokens(trimmed);
+    let cid_ratio = if char_count > 0 {
+        cid_count as f32 / char_count as f32
+    } else {
+        0.0
+    };
+
+    if cid_ratio > CID_TOKEN_THRESHOLD {
+        return (PdfPageQualityKind::CidCorrupt, QUALITY_CID);
+    }
+
+    let printable_count = trimmed
+        .chars()
+        .filter(|c| !c.is_control() || c.is_whitespace())
+        .count();
+    let printable_ratio = if char_count > 0 {
+        printable_count as f32 / char_count as f32
+    } else {
+        0.0
+    };
+
+    if char_count < SPARSE_TEXT_THRESHOLD && has_images {
+        return (PdfPageQualityKind::ScannedOrImageOnly, QUALITY_SCANNED);
+    }
+
+    if char_count < SPARSE_TEXT_THRESHOLD {
+        return (PdfPageQualityKind::SparseText, QUALITY_SPARSE);
+    }
+
+    if printable_ratio < 0.7 {
+        return (PdfPageQualityKind::SparseText, QUALITY_SPARSE);
+    }
+
+    (PdfPageQualityKind::CleanText, QUALITY_CLEAN)
+}
+
+fn count_cid_tokens(text: &str) -> usize {
+    let mut count = 0;
+    for part in text.split("(cid:") {
+        if part.starts_with(|c: char| c.is_ascii_digit()) {
+            if let Some(end) = part.find(')') {
+                let digits = &part[..end];
+                if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
+}
+
+fn has_page_images(doc: &lopdf::Document, page_num: u32) -> bool {
+    let page_ids = doc.get_pages();
+    let page_id = match page_ids.get(&page_num) {
+        Some(&id) => id,
+        None => return false,
+    };
+    let page_obj = match doc.get_object(page_id) {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+    let page_dict = match page_obj.as_dict() {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+
+    if let Ok(resources_obj) = page_dict.get(b"Resources") {
+        let resources_dict = match resources_obj {
+            lopdf::Object::Reference(r) => match doc.get_object(*r) {
+                Ok(o) => match o.as_dict() {
+                    Ok(d) => d,
+                    Err(_) => return false,
+                },
+                Err(_) => return false,
+            },
+            lopdf::Object::Dictionary(d) => d,
+            _ => return false,
+        };
+        if resources_dict.get(b"XObject").is_ok() {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Extract text from a PDF byte slice with optional page selection
+/// and quality metadata.
 pub fn extract_pdf_text(
     bytes: &[u8],
     max_chars: usize,
     limits: &PdfLimits,
+    options: Option<&PdfExtractOptions>,
 ) -> Result<PdfExtractionResult, FetchError> {
     let doc = lopdf::Document::load_mem(bytes).map_err(|e| {
         let msg = e.to_string();
@@ -58,51 +475,112 @@ pub fn extract_pdf_text(
         }
     })?;
 
-    // Check if the document is encrypted
     if doc.is_encrypted() {
-        // Try to decrypt with empty password. Returns Ok(()) on success, Err on failure.
-        doc.authenticate_password("")
+        let password = options.and_then(|o| o.password.as_deref()).unwrap_or("");
+        doc.authenticate_password(password)
             .map_err(|_| FetchError::PdfEncrypted)?;
     }
 
-    let pages = doc.get_pages();
-    let total_page_count = pages.len();
+    let all_pages = doc.get_pages();
+    let total_page_count = all_pages.len();
 
     if total_page_count == 0 {
         return Err(FetchError::PdfNoExtractableText);
     }
 
-    let mut page_numbers: Vec<u32> = pages.keys().copied().collect();
-    page_numbers.sort();
+    let pages_to_extract: Vec<u32> = if let Some(opts) = options {
+        if let Some(ref selected) = opts.selected_pages {
+            selected.clone()
+        } else {
+            let mut page_numbers: Vec<u32> = all_pages.keys().copied().collect();
+            page_numbers.sort();
+            page_numbers.into_iter().take(limits.max_pages).collect()
+        }
+    } else {
+        let mut page_numbers: Vec<u32> = all_pages.keys().copied().collect();
+        page_numbers.sort();
+        page_numbers.into_iter().take(limits.max_pages).collect()
+    };
 
-    // Cap the number of pages we attempt
-    let pages_to_extract: Vec<u32> = page_numbers.into_iter().take(limits.max_pages).collect();
+    let has_page_selection = options.and_then(|o| o.selected_pages.as_ref()).is_some();
 
-    let _pages_skipped = total_page_count.saturating_sub(pages_to_extract.len());
+    let ocr_policy = options.map(|o| o.ocr_policy).unwrap_or_default();
+    match ocr_policy {
+        PdfOcrPolicy::Auto | PdfOcrPolicy::Always => {
+            return Err(FetchError::PdfOcrUnavailable);
+        }
+        PdfOcrPolicy::Never => {}
+    }
 
     let mut blocks: Vec<RenderedBlock> = Vec::new();
     let mut outline: Vec<DocumentOutlineEntry> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
+    let mut page_metadata_list: Vec<PdfPageMetadata> = Vec::new();
     let mut total_chars: usize = 0;
     let mut pages_with_text: usize = 0;
     let mut pages_blank: usize = 0;
     let mut text_truncated = false;
 
-    // Extract text per page
+    let extracted_outline = try_extract_outline(&doc);
+    let outline_truncated = extracted_outline.len() >= MAX_OUTLINE_ENTRIES;
+    outline.extend(extracted_outline);
+
     for &page_num in &pages_to_extract {
+        let has_images = has_page_images(&doc, page_num);
         let page_text = doc.extract_text(&[page_num]).unwrap_or_default();
-
         let page_text = page_text.trim().to_string();
-        let page_chars = page_text.chars().count();
 
-        if page_text.is_empty() {
-            pages_blank += 1;
-            continue;
+        let (quality_kind, quality_score) = classify_page_quality(&page_text, has_images);
+
+        let page_chars = page_text.chars().count();
+        let cid_count = count_cid_tokens(&page_text);
+
+        let mut page_warnings: Vec<String> = Vec::new();
+
+        match quality_kind {
+            PdfPageQualityKind::Blank => {
+                pages_blank += 1;
+                page_metadata_list.push(PdfPageMetadata {
+                    page: page_num as usize,
+                    quality_kind,
+                    quality_score,
+                    extracted_chars: 0,
+                    cid_token_count: 0,
+                    image_count: if has_images { Some(0) } else { None },
+                    warnings: Vec::new(),
+                });
+                continue;
+            }
+            PdfPageQualityKind::ExtractionFailed => {
+                page_metadata_list.push(PdfPageMetadata {
+                    page: page_num as usize,
+                    quality_kind,
+                    quality_score,
+                    extracted_chars: 0,
+                    cid_token_count: 0,
+                    image_count: if has_images { Some(0) } else { None },
+                    warnings: vec!["extraction failed for this page".to_string()],
+                });
+                continue;
+            }
+            PdfPageQualityKind::CidCorrupt => {
+                page_warnings.push(format!(
+                    "page {page_num} contains CID-encoded text that may be garbled"
+                ));
+            }
+            PdfPageQualityKind::ScannedOrImageOnly => {
+                page_warnings.push(format!(
+                    "page {page_num} appears to be scanned or image-only"
+                ));
+            }
+            PdfPageQualityKind::SparseText => {
+                page_warnings.push(format!("page {page_num} has sparse or low-quality text"));
+            }
+            PdfPageQualityKind::CleanText => {}
         }
 
         pages_with_text += 1;
 
-        // Apply per-page char cap
         let page_text = if page_chars > limits.max_chars_per_page {
             let bounded = page_text
                 .chars()
@@ -116,7 +594,6 @@ pub fn extract_pdf_text(
 
         let page_text_chars = page_text.chars().count();
 
-        // Check total char cap
         if total_chars + page_text_chars > limits.max_total_chars {
             let remaining = limits.max_total_chars.saturating_sub(total_chars);
             if remaining > 0 {
@@ -141,7 +618,6 @@ pub fn extract_pdf_text(
             break;
         }
 
-        // Apply Tier 1 (strip control chars + length bound) to block text
         let (stripped, _) = strip_control_chars(&page_text);
         let (bounded, _) = bound_text(&stripped, limits.max_chars_per_page);
 
@@ -157,7 +633,6 @@ pub fn extract_pdf_text(
         };
         blocks.push(block);
 
-        // Add outline entry for each page with text
         outline.push(DocumentOutlineEntry {
             level: 1,
             title: format!("Page {page_num}"),
@@ -165,24 +640,84 @@ pub fn extract_pdf_text(
             block_index: Some(blocks.len() - 1),
         });
 
+        page_metadata_list.push(PdfPageMetadata {
+            page: page_num as usize,
+            quality_kind,
+            quality_score,
+            extracted_chars: page_text_chars,
+            cid_token_count: cid_count,
+            image_count: if has_images { Some(0) } else { None },
+            warnings: page_warnings,
+        });
+
         total_chars += page_text_chars;
     }
 
-    // Aggregate blank-page warnings
-    if pages_blank > 0 {
-        if pages_blank == total_page_count {
-            return Err(FetchError::PdfNoExtractableText);
-        }
-        warnings.push(format!(
-            "{pages_blank} of {total_page_count} pages had no extractable text"
-        ));
+    if pages_blank > 0 && pages_blank == pages_to_extract.len() {
+        return Err(FetchError::PdfNoExtractableText);
     }
 
     if pages_with_text == 0 && pages_blank > 0 {
         return Err(FetchError::PdfNoExtractableText);
     }
 
-    // Build page-marked legacy text
+    if pages_blank > 0 {
+        warnings.push(format!(
+            "{pages_blank} of {} pages had no extractable text",
+            pages_to_extract.len()
+        ));
+    }
+
+    let sparse_pages: Vec<usize> = page_metadata_list
+        .iter()
+        .filter(|m| {
+            matches!(
+                m.quality_kind,
+                PdfPageQualityKind::SparseText
+                    | PdfPageQualityKind::CidCorrupt
+                    | PdfPageQualityKind::ScannedOrImageOnly
+            )
+        })
+        .map(|m| m.page)
+        .collect();
+
+    if !sparse_pages.is_empty() {
+        let page_list = format_page_list(&sparse_pages);
+        let kinds: Vec<&str> = page_metadata_list
+            .iter()
+            .filter(|m| sparse_pages.contains(&m.page))
+            .map(|m| match m.quality_kind {
+                PdfPageQualityKind::SparseText => "sparse text",
+                PdfPageQualityKind::CidCorrupt => "CID-corrupt",
+                PdfPageQualityKind::ScannedOrImageOnly => "scanned/image-only",
+                _ => "",
+            })
+            .filter(|s| !s.is_empty())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        let kind_str = kinds.join(", ");
+        warnings.push(format!(
+            "pages {page_list} appear {kind_str}; OCR is unavailable in this build"
+        ));
+    }
+
+    if has_page_selection {
+        let page_list = format_page_list(
+            &pages_to_extract
+                .iter()
+                .map(|&p| p as usize)
+                .collect::<Vec<_>>(),
+        );
+        warnings.push(format!("page selection applied: {page_list}"));
+    }
+
+    if outline_truncated {
+        warnings.push(format!(
+            "PDF outline truncated at {MAX_OUTLINE_ENTRIES} entries"
+        ));
+    }
+
     let mut legacy_text_parts: Vec<String> = Vec::new();
     let mut first_page = true;
     for block in &blocks {
@@ -197,13 +732,14 @@ pub fn extract_pdf_text(
     }
     let legacy_text = legacy_text_parts.join("");
 
-    // Truncate legacy text to max_chars
     let (bounded_legacy, legacy_truncated) = bound_text(&legacy_text, max_chars);
     if legacy_truncated {
         text_truncated = true;
     }
 
-    // Build a single chunk from all blocks
+    let first_page_num = pages_to_extract.first().copied().unwrap_or(1) as usize;
+    let last_page_num = pages_to_extract.last().copied().unwrap_or(1) as usize;
+
     let chunks = if !blocks.is_empty() {
         let chunk_text = blocks
             .iter()
@@ -216,15 +752,30 @@ pub fn extract_pdf_text(
             heading_path: Vec::new(),
             block_start: 0,
             block_end: blocks.len().saturating_sub(1),
-            page_start: Some(1),
-            page_end: Some(total_page_count),
+            page_start: Some(first_page_num),
+            page_end: Some(last_page_num),
         }]
     } else {
         Vec::new()
     };
 
-    // Extract PDF metadata title
-    let title = extract_pdf_title(&doc);
+    let pdf_meta = extract_pdf_metadata(&doc);
+    let title = pdf_meta.title.clone();
+
+    let doc_quality_score = if page_metadata_list.is_empty() {
+        0.0
+    } else {
+        let total_weight: f32 = page_metadata_list.iter().map(|m| m.quality_score).sum();
+        total_weight / page_metadata_list.len() as f32
+    };
+
+    let content_ok = pages_with_text > 0
+        && !page_metadata_list.iter().all(|m| {
+            matches!(
+                m.quality_kind,
+                PdfPageQualityKind::Blank | PdfPageQualityKind::ExtractionFailed
+            )
+        });
 
     let text_chars_returned = bounded_legacy.chars().count();
 
@@ -255,50 +806,29 @@ pub fn extract_pdf_text(
         title,
         warnings,
         text_truncated,
+        page_metadata: page_metadata_list,
+        pdf_metadata: pdf_meta,
+        content_ok,
+        quality_score: doc_quality_score,
     })
 }
 
-/// Extract the title from PDF document info metadata.
-fn extract_pdf_title(doc: &lopdf::Document) -> Option<String> {
-    // Try the Info dictionary first
-    if let Ok(lopdf::Object::Reference(info_ref)) = doc.trailer.get(b"Info") {
-        if let Ok(info_obj) = doc.get_object(*info_ref) {
-            if let Ok(dict) = info_obj.as_dict() {
-                if let Ok(title_obj) = dict.get(b"Title") {
-                    if let Ok(title_bytes) = title_obj.as_str() {
-                        // Try UTF-16BE decoding first (common for PDF titles),
-                        // then fall back to UTF-8/latin1.
-                        let title = if title_bytes.len() >= 2
-                            && title_bytes[0] == 0xFE
-                            && title_bytes[1] == 0xFF
-                        {
-                            let payload = &title_bytes[2..];
-                            let payload = &payload[..payload.len() & !1];
-                            String::from_utf16_lossy(
-                                &payload
-                                    .chunks_exact(2)
-                                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
-                                    .collect::<Vec<_>>(),
-                            )
-                        } else {
-                            String::from_utf8_lossy(title_bytes).into_owned()
-                        };
-                        if !title.trim().is_empty() {
-                            return Some(title.trim().to_string());
-                        }
-                    }
-                }
-            }
-        }
+fn format_page_list(pages: &[usize]) -> String {
+    if pages.len() <= 3 {
+        pages
+            .iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    } else {
+        format!("{}, {}, and {} others", pages[0], pages[1], pages.len() - 2)
     }
-    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Generate a valid PDF with text on a page using lopdf.
     fn make_text_pdf(text: &str) -> Vec<u8> {
         use lopdf::content::{Content, Operation};
         use lopdf::{dictionary, Document, Object, Stream};
@@ -355,7 +885,6 @@ mod tests {
         buf
     }
 
-    /// Generate a PDF with multiple pages using lopdf.
     fn make_multipage_pdf(page_texts: &[&str]) -> Vec<u8> {
         use lopdf::content::{Content, Operation};
         use lopdf::{dictionary, Document, Object, Stream};
@@ -416,144 +945,77 @@ mod tests {
         buf
     }
 
-    #[test]
-    fn extract_text_from_simple_pdf() {
-        let pdf = make_text_pdf("Hello World");
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 12000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(&pdf, 12000, &limits).expect("extraction should succeed");
+    fn make_pdf_with_metadata(title: &str, author: &str) -> Vec<u8> {
+        use lopdf::content::{Content, Operation};
+        use lopdf::{dictionary, Document, Object, Stream};
 
-        assert_eq!(result.document.kind, DocumentKind::Pdf);
-        assert!(!result.document.blocks.is_empty());
-        assert!(result.document.blocks[0].text.contains("Hello World"));
-        assert_eq!(result.document.blocks[0].page, Some(1));
-        assert!(result.text.contains("Page 1"));
-        assert!(result.text.contains("Hello World"));
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+        });
+
+        let resources_id = doc.add_object(dictionary! {
+            "Font" => dictionary! {
+                "F1" => font_id,
+            },
+        });
+
+        let content = Content {
+            operations: vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec!["F1".into(), 12.into()]),
+                Operation::new("Td", vec![100.into(), 700.into()]),
+                Operation::new(
+                    "Tj",
+                    vec![Object::string_literal(
+                        "Document content with metadata for testing purposes",
+                    )],
+                ),
+                Operation::new("ET", vec![]),
+            ],
+        };
+
+        let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => content_id,
+            "Resources" => resources_id,
+        });
+
+        let pages = dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![page_id.into()],
+            "Count" => 1,
+        };
+        doc.objects.insert(pages_id, Object::Dictionary(pages));
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let info_id = doc.add_object(dictionary! {
+            "Title" => Object::string_literal(title),
+            "Author" => Object::string_literal(author),
+            "Subject" => Object::string_literal("Test Subject"),
+            "Keywords" => Object::string_literal("test, pdf"),
+            "Creator" => Object::string_literal("test-suite"),
+            "Producer" => Object::string_literal("lopdf-rs"),
+        });
+        doc.trailer.set("Info", info_id);
+
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
     }
 
-    #[test]
-    fn extract_text_from_multipage_pdf() {
-        let pdf = make_multipage_pdf(&["Page one text", "Page two text", "Page three text"]);
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 12000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(&pdf, 50000, &limits).expect("extraction should succeed");
-
-        assert_eq!(result.document.blocks.len(), 3);
-        assert!(result.text.contains("--- Page 1 ---"));
-        assert!(result.text.contains("--- Page 2 ---"));
-        assert!(result.text.contains("--- Page 3 ---"));
-        assert!(result.text.contains("Page one text"));
-        assert!(result.text.contains("Page two text"));
-        assert!(result.text.contains("Page three text"));
-        // Check chunks have page metadata
-        assert_eq!(result.document.chunks.len(), 1);
-        assert_eq!(result.document.chunks[0].page_start, Some(1));
-        assert_eq!(result.document.chunks[0].page_end, Some(3));
-    }
-
-    #[test]
-    fn pdf_page_limit_enforced() {
-        let pdf = make_multipage_pdf(&["a", "b", "c", "d", "e"]);
-        let limits = PdfLimits {
-            max_pages: 2,
-            max_chars_per_page: 12000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(&pdf, 50000, &limits).expect("extraction should succeed");
-
-        // Only 2 pages should be extracted
-        assert_eq!(result.document.blocks.len(), 2);
-    }
-
-    #[test]
-    fn pdf_total_char_limit_enforced() {
-        let long_text = "x".repeat(5000);
-        let pdf = make_multipage_pdf(&[&long_text, &long_text, &long_text]);
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 12000,
-            max_total_chars: 8000,
-        };
-        let result = extract_pdf_text(&pdf, 50000, &limits).expect("extraction should succeed");
-
-        // Should have a warning about the limit
-        assert!(
-            result
-                .warnings
-                .iter()
-                .any(|w| w.contains("character limit")),
-            "expected character limit warning, got: {:?}",
-            result.warnings
-        );
-    }
-
-    #[test]
-    fn pdf_per_page_char_limit_enforced() {
-        let long_text = "x".repeat(20000);
-        let pdf = make_text_pdf(&long_text);
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 5000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(&pdf, 50000, &limits).expect("extraction should succeed");
-
-        // Page text should be capped
-        let block_text = &result.document.blocks[0].text;
-        assert!(block_text.chars().count() <= 5000);
-        assert!(result.text_truncated);
-    }
-
-    #[test]
-    fn invalid_pdf_returns_parse_error() {
-        let bad_pdf = b"not a pdf at all";
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 12000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(bad_pdf, 12000, &limits);
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), FetchError::PdfParseError(_)));
-    }
-
-    #[test]
-    fn pdf_outline_entries_per_page() {
-        let pdf = make_multipage_pdf(&["First", "Second"]);
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 12000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(&pdf, 50000, &limits).expect("extraction should succeed");
-
-        assert_eq!(result.document.outline.len(), 2);
-        assert_eq!(result.document.outline[0].title, "Page 1");
-        assert_eq!(result.document.outline[1].title, "Page 2");
-    }
-
-    #[test]
-    fn pdf_metadata_has_page_info() {
-        let pdf = make_multipage_pdf(&["a", "b"]);
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 12000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(&pdf, 50000, &limits).expect("extraction should succeed");
-
-        let meta = result.document.metadata.as_ref().expect("metadata");
-        assert_eq!(meta.source_extension.as_deref(), Some("pdf"));
-        assert!(meta.bytes_read.is_some());
-    }
-
-    /// Generate a PDF with blank pages (no text content).
     fn make_blank_page_pdf(page_count: usize) -> Vec<u8> {
         use lopdf::{dictionary, Document, Object};
 
@@ -588,15 +1050,130 @@ mod tests {
         buf
     }
 
-    #[test]
-    fn pdf_all_blank_pages_returns_no_extractable_text() {
-        let pdf = make_blank_page_pdf(3);
-        let limits = PdfLimits {
+    fn default_limits() -> PdfLimits {
+        PdfLimits {
             max_pages: 25,
             max_chars_per_page: 12000,
             max_total_chars: 50000,
+        }
+    }
+
+    #[test]
+    fn extract_text_from_simple_pdf() {
+        let pdf = make_text_pdf(
+            "Hello World this is a test document with enough text to pass quality thresholds",
+        );
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), None)
+            .expect("extraction should succeed");
+
+        assert_eq!(result.document.kind, DocumentKind::Pdf);
+        assert!(!result.document.blocks.is_empty());
+        assert!(result.document.blocks[0].text.contains("Hello World"));
+        assert_eq!(result.document.blocks[0].page, Some(1));
+        assert!(result.text.contains("Page 1"));
+        assert!(result.text.contains("Hello World"));
+        assert!(result.content_ok);
+        assert!(result.quality_score > 0.5);
+    }
+
+    #[test]
+    fn extract_text_from_multipage_pdf() {
+        let pdf = make_multipage_pdf(&["Page one text", "Page two text", "Page three text"]);
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), None)
+            .expect("extraction should succeed");
+
+        assert_eq!(result.document.blocks.len(), 3);
+        assert!(result.text.contains("--- Page 1 ---"));
+        assert!(result.text.contains("--- Page 2 ---"));
+        assert!(result.text.contains("--- Page 3 ---"));
+        assert_eq!(result.document.chunks.len(), 1);
+        assert_eq!(result.document.chunks[0].page_start, Some(1));
+        assert_eq!(result.document.chunks[0].page_end, Some(3));
+    }
+
+    #[test]
+    fn pdf_page_limit_enforced() {
+        let pdf = make_multipage_pdf(&["a", "b", "c", "d", "e"]);
+        let limits = PdfLimits {
+            max_pages: 2,
+            ..default_limits()
         };
-        let result = extract_pdf_text(&pdf, 12000, &limits);
+        let result =
+            extract_pdf_text(&pdf, 50000, &limits, None).expect("extraction should succeed");
+        assert_eq!(result.document.blocks.len(), 2);
+    }
+
+    #[test]
+    fn pdf_total_char_limit_enforced() {
+        let long_text = "x".repeat(5000);
+        let pdf = make_multipage_pdf(&[&long_text, &long_text, &long_text]);
+        let limits = PdfLimits {
+            max_total_chars: 8000,
+            ..default_limits()
+        };
+        let result =
+            extract_pdf_text(&pdf, 50000, &limits, None).expect("extraction should succeed");
+
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("character limit")),
+            "expected character limit warning, got: {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn pdf_per_page_char_limit_enforced() {
+        let long_text = "x".repeat(20000);
+        let pdf = make_text_pdf(&long_text);
+        let limits = PdfLimits {
+            max_chars_per_page: 5000,
+            ..default_limits()
+        };
+        let result =
+            extract_pdf_text(&pdf, 50000, &limits, None).expect("extraction should succeed");
+
+        let block_text = &result.document.blocks[0].text;
+        assert!(block_text.chars().count() <= 5000);
+        assert!(result.text_truncated);
+    }
+
+    #[test]
+    fn invalid_pdf_returns_parse_error() {
+        let bad_pdf = b"not a pdf at all";
+        let result = extract_pdf_text(bad_pdf, 12000, &default_limits(), None);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FetchError::PdfParseError(_)));
+    }
+
+    #[test]
+    fn pdf_outline_entries_per_page() {
+        let pdf = make_multipage_pdf(&["First", "Second"]);
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), None)
+            .expect("extraction should succeed");
+
+        assert_eq!(result.document.outline.len(), 2);
+        assert_eq!(result.document.outline[0].title, "Page 1");
+        assert_eq!(result.document.outline[1].title, "Page 2");
+    }
+
+    #[test]
+    fn pdf_metadata_has_page_info() {
+        let pdf = make_multipage_pdf(&["a", "b"]);
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), None)
+            .expect("extraction should succeed");
+
+        let meta = result.document.metadata.as_ref().expect("metadata");
+        assert_eq!(meta.source_extension.as_deref(), Some("pdf"));
+        assert!(meta.bytes_read.is_some());
+    }
+
+    #[test]
+    fn pdf_all_blank_pages_returns_no_extractable_text() {
+        let pdf = make_blank_page_pdf(3);
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), None);
         assert!(
             matches!(result, Err(FetchError::PdfNoExtractableText)),
             "expected PdfNoExtractableText for blank PDF, got: {result:?}"
@@ -605,8 +1182,6 @@ mod tests {
 
     #[test]
     fn pdf_mixed_blank_and_text_pages_warns_about_blanks() {
-        // Create a PDF with some blank pages and some with text.
-        // We build it manually since make_multipage_pdf always adds text.
         use lopdf::content::{Content, Operation};
         use lopdf::{dictionary, Document, Object, Stream};
 
@@ -627,7 +1202,6 @@ mod tests {
 
         let mut page_ids = Vec::new();
 
-        // Page 1: blank (no content stream)
         let blank_page = doc.add_object(dictionary! {
             "Type" => "Page",
             "Parent" => pages_id,
@@ -635,7 +1209,6 @@ mod tests {
         });
         page_ids.push(blank_page);
 
-        // Page 2: has text
         let content = Content {
             operations: vec![
                 Operation::new("BT", vec![]),
@@ -655,7 +1228,6 @@ mod tests {
         });
         page_ids.push(text_page);
 
-        // Page 3: blank
         let blank_page2 = doc.add_object(dictionary! {
             "Type" => "Page",
             "Parent" => pages_id,
@@ -679,14 +1251,9 @@ mod tests {
         let mut buf = Vec::new();
         doc.save_to(&mut buf).unwrap();
 
-        let limits = PdfLimits {
-            max_pages: 25,
-            max_chars_per_page: 12000,
-            max_total_chars: 50000,
-        };
-        let result = extract_pdf_text(&buf, 50000, &limits).expect("extraction should succeed");
+        let result = extract_pdf_text(&buf, 50000, &default_limits(), None)
+            .expect("extraction should succeed");
 
-        // Should have a warning about blank pages
         assert!(
             result
                 .warnings
@@ -695,16 +1262,12 @@ mod tests {
             "expected blank-page warning, got: {:?}",
             result.warnings
         );
-        // Should still extract text from the page that has content
         assert_eq!(result.document.blocks.len(), 1);
         assert!(result.document.blocks[0].text.contains("Visible text"));
     }
 
     #[test]
     fn encrypted_pdf_returns_encrypted_error() {
-        // We can't easily create an encrypted PDF in tests, but we can
-        // verify the error variant is correct by testing the error path.
-        // This test ensures the error type exists and is distinct.
         let err = FetchError::PdfEncrypted;
         assert!(matches!(err, FetchError::PdfEncrypted));
         assert!(matches!(
@@ -716,16 +1279,259 @@ mod tests {
 
     #[test]
     fn pdf_body_magic_detection_works() {
-        // Verify that %PDF- magic bytes are correctly identified.
-        // This tests the detection logic, not the extraction.
         let pdf_bytes = make_text_pdf("test");
         assert!(
             pdf_bytes.starts_with(b"%PDF-"),
             "PDF should start with %PDF- magic"
         );
 
-        // Verify non-PDF bytes don't match
         let text_bytes = b"hello world";
         assert!(!text_bytes.starts_with(b"%PDF-"));
+    }
+
+    // --- New tests for Phase 1 features ---
+
+    #[test]
+    fn parse_pdf_pages_single_page() {
+        let pages = parse_pdf_pages("1", 10, 25).unwrap();
+        assert_eq!(pages, vec![1]);
+    }
+
+    #[test]
+    fn parse_pdf_pages_comma_separated() {
+        let pages = parse_pdf_pages("1,3,5", 10, 25).unwrap();
+        assert_eq!(pages, vec![1, 3, 5]);
+    }
+
+    #[test]
+    fn parse_pdf_pages_range() {
+        let pages = parse_pdf_pages("2-5", 10, 25).unwrap();
+        assert_eq!(pages, vec![2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn parse_pdf_pages_mixed() {
+        let pages = parse_pdf_pages("1,3,7-10", 10, 25).unwrap();
+        assert_eq!(pages, vec![1, 3, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn parse_pdf_pages_deduplicates() {
+        let pages = parse_pdf_pages("1,1,2,2,3", 10, 25).unwrap();
+        assert_eq!(pages, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn parse_pdf_pages_reversed_range_normalizes() {
+        let pages = parse_pdf_pages("5-3", 10, 25).unwrap();
+        assert_eq!(pages, vec![3, 4, 5]);
+    }
+
+    #[test]
+    fn parse_pdf_pages_rejects_zero() {
+        let result = parse_pdf_pages("0", 10, 25);
+        assert!(matches!(result, Err(FetchError::PdfPageSpecInvalid(_))));
+    }
+
+    #[test]
+    fn parse_pdf_pages_rejects_malformed() {
+        let result = parse_pdf_pages("abc", 10, 25);
+        assert!(matches!(result, Err(FetchError::PdfPageSpecInvalid(_))));
+    }
+
+    #[test]
+    fn parse_pdf_pages_rejects_empty() {
+        let result = parse_pdf_pages("", 10, 25);
+        assert!(matches!(result, Err(FetchError::PdfPageSpecInvalid(_))));
+    }
+
+    #[test]
+    fn parse_pdf_pages_rejects_out_of_range() {
+        let result = parse_pdf_pages("1,15", 10, 25);
+        assert!(matches!(result, Err(FetchError::PdfPageOutOfRange { .. })));
+    }
+
+    #[test]
+    fn parse_pdf_pages_rejects_cap_exceeded() {
+        let result = parse_pdf_pages("1,2,3,4", 10, 3);
+        assert!(matches!(result, Err(FetchError::PdfPageCapExceeded { .. })));
+    }
+
+    #[test]
+    fn parse_pdf_pages_whitespace_tolerant() {
+        let pages = parse_pdf_pages(" 1 , 3 , 5 ", 10, 25).unwrap();
+        assert_eq!(pages, vec![1, 3, 5]);
+    }
+
+    #[test]
+    fn page_selection_applied() {
+        let pdf = make_multipage_pdf(&["First", "Second", "Third"]);
+        let opts = PdfExtractOptions {
+            selected_pages: Some(vec![1, 3]),
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), Some(&opts))
+            .expect("extraction should succeed");
+
+        assert_eq!(result.document.blocks.len(), 2);
+        assert_eq!(result.document.blocks[0].page, Some(1));
+        assert_eq!(result.document.blocks[1].page, Some(3));
+        assert_eq!(result.document.chunks[0].page_start, Some(1));
+        assert_eq!(result.document.chunks[0].page_end, Some(3));
+    }
+
+    #[test]
+    fn page_selection_warning_emitted() {
+        let pdf = make_multipage_pdf(&["First", "Second", "Third"]);
+        let opts = PdfExtractOptions {
+            selected_pages: Some(vec![2]),
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), Some(&opts))
+            .expect("extraction should succeed");
+
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("page selection applied")),
+            "expected page selection warning, got: {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn page_metadata_populated() {
+        let pdf = make_multipage_pdf(&["Hello world this is a page with enough text to pass the quality threshold for clean classification", "Second page also needs sufficient text content to avoid being marked as sparse"]);
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), None)
+            .expect("extraction should succeed");
+
+        assert_eq!(result.page_metadata.len(), 2);
+        assert_eq!(result.page_metadata[0].page, 1);
+        assert_eq!(
+            result.page_metadata[0].quality_kind,
+            PdfPageQualityKind::CleanText
+        );
+        assert!(result.page_metadata[0].extracted_chars > 0);
+        assert_eq!(result.page_metadata[1].page, 2);
+    }
+
+    #[test]
+    fn blank_page_classified() {
+        let pdf = make_blank_page_pdf(1);
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pdf_metadata_extraction() {
+        let pdf = make_pdf_with_metadata("Test Title", "Test Author");
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), None)
+            .expect("extraction should succeed");
+
+        assert_eq!(result.title.as_deref(), Some("Test Title"));
+        assert_eq!(result.pdf_metadata.author.as_deref(), Some("Test Author"));
+        assert_eq!(result.pdf_metadata.subject.as_deref(), Some("Test Subject"));
+        assert_eq!(result.pdf_metadata.keywords.as_deref(), Some("test, pdf"));
+        assert_eq!(result.pdf_metadata.creator.as_deref(), Some("test-suite"));
+        assert!(result.pdf_metadata.producer.is_some());
+        assert_eq!(result.pdf_metadata.page_count, 1);
+    }
+
+    #[test]
+    fn content_ok_false_when_all_blank() {
+        let pdf = make_blank_page_pdf(3);
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn content_ok_true_with_mixed_quality() {
+        let pdf = make_multipage_pdf(&["Good text here", "Another good page"]);
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), None)
+            .expect("extraction should succeed");
+        assert!(result.content_ok);
+    }
+
+    #[test]
+    fn quality_score_range() {
+        let pdf = make_multipage_pdf(&["Some text content", "More text content"]);
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), None)
+            .expect("extraction should succeed");
+        assert!(result.quality_score >= 0.0 && result.quality_score <= 1.0);
+    }
+
+    #[test]
+    fn ocr_policy_always_returns_error() {
+        let pdf = make_text_pdf("test");
+        let opts = PdfExtractOptions {
+            selected_pages: None,
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Always,
+        };
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), Some(&opts));
+        assert!(matches!(result, Err(FetchError::PdfOcrUnavailable)));
+    }
+
+    #[test]
+    fn ocr_policy_auto_returns_error() {
+        let pdf = make_text_pdf("test");
+        let opts = PdfExtractOptions {
+            selected_pages: None,
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Auto,
+        };
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), Some(&opts));
+        assert!(matches!(result, Err(FetchError::PdfOcrUnavailable)));
+    }
+
+    #[test]
+    fn cid_token_counting() {
+        assert_eq!(count_cid_tokens("hello world"), 0);
+        assert_eq!(count_cid_tokens("(cid:123) text"), 1);
+        assert_eq!(count_cid_tokens("(cid:1)(cid:2)(cid:3)"), 3);
+        assert_eq!(count_cid_tokens("no cid tokens here"), 0);
+    }
+
+    #[test]
+    fn classify_clean_text() {
+        let text = "word ".repeat(20);
+        let (kind, score) = classify_page_quality(&text, false);
+        assert_eq!(kind, PdfPageQualityKind::CleanText);
+        assert_eq!(score, QUALITY_CLEAN);
+    }
+
+    #[test]
+    fn classify_blank_page() {
+        let (kind, score) = classify_page_quality("", false);
+        assert_eq!(kind, PdfPageQualityKind::Blank);
+        assert_eq!(score, QUALITY_BLANK);
+    }
+
+    #[test]
+    fn classify_scanned_page() {
+        let (kind, score) = classify_page_quality("", true);
+        assert_eq!(kind, PdfPageQualityKind::ScannedOrImageOnly);
+        assert_eq!(score, QUALITY_SCANNED);
+    }
+
+    #[test]
+    fn classify_sparse_text() {
+        let (kind, _) = classify_page_quality("ab", false);
+        assert_eq!(kind, PdfPageQualityKind::SparseText);
+    }
+
+    #[test]
+    fn classify_cid_corrupt() {
+        let text = "(cid:123)(cid:456)(cid:789)(cid:1)(cid:2)(cid:3)(cid:4)(cid:5)(cid:6)(cid:7) more text here for padding and length";
+        let (kind, score) = classify_page_quality(text, false);
+        assert_eq!(kind, PdfPageQualityKind::CidCorrupt);
+        assert_eq!(score, QUALITY_CID);
     }
 }

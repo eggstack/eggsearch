@@ -384,6 +384,78 @@ pub struct FetchDocument {
     pub chunks: Vec<DocumentChunk>,
 }
 
+/// Quality classification for an extracted PDF page.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfPageQualityKind {
+    /// Page has readable, mostly clean Unicode text.
+    CleanText,
+    /// Page has some text but it appears sparse or low-quality.
+    SparseText,
+    /// Page text contains significant `(cid:NN)` tokens indicating
+    /// CID-font corruption; extracted text may be garbled.
+    CidCorrupt,
+    /// Page appears to be scanned or image-only with little or no
+    /// extractable text. OCR is not available in this build.
+    ScannedOrImageOnly,
+    /// Page has no extractable text and no image evidence.
+    Blank,
+    /// Text extraction failed for this page.
+    ExtractionFailed,
+}
+
+/// Per-page extraction quality metadata for a PDF page.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PdfPageMetadata {
+    /// 1-based page number within the document.
+    pub page: usize,
+    /// Quality classification for this page.
+    pub quality_kind: PdfPageQualityKind,
+    /// Advisory quality score in [0.0, 1.0]. Higher is better.
+    pub quality_score: f32,
+    /// Number of characters extracted from this page.
+    pub extracted_chars: usize,
+    /// Count of `(cid:NN)` tokens found in the extracted text.
+    pub cid_token_count: usize,
+    /// Number of images detected on this page, if cheaply available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_count: Option<usize>,
+    /// Page-specific warnings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+/// Document-level PDF metadata extracted from the Info dictionary.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+pub struct PdfDocumentMetadata {
+    /// Document title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Document author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Document subject.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// Document keywords.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+    /// Creator application.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creator: Option<String>,
+    /// Producer application.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+    /// Creation date string (raw PDF date format).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creation_date: Option<String>,
+    /// Modification date string (raw PDF date format).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mod_date: Option<String>,
+    /// Total page count in the document.
+    pub page_count: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -117,6 +117,7 @@ impl FetchClient {
         max_chars: Option<usize>,
         extract_mode: ExtractMode,
         include_links: bool,
+        pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
     ) -> Result<WebFetchResponse, FetchError> {
         // Validate the initial URL (scheme, length, localhost literals,
         // obvious private-network literals, credentials).
@@ -474,7 +475,39 @@ impl FetchClient {
                 max_total_chars: self.limits.pdf_max_total_chars,
             };
 
-            let mut pdf_result = super::pdf::extract_pdf_text(&body, max_chars, &pdf_limits)?;
+            let pdf_extract_opts = pdf_options.map(|opts| {
+                let selected_pages = opts.pages.as_ref().and_then(|spec| {
+                    super::pdf::parse_pdf_pages(
+                        spec,
+                        0, // total_pages is checked inside extract_pdf_text
+                        self.limits.pdf_max_pages,
+                    )
+                    .ok()
+                });
+                super::pdf::PdfExtractOptions {
+                    selected_pages,
+                    password: opts.pdf_password.clone(),
+                    include_media: opts.include_media.unwrap_or(false),
+                    ocr_policy: match opts.pdf_ocr {
+                        Some(crate::core::fetch::PdfOcrPolicy::Never) | None => {
+                            super::pdf::PdfOcrPolicy::Never
+                        }
+                        Some(crate::core::fetch::PdfOcrPolicy::Auto) => {
+                            super::pdf::PdfOcrPolicy::Auto
+                        }
+                        Some(crate::core::fetch::PdfOcrPolicy::Always) => {
+                            super::pdf::PdfOcrPolicy::Always
+                        }
+                    },
+                }
+            });
+
+            let mut pdf_result = super::pdf::extract_pdf_text(
+                &body,
+                max_chars,
+                &pdf_limits,
+                pdf_extract_opts.as_ref(),
+            )?;
 
             // Propagate fetch-level context into the PDF document
             // metadata. The extraction function knows nothing about
@@ -1037,7 +1070,7 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/page"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/page"), None, ExtractMode::Text, false, None)
             .await
             .expect("ok");
 
@@ -1071,7 +1104,7 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/note"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/note"), None, ExtractMode::Text, false, None)
             .await
             .expect("ok");
 
@@ -1100,7 +1133,7 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/start"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/start"), None, ExtractMode::Text, false, None)
             .await
             .expect("ok");
         assert_eq!(resp.status, 200);
@@ -1126,7 +1159,7 @@ mod tests {
 
         let client = test_client();
         let result = client
-            .fetch(&server.url("/r/0"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/r/0"), None, ExtractMode::Text, false, None)
             .await;
         assert!(
             result.is_err(),
@@ -1144,7 +1177,13 @@ mod tests {
 
         let client = test_client();
         let err = client
-            .fetch(&server.url("/missing"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/missing"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await
             .expect_err("expected error");
         assert!(
@@ -1169,7 +1208,7 @@ mod tests {
         limits.max_bytes = 1_000; // smaller than the body
         let client = FetchClient::new(limits, "eggsearch/test".to_string(), true).expect("client");
         let result = client
-            .fetch(&server.url("/big"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/big"), None, ExtractMode::Text, false, None)
             .await;
 
         // The implementation streams chunks; an oversize body should either
@@ -1219,6 +1258,7 @@ mod tests {
                 None,
                 ExtractMode::Text,
                 false,
+                None,
             )
             .await;
         let err = result.expect_err("expected content-too-large error from pre-check");
@@ -1240,7 +1280,13 @@ mod tests {
 
         let client = test_client();
         let err = client
-            .fetch(&server.url("/doc.pdf"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/doc.pdf"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await
             .expect_err("expected pdf error");
         // Without the `pdf` feature: PdfNotCompiledIn.
@@ -1270,7 +1316,13 @@ mod tests {
 
         let client = test_client();
         let err = client
-            .fetch(&server.url("/mystery.bin"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/mystery.bin"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await
             .expect_err("expected pdf error from body magic detection");
         // Should be detected as PDF via body magic, then fail with
@@ -1303,7 +1355,7 @@ mod tests {
         limits.timeout_ms = 500;
         let client = FetchClient::new(limits, "eggsearch/test".to_string(), true).expect("client");
         let result = client
-            .fetch(&server.url("/slow"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/slow"), None, ExtractMode::Text, false, None)
             .await;
         let err = result.expect_err("expected timeout");
         assert!(
@@ -1326,7 +1378,7 @@ mod tests {
         let client =
             FetchClient::new(test_limits(), "eggsearch/test".to_string(), false).expect("client");
         let resp = client
-            .fetch(&server.url("/p"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/p"), None, ExtractMode::Text, false, None)
             .await
             .expect("ok");
 
@@ -1357,7 +1409,7 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/inject"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/inject"), None, ExtractMode::Text, false, None)
             .await
             .expect("ok");
 
@@ -1391,7 +1443,13 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/control"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/control"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await
             .expect("ok");
 
@@ -1422,7 +1480,7 @@ mod tests {
         };
         let client = FetchClient::new(limits, "eggsearch/test".to_string(), false).expect("client");
         let result = client
-            .fetch(&server.url("/start"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/start"), None, ExtractMode::Text, false, None)
             .await;
 
         let err = result.expect_err("expected redirect-target-blocked for credentials");
@@ -1457,7 +1515,7 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/a"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/a"), None, ExtractMode::Text, false, None)
             .await
             .expect("ok");
         assert_eq!(resp.status, 200);
@@ -1480,7 +1538,13 @@ mod tests {
 
         let client = test_client();
         let result = client
-            .fetch(&server.url("/chain/0"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/chain/0"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await;
 
         let err = result.expect_err("expected RedirectLimitExceeded");
@@ -1503,7 +1567,7 @@ mod tests {
 
         let client = test_client();
         let result = client
-            .fetch(&server.url("/noloc"), None, ExtractMode::Text, false)
+            .fetch(&server.url("/noloc"), None, ExtractMode::Text, false, None)
             .await;
 
         let err = result.expect_err("expected InvalidRedirectLocation");
@@ -1526,7 +1590,13 @@ mod tests {
 
         let client = test_client();
         let result = client
-            .fetch(&server.url("/emptyloc"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/emptyloc"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await;
 
         let err = result.expect_err("expected InvalidRedirectLocation for empty Location");
@@ -1549,7 +1619,13 @@ mod tests {
         };
         let client = FetchClient::new(limits, "eggsearch/test".to_string(), false).expect("client");
         let result = client
-            .fetch("http://192.168.1.1/secret", None, ExtractMode::Text, false)
+            .fetch(
+                "http://192.168.1.1/secret",
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await;
 
         let err = result.expect_err("expected PrivateNetworkBlocked");
@@ -1576,6 +1652,7 @@ mod tests {
                 None,
                 ExtractMode::Text,
                 false,
+                None,
             )
             .await;
 
@@ -1603,6 +1680,7 @@ mod tests {
                 None,
                 ExtractMode::Text,
                 false,
+                None,
             )
             .await;
 
@@ -1735,7 +1813,13 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/api/data"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/api/data"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await
             .expect("ok");
 
@@ -1763,7 +1847,13 @@ mod tests {
 
         let client = test_client();
         let resp = client
-            .fetch(&server.url("/readme.md"), None, ExtractMode::Text, false)
+            .fetch(
+                &server.url("/readme.md"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
             .await
             .expect("ok");
 

@@ -375,7 +375,7 @@ fn pdf_corpus_exercises_extract_pdf_text() {
     };
     for case in &cases {
         let input = case["input"].as_str().expect("case must have 'input'");
-        let _ = eggsearch::fetch::pdf::extract_pdf_text(input.as_bytes(), 10000, &limits);
+        let _ = eggsearch::fetch::pdf::extract_pdf_text(input.as_bytes(), 10000, &limits, None);
     }
 }
 

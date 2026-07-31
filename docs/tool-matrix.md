@@ -5,7 +5,7 @@ Compact reference for the ten stable MCP tools.
 | Tool | Purpose | Key Inputs | Output | Trust | When to Use |
 |------|---------|------------|--------|-------|-------------|
 | `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `max_results`, `providers` | `Vec<SourceCard>` plus `next_actions` | `external_untrusted` | General web research and source discovery. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
-| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars`, `include_links` | `WebFetchResponse` with optional `FetchDocument` | `external_untrusted` | Inspect a selected page or document |
+| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars`, `include_links`, `pdf` (page selection, OCR policy) | `WebFetchResponse` with optional `FetchDocument` | `external_untrusted` | Inspect a selected page or document |
 | `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators | `items`, optional `max_chars`, `timeout_ms` | `BatchFetchResponse` with per-item results | `external_untrusted` or `local_trusted` | Fetch several known targets in one call |
 | `provider_status` | Diagnostic report of provider config, health, capabilities, and workflow recipes | none required; optional `recipe_detail` (`none`, `summary`, `full`), reserved `probe` (bool) | Provider list with `routable`, `skip_reason`, and `skip_code` fields, `health_views` (per-provider health), `code_hosts`, `health` (snapshots), `probe` (deferred status), `server_capabilities`, `tool_capabilities`, `quality_metadata`, `workflow_recipes` | `local_trusted` | Discover what is actually available before choosing a path |
 | `repo_search` | Structured repository evidence discovery with grouped bundles | optional repo locator fields, `query`, `profile`, `mode` | `RepoSearchResponse` with grouped `SourceCard` bundles and `next_actions` | `external_untrusted` or `local_trusted` | Find code, issues, releases, docs, and repo metadata. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
@@ -48,6 +48,7 @@ Optional credentialed adapters (GitHub, GitLab, Gitea, Sourcegraph, Brave API, S
 - Each provider in `provider_status` includes `routable` (bool), `skip_reason` (optional string), and `skip_code` (optional machine-readable code) indicating whether it can actually be queried. `skip_code` values include `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, and `unknown`.
 - `repo_search` supports `mode = "exact_error"` for exact compiler/runtime/toolchain error text.
 - `web_fetch` supports `extract_mode = "metadata_only"` when you only need page metadata.
+- `web_fetch` supports `pdf.pages` for page selection (e.g., `"1,3,7-10"`) and `pdf.pdf_ocr` for OCR policy. PDF extraction requires the `pdf` feature and `[fetch].pdf_enabled = true`. Each page receives a quality classification; see [fetch architecture](architecture/fetch.md) for details.
 
 ## Trust Semantics
 

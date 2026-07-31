@@ -519,6 +519,9 @@ pub struct WebFetchArgs {
     /// `[fetch].include_links_default` config value when omitted.
     #[serde(default)]
     pub include_links: Option<bool>,
+    /// PDF-specific options. Only applies when fetching a PDF document.
+    #[serde(default)]
+    pub pdf: Option<crate::core::fetch::PdfFetchOptions>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1443,6 +1446,10 @@ pub fn run_provider_status(
             "evidence_bundle": true,
             "document_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
             "pdf_fetch": cfg!(feature = "pdf"),
+            "pdf_text": cfg!(feature = "pdf"),
+            "pdf_layout": false,
+            "pdf_ocr": false,
+            "browser_rendering": false,
             "local_workspace": local_enabled,
         },
         "quality_metadata": {
@@ -1732,7 +1739,13 @@ pub async fn run_web_fetch(
         .unwrap_or(state.config.fetch.include_links_default);
 
     let response = client
-        .fetch(trimmed_url, args.max_chars, extract_mode, include_links)
+        .fetch(
+            trimmed_url,
+            args.max_chars,
+            extract_mode,
+            include_links,
+            args.pdf.as_ref(),
+        )
         .await;
 
     match response {
@@ -2045,7 +2058,13 @@ pub async fn run_repo_fetch(
     // numbers.
     let fetch_max_chars = state.config.fetch.max_chars_cap;
     let response = client
-        .fetch(fetch_url, Some(fetch_max_chars), ExtractMode::Text, false)
+        .fetch(
+            fetch_url,
+            Some(fetch_max_chars),
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await;
 
     match response {
@@ -3074,7 +3093,7 @@ fn make_batch_fetch_future(
                 } else {
                     client
                 };
-                let response = web_client.fetch(&url, Some(em), mode, il).await;
+                let response = web_client.fetch(&url, Some(em), mode, il, None).await;
                 let ok_label = label.clone();
                 match response {
                     Ok(resp) => {
@@ -4053,6 +4072,7 @@ mod tests {
             timeout_ms: Some(1000),
             extract_mode: Some(ExtractMode::Text),
             include_links: Some(false),
+            pdf: None,
         };
         let value = run_web_fetch(state, args).await.unwrap();
         // structured_warnings must always be in the payload (even if empty).
@@ -4072,6 +4092,7 @@ mod tests {
             timeout_ms: Some(0),
             extract_mode: Some(ExtractMode::Text),
             include_links: Some(false),
+            pdf: None,
         };
 
         let err = run_web_fetch(state, args)

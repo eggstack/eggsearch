@@ -48,7 +48,7 @@ pub async fn run(
     let include_links = include_links || cfg.fetch.include_links_default;
 
     let response = client
-        .fetch(url, max_chars, extract_mode, include_links)
+        .fetch(url, max_chars, extract_mode, include_links, None)
         .await
         .map_err(|e| anyhow!("fetch failed: {}: {}", e.error_code(), e))?;
 

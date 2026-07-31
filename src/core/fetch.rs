@@ -39,6 +39,46 @@ pub struct WebFetchRequest {
     /// Whether to include extracted links.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_links: Option<bool>,
+    /// PDF-specific options. Only applies when fetching a PDF document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf: Option<PdfFetchOptions>,
+}
+
+/// PDF-specific fetch options.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PdfFetchOptions {
+    /// Page selection specification. One-indexed. Supports single
+    /// pages ("1"), comma-separated ("1,3,5"), ranges ("1-5"), and
+    /// mixed ("1,3,7-10"). Reversed ranges are normalized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pages: Option<String>,
+    /// Password for encrypted PDFs. Never logged or included in
+    /// stable identifiers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_password: Option<String>,
+    /// Whether to include media metadata. Returns bounded metadata
+    /// only; no rendering or extraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_media: Option<bool>,
+    /// OCR policy. Values other than "never" return a capability
+    /// warning until OCR support is implemented.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_ocr: Option<PdfOcrPolicy>,
+}
+
+/// OCR policy for PDF extraction.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfOcrPolicy {
+    /// Never attempt OCR (default).
+    #[default]
+    Never,
+    /// Automatically decide when to OCR. Returns capability warning
+    /// until OCR is implemented.
+    Auto,
+    /// Always attempt OCR. Returns capability warning until OCR
+    /// is implemented.
+    Always,
 }
 
 /// Classification of an extracted link based on URL heuristics.

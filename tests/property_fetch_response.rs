@@ -67,7 +67,13 @@ async fn metadata_only_mode_skips_body_extraction() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/page"), None, ExtractMode::MetadataOnly, false)
+        .fetch(
+            &server.url("/page"),
+            None,
+            ExtractMode::MetadataOnly,
+            false,
+            None,
+        )
         .await
         .unwrap();
 
@@ -101,7 +107,7 @@ async fn text_mode_returns_body_content() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/page"), None, ExtractMode::Text, false)
+        .fetch(&server.url("/page"), None, ExtractMode::Text, false, None)
         .await
         .unwrap();
 
@@ -129,7 +135,13 @@ async fn max_chars_respects_cap() {
     };
     let client = FetchClient::new(limits, "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/long"), Some(10), ExtractMode::Text, false)
+        .fetch(
+            &server.url("/long"),
+            Some(10),
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await
         .unwrap();
 
@@ -160,7 +172,7 @@ async fn content_length_precheck_rejects_oversized() {
     };
     let client = FetchClient::new(limits, "test".to_string(), true).unwrap();
     let result = client
-        .fetch(&server.url("/big"), None, ExtractMode::Text, false)
+        .fetch(&server.url("/big"), None, ExtractMode::Text, false, None)
         .await;
 
     assert!(
@@ -187,7 +199,7 @@ async fn timeout_enforced() {
     };
     let client = FetchClient::new(limits, "test".to_string(), true).unwrap();
     let result = client
-        .fetch(&server.url("/slow"), None, ExtractMode::Text, false)
+        .fetch(&server.url("/slow"), None, ExtractMode::Text, false, None)
         .await;
 
     assert!(
@@ -208,7 +220,13 @@ async fn redirect_to_credentials_blocked() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), true).unwrap();
     let result = client
-        .fetch(&server.url("/redirect"), None, ExtractMode::Text, false)
+        .fetch(
+            &server.url("/redirect"),
+            None,
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await;
 
     assert!(
@@ -231,7 +249,7 @@ async fn sanitize_disabled_skips_framing() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), false).unwrap();
     let resp = client
-        .fetch(&server.url("/page"), None, ExtractMode::Text, false)
+        .fetch(&server.url("/page"), None, ExtractMode::Text, false, None)
         .await
         .unwrap();
 
@@ -266,7 +284,7 @@ async fn redirect_count_never_exceeds_limit() {
 
     let client = FetchClient::new(limits, "test".to_string(), true).unwrap();
     let result = client
-        .fetch(&server.url("/r0"), None, ExtractMode::Text, false)
+        .fetch(&server.url("/r0"), None, ExtractMode::Text, false, None)
         .await;
 
     assert!(
@@ -290,7 +308,13 @@ async fn stream_error_after_partial_body() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/partial"), None, ExtractMode::Text, false)
+        .fetch(
+            &server.url("/partial"),
+            None,
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await;
 
     assert!(resp.is_ok(), "partial body should still succeed: {resp:?}");
@@ -310,7 +334,13 @@ async fn content_length_larger_than_actual_body() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/mismatch"), None, ExtractMode::Text, false)
+        .fetch(
+            &server.url("/mismatch"),
+            None,
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await;
 
     assert!(
@@ -330,7 +360,13 @@ async fn redirect_without_location_header() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/no-location"), None, ExtractMode::Text, false)
+        .fetch(
+            &server.url("/no-location"),
+            None,
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await;
 
     assert!(
@@ -351,7 +387,13 @@ async fn redirect_with_invalid_utf8_location() {
 
     let client = FetchClient::new(permissive_limits(), "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/bad-redirect"), None, ExtractMode::Text, false)
+        .fetch(
+            &server.url("/bad-redirect"),
+            None,
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await;
 
     assert!(
@@ -379,7 +421,7 @@ async fn max_bytes_body_truncation_when_content_length_honest() {
     };
     let client = FetchClient::new(limits, "test".to_string(), true).unwrap();
     let result = client
-        .fetch(&server.url("/trunc"), None, ExtractMode::Text, false)
+        .fetch(&server.url("/trunc"), None, ExtractMode::Text, false, None)
         .await;
 
     assert!(
@@ -407,7 +449,13 @@ async fn max_chars_exact_boundary() {
     };
     let client = FetchClient::new(limits, "test".to_string(), true).unwrap();
     let resp = client
-        .fetch(&server.url("/exact"), Some(500), ExtractMode::Text, false)
+        .fetch(
+            &server.url("/exact"),
+            Some(500),
+            ExtractMode::Text,
+            false,
+            None,
+        )
         .await
         .unwrap();
 

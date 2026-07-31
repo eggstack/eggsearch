@@ -102,6 +102,20 @@ pub enum WarningCode {
     /// Generic fetch-layer warning not matching a known prefix.
     FetchWarning,
 
+    // --- PDF Quality ---
+    /// A PDF page has sparse or low-quality extracted text.
+    PdfPageSparseText,
+    /// A PDF page contains CID-encoded text that may be garbled.
+    PdfPageCidCorrupt,
+    /// A PDF page appears to be scanned or image-only.
+    PdfPageLikelyScanned,
+    /// PDF outline was truncated at the entry limit.
+    PdfOutlineTruncated,
+    /// PDF page selection was applied.
+    PdfPageSelectionApplied,
+    /// OCR was requested but is unavailable.
+    PdfOcrUnavailable,
+
     // --- Unclassified ---
     /// Generic unclassified search warning not matching a known prefix.
     UnknownWarning,
@@ -217,6 +231,12 @@ impl WarningCode {
             Self::FetchContentTruncated => "fetch_content_truncated",
             Self::FetchLinksTruncated => "fetch_links_truncated",
             Self::FetchWarning => "fetch_warning",
+            Self::PdfPageSparseText => "pdf_page_sparse_text",
+            Self::PdfPageCidCorrupt => "pdf_page_cid_corrupt",
+            Self::PdfPageLikelyScanned => "pdf_page_likely_scanned",
+            Self::PdfOutlineTruncated => "pdf_outline_truncated",
+            Self::PdfPageSelectionApplied => "pdf_page_selection_applied",
+            Self::PdfOcrUnavailable => "pdf_ocr_unavailable",
             Self::UnknownWarning => "unknown_warning",
             Self::RequestDeadlineExceeded => "request_deadline_exceeded",
             Self::SubqueryCapApplied => "subquery_cap_applied",
@@ -287,6 +307,12 @@ impl WarningCode {
             | Self::FetchContentTruncated
             | Self::FetchLinksTruncated
             | Self::FetchWarning
+            | Self::PdfPageSparseText
+            | Self::PdfPageCidCorrupt
+            | Self::PdfPageLikelyScanned
+            | Self::PdfOutlineTruncated
+            | Self::PdfPageSelectionApplied
+            | Self::PdfOcrUnavailable
             | Self::UnknownWarning
             | Self::RequestDeadlineExceeded
             | Self::SubqueryCapApplied
@@ -423,6 +449,24 @@ impl WarningCode {
             }
             Self::FetchWarning => {
                 Some("Fetch-layer warning; review the original message for details.")
+            }
+            Self::PdfPageSparseText => {
+                Some("Page has sparse text; content may be incomplete or degraded.")
+            }
+            Self::PdfPageCidCorrupt => {
+                Some("Page contains CID-encoded text that may be garbled; consider fetching the original PDF.")
+            }
+            Self::PdfPageLikelyScanned => {
+                Some("Page appears scanned or image-only; OCR is not available in this build.")
+            }
+            Self::PdfOutlineTruncated => {
+                Some("PDF outline was truncated; some navigation entries may be missing.")
+            }
+            Self::PdfPageSelectionApplied => {
+                Some("Only selected pages were extracted; other pages were omitted.")
+            }
+            Self::PdfOcrUnavailable => {
+                Some("OCR was requested but is not available; set pdf_ocr to \"never\" or enable an OCR provider.")
             }
             Self::UnknownWarning => {
                 Some("Unclassified warning; review the original message for details.")

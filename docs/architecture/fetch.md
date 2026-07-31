@@ -18,7 +18,7 @@ The fetch module handles all outbound HTTP requests for `web_fetch`, `repo_fetch
 | `render/` | HTML structural rendering (7 submodules: blocks, code, csv, markdown, markdown_source, notebook, text). Converts HTML/code/diff/CSV/notebook content to `RenderedBlock` list |
 | `span.rs` | `SelectedSpan` — symbol/span-aware block expansion for `repo_fetch` |
 | `types.rs` | `FetchError`, `FetchErrorKind` — error types |
-| `pdf.rs` | PDF text extraction (feature-gated: `pdf`), uses `lopdf` |
+| `pdf.rs` | PDF text extraction (feature-gated: `pdf`), uses `lopdf`. Page selection, quality classification, document metadata, outline extraction |
 
 ---
 
@@ -152,6 +152,58 @@ All limits are bounded and configurable via `FetchSection` in config.
 | Tier 1 | Strip control chars + bound text | Always | title, description, body text, all blocks, outline titles |
 | Tier 2 | `<<<EXTERNAL_UNTRUSTED>>>` framing | `sanitize_output = true` | title, description, body text |
 | Tier 3 | Injection marker scan (7 patterns) | `sanitize_output = true` | title, description, body text |
+
+---
+
+## PDF Extraction
+
+PDF extraction is feature-gated (`pdf` Cargo feature) and disabled by default. When enabled, it must also be activated via `[fetch].pdf_enabled = true` in config.
+
+### Page Selection
+
+The `web_fetch` tool accepts optional `pdf.pages` for page selection:
+
+- **Syntax:** `"1"`, `"1,3,5"`, `"1-5"`, `"1,3,7-10"`
+- **Indexing:** One-indexed (page 1 is the first page)
+- **Ranges:** Reversed ranges are normalized (e.g., `5-3` becomes `3-5`)
+- **Validation:** Out-of-range pages, page 0, and malformed input produce errors
+- **Deduplication:** Duplicate pages are deduplicated; output is ascending document order
+- **Cap:** Selected page count respects `pdf_max_pages`
+
+### Quality Classification
+
+Each extracted page receives a quality classification:
+
+| Kind | Meaning |
+|------|---------|
+| `clean_text` | Page has readable, mostly clean Unicode text |
+| `sparse_text` | Page has some text but it appears sparse or low-quality |
+| `cid_corrupt` | Page text contains significant `(cid:NN)` tokens (CID-font corruption) |
+| `scanned_or_image_only` | Page appears scanned or image-only with little extractable text |
+| `blank` | Page has no extractable text and no image evidence |
+| `extraction_failed` | Text extraction failed for this page |
+
+Quality is advisory. A document-level `quality_score` in `[0.0, 1.0]` is computed as a page-weighted average. `content_ok` is `false` when all selected pages are unusable.
+
+### Document Metadata
+
+PDF extraction reads the Info dictionary for: title, author, subject, keywords, creator, producer, creation date, and modification date. Each field is bounded and control-character stripped.
+
+### Outline/Bookmark Extraction
+
+Document outlines (bookmarks) are extracted from the catalog outline tree when present. Extraction is bounded to 200 entries with a maximum nesting depth of 6. Malformed individual entries are skipped rather than failing the entire PDF.
+
+### OCR Policy
+
+The `pdf.pdf_ocr` field accepts `"never"` (default), `"auto"`, or `"always"`. Values other than `"never"` return a capability warning until OCR support is implemented in a future phase.
+
+### Capability Reporting
+
+`provider_status` reports:
+- `pdf_text`: available/unavailable (matches `cfg!(feature = "pdf")`)
+- `pdf_layout`: unavailable
+- `pdf_ocr`: unavailable
+- `browser_rendering`: unavailable
 
 ---
 
