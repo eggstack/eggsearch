@@ -889,8 +889,7 @@ pub async fn read_bounded_body(
             return Err(EngineError::ParseFailed {
                 engine,
                 reason: format!(
-                    "response body too large (Content-Length: {} bytes, limit: {max_bytes} bytes)",
-                    content_length
+                    "response body too large (Content-Length: {content_length} bytes, limit: {max_bytes} bytes)",
                 ),
             });
         }
