@@ -303,6 +303,7 @@ fn walk_element(
                     title: blocks[block_index].text.clone(),
                     anchor,
                     block_index: Some(block_index),
+                    page: None,
                 });
             }
             "p" => {
@@ -1042,24 +1043,28 @@ mod tests {
                 title: "in-range".to_string(),
                 anchor: None,
                 block_index: Some(0),
+                page: None,
             },
             DocumentOutlineEntry {
                 level: 2,
                 title: "boundary".to_string(),
                 anchor: None,
                 block_index: Some(1),
+                page: None,
             },
             DocumentOutlineEntry {
                 level: 2,
                 title: "out-of-range".to_string(),
                 anchor: None,
                 block_index: Some(5),
+                page: None,
             },
             DocumentOutlineEntry {
                 level: 1,
                 title: "fallback".to_string(),
                 anchor: None,
                 block_index: None,
+                page: None,
             },
         ];
         prune_outline_to_blocks(&mut outline, 2);

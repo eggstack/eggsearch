@@ -74,6 +74,7 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
                         title: heading_text.trim().to_string(),
                         anchor: Some(make_slug(&heading_text)),
                         block_index: Some(block_index),
+                        page: None,
                     });
                 }
                 in_heading = false;

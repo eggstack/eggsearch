@@ -134,6 +134,7 @@ pub fn render_notebook(text: &str, max_chars: usize) -> RenderedContent {
                 title: title.to_string(),
                 anchor: None,
                 block_index: if blocks.is_empty() { None } else { Some(0) },
+                page: None,
             });
         }
     }

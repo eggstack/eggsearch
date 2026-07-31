@@ -5085,6 +5085,10 @@ fn web_fetch_response_includes_fetch_transform_field() {
                 .to_string(),
         }),
         structured_warnings: vec![],
+        pdf_page_metadata: None,
+        pdf_document_metadata: None,
+        pdf_quality_score: None,
+        pdf_content_ok: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     let ft = json
@@ -5124,6 +5128,10 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         document: None,
         fetch_transform: None,
         structured_warnings: vec![],
+        pdf_page_metadata: None,
+        pdf_document_metadata: None,
+        pdf_quality_score: None,
+        pdf_content_ok: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(

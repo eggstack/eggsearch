@@ -1885,6 +1885,10 @@ fn web_fetch_response_raw_text_metadata_present_when_raw_text_present() {
         document: None,
         fetch_transform: None,
         structured_warnings: vec![],
+        pdf_page_metadata: None,
+        pdf_document_metadata: None,
+        pdf_quality_score: None,
+        pdf_content_ok: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["raw_text"], "hello raw");
@@ -1923,6 +1927,10 @@ fn web_fetch_response_raw_text_metadata_absent_when_raw_text_none() {
         document: None,
         fetch_transform: None,
         structured_warnings: vec![],
+        pdf_page_metadata: None,
+        pdf_document_metadata: None,
+        pdf_quality_score: None,
+        pdf_content_ok: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -1969,6 +1977,10 @@ fn web_fetch_response_raw_text_truncated_omitted_when_false() {
         document: None,
         fetch_transform: None,
         structured_warnings: vec![],
+        pdf_page_metadata: None,
+        pdf_document_metadata: None,
+        pdf_quality_score: None,
+        pdf_content_ok: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -2004,6 +2016,10 @@ fn web_fetch_response_raw_text_truncated_present_when_true() {
         document: None,
         fetch_transform: None,
         structured_warnings: vec![],
+        pdf_page_metadata: None,
+        pdf_document_metadata: None,
+        pdf_quality_score: None,
+        pdf_content_ok: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["raw_text_truncated"], true);

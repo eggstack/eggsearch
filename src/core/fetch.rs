@@ -1,10 +1,44 @@
 //! Fetch request/response types for the `web_fetch` tool.
 
+use std::fmt;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::core::document::FetchDocument;
+use crate::core::document::{FetchDocument, PdfDocumentMetadata, PdfPageMetadata};
 use crate::core::sanitize::TrustMarkers;
+
+/// A string wrapper that redacts its value in `Debug` output.
+///
+/// Use for sensitive fields like passwords that must never appear
+/// in logs, tracing spans, or diagnostic output.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RedactedString(String);
+
+impl RedactedString {
+    /// Create a new redacted string.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Borrow the inner value. Callers must not log or serialize
+    /// the returned string in diagnostic contexts.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for RedactedString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
+impl fmt::Display for RedactedString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
 
 /// Extraction mode for web content.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -53,9 +87,9 @@ pub struct PdfFetchOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pages: Option<String>,
     /// Password for encrypted PDFs. Never logged or included in
-    /// stable identifiers.
+    /// stable identifiers. Redacted in `Debug` output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pdf_password: Option<String>,
+    pub pdf_password: Option<RedactedString>,
     /// Whether to include media metadata. Returns bounded metadata
     /// only; no rendering or extraction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -276,6 +310,23 @@ pub struct WebFetchResponse {
     /// Structured warnings with stable codes and severity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
+    /// Per-page PDF extraction quality metadata. Present only for
+    /// PDF responses when the `pdf` feature is enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_page_metadata: Option<Vec<PdfPageMetadata>>,
+    /// Document-level PDF metadata from the Info dictionary.
+    /// Present only for PDF responses when the `pdf` feature is enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_document_metadata: Option<PdfDocumentMetadata>,
+    /// Document-level quality score in [0.0, 1.0]. Present only
+    /// for PDF responses when the `pdf` feature is enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_quality_score: Option<f32>,
+    /// Whether the extracted PDF content is usable. `false` when
+    /// all selected pages are blank or failed extraction. Present
+    /// only for PDF responses when the `pdf` feature is enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_content_ok: Option<bool>,
 }
 
 impl WebFetchResponse {

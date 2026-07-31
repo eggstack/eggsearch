@@ -117,7 +117,9 @@ impl FetchClient {
         max_chars: Option<usize>,
         extract_mode: ExtractMode,
         include_links: bool,
-        pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
+        #[cfg_attr(not(feature = "pdf"), allow(unused_variables))] pdf_options: Option<
+            &crate::core::fetch::PdfFetchOptions,
+        >,
     ) -> Result<WebFetchResponse, FetchError> {
         // Validate the initial URL (scheme, length, localhost literals,
         // obvious private-network literals, credentials).
@@ -466,6 +468,10 @@ impl FetchClient {
                     }),
                     fetch_transform: None,
                     structured_warnings: Vec::new(),
+                    pdf_page_metadata: None,
+                    pdf_document_metadata: None,
+                    pdf_quality_score: None,
+                    pdf_content_ok: None,
                 });
             }
 
@@ -586,6 +592,10 @@ impl FetchClient {
                 document: Some(pdf_result.document),
                 fetch_transform: None,
                 structured_warnings: Vec::new(),
+                pdf_page_metadata: Some(pdf_result.page_metadata),
+                pdf_document_metadata: Some(pdf_result.pdf_metadata),
+                pdf_quality_score: Some(pdf_result.quality_score),
+                pdf_content_ok: Some(pdf_result.content_ok),
             });
         }
 
@@ -827,6 +837,7 @@ impl FetchClient {
                                 title: bounded_title,
                                 anchor: None,
                                 block_index: if blocks.is_empty() { None } else { Some(0) },
+                                page: None,
                             });
                         }
                     }
@@ -959,6 +970,10 @@ impl FetchClient {
             document,
             fetch_transform,
             structured_warnings: Vec::new(),
+            pdf_page_metadata: None,
+            pdf_document_metadata: None,
+            pdf_quality_score: None,
+            pdf_content_ok: None,
         })
     }
 }

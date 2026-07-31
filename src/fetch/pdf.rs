@@ -4,6 +4,7 @@ use crate::core::document::{
     FetchRenderMetadata, PdfDocumentMetadata, PdfPageMetadata, PdfPageQualityKind, RenderFormat,
     RenderedBlock,
 };
+use crate::core::fetch::RedactedString;
 use crate::core::sanitize::{bound_text, strip_control_chars};
 
 const MAX_OUTLINE_ENTRIES: usize = 200;
@@ -36,8 +37,8 @@ pub struct PdfExtractOptions {
     /// Specific pages to extract (1-indexed). If `None`, all pages
     /// up to `max_pages` are extracted.
     pub selected_pages: Option<Vec<u32>>,
-    /// Password for encrypted PDFs.
-    pub password: Option<String>,
+    /// Password for encrypted PDFs. Redacted in `Debug` output.
+    pub password: Option<RedactedString>,
     /// Whether to include media metadata.
     pub include_media: bool,
     /// OCR policy for this extraction.
@@ -301,8 +302,8 @@ fn collect_outline_entries(
             title,
             anchor: None,
             block_index: None,
+            page: page_num.map(|p| p as usize),
         });
-        let _ = page_num;
     }
 
     if let Ok(lopdf::Object::Reference(child_ref)) = dict.get(b"First") {
@@ -476,7 +477,10 @@ pub fn extract_pdf_text(
     })?;
 
     if doc.is_encrypted() {
-        let password = options.and_then(|o| o.password.as_deref()).unwrap_or("");
+        let password = options
+            .and_then(|o| o.password.as_ref())
+            .map(|p| p.expose())
+            .unwrap_or("");
         doc.authenticate_password(password)
             .map_err(|_| FetchError::PdfEncrypted)?;
     }
@@ -638,6 +642,7 @@ pub fn extract_pdf_text(
             title: format!("Page {page_num}"),
             anchor: None,
             block_index: Some(blocks.len() - 1),
+            page: Some(page_num as usize),
         });
 
         page_metadata_list.push(PdfPageMetadata {

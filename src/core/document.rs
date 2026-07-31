@@ -145,6 +145,10 @@ pub struct DocumentOutlineEntry {
     /// Index of the corresponding block in `FetchDocument.blocks`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_index: Option<usize>,
+    /// Page number for this outline entry (for multi-page documents
+    /// like PDFs where page navigation is meaningful).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<usize>,
 }
 
 /// A rendered content block within a document.
@@ -467,6 +471,7 @@ mod tests {
             title: "Doc Title".to_string(),
             anchor: None,
             block_index: Some(0),
+            page: None,
         }];
         let blocks = vec![
             RenderedBlock {
@@ -538,6 +543,7 @@ mod tests {
             title: "Page Title".to_string(),
             anchor: None,
             block_index: Some(0),
+            page: None,
         }];
         let blocks = vec![RenderedBlock {
             kind: BlockKind::Paragraph,

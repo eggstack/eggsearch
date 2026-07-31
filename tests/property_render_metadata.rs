@@ -198,12 +198,14 @@ fn outline_references_within_bounds() {
             title: "Introduction".to_string(),
             anchor: Some("intro".to_string()),
             block_index: Some(0),
+            page: None,
         },
         DocumentOutlineEntry {
             level: 2,
             title: "Details".to_string(),
             anchor: Some("details".to_string()),
             block_index: Some(2),
+            page: None,
         },
     ];
 
@@ -260,6 +262,7 @@ fn outline_references_deterministic() {
         title: "Section".to_string(),
         anchor: None,
         block_index: Some(0),
+        page: None,
     }];
 
     let chunks1 = build_document_chunks("doc", &outline, &blocks, 4096);
