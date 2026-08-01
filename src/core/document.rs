@@ -458,6 +458,9 @@ pub struct PdfDocumentMetadata {
     pub mod_date: Option<String>,
     /// Total page count in the document.
     pub page_count: usize,
+    /// Per-page display labels from the PageLabels dictionary, if present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_labels: Option<Vec<String>>,
 }
 
 #[cfg(test)]

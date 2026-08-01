@@ -6,6 +6,7 @@ use crate::core::document::{
 };
 use crate::core::fetch::RedactedString;
 use crate::core::sanitize::{bound_text, strip_control_chars};
+use crate::core::warning::{AgentWarning, WarningCode};
 
 const MAX_OUTLINE_ENTRIES: usize = 200;
 const MAX_OUTLINE_DEPTH: usize = 6;
@@ -56,6 +57,8 @@ pub struct PdfExtractionResult {
     pub title: Option<String>,
     /// Warnings generated during extraction.
     pub warnings: Vec<String>,
+    /// Structured warnings for agent consumption.
+    pub structured_warnings: Vec<AgentWarning>,
     /// Whether the text was truncated at the character level.
     pub text_truncated: bool,
     /// Per-page extraction quality metadata.
@@ -220,7 +223,159 @@ fn extract_pdf_metadata(doc: &lopdf::Document) -> PdfDocumentMetadata {
         creation_date: read_info_date(doc, b"CreationDate"),
         mod_date: read_info_date(doc, b"ModDate"),
         page_count: doc.get_pages().len(),
+        page_labels: try_extract_page_labels(doc),
     }
+}
+
+fn try_extract_page_labels(doc: &lopdf::Document) -> Option<Vec<String>> {
+    let catalog_ref = match doc.trailer.get(b"Root") {
+        Ok(lopdf::Object::Reference(r)) => *r,
+        _ => return None,
+    };
+    let catalog_obj = match doc.get_object(catalog_ref) {
+        Ok(o) => o,
+        _ => return None,
+    };
+    let catalog_dict = match catalog_obj.as_dict() {
+        Ok(d) => d,
+        _ => return None,
+    };
+    let labels_ref = match catalog_dict.get(b"PageLabels") {
+        Ok(lopdf::Object::Reference(r)) => *r,
+        _ => return None,
+    };
+    let labels_obj = match doc.get_object(labels_ref) {
+        Ok(o) => o,
+        _ => return None,
+    };
+    let labels_dict = match labels_obj.as_dict() {
+        Ok(d) => d,
+        _ => return None,
+    };
+
+    let nums_arr = match labels_dict.get(b"Nums") {
+        Ok(lopdf::Object::Array(arr)) => arr,
+        _ => return None,
+    };
+
+    let total_pages = doc.get_pages().len();
+    let mut labels: Vec<Option<String>> = vec![None; total_pages];
+    let mut current_prefix = String::new();
+    let mut current_style: &str = "decimaldigits";
+    let mut current_start: i64 = 1;
+
+    let mut i = 0;
+    while i < nums_arr.len() {
+        let page_idx = match &nums_arr[i] {
+            lopdf::Object::Integer(n) => *n as usize,
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        i += 1;
+        if i >= nums_arr.len() {
+            break;
+        }
+        let label_dict = match &nums_arr[i] {
+            lopdf::Object::Reference(r) => match doc.get_object(*r) {
+                Ok(lopdf::Object::Dictionary(d)) => d.clone(),
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            },
+            lopdf::Object::Dictionary(d) => d.clone(),
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        i += 1;
+
+        if let Ok(lopdf::Object::String(s, _)) = label_dict.get(b"P") {
+            current_prefix = decode_pdf_string(s);
+        }
+        if let Ok(lopdf::Object::Name(name)) = label_dict.get(b"S") {
+            current_style = match name.as_slice() {
+                b"decimaldigits" => "decimaldigits",
+                b"romanUppercase" => "romanUppercase",
+                b"romanLowercase" => "romanLowercase",
+                b"alphaUppercase" => "alphaUppercase",
+                b"alphaLowercase" => "alphaLowercase",
+                _ => "decimaldigits",
+            };
+        }
+        if let Ok(lopdf::Object::Integer(n)) = label_dict.get(b"St") {
+            current_start = *n;
+        }
+
+        let start = current_start.max(1) as usize;
+        for (p, label) in labels
+            .iter_mut()
+            .enumerate()
+            .take(total_pages)
+            .skip(page_idx)
+        {
+            let num = start + (p - page_idx);
+            let suffix = match current_style {
+                "romanLowercase" => to_roman_lower(num),
+                "romanUppercase" => to_roman_upper(num),
+                "alphaLowercase" => to_alpha_lower(num),
+                "alphaUppercase" => to_alpha_upper(num),
+                _ => num.to_string(),
+            };
+            *label = Some(format!("{current_prefix}{suffix}"));
+        }
+    }
+
+    if labels.iter().all(|l| l.is_none()) {
+        None
+    } else {
+        Some(labels.into_iter().map(|l| l.unwrap_or_default()).collect())
+    }
+}
+
+fn to_roman_upper(mut n: usize) -> String {
+    if n == 0 {
+        return "0".to_string();
+    }
+    let vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+    let syms = [
+        "M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I",
+    ];
+    let mut result = String::new();
+    for (&v, s) in vals.iter().zip(syms.iter()) {
+        while n >= v {
+            result.push_str(s);
+            n -= v;
+        }
+    }
+    result
+}
+
+fn to_roman_lower(n: usize) -> String {
+    to_roman_upper(n).to_lowercase()
+}
+
+fn to_alpha_upper(mut n: usize) -> String {
+    if n == 0 {
+        return String::new();
+    }
+    n -= 1;
+    let mut result = String::new();
+    result.push((b'A' + (n % 26) as u8) as char);
+    n /= 26;
+    while n > 0 {
+        n -= 1;
+        result.insert(0, (b'A' + (n % 26) as u8) as char);
+        n /= 26;
+    }
+    result
+}
+
+fn to_alpha_lower(n: usize) -> String {
+    to_alpha_upper(n).to_lowercase()
 }
 
 fn try_extract_outline(doc: &lopdf::Document) -> Vec<DocumentOutlineEntry> {
@@ -424,39 +579,49 @@ fn count_cid_tokens(text: &str) -> usize {
     count
 }
 
-fn has_page_images(doc: &lopdf::Document, page_num: u32) -> bool {
+fn count_page_images(doc: &lopdf::Document, page_num: u32) -> usize {
     let page_ids = doc.get_pages();
     let page_id = match page_ids.get(&page_num) {
         Some(&id) => id,
-        None => return false,
+        None => return 0,
     };
     let page_obj = match doc.get_object(page_id) {
         Ok(o) => o,
-        Err(_) => return false,
+        Err(_) => return 0,
     };
     let page_dict = match page_obj.as_dict() {
         Ok(d) => d,
-        Err(_) => return false,
+        Err(_) => return 0,
     };
 
-    if let Ok(resources_obj) = page_dict.get(b"Resources") {
-        let resources_dict = match resources_obj {
+    let resources_dict = match page_dict.get(b"Resources") {
+        Ok(resources_obj) => match resources_obj {
             lopdf::Object::Reference(r) => match doc.get_object(*r) {
                 Ok(o) => match o.as_dict() {
-                    Ok(d) => d,
-                    Err(_) => return false,
+                    Ok(d) => d.clone(),
+                    Err(_) => return 0,
                 },
-                Err(_) => return false,
+                Err(_) => return 0,
             },
-            lopdf::Object::Dictionary(d) => d,
-            _ => return false,
-        };
-        if resources_dict.get(b"XObject").is_ok() {
-            return true;
-        }
-    }
+            lopdf::Object::Dictionary(d) => d.clone(),
+            _ => return 0,
+        },
+        Err(_) => return 0,
+    };
 
-    false
+    let xobject_dict = match resources_dict.get(b"XObject") {
+        Ok(lopdf::Object::Reference(r)) => match doc.get_object(*r) {
+            Ok(o) => match o.as_dict() {
+                Ok(d) => d.clone(),
+                Err(_) => return 0,
+            },
+            Err(_) => return 0,
+        },
+        Ok(lopdf::Object::Dictionary(d)) => d.clone(),
+        _ => return 0,
+    };
+
+    xobject_dict.len()
 }
 
 /// Extract text from a PDF byte slice with optional page selection
@@ -509,6 +674,7 @@ pub fn extract_pdf_text(
     let has_page_selection = options.and_then(|o| o.selected_pages.as_ref()).is_some();
 
     let ocr_policy = options.map(|o| o.ocr_policy).unwrap_or_default();
+    let include_media = options.map(|o| o.include_media).unwrap_or(false);
     match ocr_policy {
         PdfOcrPolicy::Auto | PdfOcrPolicy::Always => {
             return Err(FetchError::PdfOcrUnavailable);
@@ -519,6 +685,7 @@ pub fn extract_pdf_text(
     let mut blocks: Vec<RenderedBlock> = Vec::new();
     let mut outline: Vec<DocumentOutlineEntry> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
+    let mut structured_warnings: Vec<AgentWarning> = Vec::new();
     let mut page_metadata_list: Vec<PdfPageMetadata> = Vec::new();
     let mut total_chars: usize = 0;
     let mut pages_with_text: usize = 0;
@@ -530,9 +697,37 @@ pub fn extract_pdf_text(
     outline.extend(extracted_outline);
 
     for &page_num in &pages_to_extract {
-        let has_images = has_page_images(&doc, page_num);
-        let page_text = doc.extract_text(&[page_num]).unwrap_or_default();
-        let page_text = page_text.trim().to_string();
+        let image_count = if include_media {
+            count_page_images(&doc, page_num)
+        } else {
+            0
+        };
+        let has_images = image_count > 0;
+        let page_text_result = doc.extract_text(&[page_num]);
+        let page_text = match page_text_result {
+            Ok(t) => t.trim().to_string(),
+            Err(_) => {
+                page_metadata_list.push(PdfPageMetadata {
+                    page: page_num as usize,
+                    quality_kind: PdfPageQualityKind::ExtractionFailed,
+                    quality_score: 0.0,
+                    extracted_chars: 0,
+                    cid_token_count: 0,
+                    image_count: if include_media {
+                        Some(image_count)
+                    } else {
+                        None
+                    },
+                    warnings: vec!["extraction failed for this page".to_string()],
+                });
+                warnings.push(format!("page {page_num}: extraction failed"));
+                structured_warnings.push(AgentWarning::new(
+                    WarningCode::FetchWarning,
+                    format!("page {page_num}: text extraction failed"),
+                ));
+                continue;
+            }
+        };
 
         let (quality_kind, quality_score) = classify_page_quality(&page_text, has_images);
 
@@ -550,7 +745,11 @@ pub fn extract_pdf_text(
                     quality_score,
                     extracted_chars: 0,
                     cid_token_count: 0,
-                    image_count: if has_images { Some(0) } else { None },
+                    image_count: if include_media {
+                        Some(image_count)
+                    } else {
+                        None
+                    },
                     warnings: Vec::new(),
                 });
                 continue;
@@ -562,7 +761,11 @@ pub fn extract_pdf_text(
                     quality_score,
                     extracted_chars: 0,
                     cid_token_count: 0,
-                    image_count: if has_images { Some(0) } else { None },
+                    image_count: if include_media {
+                        Some(image_count)
+                    } else {
+                        None
+                    },
                     warnings: vec!["extraction failed for this page".to_string()],
                 });
                 continue;
@@ -571,14 +774,26 @@ pub fn extract_pdf_text(
                 page_warnings.push(format!(
                     "page {page_num} contains CID-encoded text that may be garbled"
                 ));
+                structured_warnings.push(AgentWarning::new(
+                    WarningCode::PdfPageCidCorrupt,
+                    format!("page {page_num} contains CID-encoded text that may be garbled"),
+                ));
             }
             PdfPageQualityKind::ScannedOrImageOnly => {
                 page_warnings.push(format!(
                     "page {page_num} appears to be scanned or image-only"
                 ));
+                structured_warnings.push(AgentWarning::new(
+                    WarningCode::PdfPageLikelyScanned,
+                    format!("page {page_num} appears to be scanned or image-only"),
+                ));
             }
             PdfPageQualityKind::SparseText => {
                 page_warnings.push(format!("page {page_num} has sparse or low-quality text"));
+                structured_warnings.push(AgentWarning::new(
+                    WarningCode::PdfPageSparseText,
+                    format!("page {page_num} has sparse or low-quality text"),
+                ));
             }
             PdfPageQualityKind::CleanText => {}
         }
@@ -651,7 +866,11 @@ pub fn extract_pdf_text(
             quality_score,
             extracted_chars: page_text_chars,
             cid_token_count: cid_count,
-            image_count: if has_images { Some(0) } else { None },
+            image_count: if include_media {
+                Some(image_count)
+            } else {
+                None
+            },
             warnings: page_warnings,
         });
 
@@ -715,11 +934,19 @@ pub fn extract_pdf_text(
                 .collect::<Vec<_>>(),
         );
         warnings.push(format!("page selection applied: {page_list}"));
+        structured_warnings.push(AgentWarning::new(
+            WarningCode::PdfPageSelectionApplied,
+            format!("page selection applied: {page_list}"),
+        ));
     }
 
     if outline_truncated {
         warnings.push(format!(
             "PDF outline truncated at {MAX_OUTLINE_ENTRIES} entries"
+        ));
+        structured_warnings.push(AgentWarning::new(
+            WarningCode::PdfOutlineTruncated,
+            format!("PDF outline truncated at {MAX_OUTLINE_ENTRIES} entries"),
         ));
     }
 
@@ -778,7 +1005,9 @@ pub fn extract_pdf_text(
         && !page_metadata_list.iter().all(|m| {
             matches!(
                 m.quality_kind,
-                PdfPageQualityKind::Blank | PdfPageQualityKind::ExtractionFailed
+                PdfPageQualityKind::Blank
+                    | PdfPageQualityKind::ExtractionFailed
+                    | PdfPageQualityKind::ScannedOrImageOnly
             )
         });
 
@@ -810,6 +1039,7 @@ pub fn extract_pdf_text(
         text: bounded_legacy,
         title,
         warnings,
+        structured_warnings,
         text_truncated,
         page_metadata: page_metadata_list,
         pdf_metadata: pdf_meta,
@@ -1538,5 +1768,157 @@ mod tests {
         let (kind, score) = classify_page_quality(text, false);
         assert_eq!(kind, PdfPageQualityKind::CidCorrupt);
         assert_eq!(score, QUALITY_CID);
+    }
+
+    fn make_image_only_pdf() -> Vec<u8> {
+        use lopdf::{dictionary, Document, Object, Stream};
+
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+
+        let image_data = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46];
+        let image_id = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => 100,
+                "Height" => 100,
+                "BitsPerComponent" => 8,
+                "ColorSpace" => "DeviceRGB",
+            },
+            image_data,
+        ));
+
+        let resources_id = doc.add_object(dictionary! {
+            "XObject" => dictionary! {
+                "Im0" => image_id,
+            },
+        });
+
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Resources" => resources_id,
+        });
+
+        let pages = dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![page_id.into()],
+            "Count" => 1,
+        };
+        doc.objects.insert(pages_id, Object::Dictionary(pages));
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    }
+
+    #[test]
+    fn image_only_pdf_classified_as_scanned() {
+        let pdf = make_image_only_pdf();
+        let opts = PdfExtractOptions {
+            selected_pages: None,
+            password: None,
+            include_media: true,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), Some(&opts))
+            .expect("extraction should succeed");
+        assert_eq!(result.page_metadata.len(), 1);
+        assert_eq!(
+            result.page_metadata[0].quality_kind,
+            PdfPageQualityKind::ScannedOrImageOnly
+        );
+        assert!(
+            !result.content_ok,
+            "content_ok should be false for scanned-only PDF"
+        );
+    }
+
+    #[test]
+    fn include_media_returns_image_count() {
+        let pdf = make_image_only_pdf();
+        let opts = PdfExtractOptions {
+            selected_pages: None,
+            password: None,
+            include_media: true,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 12000, &default_limits(), Some(&opts))
+            .expect("extraction should succeed");
+        assert_eq!(result.page_metadata[0].image_count, Some(1));
+    }
+
+    #[test]
+    fn include_media_false_omits_image_count() {
+        let pdf = make_multipage_pdf(&["text content here"]);
+        let opts = PdfExtractOptions {
+            selected_pages: None,
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), Some(&opts))
+            .expect("extraction should succeed");
+        assert!(result.page_metadata[0].image_count.is_none());
+    }
+
+    #[test]
+    fn structured_warnings_populated_for_page_selection() {
+        let pdf = make_multipage_pdf(&["First", "Second", "Third"]);
+        let opts = PdfExtractOptions {
+            selected_pages: Some(vec![1, 3]),
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), Some(&opts))
+            .expect("extraction should succeed");
+        assert!(
+            result
+                .structured_warnings
+                .iter()
+                .any(|w| w.code == WarningCode::PdfPageSelectionApplied),
+            "expected PdfPageSelectionApplied, got: {:?}",
+            result.structured_warnings
+        );
+    }
+
+    #[test]
+    fn to_roman_upper_basic() {
+        assert_eq!(to_roman_upper(1), "I");
+        assert_eq!(to_roman_upper(4), "IV");
+        assert_eq!(to_roman_upper(9), "IX");
+        assert_eq!(to_roman_upper(58), "LVIII");
+        assert_eq!(to_roman_upper(1999), "MCMXCIX");
+    }
+
+    #[test]
+    fn to_roman_lower_basic() {
+        assert_eq!(to_roman_lower(1), "i");
+        assert_eq!(to_roman_lower(4), "iv");
+        assert_eq!(to_roman_lower(9), "ix");
+    }
+
+    #[test]
+    fn to_alpha_upper_basic() {
+        assert_eq!(to_alpha_upper(1), "A");
+        assert_eq!(to_alpha_upper(26), "Z");
+        assert_eq!(to_alpha_upper(27), "AA");
+        assert_eq!(to_alpha_upper(52), "AZ");
+    }
+
+    #[test]
+    fn to_alpha_lower_basic() {
+        assert_eq!(to_alpha_lower(1), "a");
+        assert_eq!(to_alpha_lower(26), "z");
+        assert_eq!(to_alpha_lower(27), "aa");
     }
 }

@@ -591,7 +591,7 @@ impl FetchClient {
                 trust_markers,
                 document: Some(pdf_result.document),
                 fetch_transform: None,
-                structured_warnings: Vec::new(),
+                structured_warnings: pdf_result.structured_warnings,
                 pdf_page_metadata: Some(pdf_result.page_metadata),
                 pdf_document_metadata: Some(pdf_result.pdf_metadata),
                 pdf_quality_score: Some(pdf_result.quality_score),

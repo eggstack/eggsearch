@@ -27,6 +27,10 @@ eggsearch exposes ten stable MCP tools:
 
 Search tools return machine-readable `next_actions` hints. `web_fetch` supports `extract_mode: "text"`, `"markdown"`, and `"metadata_only"`.
 
+### PDF Extraction (Optional)
+
+`web_fetch` handles PDF documents when the `pdf` Cargo feature is enabled and `[fetch].pdf_enabled = true` in config. PDF extraction is text-only via `lopdf` — no OCR, no rendering, no image extraction. Per-page quality classification detects blank, scanned, CID-corrupt, and sparse text pages. Document metadata (title, author, subject, keywords, creator, producer, dates) and bookmark/outline entries are extracted where available. Page selection via `pages` field supports `1`, `1,3,5`, `1-5`, and `1,3,7-10` syntax (one-indexed).
+
 ## Safety Defaults
 
 - Web and remote results are `external_untrusted`.
