@@ -238,6 +238,22 @@ impl FetchClient {
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
+        let cache_headers: std::collections::HashMap<String, String> = response
+            .headers()
+            .iter()
+            .filter(|(k, _)| {
+                matches!(
+                    k.as_str(),
+                    "etag" | "last-modified" | "cache-control" | "expires" | "vary"
+                )
+            })
+            .filter_map(|(k, v)| {
+                v.to_str()
+                    .ok()
+                    .map(|val| (k.as_str().to_string(), val.to_string()))
+            })
+            .collect();
+
         // Pre-check Content-Length for honest servers. The streaming
         // body cap below remains the authoritative upper bound for
         // chunked/encoded responses; this is an early bailout.
@@ -472,6 +488,15 @@ impl FetchClient {
                     pdf_document_metadata: None,
                     pdf_quality_score: None,
                     pdf_content_ok: None,
+                    cache_status: crate::fetch::cache::CacheStatus::default(),
+                    attempt_count: None,
+                    retry_after_ms: None,
+                    origin_backoff_ms: None,
+                    response_headers: if cache_headers.is_empty() {
+                        None
+                    } else {
+                        Some(cache_headers.clone())
+                    },
                 });
             }
 
@@ -596,6 +621,15 @@ impl FetchClient {
                 pdf_document_metadata: Some(pdf_result.pdf_metadata),
                 pdf_quality_score: Some(pdf_result.quality_score),
                 pdf_content_ok: Some(pdf_result.content_ok),
+                cache_status: crate::fetch::cache::CacheStatus::default(),
+                attempt_count: None,
+                retry_after_ms: None,
+                origin_backoff_ms: None,
+                response_headers: if cache_headers.is_empty() {
+                    None
+                } else {
+                    Some(cache_headers.clone())
+                },
             });
         }
 
@@ -974,7 +1008,132 @@ impl FetchClient {
             pdf_document_metadata: None,
             pdf_quality_score: None,
             pdf_content_ok: None,
+            cache_status: crate::fetch::cache::CacheStatus::default(),
+            attempt_count: None,
+            retry_after_ms: None,
+            origin_backoff_ms: None,
+            response_headers: if cache_headers.is_empty() {
+                None
+            } else {
+                Some(cache_headers)
+            },
         })
+    }
+
+    /// Fetches a URL with optional conditional headers for cache revalidation.
+    ///
+    /// Returns the HTTP status, response headers as a HashMap, and the
+    /// raw body bytes. Used by the cache layer for stale revalidation
+    /// (304 Not Modified handling).
+    pub async fn fetch_conditional(
+        &self,
+        url_str: &str,
+        conditional_headers: &[(String, String)],
+    ) -> Result<(u16, std::collections::HashMap<String, String>, Vec<u8>), FetchError> {
+        let initial_url = validate_url(url_str, &self.limits)?;
+        let code_host_target = resolve_code_host_fetch_target(url_str);
+        let fetch_url = if let Some(ref target) = code_host_target {
+            if let Some(ref raw_url) = target.raw_url {
+                validate_url(raw_url, &self.limits)?
+            } else {
+                initial_url
+            }
+        } else {
+            initial_url
+        };
+
+        let mut current_url = fetch_url;
+        let mut redirect_count: usize = 0;
+
+        let response = loop {
+            let resolved_addrs =
+                validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?;
+            let request_client = self.client_for_url(&current_url, resolved_addrs.as_deref())?;
+
+            let mut req = request_client.get(current_url.clone());
+            for (name, value) in conditional_headers {
+                req = req.header(name.as_str(), value.as_str());
+            }
+
+            let resp = req.send().await.map_err(|e| {
+                if e.is_timeout() {
+                    FetchError::Timeout(self.limits.timeout_ms)
+                } else {
+                    FetchError::NetworkError(e.to_string())
+                }
+            })?;
+
+            let status = resp.status().as_u16();
+            if (300..400).contains(&status) {
+                let location = resp
+                    .headers()
+                    .get("location")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                let location = match location {
+                    Some(loc) if !loc.is_empty() => loc,
+                    _ => {
+                        return Err(FetchError::InvalidRedirectLocation(format!(
+                            "HTTP {status} missing or empty Location header"
+                        )));
+                    }
+                };
+                let redirect_url = current_url.join(&location).map_err(|e| {
+                    FetchError::InvalidRedirectLocation(format!(
+                        "failed to resolve redirect location '{location}': {e}"
+                    ))
+                })?;
+                redirect_count += 1;
+                if redirect_count > self.limits.redirect_limit {
+                    return Err(FetchError::RedirectLimitExceeded(redirect_count - 1));
+                }
+                validate_fetch_target(&redirect_url, &self.limits)
+                    .await
+                    .map_err(|e| match e {
+                        FetchError::PrivateNetworkBlocked(reason) => {
+                            FetchError::RedirectTargetBlocked(format!("private network: {reason}"))
+                        }
+                        FetchError::EmbeddedCredentialsBlocked(reason) => {
+                            FetchError::RedirectTargetBlocked(format!("credentials: {reason}"))
+                        }
+                        FetchError::UnsupportedScheme(reason) => {
+                            FetchError::RedirectTargetBlocked(reason)
+                        }
+                        other => FetchError::RedirectTargetBlocked(other.to_string()),
+                    })?;
+                current_url = redirect_url;
+                continue;
+            }
+            break resp;
+        };
+
+        let status = response.status().as_u16();
+        let headers: std::collections::HashMap<String, String> = response
+            .headers()
+            .iter()
+            .filter_map(|(k, v)| {
+                v.to_str()
+                    .ok()
+                    .map(|val| (k.as_str().to_string(), val.to_string()))
+            })
+            .collect();
+
+        if status == 304 {
+            return Ok((304, headers, Vec::new()));
+        }
+
+        let mut body = Vec::new();
+        let mut stream = response.bytes_stream();
+        let mut truncated = false;
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
+            truncated = append_bounded(&mut body, &chunk, self.limits.max_bytes);
+            if truncated {
+                break;
+            }
+        }
+        let _ = truncated;
+        Ok((status, headers, body))
     }
 }
 

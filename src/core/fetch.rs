@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::document::{FetchDocument, PdfDocumentMetadata, PdfPageMetadata};
 use crate::core::sanitize::TrustMarkers;
+use crate::fetch::cache::CacheStatus;
 
 /// A string wrapper that redacts its value in `Debug` output.
 ///
@@ -41,7 +42,7 @@ impl fmt::Display for RedactedString {
 }
 
 /// Extraction mode for web content.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtractMode {
     /// Extract visible text content.
@@ -205,6 +206,19 @@ pub enum FetchTrust {
     ExternalUntrusted,
 }
 
+/// Cache policy for a fetch request.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FetchCachePolicy {
+    /// Use fresh cache; otherwise revalidate or fetch.
+    #[default]
+    Default,
+    /// Do not read cache; storage may still occur unless response forbids it.
+    Bypass,
+    /// Revalidate or fetch even when locally fresh, then update cache.
+    Refresh,
+}
+
 /// Response type for the `web_fetch` tool.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct WebFetchResponse {
@@ -327,6 +341,27 @@ pub struct WebFetchResponse {
     /// only for PDF responses when the `pdf` feature is enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pdf_content_ok: Option<bool>,
+    /// Cache status for this fetch. Describes whether the response
+    /// came from cache, required revalidation, or was a fresh fetch.
+    #[serde(default)]
+    pub cache_status: CacheStatus,
+    /// Number of attempts made (including the initial request).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_count: Option<usize>,
+    /// Milliseconds the server requested we wait before retrying
+    /// (from `Retry-After` header). Only present when retry was
+    /// relevant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_after_ms: Option<u64>,
+    /// Milliseconds the origin circuit breaker imposed as backoff.
+    /// Only present when origin backoff was active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_backoff_ms: Option<u64>,
+    /// Cache-relevant response headers (ETag, Last-Modified,
+    /// Cache-Control, Expires, Vary). Used by the cache layer for
+    /// freshness calculation and conditional revalidation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_headers: Option<std::collections::HashMap<String, String>>,
 }
 
 impl WebFetchResponse {

@@ -337,6 +337,7 @@ async fn e21_keyless_web_fetch_succeeds_without_credentials() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;

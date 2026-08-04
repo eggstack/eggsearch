@@ -883,6 +883,7 @@ async fn web_fetch_disabled_by_policy_returns_error() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -924,6 +925,7 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
             extract_mode: Some(ExtractMode::Markdown),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -954,6 +956,7 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -993,6 +996,7 @@ async fn web_fetch_respects_include_links_default() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -1037,6 +1041,7 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -1074,6 +1079,7 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -1500,6 +1506,7 @@ async fn web_fetch_sanitize_emits_marker_warning() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -1545,6 +1552,7 @@ async fn web_fetch_empty_url_returns_validation_error() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -1567,6 +1575,7 @@ async fn web_fetch_unsupported_scheme_returns_error() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -1589,6 +1598,7 @@ async fn web_fetch_embedded_credentials_returns_error() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -1609,6 +1619,7 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
                 extract_mode: None,
                 include_links: None,
                 pdf: None,
+                cache_policy: None,
             },
         )
         .await;
@@ -1646,6 +1657,7 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -1815,6 +1827,7 @@ async fn web_fetch_mcp_level_full_response_shape() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -1954,6 +1967,7 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2012,6 +2026,7 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
             extract_mode: Some(ExtractMode::MetadataOnly),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2109,6 +2124,7 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2150,6 +2166,7 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2196,6 +2213,7 @@ async fn web_fetch_document_metadata_only_no_body_text() {
             extract_mode: Some(ExtractMode::MetadataOnly),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2246,6 +2264,7 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2303,6 +2322,7 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2358,6 +2378,7 @@ async fn web_fetch_document_has_blocks_and_chunks() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2425,6 +2446,7 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2503,6 +2525,7 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2561,6 +2584,7 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2620,6 +2644,7 @@ async fn web_fetch_document_outline_populated_from_title() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2679,6 +2704,7 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2735,6 +2761,7 @@ async fn web_fetch_document_rust_source_has_code_kind() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2789,6 +2816,7 @@ async fn web_fetch_document_json_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2832,6 +2860,7 @@ async fn web_fetch_document_markdown_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2898,6 +2927,7 @@ async fn web_fetch_document_toml_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2943,6 +2973,7 @@ async fn web_fetch_document_yaml_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -2985,6 +3016,7 @@ async fn web_fetch_document_diff_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3030,6 +3062,7 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3084,6 +3117,7 @@ async fn web_fetch_document_code_preserves_line_ranges() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3140,6 +3174,7 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3187,6 +3222,7 @@ async fn web_fetch_document_truncation_at_line_boundary() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3246,6 +3282,7 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
             extract_mode: Some(ExtractMode::MetadataOnly),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3290,6 +3327,7 @@ async fn web_fetch_document_application_json_no_extension() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3343,6 +3381,7 @@ async fn web_fetch_links_classification() {
             extract_mode: None,
             include_links: Some(true),
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3412,6 +3451,7 @@ async fn web_fetch_links_seen_metadata() {
             extract_mode: None,
             include_links: Some(true),
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3458,6 +3498,7 @@ async fn web_fetch_links_empty_when_not_requested() {
             extract_mode: None,
             include_links: Some(false),
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3507,6 +3548,7 @@ async fn web_fetch_links_same_domain_detection() {
             extract_mode: None,
             include_links: Some(true),
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3574,6 +3616,7 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3634,6 +3677,7 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3691,6 +3735,7 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3752,6 +3797,7 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3818,6 +3864,7 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -3939,6 +3986,7 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4026,6 +4074,7 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
             extract_mode: Some(ExtractMode::MetadataOnly),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4106,6 +4155,7 @@ async fn web_fetch_empty_main_falls_back_to_body() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4152,6 +4202,7 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4203,6 +4254,7 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4247,6 +4299,7 @@ async fn web_fetch_body_only_page_still_works() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4303,6 +4356,7 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
             extract_mode: None,
             include_links: Some(true),
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4375,6 +4429,7 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
             extract_mode: None,
             include_links: Some(true),
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4439,6 +4494,7 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
             extract_mode: None,
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -4888,6 +4944,7 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
         extract_mode: Some(ExtractMode::Text),
         include_links: None,
         pdf: None,
+        cache_policy: None,
     };
 
     // We can't easily test the actual GitHub raw URL rewrite through
@@ -5089,6 +5146,11 @@ fn web_fetch_response_includes_fetch_transform_field() {
         pdf_document_metadata: None,
         pdf_quality_score: None,
         pdf_content_ok: None,
+        cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attempt_count: None,
+        retry_after_ms: None,
+        origin_backoff_ms: None,
+        response_headers: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     let ft = json
@@ -5132,6 +5194,11 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         pdf_document_metadata: None,
         pdf_quality_score: None,
         pdf_content_ok: None,
+        cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attempt_count: None,
+        retry_after_ms: None,
+        origin_backoff_ms: None,
+        response_headers: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -9482,6 +9549,7 @@ async fn repo_fetch_via_web_fetch_full_file() {
             extract_mode: Some(ExtractMode::Text),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -9521,6 +9589,7 @@ async fn repo_fetch_via_web_fetch_404() {
             extract_mode: Some(ExtractMode::Text),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -9562,6 +9631,7 @@ async fn repo_fetch_via_web_fetch_429() {
             extract_mode: Some(ExtractMode::Text),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await;
@@ -9602,6 +9672,7 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
             extract_mode: Some(ExtractMode::Text),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -9651,6 +9722,7 @@ async fn repo_fetch_via_web_fetch_truncation() {
             extract_mode: Some(ExtractMode::Text),
             include_links: None,
             pdf: None,
+            cache_policy: None,
         },
     )
     .await
@@ -16230,6 +16302,8 @@ mod security_context_safety {
                 Duration::from_secs(5),
             )),
             fetch_client: None,
+            origin_controller: None,
+            fetch_cache: None,
             kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
                 reqwest::Client::new(),
             )),
@@ -16284,6 +16358,8 @@ mod security_context_safety {
                 Duration::from_secs(5),
             )),
             fetch_client: None,
+            origin_controller: None,
+            fetch_cache: None,
             kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
                 reqwest::Client::new(),
             )),
@@ -19846,5 +19922,572 @@ async fn repo_map_off_mode_without_local_backend_is_denied() {
     assert!(
         err.to_string().contains("disabled by policy"),
         "expected policy denial, got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_retries_on_network_error_then_succeeds() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/retry-test");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("success");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 2;
+    cfg.fetch.retry_base_delay_ms = 10;
+    cfg.fetch.retry_max_delay_ms = 50;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/retry-test"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("should succeed");
+
+    assert_eq!(v["status"], 200);
+    assert_eq!(v["attempt_count"], 1);
+    mock.assert();
+}
+
+#[test]
+fn classify_503_is_retryable() {
+    use eggsearch::fetch::origin::{
+        classify_http_status, should_retry, OriginFailureClass, OriginPolicy,
+    };
+
+    let class = classify_http_status(503);
+    assert_eq!(class, OriginFailureClass::Retryable);
+    assert!(should_retry(class, 0, 2));
+    assert!(should_retry(class, 1, 2));
+    assert!(!should_retry(class, 2, 2));
+
+    let policy = OriginPolicy::default();
+    assert_eq!(policy.retry_max_attempts, 2);
+    assert_eq!(policy.circuit_failure_threshold, 3);
+}
+
+#[tokio::test]
+async fn web_fetch_respects_deadline_during_retry() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    server.mock(|when, then| {
+        when.method(GET).path("/slow-503");
+        then.status(503).body("unavailable");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 5;
+    cfg.fetch.retry_base_delay_ms = 500;
+    cfg.fetch.retry_max_delay_ms = 2000;
+    cfg.fetch.timeout_ms = 200;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let result = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/slow-503"),
+            max_chars: None,
+            timeout_ms: Some(200),
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "should fail due to deadline, got: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_concurrent_same_origin_respects_semaphore() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    server.mock(|when, then| {
+        when.method(GET).path("/concurrent-test");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("ok")
+            .delay(Duration::from_millis(50));
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.origin_http_concurrency = 2;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut handles = Vec::new();
+    for _ in 0..5 {
+        let s = state.clone();
+        let url = server.url("/concurrent-test");
+        handles.push(tokio::spawn(async move {
+            run_web_fetch(
+                s,
+                WebFetchArgs {
+                    url,
+                    max_chars: None,
+                    timeout_ms: None,
+                    extract_mode: None,
+                    include_links: None,
+                    pdf: None,
+                    cache_policy: None,
+                },
+            )
+            .await
+        }));
+    }
+
+    let mut successes = 0;
+    for h in handles {
+        if let Ok(Ok(_)) = h.await {
+            successes += 1;
+        }
+    }
+
+    assert_eq!(successes, 5, "all requests should succeed");
+}
+
+#[tokio::test]
+async fn web_fetch_cache_hit_on_fresh_entry() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/cache-hit-test");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600")
+            .body("<html><body>content</body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v1 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/cache-hit-test"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("first fetch ok");
+    assert_eq!(v1["cache_status"], "miss");
+    mock.assert();
+
+    let v2 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/cache-hit-test"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("second fetch ok");
+    assert_eq!(v2["cache_status"], "hit");
+}
+
+#[tokio::test]
+async fn web_fetch_cache_refresh_policy_refetches() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    let mut mock = server.mock(|when, then| {
+        when.method(GET).path("/refresh-test");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600")
+            .body("<html><body>content</body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v1 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/refresh-test"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("first fetch ok");
+    assert_eq!(v1["cache_status"], "miss");
+    mock.delete();
+
+    let refresh_mock = server.mock(|when, then| {
+        when.method(GET).path("/refresh-test");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600")
+            .body("<html><body>updated</body></html>");
+    });
+
+    let v2 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/refresh-test"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Refresh),
+        },
+    )
+    .await
+    .expect("refresh fetch ok");
+    assert_eq!(v2["cache_status"], "miss");
+    refresh_mock.assert();
+}
+
+#[tokio::test]
+async fn web_fetch_cache_bypass_policy_skips_cache() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    let mut mock = server.mock(|when, then| {
+        when.method(GET).path("/bypass-test");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600")
+            .body("<html><body>content</body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v1 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/bypass-test"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("first fetch ok");
+    assert_eq!(v1["cache_status"], "miss");
+    mock.delete();
+
+    let bypass_mock = server.mock(|when, then| {
+        when.method(GET).path("/bypass-test");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body>fetched again</body></html>");
+    });
+
+    let v2 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/bypass-test"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
+        },
+    )
+    .await
+    .expect("bypass fetch ok");
+    assert_eq!(v2["cache_status"], "bypassed");
+    bypass_mock.assert();
+}
+
+#[tokio::test]
+async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    server.mock(|when, then| {
+        when.method(GET).path("/private-page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600, private")
+            .body("<html><body>private</body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v1 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/private-page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("first fetch ok");
+    assert_eq!(v1["cache_status"], "not_cacheable");
+
+    let v2 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/private-page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("second fetch ok");
+    assert_eq!(v2["cache_status"], "not_cacheable");
+}
+
+#[tokio::test]
+async fn web_fetch_cache_vary_unsupported_header_not_cached() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    server.mock(|when, then| {
+        when.method(GET).path("/vary-page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600")
+            .header("vary", "Authorization")
+            .body("<html><body>vary</body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v1 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/vary-page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("first fetch ok");
+    assert_eq!(v1["cache_status"], "not_cacheable");
+
+    let v2 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/vary-page"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("second fetch ok");
+    assert_eq!(v2["cache_status"], "not_cacheable");
+}
+
+#[tokio::test]
+async fn batch_fetch_shares_cache_with_web_fetch() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/shared-cache");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600")
+            .body("<html><body>cached</body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v1 = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/shared-cache"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+        },
+    )
+    .await
+    .expect("web_fetch ok");
+    assert_eq!(v1["cache_status"], "miss");
+
+    let batch_result = run_batch_fetch(
+        state.clone(),
+        eggsearch::mcp::tools::BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: server.url("/shared-cache"),
+                extract_mode: Some(ExtractMode::Text),
+                include_links: Some(false),
+                max_chars: Some(12000),
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(50000),
+            continue_on_error: Some(true),
+            timeout_ms: None,
+        },
+    )
+    .await
+    .expect("batch_fetch ok");
+
+    let results = batch_result["results"]
+        .as_array()
+        .expect("results is array");
+    assert_eq!(results.len(), 1);
+    let item = &results[0];
+    assert!(item["ok"].as_bool().unwrap_or(false));
+
+    mock.assert_hits(1);
+}
+
+#[tokio::test]
+async fn batch_fetch_respects_per_origin_concurrency() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+
+    server.mock(|when, then| {
+        when.method(GET).path("/origin-a");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("a")
+            .delay(Duration::from_millis(50));
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/origin-b");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("b")
+            .delay(Duration::from_millis(50));
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    cfg.fetch.origin_http_concurrency = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = (0..4)
+        .map(|i| {
+            let path = if i % 2 == 0 { "/origin-a" } else { "/origin-b" };
+            eggsearch::core::batch_fetch::BatchFetchItem::Web {
+                url: server.url(path),
+                extract_mode: Some(ExtractMode::Text),
+                include_links: Some(false),
+                max_chars: Some(12000),
+            }
+        })
+        .collect();
+
+    let result = run_batch_fetch(
+        state.clone(),
+        eggsearch::mcp::tools::BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(120000),
+            continue_on_error: Some(true),
+            timeout_ms: None,
+        },
+    )
+    .await
+    .expect("batch_fetch ok");
+
+    let arr = result["results"].as_array().expect("results is array");
+    assert_eq!(arr.len(), 4);
+    let successes = arr
+        .iter()
+        .filter(|item| item["ok"].as_bool().unwrap_or(false))
+        .count();
+    assert_eq!(
+        successes, 4,
+        "all items should succeed despite concurrency=1"
     );
 }

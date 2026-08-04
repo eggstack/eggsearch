@@ -1889,6 +1889,11 @@ fn web_fetch_response_raw_text_metadata_present_when_raw_text_present() {
         pdf_document_metadata: None,
         pdf_quality_score: None,
         pdf_content_ok: None,
+        cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attempt_count: None,
+        retry_after_ms: None,
+        origin_backoff_ms: None,
+        response_headers: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["raw_text"], "hello raw");
@@ -1931,6 +1936,11 @@ fn web_fetch_response_raw_text_metadata_absent_when_raw_text_none() {
         pdf_document_metadata: None,
         pdf_quality_score: None,
         pdf_content_ok: None,
+        cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attempt_count: None,
+        retry_after_ms: None,
+        origin_backoff_ms: None,
+        response_headers: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -1981,6 +1991,11 @@ fn web_fetch_response_raw_text_truncated_omitted_when_false() {
         pdf_document_metadata: None,
         pdf_quality_score: None,
         pdf_content_ok: None,
+        cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attempt_count: None,
+        retry_after_ms: None,
+        origin_backoff_ms: None,
+        response_headers: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -2020,6 +2035,11 @@ fn web_fetch_response_raw_text_truncated_present_when_true() {
         pdf_document_metadata: None,
         pdf_quality_score: None,
         pdf_content_ok: None,
+        cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attempt_count: None,
+        retry_after_ms: None,
+        origin_backoff_ms: None,
+        response_headers: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["raw_text_truncated"], true);

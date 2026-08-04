@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 use tracing;
 
 use crate::core::config::AppConfig;
+use crate::fetch::cache::FetchCache;
+use crate::fetch::origin::{OriginController, OriginPolicy};
 use crate::fetch::FetchClient;
 use crate::meta::engines::kev::KevClient;
 use crate::meta::local_backend::LocalWorkspaceBackend;
@@ -35,6 +37,10 @@ pub struct ServerState {
     /// fetch call should make the `None` case unreachable, but the
     /// type allows the disabled state for clean error reporting.
     pub fetch_client: Option<Arc<FetchClient>>,
+    /// Per-origin concurrency control and circuit breaker.
+    pub origin_controller: Option<Arc<OriginController>>,
+    /// In-memory fetch cache for raw responses and derived documents.
+    pub fetch_cache: Option<Arc<FetchCache>>,
     /// CISA KEV catalog client with TTL cache.
     pub kev_client: Arc<KevClient>,
     /// Local workspace search backend. `None` when `[local].enabled = false`.
@@ -52,6 +58,8 @@ impl std::fmt::Debug for ServerState {
             .field("mode", &self.config.search.mode)
             .field("providers", &self.adapter.provider_ids())
             .field("fetch_enabled", &self.config.fetch.enabled)
+            .field("origin_controller", &self.origin_controller.is_some())
+            .field("fetch_cache", &self.fetch_cache.is_some())
             .field("kev_client", &"<KevClient>")
             .field("local_enabled", &self.local_backend.is_some())
             .finish()
@@ -149,6 +157,31 @@ impl ServerState {
             None
         };
 
+        let origin_controller = if config.fetch.enabled {
+            let policy = OriginPolicy {
+                http_concurrency: config.fetch.origin_http_concurrency,
+                browser_concurrency: config.fetch.origin_browser_concurrency,
+                retry_max_attempts: config.fetch.retry_max_attempts,
+                retry_base_delay_ms: config.fetch.retry_base_delay_ms,
+                retry_max_delay_ms: config.fetch.retry_max_delay_ms,
+                circuit_failure_threshold: config.fetch.origin_circuit_failure_threshold,
+                circuit_duration_ms: config.fetch.origin_circuit_duration_ms,
+            };
+            Some(Arc::new(OriginController::new(policy, 1024)))
+        } else {
+            None
+        };
+
+        let fetch_cache = if config.fetch.enabled && config.fetch.cache.enabled {
+            Some(Arc::new(FetchCache::new(
+                config.fetch.cache.memory_max_entries,
+                config.fetch.cache.derived_max_entries,
+                config.fetch.cache.memory_max_bytes,
+            )))
+        } else {
+            None
+        };
+
         let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
 
         // Build local workspace backend
@@ -171,6 +204,8 @@ impl ServerState {
             config,
             adapter: Arc::new(adapter),
             fetch_client,
+            origin_controller,
+            fetch_cache,
             kev_client,
             local_backend,
             local_inventory_cache: Arc::new(Mutex::new(None)),
@@ -196,11 +231,36 @@ impl ServerState {
         } else {
             None
         };
+        let origin_controller = if config.fetch.enabled {
+            let policy = OriginPolicy {
+                http_concurrency: config.fetch.origin_http_concurrency,
+                browser_concurrency: config.fetch.origin_browser_concurrency,
+                retry_max_attempts: config.fetch.retry_max_attempts,
+                retry_base_delay_ms: config.fetch.retry_base_delay_ms,
+                retry_max_delay_ms: config.fetch.retry_max_delay_ms,
+                circuit_failure_threshold: config.fetch.origin_circuit_failure_threshold,
+                circuit_duration_ms: config.fetch.origin_circuit_duration_ms,
+            };
+            Some(Arc::new(OriginController::new(policy, 1024)))
+        } else {
+            None
+        };
+        let fetch_cache = if config.fetch.enabled && config.fetch.cache.enabled {
+            Some(Arc::new(FetchCache::new(
+                config.fetch.cache.memory_max_entries,
+                config.fetch.cache.derived_max_entries,
+                config.fetch.cache.memory_max_bytes,
+            )))
+        } else {
+            None
+        };
         let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
         Self {
             config,
             adapter,
             fetch_client,
+            origin_controller,
+            fetch_cache,
             kev_client,
             local_backend: None,
             local_inventory_cache: Arc::new(Mutex::new(None)),
