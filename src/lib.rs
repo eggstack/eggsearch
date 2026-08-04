@@ -13,6 +13,9 @@
 //! The `mock` feature exposes the test-only mock engine harness used by
 //! the integration tests.
 //!
+//! The `browser` feature enables optional headless Chrome/Chromium
+//! rendering for JavaScript-heavy pages via the Chrome DevTools Protocol.
+//!
 //! # Example
 //!
 //! Construct and validate a [`core::WebSearchRequest`] the same way the

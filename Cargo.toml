@@ -38,6 +38,7 @@ path = "src/main.rs"
 default = []
 mock = []
 pdf = ["dep:lopdf"]
+browser = ["dep:chromiumoxide"]
 live-smoke = ["mock"]
 
 [dependencies]
@@ -62,9 +63,11 @@ toml = "0.8"
 dirs = "5"
 pulldown-cmark = "0.12"
 lopdf = { version = "0.42", optional = true, default-features = false }
+chromiumoxide = { version = "0.9", optional = true, default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 libc = "0.2"
+lru = "0.12"
 
 [dev-dependencies]
 pretty_assertions = "1"

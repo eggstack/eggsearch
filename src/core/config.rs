@@ -268,6 +268,138 @@ fn default_batch_max_total_chars_cap() -> usize {
 fn default_batch_concurrency() -> usize {
     4
 }
+fn default_retry_max_attempts() -> usize {
+    2
+}
+fn default_retry_base_delay_ms() -> u64 {
+    250
+}
+fn default_retry_max_delay_ms() -> u64 {
+    4000
+}
+fn default_origin_http_concurrency() -> usize {
+    2
+}
+fn default_origin_browser_concurrency() -> usize {
+    1
+}
+fn default_origin_circuit_failure_threshold() -> u8 {
+    3
+}
+fn default_origin_circuit_duration_ms() -> u64 {
+    60_000
+}
+fn default_cache_memory_max_entries() -> usize {
+    256
+}
+fn default_cache_memory_max_bytes() -> usize {
+    67_108_864
+}
+fn default_cache_derived_max_entries() -> usize {
+    512
+}
+fn default_cache_default_ttl_seconds() -> u64 {
+    900
+}
+fn default_browser_startup_timeout_ms() -> u64 {
+    10_000
+}
+fn default_browser_navigation_timeout_ms() -> u64 {
+    20_000
+}
+fn default_browser_post_load_wait_ms() -> u64 {
+    1_500
+}
+fn default_browser_verification_wait_ms() -> u64 {
+    10_000
+}
+fn default_browser_max_requests() -> usize {
+    100
+}
+fn default_browser_max_dom_bytes() -> usize {
+    4_000_000
+}
+
+/// The `[fetch.cache]` section of the eggsearch configuration file.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FetchCacheSection {
+    /// Whether the in-memory fetch cache is enabled. Default: true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Maximum number of raw response entries in memory. Default: 256.
+    #[serde(default = "default_cache_memory_max_entries")]
+    pub memory_max_entries: usize,
+    /// Maximum total bytes for raw cached response bodies. Default: 64MB.
+    #[serde(default = "default_cache_memory_max_bytes")]
+    pub memory_max_bytes: usize,
+    /// Maximum number of derived (extracted document) entries. Default: 512.
+    #[serde(default = "default_cache_derived_max_entries")]
+    pub derived_max_entries: usize,
+    /// Default TTL in seconds for cached responses without explicit
+    /// `max-age` or `Expires` headers. Default: 900 (15 minutes).
+    #[serde(default = "default_cache_default_ttl_seconds")]
+    pub default_ttl_seconds: u64,
+}
+
+impl Default for FetchCacheSection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            memory_max_entries: default_cache_memory_max_entries(),
+            memory_max_bytes: default_cache_memory_max_bytes(),
+            derived_max_entries: default_cache_derived_max_entries(),
+            default_ttl_seconds: default_cache_default_ttl_seconds(),
+        }
+    }
+}
+
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FetchBrowserSection {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub policy: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable: Option<String>,
+    #[serde(default = "default_browser_startup_timeout_ms")]
+    pub startup_timeout_ms: u64,
+    #[serde(default = "default_browser_navigation_timeout_ms")]
+    pub navigation_timeout_ms: u64,
+    #[serde(default = "default_browser_post_load_wait_ms")]
+    pub post_load_wait_ms: u64,
+    #[serde(default = "default_browser_verification_wait_ms")]
+    pub verification_wait_ms: u64,
+    #[serde(default = "default_browser_max_requests")]
+    pub max_requests: usize,
+    #[serde(default = "default_browser_max_dom_bytes")]
+    pub max_dom_bytes: usize,
+    #[serde(default = "default_origin_browser_concurrency")]
+    pub global_concurrency: usize,
+    #[serde(default = "default_origin_browser_concurrency")]
+    pub per_origin_concurrency: usize,
+    #[serde(default = "default_true")]
+    pub block_media: bool,
+}
+
+impl Default for FetchBrowserSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            policy: "http_only".into(),
+            executable: None,
+            startup_timeout_ms: default_browser_startup_timeout_ms(),
+            navigation_timeout_ms: default_browser_navigation_timeout_ms(),
+            post_load_wait_ms: default_browser_post_load_wait_ms(),
+            verification_wait_ms: default_browser_verification_wait_ms(),
+            max_requests: default_browser_max_requests(),
+            max_dom_bytes: default_browser_max_dom_bytes(),
+            global_concurrency: default_origin_browser_concurrency(),
+            per_origin_concurrency: default_origin_browser_concurrency(),
+            block_media: true,
+        }
+    }
+}
 
 /// The `[fetch]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -352,6 +484,42 @@ pub struct FetchSection {
     /// Maximum concurrent fetches in a batch request. Default: 4.
     #[serde(default = "default_batch_concurrency")]
     pub batch_concurrency: usize,
+
+    // --- Retry and origin control ---
+    /// Maximum automatic retry attempts per request (1 = no retries). Default: 2.
+    #[serde(default = "default_retry_max_attempts")]
+    pub retry_max_attempts: usize,
+    /// Base delay in milliseconds for exponential backoff. Default: 250.
+    #[serde(default = "default_retry_base_delay_ms")]
+    pub retry_base_delay_ms: u64,
+    /// Maximum delay in milliseconds for exponential backoff. Default: 4000.
+    #[serde(default = "default_retry_max_delay_ms")]
+    pub retry_max_delay_ms: u64,
+    /// Maximum concurrent HTTP requests per origin. Default: 2.
+    #[serde(default = "default_origin_http_concurrency")]
+    pub origin_http_concurrency: usize,
+    /// Maximum concurrent browser requests per origin (Phase 4 hook). Default: 1.
+    #[serde(default = "default_origin_browser_concurrency")]
+    pub origin_browser_concurrency: usize,
+    /// Number of consecutive retryable failures before opening the circuit. Default: 3.
+    #[serde(default = "default_origin_circuit_failure_threshold")]
+    pub origin_circuit_failure_threshold: u8,
+    /// Circuit breaker open duration in milliseconds. Default: 60000.
+    #[serde(default = "default_origin_circuit_duration_ms")]
+    pub origin_circuit_duration_ms: u64,
+
+    // --- Cache configuration ---
+    /// In-memory fetch cache configuration.
+    #[serde(default)]
+    pub cache: FetchCacheSection,
+
+    // --- Browser rendering configuration ---
+    /// Optional browser rendering configuration (Phase 4). Disabled by
+    /// default. When `enabled = true` and a Chrome/Chromium executable is
+    /// discovered, `web_fetch` may escalate to browser rendering for
+    /// JavaScript-heavy pages.
+    #[serde(default)]
+    pub browser: FetchBrowserSection,
 }
 
 impl Default for FetchSection {
@@ -378,6 +546,15 @@ impl Default for FetchSection {
             batch_max_total_chars: default_batch_max_total_chars(),
             batch_max_total_chars_cap: default_batch_max_total_chars_cap(),
             batch_concurrency: default_batch_concurrency(),
+            retry_max_attempts: default_retry_max_attempts(),
+            retry_base_delay_ms: default_retry_base_delay_ms(),
+            retry_max_delay_ms: default_retry_max_delay_ms(),
+            origin_http_concurrency: default_origin_http_concurrency(),
+            origin_browser_concurrency: default_origin_browser_concurrency(),
+            origin_circuit_failure_threshold: default_origin_circuit_failure_threshold(),
+            origin_circuit_duration_ms: default_origin_circuit_duration_ms(),
+            cache: FetchCacheSection::default(),
+            browser: FetchBrowserSection::default(),
         }
     }
 }
@@ -778,6 +955,74 @@ impl AppConfig {
         if self.fetch.batch_concurrency == 0 {
             return Err(CoreError::Config(
                 "[fetch].batch_concurrency must be > 0".to_string(),
+            ));
+        }
+
+        if self.fetch.retry_max_attempts == 0 {
+            return Err(CoreError::Config(
+                "[fetch].retry_max_attempts must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.retry_max_delay_ms < self.fetch.retry_base_delay_ms {
+            return Err(CoreError::Config(format!(
+                "[fetch].retry_max_delay_ms ({}) must be >= [fetch].retry_base_delay_ms ({})",
+                self.fetch.retry_max_delay_ms, self.fetch.retry_base_delay_ms
+            )));
+        }
+        if self.fetch.origin_http_concurrency == 0 {
+            return Err(CoreError::Config(
+                "[fetch].origin_http_concurrency must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.origin_browser_concurrency == 0 {
+            return Err(CoreError::Config(
+                "[fetch].origin_browser_concurrency must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.origin_circuit_failure_threshold == 0 {
+            return Err(CoreError::Config(
+                "[fetch].origin_circuit_failure_threshold must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.origin_circuit_duration_ms == 0 {
+            return Err(CoreError::Config(
+                "[fetch].origin_circuit_duration_ms must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.cache.memory_max_entries == 0 {
+            return Err(CoreError::Config(
+                "[fetch].cache.memory_max_entries must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.cache.memory_max_bytes == 0 {
+            return Err(CoreError::Config(
+                "[fetch].cache.memory_max_bytes must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.cache.derived_max_entries == 0 {
+            return Err(CoreError::Config(
+                "[fetch].cache.derived_max_entries must be > 0".to_string(),
+            ));
+        }
+
+        if self.fetch.browser.startup_timeout_ms == 0 {
+            return Err(CoreError::Config(
+                "[fetch].browser.startup_timeout_ms must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.browser.navigation_timeout_ms == 0 {
+            return Err(CoreError::Config(
+                "[fetch].browser.navigation_timeout_ms must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.browser.max_requests == 0 {
+            return Err(CoreError::Config(
+                "[fetch].browser.max_requests must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.browser.max_dom_bytes == 0 {
+            return Err(CoreError::Config(
+                "[fetch].browser.max_dom_bytes must be > 0".to_string(),
             ));
         }
 

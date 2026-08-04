@@ -203,7 +203,202 @@ The `pdf.pdf_ocr` field accepts `"never"` (default), `"auto"`, or `"always"`. Va
 - `pdf_text`: available/unavailable (matches `cfg!(feature = "pdf")`)
 - `pdf_layout`: unavailable
 - `pdf_ocr`: unavailable
-- `browser_rendering`: unavailable
+- `browser_rendering`: available when `browser` feature is compiled, enabled in config, and a Chrome/Chromium executable is discovered
+
+---
+
+## Browser Rendering (Phase 4, Optional)
+
+Browser rendering is an optional feature gated behind the `browser` Cargo feature. When enabled and configured, `web_fetch` can escalate from HTTP to headless Chrome/Chromium for pages that ordinary HTTP fetching cannot usefully render (e.g., JavaScript-heavy single-page apps).
+
+### Submodule Inventory
+
+| File | Responsibility |
+|------|----------------|
+| `browser/types.rs` | `RenderPolicy`, `FetchDisposition`, `TransportResponse`, `BrowserConfig`, `BrowserDiscovery` |
+| `browser/discover.rs` | Browser executable discovery and validation (Linux/macOS candidates) |
+| `browser/lifecycle.rs` | `BrowserLifecycle` — warm browser process management with one-process-per-server model |
+| `browser/classify.rs` | `FetchDisposition` classification: useful content, JS shell, interactive challenge, non-interactive verification |
+| `browser/intercept.rs` | Request URL policy checks — blocks localhost, private networks, embedded credentials |
+| `browser/navigate.rs` | `browser_fetch` — navigation, DOM readiness heuristics, DOM extraction, challenge detection |
+
+### Render Policy
+
+```rust
+pub enum RenderPolicy {
+    HttpOnly,  // never launch Chrome (default)
+    Auto,      // attempt HTTP first, escalate once for approved classifications
+    Browser,   // use Chrome directly after validating target and origin gate
+}
+```
+
+### Escalation Rules
+
+Under `Auto`, escalation occurs only when:
+1. HTTP response is successful or a recognized non-interactive verification response
+2. Body is HTML
+3. Classification is `JavascriptShell` or `NonInteractiveVerification`
+4. Browser capability is available
+5. Origin circuit permits the attempt
+6. Logical request deadline has sufficient remaining time
+
+At most one browser attempt follows the HTTP attempt. Browser failure returns a structured result; it does not loop back to HTTP.
+
+### Browser Discovery
+
+Discovery checks these candidates in order:
+- Configured executable path (from `[fetch].browser.executable`)
+- Linux: `/usr/bin/google-chrome-stable`, `/usr/bin/google-chrome`, `/usr/bin/chromium`, `/usr/bin/chromium-browser`, `/snap/bin/chromium`
+- macOS: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, `~/Applications/...`, `/Applications/Chromium.app/...`
+- PATH resolution: `google-chrome-stable`, `google-chrome`, `chromium`, `chromium-browser`
+
+Discovered executables are validated with `--version` under a short timeout.
+
+### Network Policy
+
+Browser transport rejects:
+- localhost and private IPv4/IPv6 addresses
+- link-local, cloud metadata ranges
+- non-HTTP(S) schemes
+- embedded credentials
+
+All observable requests must be intercepted and checked. Unsupported or uninspectable request behavior fails closed.
+
+### Challenge Detection
+
+| Classification | Indicators |
+|---------------|------------|
+| `InteractiveChallenge` | Turnstile/CAPTCHA iframe markers, "verify you are human", access denied titles |
+| `NonInteractiveVerification` | "just a moment", "checking your browser", "please wait" |
+| `JavascriptShell` | Empty root/app/next div with multiple scripts, low text content |
+
+Interactive challenges return `ManualInteractionRequired` and are never solved. Non-interactive verifications get a bounded resolution window.
+
+### Configuration
+
+```toml
+[fetch.browser]
+enabled = false
+policy = "http_only"       # http_only | auto | browser
+executable = ""            # optional explicit path
+startup_timeout_ms = 10000
+navigation_timeout_ms = 20000
+post_load_wait_ms = 1500
+verification_wait_ms = 10000
+max_requests = 100
+max_dom_bytes = 4000000
+global_concurrency = 1
+per_origin_concurrency = 1
+block_media = true
+```
+
+### What Browser Rendering Does NOT Do
+
+- Download or install a browser
+- Solve CAPTCHAs or click Turnstile controls
+- Use the user's ordinary Chrome profile
+- Rotate proxies or synthesize fingerprints
+- Persist browser state across requests
+- Return screenshots in MCP responses
+- Crawl recursively
+
+---
+
+## Fetch Resilience
+
+The fetch module includes resilience features for respectful and efficient HTTP fetching.
+
+### Per-Origin Concurrency Control
+
+Each origin (scheme + host + port) has a semaphore limiting concurrent in-flight requests. Default: 2 concurrent requests per origin. This prevents hammering a single server with parallel requests.
+
+### Retry and Backoff
+
+Automatic retries apply to narrow failure classes:
+- **429 (Too Many Requests)** — after honoring `Retry-After` header
+- **502/503/504** — server errors indicating transient issues
+- **Network errors** — connection reset, DNS failures, broken pipe, EOF
+
+Non-retryable failures (400, 401, 403, 404, etc.) are returned immediately without retry.
+
+Retry uses bounded exponential backoff with jitter:
+- Base delay: 250ms
+- Max delay: 4s
+- Jitter: random(0..cap)
+- Max attempts: 2 (configurable)
+
+Backoff sleep respects the remaining request deadline — it never sleeps past the configured timeout.
+
+### Circuit Breaker
+
+After 3 consecutive retryable failures for an origin, the circuit opens for 30-120 seconds. During this period:
+- Requests fail fast with `origin_circuit_open` error
+- Cache hits can still be served
+- A successful request resets the circuit
+
+### HTTP Conditional Revalidation
+
+When a cached response has `ETag` or `Last-Modified` validators and becomes stale:
+1. Conditional headers (`If-None-Match` or `If-Modified-Since`) are sent with the request
+2. If the server responds with 304 (Not Modified), the cached body is reused with refreshed metadata
+3. If the server responds with 200, the cache entry is fully updated
+
+### Cache System
+
+Two-tier in-memory LRU cache:
+
+| Cache | Purpose | Key |
+|-------|---------|-----|
+| **Raw** | Response bytes + headers | URL + cache scope |
+| **Derived** | Extracted content | Raw content hash + extraction params |
+
+Cache scope prevents mixing anonymous and authenticated/profile content.
+
+Cache directives honored:
+- `no-store` — never cache
+- `max-age` — freshness window
+- `Expires` — fallback freshness
+- `ETag` / `Last-Modified` — conditional revalidation
+- `private` — not cached in anonymous scope; only cached in profile scope
+- `Vary` — responses with unsupported Vary headers (anything other than `Accept-Encoding`) are not cached
+- `no-cache` — forces revalidation on every use
+
+When neither `max-age` nor `Expires` is present, a configurable `default_ttl_seconds` (default 900) is applied.
+
+Challenge/error pages (403, 429, CAPTCHA, etc.) are never stored as successful content.
+
+### Cache Key Separation
+
+Derived cache keys include extraction parameters, so the same PDF with different page selections produces separate cache entries. This allows re-extracting a different page range from cached raw bytes without re-downloading.
+
+### Configuration
+
+```toml
+[fetch]
+retry_max_attempts = 2
+retry_base_delay_ms = 250
+retry_max_delay_ms = 4000
+origin_http_concurrency = 2
+origin_browser_concurrency = 1
+origin_circuit_failure_threshold = 3
+origin_circuit_duration_ms = 60000
+
+[fetch.cache]
+enabled = true
+memory_max_entries = 256
+memory_max_bytes = 67108864
+derived_max_entries = 512
+default_ttl_seconds = 900
+```
+
+### Non-Goals
+
+The fetch resilience layer does not implement:
+- Proxy rotation or IP rotation
+- Automatic user-agent rotation
+- Global crawl delay enforcement from robots.txt
+- Distributed rate limiting
+- Background prefetching or stale-while-revalidate workers
 
 ---
 

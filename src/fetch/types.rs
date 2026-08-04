@@ -107,6 +107,38 @@ pub enum FetchError {
     #[error("OCR was requested but is not available; enable an OCR provider or set pdf_ocr to \"never\"")]
     PdfOcrUnavailable,
 
+    /// Browser support is not compiled in (the `browser` Cargo feature is disabled).
+    #[error("browser support is not compiled in; enable the `browser` Cargo feature")]
+    BrowserNotCompiledIn,
+
+    /// Browser rendering is disabled by configuration.
+    #[error("browser rendering is disabled; set [fetch].browser.enabled = true in config")]
+    BrowserDisabled,
+
+    /// Browser executable was not found.
+    #[error("no Chrome/Chromium executable found on this system")]
+    BrowserNotFound,
+
+    /// Browser launch failed.
+    #[error("browser launch failed: {0}")]
+    BrowserLaunchFailed(String),
+
+    /// Browser navigation failed.
+    #[error("browser navigation failed: {0}")]
+    BrowserNavigationFailed(String),
+
+    /// Browser policy violation.
+    #[error("browser policy violation: {0}")]
+    BrowserPolicyViolation(String),
+
+    /// Interactive challenge detected in browser.
+    #[error("interactive challenge detected; manual interaction required at {0}")]
+    BrowserInteractiveChallenge(String),
+
+    /// Browser DOM size exceeded limit.
+    #[error("browser DOM size {0} exceeds limit {1}")]
+    BrowserDomTooLarge(usize, usize),
+
     /// Unknown error.
     #[error("{0}")]
     Unknown(String),
@@ -159,6 +191,22 @@ pub enum FetchErrorKind {
     PdfPageCapExceeded,
     /// PDF OCR unavailable.
     PdfOcrUnavailable,
+    /// Browser not compiled in.
+    BrowserNotCompiledIn,
+    /// Browser disabled by config.
+    BrowserDisabled,
+    /// Browser not found.
+    BrowserNotFound,
+    /// Browser launch failed.
+    BrowserLaunchFailed,
+    /// Browser navigation failed.
+    BrowserNavigationFailed,
+    /// Browser policy violation.
+    BrowserPolicyViolation,
+    /// Browser interactive challenge.
+    BrowserInteractiveChallenge,
+    /// Browser DOM too large.
+    BrowserDomTooLarge,
     /// Unknown error.
     Unknown,
 }
@@ -190,6 +238,16 @@ impl FetchError {
             FetchError::PdfPageOutOfRange { .. } => FetchErrorKind::PdfPageOutOfRange,
             FetchError::PdfPageCapExceeded { .. } => FetchErrorKind::PdfPageCapExceeded,
             FetchError::PdfOcrUnavailable => FetchErrorKind::PdfOcrUnavailable,
+            FetchError::BrowserNotCompiledIn => FetchErrorKind::BrowserNotCompiledIn,
+            FetchError::BrowserDisabled => FetchErrorKind::BrowserDisabled,
+            FetchError::BrowserNotFound => FetchErrorKind::BrowserNotFound,
+            FetchError::BrowserLaunchFailed(_) => FetchErrorKind::BrowserLaunchFailed,
+            FetchError::BrowserNavigationFailed(_) => FetchErrorKind::BrowserNavigationFailed,
+            FetchError::BrowserPolicyViolation(_) => FetchErrorKind::BrowserPolicyViolation,
+            FetchError::BrowserInteractiveChallenge(_) => {
+                FetchErrorKind::BrowserInteractiveChallenge
+            }
+            FetchError::BrowserDomTooLarge(..) => FetchErrorKind::BrowserDomTooLarge,
             FetchError::Unknown(_) => FetchErrorKind::Unknown,
         }
     }
@@ -219,6 +277,14 @@ impl FetchError {
             FetchErrorKind::PdfPageOutOfRange => "pdf_page_out_of_range",
             FetchErrorKind::PdfPageCapExceeded => "pdf_page_cap_exceeded",
             FetchErrorKind::PdfOcrUnavailable => "pdf_ocr_unavailable",
+            FetchErrorKind::BrowserNotCompiledIn => "browser_not_compiled_in",
+            FetchErrorKind::BrowserDisabled => "browser_disabled",
+            FetchErrorKind::BrowserNotFound => "browser_not_found",
+            FetchErrorKind::BrowserLaunchFailed => "browser_launch_failed",
+            FetchErrorKind::BrowserNavigationFailed => "browser_navigation_failed",
+            FetchErrorKind::BrowserPolicyViolation => "browser_policy_violation",
+            FetchErrorKind::BrowserInteractiveChallenge => "browser_interactive_challenge",
+            FetchErrorKind::BrowserDomTooLarge => "browser_dom_too_large",
             FetchErrorKind::Unknown => "unknown",
         }
     }

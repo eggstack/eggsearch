@@ -38,7 +38,7 @@ src/
   commands/        # subcommands: doctor, search, providers, mcp, fetch
   core/            # types, config, error, query, sanitize, identity, warning
   meta/            # MetadataSearchAdapter + 34 vendored engines + forge adapter + local workspace cache
-  fetch/           # HTTP fetch client, HTML rendering, extraction, span selection
+  fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, contract, property, and adversarial tests
 fuzz/              # cargo-fuzz + libfuzzer targets (21 registered)
@@ -58,6 +58,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 |------|---------|
 | `mock` | Test-only mock engine harness (`src/meta/mock.rs`) — **required for integration/corpus tests** |
 | `pdf` | PDF text extraction via `lopdf` |
+| `browser` | Optional headless Chrome/Chromium rendering via `chromiumoxide` |
 | `live-smoke` | Live network smoke tests (implies `mock`); ignored by default |
 
 Tests MUST NOT require network access. Run live smoke tests via: `cargo test --features live-smoke --test corpus_runner -- --ignored`.

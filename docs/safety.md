@@ -151,3 +151,15 @@ Forge API base URLs (GitHub, GitLab, Gitea, Forgejo, Codeberg) are validated by 
 This prevents forge adapters from being redirected to internal services or leaking API keys over plaintext connections.
 
 Primary forge tree and paginated responses are read through `read_bounded_response()` with a hard byte cap (10MB per response, cumulative aggregate cap). `ForgeReadBudget` tracks aggregate bytes across all requests within a single tool invocation (operation-wide, not per-response); pagination stops when the aggregate budget is exhausted. Error-body previews (rate-limit detection, permission-denied diagnostics) are read through `read_error_preview()` with an 8KB cap and control-character sanitization. Default-branch metadata lookups use bounded response reading. Forge API clients use `Policy::none()`, rejecting all redirects; the fetch client also uses `Policy::none()` for outbound HTTP requests.
+
+## Browser Rendering Safety
+
+When the `browser` feature is enabled and configured, browser rendering adds these safety properties:
+
+- **Public-network-only**: Browser transport rejects localhost, private IPv4/IPv6, link-local, and cloud metadata addresses regardless of `allow_localhost`/`allow_private_network` settings.
+- **No browser download**: eggsearch discovers an already-installed Chrome/Chromium. It never downloads, installs, or manages browser updates.
+- **No challenge solving**: Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as `ManualInteractionRequired`. eggsearch never clicks, simulates input, or uses external solving services.
+- **No user profile access**: Browser contexts are ephemeral and incognito. The user's ordinary Chrome profile is never used.
+- **Request interception**: All observable requests are intercepted and checked against the network policy.
+- **Bounded extraction**: DOM size, request count, navigation time, and post-load wait are all bounded by configuration.
+- **Existing sanitation pipeline**: Rendered DOM flows through the same HTML extraction, text bounding, and prompt-injection sanitation as ordinary HTTP fetches.
