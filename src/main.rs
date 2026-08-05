@@ -78,6 +78,21 @@ enum Commands {
         #[arg(short, long)]
         json: bool,
     },
+    /// Open a headed browser for manual login/verification.
+    #[cfg(feature = "browser")]
+    BrowserLogin {
+        /// The HTTP(S) origin to open (e.g. https://example.com).
+        origin: String,
+        /// Profile name (default: "default").
+        #[arg(short, long)]
+        profile: Option<String>,
+    },
+    /// Manage persistent browser profiles.
+    #[cfg(feature = "browser")]
+    BrowserProfiles {
+        #[command(subcommand)]
+        cmd: commands::browser_profiles::BrowserProfilesCmd,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -125,6 +140,16 @@ async fn main() -> Result<()> {
                 json,
             )
             .await
+        }
+        #[cfg(feature = "browser")]
+        Commands::BrowserLogin { origin, profile } => {
+            commands::browser_login::run(&cfg, &origin, profile.as_deref()).await;
+            Ok(())
+        }
+        #[cfg(feature = "browser")]
+        Commands::BrowserProfiles { cmd } => {
+            commands::browser_profiles::run(&cfg, &cmd).await;
+            Ok(())
         }
     }
 }

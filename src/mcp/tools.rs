@@ -526,6 +526,19 @@ pub struct WebFetchArgs {
     /// or "refresh" (revalidate even if fresh).
     #[serde(default)]
     pub cache_policy: Option<crate::core::fetch::FetchCachePolicy>,
+    /// Render policy: "http_only" (default), "auto", or "browser".
+    /// Controls whether fetch may escalate to headless browser rendering
+    /// for JavaScript-heavy pages. Requires the `browser` feature.
+    #[serde(default)]
+    pub render: Option<String>,
+    /// Named browser profile for persistent session reuse. When set,
+    /// the fetch uses a profile-scoped Chrome context with persisted
+    /// cookies and storage. The profile must exist and be allowed for
+    /// the requested origin. Profile creation is a CLI-only operation
+    /// (`eggsearch browser-login`). Omit for ephemeral browser context.
+    /// Requires the `browser` feature.
+    #[serde(default)]
+    pub browser_profile: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1748,7 +1761,51 @@ pub async fn run_web_fetch(
         .unwrap_or(state.config.fetch.include_links_default);
 
     let cache_policy = args.cache_policy.unwrap_or_default();
-    let scope = CacheScope::Anonymous;
+
+    #[allow(unused_mut)]
+    let mut used_profile_name: Option<String> = None;
+
+    #[cfg(feature = "browser")]
+    {
+        if let Some(ref profile_name) = args.browser_profile {
+            let mgr = state.profile_manager.as_ref().ok_or_else(|| {
+                ToolError::Validation(
+                    "browser profiles are not enabled; \
+                     set [fetch.browser].persistent_profiles_enabled = true"
+                        .to_string(),
+                )
+            })?;
+            let parsed_url = url::Url::parse(trimmed_url)
+                .map_err(|e| ToolError::Validation(format!("invalid URL: {e}")))?;
+            let request_origin = format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
+            let _meta = mgr
+                .resolve_for_origin(profile_name, &request_origin)
+                .map_err(|e| match e {
+                    crate::fetch::browser::ProfileError::ProfileNotFound(msg) => {
+                        ToolError::Validation(format!("browser_profile: {msg}"))
+                    }
+                    crate::fetch::browser::ProfileError::ProfilesDisabled => {
+                        ToolError::Validation("browser profiles are not enabled".to_string())
+                    }
+                    other => ToolError::Internal(format!("browser_profile: {other}")),
+                })?;
+            used_profile_name = Some(profile_name.clone());
+        }
+
+        if let Some(ref render_str) = args.render {
+            let _render_policy: crate::fetch::browser::RenderPolicy =
+                serde_json::from_value(serde_json::Value::String(render_str.clone())).map_err(
+                    |e| ToolError::Validation(format!("invalid render policy '{render_str}': {e}")),
+                )?;
+        }
+    }
+
+    let scope = if let Some(ref name) = used_profile_name {
+        CacheScope::Profile(name.clone())
+    } else {
+        CacheScope::Anonymous
+    };
+
     let origin_key = OriginKey::from_url(
         &url::Url::parse(trimmed_url)
             .map_err(|e| ToolError::Validation(format!("invalid URL: {e}")))?,
@@ -2167,6 +2224,8 @@ pub async fn run_web_fetch(
         "attempt_count": metadata.attempt_count,
         "retry_after_ms": metadata.retry_after_ms,
         "origin_backoff_ms": metadata.origin_backoff_ms,
+        "browser_profile": used_profile_name,
+        "browser_profile_scope": if used_profile_name.is_some() { "persistent" } else { "ephemeral" },
     });
     Ok(payload)
 }
@@ -4867,6 +4926,8 @@ mod tests {
             include_links: Some(false),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         };
         let value = run_web_fetch(state, args).await.unwrap();
         // structured_warnings must always be in the payload (even if empty).
@@ -4888,6 +4949,8 @@ mod tests {
             include_links: Some(false),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         };
 
         let err = run_web_fetch(state, args)

@@ -25,10 +25,18 @@ pub mod types;
 
 #[cfg(feature = "browser")]
 pub use browser::{
-    browser_capability_report, browser_fetch, classify_response, discover_browser,
-    is_request_allowed, BrowserConfig, BrowserDiscovery, BrowserFamily, BrowserLaunchError,
-    BrowserLifecycle, BrowserSource, FetchDisposition, FetchTransportKind, ManualInteractionReason,
-    ManualInteractionRequired, PolicyViolation, RenderPolicy, TransportResponse, TransportTiming,
+    browser_capability_report, browser_fetch, browser_fetch_with_policy, classify_response,
+    discover_browser, is_request_allowed, is_request_allowed_with_dns, BrowserConfig,
+    BrowserDiscovery, BrowserFamily, BrowserFetchResult, BrowserLaunchError, BrowserLifecycle,
+    BrowserProfileMetadata, BrowserSource, FetchDisposition, FetchTransportKind,
+    ManualInteractionReason, ManualInteractionRequired, PolicyViolation, ProfileError, ProfileLock,
+    ProfileManager, ProfileResult, RenderPolicy, TransportResponse, TransportTiming,
+    DEFAULT_GLOBAL_CONCURRENCY, DEFAULT_MAX_DOM_BYTES, DEFAULT_MAX_REQUESTS,
+    DEFAULT_NAVIGATION_TIMEOUT_MS, DEFAULT_PER_ORIGIN_CONCURRENCY, DEFAULT_POST_LOAD_WAIT_MS,
+    DEFAULT_PROFILE_PROCESS_TIMEOUT_MS, DEFAULT_STARTUP_TIMEOUT_MS, DEFAULT_VERIFICATION_WAIT_MS,
+    MAX_GLOBAL_CONCURRENCY, MAX_MAX_DOM_BYTES, MAX_MAX_REQUESTS, MAX_NAVIGATION_TIMEOUT_MS,
+    MAX_PER_ORIGIN_CONCURRENCY, MAX_POST_LOAD_WAIT_MS, MAX_PROFILE_PROCESS_TIMEOUT_MS,
+    MAX_STARTUP_TIMEOUT_MS, MAX_VERIFICATION_WAIT_MS, PROFILE_SCHEMA_VERSION,
 };
 pub use cache::{
     CacheScope, CacheStatus, DerivedCacheKey, DerivedDocumentCacheEntry, FetchCache,

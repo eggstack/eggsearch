@@ -1,0 +1,182 @@
+use std::sync::Arc;
+
+use eggsearch::core::config::AppConfig;
+use eggsearch::fetch::browser::ProfileManager;
+
+pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
+    let bp = &cfg.fetch.browser.persistent_profiles;
+
+    if !bp.enabled {
+        eprintln!("error: persistent browser profiles are disabled");
+        eprintln!("enable [fetch.browser].persistent_profiles_enabled in config");
+        std::process::exit(1);
+    }
+
+    let mgr = match ProfileManager::new(
+        bp.profiles_dir.as_deref(),
+        true,
+        bp.allowed_profiles.clone(),
+    ) {
+        Ok(m) => Arc::new(m),
+        Err(e) => {
+            eprintln!("error initializing profile manager: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let display_name = profile_name.unwrap_or("default");
+
+    let meta = match mgr.create_profile(display_name, origin) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("error creating profile: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let profile_dir = mgr.profile_dir_for(&meta.id);
+    let chrome_data = mgr.chrome_data_dir_for(&meta.id);
+
+    if !chrome_data.exists() {
+        if let Err(e) = std::fs::create_dir_all(&chrome_data) {
+            eprintln!("error creating chrome-data directory: {e}");
+            std::process::exit(1);
+        }
+    }
+
+    println!("Browser Profile: {}", meta.display_name);
+    println!("  Origin:   {}", meta.allowed_origin);
+    println!("  Profile:  {}", profile_dir.display());
+    println!();
+
+    let has_chrome = if let Some(ref executable) = cfg.fetch.browser.executable {
+        std::path::Path::new(executable).exists()
+    } else {
+        eggsearch::fetch::browser::discover_browser(cfg.fetch.browser.executable.as_deref())
+            .is_some()
+    };
+
+    if has_chrome {
+        println!(
+            "Chrome discovered. Launching headed browser at {}...",
+            meta.allowed_origin
+        );
+        println!();
+
+        let result = launch_headed_browser(cfg, &chrome_data, &meta.allowed_origin).await;
+
+        match result {
+            Ok(()) => {
+                let mut updated = meta.clone();
+                let _ = mgr.update_last_used(&mut updated);
+
+                if let Some(disc) = eggsearch::fetch::browser::discover_browser(
+                    cfg.fetch.browser.executable.as_deref(),
+                ) {
+                    let _ = mgr.update_browser_info(
+                        &mut updated,
+                        &format!("{:?}", disc.family),
+                        parse_major_version(&disc.version),
+                    );
+                }
+
+                println!();
+                println!("Session setup complete for '{}'.", display_name);
+                println!(
+                    "Use with web_fetch: {{ \"url\": \"{}\", \"browser_profile\": \"{}\" }}",
+                    meta.allowed_origin, display_name
+                );
+            }
+            Err(e) => {
+                eprintln!("browser session ended: {e}");
+                eprintln!(
+                    "profile '{}' was created but may need re-login",
+                    display_name
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        println!("No Chrome/Chromium executable found.");
+        println!("Install Chrome or set [fetch.browser].executable in config.");
+        println!();
+        println!(
+            "Profile '{}' has been created. Once Chrome is available,",
+            display_name
+        );
+        println!("run this command again to establish a session.");
+    }
+}
+
+async fn launch_headed_browser(
+    cfg: &AppConfig,
+    chrome_data_dir: &std::path::Path,
+    origin: &str,
+) -> Result<(), String> {
+    let disc = eggsearch::fetch::browser::discover_browser(None)
+        .ok_or("no browser executable discovered")?;
+
+    let mut cmd = tokio::process::Command::new(&disc.path);
+    cmd.arg(origin);
+    cmd.arg(format!("--user-data-dir={}", chrome_data_dir.display()));
+    cmd.arg("--no-first-run");
+    cmd.arg("--no-default-browser-check");
+    cmd.arg("--disable-extensions");
+    cmd.arg("--disable-component-extensions-with-background-pages");
+    cmd.arg("--disable-default-apps");
+    cmd.arg("--disable-dev-shm-usage");
+    cmd.arg("--disable-sync");
+    cmd.arg("--disable-background-networking");
+    cmd.arg("--password-store=basic");
+    cmd.arg("--use-mock-keychain");
+
+    let timeout_ms = cfg
+        .fetch
+        .browser
+        .persistent_profiles
+        .profile_process_timeout_ms;
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to launch browser: {e}"))?;
+
+    println!("Browser launched. Complete your login/verification in the browser window.");
+    println!(
+        "Press Enter here when done (or wait {}s for timeout)...",
+        timeout_ms / 1000
+    );
+
+    let result = tokio::time::timeout(timeout, tokio::signal::ctrl_c()).await;
+
+    match result {
+        Ok(Ok(())) => {
+            let _ = child.kill().await;
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let _ = child.kill().await;
+            Err(format!("signal error: {e}"))
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            Err("timeout reached".to_string())
+        }
+    }
+}
+
+fn parse_major_version(version: &str) -> Option<u32> {
+    version.split('.').next().and_then(|s| s.parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_major_version_works() {
+        assert_eq!(parse_major_version("120.0.6099.109"), Some(120));
+        assert_eq!(parse_major_version("1"), Some(1));
+        assert_eq!(parse_major_version("abc"), None);
+    }
+}

@@ -320,6 +320,43 @@ fn default_browser_max_dom_bytes() -> usize {
     4_000_000
 }
 
+/// Default timeout for profile-scoped browser processes in milliseconds.
+pub const DEFAULT_PROFILE_PROCESS_TIMEOUT_MS: u64 = 30_000;
+/// Maximum timeout for profile-scoped browser processes in milliseconds.
+pub const MAX_PROFILE_PROCESS_TIMEOUT_MS: u64 = 120_000;
+
+fn default_profile_process_timeout_ms() -> u64 {
+    DEFAULT_PROFILE_PROCESS_TIMEOUT_MS
+}
+
+/// Configuration for persistent browser profiles (Phase 5).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PersistentBrowserProfilesConfig {
+    /// Whether persistent browser profiles are enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Custom profiles directory. Empty uses platform default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profiles_dir: Option<String>,
+    /// Allowlist of profile names. Empty allows all.
+    #[serde(default)]
+    pub allowed_profiles: Vec<String>,
+    /// Timeout for profile-scoped browser processes in milliseconds.
+    #[serde(default = "default_profile_process_timeout_ms")]
+    pub profile_process_timeout_ms: u64,
+}
+
+impl Default for PersistentBrowserProfilesConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            profiles_dir: None,
+            allowed_profiles: Vec::new(),
+            profile_process_timeout_ms: DEFAULT_PROFILE_PROCESS_TIMEOUT_MS,
+        }
+    }
+}
+
 /// The `[fetch.cache]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FetchCacheSection {
@@ -380,6 +417,8 @@ pub struct FetchBrowserSection {
     pub per_origin_concurrency: usize,
     #[serde(default = "default_true")]
     pub block_media: bool,
+    #[serde(default)]
+    pub persistent_profiles: PersistentBrowserProfilesConfig,
 }
 
 impl Default for FetchBrowserSection {
@@ -397,6 +436,7 @@ impl Default for FetchBrowserSection {
             global_concurrency: default_origin_browser_concurrency(),
             per_origin_concurrency: default_origin_browser_concurrency(),
             block_media: true,
+            persistent_profiles: PersistentBrowserProfilesConfig::default(),
         }
     }
 }
@@ -1023,6 +1063,18 @@ impl AppConfig {
         if self.fetch.browser.max_dom_bytes == 0 {
             return Err(CoreError::Config(
                 "[fetch].browser.max_dom_bytes must be > 0".to_string(),
+            ));
+        }
+        if self
+            .fetch
+            .browser
+            .persistent_profiles
+            .profile_process_timeout_ms
+            == 0
+        {
+            return Err(CoreError::Config(
+                "[fetch].browser.persistent_profiles.profile_process_timeout_ms must be > 0"
+                    .to_string(),
             ));
         }
 

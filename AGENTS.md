@@ -35,12 +35,12 @@ src/
   main.rs          # binary entry point (clap, tokio main)
   lib.rs           # library root, re-exports core/fetch/mcp/meta
   config.rs        # CLI config loader
-  commands/        # subcommands: doctor, search, providers, mcp, fetch
+  commands/        # subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
   core/            # types, config, error, query, sanitize, identity, warning
   meta/            # MetadataSearchAdapter + 34 vendored engines + forge adapter + local workspace cache
-  fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering
+  fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), tool definitions, server state
-tests/             # integration, corpus, contract, property, and adversarial tests
+tests/             # integration, corpus, contract, property, adversarial, and browser_profiles tests
 fuzz/              # cargo-fuzz + libfuzzer targets (21 registered)
 ```
 
@@ -74,6 +74,7 @@ cargo test --locked --all-features --test security_applicability_regression --te
 cargo test --locked --all-features --test dispatch_fault_injection  # dispatch fault injection (requires mock)
 cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation
 cargo test --locked --all-features --test keyless_core  # keyless-core runtime contract tests
+cargo test --locked --features browser --test browser_profiles     # browser profile management
 ```
 
 ### Adding tests
@@ -106,6 +107,7 @@ cargo test --locked --all-features --test keyless_core  # keyless-core runtime c
 - **Provider model:** `ProviderKind` enum (`HtmlScrape`, `JsonApi`, `ApiKey`, `Local`). Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
 - **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors. Defined in `src/core/repo_search.rs`.
 - **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`.
+- **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default.
 - **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`.
 - **Windows is unsupported:** The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix.
 

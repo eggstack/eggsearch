@@ -93,18 +93,28 @@ fn is_noninteractive_verification(title_lower: &str, body: &str) -> bool {
 }
 
 fn is_javascript_shell(_title_lower: &str, text_len: usize, body: &str) -> bool {
-    if text_len < 50 && body.contains("<div id=\"root\"")
-        || body.contains("<div id=\"app\"")
-        || body.contains("<div id=\"__next\"")
+    let body_lower = body.to_lowercase();
+
+    if text_len < 50
+        && (body_lower.contains("<div id=\"root\"")
+            || body_lower.contains("<div id=\"app\"")
+            || body_lower.contains("<div id=\"__next\""))
     {
         return true;
     }
 
-    if text_len < 100 {
-        let script_count = body.matches("<script").count();
-        if script_count >= 3 && body.contains("<body") && text_len < 50 {
+    let script_count = body_lower.matches("<script").count();
+    let tag_count = body_lower.matches('<').count();
+
+    if tag_count > 0 {
+        let ratio = script_count as f64 / tag_count as f64;
+        if ratio > 0.3 && text_len < 100 && body_lower.contains("<body") {
             return true;
         }
+    }
+
+    if text_len < 50 && script_count >= 3 && body_lower.contains("<body") {
+        return true;
     }
 
     false
@@ -216,6 +226,30 @@ mod tests {
         assert_eq!(
             classify_response(200, Some("text/html"), Some("App"), 20, body.as_bytes()),
             FetchDisposition::JavascriptShell
+        );
+    }
+
+    #[test]
+    fn js_shell_high_script_density() {
+        let body = r#"<html><body><script></script><script></script><script></script><div></div></body></html>"#;
+        assert_eq!(
+            classify_response(200, Some("text/html"), Some("App"), 10, body.as_bytes()),
+            FetchDisposition::JavascriptShell
+        );
+    }
+
+    #[test]
+    fn useful_content_with_scripts_and_text() {
+        let body = r#"<html><head><script src="a.js"></script></head><body><p>This is a real page with lots of text content that makes it useful.</p></body></html>"#;
+        assert_eq!(
+            classify_response(
+                200,
+                Some("text/html"),
+                Some("Article"),
+                500,
+                body.as_bytes()
+            ),
+            FetchDisposition::UsefulContent
         );
     }
 }

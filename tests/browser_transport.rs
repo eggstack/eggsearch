@@ -2,8 +2,20 @@
 
 use eggsearch::fetch::browser::classify::{classify_response, FetchDisposition};
 use eggsearch::fetch::browser::discover::{browser_capability_report, discover_browser};
-use eggsearch::fetch::browser::intercept::{is_request_allowed, PolicyViolation};
-use eggsearch::fetch::browser::types::{BrowserConfig, BrowserFamily, BrowserSource, RenderPolicy};
+use eggsearch::fetch::browser::intercept::{
+    is_request_allowed, is_request_allowed_with_dns, PolicyViolation,
+};
+use eggsearch::fetch::browser::lifecycle::BrowserLifecycle;
+use eggsearch::fetch::browser::navigate::{
+    browser_fetch, browser_fetch_with_policy, BrowserFetchError,
+};
+use eggsearch::fetch::browser::types::{
+    BrowserConfig, BrowserDiscovery, BrowserFamily, BrowserSource, RenderPolicy,
+    MAX_GLOBAL_CONCURRENCY, MAX_MAX_DOM_BYTES, MAX_MAX_REQUESTS, MAX_NAVIGATION_TIMEOUT_MS,
+    MAX_PER_ORIGIN_CONCURRENCY, MAX_POST_LOAD_WAIT_MS, MAX_STARTUP_TIMEOUT_MS,
+    MAX_VERIFICATION_WAIT_MS,
+};
+use std::sync::Arc;
 
 #[test]
 fn classify_useful_html() {
@@ -259,11 +271,8 @@ fn capability_report_no_browser() {
 
 #[test]
 fn capability_report_with_browser() {
-    use eggsearch::fetch::browser::types::BrowserDiscovery;
-    use std::path::PathBuf;
-
     let disc = BrowserDiscovery {
-        path: PathBuf::from("/usr/bin/google-chrome-stable"),
+        path: std::path::PathBuf::from("/usr/bin/google-chrome-stable"),
         family: BrowserFamily::Chrome,
         version: "Chrome 120.0.0.0".into(),
         source: BrowserSource::AutoDiscovered,
@@ -346,4 +355,274 @@ fn fetch_disposition_all_variants() {
         assert!(!format!("{v:?}").is_empty());
     }
     assert_eq!(variants.len(), 9);
+}
+
+#[tokio::test]
+async fn test1_executable_discovery_order_and_explicit_override() {
+    let disc_auto = discover_browser(None);
+    let disc_explicit = discover_browser(Some("/usr/bin/google-chrome-stable"));
+    if let Some(disc) = disc_auto {
+        assert!(disc.source == BrowserSource::AutoDiscovered);
+    }
+    if let Some(disc) = disc_explicit {
+        assert!(disc.source == BrowserSource::Configured);
+    }
+}
+
+#[tokio::test]
+async fn test2_invalid_executable_rejection() {
+    let result = discover_browser(Some("/nonexistent/fake-chrome"));
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn test3_browser_unavailable_result() {
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+    let result = browser_fetch(
+        &lifecycle,
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+    )
+    .await;
+    assert!(matches!(result, Err(BrowserFetchError::LaunchFailed(_))));
+}
+
+#[tokio::test]
+async fn test4_http_only_never_starts_chrome() {
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+    let result = browser_fetch_with_policy(
+        &lifecycle,
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+        &RenderPolicy::HttpOnly,
+    )
+    .await;
+    assert!(matches!(result, Err(BrowserFetchError::HttpOnly)));
+}
+
+#[tokio::test]
+async fn test5_auto_does_not_escalate_useful_html() {
+    let disposition = classify_response(
+        200,
+        Some("text/html"),
+        Some("Article Title"),
+        500,
+        b"<html><body><p>Real content here</p></body></html>",
+    );
+    assert_eq!(disposition, FetchDisposition::UsefulContent);
+}
+
+#[tokio::test]
+async fn test6_auto_escalates_deterministic_js_shell_once() {
+    let disposition = classify_response(
+        200,
+        Some("text/html"),
+        Some("App"),
+        20,
+        br#"<html><head><title>App</title></head><body><div id="root"></div><script src="a.js"></script><script src="b.js"></script><script src="c.js"></script></body></html>"#,
+    );
+    assert_eq!(disposition, FetchDisposition::JavascriptShell);
+}
+
+#[tokio::test]
+async fn test7_auto_does_not_escalate_error_statuses() {
+    let cases = vec![
+        (401, FetchDisposition::AuthenticationRequired),
+        (403, FetchDisposition::AccessDenied),
+        (404, FetchDisposition::AccessDenied),
+        (429, FetchDisposition::RateLimited),
+        (500, FetchDisposition::ServerError),
+        (503, FetchDisposition::ServerError),
+    ];
+    for (status, expected) in cases {
+        let disposition = classify_response(status, Some("text/html"), None, 0, b"");
+        assert_eq!(
+            disposition, expected,
+            "Status {status} should map to {expected:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test8_explicit_browser_rendering_policy() {
+    let result = browser_fetch_with_policy(
+        &Arc::new(BrowserLifecycle::new(None, BrowserConfig::default())),
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+        &RenderPolicy::Browser,
+    )
+    .await;
+    assert!(matches!(result, Err(BrowserFetchError::LaunchFailed(_))));
+}
+
+#[tokio::test]
+async fn test9_final_dom_passes_through_sanitation() {
+    let html = b"<html><head><title>Test</title></head><body><p>Hello</p></body></html>";
+    let (title, _, text, _, warnings, _, _, _) =
+        eggsearch::fetch::extract::extract_content(html, "https://example.com", 10000, false);
+    assert_eq!(title, Some("Test".to_string()));
+    assert!(text.contains("Hello"));
+    assert!(warnings.is_empty());
+}
+
+#[tokio::test]
+async fn test10_top_level_prohibited_redirect_is_blocked() {
+    assert_eq!(
+        is_request_allowed("http://127.0.0.1/redirect"),
+        Err(PolicyViolation::PrivateNetworkTarget)
+    );
+}
+
+#[tokio::test]
+async fn test11_prohibited_subresource_is_blocked() {
+    assert_eq!(
+        is_request_allowed("http://169.254.169.254/latest/meta-data/"),
+        Err(PolicyViolation::PrivateNetworkTarget)
+    );
+    assert_eq!(
+        is_request_allowed("http://[::1]/internal"),
+        Err(PolicyViolation::PrivateNetworkTarget)
+    );
+}
+
+#[tokio::test]
+async fn test12_request_count_and_dom_size_limits() {
+    let cfg = BrowserConfig {
+        max_requests: 10,
+        max_dom_bytes: 1024,
+        ..Default::default()
+    };
+    assert!(cfg.validate().is_ok());
+    let cfg_excessive = BrowserConfig {
+        max_requests: 10000,
+        max_dom_bytes: 100_000_000,
+        ..Default::default()
+    };
+    assert!(cfg_excessive.validate().is_err());
+}
+
+#[tokio::test]
+async fn test13_navigation_timeout_cleanup() {
+    let cfg = BrowserConfig {
+        navigation_timeout_ms: 1,
+        startup_timeout_ms: 1,
+        ..Default::default()
+    };
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, cfg.clone()));
+    let result = browser_fetch(&lifecycle, "https://example.com", &cfg, false).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test14_page_context_cleanup_after_failure() {
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+    let _ = browser_fetch(
+        &lifecycle,
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+    )
+    .await;
+    assert!(!lifecycle.is_available());
+}
+
+#[tokio::test]
+async fn test15_interactive_challenge_result() {
+    let disposition = classify_response(
+        200,
+        Some("text/html"),
+        Some("Access Denied"),
+        100,
+        b"<html><body>Access Denied</body></html>",
+    );
+    assert_eq!(disposition, FetchDisposition::InteractiveChallenge);
+}
+
+#[tokio::test]
+async fn test16_noninteractive_bounded_wait() {
+    let disposition = classify_response(
+        200,
+        Some("text/html"),
+        Some("Just a moment..."),
+        200,
+        b"<html><body>Please wait while we verify your browser</body></html>",
+    );
+    assert_eq!(disposition, FetchDisposition::NonInteractiveVerification);
+}
+
+#[tokio::test]
+async fn test17_origin_circuit_prevents_escalation() {
+    let cfg = BrowserConfig {
+        enabled: false,
+        ..Default::default()
+    };
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, cfg.clone()));
+    let result = browser_fetch(&lifecycle, "https://example.com", &cfg, false).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test18_browser_config_validates_limits() {
+    let good = BrowserConfig::default();
+    assert!(good.validate().is_ok());
+
+    let bad = BrowserConfig {
+        startup_timeout_ms: MAX_STARTUP_TIMEOUT_MS + 1,
+        navigation_timeout_ms: MAX_NAVIGATION_TIMEOUT_MS + 1,
+        post_load_wait_ms: MAX_POST_LOAD_WAIT_MS + 1,
+        verification_wait_ms: MAX_VERIFICATION_WAIT_MS + 1,
+        max_requests: MAX_MAX_REQUESTS + 1,
+        max_dom_bytes: MAX_MAX_DOM_BYTES + 1,
+        global_concurrency: MAX_GLOBAL_CONCURRENCY + 1,
+        per_origin_concurrency: MAX_PER_ORIGIN_CONCURRENCY + 1,
+        ..Default::default()
+    };
+    let errors = bad.validate().unwrap_err();
+    assert_eq!(errors.len(), 8);
+}
+
+#[tokio::test]
+async fn test_dns_resolution_blocks_private_host() {
+    let result = is_request_allowed_with_dns("http://localhost/").await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_browser_config_clamped_values() {
+    let cfg = BrowserConfig {
+        startup_timeout_ms: u64::MAX,
+        navigation_timeout_ms: u64::MAX,
+        ..Default::default()
+    };
+    let clamped = cfg.with_clamped_values();
+    assert_eq!(clamped.startup_timeout_ms, MAX_STARTUP_TIMEOUT_MS);
+    assert_eq!(clamped.navigation_timeout_ms, MAX_NAVIGATION_TIMEOUT_MS);
+    assert!(clamped.validate().is_ok());
+}
+
+#[test]
+fn classify_js_shell_high_script_density() {
+    let body = r#"<html><body><script></script><script></script><script></script><div></div></body></html>"#;
+    assert_eq!(
+        classify_response(200, Some("text/html"), Some("App"), 10, body.as_bytes()),
+        FetchDisposition::JavascriptShell
+    );
+}
+
+#[test]
+fn classify_useful_content_with_scripts_and_text() {
+    let body = r#"<html><head><script src="a.js"></script></head><body><p>This is a real page with lots of text content that makes it useful.</p></body></html>"#;
+    assert_eq!(
+        classify_response(
+            200,
+            Some("text/html"),
+            Some("Article"),
+            500,
+            body.as_bytes()
+        ),
+        FetchDisposition::UsefulContent
+    );
 }

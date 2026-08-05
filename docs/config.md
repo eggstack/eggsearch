@@ -409,6 +409,40 @@ Local workspace search is disabled by default.
 
 When enabled, local results use `local_trusted` trust labels and can be surfaced through `repo_search`, `repo_fetch`, and `repo_map`. They remain provenance-trusted, not instruction-trusted.
 
+## Browser Rendering
+
+The `[fetch.browser]` section configures optional headless Chrome/Chromium rendering. Browser rendering is disabled by default and requires the `browser` Cargo feature.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `false` | Enable browser rendering escalation |
+| `policy` | `"http_only"` | Render policy: `http_only`, `auto`, or `browser` |
+| `executable` | auto-discovered | Path to Chrome/Chromium executable |
+| `startup_timeout_ms` | `10000` | Browser startup timeout |
+| `navigation_timeout_ms` | `20000` | Page navigation timeout |
+| `post_load_wait_ms` | `1500` | Wait after page load |
+| `verification_wait_ms` | `10000` | Wait for non-interactive verification |
+| `max_requests` | `100` | Maximum requests per browser session |
+| `max_dom_bytes` | `4000000` | Maximum DOM size |
+| `global_concurrency` | `1` | Global browser concurrency |
+| `per_origin_concurrency` | `1` | Per-origin browser concurrency |
+| `block_media` | `true` | Block media autoplay |
+
+### Persistent Browser Profiles
+
+The `[fetch.browser.persistent_profiles]` section configures named, origin-scoped persistent browser profiles (Phase 5).
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `false` | Enable persistent browser profiles |
+| `profiles_dir` | platform default | Custom profiles directory |
+| `allowed_profiles` | empty (all allowed) | Allowlist of profile names |
+| `profile_process_timeout_ms` | `30000` | Timeout for profile-scoped browser processes |
+
+Profiles are created through CLI-only headed login (`eggsearch browser-login`). MCP callers select profiles by name via the `browser_profile` field on `web_fetch`. Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml` with Chrome data in a sibling `chrome-data/` directory.
+
+Profiles are disabled by default. When disabled, MCP callers cannot use `browser_profile`. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies.
+
 ## Provider Status
 
 `provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, quality metadata, and workflow recipes. The `probe` field is reserved and currently has no effect.

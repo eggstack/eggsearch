@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,7 +11,11 @@ pub struct BrowserLifecycle {
     config: BrowserConfig,
     browser: Mutex<Option<Arc<chromiumoxide::Browser>>>,
     handler_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    restart_count: Mutex<u32>,
+    user_data_dir: Mutex<Option<PathBuf>>,
 }
+
+const MAX_RESTARTS: u32 = 1;
 
 impl BrowserLifecycle {
     pub fn new(discovery: Option<BrowserDiscovery>, config: BrowserConfig) -> Self {
@@ -19,6 +24,8 @@ impl BrowserLifecycle {
             config,
             browser: Mutex::new(None),
             handler_handle: Mutex::new(None),
+            restart_count: Mutex::new(0),
+            user_data_dir: Mutex::new(None),
         }
     }
 
@@ -32,6 +39,12 @@ impl BrowserLifecycle {
             }
         }
 
+        let mut restarts = self.restart_count.lock().await;
+        if *restarts >= MAX_RESTARTS {
+            return Err(BrowserLaunchError::RestartLimitReached);
+        }
+        *restarts += 1;
+
         self.launch().await
     }
 
@@ -40,6 +53,8 @@ impl BrowserLifecycle {
             .discovery
             .as_ref()
             .ok_or(BrowserLaunchError::NoBrowser)?;
+
+        let temp_dir = self.create_user_data_dir().await?;
 
         let mut bc = chromiumoxide::BrowserConfig::builder()
             .no_sandbox()
@@ -66,10 +81,17 @@ impl BrowserLifecycle {
         bc = bc.arg("--metrics-recording-only");
         bc = bc.arg("--password-store=basic");
         bc = bc.arg("--use-mock-keychain");
+        bc = bc.arg("--disable-features=TranslateUI");
+        bc = bc.arg("--disable-ipc-flooding-protection");
+        bc = bc.arg("--disable-extensions-http-auth-schemes");
+        bc = bc.arg("--disable-backgrounding-occluded-windows");
+        bc = bc.arg("--disable-renderer-backgrounding");
 
         if self.config.block_media {
             bc = bc.arg("--autoplay-policy=no-user-gesture-required");
         }
+
+        bc = bc.arg(format!("--user-data-dir={}", temp_dir.display()));
 
         let startup_timeout = Duration::from_millis(self.config.startup_timeout_ms);
 
@@ -82,9 +104,14 @@ impl BrowserLifecycle {
             .await
             .map_err(|e| BrowserLaunchError::LaunchFailed(e.to_string()))?;
 
+        let self_weak = Arc::downgrade(self);
         let handle = tokio::spawn(async move {
             use futures::StreamExt;
             while let Some(_event) = handler.next().await {}
+            if let Some(lifecycle) = self_weak.upgrade() {
+                let mut browser = lifecycle.browser.lock().await;
+                *browser = None;
+            }
         });
 
         {
@@ -99,6 +126,41 @@ impl BrowserLifecycle {
         Ok(Arc::clone(self.browser.lock().await.as_ref().unwrap()))
     }
 
+    async fn create_user_data_dir(&self) -> Result<PathBuf, BrowserLaunchError> {
+        let base = std::env::temp_dir().join("eggsearch-browser");
+        std::fs::create_dir_all(&base).map_err(|e| {
+            BrowserLaunchError::LaunchFailed(format!("failed to create browser temp dir: {e}"))
+        })?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o700);
+            std::fs::set_permissions(&base, perms).map_err(|e| {
+                BrowserLaunchError::LaunchFailed(format!(
+                    "failed to set browser temp dir permissions: {e}"
+                ))
+            })?;
+        }
+
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+
+        let dir = base.join(format!("ctx-{suffix}"));
+        std::fs::create_dir(&dir).map_err(|e| {
+            BrowserLaunchError::LaunchFailed(format!("failed to create browser context dir: {e}"))
+        })?;
+
+        {
+            let mut ud = self.user_data_dir.lock().await;
+            *ud = Some(dir.clone());
+        }
+
+        Ok(dir)
+    }
+
     pub async fn close(&self) {
         let mut browser = self.browser.lock().await;
         if let Some(b) = browser.take() {
@@ -109,6 +171,14 @@ impl BrowserLifecycle {
         let mut handle = self.handler_handle.lock().await;
         if let Some(h) = Option::take(&mut *handle) {
             h.abort();
+        }
+        self.cleanup_user_data_dir().await;
+    }
+
+    async fn cleanup_user_data_dir(&self) {
+        let mut dir = self.user_data_dir.lock().await;
+        if let Some(path) = dir.take() {
+            let _ = std::fs::remove_dir_all(&path);
         }
     }
 
@@ -129,6 +199,11 @@ impl Drop for BrowserLifecycle {
                 h.abort();
             }
         }
+        if let Ok(mut dir) = self.user_data_dir.try_lock() {
+            if let Some(path) = dir.take() {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
     }
 }
 
@@ -137,6 +212,7 @@ pub enum BrowserLaunchError {
     NoBrowser,
     ConfigError(String),
     LaunchFailed(String),
+    RestartLimitReached,
 }
 
 impl std::fmt::Display for BrowserLaunchError {
@@ -145,6 +221,7 @@ impl std::fmt::Display for BrowserLaunchError {
             Self::NoBrowser => write!(f, "no browser executable discovered"),
             Self::ConfigError(e) => write!(f, "browser config error: {e}"),
             Self::LaunchFailed(e) => write!(f, "browser launch failed: {e}"),
+            Self::RestartLimitReached => write!(f, "browser restart limit reached"),
         }
     }
 }

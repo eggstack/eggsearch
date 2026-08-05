@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 use tracing;
 
 use crate::core::config::AppConfig;
+#[cfg(feature = "browser")]
+use crate::fetch::browser::ProfileManager;
 use crate::fetch::cache::FetchCache;
 use crate::fetch::origin::{OriginController, OriginPolicy};
 use crate::fetch::FetchClient;
@@ -50,19 +52,27 @@ pub struct ServerState {
     /// call. Public so tests can construct `ServerState` instances
     /// with custom local-backend configurations.
     pub local_inventory_cache: Arc<Mutex<Option<LocalInventoryCache>>>,
+    /// Browser profile manager. `None` when browser feature is not
+    /// compiled in or when persistent profiles are disabled.
+    #[cfg(feature = "browser")]
+    pub profile_manager: Option<Arc<ProfileManager>>,
 }
 
 impl std::fmt::Debug for ServerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ServerState")
-            .field("mode", &self.config.search.mode)
+        let mut d = f.debug_struct("ServerState");
+        d.field("mode", &self.config.search.mode)
             .field("providers", &self.adapter.provider_ids())
             .field("fetch_enabled", &self.config.fetch.enabled)
             .field("origin_controller", &self.origin_controller.is_some())
             .field("fetch_cache", &self.fetch_cache.is_some())
             .field("kev_client", &"<KevClient>")
-            .field("local_enabled", &self.local_backend.is_some())
-            .finish()
+            .field("local_enabled", &self.local_backend.is_some());
+        #[cfg(feature = "browser")]
+        {
+            d.field("profile_manager", &self.profile_manager.is_some());
+        }
+        d.finish()
     }
 }
 
@@ -184,6 +194,32 @@ impl ServerState {
 
         let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
 
+        #[cfg(feature = "browser")]
+        let profile_manager = {
+            let bp = &config.fetch.browser.persistent_profiles;
+            if bp.enabled {
+                match ProfileManager::new(
+                    bp.profiles_dir.as_deref(),
+                    true,
+                    bp.allowed_profiles.clone(),
+                ) {
+                    Ok(mgr) => {
+                        tracing::info!(
+                            profiles_dir = %mgr.root_dir().display(),
+                            "persistent browser profiles enabled"
+                        );
+                        Some(Arc::new(mgr))
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to initialize browser profile manager; persistent profiles will be unavailable");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        };
+
         // Build local workspace backend
         let local_backend = match LocalWorkspaceBackend::new(config.local.clone()) {
             Ok(backend) if backend.is_enabled() => {
@@ -209,6 +245,8 @@ impl ServerState {
             kev_client,
             local_backend,
             local_inventory_cache: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "browser")]
+            profile_manager,
         })
     }
 
@@ -264,6 +302,8 @@ impl ServerState {
             kev_client,
             local_backend: None,
             local_inventory_cache: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "browser")]
+            profile_manager: None,
         }
     }
 

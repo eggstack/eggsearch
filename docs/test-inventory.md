@@ -122,6 +122,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `docs_provider_inventory` | Provider ID validation |
 | `docs_tool_names` | Tool name validation |
 | `docs_safety_vocabulary` | Safety vocabulary validation |
+| `browser_profiles` | Browser profile management (requires `browser` feature) |
 
 ## CI Jobs
 

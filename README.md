@@ -35,6 +35,35 @@ Search tools return machine-readable `next_actions` hints. `web_fetch` supports 
 
 `web_fetch` supports optional headless Chrome/Chromium rendering when the `browser` Cargo feature is enabled and `[fetch].browser.enabled = true` in config. Browser rendering escalates from HTTP for JavaScript-heavy pages that ordinary fetching cannot render. It discovers an already-installed system Chrome/Chromium — it never downloads a browser. Interactive challenges (CAPTCHAs, Turnstile) are detected and reported but never solved. Browser rendering is public-network-only and rejects localhost/private targets.
 
+### Browser Profiles (Optional, Phase 5)
+
+Persistent browser profiles allow a local operator to establish a dedicated browser session for an origin that requires authentication or interactive human verification. Profiles are created only through CLI commands — MCP callers cannot create profiles or launch headed browsers.
+
+```bash
+# Create a profile and open a headed browser for login
+eggsearch browser-login https://example.com --profile my-portal
+
+# List all profiles
+eggsearch browser-profiles list
+
+# Inspect a profile
+eggsearch browser-profiles inspect my-portal
+
+# Remove a profile
+eggsearch browser-profiles remove my-portal
+```
+
+Once a profile is established, use it in `web_fetch`:
+
+```json
+{
+  "url": "https://example.com/dashboard",
+  "browser_profile": "my-portal"
+}
+```
+
+Profiles are disabled by default. Enable with `[fetch.browser].persistent_profiles_enabled = true` in config. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies.
+
 ## Safety Defaults
 
 - Web and remote results are `external_untrusted`.

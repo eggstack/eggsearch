@@ -1,6 +1,10 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr, ToSocketAddrs};
+use std::time::Duration;
 
+use tokio::time::timeout;
 use url::Url;
+
+const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub fn is_request_allowed(url_str: &str) -> Result<(), PolicyViolation> {
     let url = Url::parse(url_str).map_err(|_| PolicyViolation::InvalidUrl)?;
@@ -29,6 +33,58 @@ pub fn is_request_allowed(url_str: &str) -> Result<(), PolicyViolation> {
     if let Ok(ip) = host_str.parse::<Ipv6Addr>() {
         if is_private_ipv6(ip) {
             return Err(PolicyViolation::PrivateNetworkTarget);
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn is_request_allowed_with_dns(url_str: &str) -> Result<(), PolicyViolation> {
+    is_request_allowed(url_str)?;
+
+    let url = Url::parse(url_str).map_err(|_| PolicyViolation::InvalidUrl)?;
+    let host_str = url.host_str().ok_or(PolicyViolation::NoHost)?;
+
+    if host_str.parse::<Ipv4Addr>().is_ok() || host_str.parse::<Ipv6Addr>().is_ok() {
+        return Ok(());
+    }
+
+    let port = url.port().unwrap_or(match url.scheme() {
+        "https" => 443,
+        _ => 80,
+    });
+
+    let addr_str = format!("{host_str}:{port}");
+
+    let addrs = timeout(
+        DNS_RESOLUTION_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            addr_str
+                .to_socket_addrs()
+                .map(|iter| iter.collect::<Vec<_>>())
+        }),
+    )
+    .await
+    .map_err(|_| PolicyViolation::DnsResolutionTimeout)?
+    .map_err(|_| PolicyViolation::DnsResolutionFailed)?
+    .map_err(|_| PolicyViolation::DnsResolutionFailed)?;
+
+    for addr in addrs {
+        match addr {
+            std::net::SocketAddr::V4(v4) => {
+                if is_private_ipv4(*v4.ip()) {
+                    return Err(PolicyViolation::ResolvedToPrivateNetwork(
+                        v4.ip().to_string(),
+                    ));
+                }
+            }
+            std::net::SocketAddr::V6(v6) => {
+                if is_private_ipv6(*v6.ip()) {
+                    return Err(PolicyViolation::ResolvedToPrivateNetwork(
+                        v6.ip().to_string(),
+                    ));
+                }
+            }
         }
     }
 
@@ -86,6 +142,9 @@ pub enum PolicyViolation {
     EmbeddedCredentials,
     NoHost,
     PrivateNetworkTarget,
+    DnsResolutionTimeout,
+    DnsResolutionFailed,
+    ResolvedToPrivateNetwork(String),
 }
 
 impl std::fmt::Display for PolicyViolation {
@@ -96,6 +155,11 @@ impl std::fmt::Display for PolicyViolation {
             Self::EmbeddedCredentials => write!(f, "embedded credentials blocked"),
             Self::NoHost => write!(f, "no host in URL"),
             Self::PrivateNetworkTarget => write!(f, "private/local network target blocked"),
+            Self::DnsResolutionTimeout => write!(f, "DNS resolution timed out"),
+            Self::DnsResolutionFailed => write!(f, "DNS resolution failed"),
+            Self::ResolvedToPrivateNetwork(addr) => {
+                write!(f, "resolved to private network address: {addr}")
+            }
         }
     }
 }
@@ -210,5 +274,17 @@ mod tests {
             is_request_allowed("http://192.0.2.1/"),
             Err(PolicyViolation::PrivateNetworkTarget)
         );
+    }
+
+    #[tokio::test]
+    async fn dns_resolution_succeeds_for_public_host() {
+        let result = is_request_allowed_with_dns("https://example.com").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn dns_blocks_localhost_resolution() {
+        let result = is_request_allowed_with_dns("http://localhost/").await;
+        assert!(result.is_err());
     }
 }

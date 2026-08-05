@@ -298,9 +298,55 @@ block_media = true
 - Solve CAPTCHAs or click Turnstile controls
 - Use the user's ordinary Chrome profile
 - Rotate proxies or synthesize fingerprints
-- Persist browser state across requests
+- Persist browser state across requests (unless using persistent profiles)
 - Return screenshots in MCP responses
 - Crawl recursively
+
+## Persistent Browser Profiles (Phase 5, Optional)
+
+Persistent browser profiles allow a local operator to establish a dedicated browser session for an origin requiring authentication or interactive verification.
+
+### Profile Lifecycle
+
+1. **Create:** CLI `browser-login` opens a headed Chrome at the specified origin. The operator logs in, completes MFA/CAPTCHAs, and closes the browser.
+2. **Reuse:** MCP `web_fetch` with `browser_profile` uses the profile's Chrome data directory for headless rendering, preserving cookies and storage.
+3. **Expiry:** If a profile-scoped fetch returns a login form or challenge, `browser_profile_requires_attention` is returned with the CLI command to re-establish the session.
+4. **Remove:** CLI `browser-profiles remove` deletes the profile directory and invalidates its cache scope.
+
+### Profile Metadata Model
+
+```
+$XDG_DATA_HOME/eggsearch/browser-profiles/
+    <opaque-id>/
+        profile.toml          # BrowserProfileMetadata
+        chrome-data/          # Chrome's user data directory
+```
+
+`profile.toml` contains only non-secret metadata (display name, allowed origin, timestamps, browser version). Chrome owns all cookie/storage data under `chrome-data/`.
+
+### Profile Constraints
+
+- Profiles are disabled by default; explicit operator enablement required
+- MCP callers cannot create, remove, or list profiles
+- Each profile is restricted to its recorded exact origin
+- One profile cannot be used concurrently by headed login and headless fetch (file lock)
+- Opaque directory IDs prevent cache access by recreated profiles of the same display name
+- Profile directories use owner-only permissions on Unix
+- Symlinked profile directories are rejected
+
+### Cache Partitioning
+
+Profile-scoped fetches use `CacheScope::Profile(opaque_id)` which partitions both raw and derived cache tiers. Anonymous and profile cache entries never mix.
+
+### Configuration
+
+```toml
+[fetch.browser.persistent_profiles]
+enabled = false
+profiles_dir = ""           # empty = platform default
+allowed_profiles = []       # empty = all allowed
+profile_process_timeout_ms = 30000
+```
 
 ---
 

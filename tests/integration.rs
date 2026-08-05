@@ -884,6 +884,8 @@ async fn web_fetch_disabled_by_policy_returns_error() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -926,6 +928,8 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -957,6 +961,8 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -997,6 +1003,8 @@ async fn web_fetch_respects_include_links_default() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -1042,6 +1050,8 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -1080,6 +1090,8 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -1507,6 +1519,8 @@ async fn web_fetch_sanitize_emits_marker_warning() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -1553,6 +1567,8 @@ async fn web_fetch_empty_url_returns_validation_error() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -1576,6 +1592,8 @@ async fn web_fetch_unsupported_scheme_returns_error() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -1599,6 +1617,8 @@ async fn web_fetch_embedded_credentials_returns_error() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -1620,6 +1640,8 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
                 include_links: None,
                 pdf: None,
                 cache_policy: None,
+                render: None,
+                browser_profile: None,
             },
         )
         .await;
@@ -1658,6 +1680,8 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -1828,6 +1852,8 @@ async fn web_fetch_mcp_level_full_response_shape() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -1968,6 +1994,8 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2027,6 +2055,8 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2125,6 +2155,8 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2167,6 +2199,8 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2214,6 +2248,8 @@ async fn web_fetch_document_metadata_only_no_body_text() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2265,6 +2301,8 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2323,6 +2361,8 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2379,6 +2419,8 @@ async fn web_fetch_document_has_blocks_and_chunks() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2447,6 +2489,8 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2526,6 +2570,8 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2585,6 +2631,8 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2645,6 +2693,8 @@ async fn web_fetch_document_outline_populated_from_title() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2705,6 +2755,8 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2762,6 +2814,8 @@ async fn web_fetch_document_rust_source_has_code_kind() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2817,6 +2871,8 @@ async fn web_fetch_document_json_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2861,6 +2917,8 @@ async fn web_fetch_document_markdown_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2928,6 +2986,8 @@ async fn web_fetch_document_toml_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -2974,6 +3034,8 @@ async fn web_fetch_document_yaml_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3017,6 +3079,8 @@ async fn web_fetch_document_diff_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3063,6 +3127,8 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3118,6 +3184,8 @@ async fn web_fetch_document_code_preserves_line_ranges() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3175,6 +3243,8 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3223,6 +3293,8 @@ async fn web_fetch_document_truncation_at_line_boundary() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3283,6 +3355,8 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3328,6 +3402,8 @@ async fn web_fetch_document_application_json_no_extension() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3382,6 +3458,8 @@ async fn web_fetch_links_classification() {
             include_links: Some(true),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3452,6 +3530,8 @@ async fn web_fetch_links_seen_metadata() {
             include_links: Some(true),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3499,6 +3579,8 @@ async fn web_fetch_links_empty_when_not_requested() {
             include_links: Some(false),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3549,6 +3631,8 @@ async fn web_fetch_links_same_domain_detection() {
             include_links: Some(true),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3617,6 +3701,8 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3678,6 +3764,8 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3736,6 +3824,8 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3798,6 +3888,8 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3865,6 +3957,8 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -3987,6 +4081,8 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4075,6 +4171,8 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4156,6 +4254,8 @@ async fn web_fetch_empty_main_falls_back_to_body() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4203,6 +4303,8 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4255,6 +4357,8 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4300,6 +4404,8 @@ async fn web_fetch_body_only_page_still_works() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4357,6 +4463,8 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
             include_links: Some(true),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4430,6 +4538,8 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
             include_links: Some(true),
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4495,6 +4605,8 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -4945,6 +5057,8 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
         include_links: None,
         pdf: None,
         cache_policy: None,
+        render: None,
+        browser_profile: None,
     };
 
     // We can't easily test the actual GitHub raw URL rewrite through
@@ -9550,6 +9664,8 @@ async fn repo_fetch_via_web_fetch_full_file() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -9590,6 +9706,8 @@ async fn repo_fetch_via_web_fetch_404() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -9632,6 +9750,8 @@ async fn repo_fetch_via_web_fetch_429() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -9673,6 +9793,8 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -9723,6 +9845,8 @@ async fn repo_fetch_via_web_fetch_truncation() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -16309,6 +16433,8 @@ mod security_context_safety {
             )),
             local_backend: Some(Arc::new(backend)),
             local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(feature = "browser")]
+            profile_manager: None,
         });
 
         let first = state.local_inventory();
@@ -16365,8 +16491,9 @@ mod security_context_safety {
             )),
             local_backend: Some(Arc::new(backend)),
             local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(feature = "browser")]
+            profile_manager: None,
         });
-
         let inventory = state.local_inventory();
         let names: Vec<&str> = inventory.iter().map(|r| r.root_name.as_str()).collect();
         assert!(
@@ -19956,6 +20083,8 @@ async fn web_fetch_retries_on_network_error_then_succeeds() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20013,6 +20142,8 @@ async fn web_fetch_respects_deadline_during_retry() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await;
@@ -20059,6 +20190,8 @@ async fn web_fetch_concurrent_same_origin_respects_semaphore() {
                     include_links: None,
                     pdf: None,
                     cache_policy: None,
+                    render: None,
+                    browser_profile: None,
                 },
             )
             .await
@@ -20105,6 +20238,8 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20122,6 +20257,8 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20159,6 +20296,8 @@ async fn web_fetch_cache_refresh_policy_refetches() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20184,6 +20323,8 @@ async fn web_fetch_cache_refresh_policy_refetches() {
             include_links: None,
             pdf: None,
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Refresh),
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20222,6 +20363,8 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20246,6 +20389,8 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
             include_links: None,
             pdf: None,
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20284,6 +20429,8 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20300,6 +20447,8 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20338,6 +20487,8 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20354,6 +20505,8 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
@@ -20391,6 +20544,8 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
             include_links: None,
             pdf: None,
             cache_policy: None,
+            render: None,
+            browser_profile: None,
         },
     )
     .await
