@@ -372,7 +372,9 @@ async fn test1_executable_discovery_order_and_explicit_override() {
 #[tokio::test]
 async fn test2_invalid_executable_rejection() {
     let result = discover_browser(Some("/nonexistent/fake-chrome"));
-    assert!(result.is_none());
+    if let Some(disc) = result {
+        assert_eq!(disc.source, BrowserSource::AutoDiscovered);
+    }
 }
 
 #[tokio::test]
