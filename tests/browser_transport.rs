@@ -628,3 +628,217 @@ fn classify_useful_content_with_scripts_and_text() {
         FetchDisposition::UsefulContent
     );
 }
+
+#[tokio::test]
+async fn orchestration_http_only_never_invokes_browser() {
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+    let result = browser_fetch_with_policy(
+        &lifecycle,
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+        &RenderPolicy::HttpOnly,
+    )
+    .await;
+    assert!(matches!(result, Err(BrowserFetchError::HttpOnly)));
+}
+
+#[tokio::test]
+async fn orchestration_browser_direct_calls_browser() {
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+    let result = browser_fetch_with_policy(
+        &lifecycle,
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+        &RenderPolicy::Browser,
+    )
+    .await;
+    assert!(matches!(result, Err(BrowserFetchError::LaunchFailed(_))));
+}
+
+#[tokio::test]
+async fn orchestration_auto_escalates_for_js_shell() {
+    let disposition = classify_response(
+        200,
+        Some("text/html"),
+        Some("App"),
+        10,
+        br#"<html><head><title>App</title></head><body><div id="root"></div><script src="a.js"></script><script src="b.js"></script><script src="c.js"></script></body></html>"#,
+    );
+    assert!(matches!(disposition, FetchDisposition::JavascriptShell));
+}
+
+#[tokio::test]
+async fn orchestration_auto_no_escalate_for_401() {
+    let d = classify_response(401, Some("text/html"), None, 0, b"");
+    assert!(matches!(d, FetchDisposition::AuthenticationRequired));
+}
+
+#[tokio::test]
+async fn orchestration_auto_no_escalate_for_403() {
+    let d = classify_response(403, Some("text/html"), None, 0, b"");
+    assert!(matches!(d, FetchDisposition::AccessDenied));
+}
+
+#[tokio::test]
+async fn orchestration_auto_no_escalate_for_404() {
+    let d = classify_response(404, Some("text/html"), None, 0, b"");
+    assert!(matches!(d, FetchDisposition::AccessDenied));
+}
+
+#[tokio::test]
+async fn orchestration_auto_no_escalate_for_429() {
+    let d = classify_response(429, Some("text/html"), None, 0, b"");
+    assert!(matches!(d, FetchDisposition::RateLimited));
+}
+
+#[tokio::test]
+async fn orchestration_auto_no_escalate_for_interactive_challenge() {
+    let d = classify_response(
+        200,
+        Some("text/html"),
+        Some("Access Denied"),
+        200,
+        b"<html></html>",
+    );
+    assert!(matches!(d, FetchDisposition::InteractiveChallenge));
+}
+
+#[tokio::test]
+async fn orchestration_auto_no_escalate_for_server_error() {
+    let d = classify_response(500, Some("text/html"), None, 0, b"");
+    assert!(matches!(d, FetchDisposition::ServerError));
+}
+
+#[tokio::test]
+async fn orchestration_deadline_propagation() {
+    let cfg = BrowserConfig {
+        navigation_timeout_ms: 1,
+        startup_timeout_ms: 1,
+        ..Default::default()
+    };
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, cfg.clone()));
+    let start = std::time::Instant::now();
+    let result = browser_fetch_with_policy(
+        &lifecycle,
+        "https://example.com",
+        &cfg,
+        false,
+        &RenderPolicy::Browser,
+    )
+    .await;
+    let elapsed = start.elapsed();
+    assert!(result.is_err());
+    assert!(elapsed.as_millis() < 5000);
+}
+
+#[tokio::test]
+async fn orchestration_browser_unavailable_auto_classifies_as_launch_failed() {
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+    let result = browser_fetch_with_policy(
+        &lifecycle,
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+        &RenderPolicy::Auto,
+    )
+    .await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn orchestration_browser_unavailable_explicit_fails() {
+    let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+    let result = browser_fetch_with_policy(
+        &lifecycle,
+        "https://example.com",
+        &BrowserConfig::default(),
+        false,
+        &RenderPolicy::Browser,
+    )
+    .await;
+    assert!(matches!(result, Err(BrowserFetchError::LaunchFailed(_))));
+}
+
+#[test]
+fn orchestration_browser_availability_disabled() {
+    let cfg = BrowserConfig {
+        enabled: false,
+        ..Default::default()
+    };
+    let availability = cfg.check_availability(None);
+    assert!(matches!(
+        availability,
+        eggsearch::fetch::BrowserAvailability::BrowserDisabled
+    ));
+}
+
+#[test]
+fn orchestration_browser_availability_no_discovery() {
+    let cfg = BrowserConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    let availability = cfg.check_availability(None);
+    assert!(matches!(
+        availability,
+        eggsearch::fetch::BrowserAvailability::AutoDiscoveryFailed
+    ));
+}
+
+#[test]
+fn orchestration_browser_availability_with_discovery() {
+    use eggsearch::fetch::browser::types::BrowserDiscovery;
+    use eggsearch::fetch::browser::{BrowserFamily, BrowserSource};
+    use std::path::PathBuf;
+
+    let cfg = BrowserConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    let disc = BrowserDiscovery {
+        path: PathBuf::from("/usr/bin/google-chrome-stable"),
+        family: BrowserFamily::Chrome,
+        version: "Chrome 120.0.0.0".into(),
+        source: BrowserSource::AutoDiscovered,
+    };
+    let availability = cfg.check_availability(Some(&disc));
+    assert!(availability.is_available());
+}
+
+#[test]
+fn orchestration_render_policy_roundtrip() {
+    let policies = vec![
+        RenderPolicy::HttpOnly,
+        RenderPolicy::Auto,
+        RenderPolicy::Browser,
+    ];
+    for policy in policies {
+        let s = serde_json::to_string(&policy).unwrap();
+        let parsed: RenderPolicy = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, policy);
+    }
+}
+
+#[test]
+fn orchestration_fetch_disposition_escalation_decision() {
+    let should_escalate = |d: &FetchDisposition| -> bool {
+        matches!(
+            d,
+            FetchDisposition::JavascriptShell | FetchDisposition::NonInteractiveVerification
+        )
+    };
+
+    assert!(should_escalate(&FetchDisposition::JavascriptShell));
+    assert!(should_escalate(
+        &FetchDisposition::NonInteractiveVerification
+    ));
+    assert!(!should_escalate(&FetchDisposition::UsefulContent));
+    assert!(!should_escalate(&FetchDisposition::InteractiveChallenge));
+    assert!(!should_escalate(&FetchDisposition::RateLimited));
+    assert!(!should_escalate(&FetchDisposition::AccessDenied));
+    assert!(!should_escalate(&FetchDisposition::AuthenticationRequired));
+    assert!(!should_escalate(&FetchDisposition::ServerError));
+    assert!(!should_escalate(&FetchDisposition::Unsupported));
+}

@@ -25,10 +25,11 @@ pub mod types;
 
 #[cfg(feature = "browser")]
 pub use browser::{
-    browser_capability_report, browser_fetch, browser_fetch_with_policy, classify_response,
-    discover_browser, is_request_allowed, is_request_allowed_with_dns, parse_browser_major_version,
-    BrowserConfig, BrowserDiscovery, BrowserFamily, BrowserFetchResult, BrowserLaunchError,
-    BrowserLifecycle, BrowserProfileMetadata, BrowserSource, FetchDisposition, FetchTransportKind,
+    browser_capability_report, browser_fetch, browser_fetch_with_policy,
+    browser_result_to_response, classify_response, discover_browser, is_request_allowed,
+    is_request_allowed_with_dns, parse_browser_major_version, BrowserAvailability, BrowserConfig,
+    BrowserDiscovery, BrowserFamily, BrowserFetchResult, BrowserLaunchError, BrowserLifecycle,
+    BrowserProfileMetadata, BrowserSource, FetchDisposition, FetchTransportKind,
     ManualInteractionReason, ManualInteractionRequired, PolicyViolation, ProfileError, ProfileLock,
     ProfileManager, ProfileResult, RenderPolicy, TransportResponse, TransportTiming,
     DEFAULT_GLOBAL_CONCURRENCY, DEFAULT_MAX_DOM_BYTES, DEFAULT_MAX_REQUESTS,

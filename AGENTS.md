@@ -75,6 +75,7 @@ cargo test --locked --all-features --test dispatch_fault_injection  # dispatch f
 cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation
 cargo test --locked --all-features --test keyless_core  # keyless-core runtime contract tests
 cargo test --locked --features browser --test browser_profiles     # browser profile management
+cargo test --locked --features browser --test browser_transport    # browser transport orchestration
 ```
 
 ### Adding tests

@@ -65,6 +65,13 @@ fn state_with_default() -> Arc<ServerState> {
     Arc::new(ServerState::build(AppConfig::default()).expect("default state"))
 }
 
+fn state_with_localhost() -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    Arc::new(ServerState::build(cfg).expect("state builds"))
+}
+
 fn state_with_mode_off() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.search.mode = Mode::Off;
@@ -5265,6 +5272,9 @@ fn web_fetch_response_includes_fetch_transform_field() {
         retry_after_ms: None,
         origin_backoff_ms: None,
         response_headers: None,
+        transport: Some("http".to_string()),
+        browser_escalated: false,
+        manual_interaction_required: false,
     };
     let json = serde_json::to_value(&resp).unwrap();
     let ft = json
@@ -5313,6 +5323,9 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         retry_after_ms: None,
         origin_backoff_ms: None,
         response_headers: None,
+        transport: Some("http".to_string()),
+        browser_escalated: false,
+        manual_interaction_required: false,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -16435,6 +16448,8 @@ mod security_context_safety {
             local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(feature = "browser")]
             profile_manager: None,
+            #[cfg(feature = "browser")]
+            browser_lifecycle: None,
         });
 
         let first = state.local_inventory();
@@ -16493,6 +16508,8 @@ mod security_context_safety {
             local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(feature = "browser")]
             profile_manager: None,
+            #[cfg(feature = "browser")]
+            browser_lifecycle: None,
         });
         let inventory = state.local_inventory();
         let names: Vec<&str> = inventory.iter().map(|r| r.root_name.as_str()).collect();
@@ -20645,4 +20662,258 @@ async fn batch_fetch_respects_per_origin_concurrency() {
         successes, 4,
         "all items should succeed despite concurrency=1"
     );
+}
+
+#[tokio::test]
+async fn web_fetch_render_http_only_never_uses_browser() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body("<html><head><title>Test</title></head><body><p>Hello</p></body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/page", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("http_only".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await.unwrap();
+    assert_eq!(result["transport"], "http");
+    assert_eq!(result["browser_escalated"], false);
+}
+
+#[tokio::test]
+async fn web_fetch_render_auto_returns_useful_http_content() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/article");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body("<html><head><title>Article</title></head><body><p>This is a useful article with lots of content that should not trigger browser escalation.</p></body></html>");
+    });
+
+    let state = state_with_localhost();
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/article", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("auto".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await.unwrap();
+    assert_eq!(result["transport"], "http");
+    assert_eq!(result["browser_escalated"], false);
+}
+
+#[tokio::test]
+async fn web_fetch_render_auto_no_escalate_401() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/auth");
+        then.status(401).header("content-type", "text/html").body(
+            "<html><head><title>Unauthorized</title></head><body>Please log in</body></html>",
+        );
+    });
+
+    let state = state_with_localhost();
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/auth", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("auto".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err(), "401 should return an error");
+}
+
+#[tokio::test]
+async fn web_fetch_render_auto_no_escalate_429() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/rate-limited");
+        then.status(429).header("content-type", "text/html").body(
+            "<html><head><title>Too Many Requests</title></head><body>Slow down</body></html>",
+        );
+    });
+
+    let state = state_with_localhost();
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/rate-limited", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("auto".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err(), "429 should return an error, not escalate");
+}
+
+#[tokio::test]
+async fn web_fetch_render_auto_no_escalate_404() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/not-found");
+        then.status(404)
+            .header("content-type", "text/html")
+            .body("<html><head><title>Not Found</title></head><body>Page not found</body></html>");
+    });
+
+    let state = state_with_localhost();
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/not-found", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("auto".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err(), "404 should return an error, not escalate");
+}
+
+#[tokio::test]
+async fn web_fetch_render_auto_no_escalate_403() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/forbidden");
+        then.status(403)
+            .header("content-type", "text/html")
+            .body("<html><head><title>Forbidden</title></head><body>Access denied</body></html>");
+    });
+
+    let state = state_with_localhost();
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/forbidden", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("auto".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err(), "403 should return an error, not escalate");
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_render_invalid_returns_validation_error() {
+    let state = state_with_localhost();
+    let args = WebFetchArgs {
+        url: "https://example.com".to_string(),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: None,
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("invalid_policy".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(
+        result.is_err(),
+        "invalid render policy should return an error"
+    );
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("invalid render policy") || msg.contains("unknown"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_profile_with_http_only_rejected() {
+    let state = state_with_default();
+    let args = WebFetchArgs {
+        url: "https://example.com".to_string(),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: None,
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("http_only".to_string()),
+        browser_profile: Some("test-profile".to_string()),
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("browser_profile is not valid with render=http_only"));
+}
+
+#[tokio::test]
+async fn web_fetch_response_has_transport_field() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("hello");
+    });
+
+    let state = state_with_localhost();
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: None,
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await.unwrap();
+    assert!(result.get("transport").is_some());
+    assert_eq!(result["transport"], "http");
+    assert_eq!(result["browser_escalated"], false);
+    assert_eq!(result["manual_interaction_required"], false);
 }

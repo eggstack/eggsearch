@@ -497,6 +497,9 @@ impl FetchClient {
                     } else {
                         Some(cache_headers.clone())
                     },
+                    transport: Some("http".to_string()),
+                    browser_escalated: false,
+                    manual_interaction_required: false,
                 });
             }
 
@@ -630,6 +633,9 @@ impl FetchClient {
                 } else {
                     Some(cache_headers.clone())
                 },
+                transport: Some("http".to_string()),
+                browser_escalated: false,
+                manual_interaction_required: false,
             });
         }
 
@@ -1017,6 +1023,9 @@ impl FetchClient {
             } else {
                 Some(cache_headers)
             },
+            transport: Some("http".to_string()),
+            browser_escalated: false,
+            manual_interaction_required: false,
         })
     }
 

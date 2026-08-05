@@ -35,6 +35,13 @@ Search tools return machine-readable `next_actions` hints. `web_fetch` supports 
 
 `web_fetch` supports optional headless Chrome/Chromium rendering when the `browser` Cargo feature is enabled and `[fetch].browser.enabled = true` in config. Browser rendering escalates from HTTP for JavaScript-heavy pages that ordinary fetching cannot render. It discovers an already-installed system Chrome/Chromium — it never downloads a browser. Interactive challenges (CAPTCHAs, Turnstile) are detected and reported but never solved. Browser rendering is public-network-only and rejects localhost/private targets.
 
+The `render` parameter controls transport selection:
+- `http_only` (default): HTTP only, never launches Chrome
+- `auto`: HTTP first, escalates to browser once for JavaScript shells or non-interactive verification
+- `browser`: Browser directly, no HTTP prefetch
+
+The response includes `transport` (`"http"` or `"browser"`), `browser_escalated` (whether auto escalated), and `manual_interaction_required` (for challenge pages).
+
 ### Browser Profiles (Optional, Phase 5)
 
 Persistent browser profiles allow a local operator to establish a dedicated browser session for an origin that requires authentication or interactive human verification. Profiles are created only through CLI commands — MCP callers cannot create profiles or launch headed browsers.

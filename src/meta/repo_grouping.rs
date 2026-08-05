@@ -222,7 +222,7 @@ fn rerank_group(cards: &mut [SourceCard], hints: &RepoQueryHints) {
 
         // --- owner/repo match ---
         let url_lower = card.url.to_lowercase();
-        if let (Some(ref o), Some(ref r)) = (&owner_lower, &repo_lower) {
+        if let (Some(o), Some(r)) = (&owner_lower, &repo_lower) {
             if url_lower.contains(o.as_str()) && url_lower.contains(r.as_str()) {
                 boost += boost_unit * 1.5;
                 reasons.push(RankReason::RepoOwnerMatch);

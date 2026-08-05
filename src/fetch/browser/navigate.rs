@@ -325,6 +325,169 @@ async fn navigate_and_extract(
     })
 }
 
+pub fn browser_result_to_response(
+    result: BrowserFetchResult,
+    requested_url: &str,
+    max_chars: Option<usize>,
+    extract_mode: crate::core::fetch::ExtractMode,
+    include_links: bool,
+    _sanitize_output: bool,
+) -> crate::core::fetch::WebFetchResponse {
+    use crate::core::document::{DocumentKind, FetchDocument, FetchRenderMetadata, RenderFormat};
+    use crate::fetch::detect;
+    use crate::fetch::extract::extract_links_from_html;
+    use crate::fetch::render::blocks::render_blocks;
+
+    let body = &result.response.body;
+    let final_url = &result.response.final_url;
+    let max = max_chars.unwrap_or(12000);
+    let mut warnings = result.warnings;
+    let trust_markers = result.trust_markers;
+
+    let (rendered_title, rendered_desc, rendered_blocks, render_warnings, _non_utf8) =
+        render_blocks(
+            body,
+            final_url,
+            max,
+            extract_mode == crate::core::fetch::ExtractMode::Markdown,
+        );
+    warnings.extend(render_warnings);
+
+    let detected = detect::classify(result.response.content_type.as_deref(), final_url, body);
+
+    let link_result = if include_links {
+        extract_links_from_html(body, final_url)
+    } else {
+        crate::fetch::extract::LinkExtractionResult {
+            links: Vec::new(),
+            total_seen: 0,
+            truncated: false,
+        }
+    };
+
+    let title = result.extracted_title.or(rendered_title);
+    let description = rendered_desc;
+    let text_chars = rendered_blocks
+        .blocks
+        .iter()
+        .map(|b| b.text.chars().count())
+        .sum::<usize>();
+
+    let mut blocks = rendered_blocks.blocks;
+    for block in &mut blocks {
+        let (stripped, _) = strip_control_chars(&block.text);
+        let (bounded, _) = bound_text(&stripped, max);
+        block.text = bounded;
+    }
+
+    let mut outline = rendered_blocks.outline;
+    for entry in &mut outline {
+        let (stripped, _) = strip_control_chars(&entry.title);
+        let (bounded, _) = bound_text(&stripped, 500);
+        entry.title = bounded;
+    }
+    if outline.is_empty() {
+        if let Some(ref title_text) = title {
+            let (stripped_title, _) = strip_control_chars(title_text);
+            let (bounded_title, _) = bound_text(&stripped_title, 200);
+            if !bounded_title.is_empty() {
+                outline.push(crate::core::document::DocumentOutlineEntry {
+                    level: 1,
+                    title: bounded_title,
+                    anchor: None,
+                    block_index: if blocks.is_empty() { None } else { Some(0) },
+                    page: None,
+                });
+            }
+        }
+    }
+
+    let document_id = crate::core::identity::doc_id(
+        Some(final_url),
+        title.as_deref(),
+        Some(DocumentKind::Html.as_str()),
+    );
+    let chunks = crate::core::document::build_document_chunks(&document_id, &outline, &blocks, max);
+
+    let document = Some(FetchDocument {
+        kind: DocumentKind::Html,
+        render_format: RenderFormat::AgentBlocksV1,
+        text_format: if extract_mode == crate::core::fetch::ExtractMode::Markdown {
+            "markdown".to_string()
+        } else {
+            "plain".to_string()
+        },
+        text_chars_returned: text_chars,
+        text_truncated: trust_markers.text_truncated,
+        block_truncated: rendered_blocks.block_truncated,
+        link_truncated: link_result.truncated,
+        metadata: Some(FetchRenderMetadata {
+            bytes_read: Some(body.len()),
+            content_length: None,
+            charset: None,
+            redirects_followed: 0,
+            source_extension: None,
+            detected_language: detected.language,
+        }),
+        outline,
+        blocks,
+        chunks,
+    });
+
+    let status = result.response.status.unwrap_or(200);
+
+    warnings.push(crate::core::fetch::WebFetchResponse::untrusted_warning());
+
+    crate::core::fetch::WebFetchResponse {
+        url: requested_url.to_string(),
+        final_url: final_url.clone(),
+        stable_id: Some(crate::core::identity::fetch_id(
+            Some(requested_url),
+            None,
+            None,
+            None,
+            None,
+        )),
+        source_id: None,
+        title,
+        description,
+        content_type: result.response.content_type.clone(),
+        status,
+        fetched: true,
+        truncated: trust_markers.text_truncated,
+        trust: crate::core::fetch::FetchTrust::ExternalUntrusted,
+        text: None,
+        raw_text: None,
+        raw_text_chars_returned: None,
+        raw_text_truncated: false,
+        raw_text_cap: None,
+        links: link_result.links,
+        links_seen: if link_result.total_seen > 0 {
+            Some(link_result.total_seen)
+        } else {
+            None
+        },
+        links_truncated: link_result.truncated,
+        warnings,
+        trust_markers,
+        document,
+        fetch_transform: None,
+        structured_warnings: Vec::new(),
+        pdf_page_metadata: None,
+        pdf_document_metadata: None,
+        pdf_quality_score: None,
+        pdf_content_ok: None,
+        cache_status: crate::fetch::cache::CacheStatus::default(),
+        attempt_count: Some(1),
+        retry_after_ms: None,
+        origin_backoff_ms: None,
+        response_headers: None,
+        transport: Some("browser".to_string()),
+        browser_escalated: false,
+        manual_interaction_required: false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -362,6 +362,23 @@ pub struct WebFetchResponse {
     /// freshness calculation and conditional revalidation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_headers: Option<std::collections::HashMap<String, String>>,
+    /// Transport used for this fetch: "http" or "browser".
+    /// Always present in MCP output so agents can distinguish
+    /// HTTP-fetched content from browser-rendered content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+    /// Whether browser was escalated to from HTTP (auto mode only).
+    /// `true` when the initial HTTP response was classified as a
+    /// JavaScript shell or non-interactive verification and a single
+    /// browser escalation was performed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub browser_escalated: bool,
+    /// Whether manual interaction is required (CAPTCHA, Turnstile,
+    /// login challenge, MFA prompt). When `true`, the response
+    /// includes a structured warning with details and a CLI
+    /// next-action hint.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub manual_interaction_required: bool,
 }
 
 impl WebFetchResponse {

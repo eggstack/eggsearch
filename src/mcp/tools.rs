@@ -1788,12 +1788,69 @@ pub async fn run_web_fetch(
 
     let cache_policy = args.cache_policy.unwrap_or_default();
 
+    #[cfg(feature = "browser")]
     #[allow(unused_mut)]
     let mut used_profile_name: Option<String> = None;
+    #[cfg(not(feature = "browser"))]
+    let used_profile_name: Option<String> = None;
+    #[cfg(feature = "browser")]
+    #[allow(unused_mut)]
+    let mut manual_interaction_required = false;
+    #[cfg(not(feature = "browser"))]
     let manual_interaction_required = false;
 
     #[cfg(feature = "browser")]
+    let render_policy_str = args
+        .render
+        .clone()
+        .unwrap_or_else(|| "http_only".to_string());
+    #[cfg(not(feature = "browser"))]
+    let _render_policy_str = args
+        .render
+        .clone()
+        .unwrap_or_else(|| "http_only".to_string());
+    #[cfg(feature = "browser")]
+    let mut browser_escalated = false;
+    #[cfg(not(feature = "browser"))]
+    let browser_escalated = false;
+    #[cfg(feature = "browser")]
+    let mut browser_available = false;
+    #[cfg(not(feature = "browser"))]
+    let browser_available = false;
+
+    #[cfg(feature = "browser")]
+    let render_policy = {
+        let rp: crate::fetch::browser::RenderPolicy = serde_json::from_value(
+            serde_json::Value::String(render_policy_str.clone()),
+        )
+        .map_err(|e| {
+            ToolError::Validation(format!("invalid render policy '{render_policy_str}': {e}"))
+        })?;
+        rp
+    };
+
+    #[cfg(feature = "browser")]
     {
+        if matches!(render_policy, crate::fetch::browser::RenderPolicy::HttpOnly)
+            && args.browser_profile.is_some()
+        {
+            return Err(ToolError::Validation(
+                "browser_profile is not valid with render=http_only".to_string(),
+            ));
+        }
+
+        if !matches!(render_policy, crate::fetch::browser::RenderPolicy::HttpOnly) {
+            if state.browser_lifecycle().is_some() {
+                browser_available = true;
+            } else if matches!(render_policy, crate::fetch::browser::RenderPolicy::Browser) {
+                return Err(ToolError::Internal(
+                    "browser rendering is enabled but no Chrome/Chromium executable was found; \
+                     set [fetch.browser].executable or install Chrome/Chromium"
+                        .to_string(),
+                ));
+            }
+        }
+
         if let Some(ref profile_name) = args.browser_profile {
             let mgr = state.profile_manager.as_ref().ok_or_else(|| {
                 ToolError::Validation(
@@ -1817,13 +1874,6 @@ pub async fn run_web_fetch(
                     other => ToolError::Internal(format!("browser_profile: {other}")),
                 })?;
             used_profile_name = Some(profile_name.clone());
-        }
-
-        if let Some(ref render_str) = args.render {
-            let _render_policy: crate::fetch::browser::RenderPolicy =
-                serde_json::from_value(serde_json::Value::String(render_str.clone())).map_err(
-                    |e| ToolError::Validation(format!("invalid render policy '{render_str}': {e}")),
-                )?;
         }
     }
 
@@ -2003,96 +2053,249 @@ pub async fn run_web_fetch(
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_millis(state.config.fetch.timeout_ms);
 
-    for attempt in 0..max_attempts {
-        attempt_count = attempt + 1;
+    #[cfg(feature = "browser")]
+    let browser_direct = matches!(render_policy, crate::fetch::browser::RenderPolicy::Browser);
+    #[cfg(not(feature = "browser"))]
+    let browser_direct = false;
 
-        let _permit = if let Some(ref controller) = state.origin_controller {
-            match controller.acquire(&origin_key).await {
-                Ok(permit) => Some(permit),
-                Err(e) => {
-                    return Err(ToolError::Internal(format!("origin_backoff: {e}")));
-                }
-            }
-        } else {
-            None
-        };
-
-        match client
-            .fetch(
-                trimmed_url,
-                args.max_chars,
-                extract_mode,
-                include_links,
-                args.pdf.as_ref(),
-            )
-            .await
+    let ran_browser_direct = if browser_direct && browser_available {
+        #[cfg(feature = "browser")]
         {
-            Ok(resp) => {
-                if let Some(ref ctrl) = state.origin_controller {
-                    ctrl.record_success(&origin_key).await;
+            if let Some(ref lc) = state.browser_lifecycle() {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.as_millis() < 2000 {
+                    return Err(ToolError::Internal(
+                        "insufficient time remaining for browser rendering".to_string(),
+                    ));
                 }
-                response = Some(resp);
-                break;
-            }
-            Err(e) => {
-                let kind = e.kind();
-                let class = match &e {
-                    crate::fetch::FetchError::HttpStatus(status, _) => {
-                        crate::fetch::origin::classify_http_status(*status)
+                let browser_config = crate::fetch::browser::BrowserConfig::default();
+                match tokio::time::timeout(
+                    remaining,
+                    crate::fetch::browser::browser_fetch_with_policy(
+                        lc,
+                        trimmed_url,
+                        &browser_config,
+                        state.config.fetch.sanitize_output,
+                        &render_policy,
+                    ),
+                )
+                .await
+                {
+                    Ok(Ok(result)) => {
+                        let resp = crate::fetch::browser::browser_result_to_response(
+                            result,
+                            trimmed_url,
+                            args.max_chars,
+                            extract_mode,
+                            include_links,
+                            state.config.fetch.sanitize_output,
+                        );
+                        attempt_count = 1;
+                        response = Some(resp);
+                        true
                     }
-                    _ => classify_network_error(&e.to_string()),
-                };
-                let is_retryable = matches!(
-                    kind,
-                    crate::fetch::FetchErrorKind::Timeout
-                        | crate::fetch::FetchErrorKind::NetworkError
-                ) || matches!(
-                    class,
-                    crate::fetch::origin::OriginFailureClass::Retryable
-                        | crate::fetch::origin::OriginFailureClass::RateLimited
-                );
+                    Ok(Err(crate::fetch::browser::BrowserFetchError::InteractiveChallenge(
+                        mir,
+                    ))) => {
+                        let msg = format!("{}: {}", mir.origin, mir.message);
+                        return Err(ToolError::Internal(format!(
+                            "manual_interaction_required: {msg}; \
+                             reopen with: eggsearch browser-login <origin> --profile <name>"
+                        )));
+                    }
+                    Ok(Err(e)) => {
+                        return Err(ToolError::Internal(format!("browser_fetch_failed: {e}")));
+                    }
+                    Err(_) => {
+                        return Err(ToolError::Internal(
+                            "browser rendering timed out".to_string(),
+                        ));
+                    }
+                }
+            } else {
+                false
+            }
+        }
+        #[cfg(not(feature = "browser"))]
+        {
+            false
+        }
+    } else {
+        false
+    };
 
-                if let Some(ref ctrl) = state.origin_controller {
-                    let decision = ctrl.record_failure(&origin_key, class).await;
-                    match decision {
-                        crate::fetch::origin::OriginBackoffDecision::CircuitOpened {
-                            delay_ms,
-                            ..
-                        } => {
-                            return Err(ToolError::Internal(format!(
-                                "origin_circuit_open: {e}, retry in {delay_ms}ms"
-                            )));
-                        }
-                        crate::fetch::origin::OriginBackoffDecision::Backoff {
-                            delay_ms,
-                            retry_after_ms: ra,
-                            ..
-                        } if is_retryable && attempt + 1 < max_attempts => {
-                            retry_after_ms = ra;
+    if !ran_browser_direct {
+        for attempt in 0..max_attempts {
+            attempt_count = attempt + 1;
+
+            let _permit = if let Some(ref controller) = state.origin_controller {
+                match controller.acquire(&origin_key).await {
+                    Ok(permit) => Some(permit),
+                    Err(e) => {
+                        return Err(ToolError::Internal(format!("origin_backoff: {e}")));
+                    }
+                }
+            } else {
+                None
+            };
+
+            match client
+                .fetch(
+                    trimmed_url,
+                    args.max_chars,
+                    extract_mode,
+                    include_links,
+                    args.pdf.as_ref(),
+                )
+                .await
+            {
+                Ok(resp) => {
+                    if let Some(ref ctrl) = state.origin_controller {
+                        ctrl.record_success(&origin_key).await;
+                    }
+
+                    #[cfg(feature = "browser")]
+                    let mut escalated = false;
+                    #[cfg(not(feature = "browser"))]
+                    let escalated = false;
+
+                    #[cfg(feature = "browser")]
+                    if browser_available
+                        && matches!(render_policy, crate::fetch::browser::RenderPolicy::Auto)
+                    {
+                        let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
+                        let text_len = body_bytes.len();
+                        let title_str = resp.title.as_deref().unwrap_or("");
+                        let classification = crate::fetch::browser::classify_response(
+                            resp.status,
+                            resp.content_type.as_deref(),
+                            Some(title_str),
+                            text_len,
+                            body_bytes,
+                        );
+                        let should_escalate = matches!(
+                            classification,
+                            crate::fetch::browser::FetchDisposition::JavascriptShell
+                                | crate::fetch::browser::FetchDisposition::NonInteractiveVerification
+                        );
+                        if should_escalate {
                             let remaining =
                                 deadline.saturating_duration_since(std::time::Instant::now());
-                            let sleep_dur = std::time::Duration::from_millis(
-                                delay_ms
-                                    .min(state.config.fetch.timeout_ms / 2)
-                                    .min(remaining.as_millis() as u64),
-                            );
-                            if !sleep_dur.is_zero() {
-                                tokio::time::sleep(sleep_dur).await;
+                            if remaining.as_millis() >= 2000 {
+                                if let Some(ref lc) = state.browser_lifecycle() {
+                                    let browser_config =
+                                        crate::fetch::browser::BrowserConfig::default();
+                                    match tokio::time::timeout(
+                                        remaining,
+                                        crate::fetch::browser::browser_fetch_with_policy(
+                                            lc,
+                                            trimmed_url,
+                                            &browser_config,
+                                            state.config.fetch.sanitize_output,
+                                            &render_policy,
+                                        ),
+                                    )
+                                    .await
+                                    {
+                                        Ok(Ok(result)) => {
+                                            let mut browser_resp =
+                                                crate::fetch::browser::browser_result_to_response(
+                                                    result,
+                                                    trimmed_url,
+                                                    args.max_chars,
+                                                    extract_mode,
+                                                    include_links,
+                                                    state.config.fetch.sanitize_output,
+                                                );
+                                            browser_resp.browser_escalated = true;
+                                            response = Some(browser_resp);
+                                            browser_escalated = true;
+                                            escalated = true;
+                                        }
+                                        Ok(Err(
+                                            crate::fetch::browser::BrowserFetchError::InteractiveChallenge(
+                                                _mir,
+                                            ),
+                                        )) => {
+                                            manual_interaction_required = true;
+                                            let mut r = resp.clone();
+                                            r.manual_interaction_required = true;
+                                            r.transport = Some("http".to_string());
+                                            response = Some(r);
+                                            escalated = true;
+                                        }
+                                        Ok(Err(_)) | Err(_) => {}
+                                    }
+                                }
                             }
-                            continue;
                         }
-                        crate::fetch::origin::OriginBackoffDecision::Backoff { .. } => {}
-                        _ => {}
                     }
-                }
 
-                last_err = Some(e);
-                break;
+                    if !escalated {
+                        response = Some(resp);
+                    }
+                    break;
+                }
+                Err(e) => {
+                    let kind = e.kind();
+                    let class = match &e {
+                        crate::fetch::FetchError::HttpStatus(status, _) => {
+                            crate::fetch::origin::classify_http_status(*status)
+                        }
+                        _ => classify_network_error(&e.to_string()),
+                    };
+                    let is_retryable = matches!(
+                        kind,
+                        crate::fetch::FetchErrorKind::Timeout
+                            | crate::fetch::FetchErrorKind::NetworkError
+                    ) || matches!(
+                        class,
+                        crate::fetch::origin::OriginFailureClass::Retryable
+                            | crate::fetch::origin::OriginFailureClass::RateLimited
+                    );
+
+                    if let Some(ref ctrl) = state.origin_controller {
+                        let decision = ctrl.record_failure(&origin_key, class).await;
+                        match decision {
+                            crate::fetch::origin::OriginBackoffDecision::CircuitOpened {
+                                delay_ms,
+                                ..
+                            } => {
+                                return Err(ToolError::Internal(format!(
+                                    "origin_circuit_open: {e}, retry in {delay_ms}ms"
+                                )));
+                            }
+                            crate::fetch::origin::OriginBackoffDecision::Backoff {
+                                delay_ms,
+                                retry_after_ms: ra,
+                                ..
+                            } if is_retryable && attempt + 1 < max_attempts => {
+                                retry_after_ms = ra;
+                                let remaining =
+                                    deadline.saturating_duration_since(std::time::Instant::now());
+                                let sleep_dur = std::time::Duration::from_millis(
+                                    delay_ms
+                                        .min(state.config.fetch.timeout_ms / 2)
+                                        .min(remaining.as_millis() as u64),
+                                );
+                                if !sleep_dur.is_zero() {
+                                    tokio::time::sleep(sleep_dur).await;
+                                }
+                                continue;
+                            }
+                            crate::fetch::origin::OriginBackoffDecision::Backoff { .. } => {}
+                            _ => {}
+                        }
+                    }
+
+                    last_err = Some(e);
+                    break;
+                }
             }
         }
     }
 
-    let resp = match response {
+    let resp: crate::core::fetch::WebFetchResponse = match response {
         Some(r) => r,
         None => {
             let err = last_err.unwrap_or(crate::fetch::FetchError::Unknown(
@@ -2269,6 +2472,8 @@ pub async fn run_web_fetch(
         "browser_profile": used_profile_name,
         "browser_profile_scope": if used_profile_name.is_some() { "persistent" } else { "ephemeral" },
         "manual_interaction_required": manual_interaction_required,
+        "transport": resp.transport.as_deref().unwrap_or("http"),
+        "browser_escalated": browser_escalated,
     });
     Ok(payload)
 }

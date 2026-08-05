@@ -248,6 +248,18 @@ impl BrowserConfig {
             ..self
         }
     }
+
+    pub fn check_availability(&self, discovery: Option<&BrowserDiscovery>) -> BrowserAvailability {
+        if !self.enabled {
+            return BrowserAvailability::BrowserDisabled;
+        }
+        match discovery {
+            None => BrowserAvailability::AutoDiscoveryFailed,
+            Some(disc) => BrowserAvailability::Available {
+                discovery: disc.clone(),
+            },
+        }
+    }
 }
 
 pub const DEFAULT_PROFILE_PROCESS_TIMEOUT_MS: u64 = 30_000;
@@ -268,6 +280,22 @@ pub enum ManualInteractionReason {
     InteractiveChallenge,
     TurnstileCaptcha,
     OtherVerificationRequired,
+}
+
+#[derive(Clone, Debug)]
+pub enum BrowserAvailability {
+    FeatureNotCompiled,
+    BrowserDisabled,
+    ExplicitExecutableInvalid,
+    AutoDiscoveryFailed,
+    Available { discovery: BrowserDiscovery },
+    StartupFailed(String),
+}
+
+impl BrowserAvailability {
+    pub fn is_available(&self) -> bool {
+        matches!(self, BrowserAvailability::Available { .. })
+    }
 }
 
 #[cfg(test)]

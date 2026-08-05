@@ -215,12 +215,12 @@ Browser rendering is an optional feature gated behind the `browser` Cargo featur
 
 | File | Responsibility |
 |------|----------------|
-| `browser/types.rs` | `RenderPolicy`, `FetchDisposition`, `TransportResponse`, `BrowserConfig`, `BrowserDiscovery` |
+| `browser/types.rs` | `RenderPolicy`, `FetchDisposition`, `TransportResponse`, `BrowserConfig`, `BrowserDiscovery`, `BrowserAvailability` |
 | `browser/discover.rs` | Browser executable discovery and validation (Linux/macOS candidates) |
 | `browser/lifecycle.rs` | `BrowserLifecycle` — warm browser process management with one-process-per-server model |
 | `browser/classify.rs` | `FetchDisposition` classification: useful content, JS shell, interactive challenge, non-interactive verification |
 | `browser/intercept.rs` | Request URL policy checks — blocks localhost, private networks, embedded credentials |
-| `browser/navigate.rs` | `browser_fetch` — navigation, DOM readiness heuristics, DOM extraction, challenge detection |
+| `browser/navigate.rs` | `browser_fetch` — navigation, DOM readiness heuristics, DOM extraction, challenge detection, `browser_result_to_response` conversion |
 
 ### Render Policy
 
@@ -231,6 +231,16 @@ pub enum RenderPolicy {
     Browser,   // use Chrome directly after validating target and origin gate
 }
 ```
+
+### Transport Orchestration
+
+`web_fetch` selects transport based on the `render` parameter:
+
+1. **`http_only`** (default): HTTP only. Browser is never launched. Browser profiles are rejected with a validation error.
+2. **`browser`**: Browser directly. No HTTP prefetch. Requires browser feature, enabled config, and a discovered Chrome/Chromium executable.
+3. **`auto`**: HTTP first. If the HTTP response is classified as a JavaScript shell or non-interactive verification, a single browser escalation is attempted. At most one escalation per request.
+
+Transport selection is explicit and observable via the `transport` response field (`"http"` or `"browser"`). The `browser_escalated` field indicates when `auto` mode escalated from HTTP to browser.
 
 ### Escalation Rules
 

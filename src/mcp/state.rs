@@ -8,6 +8,8 @@ use tracing;
 use crate::core::config::AppConfig;
 #[cfg(feature = "browser")]
 use crate::fetch::browser::ProfileManager;
+#[cfg(feature = "browser")]
+use crate::fetch::browser::{discover_browser, BrowserLifecycle};
 use crate::fetch::cache::FetchCache;
 use crate::fetch::origin::{OriginController, OriginPolicy};
 use crate::fetch::FetchClient;
@@ -56,6 +58,11 @@ pub struct ServerState {
     /// compiled in or when persistent profiles are disabled.
     #[cfg(feature = "browser")]
     pub profile_manager: Option<Arc<ProfileManager>>,
+    /// Shared browser lifecycle. `None` when browser feature is not
+    /// compiled in or when browser rendering is disabled. Holds a
+    /// warm browser process for reuse across requests.
+    #[cfg(feature = "browser")]
+    pub browser_lifecycle: Option<Arc<BrowserLifecycle>>,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -71,6 +78,7 @@ impl std::fmt::Debug for ServerState {
         #[cfg(feature = "browser")]
         {
             d.field("profile_manager", &self.profile_manager.is_some());
+            d.field("browser_lifecycle", &self.browser_lifecycle.is_some());
         }
         d.finish()
     }
@@ -220,6 +228,33 @@ impl ServerState {
             }
         };
 
+        #[cfg(feature = "browser")]
+        let browser_lifecycle = if config.fetch.browser.enabled {
+            let discovery = discover_browser(config.fetch.browser.executable.as_deref());
+            let render_policy: crate::fetch::browser::RenderPolicy = serde_json::from_value(
+                serde_json::Value::String(config.fetch.browser.policy.clone()),
+            )
+            .unwrap_or_default();
+            let browser_config = crate::fetch::browser::BrowserConfig {
+                enabled: config.fetch.browser.enabled,
+                policy: render_policy,
+                executable: config.fetch.browser.executable.clone(),
+                startup_timeout_ms: config.fetch.browser.startup_timeout_ms,
+                navigation_timeout_ms: config.fetch.browser.navigation_timeout_ms,
+                post_load_wait_ms: config.fetch.browser.post_load_wait_ms,
+                verification_wait_ms: config.fetch.browser.verification_wait_ms,
+                max_requests: config.fetch.browser.max_requests,
+                max_dom_bytes: config.fetch.browser.max_dom_bytes,
+                global_concurrency: config.fetch.browser.global_concurrency,
+                per_origin_concurrency: config.fetch.browser.per_origin_concurrency,
+                block_media: config.fetch.browser.block_media,
+                persistent_profiles: config.fetch.browser.persistent_profiles.clone(),
+            };
+            Some(Arc::new(BrowserLifecycle::new(discovery, browser_config)))
+        } else {
+            None
+        };
+
         // Build local workspace backend
         let local_backend = match LocalWorkspaceBackend::new(config.local.clone()) {
             Ok(backend) if backend.is_enabled() => {
@@ -247,6 +282,8 @@ impl ServerState {
             local_inventory_cache: Arc::new(Mutex::new(None)),
             #[cfg(feature = "browser")]
             profile_manager,
+            #[cfg(feature = "browser")]
+            browser_lifecycle,
         })
     }
 
@@ -304,6 +341,8 @@ impl ServerState {
             local_inventory_cache: Arc::new(Mutex::new(None)),
             #[cfg(feature = "browser")]
             profile_manager: None,
+            #[cfg(feature = "browser")]
+            browser_lifecycle: None,
         }
     }
 
@@ -313,6 +352,14 @@ impl ServerState {
     /// unexpectedly absent.
     pub fn fetch_client(&self) -> Option<Arc<FetchClient>> {
         self.fetch_client.clone()
+    }
+
+    /// Returns the shared browser lifecycle, if browser rendering is
+    /// enabled and a Chrome/Chromium executable was discovered. The
+    /// lifecycle holds a warm browser process for reuse across requests.
+    #[cfg(feature = "browser")]
+    pub fn browser_lifecycle(&self) -> Option<Arc<BrowserLifecycle>> {
+        self.browser_lifecycle.clone()
     }
 
     /// Returns the cached local repository inventory, re-running the

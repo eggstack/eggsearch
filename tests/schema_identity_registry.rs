@@ -1894,6 +1894,9 @@ fn web_fetch_response_raw_text_metadata_present_when_raw_text_present() {
         retry_after_ms: None,
         origin_backoff_ms: None,
         response_headers: None,
+        transport: Some("http".to_string()),
+        browser_escalated: false,
+        manual_interaction_required: false,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["raw_text"], "hello raw");
@@ -1941,6 +1944,9 @@ fn web_fetch_response_raw_text_metadata_absent_when_raw_text_none() {
         retry_after_ms: None,
         origin_backoff_ms: None,
         response_headers: None,
+        transport: Some("http".to_string()),
+        browser_escalated: false,
+        manual_interaction_required: false,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -1996,6 +2002,9 @@ fn web_fetch_response_raw_text_truncated_omitted_when_false() {
         retry_after_ms: None,
         origin_backoff_ms: None,
         response_headers: None,
+        transport: Some("http".to_string()),
+        browser_escalated: false,
+        manual_interaction_required: false,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -2040,6 +2049,9 @@ fn web_fetch_response_raw_text_truncated_present_when_true() {
         retry_after_ms: None,
         origin_backoff_ms: None,
         response_headers: None,
+        transport: Some("http".to_string()),
+        browser_escalated: false,
+        manual_interaction_required: false,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["raw_text_truncated"], true);

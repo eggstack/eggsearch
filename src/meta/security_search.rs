@@ -624,9 +624,7 @@ pub async fn run_security_search_plan(
     budget_summary.identifiers_scheduled = budget.identifiers_seen();
 
     // 5. Native package advisory queries when both package and ecosystem are present
-    if let (Some(ref package), Some(ref ecosystem)) =
-        (&resolved_ids.package, &resolved_ids.ecosystem)
-    {
+    if let (Some(package), Some(ecosystem)) = (&resolved_ids.package, &resolved_ids.ecosystem) {
         let package_operation = RetrievalOperationIdentity::from_package(
             ecosystem,
             package,
@@ -1157,7 +1155,7 @@ pub async fn run_security_search_plan(
         let mut seen = std::collections::HashSet::new();
         let mut packages = Vec::new();
         for vuln in &vulnerabilities {
-            if let (Some(ref pkg), Some(ref eco)) = (&vuln.package, &vuln.ecosystem) {
+            if let (Some(pkg), Some(eco)) = (&vuln.package, &vuln.ecosystem) {
                 let key = format!("{eco}:{pkg}");
                 if seen.insert(key) {
                     packages.push(AffectedPackageSummary {

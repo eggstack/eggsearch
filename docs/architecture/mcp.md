@@ -88,10 +88,13 @@ Output: {
 ### Fetch Tools
 
 ```
-Input: { url } or { locator } or { items[] }
+Input: { url, render?, browser_profile? } or { locator } or { items[] }
 Output: {
     document: FetchDocument,
     trust: FetchTrust,
+    transport: "http" | "browser",
+    browser_escalated: bool,
+    manual_interaction_required: bool,
     warnings: AgentWarning[],
     ...
 }
