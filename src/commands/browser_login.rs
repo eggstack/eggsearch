@@ -89,9 +89,7 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
             }
             Err(e) => {
                 eprintln!("browser session ended: {e}");
-                eprintln!(
-                    "profile '{display_name}' was created but may need re-login",
-                );
+                eprintln!("profile '{display_name}' was created but may need re-login",);
                 std::process::exit(1);
             }
         }
@@ -99,9 +97,7 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
         println!("No Chrome/Chromium executable found.");
         println!("Install Chrome or set [fetch.browser].executable in config.");
         println!();
-        println!(
-            "Profile '{display_name}' has been created. Once Chrome is available,"
-        );
+        println!("Profile '{display_name}' has been created. Once Chrome is available,");
         println!("run this command again to establish a session.");
     }
 }
