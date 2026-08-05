@@ -81,17 +81,16 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
                 }
 
                 println!();
-                println!("Session setup complete for '{}'.", display_name);
+                println!("Session setup complete for '{display_name}'.");
                 println!(
-                    "Use with web_fetch: {{ \"url\": \"{}\", \"browser_profile\": \"{}\" }}",
-                    meta.allowed_origin, display_name
+                    "Use with web_fetch: {{ \"url\": \"{}\", \"browser_profile\": \"{display_name}\" }}",
+                    meta.allowed_origin
                 );
             }
             Err(e) => {
                 eprintln!("browser session ended: {e}");
                 eprintln!(
-                    "profile '{}' was created but may need re-login",
-                    display_name
+                    "profile '{display_name}' was created but may need re-login",
                 );
                 std::process::exit(1);
             }
@@ -101,8 +100,7 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
         println!("Install Chrome or set [fetch.browser].executable in config.");
         println!();
         println!(
-            "Profile '{}' has been created. Once Chrome is available,",
-            display_name
+            "Profile '{display_name}' has been created. Once Chrome is available,"
         );
         println!("run this command again to establish a session.");
     }
