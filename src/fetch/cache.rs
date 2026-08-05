@@ -222,6 +222,23 @@ impl FetchCache {
         derived.put(key, entry);
     }
 
+    pub async fn invalidate_scope(&self, scope: &CacheScope) {
+        let mut raw = self.raw.lock().await;
+        let mut current = self.current_raw_bytes.lock().await;
+
+        let keys_to_remove: Vec<RawCacheKey> = raw
+            .iter()
+            .filter(|(k, _)| k.scope == *scope)
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        for key in keys_to_remove {
+            if let Some(evicted) = raw.pop(&key) {
+                *current = current.saturating_sub(evicted.body.len());
+            }
+        }
+    }
+
     pub async fn stats(&self) -> CacheStats {
         let raw = self.raw.lock().await;
         let derived = self.derived.lock().await;

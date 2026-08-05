@@ -288,6 +288,15 @@ impl Drop for ProfileLock {
     }
 }
 
+pub fn parse_browser_major_version(version_str: &str) -> Option<u32> {
+    let digit_start = version_str.find(|c: char| c.is_ascii_digit())?;
+    let rest = &version_str[digit_start..];
+    let digit_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    rest[..digit_end].parse::<u32>().ok()
+}
+
 pub struct ProfileManager {
     root_dir: PathBuf,
     profiles_enabled: bool,
@@ -412,6 +421,14 @@ impl ProfileManager {
 
         validate_display_name(display_name)?;
 
+        if !self.allowed_profiles.is_empty()
+            && !self.allowed_profiles.iter().any(|p| p == display_name)
+        {
+            return Err(ProfileError::ProfileNotFound(format!(
+                "{display_name} is not in the allowed_profiles list"
+            )));
+        }
+
         let profiles = self.list_profiles()?;
         profiles
             .into_iter()
@@ -519,6 +536,23 @@ impl ProfileManager {
         self.write_metadata(&profile_dir, metadata)
     }
 
+    pub fn check_compatibility(
+        &self,
+        metadata: &BrowserProfileMetadata,
+        current_browser_major: Option<u32>,
+    ) -> ProfileResult<()> {
+        match (metadata.browser_major_version, current_browser_major) {
+            (Some(profile_ver), Some(browser_ver)) if profile_ver > browser_ver => {
+                Err(ProfileError::ProfileIncompatible {
+                    name: metadata.display_name.clone(),
+                    profile_version: profile_ver,
+                    browser_version: browser_ver,
+                })
+            }
+            _ => Ok(()),
+        }
+    }
+
     pub fn list_profiles(&self) -> ProfileResult<Vec<BrowserProfileMetadata>> {
         if !self.profiles_enabled {
             return Ok(Vec::new());
@@ -558,7 +592,7 @@ impl ProfileManager {
         Ok(profiles)
     }
 
-    pub fn remove_profile(&self, display_name: &str) -> ProfileResult<()> {
+    pub fn remove_profile(&self, display_name: &str) -> ProfileResult<String> {
         if !self.profiles_enabled {
             return Err(ProfileError::ProfilesDisabled);
         }
@@ -599,7 +633,7 @@ impl ProfileManager {
             ProfileError::IoError(format!("failed to remove profile directory: {e}"))
         })?;
 
-        Ok(())
+        Ok(meta.id)
     }
 
     pub fn profile_dir_for(&self, id: &str) -> PathBuf {
@@ -779,7 +813,8 @@ mod tests {
         let mgr = make_manager(tmp.path());
         mgr.create_profile("doomed", "https://x.com").unwrap();
 
-        mgr.remove_profile("doomed").unwrap();
+        let removed_id = mgr.remove_profile("doomed").unwrap();
+        assert!(!removed_id.is_empty());
         assert!(mgr.resolve_by_name("doomed").is_err());
         assert!(mgr.list_profiles().unwrap().is_empty());
     }

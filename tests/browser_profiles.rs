@@ -148,7 +148,8 @@ fn remove_profile_cleans_up() {
     let profile_dir = mgr.profile_dir_for(&meta.id);
     assert!(profile_dir.exists());
 
-    mgr.remove_profile("doomed").unwrap();
+    let removed_id = mgr.remove_profile("doomed").unwrap();
+    assert!(!removed_id.is_empty());
     assert!(!profile_dir.exists());
     assert!(mgr.resolve_by_name("doomed").is_err());
     assert!(mgr.list_profiles().unwrap().is_empty());

@@ -1430,6 +1430,31 @@ pub fn run_provider_status(
         .map(|d| (d.id.clone(), health_registry.health_view(&d.id)))
         .collect();
 
+    let browser_rendering = {
+        #[cfg(feature = "browser")]
+        {
+            state.config.fetch.browser.enabled
+                && crate::fetch::browser::discover_browser(
+                    state.config.fetch.browser.executable.as_deref(),
+                )
+                .is_some()
+        }
+        #[cfg(not(feature = "browser"))]
+        {
+            false
+        }
+    };
+    let persistent_browser_profiles = {
+        #[cfg(feature = "browser")]
+        {
+            state.config.fetch.browser.persistent_profiles.enabled
+        }
+        #[cfg(not(feature = "browser"))]
+        {
+            false
+        }
+    };
+
     let mut payload = serde_json::json!({
         "providers": descriptors,
         "code_hosts": code_hosts,
@@ -1466,7 +1491,8 @@ pub fn run_provider_status(
             "pdf_text": cfg!(feature = "pdf"),
             "pdf_layout": false,
             "pdf_ocr": false,
-            "browser_rendering": false,
+            "browser_rendering": browser_rendering,
+            "persistent_browser_profiles": persistent_browser_profiles,
             "local_workspace": local_enabled,
         },
         "quality_metadata": {
@@ -1764,6 +1790,7 @@ pub async fn run_web_fetch(
 
     #[allow(unused_mut)]
     let mut used_profile_name: Option<String> = None;
+    let manual_interaction_required = false;
 
     #[cfg(feature = "browser")]
     {
@@ -1867,6 +1894,9 @@ pub async fn run_web_fetch(
                             "structured_warnings": Vec::<serde_json::Value>::new(),
                             "cache_status": "hit",
                             "attempt_count": 1,
+                            "browser_profile": used_profile_name.clone(),
+                            "browser_profile_scope": if used_profile_name.is_some() { "persistent" } else { "ephemeral" },
+                            "manual_interaction_required": false,
                         });
                         return Ok(payload);
                     }
@@ -1950,6 +1980,9 @@ pub async fn run_web_fetch(
                                             "structured_warnings": Vec::<serde_json::Value>::new(),
                                             "cache_status": "revalidated",
                                             "attempt_count": 1,
+                                            "browser_profile": used_profile_name.clone(),
+                                            "browser_profile_scope": if used_profile_name.is_some() { "persistent" } else { "ephemeral" },
+                                            "manual_interaction_required": false,
                                         });
                                         return Ok(payload);
                                     }
@@ -2065,6 +2098,15 @@ pub async fn run_web_fetch(
             let err = last_err.unwrap_or(crate::fetch::FetchError::Unknown(
                 "fetch failed after all attempts".into(),
             ));
+            if matches!(
+                err,
+                crate::fetch::FetchError::BrowserInteractiveChallenge(_)
+            ) {
+                return Err(ToolError::Internal(format!(
+                    "browser_profile_requires_attention: {err}; \
+                     reopen with: eggsearch browser-login <origin> --profile <name>"
+                )));
+            }
             return Err(ToolError::Internal(format!(
                 "{}: {}",
                 err.error_code(),
@@ -2226,6 +2268,7 @@ pub async fn run_web_fetch(
         "origin_backoff_ms": metadata.origin_backoff_ms,
         "browser_profile": used_profile_name,
         "browser_profile_scope": if used_profile_name.is_some() { "persistent" } else { "ephemeral" },
+        "manual_interaction_required": manual_interaction_required,
     });
     Ok(payload)
 }

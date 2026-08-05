@@ -14,8 +14,8 @@ pub use navigate::{
     browser_fetch, browser_fetch_with_policy, BrowserFetchError, BrowserFetchResult,
 };
 pub use profiles::{
-    BrowserProfileMetadata, ProfileError, ProfileLock, ProfileManager, ProfileResult,
-    PROFILE_SCHEMA_VERSION,
+    parse_browser_major_version, BrowserProfileMetadata, ProfileError, ProfileLock, ProfileManager,
+    ProfileResult, PROFILE_SCHEMA_VERSION,
 };
 pub use types::{
     BrowserConfig, BrowserDiscovery, BrowserFamily, BrowserSource, FetchTransportKind,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eggsearch::core::config::AppConfig;
-use eggsearch::fetch::browser::ProfileManager;
+use eggsearch::fetch::browser::{discover_browser, parse_browser_major_version, ProfileManager};
 
 pub async fn run(cfg: &AppConfig, subcmd: &BrowserProfilesCmd) {
     let bp = &cfg.fetch.browser.persistent_profiles;
@@ -88,6 +88,29 @@ fn run_inspect(mgr: &ProfileManager, name: &str) {
     let dir_size = compute_dir_size(&profile_dir);
     let chrome_size = compute_dir_size(&chrome_data);
 
+    let lock_path = profile_dir.join(".lock");
+    let lock_state = if lock_path.exists() {
+        "locked"
+    } else {
+        "unlocked"
+    };
+
+    let discovery = discover_browser(None);
+    let current_major = discovery
+        .as_ref()
+        .and_then(|d| parse_browser_major_version(&d.version));
+
+    let compat_warning = match (meta.browser_major_version, current_major) {
+        (Some(profile_ver), Some(browser_ver)) if profile_ver > browser_ver => Some(format!(
+            "WARNING: profile was created with browser v{profile_ver} \
+                 but current browser is v{browser_ver}; profile may be incompatible"
+        )),
+        (Some(profile_ver), Some(browser_ver)) => Some(format!(
+            "compatible (profile v{profile_ver}, browser v{browser_ver})"
+        )),
+        _ => None,
+    };
+
     println!("Profile: {}", meta.display_name);
     println!("  ID:               {}", meta.id);
     println!("  Allowed Origin:   {}", meta.allowed_origin);
@@ -116,11 +139,15 @@ fn run_inspect(mgr: &ProfileManager, name: &str) {
             .unwrap_or_else(|| "unknown".to_string())
     );
     println!("  Schema Version:   {}", meta.schema_version);
+    println!("  Lock State:       {lock_state}");
     println!("  Profile Dir:      {}", profile_dir.display());
     println!("  Chrome Data Dir:  {}", chrome_data.display());
     println!("  Profile Size:     {}", format_bytes(dir_size));
     println!("  Chrome Data Size: {}", format_bytes(chrome_size));
     println!("  Cache Scope:      {}", meta.id);
+    if let Some(warning) = compat_warning {
+        println!("  Compatibility:    {warning}");
+    }
 }
 
 fn run_remove(mgr: &ProfileManager, name: &str) {
@@ -130,8 +157,8 @@ fn run_remove(mgr: &ProfileManager, name: &str) {
     }
 
     match mgr.remove_profile(name) {
-        Ok(()) => {
-            println!("profile '{name}' removed");
+        Ok(removed_id) => {
+            println!("profile '{name}' removed (id: {removed_id})");
         }
         Err(e) => {
             eprintln!("error: {e}");
