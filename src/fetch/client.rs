@@ -500,6 +500,7 @@ impl FetchClient {
                     transport: Some("http".to_string()),
                     browser_escalated: false,
                     manual_interaction_required: false,
+                    raw_body: None,
                 });
             }
 
@@ -636,6 +637,7 @@ impl FetchClient {
                 transport: Some("http".to_string()),
                 browser_escalated: false,
                 manual_interaction_required: false,
+                raw_body: None,
             });
         }
 
@@ -1026,6 +1028,7 @@ impl FetchClient {
             transport: Some("http".to_string()),
             browser_escalated: false,
             manual_interaction_required: false,
+            raw_body: Some(body),
         })
     }
 

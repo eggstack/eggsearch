@@ -485,6 +485,7 @@ pub fn browser_result_to_response(
         transport: Some("browser".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        raw_body: None,
     }
 }
 

@@ -5275,6 +5275,7 @@ fn web_fetch_response_includes_fetch_transform_field() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     let ft = json
@@ -5326,6 +5327,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert!(
@@ -20916,4 +20918,230 @@ async fn web_fetch_response_has_transport_field() {
     assert_eq!(result["transport"], "http");
     assert_eq!(result["browser_escalated"], false);
     assert_eq!(result["manual_interaction_required"], false);
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_profile_lock_acquired_and_released() {
+    use httpmock::prelude::*;
+    use std::sync::Arc;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mgr = eggsearch::fetch::browser::ProfileManager::new(
+        Some(&tmp.path().display().to_string()),
+        true,
+        Vec::new(),
+    )
+    .unwrap();
+    let meta = mgr
+        .create_profile("test-lock", "https://example.com")
+        .unwrap();
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = true;
+    cfg.fetch.browser.persistent_profiles.enabled = true;
+    cfg.fetch.browser.persistent_profiles.profiles_dir = Some(tmp.path().display().to_string());
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/page");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body("<html><body><p>Hello</p></body></html>");
+    });
+
+    let args = WebFetchArgs {
+        url: "https://example.com/page".to_string(),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("http_only".to_string()),
+        browser_profile: Some("test-lock".to_string()),
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(
+        result.is_err(),
+        "http_only + profile should fail validation"
+    );
+
+    let mgr2 = eggsearch::fetch::browser::ProfileManager::new(
+        Some(&tmp.path().display().to_string()),
+        true,
+        Vec::new(),
+    )
+    .unwrap();
+    let lock_result = mgr2.acquire_lock(&meta.id);
+    assert!(
+        lock_result.is_ok(),
+        "profile lock should be released after failed request"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_profile_origin_mismatch_rejected() {
+    use std::sync::Arc;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mgr = eggsearch::fetch::browser::ProfileManager::new(
+        Some(&tmp.path().display().to_string()),
+        true,
+        Vec::new(),
+    )
+    .unwrap();
+    mgr.create_profile("test-origin", "https://example.com")
+        .unwrap();
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = true;
+    cfg.fetch.browser.persistent_profiles.enabled = true;
+    cfg.fetch.browser.persistent_profiles.profiles_dir = Some(tmp.path().display().to_string());
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let args = WebFetchArgs {
+        url: "https://other-site.com/page".to_string(),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("http_only".to_string()),
+        browser_profile: Some("test-origin".to_string()),
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("browser_profile") || err_msg.contains("not allowed for origin"),
+        "expected origin mismatch error, got: {err_msg}"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_auto_preserves_http_when_browser_unavailable() {
+    use httpmock::prelude::*;
+    use std::sync::Arc;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/article");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body("<html><head><title>Art</title></head><body><p>Useful article content that should be preserved.</p></body></html>");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let args = WebFetchArgs {
+        url: format!("http://localhost:{}/article", server.port()),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("auto".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await.unwrap();
+    assert_eq!(result["transport"], "http");
+    assert_eq!(result["browser_escalated"], false);
+    assert!(
+        result["text"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Useful article"),
+        "HTTP content should be preserved when browser is unavailable"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_explicit_browser_unavailable_returns_failure() {
+    use std::sync::Arc;
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let args = WebFetchArgs {
+        url: "https://example.com/page".to_string(),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("browser".to_string()),
+        browser_profile: None,
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("Chrome") || err_msg.contains("browser"),
+        "expected browser unavailable error, got: {err_msg}"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_profile_lock_contention_rejected() {
+    use std::sync::Arc;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mgr = eggsearch::fetch::browser::ProfileManager::new(
+        Some(&tmp.path().display().to_string()),
+        true,
+        Vec::new(),
+    )
+    .unwrap();
+    let meta = mgr
+        .create_profile("test-contention", "https://example.com")
+        .unwrap();
+
+    let _held_lock = mgr.acquire_lock(&meta.id).unwrap();
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = true;
+    cfg.fetch.browser.persistent_profiles.enabled = true;
+    cfg.fetch.browser.persistent_profiles.profiles_dir = Some(tmp.path().display().to_string());
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let args = WebFetchArgs {
+        url: "https://example.com/page".to_string(),
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: Some(ExtractMode::Text),
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: Some("auto".to_string()),
+        browser_profile: Some("test-contention".to_string()),
+    };
+    let result = run_web_fetch(state, args).await;
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("busy") || err_msg.contains("locked"),
+        "expected lock contention error, got: {err_msg}"
+    );
 }

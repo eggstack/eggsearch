@@ -40,8 +40,9 @@ pub use browser::{
     MAX_STARTUP_TIMEOUT_MS, MAX_VERIFICATION_WAIT_MS, PROFILE_SCHEMA_VERSION,
 };
 pub use cache::{
-    CacheScope, CacheStatus, DerivedCacheKey, DerivedDocumentCacheEntry, FetchCache,
-    FetchCacheMetadata, RawCacheKey,
+    build_raw_cache_key, build_raw_response_hash, CacheFreshness, CacheScope, CacheStatus,
+    CacheValidators, DerivedCacheKey, DerivedDocumentCacheEntry, FetchCache, FetchCacheMetadata,
+    RawCacheKey, RawFetchCacheEntry,
 };
 pub use client::FetchClient;
 pub use extract::{extract_content, HtmlExtractor, LinkExtractionResult};

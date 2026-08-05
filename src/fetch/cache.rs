@@ -15,6 +15,7 @@ pub struct RawCacheKey {
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct DerivedCacheKey {
+    pub scope: CacheScope,
     pub raw_content_hash: u64,
     pub extraction_key: ExtractionCacheKey,
 }
@@ -191,12 +192,15 @@ impl FetchCache {
         raw.get(key).cloned()
     }
 
-    pub async fn insert_raw(&self, key: RawCacheKey, entry: RawFetchCacheEntry) {
+    pub async fn insert_raw(&self, key: RawCacheKey, entry: RawFetchCacheEntry) -> bool {
         let body_len = entry.body.len();
+        if body_len > self.raw_max_bytes {
+            return false;
+        }
         let mut raw = self.raw.lock().await;
         let mut current = self.current_raw_bytes.lock().await;
 
-        if let Some((_, evicted)) = raw.push(key.clone(), entry.clone()) {
+        if let Some(evicted) = raw.pop(&key) {
             *current = current.saturating_sub(evicted.body.len());
         }
 
@@ -210,6 +214,7 @@ impl FetchCache {
 
         raw.put(key, entry);
         *current += body_len;
+        true
     }
 
     pub async fn get_derived(&self, key: &DerivedCacheKey) -> Option<DerivedDocumentCacheEntry> {
@@ -236,6 +241,20 @@ impl FetchCache {
             if let Some(evicted) = raw.pop(&key) {
                 *current = current.saturating_sub(evicted.body.len());
             }
+        }
+
+        drop(raw);
+        drop(current);
+
+        let mut derived = self.derived.lock().await;
+        let derived_keys_to_remove: Vec<DerivedCacheKey> = derived
+            .iter()
+            .filter(|(k, _)| k.scope == *scope)
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        for key in derived_keys_to_remove {
+            derived.pop(&key);
         }
     }
 
@@ -301,6 +320,7 @@ pub fn build_raw_response_hash(body: &[u8]) -> u64 {
 
 #[allow(clippy::too_many_arguments)]
 pub fn build_derived_key(
+    scope: &CacheScope,
     raw_hash: u64,
     extract_mode: ExtractMode,
     max_chars: usize,
@@ -312,6 +332,7 @@ pub fn build_derived_key(
 ) -> DerivedCacheKey {
     let max_chars_class = classify_max_chars(max_chars);
     DerivedCacheKey {
+        scope: scope.clone(),
         raw_content_hash: raw_hash,
         extraction_key: ExtractionCacheKey {
             extract_mode,
@@ -729,6 +750,7 @@ mod tests {
     async fn cache_derived_insert_and_get() {
         let cache = FetchCache::new(10, 10, 1024 * 1024);
         let key = DerivedCacheKey {
+            scope: CacheScope::Anonymous,
             raw_content_hash: 12345,
             extraction_key: ExtractionCacheKey {
                 extract_mode: ExtractMode::Text,
@@ -766,7 +788,9 @@ mod tests {
 
     #[test]
     fn build_derived_key_distinguishes_modes() {
+        let scope = CacheScope::Anonymous;
         let k1 = build_derived_key(
+            &scope,
             100,
             ExtractMode::Text,
             12000,
@@ -777,6 +801,7 @@ mod tests {
             true,
         );
         let k2 = build_derived_key(
+            &scope,
             100,
             ExtractMode::Markdown,
             12000,
@@ -791,7 +816,9 @@ mod tests {
 
     #[test]
     fn build_derived_key_distinguishes_pdf_pages() {
+        let scope = CacheScope::Anonymous;
         let k1 = build_derived_key(
+            &scope,
             100,
             ExtractMode::Text,
             12000,
@@ -802,6 +829,7 @@ mod tests {
             true,
         );
         let k2 = build_derived_key(
+            &scope,
             100,
             ExtractMode::Text,
             12000,
@@ -816,8 +844,20 @@ mod tests {
 
     #[test]
     fn build_derived_key_groups_same_max_chars_class() {
-        let k1 = build_derived_key(100, ExtractMode::Text, 8000, false, None, None, false, true);
+        let scope = CacheScope::Anonymous;
+        let k1 = build_derived_key(
+            &scope,
+            100,
+            ExtractMode::Text,
+            8000,
+            false,
+            None,
+            None,
+            false,
+            true,
+        );
         let k2 = build_derived_key(
+            &scope,
             100,
             ExtractMode::Text,
             10000,

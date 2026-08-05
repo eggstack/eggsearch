@@ -405,10 +405,14 @@ Two-tier in-memory LRU cache:
 
 | Cache | Purpose | Key |
 |-------|---------|-----|
-| **Raw** | Response bytes + headers | URL + cache scope |
-| **Derived** | Extracted content | Raw content hash + extraction params |
+| **Raw** | Original bounded transport bytes + headers | URL + cache scope |
+| **Derived** | Extracted/sanitized content | Scope + raw content hash + extraction params |
 
-Cache scope prevents mixing anonymous and authenticated/profile content.
+Cache scope uses opaque profile IDs (not display names) to prevent cross-profile cache access. Scope is part of derived keys so that two profiles with byte-identical responses do not share derived entries.
+
+Raw entries store the original bounded response bytes (HTML, PDF, or plain text) before extraction. This allows re-extraction under different options (e.g., different PDF page selections, different extraction modes) without re-downloading.
+
+Cache scope prevents mixing anonymous and authenticated/profile content. Profile removal invalidates both raw and derived tiers for the removed scope.
 
 Cache directives honored:
 - `no-store` — never cache
@@ -425,7 +429,12 @@ Challenge/error pages (403, 429, CAPTCHA, etc.) are never stored as successful c
 
 ### Cache Key Separation
 
-Derived cache keys include extraction parameters, so the same PDF with different page selections produces separate cache entries. This allows re-extracting a different page range from cached raw bytes without re-downloading.
+Derived cache keys include scope and extraction parameters, so:
+- The same URL with different page selections produces separate cache entries
+- The same URL under anonymous and profile scopes produces separate entries
+- Two profiles with byte-identical responses do not share derived entries
+
+This allows re-extracting a different page range from cached raw bytes without re-downloading.
 
 ### Configuration
 

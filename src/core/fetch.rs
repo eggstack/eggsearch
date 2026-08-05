@@ -367,6 +367,13 @@ pub struct WebFetchResponse {
     /// HTTP-fetched content from browser-rendered content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
+    /// Original bounded response body bytes, before text/PDF
+    /// extraction. Carried through so the cache layer can store
+    /// the raw transport bytes rather than extracted text. Only
+    /// populated when the fetch succeeded; `None` for cache hits
+    /// and metadata-only requests.
+    #[serde(skip)]
+    pub raw_body: Option<Vec<u8>>,
     /// Whether browser was escalated to from HTTP (auto mode only).
     /// `true` when the initial HTTP response was classified as a
     /// JavaScript shell or non-interactive verification and a single

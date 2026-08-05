@@ -1798,6 +1798,11 @@ pub async fn run_web_fetch(
     let mut manual_interaction_required = false;
     #[cfg(not(feature = "browser"))]
     let manual_interaction_required = false;
+    #[cfg(feature = "browser")]
+    #[allow(unused_mut)]
+    let mut _profile_lock: Option<crate::fetch::browser::ProfileLock> = None;
+    #[cfg(not(feature = "browser"))]
+    let _profile_lock: Option<()> = None;
 
     #[cfg(feature = "browser")]
     let render_policy_str = args
@@ -1862,7 +1867,7 @@ pub async fn run_web_fetch(
             let parsed_url = url::Url::parse(trimmed_url)
                 .map_err(|e| ToolError::Validation(format!("invalid URL: {e}")))?;
             let request_origin = format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
-            let _meta = mgr
+            let meta = mgr
                 .resolve_for_origin(profile_name, &request_origin)
                 .map_err(|e| match e {
                     crate::fetch::browser::ProfileError::ProfileNotFound(msg) => {
@@ -1873,7 +1878,14 @@ pub async fn run_web_fetch(
                     }
                     other => ToolError::Internal(format!("browser_profile: {other}")),
                 })?;
-            used_profile_name = Some(profile_name.clone());
+            let lock = mgr.acquire_lock(&meta.id).map_err(|e| match e {
+                crate::fetch::browser::ProfileError::ProfileBusy(name) => ToolError::Validation(
+                    format!("browser_profile '{name}' is busy (locked by another process)"),
+                ),
+                other => ToolError::Internal(format!("browser_profile lock: {other}")),
+            })?;
+            _profile_lock = Some(lock);
+            used_profile_name = Some(meta.id.clone());
         }
     }
 
@@ -1912,6 +1924,7 @@ pub async fn run_web_fetch(
                         .max_chars
                         .unwrap_or(state.config.fetch.max_chars_default);
                     let derived_key = crate::fetch::cache::build_derived_key(
+                        &scope,
                         build_raw_response_hash(&raw_entry.body),
                         extract_mode,
                         max_chars,
@@ -1988,6 +2001,7 @@ pub async fn run_web_fetch(
                                         .max_chars
                                         .unwrap_or(state.config.fetch.max_chars_default);
                                     let derived_key = crate::fetch::cache::build_derived_key(
+                                        &scope,
                                         build_raw_response_hash(&raw_entry.body),
                                         extract_mode,
                                         max_chars,
@@ -2341,8 +2355,8 @@ pub async fn run_web_fetch(
     {
         if let Some(ref cache) = state.fetch_cache {
             let raw_key = build_raw_cache_key(trimmed_url, &scope);
-            let raw_body = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-            let raw_hash = build_raw_response_hash(raw_body);
+            let raw_body_bytes = resp.raw_body.as_deref().unwrap_or(&[]);
+            let raw_hash = build_raw_response_hash(raw_body_bytes);
 
             let (mut cache_freshness, validators) = if let Some(ref headers) = resp.response_headers
             {
@@ -2379,7 +2393,7 @@ pub async fn run_web_fetch(
                     final_url: resp.final_url.clone(),
                     status: resp.status,
                     headers: resp.response_headers.clone().unwrap_or_default(),
-                    body: Arc::from(raw_body),
+                    body: Arc::from(raw_body_bytes),
                     fetched_at: std::time::SystemTime::now(),
                     freshness: cache_freshness,
                     validators,
@@ -2403,6 +2417,7 @@ pub async fn run_web_fetch(
                     .max_chars
                     .unwrap_or(state.config.fetch.max_chars_default);
                 let derived_key = crate::fetch::cache::build_derived_key(
+                    &scope,
                     raw_hash,
                     extract_mode,
                     max_chars,
@@ -3811,6 +3826,7 @@ fn make_batch_fetch_future(
                     if let Some(raw_entry) = cache.get_raw(&raw_key).await {
                         if raw_entry.freshness.is_fresh() {
                             let derived_key = crate::fetch::cache::build_derived_key(
+                                &scope,
                                 build_raw_response_hash(&raw_entry.body),
                                 mode,
                                 em,
@@ -3907,6 +3923,7 @@ fn make_batch_fetch_future(
                                         if status == 304 {
                                             let derived_key =
                                                 crate::fetch::cache::build_derived_key(
+                                                    &scope,
                                                     build_raw_response_hash(&raw_entry.body),
                                                     mode,
                                                     em,
@@ -4110,8 +4127,8 @@ fn make_batch_fetch_future(
                     Some(resp) => {
                         if let Some(ref cache) = state.fetch_cache {
                             let raw_key = build_raw_cache_key(&url, &scope);
-                            let raw_body = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-                            let raw_hash = build_raw_response_hash(raw_body);
+                            let raw_body_bytes = resp.raw_body.as_deref().unwrap_or(&[]);
+                            let raw_hash = build_raw_response_hash(raw_body_bytes);
 
                             let (mut cache_freshness, validators) = if let Some(ref headers) =
                                 resp.response_headers
@@ -4154,7 +4171,7 @@ fn make_batch_fetch_future(
                                     final_url: resp.final_url.clone(),
                                     status: resp.status,
                                     headers: resp.response_headers.clone().unwrap_or_default(),
-                                    body: Arc::from(raw_body),
+                                    body: Arc::from(raw_body_bytes),
                                     fetched_at: std::time::SystemTime::now(),
                                     freshness: cache_freshness,
                                     validators,
@@ -4164,6 +4181,7 @@ fn make_batch_fetch_future(
                                 cache.insert_raw(raw_key.clone(), raw_entry).await;
 
                                 let derived_key = crate::fetch::cache::build_derived_key(
+                                    &scope,
                                     raw_hash,
                                     mode,
                                     em,

@@ -109,6 +109,7 @@ cargo test --locked --features browser --test browser_transport    # browser tra
 - **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors. Defined in `src/core/repo_search.rs`.
 - **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`.
 - **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default.
+- **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded transport bytes (HTML/PDF/text) before extraction. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes.
 - **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`.
 - **Windows is unsupported:** The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix.
 
@@ -133,3 +134,4 @@ Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` crate with `
 - **Silently discarding native advisory lookup errors** — all lookups (CVE, GHSA, OSV, RustSec, KEV) produce `RetrievalAttempt` records in the retrieval ledger
 - **Treating limit saturation as proof of truncation** — use `TruncationEvidence`; `LimitReachedUnknown` does not set `truncated` or `has_truncation`
 - **Allowing native smoke skips to promote a release** — missing credentials, fixture refs, malformed evidence, or missing provider outputs must fail the manual release workflow
+- **Using display names as cache scope** — `CacheScope::Profile(id)` must use the opaque profile ID, never the display name; recreated profiles with the same name get distinct cache scopes
