@@ -11,7 +11,8 @@ use eggsearch::fetch::browser::types::BrowserConfig;
 #[tokio::test]
 #[ignore]
 async fn browser_live_smoke_basic_page() {
-    let discovery = discover_browser(None);
+    let discovery_state = discover_browser(None);
+    let discovery = discovery_state.discovery().cloned();
     if discovery.is_none() {
         eprintln!("No browser found, skipping live smoke test");
         return;

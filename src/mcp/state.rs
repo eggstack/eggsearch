@@ -230,7 +230,8 @@ impl ServerState {
 
         #[cfg(feature = "browser")]
         let browser_lifecycle = if config.fetch.browser.enabled {
-            let discovery = discover_browser(config.fetch.browser.executable.as_deref());
+            let discovery_state = discover_browser(config.fetch.browser.executable.as_deref());
+            let discovery = discovery_state.discovery().cloned();
             let render_policy: crate::fetch::browser::RenderPolicy = serde_json::from_value(
                 serde_json::Value::String(config.fetch.browser.policy.clone()),
             )

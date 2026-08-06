@@ -2,7 +2,7 @@
 
 **Repository:** `eggstack/eggsearch`  
 **Planning baseline:** `2b95328e409e5f19074c1d8e2118fc4a7ce5561d`  
-**Status:** Corrective implementation handoff  
+**Status:** Closed  
 **Scope:** Close the remaining browser-orchestration, cache-correctness, profile-isolation, and contract/documentation gaps from the PDF and browser resilience roadmap  
 **Primary constraint:** Finish the implemented line of work without introducing a general crawler, heavy validation apparatus, runtime download system, or expanded CI matrix
 

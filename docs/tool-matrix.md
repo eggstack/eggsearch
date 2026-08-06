@@ -48,7 +48,9 @@ Optional credentialed adapters (GitHub, GitLab, Gitea, Sourcegraph, Brave API, S
 - Each provider in `provider_status` includes `routable` (bool), `skip_reason` (optional string), and `skip_code` (optional machine-readable code) indicating whether it can actually be queried. `skip_code` values include `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, and `unknown`.
 - `repo_search` supports `mode = "exact_error"` for exact compiler/runtime/toolchain error text.
 - `web_fetch` supports `extract_mode = "metadata_only"` when you only need page metadata.
-- `web_fetch` supports `pdf.pages` for page selection (e.g., `"1,3,7-10"`) and `pdf.pdf_ocr` for OCR policy. PDF extraction requires the `pdf` feature and `[fetch].pdf_enabled = true`. Each page receives a quality classification; see [fetch architecture](architecture/fetch.md) for details.
+- `web_fetch` supports `pdf.pages` for page selection (e.g., `"1,3,7-10"`) and `pdf.pdf_ocr` for OCR policy. PDF extraction requires the `pdf` feature and `[fetch].pdf_enabled = true`. Each page receives a quality classification; PDF layout/OCR is deferred; see [fetch architecture](architecture/fetch.md) for details.
+- `web_fetch` supports `render` (`http_only`, `auto`, `browser`) for optional headless Chrome rendering. `auto` escalates at most once for JavaScript shells. Interactive challenges return structured error codes. An explicitly configured invalid browser path fails deterministically.
+- `web_fetch` supports `browser_profile` for persistent profiles created via `eggsearch browser-login`. Profiles require explicit headed local setup and are restricted to their recorded origin.
 
 ## Trust Semantics
 

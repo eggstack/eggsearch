@@ -298,6 +298,28 @@ impl BrowserAvailability {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum BrowserDiscoveryState {
+    Available(BrowserDiscovery),
+    NotConfigured,
+    ExplicitPathInvalid { path: String },
+    NotFound,
+    VersionUnsupported { version: String },
+}
+
+impl BrowserDiscoveryState {
+    pub fn is_available(&self) -> bool {
+        matches!(self, BrowserDiscoveryState::Available { .. })
+    }
+
+    pub fn discovery(&self) -> Option<&BrowserDiscovery> {
+        match self {
+            BrowserDiscoveryState::Available(d) => Some(d),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

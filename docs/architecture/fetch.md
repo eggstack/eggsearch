@@ -195,19 +195,21 @@ Document outlines (bookmarks) are extracted from the catalog outline tree when p
 
 ### OCR Policy
 
-The `pdf.pdf_ocr` field accepts `"never"` (default), `"auto"`, or `"always"`. Values other than `"never"` return a capability warning until OCR support is implemented in a future phase.
+The `pdf.pdf_ocr` field accepts `"never"` (default), `"auto"`, or `"always"`. Values other than `"never"` return a capability warning. OCR is not implemented — PDF layout reconstruction and OCR are deferred (Phase 2). Per-page quality classification detects scanned/CID-corrupt/unusable content and reports it through `pdf_page_metadata`.
 
 ### Capability Reporting
 
-`provider_status` reports:
-- `pdf_text`: available/unavailable (matches `cfg!(feature = "pdf")`)
-- `pdf_layout`: unavailable
-- `pdf_ocr`: unavailable
-- `browser_rendering`: available when `browser` feature is compiled, enabled in config, and a Chrome/Chromium executable is discovered
+`provider_status` reports structured capability dimensions:
+- `pdf_capabilities`: `{ compiled, configured, usable, layout: "deferred", ocr: "deferred" }`
+- `browser_capabilities`: `{ compiled, configured, discovered, usable, reason }`
+- `persistent_browser_profiles_capabilities`: `{ compiled, configured, usable, reason }`
+- `cache_capabilities`: `{ memory_cache_enabled, persistent_cache: false, profile_scoping: true }`
+
+Browser capability does not launch a page during status reporting.
 
 ---
 
-## Browser Rendering (Phase 4, Optional)
+## Browser Rendering (Optional)
 
 Browser rendering is an optional feature gated behind the `browser` Cargo feature. When enabled and configured, `web_fetch` can escalate from HTTP to headless Chrome/Chromium for pages that ordinary HTTP fetching cannot usefully render (e.g., JavaScript-heavy single-page apps).
 
@@ -215,8 +217,8 @@ Browser rendering is an optional feature gated behind the `browser` Cargo featur
 
 | File | Responsibility |
 |------|----------------|
-| `browser/types.rs` | `RenderPolicy`, `FetchDisposition`, `TransportResponse`, `BrowserConfig`, `BrowserDiscovery`, `BrowserAvailability` |
-| `browser/discover.rs` | Browser executable discovery and validation (Linux/macOS candidates) |
+| `browser/types.rs` | `RenderPolicy`, `FetchDisposition`, `TransportResponse`, `BrowserConfig`, `BrowserDiscovery`, `BrowserDiscoveryState`, `BrowserAvailability` |
+| `browser/discover.rs` | Browser executable discovery and validation (Linux/macOS candidates). Returns `BrowserDiscoveryState` with deterministic explicit-path handling. |
 | `browser/lifecycle.rs` | `BrowserLifecycle` — warm browser process management with one-process-per-server model |
 | `browser/classify.rs` | `FetchDisposition` classification: useful content, JS shell, interactive challenge, non-interactive verification |
 | `browser/intercept.rs` | Request URL policy checks — blocks localhost, private networks, embedded credentials |
@@ -256,8 +258,15 @@ At most one browser attempt follows the HTTP attempt. Browser failure returns a 
 
 ### Browser Discovery
 
+Discovery returns a `BrowserDiscoveryState` enum:
+- `Available(BrowserDiscovery)` — executable found and validated
+- `NotConfigured` — no explicit path configured (should not reach this; callers pass `None`)
+- `ExplicitPathInvalid { path }` — configured path does not point to a valid executable; does not fall back to auto-discovery
+- `NotFound` — no Chrome/Chromium found on the system
+- `VersionUnsupported { version }` — executable found but version is unsupported
+
 Discovery checks these candidates in order:
-- Configured executable path (from `[fetch].browser.executable`)
+- Configured executable path (from `[fetch].browser.executable`) — if present and invalid, returns `ExplicitPathInvalid` immediately
 - Linux: `/usr/bin/google-chrome-stable`, `/usr/bin/google-chrome`, `/usr/bin/chromium`, `/usr/bin/chromium-browser`, `/snap/bin/chromium`
 - macOS: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, `~/Applications/...`, `/Applications/Chromium.app/...`
 - PATH resolution: `google-chrome-stable`, `google-chrome`, `chromium`, `chromium-browser`
@@ -282,7 +291,7 @@ All observable requests must be intercepted and checked. Unsupported or uninspec
 | `NonInteractiveVerification` | "just a moment", "checking your browser", "please wait" |
 | `JavascriptShell` | Empty root/app/next div with multiple scripts, low text content |
 
-Interactive challenges return `ManualInteractionRequired` and are never solved. Non-interactive verifications get a bounded resolution window.
+Interactive challenges return structured MCP error codes (`browser_manual_interaction_required`, `browser_profile_requires_attention`) and are never solved. Non-interactive verifications get a bounded resolution window.
 
 ### Configuration
 

@@ -33,18 +33,22 @@ Search tools return machine-readable `next_actions` hints. `web_fetch` supports 
 
 ### Browser Rendering (Optional)
 
-`web_fetch` supports optional headless Chrome/Chromium rendering when the `browser` Cargo feature is enabled and `[fetch].browser.enabled = true` in config. Browser rendering escalates from HTTP for JavaScript-heavy pages that ordinary fetching cannot render. It discovers an already-installed system Chrome/Chromium — it never downloads a browser. Interactive challenges (CAPTCHAs, Turnstile) are detected and reported but never solved. Browser rendering is public-network-only and rejects localhost/private targets.
+`web_fetch` supports optional headless Chrome/Chromium rendering when the `browser` Cargo feature is enabled and `[fetch].browser.enabled = true` in config. Browser rendering escalates from HTTP for JavaScript-heavy pages that ordinary fetching cannot render. It discovers an already-installed system Chrome/Chromium — it never downloads a browser. Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured errors but never solved. Browser rendering is public-network-only and rejects localhost/private targets.
 
 The `render` parameter controls transport selection:
 - `http_only` (default): HTTP only, never launches Chrome
-- `auto`: HTTP first, escalates to browser once for JavaScript shells or non-interactive verification
-- `browser`: Browser directly, no HTTP prefetch
+- `auto`: HTTP first, escalates to browser at most once for JavaScript shells or non-interactive verification pages. Does not escalate for interactive challenges, authentication pages, or rate-limited responses.
+- `browser`: Browser directly, no HTTP prefetch. Fails if no Chrome/Chromium executable is available.
 
-The response includes `transport` (`"http"` or `"browser"`), `browser_escalated` (whether auto escalated), and `manual_interaction_required` (for challenge pages).
+An explicitly configured invalid browser executable path fails deterministically — it does not silently fall back to auto-discovery.
 
-### Browser Profiles (Optional, Phase 5)
+Interactive challenge outcomes (CAPTCHAs, Turnstile, login walls) return structured error codes (`browser_manual_interaction_required`, `browser_profile_requires_attention`) through the MCP error response. These are never automated.
 
-Persistent browser profiles allow a local operator to establish a dedicated browser session for an origin that requires authentication or interactive human verification. Profiles are created only through CLI commands — MCP callers cannot create profiles or launch headed browsers.
+The response includes `transport` (`"http"` or `"browser"`), `browser_escalated` (whether auto escalated), and the `browser_profile` display name when a persistent profile was used.
+
+### Browser Profiles (Optional)
+
+Persistent browser profiles allow a local operator to establish a dedicated browser session for an origin that requires authentication or interactive human verification. Profiles are created only through CLI commands — MCP callers cannot create profiles or launch headed browsers. Each profile requires explicit headed local setup via `browser-login` and is restricted to its recorded exact origin.
 
 ```bash
 # Create a profile and open a headed browser for login
@@ -69,7 +73,9 @@ Once a profile is established, use it in `web_fetch`:
 }
 ```
 
-Profiles are disabled by default. Enable with `[fetch.browser].persistent_profiles_enabled = true` in config. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies.
+Profiles are disabled by default. Enable with `[fetch.browser].persistent_profiles_enabled = true` in config. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies. Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped).
+
+PDF layout reconstruction and OCR are deferred — PDF extraction is text-only via `lopdf` with per-page quality classification.
 
 ## Safety Defaults
 

@@ -53,7 +53,7 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
         std::path::Path::new(executable).exists()
     } else {
         eggsearch::fetch::browser::discover_browser(cfg.fetch.browser.executable.as_deref())
-            .is_some()
+            .is_available()
     };
 
     if has_chrome {
@@ -72,7 +72,9 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
 
                 if let Some(disc) = eggsearch::fetch::browser::discover_browser(
                     cfg.fetch.browser.executable.as_deref(),
-                ) {
+                )
+                .discovery()
+                {
                     let _ = mgr.update_browser_info(
                         &mut updated,
                         &format!("{:?}", disc.family),
@@ -108,6 +110,8 @@ async fn launch_headed_browser(
     origin: &str,
 ) -> Result<(), String> {
     let disc = eggsearch::fetch::browser::discover_browser(None)
+        .discovery()
+        .cloned()
         .ok_or("no browser executable discovered")?;
 
     let mut cmd = tokio::process::Command::new(&disc.path);

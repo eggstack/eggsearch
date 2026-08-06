@@ -95,10 +95,9 @@ fn run_inspect(mgr: &ProfileManager, name: &str) {
         "unlocked"
     };
 
-    let discovery = discover_browser(None);
-    let current_major = discovery
-        .as_ref()
-        .and_then(|d| parse_browser_major_version(&d.version));
+    let discovery_state = discover_browser(None);
+    let discovery = discovery_state.discovery();
+    let current_major = discovery.and_then(|d| parse_browser_major_version(&d.version));
 
     let compat_warning = match (meta.browser_major_version, current_major) {
         (Some(profile_ver), Some(browser_ver)) if profile_ver > browser_ver => Some(format!(

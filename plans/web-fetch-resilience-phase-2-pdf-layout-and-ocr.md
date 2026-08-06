@@ -3,7 +3,9 @@
 **Repository:** `eggstack/eggsearch`  
 **Roadmap:** `plans/web-fetch-pdf-and-browser-resilience-roadmap.md`  
 **Predecessor:** `plans/web-fetch-resilience-phase-1-pdf-quality-and-navigation.md`  
-**Status:** Implementation handoff  
+**Status:** Deferred — not required for current closure  
+**Reason:** Native/model distribution complexity exceeds current demonstrated need  
+**Re-entry condition:** A concrete scanned-PDF workload and approved dependency/runtime plan  
 **Scope:** Optional page rendering, basic layout reconstruction, and page-local OCR for degraded PDF pages
 
 ---

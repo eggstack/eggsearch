@@ -1,32 +1,37 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::types::{BrowserDiscovery, BrowserFamily, BrowserSource};
+use super::types::{BrowserDiscovery, BrowserDiscoveryState, BrowserFamily, BrowserSource};
 
-pub fn discover_browser(configured_path: Option<&str>) -> Option<BrowserDiscovery> {
+pub fn discover_browser(configured_path: Option<&str>) -> BrowserDiscoveryState {
     if let Some(path) = configured_path {
         if !path.is_empty() {
             let p = PathBuf::from(path);
-            if let Some(disc) = try_validate(&p, BrowserSource::Configured) {
-                return Some(disc);
+            match try_validate(&p, BrowserSource::Configured) {
+                Some(disc) => return BrowserDiscoveryState::Available(disc),
+                None => {
+                    return BrowserDiscoveryState::ExplicitPathInvalid {
+                        path: path.to_string(),
+                    };
+                }
             }
         }
     }
 
     for candidate in linux_candidates() {
         if let Some(disc) = try_validate(&candidate, BrowserSource::AutoDiscovered) {
-            return Some(disc);
+            return BrowserDiscoveryState::Available(disc);
         }
     }
 
     for candidate in macos_candidates() {
         if let Some(disc) = try_validate_expanded(&candidate, BrowserSource::AutoDiscovered) {
-            return Some(disc);
+            return BrowserDiscoveryState::Available(disc);
         }
     }
 
     if let Some(path) = find_in_path("google-chrome-stable") {
-        return Some(BrowserDiscovery {
+        return BrowserDiscoveryState::Available(BrowserDiscovery {
             path,
             family: BrowserFamily::Chrome,
             version: String::new(),
@@ -34,7 +39,7 @@ pub fn discover_browser(configured_path: Option<&str>) -> Option<BrowserDiscover
         });
     }
     if let Some(path) = find_in_path("google-chrome") {
-        return Some(BrowserDiscovery {
+        return BrowserDiscoveryState::Available(BrowserDiscovery {
             path,
             family: BrowserFamily::Chrome,
             version: String::new(),
@@ -42,7 +47,7 @@ pub fn discover_browser(configured_path: Option<&str>) -> Option<BrowserDiscover
         });
     }
     if let Some(path) = find_in_path("chromium") {
-        return Some(BrowserDiscovery {
+        return BrowserDiscoveryState::Available(BrowserDiscovery {
             path,
             family: BrowserFamily::Chromium,
             version: String::new(),
@@ -50,7 +55,7 @@ pub fn discover_browser(configured_path: Option<&str>) -> Option<BrowserDiscover
         });
     }
     if let Some(path) = find_in_path("chromium-browser") {
-        return Some(BrowserDiscovery {
+        return BrowserDiscoveryState::Available(BrowserDiscovery {
             path,
             family: BrowserFamily::Chromium,
             version: String::new(),
@@ -58,7 +63,7 @@ pub fn discover_browser(configured_path: Option<&str>) -> Option<BrowserDiscover
         });
     }
 
-    None
+    BrowserDiscoveryState::NotFound
 }
 
 fn linux_candidates() -> Vec<PathBuf> {

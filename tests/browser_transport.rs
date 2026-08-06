@@ -10,10 +10,10 @@ use eggsearch::fetch::browser::navigate::{
     browser_fetch, browser_fetch_with_policy, BrowserFetchError,
 };
 use eggsearch::fetch::browser::types::{
-    BrowserConfig, BrowserDiscovery, BrowserFamily, BrowserSource, RenderPolicy,
-    MAX_GLOBAL_CONCURRENCY, MAX_MAX_DOM_BYTES, MAX_MAX_REQUESTS, MAX_NAVIGATION_TIMEOUT_MS,
-    MAX_PER_ORIGIN_CONCURRENCY, MAX_POST_LOAD_WAIT_MS, MAX_STARTUP_TIMEOUT_MS,
-    MAX_VERIFICATION_WAIT_MS,
+    BrowserConfig, BrowserDiscovery, BrowserDiscoveryState, BrowserFamily, BrowserSource,
+    RenderPolicy, MAX_GLOBAL_CONCURRENCY, MAX_MAX_DOM_BYTES, MAX_MAX_REQUESTS,
+    MAX_NAVIGATION_TIMEOUT_MS, MAX_PER_ORIGIN_CONCURRENCY, MAX_POST_LOAD_WAIT_MS,
+    MAX_STARTUP_TIMEOUT_MS, MAX_VERIFICATION_WAIT_MS,
 };
 use std::sync::Arc;
 
@@ -246,18 +246,30 @@ fn policy_blocks_documentation_range() {
 }
 
 #[test]
-fn discovery_does_not_panic_with_invalid_path() {
-    let _result = discover_browser(Some("/nonexistent/path/to/chrome"));
+fn discovery_invalid_explicit_path_returns_explicit_path_invalid() {
+    let result = discover_browser(Some("/nonexistent/path/to/chrome"));
+    assert!(matches!(
+        result,
+        BrowserDiscoveryState::ExplicitPathInvalid { .. }
+    ));
 }
 
 #[test]
-fn discovery_does_not_panic_with_empty_path() {
-    let _result = discover_browser(Some(""));
+fn discovery_empty_path_treated_as_not_configured() {
+    let result = discover_browser(Some(""));
+    assert!(!matches!(
+        result,
+        BrowserDiscoveryState::ExplicitPathInvalid { .. }
+    ));
 }
 
 #[test]
-fn discovery_does_not_panic_with_none() {
-    let _result = discover_browser(None);
+fn discovery_none_returns_not_found_or_available() {
+    let result = discover_browser(None);
+    assert!(matches!(
+        result,
+        BrowserDiscoveryState::NotFound | BrowserDiscoveryState::Available(_)
+    ));
 }
 
 #[test]
@@ -361,20 +373,21 @@ fn fetch_disposition_all_variants() {
 async fn test1_executable_discovery_order_and_explicit_override() {
     let disc_auto = discover_browser(None);
     let disc_explicit = discover_browser(Some("/usr/bin/google-chrome-stable"));
-    if let Some(disc) = disc_auto {
+    if let BrowserDiscoveryState::Available(disc) = disc_auto {
         assert!(disc.source == BrowserSource::AutoDiscovered);
     }
-    if let Some(disc) = disc_explicit {
+    if let BrowserDiscoveryState::Available(disc) = disc_explicit {
         assert!(disc.source == BrowserSource::Configured);
     }
 }
 
 #[tokio::test]
-async fn test2_invalid_executable_rejection() {
+async fn test2_invalid_explicit_path_fails_deterministically() {
     let result = discover_browser(Some("/nonexistent/fake-chrome"));
-    if let Some(disc) = result {
-        assert_eq!(disc.source, BrowserSource::AutoDiscovered);
-    }
+    assert!(matches!(
+        result,
+        BrowserDiscoveryState::ExplicitPathInvalid { .. }
+    ));
 }
 
 #[tokio::test]

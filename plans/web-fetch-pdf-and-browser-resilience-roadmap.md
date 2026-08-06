@@ -364,3 +364,25 @@ The following may be reconsidered only after this roadmap is implemented and use
 - OCR quality benchmark suites.
 
 These are not hidden acceptance criteria for this line of work.
+
+---
+
+## Closure
+
+**Closed at:** Pass 3 contracts and finalization
+
+**Implemented:**
+- Phase 1 PDF quality/navigation
+- process-local origin control and correct in-memory raw/derived caching
+- optional system-Chrome rendering through `web_fetch`
+- explicit local persistent browser profiles
+
+**Deferred:**
+- PDF layout reconstruction and OCR (Phase 2)
+
+**Preserved constraints:**
+- empty default features
+- no runtime downloads
+- no automated challenge solving
+- manual crates.io release
+- one routine `make check` gate

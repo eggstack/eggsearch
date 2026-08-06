@@ -64,7 +64,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -80,7 +80,7 @@ impl EggsearchServer {
         match run_provider_status(state, args) {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -97,7 +97,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -114,7 +114,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -131,7 +131,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -148,7 +148,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -165,7 +165,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -182,7 +182,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -199,7 +199,7 @@ impl EggsearchServer {
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 
@@ -214,7 +214,7 @@ impl EggsearchServer {
         match run_build_evidence_bundle(args) {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal(e)) => Err(McpError::internal_error(e, None)),
+            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
         }
     }
 }

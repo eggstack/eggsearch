@@ -28,18 +28,128 @@ use crate::mcp::state::ServerState;
 
 /// Error from a tool call, tagged by whether it reflects bad client
 /// input (`Validation`) or a server-side/runtime issue (`Internal`).
+///
+/// `Internal` errors optionally carry structured JSON data for
+/// machine-readable error codes (e.g. browser/manual-interaction outcomes).
+/// The `data` field is passed through the MCP error response's `data`
+/// member when present.
 #[derive(Debug)]
 pub enum ToolError {
     Validation(String),
-    Internal(String),
+    Internal {
+        message: String,
+        data: Option<serde_json::Value>,
+    },
+}
+
+impl ToolError {
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::Internal {
+            message: message.into(),
+            data: None,
+        }
+    }
+
+    pub fn internal_with_data(message: impl Into<String>, data: serde_json::Value) -> Self {
+        Self::Internal {
+            message: message.into(),
+            data: Some(data),
+        }
+    }
 }
 
 impl std::fmt::Display for ToolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Validation(msg) | Self::Internal(msg) => write!(f, "{msg}"),
+            Self::Validation(msg) | Self::Internal { message: msg, .. } => {
+                write!(f, "{msg}")
+            }
         }
     }
+}
+
+#[allow(dead_code)]
+fn browser_manual_interaction_error(
+    origin: &str,
+    message: &str,
+    profile_name: Option<&str>,
+    next_action: Option<&str>,
+) -> ToolError {
+    let mut data = serde_json::json!({
+        "code": "browser_manual_interaction_required",
+        "message": message,
+        "origin": origin,
+        "manual_interaction_required": true,
+    });
+    if let Some(name) = profile_name {
+        data["profile_name"] = serde_json::Value::String(name.to_string());
+    }
+    if let Some(action) = next_action {
+        data["next_action"] = serde_json::Value::String(action.to_string());
+    }
+    let error_msg = format!("manual_interaction_required: {origin}: {message}");
+    ToolError::internal_with_data(error_msg, data)
+}
+
+#[allow(dead_code)]
+fn browser_profile_requires_attention_error(origin: &str, profile_name: &str) -> ToolError {
+    let next_action = format!("eggsearch browser-login {origin} --profile {profile_name}");
+    let data = serde_json::json!({
+        "code": "browser_profile_requires_attention",
+        "message": format!("browser profile '{profile_name}' requires manual login for origin {origin}"),
+        "origin": origin,
+        "profile_name": profile_name,
+        "manual_interaction_required": true,
+        "next_action": next_action,
+    });
+    let error_msg = format!(
+        "browser_profile_requires_attention: profile '{profile_name}' requires manual login for {origin}; \
+         reopen with: {next_action}"
+    );
+    ToolError::internal_with_data(error_msg, data)
+}
+
+#[allow(dead_code)]
+fn browser_unavailable_error(reason: &str) -> ToolError {
+    let data = serde_json::json!({
+        "code": "browser_unavailable",
+        "message": reason,
+        "manual_interaction_required": false,
+    });
+    ToolError::internal_with_data(reason.to_string(), data)
+}
+
+#[allow(dead_code)]
+fn browser_startup_failed_error(detail: &str) -> ToolError {
+    let data = serde_json::json!({
+        "code": "browser_startup_failed",
+        "message": format!("browser startup failed: {detail}"),
+        "manual_interaction_required": false,
+    });
+    ToolError::internal_with_data(format!("browser_startup_failed: {detail}"), data)
+}
+
+#[allow(dead_code)]
+fn browser_navigation_failed_error(detail: &str) -> ToolError {
+    let data = serde_json::json!({
+        "code": "browser_navigation_failed",
+        "message": format!("browser navigation failed: {detail}"),
+        "manual_interaction_required": false,
+    });
+    ToolError::internal_with_data(format!("browser_navigation_failed: {detail}"), data)
+}
+
+#[allow(dead_code)]
+fn browser_deadline_exceeded_error() -> ToolError {
+    let data = serde_json::json!({
+        "code": "browser_deadline_exceeded",
+        "message": "insufficient time remaining for browser rendering",
+        "manual_interaction_required": false,
+    });
+    ToolError::internal_with_data(
+        "insufficient time remaining for browser rendering".to_string(),
+        data,
+    )
 }
 
 fn parse_code_host_arg(
@@ -701,7 +811,7 @@ pub async fn run_web_search(
     args: WebSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Internal(live_search_denied_message(
+        return Err(ToolError::internal(live_search_denied_message(
             "web_search",
         )));
     }
@@ -883,7 +993,7 @@ pub async fn run_web_search(
         && !effective_providers.is_empty()
         && resp.results.is_empty()
     {
-        return Err(ToolError::Internal(format!(
+        return Err(ToolError::internal(format!(
             "all providers failed: {}",
             providers_failed
                 .iter()
@@ -912,7 +1022,7 @@ pub async fn run_repo_search(
         && args.include_local != Some(false);
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
-        return Err(ToolError::Internal(live_search_denied_message(
+        return Err(ToolError::internal(live_search_denied_message(
             "repo_search",
         )));
     }
@@ -1068,7 +1178,7 @@ pub async fn run_repo_search(
                 ToolError::Validation(format!("provider is disabled: {id}"))
             }
             crate::meta::provider_diagnostics::ProviderRoutingError::NoDefaultProviders(msg) => {
-                ToolError::Internal(format!("no default providers: {msg}"))
+                ToolError::internal(format!("no default providers: {msg}"))
             }
         })?
     };
@@ -1231,7 +1341,7 @@ pub async fn run_repo_search(
     }
 
     let value = serde_json::to_value(&response)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 
     Ok(value)
 }
@@ -1246,7 +1356,7 @@ pub async fn run_research_search(
     };
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Internal(live_search_denied_message(
+        return Err(ToolError::internal(live_search_denied_message(
             "research_search",
         )));
     }
@@ -1386,7 +1496,7 @@ pub async fn run_research_search(
     }
 
     let value = serde_json::to_value(&response)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 
     Ok(value)
 }
@@ -1430,28 +1540,73 @@ pub fn run_provider_status(
         .map(|d| (d.id.clone(), health_registry.health_view(&d.id)))
         .collect();
 
-    let browser_rendering = {
+    let (browser_compiled, browser_configured, browser_discovered, browser_usable, browser_reason) = {
         #[cfg(feature = "browser")]
         {
-            state.config.fetch.browser.enabled
-                && crate::fetch::browser::discover_browser(
-                    state.config.fetch.browser.executable.as_deref(),
-                )
-                .is_some()
+            let compiled = true;
+            let configured = state.config.fetch.browser.enabled;
+            let discovery_state = crate::fetch::browser::discover_browser(
+                state.config.fetch.browser.executable.as_deref(),
+            );
+            let discovered = discovery_state.is_available();
+            let usable = compiled && configured && discovered;
+            let reason = if !configured {
+                Some("disabled in config".to_string())
+            } else {
+                match &discovery_state {
+                    crate::fetch::browser::types::BrowserDiscoveryState::ExplicitPathInvalid {
+                        path,
+                    } => Some(format!("explicit path invalid: {path}")),
+                    crate::fetch::browser::types::BrowserDiscoveryState::NotFound => {
+                        Some("no Chrome/Chromium executable found".to_string())
+                    }
+                    crate::fetch::browser::types::BrowserDiscoveryState::NotConfigured => {
+                        Some("no executable configured".to_string())
+                    }
+                    crate::fetch::browser::types::BrowserDiscoveryState::VersionUnsupported {
+                        version,
+                    } => Some(format!("browser version unsupported: {version}")),
+                    crate::fetch::browser::types::BrowserDiscoveryState::Available(_) => None,
+                }
+            };
+            (compiled, configured, discovered, usable, reason)
         }
         #[cfg(not(feature = "browser"))]
         {
-            false
+            (false, false, false, false, Some("not compiled".to_string()))
         }
     };
-    let persistent_browser_profiles = {
+
+    let (profiles_compiled, profiles_configured, profiles_usable, profiles_reason) = {
         #[cfg(feature = "browser")]
         {
-            state.config.fetch.browser.persistent_profiles.enabled
+            let compiled = true;
+            let configured = state.config.fetch.browser.persistent_profiles.enabled;
+            let usable = compiled && configured;
+            let reason = if !configured {
+                Some("disabled".to_string())
+            } else {
+                None
+            };
+            (compiled, configured, usable, reason)
         }
         #[cfg(not(feature = "browser"))]
         {
-            false
+            (false, false, false, Some("not compiled".to_string()))
+        }
+    };
+
+    let (pdf_compiled, pdf_configured, pdf_usable) = {
+        #[cfg(feature = "pdf")]
+        {
+            let compiled = true;
+            let configured = state.config.fetch.pdf_enabled;
+            let usable = compiled && configured;
+            (compiled, configured, usable)
+        }
+        #[cfg(not(feature = "pdf"))]
+        {
+            (false, false, false)
         }
     };
 
@@ -1487,13 +1642,38 @@ pub fn run_provider_status(
             "batch_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
             "evidence_bundle": true,
             "document_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
-            "pdf_fetch": cfg!(feature = "pdf"),
-            "pdf_text": cfg!(feature = "pdf"),
+            "pdf_fetch": pdf_compiled,
+            "pdf_text": pdf_compiled,
             "pdf_layout": false,
             "pdf_ocr": false,
-            "browser_rendering": browser_rendering,
-            "persistent_browser_profiles": persistent_browser_profiles,
+            "browser_rendering": browser_usable,
+            "persistent_browser_profiles": profiles_usable,
             "local_workspace": local_enabled,
+        },
+        "browser_capabilities": {
+            "compiled": browser_compiled,
+            "configured": browser_configured,
+            "discovered": browser_discovered,
+            "usable": browser_usable,
+            "reason": browser_reason,
+        },
+        "persistent_browser_profiles_capabilities": {
+            "compiled": profiles_compiled,
+            "configured": profiles_configured,
+            "usable": profiles_usable,
+            "reason": profiles_reason,
+        },
+        "pdf_capabilities": {
+            "compiled": pdf_compiled,
+            "configured": pdf_configured,
+            "usable": pdf_usable,
+            "layout": "deferred",
+            "ocr": "deferred",
+        },
+        "cache_capabilities": {
+            "memory_cache_enabled": state.fetch_cache.is_some(),
+            "persistent_cache": false,
+            "profile_scoping": true,
         },
         "quality_metadata": {
             "enabled": true,
@@ -1743,7 +1923,7 @@ pub async fn run_web_fetch(
     use crate::fetch::origin::{classify_network_error, OriginKey};
 
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
-        return Err(ToolError::Internal(web_fetch_denied_message()));
+        return Err(ToolError::internal(web_fetch_denied_message()));
     }
 
     if args.url.trim().is_empty() {
@@ -1770,13 +1950,13 @@ pub async fn run_web_fetch(
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
 
     let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
-        ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
+        ToolError::internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
 
     let client =
         if let Some(ms) = args.timeout_ms {
             Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
-                ToolError::Internal(format!("failed to create timeout override: {e}"))
+                ToolError::internal(format!("failed to create timeout override: {e}"))
             })?)
         } else {
             base_client
@@ -1793,6 +1973,11 @@ pub async fn run_web_fetch(
     let mut used_profile_name: Option<String> = None;
     #[cfg(not(feature = "browser"))]
     let used_profile_name: Option<String> = None;
+    #[cfg(feature = "browser")]
+    #[allow(unused_mut)]
+    let mut profile_cache_scope_id: Option<String> = None;
+    #[cfg(not(feature = "browser"))]
+    let profile_cache_scope_id: Option<String> = None;
     #[cfg(feature = "browser")]
     #[allow(unused_mut)]
     let mut manual_interaction_required = false;
@@ -1848,10 +2033,9 @@ pub async fn run_web_fetch(
             if state.browser_lifecycle().is_some() {
                 browser_available = true;
             } else if matches!(render_policy, crate::fetch::browser::RenderPolicy::Browser) {
-                return Err(ToolError::Internal(
+                return Err(browser_unavailable_error(
                     "browser rendering is enabled but no Chrome/Chromium executable was found; \
-                     set [fetch.browser].executable or install Chrome/Chromium"
-                        .to_string(),
+                     set [fetch.browser].executable or install Chrome/Chromium",
                 ));
             }
         }
@@ -1876,21 +2060,22 @@ pub async fn run_web_fetch(
                     crate::fetch::browser::ProfileError::ProfilesDisabled => {
                         ToolError::Validation("browser profiles are not enabled".to_string())
                     }
-                    other => ToolError::Internal(format!("browser_profile: {other}")),
+                    other => ToolError::internal(format!("browser_profile: {other}")),
                 })?;
             let lock = mgr.acquire_lock(&meta.id).map_err(|e| match e {
                 crate::fetch::browser::ProfileError::ProfileBusy(name) => ToolError::Validation(
                     format!("browser_profile '{name}' is busy (locked by another process)"),
                 ),
-                other => ToolError::Internal(format!("browser_profile lock: {other}")),
+                other => ToolError::internal(format!("browser_profile lock: {other}")),
             })?;
             _profile_lock = Some(lock);
-            used_profile_name = Some(meta.id.clone());
+            profile_cache_scope_id = Some(meta.id.clone());
+            used_profile_name = Some(meta.display_name.clone());
         }
     }
 
-    let scope = if let Some(ref name) = used_profile_name {
-        CacheScope::Profile(name.clone())
+    let scope = if let Some(ref id) = profile_cache_scope_id {
+        CacheScope::Profile(id.clone())
     } else {
         CacheScope::Anonymous
     };
@@ -2078,9 +2263,7 @@ pub async fn run_web_fetch(
             if let Some(ref lc) = state.browser_lifecycle() {
                 let remaining = deadline.saturating_duration_since(std::time::Instant::now());
                 if remaining.as_millis() < 2000 {
-                    return Err(ToolError::Internal(
-                        "insufficient time remaining for browser rendering".to_string(),
-                    ));
+                    return Err(browser_deadline_exceeded_error());
                 }
                 let browser_config = crate::fetch::browser::BrowserConfig::default();
                 match tokio::time::timeout(
@@ -2111,17 +2294,29 @@ pub async fn run_web_fetch(
                     Ok(Err(crate::fetch::browser::BrowserFetchError::InteractiveChallenge(
                         mir,
                     ))) => {
-                        let msg = format!("{}: {}", mir.origin, mir.message);
-                        return Err(ToolError::Internal(format!(
-                            "manual_interaction_required: {msg}; \
-                             reopen with: eggsearch browser-login <origin> --profile <name>"
-                        )));
+                        let next_action = used_profile_name
+                            .as_deref()
+                            .map(|pn| {
+                                format!("eggsearch browser-login {} --profile {}", mir.origin, pn)
+                            })
+                            .or_else(|| {
+                                Some(format!(
+                                    "eggsearch browser-login {} --profile <name>",
+                                    mir.origin
+                                ))
+                            });
+                        return Err(browser_manual_interaction_error(
+                            &mir.origin,
+                            &mir.message,
+                            used_profile_name.as_deref(),
+                            next_action.as_deref(),
+                        ));
                     }
                     Ok(Err(e)) => {
-                        return Err(ToolError::Internal(format!("browser_fetch_failed: {e}")));
+                        return Err(ToolError::internal(format!("browser_fetch_failed: {e}")));
                     }
                     Err(_) => {
-                        return Err(ToolError::Internal(
+                        return Err(ToolError::internal(
                             "browser rendering timed out".to_string(),
                         ));
                     }
@@ -2146,7 +2341,7 @@ pub async fn run_web_fetch(
                 match controller.acquire(&origin_key).await {
                     Ok(permit) => Some(permit),
                     Err(e) => {
-                        return Err(ToolError::Internal(format!("origin_backoff: {e}")));
+                        return Err(ToolError::internal(format!("origin_backoff: {e}")));
                     }
                 }
             } else {
@@ -2228,15 +2423,24 @@ pub async fn run_web_fetch(
                                         }
                                         Ok(Err(
                                             crate::fetch::browser::BrowserFetchError::InteractiveChallenge(
-                                                _mir,
+                                                mir,
                                             ),
                                         )) => {
-                                            manual_interaction_required = true;
-                                            let mut r = resp.clone();
-                                            r.manual_interaction_required = true;
-                                            r.transport = Some("http".to_string());
-                                            response = Some(r);
-                                            escalated = true;
+                                            let next_action = used_profile_name.as_deref().map(|pn| {
+                                                format!(
+                                                    "eggsearch browser-login {} --profile {}",
+                                                    mir.origin, pn
+                                                )
+                                            }).or_else(|| Some(format!(
+                                                "eggsearch browser-login {} --profile <name>",
+                                                mir.origin
+                                            )));
+                                            return Err(browser_manual_interaction_error(
+                                                &mir.origin,
+                                                &mir.message,
+                                                used_profile_name.as_deref(),
+                                                next_action.as_deref(),
+                                            ));
                                         }
                                         Ok(Err(_)) | Err(_) => {}
                                     }
@@ -2275,7 +2479,7 @@ pub async fn run_web_fetch(
                                 delay_ms,
                                 ..
                             } => {
-                                return Err(ToolError::Internal(format!(
+                                return Err(ToolError::internal(format!(
                                     "origin_circuit_open: {e}, retry in {delay_ms}ms"
                                 )));
                             }
@@ -2319,12 +2523,12 @@ pub async fn run_web_fetch(
                 err,
                 crate::fetch::FetchError::BrowserInteractiveChallenge(_)
             ) {
-                return Err(ToolError::Internal(format!(
+                return Err(ToolError::internal(format!(
                     "browser_profile_requires_attention: {err}; \
                      reopen with: eggsearch browser-login <origin> --profile <name>"
                 )));
             }
-            return Err(ToolError::Internal(format!(
+            return Err(ToolError::internal(format!(
                 "{}: {}",
                 err.error_code(),
                 err
@@ -2557,7 +2761,7 @@ pub async fn run_repo_fetch(
     }
 
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
-        return Err(ToolError::Internal(web_fetch_denied_message()));
+        return Err(ToolError::internal(web_fetch_denied_message()));
     }
 
     // Parse host.
@@ -2728,14 +2932,14 @@ pub async fn run_repo_fetch(
     let source_role = infer_source_role(path);
 
     let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
-        ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
+        ToolError::internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
 
     // Use per-request timeout override when provided.
     let client: Arc<FetchClient> =
         if let Some(ms) = req.timeout_ms {
             Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
-                ToolError::Internal(format!("failed to create timeout override: {e}"))
+                ToolError::internal(format!("failed to create timeout override: {e}"))
             })?)
         } else {
             base_client
@@ -2981,10 +3185,10 @@ pub async fn run_repo_fetch(
             };
 
             let value = serde_json::to_value(&fetch_response)
-                .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+                .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
             Ok(value)
         }
-        Err(e) => Err(ToolError::Internal(format!("{}: {}", e.error_code(), e))),
+        Err(e) => Err(ToolError::internal(format!("{}: {}", e.error_code(), e))),
     }
 }
 
@@ -3041,7 +3245,7 @@ pub async fn run_repo_map(
         && state.local_backend.is_some();
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
-        return Err(ToolError::Internal(live_search_denied_message("repo_map")));
+        return Err(ToolError::internal(live_search_denied_message("repo_map")));
     }
 
     let host = parse_code_host_arg(args.host.as_deref())?;
@@ -3231,7 +3435,7 @@ pub async fn run_repo_map(
     response.structured_warnings = crate::core::warning::convert_warnings(&response.warnings);
 
     let value = serde_json::to_value(&response)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
     Ok(value)
 }
 
@@ -3246,7 +3450,7 @@ pub async fn run_batch_fetch(
 
     // Policy check
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
-        return Err(ToolError::Internal(web_fetch_denied_message()));
+        return Err(ToolError::internal(web_fetch_denied_message()));
     }
 
     // Validate items non-empty
@@ -3405,7 +3609,7 @@ pub async fn run_batch_fetch(
     }
 
     let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
-        ToolError::Internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
+        ToolError::internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
 
     let concurrency = state.config.fetch.batch_concurrency;
@@ -3617,7 +3821,7 @@ pub async fn run_batch_fetch(
     };
 
     let value = serde_json::to_value(&response)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
     Ok(value)
 }
 
@@ -3786,10 +3990,10 @@ fn make_batch_fetch_future(
                 let _permit = semaphore
                     .acquire_owned()
                     .await
-                    .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
+                    .map_err(|e| ToolError::internal(format!("semaphore closed: {e}")))?;
                 let web_client: Arc<FetchClient> = if let Some(ms) = timeout_ms {
                     Arc::new(client.with_timeout_ms(ms).map_err(|e| {
-                        ToolError::Internal(format!("failed to create timeout override: {e}"))
+                        ToolError::internal(format!("failed to create timeout override: {e}"))
                     })?)
                 } else {
                     client
@@ -3801,7 +4005,7 @@ fn make_batch_fetch_future(
                 use crate::fetch::origin::OriginKey;
                 let origin_key = match OriginKey::from_url(
                     &url::Url::parse(&url)
-                        .map_err(|e| ToolError::Internal(format!("invalid URL: {e}")))?,
+                        .map_err(|e| ToolError::internal(format!("invalid URL: {e}")))?,
                 ) {
                     Some(k) => k,
                     None => {
@@ -4331,7 +4535,7 @@ fn make_batch_fetch_future(
                 let _permit = semaphore
                     .acquire_owned()
                     .await
-                    .map_err(|e| ToolError::Internal(format!("semaphore closed: {e}")))?;
+                    .map_err(|e| ToolError::internal(format!("semaphore closed: {e}")))?;
                 match run_repo_fetch(state, repo_args).await {
                     Ok(payload) => {
                         let text_len = payload
@@ -4460,8 +4664,8 @@ async fn run_workspace_fetch(
     // Read file content (off the runtime thread)
     let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&canonical))
         .await
-        .map_err(|e| ToolError::Internal(format!("failed to join read task: {e}")))?
-        .map_err(|e| ToolError::Internal(format!("failed to read file: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("failed to join read task: {e}")))?
+        .map_err(|e| ToolError::internal(format!("failed to read file: {e}")))?;
 
     let all_lines: Vec<String> = content.lines().map(String::from).collect();
     let total_lines = if all_lines.is_empty() {
@@ -4676,7 +4880,7 @@ async fn run_workspace_fetch(
     };
 
     let value = serde_json::to_value(&fetch_response)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
     Ok(value)
 }
 
@@ -4688,7 +4892,7 @@ pub async fn run_security_search(
     use crate::core::SecuritySearchRequest;
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::Internal(live_search_denied_message(
+        return Err(ToolError::internal(live_search_denied_message(
             "security_search",
         )));
     }
@@ -4867,7 +5071,7 @@ pub async fn run_security_search(
         crate::meta::security_search_next_actions(&source_ids, has_suggested_fetches);
 
     let value = serde_json::to_value(&response)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 
     Ok(value)
 }
@@ -4908,7 +5112,7 @@ pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json:
     let bundle = crate::meta::evidence_bundle::build_evidence_bundle(request);
 
     let value = serde_json::to_value(&bundle)
-        .map_err(|e| ToolError::Internal(format!("serialization error: {e}")))?;
+        .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
     Ok(value)
 }
 

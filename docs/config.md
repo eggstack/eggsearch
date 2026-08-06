@@ -417,7 +417,7 @@ The `[fetch.browser]` section configures optional headless Chrome/Chromium rende
 |---------|---------|-------------|
 | `enabled` | `false` | Enable browser rendering escalation |
 | `policy` | `"http_only"` | Render policy: `http_only`, `auto`, or `browser` |
-| `executable` | auto-discovered | Path to Chrome/Chromium executable |
+| `executable` | auto-discovered | Path to Chrome/Chromium executable. An explicitly configured invalid path fails deterministically — it does not fall back to auto-discovery. |
 | `startup_timeout_ms` | `10000` | Browser startup timeout |
 | `navigation_timeout_ms` | `20000` | Page navigation timeout |
 | `post_load_wait_ms` | `1500` | Wait after page load |
@@ -430,7 +430,7 @@ The `[fetch.browser]` section configures optional headless Chrome/Chromium rende
 
 ### Persistent Browser Profiles
 
-The `[fetch.browser.persistent_profiles]` section configures named, origin-scoped persistent browser profiles (Phase 5).
+The `[fetch.browser.persistent_profiles]` section configures named, origin-scoped persistent browser profiles.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -441,7 +441,7 @@ The `[fetch.browser.persistent_profiles]` section configures named, origin-scope
 
 Profiles are created through CLI-only headed login (`eggsearch browser-login`). MCP callers select profiles by name via the `browser_profile` field on `web_fetch`. Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml` with Chrome data in a sibling `chrome-data/` directory.
 
-Profiles are disabled by default. When disabled, MCP callers cannot use `browser_profile`. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies.
+Profiles are disabled by default. When disabled, MCP callers cannot use `browser_profile`. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies. Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped).
 
 ## Provider Status
 
