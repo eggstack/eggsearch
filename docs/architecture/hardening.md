@@ -254,7 +254,7 @@ cargo test --locked --all-features --test adversarial_corpus # corpus validation
 
 ## Fuzz Harness
 
-Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys` (21 registered targets):
+Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys` (23 registered targets):
 
 | Target | What it fuzzes |
 |--------|---------------|

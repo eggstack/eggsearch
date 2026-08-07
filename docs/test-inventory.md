@@ -73,7 +73,7 @@ Last updated: Phase 3-5 production closure.
 | `pdf_extended.json` | 28 | PDF magic bytes, encrypted, malformed xref, cyclic refs |
 | `filesystem_extended.json` | 30 | Symlinks, path traversal, hidden paths, binary files |
 
-## Fuzz Targets (21 registered targets)
+## Fuzz Targets (23 registered targets)
 
 Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 

@@ -58,6 +58,7 @@ Creating a GitHub release from the changelog is optional and manual.
 |------|---------|----------|
 | (none) | Minimal build | Yes |
 | `pdf` | PDF extraction | No |
+| `browser` | Headless Chrome/Chromium rendering | No |
 | `mock` | Test-only mock engine | No |
 | `live-smoke` | Live network tests (opt-in) | No |
 

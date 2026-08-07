@@ -7,7 +7,7 @@
 
 ## Evidence Roles (`src/core/evidence_role.rs`)
 
-18-variant taxonomy mapping across source kinds, roles, classes, and tiers:
+19-variant taxonomy mapping across source kinds, roles, classes, and tiers:
 
 | Role | Meaning |
 |------|---------|

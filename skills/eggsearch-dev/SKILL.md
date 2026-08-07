@@ -28,6 +28,7 @@ cargo publish --dry-run --locked
 |------|---------|-------------|
 | `mock` | Test-only mock engine (`src/meta/mock.rs`) | Integration/corpus tests |
 | `pdf` | PDF text extraction via `lopdf` | PDF tests |
+| `browser` | Headless Chrome/Chromium rendering via `chromiumoxide` | Browser rendering tests |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Manual only |
 
 **Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most tests.
