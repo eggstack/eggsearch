@@ -2523,10 +2523,31 @@ pub async fn run_web_fetch(
                 err,
                 crate::fetch::FetchError::BrowserInteractiveChallenge(_)
             ) {
-                return Err(ToolError::internal(format!(
-                    "browser_profile_requires_attention: {err}; \
-                     reopen with: eggsearch browser-login <origin> --profile <name>"
-                )));
+                let parsed_url = url::Url::parse(trimmed_url).ok();
+                let origin = parsed_url
+                    .as_ref()
+                    .map(|u| format!("{}://{}", u.scheme(), u.authority()))
+                    .unwrap_or_else(|| "<origin>".to_string());
+                if let Some(ref pn) = used_profile_name {
+                    return Err(browser_profile_requires_attention_error(&origin, pn));
+                }
+                let next_action = format!("eggsearch browser-login {origin} --profile <name>");
+                let data = serde_json::json!({
+                    "code": "browser_profile_requires_attention",
+                    "message": format!(
+                        "browser profile requires manual login for origin {origin}"
+                    ),
+                    "origin": origin,
+                    "manual_interaction_required": true,
+                    "next_action": next_action,
+                });
+                return Err(ToolError::internal_with_data(
+                    format!(
+                        "browser_profile_requires_attention: profile requires manual login for {origin}; \
+                         reopen with: {next_action}"
+                    ),
+                    data,
+                ));
             }
             return Err(ToolError::internal(format!(
                 "{}: {}",
