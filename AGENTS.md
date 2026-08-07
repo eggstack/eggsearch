@@ -17,7 +17,7 @@ make release-check
 
 # Individual targets
 cargo fmt --check            # format check (CI fails on this)
-cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required
+cargo clippy --locked --all-targets --all-features -- -D warnings  # zero warnings required
 cargo check --locked --no-default-features  # no-default compilation check
 cargo test --locked --all-features    # all tests
 cargo build --release        # release build
@@ -84,7 +84,7 @@ cargo test --locked --features browser --test browser_transport    # browser tra
 - **Extend `integration.rs`** for MCP tool input validation, provider failures, tool response shape
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
-- Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
+- Always run `cargo clippy --locked --all-targets --all-features -- -D warnings` after adding
 - **Property tests** in `tests/property_*.rs` for pure functions using `proptest`
 - **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs
 - **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency
@@ -94,7 +94,7 @@ cargo test --locked --features browser --test browser_transport    # browser tra
 
 - **No comments** unless explicitly requested
 - **Formatter:** `cargo fmt` (standard rustfmt). CI checks `cargo fmt --check`.
-- **Linter:** `cargo clippy --all-targets --all-features -- -D warnings` — zero warnings.
+- **Linter:** `cargo clippy --locked --all-targets --all-features -- -D warnings` — zero warnings.
 - **Error handling:** `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`.
 - **Deterministic IDs:** SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
 - **Sanitization:** All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.
