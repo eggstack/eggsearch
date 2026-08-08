@@ -6,7 +6,7 @@ eggsearch is a lightweight MCP search/fetch server for AI agents. It queries ups
 
 ## Build & Verification
 
-All commands from project root. CI pins **Rust 1.88** (`rust-version = "1.88"` in Cargo.toml). **Run `make check` to replicate the full CI suite locally.**
+All commands from project root. CI pins **Rust 1.88** (`rust-version = "1.88"` in Cargo.toml). Edition 2021. **Run `make check` to replicate the full CI suite locally.**
 
 ```bash
 # Routine gate (fmt + clippy + no-default compile check + all-features tests)
@@ -24,7 +24,7 @@ cargo build --release        # release build
 cargo publish --dry-run --locked  # pre-publish check
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock` and `pdf`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock` and `pdf`. Current test counts: ~3950 with `--all-features`, ~3935 with `--features mock` (15 tests gated on `pdf`).
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -50,7 +50,7 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 
 | Job | What it runs |
 |-----|-------------|
-| **ci** | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
+| **ci** | `make ci` — alias for `make check`: fmt, clippy, no-default-features compile check, all-features tests |
 
 ## Feature Flags
 
