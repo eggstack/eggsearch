@@ -6,9 +6,16 @@ use tokio::sync::Mutex;
 
 use super::types::{BrowserConfig, BrowserDiscovery};
 
+#[derive(Clone, Debug)]
+enum BrowserExecutionMode {
+    AnonymousEphemeral,
+    PersistentProfile { user_data_dir: PathBuf },
+}
+
 pub struct BrowserLifecycle {
     discovery: Option<BrowserDiscovery>,
     config: BrowserConfig,
+    mode: BrowserExecutionMode,
     browser: Mutex<Option<Arc<chromiumoxide::Browser>>>,
     handler_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
     restart_count: Mutex<u32>,
@@ -22,6 +29,23 @@ impl BrowserLifecycle {
         Self {
             discovery,
             config,
+            mode: BrowserExecutionMode::AnonymousEphemeral,
+            browser: Mutex::new(None),
+            handler_handle: Mutex::new(None),
+            restart_count: Mutex::new(0),
+            user_data_dir: Mutex::new(None),
+        }
+    }
+
+    pub fn for_persistent_profile(
+        discovery: Option<BrowserDiscovery>,
+        config: BrowserConfig,
+        user_data_dir: PathBuf,
+    ) -> Self {
+        Self {
+            discovery,
+            config,
+            mode: BrowserExecutionMode::PersistentProfile { user_data_dir },
             browser: Mutex::new(None),
             handler_handle: Mutex::new(None),
             restart_count: Mutex::new(0),
@@ -54,12 +78,26 @@ impl BrowserLifecycle {
             .as_ref()
             .ok_or(BrowserLaunchError::NoBrowser)?;
 
-        let temp_dir = self.create_user_data_dir().await?;
+        let (user_data_dir, anonymous) = match &self.mode {
+            BrowserExecutionMode::AnonymousEphemeral => (self.create_user_data_dir().await?, true),
+            BrowserExecutionMode::PersistentProfile { user_data_dir } => {
+                if !user_data_dir.is_dir() {
+                    return Err(BrowserLaunchError::LaunchFailed(format!(
+                        "persistent browser profile directory is unavailable: {}",
+                        user_data_dir.display()
+                    )));
+                }
+                (user_data_dir.clone(), false)
+            }
+        };
 
         let mut bc = chromiumoxide::BrowserConfig::builder()
             .no_sandbox()
-            .incognito()
             .disable_default_args();
+
+        if anonymous {
+            bc = bc.incognito();
+        }
 
         bc = bc.chrome_executable(&disc.path);
 
@@ -91,7 +129,7 @@ impl BrowserLifecycle {
             bc = bc.arg("--autoplay-policy=no-user-gesture-required");
         }
 
-        bc = bc.arg(format!("--user-data-dir={}", temp_dir.display()));
+        bc = bc.arg(format!("--user-data-dir={}", user_data_dir.display()));
 
         let startup_timeout = Duration::from_millis(self.config.startup_timeout_ms);
 
@@ -176,6 +214,9 @@ impl BrowserLifecycle {
     }
 
     async fn cleanup_user_data_dir(&self) {
+        if !matches!(&self.mode, BrowserExecutionMode::AnonymousEphemeral) {
+            return;
+        }
         let mut dir = self.user_data_dir.lock().await;
         if let Some(path) = dir.take() {
             let _ = std::fs::remove_dir_all(&path);
@@ -184,6 +225,14 @@ impl BrowserLifecycle {
 
     pub fn is_available(&self) -> bool {
         self.discovery.is_some()
+    }
+
+    pub fn config(&self) -> BrowserConfig {
+        self.config.clone()
+    }
+
+    pub fn is_persistent_profile(&self) -> bool {
+        matches!(&self.mode, BrowserExecutionMode::PersistentProfile { .. })
     }
 
     pub fn discovery(&self) -> Option<&BrowserDiscovery> {
@@ -199,9 +248,11 @@ impl Drop for BrowserLifecycle {
                 h.abort();
             }
         }
-        if let Ok(mut dir) = self.user_data_dir.try_lock() {
-            if let Some(path) = dir.take() {
-                let _ = std::fs::remove_dir_all(&path);
+        if matches!(&self.mode, BrowserExecutionMode::AnonymousEphemeral) {
+            if let Ok(mut dir) = self.user_data_dir.try_lock() {
+                if let Some(path) = dir.take() {
+                    let _ = std::fs::remove_dir_all(&path);
+                }
             }
         }
     }
@@ -227,3 +278,35 @@ impl std::fmt::Display for BrowserLaunchError {
 }
 
 impl std::error::Error for BrowserLaunchError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn persistent_profile_close_does_not_remove_profile_directory() {
+        let profile_dir = TempDir::new().expect("profile directory");
+        let path = profile_dir.path().to_path_buf();
+        let lifecycle =
+            BrowserLifecycle::for_persistent_profile(None, BrowserConfig::default(), path.clone());
+
+        assert!(lifecycle.is_persistent_profile());
+        lifecycle.close().await;
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn anonymous_close_removes_ephemeral_directory() {
+        let lifecycle = BrowserLifecycle::new(None, BrowserConfig::default());
+        let path = lifecycle
+            .create_user_data_dir()
+            .await
+            .expect("temp directory");
+
+        assert!(!lifecycle.is_persistent_profile());
+        assert!(path.exists());
+        lifecycle.close().await;
+        assert!(!path.exists());
+    }
+}

@@ -44,7 +44,7 @@ An explicitly configured invalid browser executable path fails deterministically
 
 Interactive challenge outcomes (CAPTCHAs, Turnstile, login walls) return structured error codes (`browser_manual_interaction_required`, `browser_profile_requires_attention`) through the MCP error response. These are never automated.
 
-The response includes `transport` (`"http"` or `"browser"`), `browser_escalated` (whether auto escalated), and the `browser_profile` display name when a persistent profile was used.
+The response includes `transport` (`"http"` or `"browser"`), `browser_escalated` (whether auto escalated), and the `browser_profile` display name when a persistent profile was used. Fresh raw cache entries can satisfy a new extraction mode, link setting, character bound, or PDF page selection without another network request.
 
 ### Browser Profiles (Optional)
 
@@ -73,7 +73,7 @@ Once a profile is established, use it in `web_fetch`:
 }
 ```
 
-Profiles are disabled by default. Enable with `[fetch.browser].persistent_profiles_enabled = true` in config. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies. Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped).
+Profiles are disabled by default. Enable with `[fetch.browser].persistent_profiles_enabled = true` in config. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. `browser-login` and profile-scoped MCP fetches use the same Eggsearch-owned `chrome-data` directory; login state is available through the browser's default profile context, while each profile fetch uses a request-scoped browser process. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies. Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped).
 
 PDF layout reconstruction and OCR are deferred — PDF extraction is text-only via `lopdf` with per-page quality classification.
 

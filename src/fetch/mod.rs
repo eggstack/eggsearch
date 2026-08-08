@@ -42,7 +42,7 @@ pub use browser::{
 pub use cache::{
     build_raw_cache_key, build_raw_response_hash, CacheFreshness, CacheScope, CacheStatus,
     CacheValidators, DerivedCacheKey, DerivedDocumentCacheEntry, FetchCache, FetchCacheMetadata,
-    RawCacheKey, RawFetchCacheEntry,
+    RawCacheKey, RawFetchCacheEntry, RawRepresentation,
 };
 pub use client::FetchClient;
 pub use extract::{extract_content, HtmlExtractor, LinkExtractionResult};

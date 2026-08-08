@@ -359,7 +359,7 @@ impl FetchClient {
 
         if !is_html && !is_text && !is_pdf {
             return Err(FetchError::UnsupportedContentType(
-                content_type.unwrap_or_else(|| "unknown".into()),
+                content_type.clone().unwrap_or_else(|| "unknown".into()),
             ));
         }
 
@@ -388,6 +388,105 @@ impl FetchClient {
                     break;
                 }
             }
+        }
+
+        self.derive_from_raw(
+            url_str,
+            final_url,
+            status,
+            content_type,
+            cache_headers,
+            content_length_header,
+            redirect_count,
+            body,
+            truncated,
+            max_chars,
+            max_chars_raw,
+            extract_mode,
+            include_links,
+            pdf_options,
+            fetch_transform,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn derive_from_raw(
+        &self,
+        url_str: &str,
+        final_url: String,
+        status: u16,
+        content_type: Option<String>,
+        cache_headers: std::collections::HashMap<String, String>,
+        content_length_header: Option<usize>,
+        redirect_count: usize,
+        body: Vec<u8>,
+        truncated: bool,
+        max_chars: usize,
+        max_chars_raw: usize,
+        extract_mode: ExtractMode,
+        include_links: bool,
+        pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
+        fetch_transform: Option<crate::core::fetch::FetchTransform>,
+    ) -> Result<WebFetchResponse, FetchError> {
+        #[cfg(not(feature = "pdf"))]
+        let _ = pdf_options;
+
+        let is_html = content_type
+            .as_ref()
+            .map(|ct| {
+                let ct_lower = ct.to_lowercase();
+                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
+                ct_base == "text/html" || ct_base == "application/xhtml+xml"
+            })
+            .unwrap_or(false);
+        let is_pdf_by_ct = content_type
+            .as_ref()
+            .map(|ct| {
+                let ct_lower = ct.to_lowercase();
+                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
+                ct_base == "application/pdf"
+            })
+            .unwrap_or(false);
+        let is_pdf_by_url = if !is_pdf_by_ct {
+            url::Url::parse(&final_url)
+                .ok()
+                .map(|u| u.path().to_ascii_lowercase().ends_with(".pdf"))
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        let mut is_pdf = is_pdf_by_ct || is_pdf_by_url;
+        if !is_pdf && body.starts_with(b"%PDF-") {
+            is_pdf = true;
+        }
+        let is_text = content_type
+            .as_ref()
+            .map(|ct| {
+                let ct_lower = ct.to_lowercase();
+                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
+                ct_base.starts_with("text/")
+                    || ct_base == "application/json"
+                    || ct_base == "application/ld+json"
+                    || (ct_base.starts_with("application/") && ct_base.ends_with("+json"))
+                    || ct_base == "application/toml"
+                    || ct_base == "application/x-yaml"
+                    || ct_base == "application/yaml"
+                    || ct_base == "application/javascript"
+                    || ct_base == "application/typescript"
+                    || ct_base == "application/x-sh"
+            })
+            .unwrap_or(false);
+
+        if !is_html && !is_text && !is_pdf {
+            return Err(FetchError::UnsupportedContentType(
+                content_type.clone().unwrap_or_else(|| "unknown".into()),
+            ));
+        }
+        if is_pdf && !cfg!(feature = "pdf") {
+            return Err(FetchError::PdfNotCompiledIn);
+        }
+        if is_pdf && !self.limits.pdf_enabled {
+            return Err(FetchError::PdfDisabled);
         }
 
         // --- PDF extraction path (early return) ---
@@ -500,7 +599,7 @@ impl FetchClient {
                     transport: Some("http".to_string()),
                     browser_escalated: false,
                     manual_interaction_required: false,
-                    raw_body: None,
+                    raw_body: Some(body.clone()),
                 });
             }
 
@@ -637,7 +736,7 @@ impl FetchClient {
                 transport: Some("http".to_string()),
                 browser_escalated: false,
                 manual_interaction_required: false,
-                raw_body: None,
+                raw_body: Some(body.clone()),
             });
         }
 
@@ -1241,6 +1340,40 @@ mod tests {
 
     fn test_client() -> FetchClient {
         FetchClient::new(test_limits(), "eggsearch/test".to_string(), true).expect("client builds")
+    }
+
+    #[test]
+    fn derive_from_raw_reuses_bounded_html_bytes() {
+        let client = test_client();
+        let body = br#"<html><head><title>Cached</title></head><body><p>Hello</p><a href="/next">Next</a></body></html>"#;
+        let response = client
+            .derive_from_raw(
+                "https://example.com/page",
+                "https://example.com/page".to_string(),
+                200,
+                Some("text/html".to_string()),
+                std::collections::HashMap::new(),
+                None,
+                0,
+                body.to_vec(),
+                false,
+                12_000,
+                50_000,
+                ExtractMode::Markdown,
+                true,
+                None,
+                None,
+            )
+            .expect("cached HTML derives");
+
+        assert_eq!(response.raw_body.as_deref(), Some(body.as_slice()));
+        assert!(response
+            .text
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Hello"));
+        assert_eq!(response.links.len(), 1);
+        assert_eq!(response.links[0].url, "https://example.com/next");
     }
 
     #[tokio::test]

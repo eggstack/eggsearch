@@ -38,6 +38,12 @@ pub enum CacheScope {
     Profile(String),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RawRepresentation {
+    Http,
+    BrowserDom,
+}
+
 #[derive(Clone, Debug)]
 pub struct CacheValidators {
     pub etag: Option<String>,
@@ -144,6 +150,9 @@ pub struct RawFetchCacheEntry {
     pub validators: CacheValidators,
     pub scope: CacheScope,
     pub content_type: Option<String>,
+    pub representation: RawRepresentation,
+    pub truncated: bool,
+    pub browser_escalated: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -166,6 +175,8 @@ pub struct CachedExtractedDocument {
     pub truncated: bool,
     pub document: Option<crate::core::document::FetchDocument>,
     pub trust_markers: crate::core::sanitize::TrustMarkers,
+    pub transport: Option<String>,
+    pub browser_escalated: bool,
 }
 
 pub struct FetchCache {
@@ -708,6 +719,9 @@ mod tests {
             },
             scope: CacheScope::Anonymous,
             content_type: Some("text/html".into()),
+            representation: RawRepresentation::Http,
+            truncated: false,
+            browser_escalated: false,
         };
 
         assert!(cache.get_raw(&key).await.is_none());
@@ -739,6 +753,9 @@ mod tests {
                 },
                 scope: CacheScope::Anonymous,
                 content_type: Some("text/html".into()),
+                representation: RawRepresentation::Http,
+                truncated: false,
+                browser_escalated: false,
             };
             cache.insert_raw(key, entry).await;
         }
@@ -777,6 +794,8 @@ mod tests {
                 truncated: false,
                 document: None,
                 trust_markers: crate::core::sanitize::TrustMarkers::default(),
+                transport: Some("http".into()),
+                browser_escalated: false,
             },
             created_at: SystemTime::now(),
         };

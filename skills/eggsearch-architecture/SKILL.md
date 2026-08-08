@@ -17,7 +17,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `commands/` — subcommands: doctor, search, providers, mcp, fetch
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
 - `meta/` — MetadataSearchAdapter + 34 vendored engines + forge tree adapter + local workspace backend + inventory cache
-- `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection
+- `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio (rmcp), 10 tool definitions, server state, policy
 
 ## Module Responsibilities
@@ -26,7 +26,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 |--------|-----------|---------|
 | `core` | `identity.rs`, `sanitize.rs`, `warning.rs`, `evidence_role.rs`, `workflow_coverage.rs`, `conflict.rs`, `retrieval_status.rs`, `evidence_postprocess.rs`, `local.rs` | Canonical data model with zero external dependencies beyond serialization |
 | `meta` | `adapter.rs`, `forge_adapter.rs`, `local_backend.rs`, `local_inventory_cache.rs`, `local_inventory.rs`, `dispatch.rs`, `planner.rs` | Search orchestration, RRF aggregation, provider health, forge API client, local workspace |
-| `fetch` | `client.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, SSRF protection, content extraction |
+| `fetch` | `client.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, SSRF protection, content extraction, cache, and browser transport |
 | `mcp` | `server.rs`, `state.rs`, `tools.rs`, `policy.rs` | MCP protocol, 10 tool handlers, shared state |
 
 ## Adapter Pattern
@@ -98,6 +98,8 @@ not remove the underlying attempts.
 - Partial failures are soft (adapter returns `WebSearchResponse`, never errors)
 - MCP tools return `Result<serde_json::Value, ToolError>`
 - Additive schema evolution (new optional fields, never removal)
+- Anonymous browser rendering uses the warm ephemeral lifecycle; profile-scoped rendering uses the resolved opaque profile's Eggsearch-owned `chrome-data` directory and default browser context for one request
+- Raw cache entries distinguish original HTTP bytes from rendered browser DOM; a fresh raw hit may be re-derived locally without another network request
 - `NotApplicable` is reserved for operations that do not apply; provider incapability is `SkippedCapabilityUnavailable`
 - `RetrievalAttempt` carries an optional `operation_id` field; ledger uniqueness is `(provider_id, operation_id, role)`
 - State-aware helpers prefer `RetrievalDimensionState` when present, falling back to `absence_kind` for legacy dimensions

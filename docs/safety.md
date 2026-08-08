@@ -159,8 +159,9 @@ When the `browser` feature is enabled and configured, browser rendering adds the
 - **Public-network-only**: Browser transport rejects localhost, private IPv4/IPv6, link-local, and cloud metadata addresses regardless of `allow_localhost`/`allow_private_network` settings.
 - **No browser download**: eggsearch discovers an already-installed Chrome/Chromium. It never downloads, installs, or manages browser updates.
 - **No challenge solving**: Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured MCP error codes (`browser_manual_interaction_required`, `browser_profile_requires_attention`). eggsearch never clicks, simulates input, or uses external solving services.
-- **No user profile access**: Browser contexts are ephemeral and incognito. The user's ordinary Chrome profile is never used.
+- **Profile isolation**: Anonymous browser contexts are ephemeral and incognito. Persistent profile fetches use only the Eggsearch-owned `chrome-data` directory established by `browser-login`; the user's ordinary Chrome profile is never used. Persistent fetches are request-scoped and serialized by the profile lock.
 - **Deterministic executable path**: An explicitly configured invalid browser executable path fails deterministically. It does not silently fall back to auto-discovery.
 - **Request interception**: All observable requests are intercepted and checked against the network policy.
 - **Bounded extraction**: DOM size, request count, navigation time, and post-load wait are all bounded by configuration.
+- **Configured runtime**: Startup, navigation, verification, DOM, request, and media limits are taken from the configured browser section for both anonymous and persistent execution.
 - **Existing sanitation pipeline**: Rendered DOM flows through the same HTML extraction, text bounding, and prompt-injection sanitation as ordinary HTTP fetches.

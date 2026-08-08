@@ -2,7 +2,7 @@
 
 **Repository:** `eggstack/eggsearch`  
 **Implementation baseline:** `ebcc9f3785a1a97e9f220956ea0268c16be7895d`  
-**Status:** Implementation handoff  
+**Status:** Completed
 **Scope:** Close the remaining persistent-profile execution, raw-cache re-extraction, browser-cache provenance, configured-browser-runtime, and browser-login correctness gaps  
 **Priority:** Final narrow corrective pass only  
 
@@ -657,68 +657,68 @@ This pass is complete only when every applicable item below is satisfied.
 
 ### Persistent profile correctness
 
-- [ ] A `browser_profile` request resolves to the profile's opaque ID and Eggsearch-owned `chrome-data` directory.
-- [ ] Profile-scoped headless Chrome launches with that exact persistent `chrome-data` directory.
-- [ ] Profile-scoped execution does not silently use a temporary anonymous user-data directory.
-- [ ] Profile-scoped execution does not force incognito mode.
-- [ ] Profile-scoped navigation uses the default browser context so manual-login cookies/storage are available.
-- [ ] Anonymous browser rendering remains ephemeral and isolated.
-- [ ] Persistent profile directories are never removed by anonymous lifecycle cleanup/drop.
-- [ ] The existing origin restriction remains enforced before launch.
-- [ ] The profile lock covers the complete browser execution and is released on every exit path.
-- [ ] No ordinary Chrome profile is read or modified.
+- [x] A `browser_profile` request resolves to the profile's opaque ID and Eggsearch-owned `chrome-data` directory.
+- [x] Profile-scoped headless Chrome launches with that exact persistent `chrome-data` directory.
+- [x] Profile-scoped execution does not silently use a temporary anonymous user-data directory.
+- [x] Profile-scoped execution does not force incognito mode.
+- [x] Profile-scoped navigation uses the default browser context so manual-login cookies/storage are available.
+- [x] Anonymous browser rendering remains ephemeral and isolated.
+- [x] Persistent profile directories are never removed by anonymous lifecycle cleanup/drop.
+- [x] The existing origin restriction remains enforced before launch.
+- [x] The profile lock covers the complete browser execution and is released on every exit path.
+- [x] No ordinary Chrome profile is read or modified.
 
 ### Cache correctness
 
-- [ ] HTTP raw entries continue storing original bounded HTTP response bytes.
-- [ ] Browser raw entries store the bounded rendered DOM bytes used for extraction.
-- [ ] Browser raw entries never use an empty placeholder when non-empty DOM was rendered.
-- [ ] Raw entries record enough transport provenance to distinguish HTTP from browser DOM.
-- [ ] Fresh raw HTML + derived miss is re-extracted locally with zero network requests.
-- [ ] Fresh raw PDF + different page selection is re-extracted locally with zero network requests.
-- [ ] Fresh raw cache can satisfy changed extraction semantics represented by `ExtractionCacheKey` without redownloading.
-- [ ] Newly re-derived representations are inserted into the derived cache.
-- [ ] 304 + derived miss reuses preserved HTTP raw bytes instead of forcing a full body download.
-- [ ] Browser DOM raw entries do not perform unsupported conditional HTTP revalidation.
-- [ ] Existing `no-store`, `private`, `Vary`, password-PDF, error/challenge, and cache-scope policies remain intact.
+- [x] HTTP raw entries continue storing original bounded HTTP response bytes.
+- [x] Browser raw entries store the bounded rendered DOM bytes used for extraction.
+- [x] Browser raw entries never use an empty placeholder when non-empty DOM was rendered.
+- [x] Raw entries record enough transport provenance to distinguish HTTP from browser DOM.
+- [x] Fresh raw HTML + derived miss is re-extracted locally with zero network requests.
+- [x] Fresh raw PDF + different page selection is re-extracted locally with zero network requests.
+- [x] Fresh raw cache can satisfy changed extraction semantics represented by `ExtractionCacheKey` without redownloading.
+- [x] Newly re-derived representations are inserted into the derived cache.
+- [x] 304 + derived miss reuses preserved HTTP raw bytes instead of forcing a full body download.
+- [x] Browser DOM raw entries do not perform unsupported conditional HTTP revalidation.
+- [x] Existing `no-store`, `private`, `Vary`, password-PDF, error/challenge, and cache-scope policies remain intact.
 
 ### Transport/provenance correctness
 
-- [ ] Derived cache responses preserve `transport` accurately.
-- [ ] Derived cache responses preserve `browser_escalated` accurately.
-- [ ] Cached anonymous HTTP content is not reported as browser content.
-- [ ] Cached browser content is not reported as ordinary HTTP content.
-- [ ] Profile display name remains operator-facing metadata only; opaque IDs/paths are not exposed through normal MCP output.
+- [x] Derived cache responses preserve `transport` accurately.
+- [x] Derived cache responses preserve `browser_escalated` accurately.
+- [x] Cached anonymous HTTP content is not reported as browser content.
+- [x] Cached browser content is not reported as ordinary HTTP content.
+- [x] Profile display name remains operator-facing metadata only; opaque IDs/paths are not exposed through normal MCP output.
 
 ### Browser config correctness
 
-- [ ] Browser execution uses configured runtime values rather than `BrowserConfig::default()`.
-- [ ] Configured navigation timeout is honored.
-- [ ] Configured post-load and verification waits are honored.
-- [ ] Configured DOM/request/media bounds remain effective.
-- [ ] Anonymous and profile-scoped browser execution use the same approved runtime safety limits unless an existing documented profile-specific setting says otherwise.
+- [x] Browser execution uses configured runtime values rather than `BrowserConfig::default()`.
+- [x] Configured navigation timeout is honored.
+- [x] Configured post-load and verification waits are honored.
+- [x] Configured DOM/request/media bounds remain effective.
+- [x] Anonymous and profile-scoped browser execution use the same approved runtime safety limits unless an existing documented profile-specific setting says otherwise.
 
 ### browser-login correctness
 
-- [ ] Explicit configured executable path is used for both discovery/preflight and launch.
-- [ ] Invalid explicit executable path fails deterministically without silent auto-discovery.
-- [ ] Auto-discovery still works when no explicit executable is configured.
-- [ ] `browser-login` writes session state to the same `chrome-data` path later used by profile-scoped MCP fetching.
-- [ ] Completion instructions match the implemented completion mechanism.
-- [ ] Browser-login remains manual, local, and CLI-only.
+- [x] Explicit configured executable path is used for both discovery/preflight and launch.
+- [x] Invalid explicit executable path fails deterministically without silent auto-discovery.
+- [x] Auto-discovery still works when no explicit executable is configured.
+- [x] `browser-login` writes session state to the same `chrome-data` path later used by profile-scoped MCP fetching.
+- [x] Completion instructions match the implemented completion mechanism.
+- [x] Browser-login remains manual, local, and CLI-only.
 
 ### Scope/quality gates
 
-- [ ] No multi-profile browser pool was introduced.
-- [ ] No cookie export/import mechanism was introduced.
-- [ ] No CAPTCHA/Turnstile automation, stealth, proxy rotation, or identity mutation was added.
-- [ ] No runtime browser/PDF/OCR downloader was added.
-- [ ] No new persistent cache or cache framework was added.
-- [ ] PDF layout/OCR remains explicitly deferred.
-- [ ] No new CI workflow, browser matrix, evidence ledger, benchmark gate, or release automation was added.
-- [ ] Focused deterministic tests pass.
-- [ ] Existing `make check` passes on the final implementation commit.
-- [ ] The closure roadmap is marked `Closed` only after these criteria are satisfied.
+- [x] No multi-profile browser pool was introduced.
+- [x] No cookie export/import mechanism was introduced.
+- [x] No CAPTCHA/Turnstile automation, stealth, proxy rotation, or identity mutation was added.
+- [x] No runtime browser/PDF/OCR downloader was added.
+- [x] No new persistent cache or cache framework was added.
+- [x] PDF layout/OCR remains explicitly deferred.
+- [x] No new CI workflow, browser matrix, evidence ledger, benchmark gate, or release automation was added.
+- [x] Focused deterministic tests pass.
+- [x] Existing `make check` passes on the final implementation commit.
+- [x] The closure roadmap is marked `Closed` only after these criteria are satisfied.
 
 ---
 

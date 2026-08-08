@@ -3,7 +3,7 @@
 **Repository:** `eggstack/eggsearch`  
 **Planning baseline:** `2b95328e409e5f19074c1d8e2118fc4a7ce5561d`  
 **Latest audited implementation baseline:** `ebcc9f3785a1a97e9f220956ea0268c16be7895d`  
-**Status:** Final corrective closure pending  
+**Status:** Closed
 **Scope:** Close the remaining browser-orchestration, cache-correctness, profile-isolation, and contract/documentation gaps from the PDF and browser resilience roadmap  
 **Primary constraint:** Finish the implemented line of work without introducing a general crawler, heavy validation apparatus, runtime download system, or expanded CI matrix
 
@@ -22,7 +22,7 @@ The first three closure passes corrected the majority of the original audit find
 
 The remaining work is defined in one final narrow pass:
 
-`plans/web-fetch-resilience-closure-pass-4-final-correctness.md`
+`plans/web-fetch-resilience-closure-pass-4-final-correctness.md` (completed)
 
 No additional resilience phase should be created unless implementation of that pass reveals a genuinely new blocker.
 
@@ -149,7 +149,7 @@ Use deterministic local fixtures, browser seams/fakes where practical, the exist
 
 File: `plans/web-fetch-resilience-closure-pass-1-browser-orchestration.md`
 
-Status: **Implemented with final follow-up required for persistent-profile state reuse.**
+Status: **Implemented and verified.**
 
 Landed behavior includes:
 
@@ -163,7 +163,7 @@ Landed behavior includes:
 
 File: `plans/web-fetch-resilience-closure-pass-2-cache-and-profile-correctness.md`
 
-Status: **Mostly implemented with final follow-up required for raw-cache re-derivation and browser raw/provenance handling.**
+Status: **Implemented and verified.**
 
 Landed behavior includes:
 
@@ -177,7 +177,7 @@ Landed behavior includes:
 
 File: `plans/web-fetch-resilience-closure-pass-3-contracts-and-finalization.md`
 
-Status: **Implemented, but closure declaration was premature.**
+Status: **Implemented and verified.**
 
 Landed behavior includes:
 
@@ -191,7 +191,7 @@ Landed behavior includes:
 
 File: `plans/web-fetch-resilience-closure-pass-4-final-correctness.md`
 
-Status: **Pending implementation.**
+Status: **Closed after implementation and verification.**
 
 Required result:
 
@@ -242,27 +242,27 @@ This line of work is complete only when all of the following are true:
 - [x] `render = browser` invokes the browser transport.
 - [x] `render = auto` escalates only once and only for approved JavaScript/non-interactive verification classifications.
 - [x] `render = http_only` never launches Chrome.
-- [ ] Browser profiles are resolved to opaque IDs and the associated Eggsearch-owned `chrome-data` directory is actually used by profile-scoped browser execution.
-- [ ] Persistent profile browser execution uses session-bearing default profile context rather than an isolated anonymous context.
+- [x] Browser profiles are resolved to opaque IDs and the associated Eggsearch-owned `chrome-data` directory is actually used by profile-scoped browser execution.
+- [x] Persistent profile browser execution uses session-bearing default profile context rather than an isolated anonymous context.
 - [x] Interactive challenges never trigger automated interaction.
 - [x] HTTP raw cache entries contain original bounded response bytes.
-- [ ] Browser raw cache entries contain the bounded rendered DOM bytes rather than an empty placeholder.
+- [x] Browser raw cache entries contain the bounded rendered DOM bytes rather than an empty placeholder.
 - [x] Derived entries are partitioned by anonymous/profile scope.
 - [x] Profile removal invalidates both raw and derived cache entries for its opaque scope.
 - [x] Cache accounting respects entry and total-byte limits without double insertion.
-- [ ] Cached PDF bytes can be re-extracted for a different page selection without network access.
-- [ ] Cached HTML bytes can be re-rendered for a different extraction mode without network access.
-- [ ] Browser cache hits preserve `transport` and `browser_escalated` provenance.
-- [ ] Browser execution honors configured navigation/runtime limits rather than default values.
+- [x] Cached PDF bytes can be re-extracted for a different page selection without network access.
+- [x] Cached HTML bytes can be re-rendered for a different extraction mode without network access.
+- [x] Browser cache hits preserve `transport` and `browser_escalated` provenance.
+- [x] Browser execution honors configured navigation/runtime limits rather than default values.
 - [x] Explicit invalid browser executable configuration fails rather than silently falling back.
-- [ ] `browser-login` launches the same explicitly configured executable recognized during discovery/preflight.
-- [ ] `browser-login` completion instructions match the actual completion mechanism.
+- [x] `browser-login` launches the same explicitly configured executable recognized during discovery/preflight.
+- [x] `browser-login` completion instructions match the actual completion mechanism.
 - [x] Manual interaction is represented through one documented machine-readable contract.
 - [x] Capability reporting does not claim browser usability merely because the feature was compiled.
 - [x] PDF layout/OCR is explicitly documented as deferred and unavailable.
 - [x] No new automatic downloads, bypass behavior, CI matrix, release workflow, or evidence ledger has been added.
-- [ ] Focused final-corrective tests pass.
-- [ ] `make check` passes on the final closure commit.
+- [x] Focused final-corrective tests pass.
+- [x] `make check` passes on the final closure commit.
 
 Only after every unchecked item above is satisfied should this file's status be changed to `Closed` again.
 

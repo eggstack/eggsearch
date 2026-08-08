@@ -92,12 +92,18 @@ pub async fn browser_fetch_with_policy(
 
     let params = NavigateParams::new(url, config, start, sanitize_output);
 
-    let context_id = browser
-        .create_browser_context(
-            chromiumoxide::cdp::browser_protocol::target::CreateBrowserContextParams::default(),
+    let context_id = if lifecycle.is_persistent_profile() {
+        None
+    } else {
+        Some(
+            browser
+                .create_browser_context(
+                    chromiumoxide::cdp::browser_protocol::target::CreateBrowserContextParams::default(),
+                )
+                .await
+                .map_err(|e| BrowserFetchError::NavigationFailed(e.to_string()))?,
         )
-        .await
-        .map_err(|e| BrowserFetchError::NavigationFailed(e.to_string()))?;
+    };
 
     let page = browser
         .new_page(
@@ -105,7 +111,7 @@ pub async fn browser_fetch_with_policy(
                 url: url.to_string(),
                 width: Some(1280),
                 height: Some(720),
-                browser_context_id: Some(context_id.clone()),
+                browser_context_id: context_id.clone(),
                 ..Default::default()
             },
         )
@@ -115,7 +121,9 @@ pub async fn browser_fetch_with_policy(
     let result = navigate_and_extract(&page, config, &params).await;
 
     let _ = page.close().await;
-    let _ = browser.dispose_browser_context(context_id).await;
+    if let Some(context_id) = context_id {
+        let _ = browser.dispose_browser_context(context_id).await;
+    }
 
     result
 }
@@ -485,7 +493,7 @@ pub fn browser_result_to_response(
         transport: Some("browser".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
-        raw_body: None,
+        raw_body: Some(body.clone()),
     }
 }
 

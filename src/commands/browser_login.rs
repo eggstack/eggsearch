@@ -49,38 +49,37 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
     println!("  Profile:  {}", profile_dir.display());
     println!();
 
-    let has_chrome = if let Some(ref executable) = cfg.fetch.browser.executable {
-        std::path::Path::new(executable).exists()
-    } else {
-        eggsearch::fetch::browser::discover_browser(cfg.fetch.browser.executable.as_deref())
-            .is_available()
+    let discovery = match eggsearch::fetch::browser::discover_browser(
+        cfg.fetch.browser.executable.as_deref(),
+    ) {
+        eggsearch::fetch::browser::BrowserDiscoveryState::Available(discovery) => Some(discovery),
+        eggsearch::fetch::browser::BrowserDiscoveryState::ExplicitPathInvalid { path } => {
+            eprintln!("error: configured browser executable is invalid: {path}");
+            std::process::exit(1);
+        }
+        _ => None,
     };
 
-    if has_chrome {
+    if let Some(ref discovery) = discovery {
         println!(
             "Chrome discovered. Launching headed browser at {}...",
             meta.allowed_origin
         );
         println!();
 
-        let result = launch_headed_browser(cfg, &chrome_data, &meta.allowed_origin).await;
+        let result =
+            launch_headed_browser(cfg, discovery, &chrome_data, &meta.allowed_origin).await;
 
         match result {
             Ok(()) => {
                 let mut updated = meta.clone();
                 let _ = mgr.update_last_used(&mut updated);
 
-                if let Some(disc) = eggsearch::fetch::browser::discover_browser(
-                    cfg.fetch.browser.executable.as_deref(),
-                )
-                .discovery()
-                {
-                    let _ = mgr.update_browser_info(
-                        &mut updated,
-                        &format!("{:?}", disc.family),
-                        parse_major_version(&disc.version),
-                    );
-                }
+                let _ = mgr.update_browser_info(
+                    &mut updated,
+                    &format!("{:?}", discovery.family),
+                    parse_major_version(&discovery.version),
+                );
 
                 println!();
                 println!("Session setup complete for '{display_name}'.");
@@ -106,15 +105,13 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
 
 async fn launch_headed_browser(
     cfg: &AppConfig,
+    discovery: &eggsearch::fetch::browser::BrowserDiscovery,
     chrome_data_dir: &std::path::Path,
     origin: &str,
 ) -> Result<(), String> {
-    let disc = eggsearch::fetch::browser::discover_browser(None)
-        .discovery()
-        .cloned()
-        .ok_or("no browser executable discovered")?;
+    use tokio::io::AsyncBufReadExt;
 
-    let mut cmd = tokio::process::Command::new(&disc.path);
+    let mut cmd = tokio::process::Command::new(&discovery.path);
     cmd.arg(origin);
     cmd.arg(format!("--user-data-dir={}", chrome_data_dir.display()));
     cmd.arg("--no-first-run");
@@ -145,10 +142,12 @@ async fn launch_headed_browser(
         timeout_ms / 1000
     );
 
-    let result = tokio::time::timeout(timeout, tokio::signal::ctrl_c()).await;
+    let mut input = String::new();
+    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let result = tokio::time::timeout(timeout, stdin.read_line(&mut input)).await;
 
     match result {
-        Ok(Ok(())) => {
+        Ok(Ok(_)) => {
             let _ = child.kill().await;
             Ok(())
         }

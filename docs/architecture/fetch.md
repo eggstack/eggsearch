@@ -328,7 +328,7 @@ Persistent browser profiles allow a local operator to establish a dedicated brow
 ### Profile Lifecycle
 
 1. **Create:** CLI `browser-login` opens a headed Chrome at the specified origin. The operator logs in, completes MFA/CAPTCHAs, and closes the browser.
-2. **Reuse:** MCP `web_fetch` with `browser_profile` uses the profile's Chrome data directory for headless rendering, preserving cookies and storage.
+2. **Reuse:** MCP `web_fetch` with `browser_profile` launches a request-scoped headless browser with the profile's exact `chrome-data` directory and uses the default browser context, preserving cookies and storage.
 3. **Expiry:** If a profile-scoped fetch returns a login form or challenge, `browser_profile_requires_attention` is returned with the CLI command to re-establish the session.
 4. **Remove:** CLI `browser-profiles remove` deletes the profile directory and invalidates its cache scope.
 
@@ -419,7 +419,8 @@ Two-tier in-memory LRU cache:
 
 Cache scope uses opaque profile IDs (not display names) to prevent cross-profile cache access. Scope is part of derived keys so that two profiles with byte-identical responses do not share derived entries.
 
-Raw entries store the original bounded response bytes (HTML, PDF, or plain text) before extraction. This allows re-extraction under different options (e.g., different PDF page selections, different extraction modes) without re-downloading.
+Raw entries store the original bounded HTTP response bytes or bounded rendered browser DOM before extraction. This allows re-extraction under different options (e.g., different PDF page selections, different extraction modes, link extraction, or character bounds) without re-downloading. Browser DOM entries are marked separately and are never conditionally revalidated as HTTP responses.
+Derived entries retain the small transport contract (`transport` and `browser_escalated`) so cached browser results remain distinguishable from HTTP results.
 
 Cache scope prevents mixing anonymous and authenticated/profile content. Profile removal invalidates both raw and derived tiers for the removed scope.
 
