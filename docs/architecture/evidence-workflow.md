@@ -63,9 +63,9 @@ EvidenceBundle
 | `max_fetched_items` | 20 |
 | `max_total_chars` | 100,000 |
 
-### Evidence Gap Kinds (25+)
+### Evidence Gap Kinds (26 variants)
 
-`EvidenceGapKind` includes: `NoPrimarySource`, `NoSecuritySource`, `NoBenchmarkSource`, `NoRecentSource`, `OnlySecondarySources`, `ConflictingEvidenceUnresolved`, `VersionContextMissing`, `NoMigrationChangelog`, `ProviderFailed`, `ProviderSkipped`, etc.
+`EvidenceGapKind` includes: `NoPrimarySourceFound`, `ProviderDegraded`, `NativeRepoFilterNotEnforced`, `SecurityApplicabilityUnknown`, `FetchFailed`, `SourceUnfetched`, `AllResultsExternalUntrusted`, `LocalCheckoutDirty`, `LocalRemoteMismatch`, `LocalGeneratedOrVendorOnly`, `LocalUntrackedFile`, `LocalSourceUnfetched`, `NativeAdvisoryUnavailable`, `SymbolHintNoNativeProvider`, `IssueSearchNoNativeProvider`, `ReleaseSearchNoNativeProvider`, `FreshnessNotEnforced`, `PackageResolutionFailed`, `NoFixedVersionFound`, `NoCounterpointFound`, `NoBenchmarksFound`, `MissingTests`, `MissingExamples`, `MissingManifest`, `MissingChangelog`, `MissingSecurityPolicy`.
 
 ---
 

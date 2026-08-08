@@ -112,6 +112,19 @@ make native-forge-smoke-gitea
 make native-forge-smoke-all
 ```
 
+## Makefile Targets
+
+| Target | Command | Purpose |
+|--------|---------|---------|
+| `check` | `fmt + clippy + feature-check + test` | Local CI gate |
+| `ci` | `check` | Alias for `check` |
+| `release-check` | `check + docs-check + release-build + publish-check` | Pre-release gate |
+| `docs-check` | `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps` | Docs check |
+| `release-build` | `cargo build --locked --release` | Release build |
+| `publish-check` | `cargo publish --dry-run --locked` | Pre-publish check |
+| `live-smoke` | `cargo test --features live-smoke --test corpus_runner -- --ignored` | Live network tests |
+| `fuzz-smoke` | Quick fuzz runs for 3 targets | Fuzz smoke test |
+
 ## Pre-release Checklist
 
 1. All CI checks green

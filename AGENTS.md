@@ -4,6 +4,8 @@
 
 eggsearch is a lightweight MCP search/fetch server for AI agents. It queries upstream search providers, deduplicates with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. Transport is MCP over stdio. Single library + binary crate (not a workspace).
 
+Architecture deep dives live in `architecture/` (overview, core, meta, fetch, mcp, commands, testing, build). Operator-facing docs live in `docs/` (config, safety, threat model, tool matrix, agent workflows, provider setup).
+
 ## Build & Verification
 
 All commands from project root. CI pins **Rust 1.88** (`rust-version = "1.88"` in Cargo.toml). Edition 2021. **Run `make check` to replicate the full CI suite locally.**
@@ -102,15 +104,28 @@ cargo test --locked --features browser --test browser_transport    # browser tra
 - **Bounded git execution:** `run_bounded_command()` drains stdout/stderr concurrently with independent capped reads, creates a process group via `setsid()`, and kills on timeout. Cap breaches trigger immediate process group termination.
 - **Keyless core invariant:** No config and no credential environment variables must produce a healthy, useful server. Missing optional credentials are provider-scoped skips, never global failures.
 
+## Skills
+
+Skills provide specialized instructions and workflows for specific tasks.
+
+| Skill | Location | Use When |
+|-------|----------|----------|
+| `eggsearch-architecture` | `skills/eggsearch-architecture/` | Working with internals, crate layout, provider model, adapter pattern |
+| `eggsearch-dev` | `skills/eggsearch-dev/` | Building, testing, contributing to eggsearch |
+| `eggsearch-mcp` | `skills/eggsearch-mcp/` | Integrating with MCP tools, tool selection, workflows, evidence bundles |
+| `eggsearch-release` | `skills/eggsearch-release/` | Preparing or cutting releases |
+
+Skills are symlinked from `.opencode/skills/` and `.agents/skills/` to the canonical `skills/` directory.
+
 ## Key Architecture
 
-- **Adapter pattern:** `MetadataSearchAdapter` wraps all search engines, handles RRF aggregation, sanitization, and provider health. MCP tools call the adapter, never engines directly.
-- **Provider model:** `ProviderKind` enum (`HtmlScrape`, `JsonApi`, `ApiKey`, `Local`). Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
+- **Adapter pattern:** `MetadataSearchAdapter` wraps all search engines, handles RRF aggregation, sanitization, and provider health. MCP tools call the adapter, never engines directly. See `architecture/meta.md`.
+- **Provider model:** `ProviderKind` enum (`HtmlScrape`, `JsonApi`, `ApiKey`, `Local`). 24 boolean capability flags per provider. HTML scrapers report `ProviderCapabilities::none()`. See `architecture/core.md`.
 - **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors. Defined in `src/core/repo_search.rs`.
-- **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`.
-- **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP profile-scoped browser fetches launch a request-scoped browser against that exact directory and use its default browser context; anonymous browser fetches retain the warm ephemeral lifecycle. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default. Profile cache isolation uses opaque IDs internally; display names are used only in MCP response metadata.
-- **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded HTTP bytes or bounded rendered browser DOM before extraction. A fresh raw hit can create a missing derived representation locally, including changed HTML extraction/link settings and PDF page selection. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params and preserves transport provenance. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes.
-- **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`.
+- **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`. See `docs/config.md`.
+- **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP profile-scoped browser fetches launch a request-scoped browser against that exact directory and use its default browser context; anonymous browser fetches retain the warm ephemeral lifecycle. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default. Profile cache isolation uses opaque IDs internally; display names are used only in MCP response metadata. See `architecture/fetch.md`.
+- **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded HTTP bytes or bounded rendered browser DOM before extraction. A fresh raw hit can create a missing derived representation locally, including changed HTML extraction/link settings and PDF page selection. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params and preserves transport provenance. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes. See `architecture/fetch.md`.
+- **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`. See `architecture/mcp.md`.
 - **Windows is unsupported:** The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix.
 
 ## MCP Tools (10 total)

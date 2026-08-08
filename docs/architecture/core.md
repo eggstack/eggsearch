@@ -141,7 +141,7 @@ The `core` module is intentionally independent of HTTP, MCP, or any search engin
 
 | File | Key Types | Responsibility |
 |------|-----------|----------------|
-| `evidence_bundle.rs` | `EvidenceBundle`, `EvidenceBundleSource`, `EvidenceBundleFetchedItem`, `EvidenceBundleLink`, `EvidenceGap`, `EvidenceGapKind`, `EvidenceTrustSummary`, `EvidenceProviderSummary` | Deterministic non-summarizing evidence container for multi-agent handoff. 25+ gap kinds |
+| `evidence_bundle.rs` | `EvidenceBundle`, `EvidenceBundleSource`, `EvidenceBundleFetchedItem`, `EvidenceBundleLink`, `EvidenceGap`, `EvidenceGapKind`, `EvidenceTrustSummary`, `EvidenceProviderSummary` | Deterministic non-summarizing evidence container for multi-agent handoff. 26 gap kinds |
 
 ### Local Search
 

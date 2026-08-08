@@ -46,6 +46,10 @@ cargo publish --dry-run --locked
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
 | `tests/docs_*.rs` | None | Documentation contract tests |
 | `tests/schema_identity_registry.rs` | None | Schema + deterministic ID fixtures |
+| `tests/keyless_core.rs` | None | Keyless-core runtime contract tests |
+| `tests/security_applicability_corpus.rs` | None | Security applicability pipeline regression |
+| `tests/browser_profiles.rs` | `browser` | Browser profile management |
+| `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 
 ## Running Specific Suites
 

@@ -23,7 +23,7 @@
 | `result.rs` | `SearchWarning`, `TrustLevel` |
 | `warning.rs` | `AgentWarning`, `WarningCode`, `WarningSeverity`, `WarningAccumulator` |
 | `quality.rs` | `ResultQuality`, `ResultConfidence`, `SearchUncertaintySummary`, evidence strength/freshness/relevance estimates |
-| `evidence_role.rs` | `EvidenceRole` enum (18 roles): `PrimaryImplementation`, `OfficialDocumentation`, etc. |
+| `evidence_role.rs` | `EvidenceRole` enum (19 roles): `PrimaryImplementation`, `OfficialDocumentation`, etc. |
 | `evidence_bundle.rs` | `EvidenceBundle`, `EvidenceBundleRequest`, `EvidenceBundleSource`, `EvidenceGap`, `EvidenceTrustSummary` |
 | `evidence_postprocess.rs` | `postprocess()`, `detect_structured_conflicts()`, `materialize_evidence_roles()`, `resolve_workflow_model()` |
 | `conflict.rs` | `EvidenceConflict`, `ConflictDetector`, `ConflictSeverity`, `ConflictClass`, `ConflictResolution` |

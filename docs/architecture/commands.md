@@ -14,6 +14,8 @@
 | `mcp.rs` | `eggsearch mcp stdio` | Run MCP server over stdio |
 | `fetch.rs` | `eggsearch fetch` | Fetch and extract content from a URL |
 | `providers.rs` | `eggsearch providers` | Report provider configuration and status |
+| `browser_login.rs` | `eggsearch browser-login` | Headed browser login for persistent profiles (feature-gated `browser`) |
+| `browser_profiles.rs` | `eggsearch browser-profiles` | Manage persistent browser profiles (feature-gated `browser`) |
 
 ---
 
@@ -27,7 +29,9 @@ eggsearch [--config <PATH>] [-v|-vv]
   ├── search <query> [--max-results N] [--json] [--providers csv]
   ├── fetch <url> [--max-chars N] [--timeout-ms N] [--markdown] [--metadata-only] [--include-links] [--json]
   ├── providers [--json]
-  └── mcp stdio
+  ├── mcp stdio
+  ├── browser-login <ORIGIN> [--profile NAME]
+  └── browser-profiles <COMMAND>
 ```
 
 ### Global Flags

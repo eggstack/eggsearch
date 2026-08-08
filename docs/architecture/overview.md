@@ -128,7 +128,7 @@ Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` with `tool_r
 | `ApiKey` | Brave API, GitHub/GitLab/Gitea code/issues/releases, Semantic Scholar, Sourcegraph | Requires authentication, richest results |
 | `Local` | local_workspace | Filesystem-based workspace search |
 
-**Capability flags** (25+): `code_search`, `issue_search`, `release_search`, `security_search`, `scholarly_search`, `package_search`, `repo_structure`, `advisory_search`, `freshness`, and more. Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
+**Capability flags** (24 boolean flags): `supports_safe_search`, `supports_freshness`, `supports_language`, `supports_region`, `supports_domain_filters`, `supports_news`, `supports_code_search`, `supports_repo_filter`, `supports_org_filter`, `supports_path_filter`, `supports_language_filter`, `supports_symbol_hint`, `supports_issue_search`, `supports_release_search`, `supports_result_timestamps`, `supports_security_search`, `supports_package_metadata`, `supports_advisory_lookup_by_id`, `supports_advisory_lookup_by_package`, `supports_exploit_kev_status`, `supports_scholarly_search`, `supports_doi_lookup`, `supports_repo_indexing`, `supports_structured_changelog`. Capability flags are conservative — HTML scrapers report `ProviderCapabilities::none()`.
 
 **4 search profiles** influence provider selection:
 - `generic` — broad web search (DuckDuckGo, Startpage, Yahoo)

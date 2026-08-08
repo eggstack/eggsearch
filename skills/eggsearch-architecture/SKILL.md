@@ -14,7 +14,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `main.rs` — binary entry point (clap, tokio main)
 - `lib.rs` — library root, re-exports `core`, `fetch`, `mcp`, `meta`
 - `config.rs` — CLI config loader
-- `commands/` — subcommands: doctor, search, providers, mcp, fetch
+- `commands/` — subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
 - `meta/` — MetadataSearchAdapter + 34 vendored engines + forge tree adapter + local workspace backend + inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
