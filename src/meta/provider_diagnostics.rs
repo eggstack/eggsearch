@@ -278,7 +278,10 @@ impl ProviderHealthRegistry {
 
     /// Record a successful provider call.
     pub fn record_success(&self, provider_id: &str, latency_ms: u64) {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let entry = entries
             .entry(provider_id.to_string())
             .or_insert_with(ProviderHealthEntry::new);
@@ -299,7 +302,10 @@ impl ProviderHealthRegistry {
     ) {
         let now = Instant::now();
         let bounded = bound_error_message(message);
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let entry = entries
             .entry(provider_id.to_string())
             .or_insert_with(ProviderHealthEntry::new);
@@ -326,7 +332,10 @@ impl ProviderHealthRegistry {
 
     /// Check if a provider is currently in cooldown.
     pub fn is_in_cooldown(&self, provider_id: &str) -> bool {
-        let entries = self.entries.lock().unwrap();
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(entry) = entries.get(provider_id) {
             if let Some(until) = entry.cooldown_until {
                 return Instant::now() < until;
@@ -337,7 +346,10 @@ impl ProviderHealthRegistry {
 
     /// Get a compact health view for a single provider.
     pub fn health_view(&self, provider_id: &str) -> ProviderHealthView {
-        let entries = self.entries.lock().unwrap();
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let now = Instant::now();
         entries
             .get(provider_id)
@@ -362,7 +374,10 @@ impl ProviderHealthRegistry {
         enabled: bool,
         configured: bool,
     ) -> ProviderHealthSnapshot {
-        let entries = self.entries.lock().unwrap();
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let now = Instant::now();
         let entry = entries.get(provider_id);
         ProviderHealthSnapshot {
@@ -435,7 +450,10 @@ impl Default for ProviderHealthRegistry {
 
 impl std::fmt::Debug for ProviderHealthRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let entries = self.entries.lock().unwrap();
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         f.debug_struct("ProviderHealthRegistry")
             .field("entries_count", &entries.len())
             .finish()
@@ -1089,6 +1107,20 @@ mod tests {
         let snapshot = registry.snapshot("nonexistent", true, true);
         assert_eq!(snapshot.status, ProviderHealthStatus::Unknown);
         assert_eq!(snapshot.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn health_registry_recovers_from_poisoned_mutex() {
+        let registry = ProviderHealthRegistry::new();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _entries = registry.entries.lock().unwrap();
+            panic!("poison provider health mutex");
+        }));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            registry.record_success("duckduckgo", 100);
+        }));
+        assert!(result.is_ok());
     }
 
     #[test]

@@ -156,12 +156,10 @@ impl BrowserLifecycle {
             let mut h = self.handler_handle.lock().await;
             *h = Some(handle);
         }
-        {
-            let mut b = self.browser.lock().await;
-            *b = Some(Arc::new(browser));
-        }
-
-        Ok(Arc::clone(self.browser.lock().await.as_ref().unwrap()))
+        let mut b = self.browser.lock().await;
+        let browser = Arc::new(browser);
+        *b = Some(Arc::clone(&browser));
+        Ok(browser)
     }
 
     async fn create_user_data_dir(&self) -> Result<PathBuf, BrowserLaunchError> {

@@ -733,31 +733,33 @@ pub fn assess_source_quality(results: &[crate::core::SourceCard]) -> SecuritySou
 }
 
 fn remove_identifier_tokens(text: &str) -> String {
-    let mut result = text.to_string();
-    for cap in CVE_RE.find_iter(text) {
-        result = result.replace(cap.as_str(), "");
+    let mut ranges = Vec::new();
+    for pattern in [
+        &*CVE_RE,
+        &*GHSA_RE,
+        &*RUSTSEC_RE,
+        &*PACKAGE_RE,
+        &*ECOSYSTEM_RE,
+        &*CWE_RE,
+        &*SYMBOL_RE,
+        &*VERSION_RE,
+    ] {
+        ranges.extend(pattern.find_iter(text).map(|m| (m.start(), m.end())));
     }
-    for cap in GHSA_RE.find_iter(&result.clone()) {
-        result = result.replace(cap.as_str(), "");
+    ranges.sort_unstable();
+
+    let mut result = String::with_capacity(text.len());
+    let mut cursor = 0;
+    for (start, end) in ranges {
+        if start < cursor {
+            cursor = cursor.max(end);
+            continue;
+        }
+        result.push_str(&text[cursor..start]);
+        cursor = end;
     }
-    for cap in RUSTSEC_RE.find_iter(&result.clone()) {
-        result = result.replace(cap.as_str(), "");
-    }
-    for cap in PACKAGE_RE.find_iter(&result.clone()) {
-        result = result.replace(cap.as_str(), "");
-    }
-    for cap in ECOSYSTEM_RE.find_iter(&result.clone()) {
-        result = result.replace(cap.as_str(), "");
-    }
-    for cap in CWE_RE.find_iter(&result.clone()) {
-        result = result.replace(cap.as_str(), "");
-    }
-    for cap in SYMBOL_RE.find_iter(&result.clone()) {
-        result = result.replace(cap.as_str(), "");
-    }
-    for cap in VERSION_RE.find_iter(&result.clone()) {
-        result = result.replace(cap.as_str(), "");
-    }
+    result.push_str(&text[cursor..]);
+
     // Collapse whitespace.
     let mut out = String::with_capacity(result.len());
     let mut prev_space = false;
@@ -1969,6 +1971,14 @@ mod tests {
         assert!(!cleaned.contains("CVE-2024-0001"));
         assert!(cleaned.contains("openssl"));
         assert!(cleaned.contains("vulnerability"));
+    }
+
+    #[test]
+    fn remove_identifier_tokens_cleans_all_identifier_kinds() {
+        let cleaned = remove_identifier_tokens(
+            "CVE-2024-0001 GHSA-abcd-efgh-ijkl RUSTSEC-2024-0001 package:openssl ecosystem:crates CWE-79 symbol:foo version:1.2",
+        );
+        assert!(cleaned.trim().is_empty());
     }
 
     #[test]

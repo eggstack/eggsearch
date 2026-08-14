@@ -58,8 +58,10 @@ fn run_bounded(cmd: &mut Command) -> Option<(bool, Vec<u8>)> {
                 return;
             }
             if std::time::Instant::now() >= deadline {
-                unsafe {
-                    libc::kill(-(child_id as i32), libc::SIGKILL);
+                if let Ok(pid) = i32::try_from(child_id) {
+                    unsafe {
+                        libc::kill(-pid, libc::SIGKILL);
+                    }
                 }
                 return;
             }

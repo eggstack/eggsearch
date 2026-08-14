@@ -310,13 +310,17 @@ fn clamp_and_truncate(
     max_block_lines: Option<usize>,
     reasons: &mut Vec<String>,
 ) -> (u32, u32, bool) {
-    let ls = u32::try_from(block_start).unwrap_or(u32::MAX) + 1;
-    let mut le = u32::try_from(block_end).unwrap_or(u32::MAX) + 1;
+    let ls = u32::try_from(block_start)
+        .unwrap_or(u32::MAX)
+        .saturating_add(1);
+    let mut le = u32::try_from(block_end)
+        .unwrap_or(u32::MAX)
+        .saturating_add(1);
     let mut truncated = false;
     if let Some(max) = max_block_lines {
-        let max = max as u32;
-        if le - ls + 1 > max {
-            le = ls + max - 1;
+        let max = u32::try_from(max).unwrap_or(u32::MAX);
+        if le.saturating_sub(ls).saturating_add(1) > max {
+            le = ls.saturating_add(max.saturating_sub(1));
             truncated = true;
             reasons.push(format!("truncated to {max} lines"));
         }
@@ -1016,6 +1020,21 @@ mod tests {
 
     fn lines(s: &str) -> Vec<String> {
         s.lines().map(String::from).collect()
+    }
+
+    #[test]
+    fn clamp_and_truncate_saturates_line_numbers_and_ranges() {
+        let mut reasons = Vec::new();
+        assert_eq!(
+            clamp_and_truncate(usize::MAX, usize::MAX, None, &mut reasons),
+            (u32::MAX, u32::MAX, false)
+        );
+
+        let mut reasons = Vec::new();
+        assert_eq!(
+            clamp_and_truncate(10, 5, Some(3), &mut reasons),
+            (11, 6, false)
+        );
     }
 
     // --- Rust function block expansion with attributes/doc comments ---

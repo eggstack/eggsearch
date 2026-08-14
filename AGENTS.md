@@ -26,7 +26,7 @@ cargo build --release        # release build
 cargo publish --dry-run --locked  # pre-publish check
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock` and `pdf`. Current test counts: ~3950 with `--all-features`, ~3935 with `--features mock` (15 tests gated on `pdf`).
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Current test counts: 4716 passed and 21 ignored with `--all-features`; 4497 passed with `--features mock`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 

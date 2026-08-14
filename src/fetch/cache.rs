@@ -97,21 +97,31 @@ impl CacheFreshness {
         };
 
         if let Some(cc) = headers.get("cache-control").and_then(|v| v.to_str().ok()) {
-            let cc_lower = cc.to_lowercase();
-            freshness.no_store = cc_lower.contains("no-store");
-            freshness.no_cache = cc_lower.contains("no-cache");
-            freshness.private = cc_lower.contains("private");
-
-            if let Some(pos) = cc_lower.find("max-age=") {
-                let val_start = pos + 8;
-                if let Some(val_end) = cc_lower[val_start..].find(|c: char| !c.is_ascii_digit()) {
-                    if let Ok(secs) = cc_lower[val_start..val_start + val_end].parse::<u64>() {
-                        freshness.max_age = Some(Duration::from_secs(secs));
+            let mut max_age = None;
+            let mut s_maxage = None;
+            for directive in cc.split(',') {
+                let (name, value) = directive.split_once('=').unwrap_or((directive, ""));
+                match name.trim().to_ascii_lowercase().as_str() {
+                    "no-store" => freshness.no_store = true,
+                    "no-cache" => freshness.no_cache = true,
+                    "private" => freshness.private = true,
+                    "max-age" | "s-maxage" => {
+                        let parsed = value
+                            .trim()
+                            .trim_matches('"')
+                            .parse::<u64>()
+                            .ok()
+                            .map(Duration::from_secs);
+                        if name.trim().eq_ignore_ascii_case("s-maxage") {
+                            s_maxage = parsed;
+                        } else {
+                            max_age = parsed;
+                        }
                     }
-                } else if let Ok(secs) = cc_lower[val_start..].parse::<u64>() {
-                    freshness.max_age = Some(Duration::from_secs(secs));
+                    _ => {}
                 }
             }
+            freshness.max_age = s_maxage.or(max_age);
         }
 
         if freshness.max_age.is_none() {
@@ -374,7 +384,51 @@ fn parse_http_date(s: &str) -> Option<SystemTime> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Some(dt.into());
     }
-    let normalized = s.trim().replace("GMT", "+0000");
+    let mut parts = s.split_whitespace().collect::<Vec<_>>();
+    let zone = parts.last().copied().unwrap_or_default();
+    let normalized_zone = match zone {
+        "UT" | "GMT" | "Z" => Some("+0000"),
+        "EST" => Some("-0500"),
+        "EDT" => Some("-0400"),
+        "CST" => Some("-0600"),
+        "CDT" => Some("-0500"),
+        "MST" => Some("-0700"),
+        "MDT" => Some("-0600"),
+        "PST" => Some("-0800"),
+        "PDT" => Some("-0700"),
+        "A" => Some("+0100"),
+        "B" => Some("+0200"),
+        "C" => Some("+0300"),
+        "D" => Some("+0400"),
+        "E" => Some("+0500"),
+        "F" => Some("+0600"),
+        "G" => Some("+0700"),
+        "H" => Some("+0800"),
+        "I" => Some("+0900"),
+        "K" => Some("+1000"),
+        "L" => Some("+1100"),
+        "M" => Some("+1200"),
+        "N" => Some("-0100"),
+        "O" => Some("-0200"),
+        "P" => Some("-0300"),
+        "Q" => Some("-0400"),
+        "R" => Some("-0500"),
+        "S" => Some("-0600"),
+        "T" => Some("-0700"),
+        "U" => Some("-0800"),
+        "V" => Some("-0900"),
+        "W" => Some("-1000"),
+        "X" => Some("-1100"),
+        "Y" => Some("-1200"),
+        _ => None,
+    };
+    let normalized = if let Some(normalized_zone) = normalized_zone {
+        parts.pop();
+        parts.push(normalized_zone);
+        parts.join(" ")
+    } else {
+        s.trim().to_string()
+    };
     if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(&normalized) {
         return Some(dt.into());
     }
@@ -473,6 +527,29 @@ mod tests {
     }
 
     #[test]
+    fn freshness_from_headers_matches_cache_control_tokens() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "cache-control",
+            "no-cacheable, custom-no-store-extension, not-private"
+                .parse()
+                .unwrap(),
+        );
+        let (freshness, _) = CacheFreshness::from_headers(&headers);
+        assert!(!freshness.no_store);
+        assert!(!freshness.no_cache);
+        assert!(!freshness.private);
+    }
+
+    #[test]
+    fn freshness_from_headers_prefers_s_maxage() {
+        let mut headers = HeaderMap::new();
+        headers.insert("cache-control", "max-age=300, s-maxage=60".parse().unwrap());
+        let (freshness, _) = CacheFreshness::from_headers(&headers);
+        assert_eq!(freshness.max_age, Some(Duration::from_secs(60)));
+    }
+
+    #[test]
     fn freshness_from_headers_no_store() {
         let mut headers = HeaderMap::new();
         headers.insert("cache-control", "no-store".parse().unwrap());
@@ -505,6 +582,19 @@ mod tests {
         headers.insert("expires", "Wed, 01 Jan 2025 00:00:00 GMT".parse().unwrap());
         let (freshness, _) = CacheFreshness::from_headers(&headers);
         assert!(freshness.expires.is_some());
+    }
+
+    #[test]
+    fn freshness_from_headers_parses_legacy_http_date_zones() {
+        for zone in ["UT", "Z", "PST"] {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                "expires",
+                format!("Wed, 01 Jan 2025 00:00:00 {zone}").parse().unwrap(),
+            );
+            let (freshness, _) = CacheFreshness::from_headers(&headers);
+            assert!(freshness.expires.is_some(), "failed to parse {zone}");
+        }
     }
 
     #[test]

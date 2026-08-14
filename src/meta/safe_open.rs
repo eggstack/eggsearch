@@ -215,7 +215,15 @@ pub fn safe_open_relative(
 
         for (i, component) in components.iter().enumerate() {
             let name = match component {
-                Component::Normal(n) => n.to_str().unwrap(),
+                Component::Normal(n) => match n.to_str() {
+                    Some(name) => name,
+                    None => {
+                        close_fd(current_fd);
+                        return Err(SafeOpenError::NotFound(format!(
+                            "non-UTF8 component: {component:?}"
+                        )));
+                    }
+                },
                 _ => unreachable!(),
             };
 
