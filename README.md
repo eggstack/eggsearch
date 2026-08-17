@@ -3,6 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/eggsearch.svg)](https://crates.io/crates/eggsearch)
 [![docs.rs](https://docs.rs/eggsearch/badge.svg)](https://docs.rs/eggsearch)
 [![License](https://img.shields.io/crates/l/eggsearch.svg)](https://github.com/eggstack/eggsearch#license)
+[![Downloads](https://img.shields.io/crates/d/eggsearch.svg)](https://crates.io/crates/eggsearch)
 
 eggsearch is a lightweight MCP (Model Context Protocol) search and fetch server for AI agents. It combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio.
 
