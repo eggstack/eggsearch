@@ -1,47 +1,39 @@
 use std::sync::Arc;
 
+use anyhow::{anyhow, Result};
 use eggsearch::core::config::AppConfig;
 use eggsearch::fetch::browser::ProfileManager;
 
-pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
+pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> Result<()> {
     let bp = &cfg.fetch.browser.persistent_profiles;
 
     if !bp.enabled {
-        eprintln!("error: persistent browser profiles are disabled");
-        eprintln!("enable [fetch.browser].persistent_profiles_enabled in config");
-        std::process::exit(1);
+        return Err(anyhow!(
+            "persistent browser profiles are disabled; \
+             enable [fetch.browser].persistent_profiles_enabled in config"
+        ));
     }
 
-    let mgr = match ProfileManager::new(
+    let mgr = ProfileManager::new(
         bp.profiles_dir.as_deref(),
         true,
         bp.allowed_profiles.clone(),
-    ) {
-        Ok(m) => Arc::new(m),
-        Err(e) => {
-            eprintln!("error initializing profile manager: {e}");
-            std::process::exit(1);
-        }
-    };
+    )
+    .map(Arc::new)
+    .map_err(|e| anyhow!("error initializing profile manager: {e}"))?;
 
     let display_name = profile_name.unwrap_or("default");
 
-    let meta = match mgr.create_profile(display_name, origin) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("error creating profile: {e}");
-            std::process::exit(1);
-        }
-    };
+    let meta = mgr
+        .create_profile(display_name, origin)
+        .map_err(|e| anyhow!("error creating profile: {e}"))?;
 
     let profile_dir = mgr.profile_dir_for(&meta.id);
     let chrome_data = mgr.chrome_data_dir_for(&meta.id);
 
     if !chrome_data.exists() {
-        if let Err(e) = std::fs::create_dir_all(&chrome_data) {
-            eprintln!("error creating chrome-data directory: {e}");
-            std::process::exit(1);
-        }
+        std::fs::create_dir_all(&chrome_data)
+            .map_err(|e| anyhow!("error creating chrome-data directory: {e}"))?;
     }
 
     println!("Browser Profile: {}", meta.display_name);
@@ -54,8 +46,7 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
     ) {
         eggsearch::fetch::browser::BrowserDiscoveryState::Available(discovery) => Some(discovery),
         eggsearch::fetch::browser::BrowserDiscoveryState::ExplicitPathInvalid { path } => {
-            eprintln!("error: configured browser executable is invalid: {path}");
-            std::process::exit(1);
+            return Err(anyhow!("configured browser executable is invalid: {path}"));
         }
         _ => None,
     };
@@ -89,9 +80,10 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
                 );
             }
             Err(e) => {
-                eprintln!("browser session ended: {e}");
-                eprintln!("profile '{display_name}' was created but may need re-login",);
-                std::process::exit(1);
+                return Err(anyhow!(
+                    "browser session ended: {e}; \
+                     profile '{display_name}' was created but may need re-login"
+                ));
             }
         }
     } else {
@@ -101,6 +93,8 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) {
         println!("Profile '{display_name}' has been created. Once Chrome is available,");
         println!("run this command again to establish a session.");
     }
+
+    Ok(())
 }
 
 async fn launch_headed_browser(
@@ -108,7 +102,7 @@ async fn launch_headed_browser(
     discovery: &eggsearch::fetch::browser::BrowserDiscovery,
     chrome_data_dir: &std::path::Path,
     origin: &str,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     use tokio::io::AsyncBufReadExt;
 
     let mut cmd = tokio::process::Command::new(&discovery.path);
@@ -134,7 +128,7 @@ async fn launch_headed_browser(
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("failed to launch browser: {e}"))?;
+        .map_err(|e| anyhow!("failed to launch browser: {e}"))?;
 
     println!("Browser launched. Complete your login/verification in the browser window.");
     println!(
@@ -153,11 +147,11 @@ async fn launch_headed_browser(
         }
         Ok(Err(e)) => {
             let _ = child.kill().await;
-            Err(format!("signal error: {e}"))
+            Err(anyhow!("signal error: {e}"))
         }
         Err(_) => {
             let _ = child.kill().await;
-            Err("timeout reached".to_string())
+            Err(anyhow!("timeout reached"))
         }
     }
 }

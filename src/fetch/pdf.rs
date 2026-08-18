@@ -126,6 +126,13 @@ pub fn parse_pdf_pages(
                 (end, start)
             };
 
+            let range_len = end.saturating_sub(start).saturating_add(1) as usize;
+            if range_len > max_pages {
+                return Err(FetchError::PdfPageSpecInvalid(format!(
+                    "page range {start}-{end} ({range_len} pages) exceeds max_pages ({max_pages})"
+                )));
+            }
+
             for p in start..=end {
                 if !pages.contains(&p) {
                     pages.push(p);
@@ -413,7 +420,8 @@ fn try_extract_outline(doc: &lopdf::Document) -> Vec<DocumentOutlineEntry> {
     };
 
     let mut entries = Vec::new();
-    collect_outline_entries(doc, first_ref, 0, &mut entries);
+    let mut visited = std::collections::HashSet::new();
+    collect_outline_entries(doc, first_ref, 0, &mut entries, &mut visited);
     entries
 }
 
@@ -422,8 +430,12 @@ fn collect_outline_entries(
     obj_ref: lopdf::ObjectId,
     depth: usize,
     out: &mut Vec<DocumentOutlineEntry>,
+    visited: &mut std::collections::HashSet<lopdf::ObjectId>,
 ) {
     if out.len() >= MAX_OUTLINE_ENTRIES || depth >= MAX_OUTLINE_DEPTH {
+        return;
+    }
+    if !visited.insert(obj_ref) {
         return;
     }
 
@@ -462,11 +474,11 @@ fn collect_outline_entries(
     }
 
     if let Ok(lopdf::Object::Reference(child_ref)) = dict.get(b"First") {
-        collect_outline_entries(doc, *child_ref, depth + 1, out);
+        collect_outline_entries(doc, *child_ref, depth + 1, out, visited);
     }
 
     if let Ok(lopdf::Object::Reference(next_ref)) = dict.get(b"Next") {
-        collect_outline_entries(doc, *next_ref, depth, out);
+        collect_outline_entries(doc, *next_ref, depth, out, visited);
     }
 }
 
@@ -1056,7 +1068,9 @@ fn format_page_list(pages: &[usize]) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     } else {
-        format!("{}, {}, and {} others", pages[0], pages[1], pages.len() - 2)
+        let others = pages.len() - 2;
+        let noun = if others == 1 { "other" } else { "others" };
+        format!("{}, {}, and {others} {noun}", pages[0], pages[1])
     }
 }
 

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -89,7 +90,7 @@ impl CacheFreshness {
             no_cache: false,
             private: false,
             vary: None,
-            fetched_at: Some(SystemTime::now()),
+            fetched_at: None,
         };
         let mut validators = CacheValidators {
             etag: None,
@@ -193,7 +194,7 @@ pub struct FetchCache {
     raw: Mutex<LruCache<RawCacheKey, RawFetchCacheEntry>>,
     derived: Mutex<LruCache<DerivedCacheKey, DerivedDocumentCacheEntry>>,
     raw_max_bytes: usize,
-    current_raw_bytes: Mutex<usize>,
+    current_raw_bytes: AtomicUsize,
 }
 
 impl FetchCache {
@@ -204,7 +205,7 @@ impl FetchCache {
             raw: Mutex::new(LruCache::new(raw_cap)),
             derived: Mutex::new(LruCache::new(derived_cap)),
             raw_max_bytes,
-            current_raw_bytes: Mutex::new(0),
+            current_raw_bytes: AtomicUsize::new(0),
         }
     }
 
@@ -219,22 +220,26 @@ impl FetchCache {
             return false;
         }
         let mut raw = self.raw.lock().await;
-        let mut current = self.current_raw_bytes.lock().await;
 
         if let Some(evicted) = raw.pop(&key) {
-            *current = current.saturating_sub(evicted.body.len());
+            self.current_raw_bytes
+                .fetch_sub(evicted.body.len(), Ordering::Relaxed);
         }
 
-        while *current + body_len > self.raw_max_bytes && !raw.is_empty() {
+        while self.current_raw_bytes.load(Ordering::Relaxed) + body_len > self.raw_max_bytes
+            && !raw.is_empty()
+        {
             if let Some((_, evicted)) = raw.pop_lru() {
-                *current = current.saturating_sub(evicted.body.len());
+                self.current_raw_bytes
+                    .fetch_sub(evicted.body.len(), Ordering::Relaxed);
             } else {
                 break;
             }
         }
 
         raw.put(key, entry);
-        *current += body_len;
+        self.current_raw_bytes
+            .fetch_add(body_len, Ordering::Relaxed);
         true
     }
 
@@ -250,7 +255,6 @@ impl FetchCache {
 
     pub async fn invalidate_scope(&self, scope: &CacheScope) {
         let mut raw = self.raw.lock().await;
-        let mut current = self.current_raw_bytes.lock().await;
 
         let keys_to_remove: Vec<RawCacheKey> = raw
             .iter()
@@ -260,12 +264,12 @@ impl FetchCache {
 
         for key in keys_to_remove {
             if let Some(evicted) = raw.pop(&key) {
-                *current = current.saturating_sub(evicted.body.len());
+                self.current_raw_bytes
+                    .fetch_sub(evicted.body.len(), Ordering::Relaxed);
             }
         }
 
         drop(raw);
-        drop(current);
 
         let mut derived = self.derived.lock().await;
         let derived_keys_to_remove: Vec<DerivedCacheKey> = derived
@@ -282,7 +286,7 @@ impl FetchCache {
     pub async fn stats(&self) -> CacheStats {
         let raw = self.raw.lock().await;
         let derived = self.derived.lock().await;
-        let current_raw = *self.current_raw_bytes.lock().await;
+        let current_raw = self.current_raw_bytes.load(Ordering::Relaxed);
         CacheStats {
             raw_entries: raw.len(),
             derived_entries: derived.len(),

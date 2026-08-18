@@ -26,6 +26,15 @@ pub async fn run(
         anyhow::bail!("fetch is disabled in config; set [fetch].enabled = true to enable");
     }
 
+    if url.trim().is_empty() {
+        anyhow::bail!("url must not be empty");
+    }
+    let parsed = url::Url::parse(url).map_err(|e| anyhow!("invalid URL '{url}': {e}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => anyhow::bail!("URL must be http or https; got '{other}'"),
+    }
+
     if let Some(0) = max_chars {
         anyhow::bail!("max_chars must be > 0");
     }

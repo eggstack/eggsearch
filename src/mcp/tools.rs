@@ -68,7 +68,7 @@ impl std::fmt::Display for ToolError {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "browser")]
 fn browser_manual_interaction_error(
     origin: &str,
     message: &str,
@@ -91,7 +91,7 @@ fn browser_manual_interaction_error(
     ToolError::internal_with_data(error_msg, data)
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "browser")]
 fn browser_profile_requires_attention_error(origin: &str, profile_name: &str) -> ToolError {
     let next_action = format!("eggsearch browser-login {origin} --profile {profile_name}");
     let data = serde_json::json!({
@@ -109,7 +109,7 @@ fn browser_profile_requires_attention_error(origin: &str, profile_name: &str) ->
     ToolError::internal_with_data(error_msg, data)
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "browser")]
 fn browser_unavailable_error(reason: &str) -> ToolError {
     let data = serde_json::json!({
         "code": "browser_unavailable",
@@ -119,27 +119,7 @@ fn browser_unavailable_error(reason: &str) -> ToolError {
     ToolError::internal_with_data(reason.to_string(), data)
 }
 
-#[allow(dead_code)]
-fn browser_startup_failed_error(detail: &str) -> ToolError {
-    let data = serde_json::json!({
-        "code": "browser_startup_failed",
-        "message": format!("browser startup failed: {detail}"),
-        "manual_interaction_required": false,
-    });
-    ToolError::internal_with_data(format!("browser_startup_failed: {detail}"), data)
-}
-
-#[allow(dead_code)]
-fn browser_navigation_failed_error(detail: &str) -> ToolError {
-    let data = serde_json::json!({
-        "code": "browser_navigation_failed",
-        "message": format!("browser navigation failed: {detail}"),
-        "manual_interaction_required": false,
-    });
-    ToolError::internal_with_data(format!("browser_navigation_failed: {detail}"), data)
-}
-
-#[allow(dead_code)]
+#[cfg(feature = "browser")]
 fn browser_deadline_exceeded_error() -> ToolError {
     let data = serde_json::json!({
         "code": "browser_deadline_exceeded",
@@ -242,10 +222,27 @@ where
     };
     match parse(raw) {
         Some(value) => Ok(Some(value)),
-        None => Err(ToolError::Validation(format!(
-            "invalid {field} '{raw}'; accepted values: {}",
-            accepted.join(", ")
-        ))),
+        None => {
+            let values: Vec<&str> = accepted
+                .iter()
+                .copied()
+                .filter(|v| !v.starts_with("(aliases"))
+                .collect();
+            let hints: Vec<&str> = accepted
+                .iter()
+                .copied()
+                .filter(|v| v.starts_with("(aliases"))
+                .collect();
+            let mut msg = format!(
+                "invalid {field} '{raw}'; accepted values: {}",
+                values.join(", ")
+            );
+            if !hints.is_empty() {
+                msg.push_str("; ");
+                msg.push_str(&hints.join(" "));
+            }
+            Err(ToolError::Validation(msg))
+        }
     }
 }
 
@@ -811,7 +808,7 @@ pub async fn run_web_search(
     args: WebSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::internal(live_search_denied_message(
+        return Err(ToolError::Validation(live_search_denied_message(
             "web_search",
         )));
     }
@@ -1022,7 +1019,7 @@ pub async fn run_repo_search(
         && args.include_local != Some(false);
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
-        return Err(ToolError::internal(live_search_denied_message(
+        return Err(ToolError::Validation(live_search_denied_message(
             "repo_search",
         )));
     }
@@ -1072,16 +1069,13 @@ pub async fn run_repo_search(
 
     let (owner, repo) = if let Some(r) = &args.repo {
         if r.contains('/') && args.owner.is_none() {
-            if let Some((o, rest)) = r.split_once('/') {
-                if o.is_empty() || rest.is_empty() {
-                    return Err(ToolError::Validation(format!(
-                        "invalid repo '{r}': must be owner/name with non-empty parts"
-                    )));
-                }
-                (Some(o.to_string()), Some(rest.to_string()))
-            } else {
-                (args.owner.clone(), args.repo.clone())
+            let (o, rest) = r.split_once('/').expect("contains('/') implies split_once");
+            if o.is_empty() || rest.is_empty() {
+                return Err(ToolError::Validation(format!(
+                    "invalid repo '{r}': must be owner/name with non-empty parts"
+                )));
             }
+            (Some(o.to_string()), Some(rest.to_string()))
         } else {
             (args.owner.clone(), args.repo.clone())
         }
@@ -1356,7 +1350,7 @@ pub async fn run_research_search(
     };
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::internal(live_search_denied_message(
+        return Err(ToolError::Validation(live_search_denied_message(
             "research_search",
         )));
     }
@@ -2041,7 +2035,7 @@ pub async fn run_web_fetch(
     use crate::fetch::origin::{classify_network_error, OriginKey};
 
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
-        return Err(ToolError::internal(web_fetch_denied_message()));
+        return Err(ToolError::Validation(web_fetch_denied_message()));
     }
 
     if args.url.trim().is_empty() {
@@ -2101,11 +2095,6 @@ pub async fn run_web_fetch(
     let mut profile_chrome_data_dir: Option<std::path::PathBuf> = None;
     #[cfg(not(feature = "browser"))]
     let _profile_chrome_data_dir: Option<std::path::PathBuf> = None;
-    #[cfg(feature = "browser")]
-    #[allow(unused_mut)]
-    let mut manual_interaction_required = false;
-    #[cfg(not(feature = "browser"))]
-    let manual_interaction_required = false;
     #[cfg(feature = "browser")]
     #[allow(unused_mut)]
     let mut _profile_lock: Option<crate::fetch::browser::ProfileLock> = None;
@@ -2643,6 +2632,7 @@ pub async fn run_web_fetch(
                     .as_ref()
                     .map(|u| format!("{}://{}", u.scheme(), u.authority()))
                     .unwrap_or_else(|| "<origin>".to_string());
+                #[cfg(feature = "browser")]
                 if let Some(ref pn) = used_profile_name {
                     return Err(browser_profile_requires_attention_error(&origin, pn));
                 }
@@ -2807,7 +2797,7 @@ pub async fn run_web_fetch(
         "origin_backoff_ms": metadata.origin_backoff_ms,
         "browser_profile": used_profile_name,
         "browser_profile_scope": if used_profile_name.is_some() { "persistent" } else { "ephemeral" },
-        "manual_interaction_required": manual_interaction_required,
+        "manual_interaction_required": false,
         "transport": resp.transport.as_deref().unwrap_or("http"),
         "browser_escalated": resp.browser_escalated,
     });
@@ -2840,7 +2830,7 @@ pub async fn run_repo_fetch(
     if args.prefer_local.unwrap_or(false) {
         if let Some(backend) = state.local_backend.as_deref() {
             if backend.is_enabled() {
-                let inventory = state.local_inventory();
+                let inventory = state.local_inventory().await;
                 let parsed_host = parse_code_host_arg(args.host.as_deref())?;
                 let matched = crate::meta::local_inventory::match_local_repo(
                     &inventory,
@@ -2878,7 +2868,7 @@ pub async fn run_repo_fetch(
     }
 
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
-        return Err(ToolError::internal(web_fetch_denied_message()));
+        return Err(ToolError::Validation(web_fetch_denied_message()));
     }
 
     // Parse host.
@@ -3362,7 +3352,9 @@ pub async fn run_repo_map(
         && state.local_backend.is_some();
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
-        return Err(ToolError::internal(live_search_denied_message("repo_map")));
+        return Err(ToolError::Validation(live_search_denied_message(
+            "repo_map",
+        )));
     }
 
     let host = parse_code_host_arg(args.host.as_deref())?;
@@ -3483,7 +3475,7 @@ pub async fn run_repo_map(
     let mut local_checkout_root: Option<std::path::PathBuf> = None;
     if let Some(backend) = state.local_backend.as_deref() {
         if backend.is_enabled() {
-            let inventory = state.local_inventory();
+            let inventory = state.local_inventory().await;
             let matched = crate::meta::local_inventory::match_local_repo(
                 &inventory,
                 req.host.as_ref(),
@@ -3567,7 +3559,7 @@ pub async fn run_batch_fetch(
 
     // Policy check
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
-        return Err(ToolError::internal(web_fetch_denied_message()));
+        return Err(ToolError::Validation(web_fetch_denied_message()));
     }
 
     // Validate items non-empty
@@ -5004,9 +4996,31 @@ pub async fn run_security_search(
     use crate::core::SecuritySearchRequest;
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) {
-        return Err(ToolError::internal(live_search_denied_message(
+        return Err(ToolError::Validation(live_search_denied_message(
             "security_search",
         )));
+    }
+
+    let query_present = args
+        .query
+        .as_deref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    let identifier_present = args.cve_id.is_some()
+        || args.ghsa_id.is_some()
+        || args.osv_id.is_some()
+        || args.rustsec_id.is_some()
+        || args
+            .package
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+    if !query_present && !identifier_present {
+        return Err(ToolError::Validation(
+            "security_search requires a non-empty query, package, \
+             cve_id, ghsa_id, osv_id, or rustsec_id"
+                .into(),
+        ));
     }
 
     let query = args.query.unwrap_or_default();

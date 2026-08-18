@@ -366,30 +366,38 @@ impl ServerState {
     /// Returns the cached local repository inventory, re-running the
     /// discovery walk when the cached snapshot is older than
     /// `LOCAL_INVENTORY_CACHE_TTL`. Returns an empty vector when no
-    /// local backend is configured. Discovery is intentionally
-    /// performed synchronously inside this call so it can be wrapped
-    /// in `spawn_blocking` by callers that need to keep the async
-    /// runtime responsive; the cache keeps the cost bounded across
-    /// repeated tool calls.
-    pub fn local_inventory(&self) -> Vec<LocalRepoIdentity> {
+    /// local backend is configured. Discovery is performed on a blocking
+    /// task to keep the async runtime responsive; the cache keeps the
+    /// cost bounded across repeated tool calls.
+    pub async fn local_inventory(&self) -> Vec<LocalRepoIdentity> {
+        {
+            if let Ok(cache) = self.local_inventory_cache.lock() {
+                if let Some(snapshot) = cache.as_ref() {
+                    if snapshot.fetched_at.elapsed() < LOCAL_INVENTORY_CACHE_TTL {
+                        return snapshot.inventory.clone();
+                    }
+                }
+            }
+        }
+
         let backend = match self.local_backend.as_deref() {
             Some(b) if b.is_enabled() => b,
             _ => return Vec::new(),
         };
 
-        if let Ok(cache) = self.local_inventory_cache.lock() {
-            if let Some(snapshot) = cache.as_ref() {
-                if snapshot.fetched_at.elapsed() < LOCAL_INVENTORY_CACHE_TTL {
-                    return snapshot.inventory.clone();
-                }
-            }
-        }
-
         let roots = backend.roots();
         let mut local_config = backend.config().clone();
         local_config.enabled = true;
-        local_config.roots = roots.iter().map(|(_, p)| p.clone()).collect();
-        let inventory = discover_local_repos(&local_config, 2);
+        let roots_for_walk: Vec<std::path::PathBuf> =
+            roots.iter().map(|(_, p)| p.clone()).collect();
+
+        let inventory = tokio::task::spawn_blocking(move || {
+            let mut cfg = local_config;
+            cfg.roots = roots_for_walk;
+            discover_local_repos(&cfg, 2)
+        })
+        .await
+        .unwrap_or_default();
 
         if let Ok(mut cache) = self.local_inventory_cache.lock() {
             *cache = Some(LocalInventoryCache {

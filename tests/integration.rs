@@ -16454,8 +16454,8 @@ mod security_context_safety {
             browser_lifecycle: None,
         });
 
-        let first = state.local_inventory();
-        let second = state.local_inventory();
+        let first = state.local_inventory().await;
+        let second = state.local_inventory().await;
         assert_eq!(
             first.len(),
             second.len(),
@@ -16463,7 +16463,7 @@ mod security_context_safety {
         );
 
         state.invalidate_local_inventory_cache();
-        let third = state.local_inventory();
+        let third = state.local_inventory().await;
         assert_eq!(first.len(), third.len(), "invalidate+reload should match");
     }
 
@@ -16513,7 +16513,7 @@ mod security_context_safety {
             #[cfg(feature = "browser")]
             browser_lifecycle: None,
         });
-        let inventory = state.local_inventory();
+        let inventory = state.local_inventory().await;
         let names: Vec<&str> = inventory.iter().map(|r| r.root_name.as_str()).collect();
         assert!(
             names.contains(&".hidden_repo"),

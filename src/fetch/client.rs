@@ -28,7 +28,6 @@ use crate::core::sanitize::{
 pub struct FetchClient {
     client: Client,
     limits: FetchLimits,
-    #[allow(dead_code)]
     user_agent: String,
     /// Whether to wrap untrusted fetched text in
     /// `<<<EXTERNAL_UNTRUSTED ...>>>` framing and emit per-response
@@ -347,13 +346,14 @@ impl FetchClient {
                 ct_base.starts_with("text/")
                     || ct_base == "application/json"
                     || ct_base == "application/ld+json"
-                    || ct_base.starts_with("application/") && ct_base.ends_with("+json")
+                    || (ct_base.starts_with("application/") && ct_base.ends_with("+json"))
                     || ct_base == "application/toml"
                     || ct_base == "application/x-yaml"
                     || ct_base == "application/yaml"
                     || ct_base == "application/javascript"
                     || ct_base == "application/typescript"
                     || ct_base == "application/x-sh"
+                    || ct_base == "application/xml"
             })
             .unwrap_or(false);
 
@@ -1231,6 +1231,21 @@ impl FetchClient {
 
         if status == 304 {
             return Ok((304, headers, Vec::new()));
+        }
+
+        if let Some(cl_header) = response.headers().get("content-length") {
+            if let Some(content_length) = cl_header
+                .to_str()
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+            {
+                if content_length > self.limits.max_bytes {
+                    return Err(FetchError::ContentTooLarge(
+                        content_length,
+                        self.limits.max_bytes,
+                    ));
+                }
+            }
         }
 
         let mut body = Vec::new();

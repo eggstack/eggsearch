@@ -520,7 +520,6 @@ pub fn classify_source_kind(url: &str) -> SourceKind {
         || host == "www.npmjs.com"
         || host == "pypi.org"
         || host == "rubygems.org"
-        || host == "pkg.go.dev"
     {
         return SourceKind::PackageRegistry;
     }

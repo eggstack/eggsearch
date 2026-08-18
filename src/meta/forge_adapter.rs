@@ -409,10 +409,17 @@ pub async fn fetch_tree(
             .await
         }
         CodeHost::Gitea | CodeHost::Forgejo => {
-            let base = config
-                .base_url
-                .as_deref()
-                .unwrap_or("https://gitea.example.com/api/v1");
+            let base = config.base_url.as_deref().ok_or_else(|| {
+                let host_label = match host {
+                    CodeHost::Gitea => "gitea",
+                    CodeHost::Forgejo => "forgejo",
+                    _ => unreachable!(),
+                };
+                format!(
+                    "{host_label} host requires an explicit base_url; \
+                     set [forge].{host_label}.base_url in config"
+                )
+            })?;
             let provider_id = match host {
                 CodeHost::Gitea => "gitea_tree",
                 CodeHost::Forgejo => "forgejo_tree",
@@ -593,7 +600,7 @@ async fn fetch_github_tree(
         provider_id: "github_tree".to_string(),
         endpoint_origin: extract_host(base),
         response_bytes_observed: telemetry.aggregate_observed,
-        response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_cap_applied: telemetry.aggregate_observed >= telemetry.aggregate_limit,
         dns_policy_class: classify_host_from_url(base),
         aggregate_byte_cap_reached: budget.exceeded(),
         aggregate_limit: telemetry.aggregate_limit,

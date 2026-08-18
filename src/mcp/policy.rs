@@ -1,6 +1,6 @@
 //! Policy enforcement: gates tool execution based on configured mode.
 
-use crate::core::config::{AppConfig, Mode};
+use crate::core::config::Mode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Policy {
@@ -50,16 +50,6 @@ pub fn web_fetch_denied_message() -> String {
 /// Policy message for any live-search tool gated by `[search].mode`.
 pub fn live_search_denied_message(tool: &str) -> String {
     policy_message(tool, "[search].mode = \"live\"")
-}
-
-#[allow(dead_code)]
-pub(crate) fn policy_for_web_search(cfg: &AppConfig) -> Policy {
-    live_allowed(cfg.search.mode)
-}
-
-#[allow(dead_code)]
-pub(crate) fn policy_for_web_fetch(cfg: &AppConfig) -> Policy {
-    fetch_allowed(cfg.fetch.enabled)
 }
 
 #[cfg(test)]

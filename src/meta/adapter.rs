@@ -364,11 +364,14 @@ impl MetadataSearchAdapter {
     /// Record provider health from raw dispatch results and failures.
     /// Call after dispatch completes but before `provider_failures()`.
     /// Also records timeout failures for providers that never responded.
+    /// `deadline_ms` is reported as the latency for providers that did
+    /// not respond before the dispatch deadline.
     fn record_provider_health(
         &self,
         queried_ids: &[String],
         raw_results: &[(String, Vec<SearchResult>)],
         raw_failures: &[(String, EngineError)],
+        deadline_ms: u64,
     ) {
         // Track which providers responded (success or failure)
         let mut responded: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -390,8 +393,12 @@ impl MetadataSearchAdapter {
         // Record timeout for providers that never responded
         for id in queried_ids {
             if !responded.contains(id.as_str()) {
-                self.health
-                    .record_failure(id, FailureClass::Timeout, "provider timed out", 0);
+                self.health.record_failure(
+                    id,
+                    FailureClass::Timeout,
+                    "provider timed out",
+                    deadline_ms,
+                );
             }
         }
     }
@@ -876,6 +883,7 @@ impl MetadataSearchAdapter {
                     "metasearch global timeout exceeded with {} engines still pending",
                     join_set.len()
                 );
+                join_set.abort_all();
                 break;
             }
             match tokio::time::timeout(remaining, join_set.join_next()).await {
@@ -894,6 +902,7 @@ impl MetadataSearchAdapter {
                         "metasearch global timeout exceeded with {} engines still pending",
                         join_set.len()
                     );
+                    join_set.abort_all();
                     break;
                 }
             }
@@ -901,7 +910,12 @@ impl MetadataSearchAdapter {
         // JoinSet dropped here cancels any in-flight engine tasks.
 
         // Record provider health from raw results and failures
-        self.record_provider_health(&queried_ids, &raw_results, &raw_failures);
+        self.record_provider_health(
+            &queried_ids,
+            &raw_results,
+            &raw_failures,
+            effective_timeout.as_millis() as u64,
+        );
 
         // Aggregate up to the candidate pool size so intent/freshness
         // reranking has the larger pool to work with.
@@ -1237,7 +1251,12 @@ impl MetadataSearchAdapter {
         .await;
 
         // Record provider health from raw results and failures
-        self.record_provider_health(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        self.record_provider_health(
+            &queried_ids,
+            &dispatch.raw_results,
+            &dispatch.raw_failures,
+            effective_timeout.as_millis() as u64,
+        );
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
@@ -1812,7 +1831,12 @@ impl MetadataSearchAdapter {
         .await;
 
         // Record provider health from raw results and failures
-        self.record_provider_health(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        self.record_provider_health(
+            &queried_ids,
+            &dispatch.raw_results,
+            &dispatch.raw_failures,
+            effective_timeout.as_millis() as u64,
+        );
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
@@ -1901,7 +1925,12 @@ impl MetadataSearchAdapter {
         .await;
 
         // Record provider health from raw results and failures
-        self.record_provider_health(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        self.record_provider_health(
+            &queried_ids,
+            &dispatch.raw_results,
+            &dispatch.raw_failures,
+            effective_timeout.as_millis() as u64,
+        );
 
         let providers_failed =
             provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
@@ -2777,8 +2806,7 @@ fn aggregate_rrf(
                     // when a generic HTML scraper also returned the
                     // same URL.
                     existing.metadata =
-                        std::mem::replace(&mut existing.metadata, result.metadata.clone())
-                            .merge(result.metadata);
+                        std::mem::take(&mut existing.metadata).merge(result.metadata);
                 }
                 None => {
                     map.insert(
@@ -2820,6 +2848,11 @@ fn convert_aggregated(a: AggregatedResult, sanitize: bool) -> Option<SourceCard>
         return None;
     }
     if !crate::meta::engines::is_http_url(&a.url) {
+        tracing::debug!(
+            url = %a.url,
+            engines = ?a.engines,
+            "dropping aggregated result with non-http URL"
+        );
         return None;
     }
     let providers: Vec<String> = a.engines.into_iter().collect();

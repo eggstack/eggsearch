@@ -849,7 +849,7 @@ pub fn search_warning_to_agent_warning(sw: &super::SearchWarning) -> AgentWarnin
     if msg.starts_with('[') {
         if let Some(bracket_end) = msg.find(']') {
             let error_class = &msg[1..bracket_end];
-            let description = &msg[bracket_end + 2..];
+            let description = msg.get(bracket_end + 2..).unwrap_or("");
             let code = error_class_to_code(error_class);
             let mut w = AgentWarning::new(code, description.to_string());
             if sw.provider_id != "_system" {

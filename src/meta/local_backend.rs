@@ -948,7 +948,7 @@ impl LocalWorkspaceBackend {
         ignore_stack: &IgnoreStack,
         matches: &mut Vec<LocalMatch>,
         files_scanned: &mut usize,
-        _max_results: usize,
+        max_results: usize,
         start: &Instant,
         timeout: Duration,
         timed_out: &mut bool,
@@ -967,7 +967,8 @@ impl LocalWorkspaceBackend {
                 *timed_out = true;
                 return;
             }
-            if *truncated {
+            if *truncated || matches.len() >= max_results {
+                *truncated = true;
                 return;
             }
 
@@ -1013,7 +1014,7 @@ impl LocalWorkspaceBackend {
                     ignore_stack,
                     matches,
                     files_scanned,
-                    _max_results,
+                    max_results,
                     start,
                     timeout,
                     timed_out,

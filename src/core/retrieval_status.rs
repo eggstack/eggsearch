@@ -519,7 +519,9 @@ pub fn classify_absence(kind: EvidenceAbsenceKind) -> &'static str {
 }
 
 /// Outcome of a single retrieval attempt.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, PartialOrd, Ord,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum RetrievalAttemptOutcome {
     /// Provider returned results.

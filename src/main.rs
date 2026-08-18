@@ -143,14 +143,10 @@ async fn main() -> Result<()> {
         }
         #[cfg(feature = "browser")]
         Commands::BrowserLogin { origin, profile } => {
-            commands::browser_login::run(&cfg, &origin, profile.as_deref()).await;
-            Ok(())
+            commands::browser_login::run(&cfg, &origin, profile.as_deref()).await
         }
         #[cfg(feature = "browser")]
-        Commands::BrowserProfiles { cmd } => {
-            commands::browser_profiles::run(&cfg, &cmd).await;
-            Ok(())
-        }
+        Commands::BrowserProfiles { cmd } => commands::browser_profiles::run(&cfg, &cmd).await,
     }
 }
 

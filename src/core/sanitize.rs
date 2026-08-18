@@ -217,11 +217,13 @@ pub fn scan_injection_markers(s: &str) -> Vec<MarkerHit> {
 /// Wrap `s` in `<<<EXTERNAL_UNTRUSTED field=... id=...>>>` ...
 /// `<<<END>>>` framing delimiters.
 pub fn frame(s: &str, field: &str, id: &str) -> String {
+    let field = field.replace(['\n', '\r'], "");
+    let id = id.replace(['\n', '\r'], "");
     let mut out = String::with_capacity(s.len() + 96);
     out.push_str("<<<EXTERNAL_UNTRUSTED field=");
-    out.push_str(field);
+    out.push_str(&field);
     out.push_str(" id=");
-    out.push_str(id);
+    out.push_str(&id);
     out.push_str(">>>\n");
     out.push_str(s);
     out.push_str("\n<<<END>>>");

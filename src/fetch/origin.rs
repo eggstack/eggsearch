@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{Mutex, Semaphore};
 
@@ -51,7 +52,14 @@ impl Default for OriginPolicy {
 pub struct OriginState {
     pub semaphore: Arc<Semaphore>,
     pub failures: Mutex<FailureState>,
-    pub last_access: Mutex<Instant>,
+    pub last_access_ms: AtomicU64,
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 pub struct FailureState {
@@ -188,7 +196,7 @@ impl OriginController {
         {
             let states = self.states.lock().await;
             if let Some(state) = states.get(key) {
-                *state.last_access.lock().await = Instant::now();
+                state.last_access_ms.store(now_ms(), Ordering::Relaxed);
                 return Arc::clone(state);
             }
         }
@@ -201,7 +209,7 @@ impl OriginController {
         if states.len() >= self.max_entries {
             let oldest_key = states
                 .iter()
-                .min_by_key(|(_, s)| *s.last_access.blocking_lock())
+                .min_by_key(|(_, s)| s.last_access_ms.load(Ordering::Relaxed))
                 .map(|(k, _)| k.clone());
             if let Some(oldest) = oldest_key {
                 states.remove(&oldest);
@@ -211,7 +219,7 @@ impl OriginController {
         let state = Arc::new(OriginState {
             semaphore: Arc::new(Semaphore::new(self.defaults.http_concurrency)),
             failures: Mutex::new(FailureState::new()),
-            last_access: Mutex::new(Instant::now()),
+            last_access_ms: AtomicU64::new(now_ms()),
         });
         states.insert(key.clone(), Arc::clone(&state));
         state

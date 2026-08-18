@@ -251,7 +251,7 @@ impl<'a> HtmlExtractor<'a> {
             .and_then(|sel| document.select(&sel).next())
             .map(|body_el| {
                 let mut text = String::new();
-                extract_text_recursive(&body_el, &mut text);
+                extract_text_recursive(&body_el, &mut text, 0);
                 text
             })
             .unwrap_or_else(|| document.root_element().text().collect::<String>());
@@ -284,7 +284,12 @@ const STRIP_TAGS: &[&str] = &[
     "script", "style", "noscript", "svg", "nav", "footer", "header", "form", "aside",
 ];
 
-fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String) {
+const MAX_EXTRACT_DEPTH: usize = 256;
+
+fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String, depth: usize) {
+    if depth >= MAX_EXTRACT_DEPTH {
+        return;
+    }
     for child in element.children() {
         if let Some(text) = child.value().as_text() {
             let s = text.trim();
@@ -305,7 +310,7 @@ fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String) {
                 out.push(' ');
             }
             if let Some(child_elem) = scraper::ElementRef::wrap(child) {
-                extract_text_recursive(&child_elem, out);
+                extract_text_recursive(&child_elem, out, depth + 1);
             }
             if is_block {
                 out.push(' ');

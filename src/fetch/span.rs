@@ -310,12 +310,13 @@ fn clamp_and_truncate(
     max_block_lines: Option<usize>,
     reasons: &mut Vec<String>,
 ) -> (u32, u32, bool) {
-    let ls = u32::try_from(block_start)
-        .unwrap_or(u32::MAX)
-        .saturating_add(1);
-    let mut le = u32::try_from(block_end)
-        .unwrap_or(u32::MAX)
-        .saturating_add(1);
+    let (lo, hi) = if block_start <= block_end {
+        (block_start, block_end)
+    } else {
+        (block_end, block_start)
+    };
+    let ls = u32::try_from(lo).unwrap_or(u32::MAX).saturating_add(1);
+    let mut le = u32::try_from(hi).unwrap_or(u32::MAX).saturating_add(1);
     let mut truncated = false;
     if let Some(max) = max_block_lines {
         let max = u32::try_from(max).unwrap_or(u32::MAX);
@@ -1033,7 +1034,7 @@ mod tests {
         let mut reasons = Vec::new();
         assert_eq!(
             clamp_and_truncate(10, 5, Some(3), &mut reasons),
-            (11, 6, false)
+            (6, 8, true)
         );
     }
 

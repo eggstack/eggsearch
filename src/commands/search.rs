@@ -17,6 +17,10 @@ pub async fn run(
         anyhow::bail!("search is disabled by policy; set [search].mode = \"live\" to enable");
     }
 
+    if query.trim().is_empty() {
+        anyhow::bail!("query must not be empty");
+    }
+
     let state = Arc::new(ServerState::build(cfg.clone())?);
 
     let effective_providers = cfg

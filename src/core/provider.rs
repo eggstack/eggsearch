@@ -1731,6 +1731,9 @@ pub fn provider_skip_code(
                 if id.contains("searxng") && !searxng_configured {
                     return Some(ProviderSkipCode::MissingSearxngConfig);
                 }
+                if is_api_provider(id) {
+                    return Some(ProviderSkipCode::MissingApiKey);
+                }
                 return Some(ProviderSkipCode::Unknown);
             }
         }

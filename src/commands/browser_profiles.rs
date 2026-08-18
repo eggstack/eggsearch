@@ -1,48 +1,41 @@
 use std::sync::Arc;
 
+use anyhow::{anyhow, Result};
 use eggsearch::core::config::AppConfig;
 use eggsearch::fetch::browser::{discover_browser, parse_browser_major_version, ProfileManager};
 
-pub async fn run(cfg: &AppConfig, subcmd: &BrowserProfilesCmd) {
+pub async fn run(cfg: &AppConfig, subcmd: &BrowserProfilesCmd) -> Result<()> {
     let bp = &cfg.fetch.browser.persistent_profiles;
-    let mgr = match ProfileManager::new(
+    let mgr = ProfileManager::new(
         bp.profiles_dir.as_deref(),
         bp.enabled,
         bp.allowed_profiles.clone(),
-    ) {
-        Ok(m) => Arc::new(m),
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-    };
+    )
+    .map(Arc::new)
+    .map_err(|e| anyhow!("error: {e}"))?;
 
     match subcmd {
-        BrowserProfilesCmd::List => run_list(&mgr),
-        BrowserProfilesCmd::Inspect { name } => run_inspect(&mgr, name),
-        BrowserProfilesCmd::Remove { name } => run_remove(&mgr, name),
+        BrowserProfilesCmd::List => run_list(&mgr).await,
+        BrowserProfilesCmd::Inspect { name } => run_inspect(&mgr, name).await,
+        BrowserProfilesCmd::Remove { name } => run_remove(&mgr, name).await,
     }
 }
 
-fn run_list(mgr: &ProfileManager) {
+async fn run_list(mgr: &ProfileManager) -> Result<()> {
     if !mgr.profiles_enabled() {
         println!("persistent browser profiles are disabled");
         println!("enable [fetch.browser].persistent_profiles_enabled in config");
-        return;
+        return Ok(());
     }
 
-    let profiles = match mgr.list_profiles() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("error listing profiles: {e}");
-            std::process::exit(1);
-        }
-    };
+    let profiles = mgr
+        .list_profiles()
+        .map_err(|e| anyhow!("error listing profiles: {e}"))?;
 
     if profiles.is_empty() {
         println!("no browser profiles found");
         println!("create one with: eggsearch browser-login <origin> --profile <name>");
-        return;
+        return Ok(());
     }
 
     println!(
@@ -66,21 +59,17 @@ fn run_list(mgr: &ProfileManager) {
         );
     }
     println!("\n{} profile(s) total", profiles.len());
+    Ok(())
 }
 
-fn run_inspect(mgr: &ProfileManager, name: &str) {
+async fn run_inspect(mgr: &ProfileManager, name: &str) -> Result<()> {
     if !mgr.profiles_enabled() {
-        eprintln!("error: persistent browser profiles are disabled");
-        std::process::exit(1);
+        return Err(anyhow!("persistent browser profiles are disabled"));
     }
 
-    let meta = match mgr.resolve_by_name(name) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let meta = mgr
+        .resolve_by_name(name)
+        .map_err(|e| anyhow!("error: {e}"))?;
 
     let profile_dir = mgr.profile_dir_for(&meta.id);
     let chrome_data = mgr.chrome_data_dir_for(&meta.id);
@@ -147,23 +136,19 @@ fn run_inspect(mgr: &ProfileManager, name: &str) {
     if let Some(warning) = compat_warning {
         println!("  Compatibility:    {warning}");
     }
+    Ok(())
 }
 
-fn run_remove(mgr: &ProfileManager, name: &str) {
+async fn run_remove(mgr: &ProfileManager, name: &str) -> Result<()> {
     if !mgr.profiles_enabled() {
-        eprintln!("error: persistent browser profiles are disabled");
-        std::process::exit(1);
+        return Err(anyhow!("persistent browser profiles are disabled"));
     }
 
-    match mgr.remove_profile(name) {
-        Ok(removed_id) => {
-            println!("profile '{name}' removed (id: {removed_id})");
-        }
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-    }
+    let removed_id = mgr
+        .remove_profile(name)
+        .map_err(|e| anyhow!("error: {e}"))?;
+    println!("profile '{name}' removed (id: {removed_id})");
+    Ok(())
 }
 
 fn compute_dir_size(path: &std::path::Path) -> u64 {

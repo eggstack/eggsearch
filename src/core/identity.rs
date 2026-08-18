@@ -98,8 +98,10 @@ pub fn entity_prefix(entity: &str) -> Vec<u8> {
 
 /// Write a length-prefixed byte slice to the hasher.
 /// Prefix prevents field-boundary ambiguity (e.g. "ab"+"c" vs "a"+"bc").
+/// Lengths above u32::MAX are clamped to u32::MAX to keep the prefix
+/// stable; in practice inputs are bounded by upstream extract limits.
 pub fn write_str(hasher: &mut FnvHasher, s: &str) {
-    let len = s.len() as u32;
+    let len = u32::try_from(s.len()).unwrap_or(u32::MAX);
     hasher.write(&len.to_le_bytes());
     hasher.write(s.as_bytes());
 }
@@ -212,7 +214,7 @@ pub fn canonicalize_url(url: &str) -> String {
             (path_query_frag.as_str(), "")
         };
         let trimmed = path.trim_end_matches('/');
-        if trimmed.is_empty() || trimmed == "?" {
+        if trimmed.is_empty() {
             format!("/{query}")
         } else {
             format!("{trimmed}{query}")

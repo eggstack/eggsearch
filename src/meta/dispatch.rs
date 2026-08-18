@@ -800,8 +800,8 @@ pub(crate) async fn dispatch_parallel(
         a.subquery_id
             .cmp(&b.subquery_id)
             .then(a.provider_id.cmp(&b.provider_id))
-            .then(format!("{:?}", a.intended_roles).cmp(&format!("{:?}", b.intended_roles)))
-            .then(format!("{:?}", a.outcome).cmp(&format!("{:?}", b.outcome)))
+            .then(a.intended_roles.cmp(&b.intended_roles))
+            .then(a.outcome.cmp(&b.outcome))
     });
 
     // Convert to the flat format expected by aggregate_rrf

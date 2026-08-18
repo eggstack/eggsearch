@@ -7,7 +7,18 @@ use crate::core::source_card::SourceKind;
 
 #[allow(missing_docs)]
 #[derive(
-    Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+    PartialOrd,
+    Ord,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceRole {
