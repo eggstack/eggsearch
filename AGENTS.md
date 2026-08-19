@@ -38,7 +38,7 @@ src/
   lib.rs           # library root, re-exports core/fetch/mcp/meta
   config.rs        # CLI config loader
   commands/        # subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
-  core/            # types, config, error, query, sanitize, identity, warning
+  core/            # types, config, error, query, sanitize, identity, warning, evidence roles, security, conflict, source cards
   meta/            # MetadataSearchAdapter + 34 vendored engines + forge adapter + local workspace cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), tool definitions, server state
