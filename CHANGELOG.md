@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-19
+
+### Changed
+
+- **README trimmed and detail offloaded to docs.** README reduced from 137 to 78 lines. PDF extraction, browser rendering, and browser profiles sections moved to new `docs/features.md`. README now links to individual docs for in-depth coverage. All links use relative paths for crates.io compatibility.
+
 ## [0.3.6] - 2026-08-15
 
 ## [0.3.5] - 2026-07-08

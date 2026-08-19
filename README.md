@@ -5,95 +5,9 @@
 [![License](https://img.shields.io/crates/l/eggsearch.svg)](https://github.com/eggstack/eggsearch#license)
 [![Downloads](https://img.shields.io/crates/d/eggsearch.svg)](https://crates.io/crates/eggsearch)
 
-eggsearch is a lightweight MCP (Model Context Protocol) search and fetch server for AI agents. It combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio.
+Lightweight MCP (Model Context Protocol) search and fetch server for AI agents. Combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio.
 
 **No API keys are required for the default installation.** eggsearch ships with keyless web, fetch, advisory, registry, and scholarly paths. Credentialed forge and search adapters are optional enhancements.
-
-Generic search uses the server's configured default provider list. The shipped defaults favor DuckDuckGo, Startpage, and Yahoo; other providers such as Brave, SearXNG, GitHub/GitLab/Gitea code and issue search, OSV, local workspace search, security advisory databases (GitHub Advisory, NVD, CISA KEV, RustSec), package registries (crates.io, PyPI, npm, Go Proxy, Maven Central, NuGet, RubyGems, Packagist), scholarly search (OpenAlex, Crossref, Semantic Scholar), and Sourcegraph code search are available when configured.
-
-## Stable MCP Surface
-
-eggsearch exposes ten stable MCP tools:
-
-- `web_search` - live metasearch over configured providers
-- `web_fetch` - bounded fetch of one explicit HTTP(S) URL
-- `batch_fetch` - bounded batch fetch over explicit URLs or repo locators
-- `provider_status` - diagnostic provider/capability report with routability info plus workflow recipes
-- `repo_search` - structured repository evidence discovery with grouped bundles
-- `repo_fetch` - fetch a specific repo file span or symbol
-- `repo_map` - bounded repository structure discovery with native remote tree retrieval
-- `security_search` - vulnerability and advisory retrieval
-- `research_search` - multi-source evidence discovery
-- `build_evidence_bundle` - deterministic, non-summarizing evidence packaging
-
-Search tools return machine-readable `next_actions` hints. `web_fetch` supports `extract_mode: "text"`, `"markdown"`, and `"metadata_only"`.
-
-### PDF Extraction (Optional)
-
-`web_fetch` handles PDF documents when the `pdf` Cargo feature is enabled and `[fetch].pdf_enabled = true` in config. PDF extraction is text-only via `lopdf` — no OCR, no rendering, no image extraction. Per-page quality classification detects blank, scanned, CID-corrupt, and sparse text pages. Document metadata (title, author, subject, keywords, creator, producer, dates) and bookmark/outline entries are extracted where available. Page selection via `pages` field supports `1`, `1,3,5`, `1-5`, and `1,3,7-10` syntax (one-indexed).
-
-### Browser Rendering (Optional)
-
-`web_fetch` supports optional headless Chrome/Chromium rendering when the `browser` Cargo feature is enabled and `[fetch].browser.enabled = true` in config. Browser rendering escalates from HTTP for JavaScript-heavy pages that ordinary fetching cannot render. It discovers an already-installed system Chrome/Chromium — it never downloads a browser. Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured errors but never solved. Browser rendering is public-network-only and rejects localhost/private targets.
-
-The `render` parameter controls transport selection:
-- `http_only` (default): HTTP only, never launches Chrome
-- `auto`: HTTP first, escalates to browser at most once for JavaScript shells or non-interactive verification pages. Does not escalate for interactive challenges, authentication pages, or rate-limited responses.
-- `browser`: Browser directly, no HTTP prefetch. Fails if no Chrome/Chromium executable is available.
-
-An explicitly configured invalid browser executable path fails deterministically — it does not silently fall back to auto-discovery.
-
-Interactive challenge outcomes (CAPTCHAs, Turnstile, login walls) return structured error codes (`browser_manual_interaction_required`, `browser_profile_requires_attention`) through the MCP error response. These are never automated.
-
-The response includes `transport` (`"http"` or `"browser"`), `browser_escalated` (whether auto escalated), and the `browser_profile` display name when a persistent profile was used. Fresh raw cache entries can satisfy a new extraction mode, link setting, character bound, or PDF page selection without another network request.
-
-### Browser Profiles (Optional)
-
-Persistent browser profiles allow a local operator to establish a dedicated browser session for an origin that requires authentication or interactive human verification. Profiles are created only through CLI commands — MCP callers cannot create profiles or launch headed browsers. Each profile requires explicit headed local setup via `browser-login` and is restricted to its recorded exact origin.
-
-```bash
-# Create a profile and open a headed browser for login
-eggsearch browser-login https://example.com --profile my-portal
-
-# List all profiles
-eggsearch browser-profiles list
-
-# Inspect a profile
-eggsearch browser-profiles inspect my-portal
-
-# Remove a profile
-eggsearch browser-profiles remove my-portal
-```
-
-Once a profile is established, use it in `web_fetch`:
-
-```json
-{
-  "url": "https://example.com/dashboard",
-  "browser_profile": "my-portal"
-}
-```
-
-Profiles are disabled by default. Enable with `[fetch.browser].persistent_profiles_enabled = true` in config. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. `browser-login` and profile-scoped MCP fetches use the same Eggsearch-owned `chrome-data` directory; login state is available through the browser's default profile context, while each profile fetch uses a request-scoped browser process. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies. Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped).
-
-PDF layout reconstruction and OCR are deferred — PDF extraction is text-only via `lopdf` with per-page quality classification.
-
-## Safety Defaults
-
-- Web and remote results are `external_untrusted`.
-- Local workspace results are `local_trusted`, but they are still not instruction-trusted.
-- `sanitize_output` defaults to `true` for both search and fetch.
-- `web_fetch` is bounded and explicit: it does not crawl, does not execute JavaScript, and only fetches one requested URL.
-- Fetch targets are validated against blocked address ranges (private networks, loopback, link-local, multicast, reserved, and documentation addresses). Redirect targets are revalidated before being followed.
-- `provider_status` is diagnostic only; it reports configured providers, routability, skip reasons and codes, capabilities, cached health, and workflow recipes.
-
-Retrieval responses expose provider-scoped attempts. A zero-result attempt means the
-provider completed successfully; `provider_failed`, `deadline_prevented_completion`,
-`provider_capability_unavailable`, and `provider_skipped_by_policy` are distinct
-states. A candidate limit reached without proof of more results is reported as
-`limit_reached_unknown`, not confirmed truncation.
-
-For the full operator threat model, including fetch network boundaries, trust classes, prompt-injection handling, local workspace caveats, provider disclosure notes, and escape-hatch risks, see [`docs/threat-model.md`](docs/threat-model.md).
 
 ## Install
 
@@ -106,6 +20,33 @@ cargo install eggsearch
 ```bash
 eggsearch mcp stdio
 ```
+
+## MCP Tools
+
+| Tool | Purpose |
+|------|---------|
+| `web_search` | Live metasearch over configured providers |
+| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL |
+| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators |
+| `provider_status` | Diagnostic provider/capability report with workflow recipes |
+| `repo_search` | Structured repository evidence discovery with grouped bundles |
+| `repo_fetch` | Fetch a specific repo file span or symbol |
+| `repo_map` | Bounded repository structure discovery |
+| `security_search` | Vulnerability and advisory retrieval |
+| `research_search` | Multi-source evidence discovery |
+| `build_evidence_bundle` | Deterministic, non-summarizing evidence packaging |
+
+Search tools return machine-readable `next_actions` hints. See [tool-matrix.md](docs/tool-matrix.md) for full tool reference.
+
+## Safety
+
+- Web and remote results are `external_untrusted`
+- `sanitize_output` defaults to `true`
+- Fetch is bounded and explicit — no crawling, no JavaScript execution, one URL per call
+- Fetch targets validated against blocked address ranges (private networks, loopback, link-local, multicast, reserved, documentation)
+- Provider errors are bounded before exposure
+
+See [safety.md](docs/safety.md) and [threat-model.md](docs/threat-model.md) for full details.
 
 ## Build From Source
 
@@ -121,17 +62,17 @@ The binary is written to `target/release/eggsearch`.
 make check
 ```
 
-That runs formatting, clippy, feature compilation, and the deterministic test suite. `make release-check` adds documentation, release-build, and package dry-run checks for maintainers preparing a crates.io release.
+Runs formatting, clippy, feature compilation, and the deterministic test suite. Native forge smoke tests exercise the adapter path directly with configured API tokens — these are **maintainer-only** diagnostics, not user-facing. See [release.md](docs/release.md) for the full release process.
 
-Native forge smoke tests (`tests/native_forge_smoke.rs`) exercise the adapter path directly with configured API tokens. These are **maintainer-only** diagnostics — users do not need these credentials.
+## Documentation
 
-## Docs
-
-- [Provider setup](docs/provider-setup.md)
-- [Configuration](docs/config.md)
-- [Safety and fetch behavior](docs/safety.md)
-- [Threat model](docs/threat-model.md)
-- [Tool matrix](docs/tool-matrix.md)
-- [Agent workflows](docs/agent-workflows.md)
-- [Architecture contract](docs/architecture/codegg-contract.md)
-- [Release checklist](docs/release-checklist.md)
+- [Configuration](docs/config.md) — config file reference, profiles, defaults
+- [Provider Setup](docs/provider-setup.md) — all 34 providers, skip codes, health
+- [Optional Features](docs/features.md) — PDF extraction, browser rendering, browser profiles
+- [Tool Matrix](docs/tool-matrix.md) — compact tool reference with trust semantics
+- [Agent Workflows](docs/agent-workflows.md) — recommended tool call sequences, evidence roles
+- [Safety and Fetch Behavior](docs/safety.md) — fetch boundaries, blocked ranges, sanitization
+- [Threat Model](docs/threat-model.md) — trust boundaries, prompt injection, escape hatches
+- [Architecture Overview](docs/architecture/overview.md) — module map, data flows
+- [MCP Response Contract](docs/architecture/codegg-contract.md) — trust model, warnings, deterministic IDs
+- [Release Process](docs/release.md) — preparation, verification, publication
