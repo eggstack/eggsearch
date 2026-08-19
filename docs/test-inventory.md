@@ -1,18 +1,14 @@
 # Test Inventory
 
-Auto-generated inventory of all hardening and regression test suites.
-Last updated: Phase 3-5 production closure.
+Inventory of all hardening and regression test suites.
 
 ## Test Counts
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 3950 | 9 |
-| `--no-default-features` | 3662 | 0 |
-| `--features mock` | 3935 | 0 |
-| `--features pdf` | 3677 | 0 |
+| `--all-features` | 4716 | 21 |
 
-## Property Tests (15 suites, 243 tests)
+## Property Tests (17 suites)
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
@@ -29,6 +25,9 @@ Last updated: Phase 3-5 production closure.
 | `property_render_metadata` | None | 11 | TrustMarkers merge, sanitization metadata consistency, outline-reference bounds |
 | `property_local_fs` | None | 12 | Path joining, extensions, skip dirs, binary extensions, scoring |
 | `property_local_fs_extended` | None | 25 | Symlinks, path traversal, hidden paths, root containment, permission denied |
+| `property_forge_url` | None | 17 | Forge URL validation, credential rejection, loopback, private ranges |
+| `property_conflict` | None | 38 | Conflict detection, entity scoping, source attribution |
+| `property_retrieval` | None | 61 | Retrieval attempt ledger, absence kinds, truncation evidence |
 | `dispatch_fault_injection` | `mock` | 29 | Provider failure, timeout, hang, health transitions, concurrency, panic |
 | `adversarial_corpus` | None | 10 | Structural validation of adversarial corpus JSON files |
 
@@ -103,18 +102,22 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `workflow_resolution` | Workflow resolution |
 | `research_role_mapping` | Research role mapping |
 
-## Schema/Contract Tests (6 suites)
+## Schema/Contract Tests (9 suites)
 
 | Suite | Focus |
 |-------|-------|
 | `schema_identity_registry` | Identity function stability |
 | `fetch_safety` | Fetch safety bounds |
 | `security_applicability_corpus` | Security applicability pipeline |
+| `security_applicability_phase8` | Security applicability phase 8 regression |
+| `security_applicability_regression` | Security applicability regression |
 | `research_evidence_corpus` | Research evidence regression |
+| `research_semantic_roles` | Research semantic role mapping |
 | `recipes_next_actions` | Workflow hint generation |
 | `evidence_bundle_handoff` | Evidence bundle packaging |
+| `evidence_integration` | Evidence integration pipeline |
 
-## Documentation Contract Tests (4 suites)
+## Documentation Contract Tests (5 suites)
 
 | Suite | Focus |
 |-------|-------|
@@ -122,6 +125,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `docs_provider_inventory` | Provider ID validation |
 | `docs_tool_names` | Tool name validation |
 | `docs_safety_vocabulary` | Safety vocabulary validation |
+| `docs_keyless_contract` | Keyless-core runtime contract |
 | `browser_profiles` | Browser profile management (requires `browser` feature) |
 
 ## CI Jobs

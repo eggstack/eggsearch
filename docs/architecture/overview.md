@@ -1,6 +1,6 @@
 # eggsearch Architecture Overview
 
-**Version:** 0.3.5 · **Rust edition:** 2021 · **MSRV:** 1.88
+**Version:** 0.3.6 · **Rust edition:** 2021 · **MSRV:** 1.88
 **Crate type:** Single library + binary (no workspace)
 
 eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches explicit HTTP(S) URLs on demand with bounded text extraction. Transport is MCP over stdio only.
@@ -12,7 +12,8 @@ eggsearch is a lightweight MCP (Model Context Protocol) search/fetch server for 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLI (main.rs)                        │
-│  clap subcommands: doctor | search | mcp | fetch | providers│
+│  clap subcommands: doctor | search | mcp | fetch | providers  │
+│  browser-login | browser-profiles                             │
 └──────────┬──────────────────────────────────┬───────────────┘
            │                                  │
            ▼                                  ▼
@@ -71,7 +72,7 @@ The four top-level library modules (`core`, `meta`, `fetch`, `mcp`) plus the `co
 | **meta** | `src/meta/` | Metasearch adapter + 34 vendored search engines. RRF aggregation, query planning, provider health, result grouping, suggested fetches, local workspace backend | [meta.md](meta.md) |
 | **fetch** | `src/fetch/` | HTTP fetch client, HTML content extraction, PDF extraction, span selection, SSRF protection, code-host URL rewriting | [fetch.md](fetch.md) |
 | **mcp** | `src/mcp/` | MCP server over stdio (rmcp), 10 tool definitions, shared server state, policy enforcement | [mcp.md](mcp.md) |
-| **commands** | `src/commands/` | CLI subcommands: doctor, search, mcp, fetch, providers | [commands.md](commands.md) |
+| **commands** | `src/commands/` | CLI subcommands: doctor, search, mcp, fetch, providers, browser-login, browser-profiles | [commands.md](commands.md) |
 | **testing** | `tests/` | Integration, corpus, schema/contract, and documentation contract tests | [testing.md](testing.md) |
 
 ### Subsystem Deep Dives
@@ -326,6 +327,7 @@ Forge API base URLs are validated by `validate_base_url()` before use: embedded 
 |------|---------|
 | `mock` | Test-only mock engine harness (`src/meta/mock.rs`) — **required for integration/corpus tests** |
 | `pdf` | PDF text extraction via `lopdf` |
+| `browser` | Optional headless Chrome/Chromium rendering via `chromiumoxide` |
 | `live-smoke` | Live network smoke tests (implies `mock`); ignored by default |
 
 ---
@@ -336,11 +338,11 @@ Forge API base URLs are validated by `validate_base_url()` before use: embedded 
 make check            # routine gate (fmt + clippy + no-default compile check + all-features tests)
 make release-check    # release gate (routine + docs + release-build + publish-dry-run)
 cargo fmt --check     # format check
-cargo clippy --all-targets --all-features -- -D warnings  # zero warnings required
-cargo test --all-features  # all tests
-cargo test --features mock  # mock feature tests (integration + corpus)
-cargo build --release  # release build
-cargo publish --dry-run  # pre-publish check
+cargo clippy --locked --all-targets --all-features -- -D warnings  # zero warnings required
+cargo test --locked --all-features  # all tests
+cargo test --locked --features mock  # mock feature tests (integration + corpus)
+cargo build --locked --release  # release build
+cargo publish --dry-run --locked  # pre-publish check
 ```
 
 ---
@@ -355,7 +357,7 @@ For detailed analysis of each component:
 2. [meta.md](meta.md) — Metasearch adapter, 34 engines, RRF aggregation, query planning, provider health, local workspace
 3. [fetch.md](fetch.md) — HTTP client, content extraction, SSRF protection, code-host rewriting, span selection, PDF
 4. [mcp.md](mcp.md) — MCP server, 10 tool definitions, state management, policy enforcement
-5. [commands.md](commands.md) — CLI subcommands (doctor, search, mcp, fetch, providers)
+5. [commands.md](commands.md) — CLI subcommands (doctor, search, mcp, fetch, providers, browser-login, browser-profiles)
 
 ### Subsystem Deep Dives
 

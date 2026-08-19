@@ -110,12 +110,12 @@ Skills provide specialized instructions and workflows for specific tasks.
 
 | Skill | Location | Use When |
 |-------|----------|----------|
-| `eggsearch-architecture` | `skills/eggsearch-architecture/` | Working with internals, crate layout, provider model, adapter pattern |
-| `eggsearch-dev` | `skills/eggsearch-dev/` | Building, testing, contributing to eggsearch |
-| `eggsearch-mcp` | `skills/eggsearch-mcp/` | Integrating with MCP tools, tool selection, workflows, evidence bundles |
-| `eggsearch-release` | `skills/eggsearch-release/` | Preparing or cutting releases |
+| `eggsearch-architecture` | `.opencode/skills/eggsearch-architecture/` | Working with internals, crate layout, provider model, adapter pattern |
+| `eggsearch-dev` | `.opencode/skills/eggsearch-dev/` | Building, testing, contributing to eggsearch |
+| `eggsearch-mcp` | `.opencode/skills/eggsearch-mcp/` | Integrating with MCP tools, tool selection, workflows, evidence bundles |
+| `eggsearch-release` | `.opencode/skills/eggsearch-release/` | Preparing or cutting releases |
 
-Skills are symlinked from `.opencode/skills/` and `.agents/skills/` to the canonical `skills/` directory.
+Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/skills/`.
 
 ## Key Architecture
 
