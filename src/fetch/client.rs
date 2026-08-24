@@ -612,16 +612,15 @@ impl FetchClient {
                 max_total_chars: self.limits.pdf_max_total_chars,
             };
 
-            let pdf_extract_opts = pdf_options.map(|opts| {
-                let selected_pages = opts.pages.as_ref().and_then(|spec| {
-                    super::pdf::parse_pdf_pages(
+            let pdf_extract_opts = if let Some(opts) = pdf_options {
+                let selected_pages = match opts.pages.as_deref() {
+                    Some(spec) => Some(super::pdf::parse_pdf_page_spec(
                         spec,
-                        0, // total_pages is checked inside extract_pdf_text
                         self.limits.pdf_max_pages,
-                    )
-                    .ok()
-                });
-                super::pdf::PdfExtractOptions {
+                    )?),
+                    None => None,
+                };
+                Some(super::pdf::PdfExtractOptions {
                     selected_pages,
                     password: opts.pdf_password.clone(),
                     include_media: opts.include_media.unwrap_or(false),
@@ -636,8 +635,10 @@ impl FetchClient {
                             super::pdf::PdfOcrPolicy::Always
                         }
                     },
-                }
-            });
+                })
+            } else {
+                None
+            };
 
             let mut pdf_result = super::pdf::extract_pdf_text(
                 &body,
@@ -1225,6 +1226,12 @@ impl FetchClient {
         let headers: std::collections::HashMap<String, String> = response
             .headers()
             .iter()
+            .filter(|(k, _)| {
+                matches!(
+                    k.as_str(),
+                    "etag" | "last-modified" | "cache-control" | "expires" | "vary"
+                )
+            })
             .filter_map(|(k, v)| {
                 v.to_str()
                     .ok()

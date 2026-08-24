@@ -21,6 +21,10 @@ const SKIP_TAGS: &[&str] = &[
     "script", "style", "noscript", "svg", "nav", "footer", "header", "form", "aside", "template",
 ];
 
+/// Maximum recursion depth for HTML tree walks. Adversarial markup
+/// with extreme nesting must not overflow the stack.
+const MAX_RENDER_DEPTH: usize = 256;
+
 /// Language class mappings for code blocks.
 fn normalize_language(lang: &str) -> String {
     match lang {
@@ -67,6 +71,7 @@ pub fn render_blocks(
         base_url,
         &mut warnings,
         markdown,
+        0,
     );
 
     // Block-boundary-aware truncation: walk blocks, accumulate chars,
@@ -192,7 +197,7 @@ fn probe_root<'a>(
 ) -> (usize, usize) {
     blocks.clear();
     outline.clear();
-    walk_element(element, blocks, outline, base_url, warnings, markdown);
+    walk_element(element, blocks, outline, base_url, warnings, markdown, 0);
     let total_chars: usize = blocks.iter().map(|b| b.text.chars().count()).sum();
     (blocks.len(), total_chars)
 }
@@ -266,7 +271,11 @@ fn walk_element(
     base_url: &str,
     warnings: &mut Vec<String>,
     markdown: bool,
+    depth: usize,
 ) {
+    if depth >= MAX_RENDER_DEPTH {
+        return;
+    }
     for child in element.children() {
         let child_elem = match ElementRef::wrap(child) {
             Some(e) => e,
@@ -388,10 +397,18 @@ fn walk_element(
                 });
             }
             "ul" | "ol" => {
-                render_list(&child_elem, blocks, base_url, markdown);
+                render_list(&child_elem, blocks, base_url, markdown, 0);
             }
             _ => {
-                walk_element(child_elem, blocks, outline, base_url, warnings, markdown);
+                walk_element(
+                    child_elem,
+                    blocks,
+                    outline,
+                    base_url,
+                    warnings,
+                    markdown,
+                    depth + 1,
+                );
             }
         }
     }
@@ -406,7 +423,7 @@ fn collect_inline_text<'a>(
     base_url: &str,
 ) -> String {
     let mut parts = Vec::new();
-    collect_text_parts(node, &mut parts, markdown, base_url);
+    collect_text_parts(node, &mut parts, markdown, base_url, 0);
     let text = parts.join("");
     text.split_whitespace()
         .collect::<Vec<_>>()
@@ -420,7 +437,11 @@ fn collect_text_parts<'a>(
     parts: &mut Vec<String>,
     markdown: bool,
     base_url: &str,
+    depth: usize,
 ) {
+    if depth >= MAX_RENDER_DEPTH {
+        return;
+    }
     if let Some(text) = node.value().as_text() {
         let s = text.trim();
         if !s.is_empty() {
@@ -452,7 +473,7 @@ fn collect_text_parts<'a>(
             return;
         }
         for child in node.children() {
-            collect_text_parts(child, parts, markdown, base_url);
+            collect_text_parts(child, parts, markdown, base_url, depth + 1);
         }
     }
 }
@@ -460,11 +481,14 @@ fn collect_text_parts<'a>(
 /// Collect raw text from a node, preserving whitespace (for code blocks).
 fn collect_raw_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
     let mut text = String::new();
-    collect_raw_text_inner(node, &mut text);
+    collect_raw_text_inner(node, &mut text, 0);
     text
 }
 
-fn collect_raw_text_inner<'a>(node: NodeRef<'a, scraper::Node>, text: &mut String) {
+fn collect_raw_text_inner<'a>(node: NodeRef<'a, scraper::Node>, text: &mut String, depth: usize) {
+    if depth >= MAX_RENDER_DEPTH {
+        return;
+    }
     if let Some(t) = node.value().as_text() {
         text.push_str(t);
     } else if let Some(elem) = ElementRef::wrap(node) {
@@ -472,7 +496,7 @@ fn collect_raw_text_inner<'a>(node: NodeRef<'a, scraper::Node>, text: &mut Strin
             return;
         }
         for child in node.children() {
-            collect_raw_text_inner(child, text);
+            collect_raw_text_inner(child, text, depth + 1);
         }
     }
 }
@@ -504,7 +528,16 @@ fn detect_language(elem: ElementRef) -> Option<String> {
     None
 }
 
-fn render_list(list: &ElementRef, blocks: &mut Vec<RenderedBlock>, base_url: &str, markdown: bool) {
+fn render_list(
+    list: &ElementRef,
+    blocks: &mut Vec<RenderedBlock>,
+    base_url: &str,
+    markdown: bool,
+    depth: usize,
+) {
+    if depth >= MAX_RENDER_DEPTH {
+        return;
+    }
     for child in list.children() {
         if let Some(li) = ElementRef::wrap(child) {
             if li.value().name() == "li" {
@@ -526,7 +559,7 @@ fn render_list(list: &ElementRef, blocks: &mut Vec<RenderedBlock>, base_url: &st
                     if let Some(nested_elem) = ElementRef::wrap(nested_child) {
                         let tag = nested_elem.value().name();
                         if tag == "ul" || tag == "ol" {
-                            render_list(&nested_elem, blocks, base_url, markdown);
+                            render_list(&nested_elem, blocks, base_url, markdown, depth + 1);
                         }
                     }
                 }
@@ -1090,6 +1123,48 @@ mod tests {
             titles,
             vec!["in-range", "boundary", "fallback"],
             "only entries with block_index < blocks.len() should survive"
+        );
+    }
+
+    #[test]
+    fn render_blocks_deeply_nested_html_does_not_overflow() {
+        let depth = 5_000;
+        let mut html = String::from("<!DOCTYPE html><html><body>");
+        for _ in 0..depth {
+            html.push_str("<div>");
+        }
+        html.push_str("<p>deep content</p>");
+        for _ in 0..depth {
+            html.push_str("</div>");
+        }
+        html.push_str("</body></html>");
+
+        let (_, _, rendered, _, _) =
+            render_blocks(html.as_bytes(), "https://example.com/", 10_000, false);
+        assert!(
+            rendered.blocks.is_empty(),
+            "content beyond the depth cap must not be walked"
+        );
+    }
+
+    #[test]
+    fn render_blocks_deeply_nested_inline_text_does_not_overflow() {
+        let depth = 5_000;
+        let mut html = String::from("<!DOCTYPE html><html><body><p>");
+        for _ in 0..depth {
+            html.push_str("<span>");
+        }
+        html.push_str("deep inline");
+        for _ in 0..depth {
+            html.push_str("</span>");
+        }
+        html.push_str("</p></body></html>");
+
+        let (_, _, rendered, _, _) =
+            render_blocks(html.as_bytes(), "https://example.com/", 10_000, false);
+        assert!(
+            rendered.blocks.is_empty(),
+            "inline text beyond the depth cap must not be collected"
         );
     }
 }

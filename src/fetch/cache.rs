@@ -192,11 +192,46 @@ pub struct CachedExtractedDocument {
     pub browser_escalated: bool,
 }
 
+/// Approximate in-memory size of a derived cache entry: the byte
+/// length of every stored text payload.
+fn derived_entry_bytes(entry: &DerivedDocumentCacheEntry) -> usize {
+    let r = &entry.response;
+    let mut bytes = 0usize;
+    if let Some(t) = &r.title {
+        bytes += t.len();
+    }
+    if let Some(d) = &r.description {
+        bytes += d.len();
+    }
+    if let Some(t) = &r.text {
+        bytes += t.len();
+    }
+    if let Some(t) = &r.raw_text {
+        bytes += t.len();
+    }
+    for link in &r.links {
+        bytes += link.url.len() + link.text.len();
+    }
+    if let Some(doc) = &r.document {
+        for block in &doc.blocks {
+            bytes += block.text.len();
+        }
+        for outline_entry in &doc.outline {
+            bytes += outline_entry.title.len();
+        }
+        for chunk in &doc.chunks {
+            bytes += chunk.text.len();
+        }
+    }
+    bytes
+}
+
 pub struct FetchCache {
     raw: Mutex<LruCache<RawCacheKey, RawFetchCacheEntry>>,
     derived: Mutex<LruCache<DerivedCacheKey, DerivedDocumentCacheEntry>>,
     raw_max_bytes: usize,
     current_raw_bytes: AtomicUsize,
+    current_derived_bytes: AtomicUsize,
 }
 
 impl FetchCache {
@@ -208,6 +243,7 @@ impl FetchCache {
             derived: Mutex::new(LruCache::new(derived_cap)),
             raw_max_bytes,
             current_raw_bytes: AtomicUsize::new(0),
+            current_derived_bytes: AtomicUsize::new(0),
         }
     }
 
@@ -251,8 +287,31 @@ impl FetchCache {
     }
 
     pub async fn insert_derived(&self, key: DerivedCacheKey, entry: DerivedDocumentCacheEntry) {
+        let entry_len = derived_entry_bytes(&entry);
+        if entry_len > self.raw_max_bytes {
+            return;
+        }
         let mut derived = self.derived.lock().await;
+
+        if let Some(evicted) = derived.pop(&key) {
+            self.current_derived_bytes
+                .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+        }
+
+        while self.current_derived_bytes.load(Ordering::Relaxed) + entry_len > self.raw_max_bytes
+            && !derived.is_empty()
+        {
+            if let Some((_, evicted)) = derived.pop_lru() {
+                self.current_derived_bytes
+                    .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+            } else {
+                break;
+            }
+        }
+
         derived.put(key, entry);
+        self.current_derived_bytes
+            .fetch_add(entry_len, Ordering::Relaxed);
     }
 
     pub async fn invalidate_scope(&self, scope: &CacheScope) {
@@ -281,7 +340,10 @@ impl FetchCache {
             .collect();
 
         for key in derived_keys_to_remove {
-            derived.pop(&key);
+            if let Some(evicted) = derived.pop(&key) {
+                self.current_derived_bytes
+                    .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+            }
         }
     }
 
@@ -926,6 +988,89 @@ mod tests {
         assert!(cache.get_derived(&key).await.is_none());
         cache.insert_derived(key.clone(), entry).await;
         assert!(cache.get_derived(&key).await.is_some());
+    }
+
+    fn make_derived_entry(raw_content_hash: u64, text_len: usize) -> DerivedDocumentCacheEntry {
+        DerivedDocumentCacheEntry {
+            raw_content_hash,
+            extraction_key: ExtractionCacheKey {
+                extract_mode: ExtractMode::Text,
+                max_chars_class: 12000,
+                include_links: false,
+                pdf_pages: None,
+                pdf_ocr: None,
+                include_media: false,
+                renderer_version: 1,
+                sanitize_output: true,
+            },
+            response: CachedExtractedDocument {
+                title: None,
+                description: None,
+                text: Some("x".repeat(text_len)),
+                raw_text: Some("y".repeat(text_len)),
+                links: Vec::new(),
+                links_seen: None,
+                links_truncated: false,
+                truncated: false,
+                document: None,
+                trust_markers: crate::core::sanitize::TrustMarkers::default(),
+                transport: Some("http".into()),
+                browser_escalated: false,
+            },
+            created_at: SystemTime::now(),
+        }
+    }
+
+    fn make_derived_key(raw_content_hash: u64) -> DerivedCacheKey {
+        DerivedCacheKey {
+            scope: CacheScope::Anonymous,
+            raw_content_hash,
+            extraction_key: ExtractionCacheKey {
+                extract_mode: ExtractMode::Text,
+                max_chars_class: 12000,
+                include_links: false,
+                pdf_pages: None,
+                pdf_ocr: None,
+                include_media: false,
+                renderer_version: 1,
+                sanitize_output: true,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn cache_derived_evicts_oldest_on_byte_pressure() {
+        let cache = FetchCache::new(10, 10, 500);
+        for i in 0..5u64 {
+            cache
+                .insert_derived(make_derived_key(i), make_derived_entry(i, 100))
+                .await;
+        }
+
+        let oldest = make_derived_key(0);
+        let kept_old = make_derived_key(3);
+        let newest = make_derived_key(4);
+        assert!(
+            cache.get_derived(&oldest).await.is_none(),
+            "oldest derived entry should be evicted under byte pressure"
+        );
+        assert!(cache.get_derived(&kept_old).await.is_some());
+        assert!(cache.get_derived(&newest).await.is_some());
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.derived_entries, 2);
+    }
+
+    #[tokio::test]
+    async fn cache_derived_oversized_entry_not_stored() {
+        let cache = FetchCache::new(10, 10, 64);
+        let key = make_derived_key(1);
+        cache
+            .insert_derived(key.clone(), make_derived_entry(1, 4096))
+            .await;
+        assert!(cache.get_derived(&key).await.is_none());
+        let stats = cache.stats().await;
+        assert_eq!(stats.derived_entries, 0);
     }
 
     #[test]

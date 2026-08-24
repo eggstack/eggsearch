@@ -926,7 +926,7 @@ async fn fetch_gitlab_tree(
         provider_id: "gitlab_tree".to_string(),
         endpoint_origin: extract_host(config.base_url.as_deref().unwrap_or(GITLAB_API_BASE)),
         response_bytes_observed: telemetry.aggregate_observed,
-        response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_cap_applied: telemetry.aggregate_observed >= telemetry.aggregate_limit,
         dns_policy_class: classify_host_from_url(
             config.base_url.as_deref().unwrap_or(GITLAB_API_BASE),
         )
@@ -1245,7 +1245,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         provider_id: provider_id.to_string(),
         endpoint_origin: extract_host(api_base),
         response_bytes_observed: telemetry.aggregate_observed,
-        response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
+        response_cap_applied: telemetry.aggregate_observed >= telemetry.aggregate_limit,
         dns_policy_class: classify_host_from_url(api_base).await,
         aggregate_byte_cap_reached: budget.exceeded(),
         aggregate_limit: telemetry.aggregate_limit,

@@ -88,6 +88,29 @@ pub fn parse_pdf_pages(
     total_pages: usize,
     max_pages: usize,
 ) -> Result<Vec<u32>, FetchError> {
+    let pages = parse_pdf_page_spec(spec, max_pages)?;
+    validate_pdf_page_range(&pages, total_pages)?;
+    Ok(pages)
+}
+
+/// Validate parsed page numbers against an actual document page count.
+fn validate_pdf_page_range(pages: &[u32], total_pages: usize) -> Result<(), FetchError> {
+    let total = total_pages as u32;
+    let out_of_range: Vec<u32> = pages.iter().copied().filter(|&p| p > total).collect();
+    if !out_of_range.is_empty() {
+        return Err(FetchError::PdfPageOutOfRange {
+            requested: out_of_range,
+            total_pages,
+        });
+    }
+    Ok(())
+}
+
+/// Parse a page selection specification into a sorted, deduplicated
+/// list of 1-indexed page numbers without validating against an
+/// actual page count. Range validation against the document happens
+/// inside [`extract_pdf_text`] once the page count is known.
+pub fn parse_pdf_page_spec(spec: &str, max_pages: usize) -> Result<Vec<u32>, FetchError> {
     let spec = spec.trim();
     if spec.is_empty() {
         return Err(FetchError::PdfPageSpecInvalid(
@@ -159,15 +182,6 @@ pub fn parse_pdf_pages(
         return Err(FetchError::PdfPageSpecInvalid(
             "page specification resolved to an empty selection".into(),
         ));
-    }
-
-    let total = total_pages as u32;
-    let out_of_range: Vec<u32> = pages.iter().copied().filter(|&p| p > total).collect();
-    if !out_of_range.is_empty() {
-        return Err(FetchError::PdfPageOutOfRange {
-            requested: out_of_range,
-            total_pages,
-        });
     }
 
     if pages.len() > max_pages {
@@ -667,6 +681,12 @@ pub fn extract_pdf_text(
 
     if total_page_count == 0 {
         return Err(FetchError::PdfNoExtractableText);
+    }
+
+    if let Some(opts) = options {
+        if let Some(ref selected) = opts.selected_pages {
+            validate_pdf_page_range(selected, total_page_count)?;
+        }
     }
 
     let pages_to_extract: Vec<u32> = if let Some(opts) = options {
@@ -1598,6 +1618,49 @@ mod tests {
     fn parse_pdf_pages_rejects_out_of_range() {
         let result = parse_pdf_pages("1,15", 10, 25);
         assert!(matches!(result, Err(FetchError::PdfPageOutOfRange { .. })));
+    }
+
+    #[test]
+    fn parse_pdf_page_spec_defers_range_validation() {
+        let pages = parse_pdf_page_spec("1,15", 25).unwrap();
+        assert_eq!(pages, vec![1, 15]);
+    }
+
+    #[test]
+    fn extract_pdf_text_selected_page_out_of_range_is_error() {
+        let pdf = make_multipage_pdf(&["First", "Second", "Third"]);
+        let opts = PdfExtractOptions {
+            selected_pages: Some(vec![1, 10]),
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), Some(&opts));
+        match result {
+            Err(FetchError::PdfPageOutOfRange {
+                requested,
+                total_pages,
+            }) => {
+                assert_eq!(requested, vec![10]);
+                assert_eq!(total_pages, 3);
+            }
+            other => panic!("expected PdfPageOutOfRange, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn extract_pdf_text_valid_selection_still_applies() {
+        let pdf = make_multipage_pdf(&["First", "Second", "Third"]);
+        let opts = PdfExtractOptions {
+            selected_pages: Some(vec![2]),
+            password: None,
+            include_media: false,
+            ocr_policy: PdfOcrPolicy::Never,
+        };
+        let result = extract_pdf_text(&pdf, 50000, &default_limits(), Some(&opts))
+            .expect("extraction should succeed");
+        assert_eq!(result.document.blocks.len(), 1);
+        assert_eq!(result.document.blocks[0].page, Some(2));
     }
 
     #[test]

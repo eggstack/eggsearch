@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 use futures::FutureExt;
 
 use crate::core::config::ApiProviderConfig;
-use crate::core::evidence_role::EvidenceRole;
 use crate::core::provider::{
     built_in_provider_descriptor, provider_configured_state, CapabilityOption, ProviderDescriptor,
     ProviderSkipCode, KNOWN_PROVIDER_IDS,
@@ -1005,7 +1004,10 @@ impl MetadataSearchAdapter {
                 provider_id: id.clone(),
                 subquery_id: None,
                 operation_id: None,
-                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                intended_roles: crate::core::retrieval_status::map_provider_to_intended_roles(
+                    id,
+                    req.intent.as_str(),
+                ),
                 outcome: if results.is_empty() {
                     crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessZeroResults
                 } else {
@@ -1037,7 +1039,10 @@ impl MetadataSearchAdapter {
                 provider_id: id.clone(),
                 subquery_id: None,
                 operation_id: None,
-                intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                intended_roles: crate::core::retrieval_status::map_provider_to_intended_roles(
+                    id,
+                    req.intent.as_str(),
+                ),
                 outcome,
                 result_count: 0,
                 error_class: Some(ec.as_str().to_string()),
@@ -1083,7 +1088,10 @@ impl MetadataSearchAdapter {
                     provider_id: id.clone(),
                     subquery_id: None,
                     operation_id: None,
-                    intended_roles: vec![EvidenceRole::PrimaryImplementation],
+                    intended_roles: crate::core::retrieval_status::map_provider_to_intended_roles(
+                        id,
+                        req.intent.as_str(),
+                    ),
                     outcome:
                         crate::core::retrieval_status::RetrievalAttemptOutcome::InterruptedByDeadline,
                     result_count: 0,

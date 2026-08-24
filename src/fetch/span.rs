@@ -180,7 +180,7 @@ pub fn select_span(
         }
 
         // 2. Explicit line range with expansion.
-        let midpoint = ((start + end) / 2).saturating_sub(1) as usize;
+        let midpoint = ((start.saturating_add(end)) / 2).saturating_sub(1) as usize;
         let midpoint = midpoint.min(all_lines.len().saturating_sub(1));
         let lang = language.unwrap_or("");
         let (block_start, block_end) = expand_to_enclosing_block(all_lines, midpoint, lang);
@@ -1036,6 +1036,29 @@ mod tests {
             clamp_and_truncate(10, 5, Some(3), &mut reasons),
             (6, 8, true)
         );
+    }
+
+    #[test]
+    fn explicit_range_expansion_handles_extreme_line_numbers() {
+        let input: Vec<String> = (1..=50).map(|i| format!("line {i}")).collect();
+        let span = select_span(
+            &input,
+            None,
+            None,
+            None,
+            None,
+            Some(u32::MAX),
+            Some(u32::MAX),
+            true,
+            None,
+        )
+        .expect("span should be selected without overflow");
+        assert_eq!(
+            span.selection_kind,
+            SpanSelectionKind::ExpandedExplicitRange
+        );
+        assert!(span.line_start >= 1);
+        assert!(span.line_end <= 50);
     }
 
     // --- Rust function block expansion with attributes/doc comments ---

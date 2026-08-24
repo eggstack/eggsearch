@@ -113,6 +113,9 @@ fn write_opt_str(hasher: &mut FnvHasher, s: Option<&str>) {
 
 /// Write an `Option<u32>` to the hasher (`None` = sentinel 0,
 /// `Some(0)` = sentinel u32::MAX so the encoding stays injective).
+/// `Some(u32::MAX)` appends a one-byte disambiguator so it cannot
+/// collide with the `Some(0)` sentinel; all other values are written
+/// verbatim, keeping existing hash streams byte-for-byte stable.
 fn write_opt_u32(hasher: &mut FnvHasher, v: Option<u32>) {
     let encoded = match v {
         None => 0u32,
@@ -120,6 +123,9 @@ fn write_opt_u32(hasher: &mut FnvHasher, v: Option<u32>) {
         Some(n) => n,
     };
     hasher.write(&encoded.to_le_bytes());
+    if v == Some(u32::MAX) {
+        hasher.write(&[1u8]);
+    }
 }
 
 /// Write a `usize` to the hasher.
@@ -265,10 +271,11 @@ fn normalize_percent_encoding(path_query: &str) -> String {
 ///
 /// Unreserved characters: `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`.
 /// Reserved characters and their encodings (e.g. `%2F` for `/`) are
-/// left as-is to preserve resource identity.
-fn decode_unreserved(input: &str) -> String {
+/// left as-is to preserve resource identity. Operates on bytes so raw
+/// multi-byte UTF-8 passes through unchanged.
+fn decode_unreserved(input: &str) -> Vec<u8> {
     let bytes = input.as_bytes();
-    let mut result = String::with_capacity(input.len());
+    let mut result = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
@@ -277,13 +284,13 @@ fn decode_unreserved(input: &str) -> String {
             if let (Some(h), Some(l)) = (hi, lo) {
                 let byte = h * 16 + l;
                 if is_unreserved(byte) {
-                    result.push(byte as char);
+                    result.push(byte);
                     i += 3;
                     continue;
                 }
             }
         }
-        result.push(bytes[i] as char);
+        result.push(bytes[i]);
         i += 1;
     }
     result
@@ -306,37 +313,38 @@ fn hex_val(byte: u8) -> Option<u8> {
     }
 }
 
-/// Percent-encode a path string, encoding all characters except
+/// Percent-encode a path byte string, encoding all bytes except
 /// unreserved characters, `/` (path separator), and existing
 /// percent-encoded sequences (`%XX`).
 ///
 /// This produces a canonical percent-encoding form: unreserved chars
 /// are literal, hex digits are lowercase, path separators are
-/// preserved, and already-encoded sequences are left as-is.
-fn percent_encode_path(path: &str) -> String {
-    let bytes = path.as_bytes();
-    let mut result = String::with_capacity(bytes.len());
+/// preserved, and already-encoded sequences are left as-is. Raw
+/// multi-byte UTF-8 is encoded once (byte-wise), matching the
+/// encoding of the same text supplied pre-encoded.
+fn percent_encode_path(path: &[u8]) -> String {
+    let mut result = String::with_capacity(path.len());
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && hex_val(bytes[i + 1]).is_some()
-            && hex_val(bytes[i + 2]).is_some()
+    while i < path.len() {
+        if path[i] == b'%'
+            && i + 2 < path.len()
+            && hex_val(path[i + 1]).is_some()
+            && hex_val(path[i + 2]).is_some()
         {
             // Existing percent-encoded sequence: preserve with uppercase hex
             result.push('%');
-            result.push(bytes[i + 1].to_ascii_uppercase() as char);
-            result.push(bytes[i + 2].to_ascii_uppercase() as char);
+            result.push(path[i + 1].to_ascii_uppercase() as char);
+            result.push(path[i + 2].to_ascii_uppercase() as char);
             i += 3;
-        } else if matches!(bytes[i],
+        } else if matches!(path[i],
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9'
             | b'-' | b'.' | b'_' | b'~' | b'/'
         ) {
-            result.push(bytes[i] as char);
+            result.push(path[i] as char);
             i += 1;
         } else {
             result.push('%');
-            result.push_str(&format!("{:02X}", bytes[i]));
+            result.push_str(&format!("{:02X}", path[i]));
             i += 1;
         }
     }
@@ -1231,6 +1239,32 @@ mod tests {
         let e = source_id(Some("p"), Some("https://example.com/a%2fb"), None, None);
         let f = source_id(Some("p"), Some("https://example.com/a%2Fb"), None, None);
         assert_eq!(e, f);
+    }
+
+    #[test]
+    fn raw_utf8_and_percent_encoded_path_converge() {
+        let raw = canonicalize_url("https://example.com/docs/café");
+        let encoded = canonicalize_url("https://example.com/docs/caf%C3%A9");
+        assert_eq!(raw, encoded);
+
+        let raw_id = source_id(Some("p"), Some("https://example.com/docs/café"), None, None);
+        let encoded_id = source_id(
+            Some("p"),
+            Some("https://example.com/docs/caf%C3%A9"),
+            None,
+            None,
+        );
+        assert_eq!(raw_id, encoded_id);
+    }
+
+    #[test]
+    fn opt_u32_encoding_is_injective() {
+        let none = fetch_id(Some("https://a.com"), None, None, None, None);
+        let some_zero = fetch_id(Some("https://a.com"), None, Some(0), None, None);
+        let some_max = fetch_id(Some("https://a.com"), None, Some(u32::MAX), None, None);
+        assert_ne!(none, some_zero);
+        assert_ne!(none, some_max);
+        assert_ne!(some_zero, some_max);
     }
 
     // -- Doc / Chunk ID tests --

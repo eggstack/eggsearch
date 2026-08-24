@@ -315,8 +315,11 @@ impl ProviderHealthRegistry {
         entry.last_latency_ms = Some(latency_ms);
         entry.consecutive_failures += 1;
 
-        // Enter cooldown after threshold consecutive failures
-        if entry.consecutive_failures >= COOLDOWN_THRESHOLD && entry.cooldown_until.is_none() {
+        // Enter cooldown after threshold consecutive failures. An
+        // expired previous cooldown is eligible for re-entry so the
+        // mechanism recurs instead of firing once.
+        let cooldown_expired = entry.cooldown_until.is_none_or(|until| now >= until);
+        if entry.consecutive_failures >= COOLDOWN_THRESHOLD && cooldown_expired {
             let (duration, reason) = match failure_class {
                 FailureClass::RateLimited => (RATE_LIMIT_COOLDOWN, "rate limited"),
                 FailureClass::Timeout => (TIMEOUT_COOLDOWN, "repeated timeouts"),
@@ -1099,6 +1102,25 @@ mod tests {
         let snapshot = registry.snapshot("brave", true, true);
         assert_eq!(snapshot.status, ProviderHealthStatus::Healthy);
         assert_eq!(snapshot.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn health_registry_cooldown_rearms_after_expiry() {
+        let registry = ProviderHealthRegistry::new();
+        for _ in 0..3 {
+            registry.record_failure("brave", FailureClass::RateLimited, "429", 100);
+        }
+        assert!(registry.is_in_cooldown("brave"));
+
+        {
+            let mut entries = registry.entries.lock().unwrap();
+            let entry = entries.get_mut("brave").expect("entry exists");
+            entry.cooldown_until = Some(Instant::now() - Duration::from_secs(1));
+        }
+        assert!(!registry.is_in_cooldown("brave"));
+
+        registry.record_failure("brave", FailureClass::RateLimited, "429", 100);
+        assert!(registry.is_in_cooldown("brave"));
     }
 
     #[test]
