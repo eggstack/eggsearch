@@ -166,7 +166,7 @@ fn convert(items: Vec<GitlabCodeBlob>, max_results: usize) -> Vec<SearchResult> 
             .data
             .as_deref()
             .map(|b| truncate_body(b, SNIPPET_MAX_CHARS))
-            .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+            .map(|s| crate::core::sanitize::normalize_whitespace(&s))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 

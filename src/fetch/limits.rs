@@ -245,10 +245,7 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
                 }
             } else if (host_lower.ends_with(".internal")
                 || host_lower.ends_with(".private")
-                || host_lower.ends_with(".local")
-                || host_lower.contains(".lan.")
-                || host_lower.starts_with("192.168.")
-                || host_lower.starts_with("10."))
+                || host_lower.ends_with(".local"))
                 && !limits.allow_private_network
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
@@ -330,10 +327,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
                 }
             } else if (host_lower.ends_with(".internal")
                 || host_lower.ends_with(".private")
-                || host_lower.ends_with(".local")
-                || host_lower.contains(".lan.")
-                || host_lower.starts_with("192.168.")
-                || host_lower.starts_with("10."))
+                || host_lower.ends_with(".local"))
                 && !limits.allow_private_network
             {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
@@ -354,7 +348,10 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
         _ => 80,
     });
 
-    let resolve_target = format!("{host}:{port}");
+    let resolve_target = match IpAddr::from_str(&host) {
+        Ok(IpAddr::V6(_)) => format!("[{host}]:{port}"),
+        _ => format!("{host}:{port}"),
+    };
     let dns_timeout = std::time::Duration::from_millis(limits.timeout_ms);
     let resolved = tokio::time::timeout(
         dns_timeout,
@@ -452,6 +449,14 @@ mod tests {
         assert!(validate_url("https://example.com/path?query=1", &limits).is_ok());
     }
 
+    #[test]
+    fn validate_url_does_not_treat_public_hostname_prefixes_as_private_ips() {
+        let limits = FetchLimits::default();
+        assert!(validate_url("https://10.example.com/", &limits).is_ok());
+        assert!(validate_url("https://192.168.example.com/", &limits).is_ok());
+        assert!(validate_url("https://slack.lan.example.com/", &limits).is_ok());
+    }
+
     #[tokio::test]
     async fn validate_fetch_target_allows_when_fully_open() {
         let limits = FetchLimits {
@@ -526,6 +531,21 @@ mod tests {
         let limits = FetchLimits::default();
         let mapped: SocketAddr = "[::ffff:10.0.0.1]:80".parse().unwrap();
         assert!(is_blocked_address(mapped, &limits));
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_resolves_ipv6_literal_with_port() {
+        let limits = FetchLimits {
+            allow_localhost: true,
+            ..Default::default()
+        };
+        let url = Url::parse("http://[::1]:8080/").unwrap();
+        let result = validate_fetch_target_with_resolved_addrs(&url, &limits).await;
+        assert!(result.is_ok(), "IPv6 literal resolution failed: {result:?}");
+        assert_eq!(
+            result.unwrap().unwrap(),
+            vec!["[::1]:8080".parse().unwrap()]
+        );
     }
 
     #[test]

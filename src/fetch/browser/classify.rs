@@ -33,17 +33,17 @@ pub fn classify_response(
     }
 
     let title_lower = title.unwrap_or("").to_lowercase();
-    let body_str = String::from_utf8_lossy(body_snippet);
+    let body_lower = String::from_utf8_lossy(body_snippet).to_lowercase();
 
-    if is_interactive_challenge(&title_lower, &body_str) {
+    if is_interactive_challenge(&title_lower, &body_lower) {
         return FetchDisposition::InteractiveChallenge;
     }
 
-    if is_noninteractive_verification(&title_lower, &body_str) {
+    if is_noninteractive_verification(&title_lower, &body_lower) {
         return FetchDisposition::NonInteractiveVerification;
     }
 
-    if is_javascript_shell(&title_lower, text_len, &body_str) {
+    if is_javascript_shell(&title_lower, text_len, &body_lower) {
         return FetchDisposition::JavascriptShell;
     }
 
@@ -68,7 +68,7 @@ fn is_interactive_challenge(title_lower: &str, body: &str) -> bool {
         "verify you are human",
     ];
     for indicator in &indicators {
-        if body.to_lowercase().contains(indicator) {
+        if body.contains(indicator) {
             return true;
         }
     }
@@ -85,7 +85,7 @@ fn is_noninteractive_verification(title_lower: &str, body: &str) -> bool {
         "security verification",
     ];
     for marker in &markers {
-        if title_lower.contains(marker) || body.to_lowercase().contains(marker) {
+        if title_lower.contains(marker) || body.contains(marker) {
             return true;
         }
     }

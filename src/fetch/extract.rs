@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use scraper::{Html, Selector};
 
 use crate::core::fetch::{ExtractedLink, LinkKind};
+use crate::core::sanitize::normalize_whitespace;
 
 /// Maximum number of links the extractor will collect from a single
 /// page. A defensive upper bound to keep response payloads bounded
@@ -164,7 +165,6 @@ fn is_github_or_gitlab(host: &str) -> bool {
 }
 
 /// Returns `true` if the host is a well-known documentation host.
-#[allow(clippy::nonminimal_bool)]
 fn is_docs_host(host: &str) -> bool {
     host == "readthedocs.io"
         || host.ends_with(".readthedocs.io")
@@ -256,7 +256,7 @@ impl<'a> HtmlExtractor<'a> {
             })
             .unwrap_or_else(|| document.root_element().text().collect::<String>());
 
-        let normalized: String = body_text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let normalized = normalize_whitespace(&body_text);
         let text_truncated = normalized.chars().count() > max_chars;
         let truncated_text: String = normalized.chars().take(max_chars).collect();
 

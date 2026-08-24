@@ -126,7 +126,7 @@ fn convert(items: Vec<GithubCodeItem>, max_results: usize) -> Vec<SearchResult> 
             .repository
             .as_ref()
             .and_then(|r| r.description.as_deref())
-            .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+            .map(crate::core::sanitize::normalize_whitespace)
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 

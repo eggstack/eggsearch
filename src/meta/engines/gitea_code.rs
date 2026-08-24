@@ -136,7 +136,7 @@ fn convert(response: GiteaSearchResponse, base_url: &str, max_results: usize) ->
                 .repository
                 .as_ref()
                 .and_then(|r| r.description.as_deref())
-                .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+                .map(crate::core::sanitize::normalize_whitespace)
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
 

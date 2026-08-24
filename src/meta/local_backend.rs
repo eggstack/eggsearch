@@ -7,10 +7,8 @@
 //! `TrustLevel::LocalTrusted`.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-
-use regex::Regex;
 
 use crate::core::code_evidence::{
     CodeEvidence, CodeEvidenceReason, EvidenceConfidence, SourceRole, SymbolKind,
@@ -71,88 +69,6 @@ impl std::fmt::Debug for LocalWorkspaceBackend {
             .finish()
     }
 }
-
-/// Lazily compiled regex patterns for symbol definition matching.
-static SYMBOL_PATTERNS: LazyLock<Vec<(Regex, SymbolKind)>> = LazyLock::new(|| {
-    vec![
-        (
-            Regex::new(r"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)").unwrap(),
-            SymbolKind::Function,
-        ),
-        (
-            Regex::new(r"(?:pub\s+)?struct\s+(\w+)").unwrap(),
-            SymbolKind::Struct,
-        ),
-        (
-            Regex::new(r"(?:pub\s+)?enum\s+(\w+)").unwrap(),
-            SymbolKind::Enum,
-        ),
-        (
-            Regex::new(r"(?:pub\s+)?trait\s+(\w+)").unwrap(),
-            SymbolKind::Trait,
-        ),
-        (
-            Regex::new(r"impl(?:<[^>]*>)?\s+(?:dyn\s+)?(\w+)").unwrap(),
-            SymbolKind::Struct,
-        ),
-        (
-            Regex::new(r"(?:pub\s+)?type\s+(\w+)").unwrap(),
-            SymbolKind::TypeAlias,
-        ),
-        (
-            Regex::new(r"macro_rules!\s+(\w+)").unwrap(),
-            SymbolKind::Macro,
-        ),
-        (
-            Regex::new(r"(?:pub\s+)?(?:const|static)\s+(?:\w+\s*:)?\s*(\w+)").unwrap(),
-            SymbolKind::Constant,
-        ),
-        (
-            Regex::new(r"(?:async\s+)?def\s+(\w+)").unwrap(),
-            SymbolKind::Function,
-        ),
-        (
-            Regex::new(r"class\s+(\w+)").unwrap(),
-            SymbolKind::Class,
-        ),
-        (
-            Regex::new(r"(?:export\s+)?(?:async\s+)?function\s+(\w+)").unwrap(),
-            SymbolKind::Function,
-        ),
-        (
-            Regex::new(r"(?:export\s+)?class\s+(\w+)").unwrap(),
-            SymbolKind::Class,
-        ),
-        (
-            Regex::new(r"(?:export\s+)?interface\s+(\w+)").unwrap(),
-            SymbolKind::Interface,
-        ),
-        (
-            Regex::new(r"(?:export\s+)?type\s+(\w+)").unwrap(),
-            SymbolKind::TypeAlias,
-        ),
-        (
-            Regex::new(r"func\s+(?:\([^)]*\)\s+)?(\w+)").unwrap(),
-            SymbolKind::Function,
-        ),
-        (
-            Regex::new(r"type\s+(\w+)\s+(?:struct|interface)").unwrap(),
-            SymbolKind::Struct,
-        ),
-        (
-            Regex::new(r"(?:public|private|protected|internal)\s+(?:static\s+)?(?:class|interface|enum)\s+(\w+)").unwrap(),
-            SymbolKind::Class,
-        ),
-        (
-            Regex::new(r"(?:typedef\s+)?(?:struct|class)\s+(\w+)").unwrap(),
-            SymbolKind::Struct,
-        ),
-        (
-            Regex::new(r"^(?:static|inline|extern|const)?\s*\w[\w\s\*]*\b(\w+)\s*\(").unwrap(),
-            SymbolKind::Function,
-        ),
-    ]
-});
 
 impl LocalWorkspaceBackend {
     /// Build a new local workspace backend from config.
@@ -1143,9 +1059,7 @@ impl LocalWorkspaceBackend {
         let (snippet, line_start, line_end, matched_symbol, symbol_kind, boosted_score) =
             if let Some(sym_hint) = symbol_hint {
                 if let Some(ref text) = content_text {
-                    if let Some((name, kind, sym_line)) =
-                        Self::find_symbol_match_in_text(text, sym_hint)
-                    {
+                    if let Some((name, kind, sym_line)) = find_symbols_in_text(text, sym_hint) {
                         let snippet = Self::find_text_match_in_text(text, &name);
                         let boosted = score + 30.0;
                         (
@@ -1287,12 +1201,13 @@ impl LocalWorkspaceBackend {
             Err(_) => return (None, None, None),
         };
 
-        let snippet = Self::find_text_match_in_text(&content, query);
+        let query_lower = query.to_lowercase();
+        let snippet = Self::find_text_match_in_text_lower(&content, &query_lower);
         let line_num = snippet.as_ref().and_then(|_| {
             content
                 .lines()
                 .enumerate()
-                .find(|(_, line)| line.to_lowercase().contains(&query.to_lowercase()))
+                .find(|(_, line)| line.to_lowercase().contains(&query_lower))
                 .map(|(i, _)| (i + 1) as u32)
         });
         (snippet, line_num, line_num)
@@ -1302,8 +1217,12 @@ impl LocalWorkspaceBackend {
     /// bounded snippet of the first matching line.
     fn find_text_match_in_text(content: &str, query: &str) -> Option<String> {
         let query_lower = query.to_lowercase();
+        Self::find_text_match_in_text_lower(content, &query_lower)
+    }
+
+    fn find_text_match_in_text_lower(content: &str, query_lower: &str) -> Option<String> {
         for line in content.lines() {
-            if line.to_lowercase().contains(&query_lower) {
+            if line.to_lowercase().contains(query_lower) {
                 let snippet = line.trim().to_string();
                 let snippet = if snippet.len() > 500 {
                     let truncated: String = snippet.chars().take(500).collect();
@@ -1312,36 +1231,6 @@ impl LocalWorkspaceBackend {
                     snippet
                 };
                 return Some(snippet);
-            }
-        }
-        None
-    }
-
-    /// Scan already-read text for symbol definitions matching the hint.
-    ///
-    /// Returns `(matched_symbol_name, SymbolKind, line_number)` for the
-    /// first matching definition, or `None` if no match is found.
-    fn find_symbol_match_in_text(
-        text: &str,
-        symbol_hint: &str,
-    ) -> Option<(String, SymbolKind, u32)> {
-        let hint_lower = symbol_hint.to_lowercase();
-
-        for (line_idx, line) in text.lines().enumerate() {
-            let line_lower = line.to_lowercase();
-            if !line_lower.contains(&hint_lower) {
-                continue;
-            }
-            for (re, kind) in SYMBOL_PATTERNS.iter() {
-                if let Some(caps) = re.captures(line) {
-                    if let Some(name_match) = caps.get(1) {
-                        let name = name_match.as_str();
-                        if name.to_lowercase() == hint_lower {
-                            let line_num = (line_idx + 1) as u32;
-                            return Some((name.to_string(), *kind, line_num));
-                        }
-                    }
-                }
             }
         }
         None
@@ -1753,7 +1642,7 @@ mod tests {
         .unwrap();
 
         let content = std::fs::read_to_string(&file_path).unwrap();
-        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "helper");
+        let result = find_symbols_in_text(&content, "helper");
         assert!(result.is_some());
         let (name, kind, line) = result.unwrap();
         assert_eq!(name, "helper");
@@ -1772,7 +1661,7 @@ mod tests {
         .unwrap();
 
         let content = std::fs::read_to_string(&file_path).unwrap();
-        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "User");
+        let result = find_symbols_in_text(&content, "User");
         assert!(result.is_some());
         let (name, kind, line) = result.unwrap();
         assert_eq!(name, "User");
@@ -1787,7 +1676,7 @@ mod tests {
         fs::write(&file_path, "fn main() {}\n").unwrap();
 
         let content = std::fs::read_to_string(&file_path).unwrap();
-        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "nonexistent");
+        let result = find_symbols_in_text(&content, "nonexistent");
         assert!(result.is_none());
     }
 
@@ -1799,7 +1688,7 @@ mod tests {
 
         // Hint is lowercase "my_function", symbol in code is also "my_function"
         let content = std::fs::read_to_string(&file_path).unwrap();
-        let result = LocalWorkspaceBackend::find_symbol_match_in_text(&content, "my_function");
+        let result = find_symbols_in_text(&content, "my_function");
         assert!(result.is_some());
         let (name, kind, _line) = result.unwrap();
         assert_eq!(name, "my_function");

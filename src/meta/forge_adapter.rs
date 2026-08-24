@@ -238,7 +238,7 @@ pub async fn read_error_body_preview(resp: reqwest::Response) -> String {
 }
 
 /// Configuration for connecting to a forge API.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ForgeTreeConfig {
     /// Optional API key for authenticated requests.
     pub api_key: Option<String>,
@@ -249,18 +249,6 @@ pub struct ForgeTreeConfig {
     /// Optional override for the aggregate byte budget limit.
     /// When `None`, uses `DEFAULT_MAX_RESPONSE_BYTES`.
     pub forge_budget_limit: Option<usize>,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for ForgeTreeConfig {
-    fn default() -> Self {
-        Self {
-            api_key: None,
-            base_url: None,
-            endpoint_policy: ForgeEndpointPolicy::default(),
-            forge_budget_limit: None,
-        }
-    }
 }
 
 /// Resolved repository identity after fetching a tree.

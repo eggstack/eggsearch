@@ -195,6 +195,32 @@ impl std::fmt::Debug for MetadataSearchAdapter {
     }
 }
 
+fn provider_skip_reason(skip_code: Option<ProviderSkipCode>) -> Option<String> {
+    skip_code.map(|code| format!("[{}] {}", code.as_str(), code.display_name()))
+}
+
+fn known_provider_skip_code(
+    id: &str,
+    is_enabled: bool,
+    configured: bool,
+    searxng_configured: bool,
+) -> Option<ProviderSkipCode> {
+    if is_enabled && configured {
+        return None;
+    }
+    Some(if !is_enabled {
+        ProviderSkipCode::DisabledByUser
+    } else if id == "local_workspace" {
+        ProviderSkipCode::MissingLocalBackend
+    } else if crate::core::provider::is_api_provider(id) {
+        ProviderSkipCode::MissingApiKey
+    } else if id.contains("searxng") && !searxng_configured {
+        ProviderSkipCode::MissingSearxngConfig
+    } else {
+        ProviderSkipCode::Unknown
+    })
+}
+
 impl MetadataSearchAdapter {
     /// Build an adapter for the given enabled provider ids.
     ///
@@ -704,39 +730,9 @@ impl MetadataSearchAdapter {
                     false,
                 );
                 let routable = is_enabled && configured;
-                let skip_reason = if !routable {
-                    let code = if !is_enabled {
-                        ProviderSkipCode::DisabledByUser
-                    } else if *id == "local_workspace" {
-                        ProviderSkipCode::MissingLocalBackend
-                    } else if crate::core::provider::is_api_provider(id) {
-                        ProviderSkipCode::MissingApiKey
-                    } else if id.contains("searxng") && !self.searxng_configured {
-                        ProviderSkipCode::MissingSearxngConfig
-                    } else {
-                        ProviderSkipCode::Unknown
-                    };
-                    Some(format!("[{}] {}", code.as_str(), code.display_name()))
-                } else {
-                    None
-                };
-                let skip_code = if routable {
-                    None
-                } else if !is_enabled {
-                    Some(ProviderSkipCode::DisabledByUser)
-                } else if !configured {
-                    if *id == "local_workspace" {
-                        Some(ProviderSkipCode::MissingLocalBackend)
-                    } else if crate::core::provider::is_api_provider(id) {
-                        Some(ProviderSkipCode::MissingApiKey)
-                    } else if id.contains("searxng") && !self.searxng_configured {
-                        Some(ProviderSkipCode::MissingSearxngConfig)
-                    } else {
-                        Some(ProviderSkipCode::Unknown)
-                    }
-                } else {
-                    Some(ProviderSkipCode::Unknown)
-                };
+                let skip_code =
+                    known_provider_skip_code(id, is_enabled, configured, self.searxng_configured);
+                let skip_reason = provider_skip_reason(skip_code);
                 built_in_provider_descriptor(
                     id,
                     is_enabled,
@@ -756,23 +752,14 @@ impl MetadataSearchAdapter {
             let is_enabled = enabled.contains(id.as_str());
             let is_default = defaults.contains(id.as_str());
             let routable = is_enabled && configured;
-            let skip_reason = if !routable {
-                let code = if !is_enabled {
-                    ProviderSkipCode::NotBuilt
-                } else {
-                    ProviderSkipCode::UnknownProvider
-                };
-                Some(format!("[{}] {}", code.as_str(), code.display_name()))
-            } else {
-                None
-            };
             let skip_code = if routable {
                 None
             } else if !is_enabled {
                 Some(ProviderSkipCode::NotBuilt)
             } else {
-                Some(ProviderSkipCode::Unknown)
+                Some(ProviderSkipCode::UnknownProvider)
             };
+            let skip_reason = provider_skip_reason(skip_code);
             if let Some(desc) = built_in_provider_descriptor(
                 id,
                 is_enabled,
@@ -2759,9 +2746,7 @@ fn candidate_pool_size(final_max_results: usize, candidate_cap: usize) -> usize 
         return 0;
     }
     let desired = final_max_results.saturating_mul(3);
-    desired
-        .max(final_max_results)
-        .min(candidate_cap.max(final_max_results))
+    desired.min(candidate_cap.max(final_max_results))
 }
 
 fn local_result_budget(effective_max_results: usize) -> usize {

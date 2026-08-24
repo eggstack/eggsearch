@@ -568,7 +568,7 @@ fn render_table_text(table: &ElementRef) -> (String, bool) {
         lines.push(line);
 
         if i == 0 {
-            let sep: String = (0..max_cols).map(|_| " --- |").collect();
+            let sep = " --- |".repeat(max_cols);
             lines.push(format!("|{sep}"));
         }
     }

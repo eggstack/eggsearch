@@ -33,13 +33,13 @@ proptest! {
     }
 
     #[test]
-    fn validate_url_rejects_private_tld_lan(
+    fn validate_url_accepts_public_lan_subdomain(
         name in "[a-z]{2,10}"
     ) {
         let limits = FetchLimits::default();
         let url = format!("http://{name}.lan.example/");
         let result = validate_url(&url, &limits);
-        prop_assert!(result.is_err(), "host containing .lan. should be rejected");
+        prop_assert!(result.is_ok(), "public hostname containing .lan. should be accepted");
     }
 
     #[test]

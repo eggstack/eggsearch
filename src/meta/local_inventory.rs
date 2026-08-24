@@ -7,6 +7,7 @@
 //! commit, dirty), and identifies package manifests — all without
 //! cloning, indexing, or running build commands.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -20,80 +21,11 @@ const GIT_OP_TIMEOUT: Duration = Duration::from_secs(5);
 const GIT_OP_STDOUT_CAP: usize = 64 * 1024;
 
 fn run_bounded(cmd: &mut Command) -> Option<(bool, Vec<u8>)> {
-    use std::io::Read;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        unsafe {
-            cmd.pre_exec(|| {
-                libc::setsid();
-                Ok(())
-            });
-        }
-    }
-
-    let mut child = cmd
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .ok()?;
-
-    let child_id = child.id();
-    let exited = Arc::new(AtomicBool::new(false));
-    let exited_clone = exited.clone();
-    let kill_handle = std::thread::spawn(move || {
-        let deadline = std::time::Instant::now() + GIT_OP_TIMEOUT;
-        loop {
-            if exited_clone.load(Ordering::Relaxed) {
-                return;
-            }
-            if std::time::Instant::now() >= deadline {
-                if let Ok(pid) = i32::try_from(child_id) {
-                    unsafe {
-                        libc::kill(-pid, libc::SIGKILL);
-                    }
-                }
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-    });
-
-    let mut stdout = Vec::new();
-    if let Some(ref mut out) = child.stdout {
-        let mut buf = [0u8; 4096];
-        loop {
-            match out.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let remaining = GIT_OP_STDOUT_CAP.saturating_sub(stdout.len());
-                    if n <= remaining {
-                        stdout.extend_from_slice(&buf[..n]);
-                    } else {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    }
-
-    let status = child.wait().ok();
-    exited.store(true, Ordering::Relaxed);
-    let _ = kill_handle.join();
-
-    let success = status.as_ref().is_some_and(|s| s.success());
-    Some((success, stdout))
+    crate::meta::local_inventory_cache::run_bounded_for_discovery(
+        cmd,
+        GIT_OP_TIMEOUT,
+        GIT_OP_STDOUT_CAP,
+    )
 }
 
 /// A normalized remote URL identity for a Git repository.
@@ -336,11 +268,7 @@ fn parse_scp_form(url: &str) -> Option<NormalizedRepoId> {
         return None;
     }
 
-    let rest = if let Some(after_at) = url.rsplit('@').next() {
-        after_at
-    } else {
-        url
-    };
+    let rest = url.rsplit_once('@').map_or(url, |(_, after_at)| after_at);
 
     let (host_part, path_part) = rest.split_once(':')?;
     if host_part.is_empty() || path_part.is_empty() {
@@ -664,6 +592,7 @@ pub fn discover_local_repos(config: &LocalConfig, max_depth: usize) -> Vec<Local
     }
 
     let mut repos = Vec::new();
+    let mut visited_dirs = HashSet::new();
 
     for root in &config.roots {
         let canonical = match root.canonicalize() {
@@ -673,7 +602,14 @@ pub fn discover_local_repos(config: &LocalConfig, max_depth: usize) -> Vec<Local
         if !canonical.is_dir() {
             continue;
         }
-        discover_in_dir(&canonical, 0, max_depth, config, &mut repos);
+        discover_in_dir(
+            &canonical,
+            0,
+            max_depth,
+            config,
+            &mut repos,
+            &mut visited_dirs,
+        );
     }
 
     repos
@@ -685,6 +621,7 @@ fn discover_in_dir(
     max_depth: usize,
     config: &LocalConfig,
     repos: &mut Vec<LocalRepoIdentity>,
+    visited_dirs: &mut HashSet<PathBuf>,
 ) {
     if depth > max_depth {
         return;
@@ -696,6 +633,12 @@ fn discover_in_dir(
         }
         // Don't recurse into the repo's subdirectories for nested repos
         return;
+    }
+
+    if let Ok(canonical) = dir.canonicalize() {
+        if !visited_dirs.insert(canonical) {
+            return;
+        }
     }
 
     // Recurse into subdirectories
@@ -732,7 +675,7 @@ fn discover_in_dir(
             if config.respect_gitignore && is_gitignored(&path) {
                 continue;
             }
-            discover_in_dir(&path, depth + 1, max_depth, config, repos);
+            discover_in_dir(&path, depth + 1, max_depth, config, repos, visited_dirs);
         }
     }
 }
@@ -836,6 +779,14 @@ mod tests {
     #[test]
     fn normalize_scp_github_no_dot_git() {
         let id = normalize_remote_url("git@github.com:tokio-rs/axum").unwrap();
+        assert_eq!(id.host, CodeHost::Github);
+        assert_eq!(id.owner, "tokio-rs");
+        assert_eq!(id.repo, "axum");
+    }
+
+    #[test]
+    fn normalize_scp_form_without_user() {
+        let id = normalize_remote_url("github.com:tokio-rs/axum").unwrap();
         assert_eq!(id.host, CodeHost::Github);
         assert_eq!(id.owner, "tokio-rs");
         assert_eq!(id.repo, "axum");
@@ -946,6 +897,16 @@ mod tests {
     fn detect_git_worktree_without_git_dir() {
         let dir = tempfile::tempdir().unwrap();
         assert!(!detect_git_worktree(dir.path()));
+    }
+
+    #[test]
+    fn bounded_command_drains_stderr_without_deadlocking() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(
+            "i=0; while [ $i -lt 10000 ]; do printf 'stderr_line_%d\\n' $i >&2; i=$((i+1)); done",
+        );
+        let result = run_bounded(&mut cmd);
+        assert!(result.is_some());
     }
 
     #[test]
@@ -1356,6 +1317,24 @@ mod tests {
         // Note: symlink points to same dir, so discover_in_dir won't
         // recurse into it (already found as git worktree). The test
         // verifies that symlinks are not skipped at the entry level.
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_follow_symlinks_stops_directory_cycles() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::os::unix::fs::symlink(dir.path(), nested.join("parent")).unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            follow_symlinks: true,
+            ..Default::default()
+        };
+        let repos = discover_local_repos(&config, 100);
+        assert!(repos.is_empty());
     }
 
     #[test]

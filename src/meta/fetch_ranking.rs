@@ -9,6 +9,7 @@ use crate::core::code_evidence::{EvidenceConfidence, SourceRole};
 use crate::core::fetch::ExtractMode;
 use crate::core::repo_query::RepoQueryHints;
 use crate::core::source_card::SourceKind;
+use url::Url;
 
 /// Stable rank-reason identifiers. Serialized as snake_case strings.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -249,26 +250,41 @@ pub fn extract_domain(url: &str) -> String {
 }
 
 /// Determine if a URL is a commit-pinned permalink.
-#[allow(dead_code)]
 pub(crate) fn is_pinned_permalink(url: &str) -> bool {
-    // GitHub/GitLab permalinks contain a 40-char hex SHA in the path
-    // e.g. github.com/owner/repo/blob/abc123...def/path
-    if let Some(path_start) = url.split("://").nth(1) {
-        let path = path_start.split('/').skip(2).collect::<Vec<_>>().join("/");
-        // Look for a segment after blob/tree that looks like a SHA
-        for segment in path.split('/') {
-            if segment.len() >= 12 && segment.chars().all(|c| c.is_ascii_hexdigit()) {
-                return true;
-            }
-        }
+    let parsed = match Url::parse(url) {
+        Ok(parsed) => parsed,
+        Err(_) => return false,
+    };
+    let is_sha =
+        |segment: &str| segment.len() == 40 && segment.chars().all(|c| c.is_ascii_hexdigit());
+    let segments: Vec<&str> = match parsed.path_segments() {
+        Some(segments) => segments.collect(),
+        None => return false,
+    };
+
+    if parsed
+        .host_str()
+        .is_some_and(|host| host.eq_ignore_ascii_case("raw.githubusercontent.com"))
+    {
+        return segments.get(2).is_some_and(|segment| is_sha(segment));
     }
-    false
+
+    segments
+        .windows(2)
+        .any(|window| matches!(window[0], "blob" | "tree") && is_sha(window[1]))
 }
 
 /// Determine if a URL is a raw content URL.
-#[allow(dead_code)]
 pub(crate) fn is_raw_url(url: &str) -> bool {
-    url.contains("raw.githubusercontent.com") || url.contains("/raw/") || url.contains("raw.")
+    let Ok(parsed) = Url::parse(url) else {
+        return false;
+    };
+    parsed
+        .host_str()
+        .is_some_and(|host| host.eq_ignore_ascii_case("raw.githubusercontent.com"))
+        || parsed
+            .path_segments()
+            .is_some_and(|mut segments| segments.any(|segment| segment == "raw"))
 }
 
 /// Score provenance and stability signals.
@@ -1190,8 +1206,20 @@ mod tests {
             "https://raw.githubusercontent.com/owner/repo/main/src/lib.rs"
         ));
         assert!(is_raw_url("https://example.com/raw/file.rs"));
+        assert!(!is_raw_url("https://rawsome.example.com/path"));
+        assert!(!is_raw_url("https://example.com/draw/raw-content/file.rs"));
         assert!(!is_raw_url(
             "https://github.com/owner/repo/blob/main/src/lib.rs"
+        ));
+    }
+
+    #[test]
+    fn pinned_permalink_requires_full_commit_sha_in_context() {
+        assert!(!is_pinned_permalink(
+            "https://github.com/owner/repo/blob/abc123def456/src/lib.rs"
+        ));
+        assert!(is_pinned_permalink(
+            "https://github.com/owner/repo/blob/0123456789abcdef0123456789abcdef01234567/src/lib.rs"
         ));
     }
 

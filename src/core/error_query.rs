@@ -411,7 +411,7 @@ pub fn validate_error_query(query: &str, max_chars: usize) -> Result<(), String>
 
 /// Collapse multiple whitespace characters into single spaces.
 fn collapse_whitespace(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<&str>>().join(" ")
+    crate::core::sanitize::normalize_whitespace(s)
 }
 
 /// Extract known compiler/tool error codes.

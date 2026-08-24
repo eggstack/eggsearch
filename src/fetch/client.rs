@@ -431,6 +431,8 @@ impl FetchClient {
         #[cfg(not(feature = "pdf"))]
         let _ = pdf_options;
 
+        let final_url_parsed = url::Url::parse(&final_url).ok();
+
         let is_html = content_type
             .as_ref()
             .map(|ct| {
@@ -448,8 +450,8 @@ impl FetchClient {
             })
             .unwrap_or(false);
         let is_pdf_by_url = if !is_pdf_by_ct {
-            url::Url::parse(&final_url)
-                .ok()
+            final_url_parsed
+                .as_ref()
                 .map(|u| u.path().to_ascii_lowercase().ends_with(".pdf"))
                 .unwrap_or(false)
         } else {
@@ -511,8 +513,8 @@ impl FetchClient {
                     })
                     .filter(|c| !c.is_empty());
 
-                let source_extension = url::Url::parse(&final_url)
-                    .ok()
+                let source_extension = final_url_parsed
+                    .as_ref()
                     .and_then(|u| {
                         let path = u.path();
                         path.rsplit('.')
@@ -921,8 +923,8 @@ impl FetchClient {
                 })
                 .filter(|c| !c.is_empty());
 
-            let source_extension = url::Url::parse(&final_url)
-                .ok()
+            let source_extension = final_url_parsed
+                .as_ref()
                 .and_then(|u| {
                     let path = u.path();
                     path.rsplit('.')

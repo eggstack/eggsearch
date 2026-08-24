@@ -94,13 +94,13 @@ fn convert(raw: Vec<BraveResult>, max_results: usize) -> Vec<SearchResult> {
         }
         let title = r
             .title
-            .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+            .map(|t| crate::core::sanitize::normalize_whitespace(&t))
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty());
         let Some(title) = title else { continue };
         let snippet = r
             .description
-            .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+            .map(|s| crate::core::sanitize::normalize_whitespace(&s))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
         out.push(SearchResult {

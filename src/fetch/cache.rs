@@ -388,7 +388,8 @@ fn parse_http_date(s: &str) -> Option<SystemTime> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Some(dt.into());
     }
-    let mut parts = s.split_whitespace().collect::<Vec<_>>();
+    let normalized_input = crate::core::sanitize::normalize_whitespace(s);
+    let mut parts = normalized_input.split_whitespace().collect::<Vec<_>>();
     let zone = parts.last().copied().unwrap_or_default();
     let normalized_zone = match zone {
         "UT" | "GMT" | "Z" => Some("+0000"),

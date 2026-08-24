@@ -632,6 +632,16 @@ fn run_bounded_command_for_inventory(
     run_bounded_command_impl(cmd, timeout, cap, GIT_STDERR_CAP)
 }
 
+pub(crate) fn run_bounded_for_discovery(
+    cmd: &mut Command,
+    timeout: Duration,
+    stdout_cap: usize,
+) -> Option<(bool, Vec<u8>)> {
+    let result = run_bounded_command_impl(cmd, timeout, stdout_cap, GIT_STDERR_CAP);
+    let status = result.status?;
+    Some((status.success(), result.stdout))
+}
+
 fn run_bounded_command_impl(
     cmd: &mut Command,
     timeout: Duration,
@@ -652,8 +662,11 @@ fn run_bounded_command_impl(
         use std::os::unix::process::CommandExt;
         unsafe {
             cmd.pre_exec(|| {
-                libc::setsid();
-                Ok(())
+                if libc::setsid() == -1 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
             });
         }
     }

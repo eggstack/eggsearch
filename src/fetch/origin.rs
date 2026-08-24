@@ -193,16 +193,9 @@ impl OriginController {
     }
 
     async fn get_or_create_state(&self, key: &OriginKey) -> Arc<OriginState> {
-        {
-            let states = self.states.lock().await;
-            if let Some(state) = states.get(key) {
-                state.last_access_ms.store(now_ms(), Ordering::Relaxed);
-                return Arc::clone(state);
-            }
-        }
-
         let mut states = self.states.lock().await;
         if let Some(state) = states.get(key) {
+            state.last_access_ms.store(now_ms(), Ordering::Relaxed);
             return Arc::clone(state);
         }
 
