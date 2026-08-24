@@ -275,13 +275,15 @@ pub fn resolve_max_results(
 ) -> MaxResultsResolution {
     let requested_or_default = requested.unwrap_or(default_max_results);
     let effective = requested_or_default.clamp(1, max_results_cap);
-    let clamped = requested_or_default > max_results_cap;
+    let clamped = requested_or_default == 0 || requested_or_default > max_results_cap;
 
-    let warning = clamped.then(|| {
-        format!(
+    let warning = match requested_or_default {
+        0 => Some("Requested max_results=0 is below the minimum of 1; using 1.".to_string()),
+        n if n > max_results_cap => Some(format!(
             "Requested max_results={requested_or_default} exceeded server cap={max_results_cap}; using {effective}."
-        )
-    });
+        )),
+        _ => None,
+    };
 
     MaxResultsResolution {
         effective,
@@ -374,6 +376,8 @@ mod tests {
     fn resolve_max_results_clamps_to_one() {
         let r = resolve_max_results(Some(0), 10, 50);
         assert_eq!(r.effective, 1);
+        assert!(r.clamped);
+        assert!(r.warning.is_some());
     }
 
     #[test]

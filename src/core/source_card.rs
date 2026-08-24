@@ -322,8 +322,7 @@ pub struct LocalRepoMatch {
 /// response for one explicit URL.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SourceCard {
-    /// Per-response identifier, e.g. `src_<uuid>`. Unique within a
-    /// single `web_search` response.
+    /// Deterministic identifier for this source card.
     pub id: String,
     /// Deterministic, content-derived identifier stable across runs.
     /// Format: `src_<16hex>`. Derived from (provider_id, url, title, source_kind).
@@ -389,7 +388,7 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
 
 impl SourceCard {
     /// Build a fresh `SourceCard` with the given title, url, providers, score,
-    /// and trust label. A unique id of the form `src_<uuid>` is generated.
+    /// and trust label.
     ///
     /// # Examples
     ///
@@ -423,7 +422,7 @@ impl SourceCard {
             providers.first().map(|s| s.as_str()),
             Some(&url),
             Some(&title),
-            None,
+            Some(SourceKind::Unknown),
         );
         Self {
             id: id.clone(),

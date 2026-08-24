@@ -214,7 +214,11 @@ impl VulnerabilityMetadata {
             modified_at: self.modified_at.or(other.modified_at),
             withdrawn_at: self.withdrawn_at.or(other.withdrawn_at),
             references,
-            source: self.source,
+            source: if self.source == other.source {
+                self.source
+            } else {
+                VulnerabilitySource::Generic
+            },
         }
     }
 }
@@ -1888,7 +1892,7 @@ mod tests {
     }
 
     #[test]
-    fn vulnerability_metadata_merge_preserves_self() {
+    fn vulnerability_metadata_merge_marks_mixed_sources_generic() {
         let a = VulnerabilityMetadata {
             cve_ids: vec!["CVE-2024-0001".to_string()],
             severity: Some(SeverityLevel::High),
@@ -1904,7 +1908,7 @@ mod tests {
         let merged = a.clone().merge(b);
         assert_eq!(merged.cve_ids, vec!["CVE-2024-0001", "CVE-2024-0002"]);
         assert_eq!(merged.severity, Some(SeverityLevel::High));
-        assert_eq!(merged.source, VulnerabilitySource::Osv);
+        assert_eq!(merged.source, VulnerabilitySource::Generic);
     }
 
     #[test]

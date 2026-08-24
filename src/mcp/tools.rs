@@ -1949,6 +1949,13 @@ fn cached_document_response(
     raw: &crate::fetch::cache::RawFetchCacheEntry,
     document: &crate::fetch::cache::CachedExtractedDocument,
 ) -> crate::core::fetch::WebFetchResponse {
+    let structured_document = document.document.clone().map(|mut structured_document| {
+        if let Some(metadata) = structured_document.metadata.as_mut() {
+            metadata.content_length = raw.content_length_header;
+            metadata.redirects_followed = raw.redirect_count;
+        }
+        structured_document
+    });
     crate::core::fetch::WebFetchResponse {
         url: requested_url.to_string(),
         final_url: raw.final_url.clone(),
@@ -1977,7 +1984,7 @@ fn cached_document_response(
         links_truncated: document.links_truncated,
         warnings: vec![crate::core::fetch::WebFetchResponse::untrusted_warning()],
         trust_markers: document.trust_markers.clone(),
-        document: document.document.clone(),
+        document: structured_document,
         fetch_transform: None,
         structured_warnings: Vec::new(),
         pdf_page_metadata: None,
@@ -2257,8 +2264,8 @@ pub async fn run_web_fetch(
                             raw_entry.status,
                             raw_entry.content_type.clone(),
                             raw_entry.headers.clone(),
-                            None,
-                            0,
+                            raw_entry.content_length_header,
+                            raw_entry.redirect_count,
                             raw_entry.body.to_vec(),
                             raw_entry.truncated,
                             requested_max_chars,
@@ -2729,6 +2736,17 @@ pub async fn run_web_fetch(
                     validators,
                     scope: scope.clone(),
                     content_type: resp.content_type.clone(),
+                    content_length_header: resp
+                        .document
+                        .as_ref()
+                        .and_then(|document| document.metadata.as_ref())
+                        .and_then(|metadata| metadata.content_length),
+                    redirect_count: resp
+                        .document
+                        .as_ref()
+                        .and_then(|document| document.metadata.as_ref())
+                        .map(|metadata| metadata.redirects_followed)
+                        .unwrap_or(0),
                     representation: if resp.transport.as_deref() == Some("browser") {
                         crate::fetch::cache::RawRepresentation::BrowserDom
                     } else {
@@ -4511,6 +4529,17 @@ fn make_batch_fetch_future(
                                     validators,
                                     scope: scope.clone(),
                                     content_type: resp.content_type.clone(),
+                                    content_length_header: resp
+                                        .document
+                                        .as_ref()
+                                        .and_then(|document| document.metadata.as_ref())
+                                        .and_then(|metadata| metadata.content_length),
+                                    redirect_count: resp
+                                        .document
+                                        .as_ref()
+                                        .and_then(|document| document.metadata.as_ref())
+                                        .map(|metadata| metadata.redirects_followed)
+                                        .unwrap_or(0),
                                     representation: if resp.transport.as_deref() == Some("browser")
                                     {
                                         crate::fetch::cache::RawRepresentation::BrowserDom

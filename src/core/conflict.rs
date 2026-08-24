@@ -305,9 +305,7 @@ pub fn detect_mutable_vs_pinned(
 fn has_distinct_sources(sourced: &[SourcedValue]) -> bool {
     let mut seen = BTreeSet::new();
     for sv in sourced {
-        if !seen.insert(&sv.source_id) {
-            continue;
-        }
+        seen.insert(&sv.source_id);
     }
     seen.len() >= 2
 }

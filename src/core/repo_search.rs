@@ -360,6 +360,9 @@ impl RepoSearchRequest {
 
     /// Validate the request, returning an error if invalid.
     pub fn validate(&self, max_query_chars: usize) -> Result<(), String> {
+        if self.owner.is_some() && self.repo.as_deref().is_some_and(|repo| repo.contains('/')) {
+            return Err("repo must not contain '/' when owner is provided".to_string());
+        }
         if self.query.trim().is_empty() && self.resolved_repo_locator().is_none() {
             return Err(
                 "repo_search requires a non-empty query or a repository locator such as owner+repo or repo:owner/name"
@@ -834,6 +837,17 @@ mod tests {
         };
         let err = req.validate(512).unwrap_err();
         assert!(err.contains("timeout_ms"));
+    }
+
+    #[test]
+    fn validate_rejects_slash_repo_with_explicit_owner() {
+        let req = RepoSearchRequest {
+            owner: Some("my-org".to_string()),
+            repo: Some("tokio-rs/axum".to_string()),
+            ..Default::default()
+        };
+        let err = req.validate(512).unwrap_err();
+        assert!(err.contains("must not contain '/'"));
     }
 
     #[test]

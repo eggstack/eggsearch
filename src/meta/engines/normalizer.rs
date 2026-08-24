@@ -16,6 +16,20 @@ const TRACKING_PARAMS: &[&str] = &[
 
 const INDEX_FILES: &[&str] = &["index.html", "index.htm", "index.php"];
 
+const LOCALE_SEGMENTS: &[&str] = &[
+    "ar", "bg", "ca", "cs", "da", "de", "el", "en", "es", "et", "eu", "fa", "fi", "fr", "he", "hr",
+    "hu", "is", "ja", "ko", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sr", "sv",
+    "th", "tr", "uk", "vi", "zh",
+];
+
+const LOCALE_REGION_SEGMENTS: &[&str] = &[
+    "ar-sa", "bg-bg", "ca-es", "cs-cz", "da-dk", "de-at", "de-ch", "de-de", "el-gr", "en-au",
+    "en-ca", "en-gb", "en-ie", "en-in", "en-nz", "en-us", "es-es", "es-mx", "fa-ir", "fi-fi",
+    "fr-ca", "fr-fr", "he-il", "hu-hu", "it-it", "ja-jp", "ko-kr", "nb-no", "nl-be", "nl-nl",
+    "pl-pl", "pt-br", "pt-pt", "ro-ro", "ru-ru", "sk-sk", "sv-se", "th-th", "tr-tr", "uk-ua",
+    "vi-vn", "zh-cn", "zh-hk", "zh-tw",
+];
+
 pub fn normalize(raw: &str) -> Option<String> {
     let mut url = Url::parse(raw).ok()?;
 
@@ -90,18 +104,9 @@ fn strip_locale_prefix(path: &str) -> &str {
 }
 
 fn is_locale_segment(s: &str) -> bool {
-    let b = s.as_bytes();
-    match b.len() {
-        2 => b[0].is_ascii_alphabetic() && b[1].is_ascii_alphabetic(),
-        5 => {
-            b[0].is_ascii_alphabetic()
-                && b[1].is_ascii_alphabetic()
-                && (b[2] == b'-' || b[2] == b'_')
-                && b[3].is_ascii_alphabetic()
-                && b[4].is_ascii_alphabetic()
-        }
-        _ => false,
-    }
+    let normalized = s.to_ascii_lowercase().replace('_', "-");
+    LOCALE_SEGMENTS.contains(&normalized.as_str())
+        || LOCALE_REGION_SEGMENTS.contains(&normalized.as_str())
 }
 
 fn strip_index_file(path: &str) -> &str {
@@ -149,6 +154,26 @@ mod tests {
         let a = normalize("https://example.com/?z=1&a=2").unwrap();
         let b = normalize("https://example.com/?a=2&z=1").unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn only_known_locale_prefixes_are_removed() {
+        assert_eq!(
+            normalize("https://example.com/de/docs").unwrap(),
+            "https://example.com/docs"
+        );
+        assert_eq!(
+            normalize("https://example.com/go/rust").unwrap(),
+            "https://example.com/go/rust"
+        );
+        assert_eq!(
+            normalize("https://example.com/id/12345").unwrap(),
+            "https://example.com/id/12345"
+        );
+        assert_eq!(
+            normalize("https://example.com/xx-yy/docs").unwrap(),
+            "https://example.com/xx-yy/docs"
+        );
     }
 
     #[test]

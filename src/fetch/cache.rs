@@ -161,6 +161,8 @@ pub struct RawFetchCacheEntry {
     pub validators: CacheValidators,
     pub scope: CacheScope,
     pub content_type: Option<String>,
+    pub content_length_header: Option<usize>,
+    pub redirect_count: usize,
     pub representation: RawRepresentation,
     pub truncated: bool,
     pub browser_escalated: bool,
@@ -373,12 +375,7 @@ pub fn build_derived_key(
 }
 
 fn classify_max_chars(max_chars: usize) -> usize {
-    match max_chars {
-        0..=4096 => 4096,
-        4097..=12000 => 12000,
-        12001..=50000 => 50000,
-        _ => max_chars,
-    }
+    max_chars
 }
 
 fn parse_http_date(s: &str) -> Option<SystemTime> {
@@ -785,10 +782,37 @@ mod tests {
 
     #[test]
     fn classify_max_chars_works() {
-        assert_eq!(classify_max_chars(1000), 4096);
-        assert_eq!(classify_max_chars(8000), 12000);
-        assert_eq!(classify_max_chars(30000), 50000);
+        assert_eq!(classify_max_chars(1000), 1000);
+        assert_eq!(classify_max_chars(8000), 8000);
+        assert_eq!(classify_max_chars(30000), 30000);
         assert_eq!(classify_max_chars(60000), 60000);
+    }
+
+    #[test]
+    fn derived_keys_do_not_share_max_chars_buckets() {
+        let low = build_derived_key(
+            &CacheScope::Anonymous,
+            1,
+            ExtractMode::Text,
+            1000,
+            false,
+            None,
+            None,
+            false,
+            false,
+        );
+        let high = build_derived_key(
+            &CacheScope::Anonymous,
+            1,
+            ExtractMode::Text,
+            4096,
+            false,
+            None,
+            None,
+            false,
+            false,
+        );
+        assert_ne!(low, high);
     }
 
     #[tokio::test]
@@ -814,6 +838,8 @@ mod tests {
             },
             scope: CacheScope::Anonymous,
             content_type: Some("text/html".into()),
+            content_length_header: Some(5),
+            redirect_count: 0,
             representation: RawRepresentation::Http,
             truncated: false,
             browser_escalated: false,
@@ -848,6 +874,8 @@ mod tests {
                 },
                 scope: CacheScope::Anonymous,
                 content_type: Some("text/html".into()),
+                content_length_header: Some(10),
+                redirect_count: 0,
                 representation: RawRepresentation::Http,
                 truncated: false,
                 browser_escalated: false,
@@ -957,7 +985,7 @@ mod tests {
     }
 
     #[test]
-    fn build_derived_key_groups_same_max_chars_class() {
+    fn build_derived_key_distinguishes_max_chars() {
         let scope = CacheScope::Anonymous;
         let k1 = build_derived_key(
             &scope,
@@ -981,7 +1009,7 @@ mod tests {
             false,
             true,
         );
-        assert_eq!(k1, k2);
+        assert_ne!(k1, k2);
     }
 
     #[test]

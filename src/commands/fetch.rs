@@ -22,6 +22,8 @@ pub async fn run(
     include_links: bool,
     as_json: bool,
 ) -> Result<()> {
+    cfg.validate()
+        .map_err(|e| anyhow!("invalid configuration: {e}"))?;
     if !cfg.fetch.enabled {
         anyhow::bail!("fetch is disabled in config; set [fetch].enabled = true to enable");
     }
