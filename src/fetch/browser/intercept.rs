@@ -30,7 +30,9 @@ pub fn is_request_allowed(url_str: &str) -> Result<(), PolicyViolation> {
         }
     }
 
-    if let Ok(ip) = host_str.parse::<Ipv6Addr>() {
+    let v6_candidate = host_str.strip_prefix('[').unwrap_or(host_str);
+    let v6_candidate = v6_candidate.strip_suffix(']').unwrap_or(v6_candidate);
+    if let Ok(ip) = v6_candidate.parse::<Ipv6Addr>() {
         if is_private_ipv6(ip) {
             return Err(PolicyViolation::PrivateNetworkTarget);
         }
@@ -127,6 +129,9 @@ fn is_private_ipv4(ip: Ipv4Addr) -> bool {
 }
 
 fn is_private_ipv6(ip: Ipv6Addr) -> bool {
+    if let Some(v4) = ip.to_ipv4_mapped() {
+        return is_private_ipv4(v4);
+    }
     ip.is_loopback()
         || ip.is_unspecified()
         || ip.is_unicast_link_local()
@@ -250,6 +255,39 @@ mod tests {
             is_request_allowed("http://[::1]/"),
             Err(PolicyViolation::PrivateNetworkTarget)
         );
+    }
+
+    #[test]
+    fn is_private_ipv6_unwraps_ipv4_mapped() {
+        let mapped_private = "::ffff:10.0.0.1".parse::<Ipv6Addr>().unwrap();
+        let mapped_loopback = "::ffff:127.0.0.1".parse::<Ipv6Addr>().unwrap();
+        let mapped_link_local = "::ffff:169.254.169.254".parse::<Ipv6Addr>().unwrap();
+        let mapped_public = "::ffff:93.184.216.34".parse::<Ipv6Addr>().unwrap();
+        assert!(is_private_ipv6(mapped_private));
+        assert!(is_private_ipv6(mapped_loopback));
+        assert!(is_private_ipv6(mapped_link_local));
+        assert!(!is_private_ipv6(mapped_public));
+    }
+
+    #[test]
+    fn blocks_ipv4_mapped_ipv6_literal() {
+        assert_eq!(
+            is_request_allowed("http://[::ffff:10.0.0.1]/"),
+            Err(PolicyViolation::PrivateNetworkTarget)
+        );
+    }
+
+    #[test]
+    fn blocks_ipv4_mapped_loopback_literal() {
+        assert_eq!(
+            is_request_allowed("http://[::ffff:127.0.0.1]/"),
+            Err(PolicyViolation::PrivateNetworkTarget)
+        );
+    }
+
+    #[test]
+    fn allows_public_mapped_ipv6_literal() {
+        assert!(is_request_allowed("http://[::ffff:93.184.216.34]/").is_ok());
     }
 
     #[test]

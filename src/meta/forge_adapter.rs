@@ -128,6 +128,7 @@ pub(crate) struct ForgeReadBudgetTelemetry {
     pub remaining: usize,
     pub request_count: usize,
     pub exhausted_by: Option<ForgeRequestKind>,
+    pub per_response_cap_hits: usize,
 }
 
 pub(crate) struct ForgeReadBudget {
@@ -137,6 +138,7 @@ pub(crate) struct ForgeReadBudget {
     pub exhausted: bool,
     pub exhausted_by: Option<ForgeRequestKind>,
     pub request_count: usize,
+    pub per_response_cap_hits: usize,
 }
 
 impl ForgeReadBudget {
@@ -148,6 +150,7 @@ impl ForgeReadBudget {
             exhausted: false,
             exhausted_by: None,
             request_count: 0,
+            per_response_cap_hits: 0,
         }
     }
 
@@ -175,6 +178,7 @@ impl ForgeReadBudget {
             remaining: self.remaining(),
             request_count: self.request_count,
             exhausted_by: self.exhausted_by,
+            per_response_cap_hits: self.per_response_cap_hits,
         }
     }
 }
@@ -190,6 +194,7 @@ pub(crate) async fn read_with_budget(
     }
     if let Some(content_length) = resp.content_length() {
         if content_length > effective_cap as u64 {
+            budget.per_response_cap_hits += 1;
             return Err(ForgeReadError::ContentLengthTooLarge);
         }
     }
@@ -201,6 +206,7 @@ pub(crate) async fn read_with_budget(
         let chunk = chunk.map_err(|_| ForgeReadError::StreamReadFailure)?;
         observed += chunk.len();
         if observed > effective_cap {
+            budget.per_response_cap_hits += 1;
             return Err(ForgeReadError::PerResponseLimitExceeded);
         }
         body.extend_from_slice(&chunk);
@@ -440,6 +446,7 @@ async fn fetch_github_tree(
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let ref_name = req.ref_name.as_deref().unwrap_or("HEAD");
     let max_d = max_depth(req);
+    let max_e = max_entries(req);
     let aggregate_limit = config
         .forge_budget_limit
         .unwrap_or(DEFAULT_MAX_RESPONSE_BYTES);
@@ -511,7 +518,7 @@ async fn fetch_github_tree(
     let tree: GitHubTreeResponse =
         serde_json::from_str(&body_str).map_err(|e| format!("malformed response: {e}"))?;
 
-    let truncated_by_provider = tree.truncated.unwrap_or(false);
+    let mut truncated_by_provider = tree.truncated.unwrap_or(false);
 
     let mut entries: Vec<ForgeRawEntry> = tree
         .tree
@@ -553,7 +560,20 @@ async fn fetch_github_tree(
         }
     }
 
+    let mut truncated_by_eggsearch = false;
+    if entries.len() > max_e {
+        entries.truncate(max_e);
+        truncated_by_eggsearch = true;
+        truncated_by_provider = true;
+    }
+
     let mut warnings = Vec::new();
+    if truncated_by_eggsearch {
+        warnings.push(SearchWarning::new(
+            "github_tree",
+            "response_truncated_by_eggsearch: entry limit reached",
+        ));
+    }
     if truncated_by_provider {
         warnings.push(SearchWarning::new(
             "github_tree",
@@ -588,7 +608,7 @@ async fn fetch_github_tree(
         provider_id: "github_tree".to_string(),
         endpoint_origin: extract_host(base),
         response_bytes_observed: telemetry.aggregate_observed,
-        response_cap_applied: telemetry.aggregate_observed >= telemetry.aggregate_limit,
+        response_cap_applied: telemetry.per_response_cap_hits > 0,
         dns_policy_class: classify_host_from_url(base).await,
         aggregate_byte_cap_reached: budget.exceeded(),
         aggregate_limit: telemetry.aggregate_limit,
@@ -926,7 +946,7 @@ async fn fetch_gitlab_tree(
         provider_id: "gitlab_tree".to_string(),
         endpoint_origin: extract_host(config.base_url.as_deref().unwrap_or(GITLAB_API_BASE)),
         response_bytes_observed: telemetry.aggregate_observed,
-        response_cap_applied: telemetry.aggregate_observed >= telemetry.aggregate_limit,
+        response_cap_applied: telemetry.per_response_cap_hits > 0,
         dns_policy_class: classify_host_from_url(
             config.base_url.as_deref().unwrap_or(GITLAB_API_BASE),
         )
@@ -1175,7 +1195,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         let tree: ForgeTreeApiResponse =
             serde_json::from_str(body_str).map_err(|e| format!("malformed response: {e}"))?;
 
-        truncated_by_provider = tree.truncated.unwrap_or(false);
+        truncated_by_provider |= tree.truncated.unwrap_or(false);
 
         let page_len = tree.tree.len();
         for item in tree.tree {
@@ -1245,7 +1265,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         provider_id: provider_id.to_string(),
         endpoint_origin: extract_host(api_base),
         response_bytes_observed: telemetry.aggregate_observed,
-        response_cap_applied: telemetry.aggregate_observed >= telemetry.aggregate_limit,
+        response_cap_applied: telemetry.per_response_cap_hits > 0,
         dns_policy_class: classify_host_from_url(api_base).await,
         aggregate_byte_cap_reached: budget.exceeded(),
         aggregate_limit: telemetry.aggregate_limit,

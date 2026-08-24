@@ -230,18 +230,25 @@ pub struct FetchCache {
     raw: Mutex<LruCache<RawCacheKey, RawFetchCacheEntry>>,
     derived: Mutex<LruCache<DerivedCacheKey, DerivedDocumentCacheEntry>>,
     raw_max_bytes: usize,
+    derived_max_bytes: usize,
     current_raw_bytes: AtomicUsize,
     current_derived_bytes: AtomicUsize,
 }
 
 impl FetchCache {
-    pub fn new(max_raw_entries: usize, max_derived_entries: usize, raw_max_bytes: usize) -> Self {
+    pub fn new(
+        max_raw_entries: usize,
+        max_derived_entries: usize,
+        raw_max_bytes: usize,
+        derived_max_bytes: usize,
+    ) -> Self {
         let raw_cap = std::num::NonZeroUsize::new(max_raw_entries.max(1)).unwrap();
         let derived_cap = std::num::NonZeroUsize::new(max_derived_entries.max(1)).unwrap();
         Self {
             raw: Mutex::new(LruCache::new(raw_cap)),
             derived: Mutex::new(LruCache::new(derived_cap)),
             raw_max_bytes,
+            derived_max_bytes,
             current_raw_bytes: AtomicUsize::new(0),
             current_derived_bytes: AtomicUsize::new(0),
         }
@@ -288,7 +295,7 @@ impl FetchCache {
 
     pub async fn insert_derived(&self, key: DerivedCacheKey, entry: DerivedDocumentCacheEntry) {
         let entry_len = derived_entry_bytes(&entry);
-        if entry_len > self.raw_max_bytes {
+        if entry_len > self.derived_max_bytes {
             return;
         }
         let mut derived = self.derived.lock().await;
@@ -298,7 +305,8 @@ impl FetchCache {
                 .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
         }
 
-        while self.current_derived_bytes.load(Ordering::Relaxed) + entry_len > self.raw_max_bytes
+        while self.current_derived_bytes.load(Ordering::Relaxed) + entry_len
+            > self.derived_max_bytes
             && !derived.is_empty()
         {
             if let Some((_, evicted)) = derived.pop_lru() {
@@ -879,7 +887,7 @@ mod tests {
 
     #[tokio::test]
     async fn cache_insert_and_get_raw() {
-        let cache = FetchCache::new(10, 10, 1024 * 1024);
+        let cache = FetchCache::new(10, 10, 1024 * 1024, 1024 * 1024);
         let key = RawCacheKey {
             url: "https://x.com".into(),
             scope: CacheScope::Anonymous,
@@ -914,7 +922,7 @@ mod tests {
 
     #[tokio::test]
     async fn cache_evicts_oldest_on_byte_pressure() {
-        let cache = FetchCache::new(10, 10, 20);
+        let cache = FetchCache::new(10, 10, 20, 20);
         for i in 0..5 {
             let key = RawCacheKey {
                 url: format!("https://x.com/{i}"),
@@ -950,7 +958,7 @@ mod tests {
 
     #[tokio::test]
     async fn cache_derived_insert_and_get() {
-        let cache = FetchCache::new(10, 10, 1024 * 1024);
+        let cache = FetchCache::new(10, 10, 1024 * 1024, 1024 * 1024);
         let key = DerivedCacheKey {
             scope: CacheScope::Anonymous,
             raw_content_hash: 12345,
@@ -1040,7 +1048,7 @@ mod tests {
 
     #[tokio::test]
     async fn cache_derived_evicts_oldest_on_byte_pressure() {
-        let cache = FetchCache::new(10, 10, 500);
+        let cache = FetchCache::new(10, 10, 500, 500);
         for i in 0..5u64 {
             cache
                 .insert_derived(make_derived_key(i), make_derived_entry(i, 100))
@@ -1063,7 +1071,7 @@ mod tests {
 
     #[tokio::test]
     async fn cache_derived_oversized_entry_not_stored() {
-        let cache = FetchCache::new(10, 10, 64);
+        let cache = FetchCache::new(10, 10, 64, 64);
         let key = make_derived_key(1);
         cache
             .insert_derived(key.clone(), make_derived_entry(1, 4096))
@@ -1071,6 +1079,60 @@ mod tests {
         assert!(cache.get_derived(&key).await.is_none());
         let stats = cache.stats().await;
         assert_eq!(stats.derived_entries, 0);
+    }
+
+    #[tokio::test]
+    async fn cache_derived_budget_is_independent_of_raw_budget() {
+        let cache = FetchCache::new(10, 10, 8, 4096);
+        for i in 0..4u64 {
+            cache
+                .insert_derived(make_derived_key(i), make_derived_entry(i, 100))
+                .await;
+        }
+        for i in 0..4u64 {
+            assert!(
+                cache.get_derived(&make_derived_key(i)).await.is_some(),
+                "derived entry {i} should survive: derived budget is independent of raw budget"
+            );
+        }
+        let stats = cache.stats().await;
+        assert_eq!(stats.derived_entries, 4);
+    }
+
+    #[tokio::test]
+    async fn cache_raw_oversized_entry_not_stored_with_separate_derived_budget() {
+        let cache = FetchCache::new(10, 10, 16, 4096);
+        let key = RawCacheKey {
+            url: "https://x.com".into(),
+            scope: CacheScope::Anonymous,
+        };
+        let entry = RawFetchCacheEntry {
+            final_url: "https://x.com".into(),
+            status: 200,
+            headers: HashMap::new(),
+            body: Arc::from(vec![0u8; 128]),
+            fetched_at: SystemTime::now(),
+            freshness: CacheFreshness::default(),
+            validators: CacheValidators {
+                etag: None,
+                last_modified: None,
+            },
+            scope: CacheScope::Anonymous,
+            content_type: Some("text/html".into()),
+            content_length_header: Some(128),
+            redirect_count: 0,
+            representation: RawRepresentation::Http,
+            truncated: false,
+            browser_escalated: false,
+        };
+        assert!(!cache.insert_raw(key.clone(), entry).await);
+        assert!(cache.get_raw(&key).await.is_none());
+
+        let dkey = make_derived_key(1);
+        cache
+            .insert_derived(dkey.clone(), make_derived_entry(1, 100))
+            .await;
+        assert!(cache.get_derived(&dkey).await.is_some());
     }
 
     #[test]

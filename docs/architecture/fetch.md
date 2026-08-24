@@ -463,6 +463,7 @@ enabled = true
 memory_max_entries = 256
 memory_max_bytes = 67108864
 derived_max_entries = 512
+derived_max_bytes = 67108864
 default_ttl_seconds = 900
 ```
 

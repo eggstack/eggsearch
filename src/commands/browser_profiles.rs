@@ -74,8 +74,18 @@ async fn run_inspect(mgr: &ProfileManager, name: &str) -> Result<()> {
     let profile_dir = mgr.profile_dir_for(&meta.id);
     let chrome_data = mgr.chrome_data_dir_for(&meta.id);
 
-    let dir_size = compute_dir_size(&profile_dir);
-    let chrome_size = compute_dir_size(&chrome_data);
+    let (dir_size, chrome_size) = {
+        let profile_dir = profile_dir.clone();
+        let chrome_data = chrome_data.clone();
+        tokio::task::spawn_blocking(move || {
+            (
+                compute_dir_size(&profile_dir),
+                compute_dir_size(&chrome_data),
+            )
+        })
+        .await
+        .map_err(|e| anyhow!("error computing profile sizes: {e}"))?
+    };
 
     let lock_path = profile_dir.join(".lock");
     let lock_state = if lock_path.exists() {

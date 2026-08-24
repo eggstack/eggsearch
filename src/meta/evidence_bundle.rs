@@ -345,24 +345,15 @@ fn apply_fetch_caps(
     let mut total_chars = 0usize;
     let mut total_chars_exceeded = false;
     for item in fetch_items.iter_mut() {
-        let text_len = item.text.as_ref().map(|t| t.len()).unwrap_or(0);
+        let text_len = item.text.as_ref().map(|t| t.chars().count()).unwrap_or(0);
         if total_chars + text_len > max_total_chars {
             // Truncate this item's text to fit the budget
             let remaining = max_total_chars.saturating_sub(total_chars);
-            if remaining > 0 {
-                if let Some(ref mut text) = item.text {
-                    // Reserve 1 char for the '…' truncation marker
-                    let safe_cap = remaining.saturating_sub(1);
-                    if safe_cap > 0 {
-                        text.truncate(safe_cap);
-                    } else {
-                        text.clear();
-                    }
-                    text.push('…');
-                }
-            } else {
+            if remaining == 0 {
                 item.text = None;
                 item.truncated = true;
+            } else if let Some(ref mut text) = item.text {
+                *text = crate::core::sanitize::bound_text(text, remaining).0;
             }
             total_chars_exceeded = true;
             break;
@@ -935,13 +926,75 @@ mod tests {
         let bundle = build_evidence_bundle(req);
         assert!(bundle.limits.total_chars_exceeded);
         // Second item should be truncated or removed
-        // Use chars().count() since budget is char-based but String::len() is byte-based
         let total: usize = bundle
             .fetched_items
             .iter()
             .filter_map(|f| f.text.as_ref().map(|t| t.chars().count()))
             .sum();
         assert!(total <= 100, "total chars {total} exceeded budget 100");
+    }
+
+    #[test]
+    fn total_chars_budget_multibyte_no_panic() {
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![],
+            fetches: vec![
+                EvidenceFetchInput {
+                    source_id: None,
+                    url: Some("https://a.com".to_string()),
+                    locator: None,
+                    fetched: true,
+                    content_type: None,
+                    language: None,
+                    selected_span: None,
+                    code_span_id: None,
+                    line_start: None,
+                    line_end: None,
+                    text: Some("あ".repeat(40)),
+                    truncated: false,
+                    trust: None,
+                    trust_markers: None,
+                    warnings: vec![],
+                },
+                EvidenceFetchInput {
+                    source_id: None,
+                    url: Some("https://b.com".to_string()),
+                    locator: None,
+                    fetched: true,
+                    content_type: None,
+                    language: None,
+                    selected_span: None,
+                    code_span_id: None,
+                    line_start: None,
+                    line_end: None,
+                    text: Some("b".repeat(60)),
+                    truncated: false,
+                    trust: None,
+                    trust_markers: None,
+                    warnings: vec![],
+                },
+            ],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: Some(50),
+            warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(bundle.limits.total_chars_exceeded);
+        let total: usize = bundle
+            .fetched_items
+            .iter()
+            .filter_map(|f| f.text.as_ref().map(|t| t.chars().count()))
+            .sum();
+        assert!(total <= 50, "total chars {total} exceeded budget 50");
+        for text in bundle.fetched_items.iter().filter_map(|f| f.text.as_ref()) {
+            assert!(text.is_char_boundary(text.len()));
+        }
     }
 
     #[test]

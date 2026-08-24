@@ -195,6 +195,7 @@ impl ServerState {
                 config.fetch.cache.memory_max_entries,
                 config.fetch.cache.derived_max_entries,
                 config.fetch.cache.memory_max_bytes,
+                config.fetch.cache.derived_max_bytes,
             )))
         } else {
             None
@@ -326,6 +327,7 @@ impl ServerState {
                 config.fetch.cache.memory_max_entries,
                 config.fetch.cache.derived_max_entries,
                 config.fetch.cache.memory_max_bytes,
+                config.fetch.cache.derived_max_bytes,
             )))
         } else {
             None

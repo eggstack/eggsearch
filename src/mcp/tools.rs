@@ -2225,7 +2225,8 @@ pub async fn run_web_fetch(
         .unwrap_or(false);
     let requested_max_chars = args
         .max_chars
-        .unwrap_or(state.config.fetch.max_chars_default);
+        .unwrap_or(state.config.fetch.max_chars_default)
+        .min(state.config.fetch.max_chars_cap);
 
     let mut cached_response: Option<crate::core::fetch::WebFetchResponse> = None;
     if cache_policy == crate::core::fetch::FetchCachePolicy::Default {
@@ -5186,7 +5187,7 @@ pub async fn run_security_search(
     // server-side paths to be read by the applicability pipeline,
     // bypassing the documented local workspace safety model.
     if !args.dependency_files.is_empty() {
-        let backend = state.local_backend.as_deref().ok_or_else(|| {
+        let backend = state.local_backend.clone().ok_or_else(|| {
             ToolError::Validation(
                 "dependency_files requires local workspace to be enabled".to_string(),
             )
@@ -5196,55 +5197,61 @@ pub async fn run_security_search(
                 "dependency_files requires local workspace to be enabled".to_string(),
             ));
         }
-        let roots = backend.roots();
-        let root_canonicals: Vec<std::path::PathBuf> = roots
-            .iter()
-            .filter_map(|(_, p)| std::fs::canonicalize(p).ok())
-            .collect();
-        if root_canonicals.is_empty() {
-            return Err(ToolError::Validation(
-                "dependency_files requires at least one configured local workspace root"
-                    .to_string(),
-            ));
-        }
-        for file_path in &args.dependency_files {
-            let path = Path::new(file_path);
-            if path.as_os_str().is_empty() {
+        let dependency_files = args.dependency_files.clone();
+        tokio::task::spawn_blocking(move || {
+            let max_file_bytes = backend.config().max_file_bytes;
+            let root_canonicals: Vec<std::path::PathBuf> = backend
+                .roots()
+                .iter()
+                .filter_map(|(_, p)| std::fs::canonicalize(p).ok())
+                .collect();
+            if root_canonicals.is_empty() {
                 return Err(ToolError::Validation(
-                    "dependency_files path must not be empty".to_string(),
+                    "dependency_files requires at least one configured local workspace root"
+                        .to_string(),
                 ));
             }
-            let canonical_input = std::fs::canonicalize(path).map_err(|e| {
-                ToolError::Validation(format!(
-                    "dependency_files path '{file_path}' cannot be resolved: {e}"
-                ))
-            })?;
-            if !canonical_input.is_file() {
-                return Err(ToolError::Validation(format!(
-                    "dependency_files path '{file_path}' is not a regular file"
-                )));
-            }
-            if let Ok(meta) = std::fs::metadata(&canonical_input) {
-                if meta.len() > backend.config().max_file_bytes as u64 {
+            for file_path in &dependency_files {
+                let path = Path::new(file_path);
+                if path.as_os_str().is_empty() {
+                    return Err(ToolError::Validation(
+                        "dependency_files path must not be empty".to_string(),
+                    ));
+                }
+                let canonical_input = std::fs::canonicalize(path).map_err(|e| {
+                    ToolError::Validation(format!(
+                        "dependency_files path '{file_path}' cannot be resolved: {e}"
+                    ))
+                })?;
+                if !canonical_input.is_file() {
                     return Err(ToolError::Validation(format!(
-                        "dependency_files path '{file_path}' exceeds max_file_bytes ({})",
-                        backend.config().max_file_bytes
+                        "dependency_files path '{file_path}' is not a regular file"
+                    )));
+                }
+                if let Ok(meta) = std::fs::metadata(&canonical_input) {
+                    if meta.len() > max_file_bytes as u64 {
+                        return Err(ToolError::Validation(format!(
+                            "dependency_files path '{file_path}' exceeds max_file_bytes ({max_file_bytes})",
+                        )));
+                    }
+                }
+                let mut inside_root = false;
+                for root_canon in &root_canonicals {
+                    if canonical_input.starts_with(root_canon) {
+                        inside_root = true;
+                        break;
+                    }
+                }
+                if !inside_root {
+                    return Err(ToolError::Validation(format!(
+                        "dependency_files path '{file_path}' is not within any configured local workspace root"
                     )));
                 }
             }
-            let mut inside_root = false;
-            for root_canon in &root_canonicals {
-                if canonical_input.starts_with(root_canon) {
-                    inside_root = true;
-                    break;
-                }
-            }
-            if !inside_root {
-                return Err(ToolError::Validation(format!(
-                    "dependency_files path '{file_path}' is not within any configured local workspace root"
-                )));
-            }
-        }
+            Ok(())
+        })
+        .await
+        .map_err(|e| ToolError::internal(format!("dependency_files validation failed: {e}")))??;
     }
 
     let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(

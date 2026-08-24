@@ -32,7 +32,8 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
     let chrome_data = mgr.chrome_data_dir_for(&meta.id);
 
     if !chrome_data.exists() {
-        std::fs::create_dir_all(&chrome_data)
+        tokio::fs::create_dir_all(&chrome_data)
+            .await
             .map_err(|e| anyhow!("error creating chrome-data directory: {e}"))?;
     }
 

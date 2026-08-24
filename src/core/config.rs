@@ -298,6 +298,9 @@ fn default_cache_memory_max_bytes() -> usize {
 fn default_cache_derived_max_entries() -> usize {
     512
 }
+fn default_cache_derived_max_bytes() -> usize {
+    67_108_864
+}
 fn default_cache_default_ttl_seconds() -> u64 {
     900
 }
@@ -372,6 +375,10 @@ pub struct FetchCacheSection {
     /// Maximum number of derived (extracted document) entries. Default: 512.
     #[serde(default = "default_cache_derived_max_entries")]
     pub derived_max_entries: usize,
+    /// Maximum total bytes for cached derived (extracted document)
+    /// entries, independent of the raw-body byte budget. Default: 64MB.
+    #[serde(default = "default_cache_derived_max_bytes")]
+    pub derived_max_bytes: usize,
     /// Default TTL in seconds for cached responses without explicit
     /// `max-age` or `Expires` headers. Default: 900 (15 minutes).
     #[serde(default = "default_cache_default_ttl_seconds")]
@@ -385,6 +392,7 @@ impl Default for FetchCacheSection {
             memory_max_entries: default_cache_memory_max_entries(),
             memory_max_bytes: default_cache_memory_max_bytes(),
             derived_max_entries: default_cache_derived_max_entries(),
+            derived_max_bytes: default_cache_derived_max_bytes(),
             default_ttl_seconds: default_cache_default_ttl_seconds(),
         }
     }
@@ -1043,6 +1051,11 @@ impl AppConfig {
         if self.fetch.cache.derived_max_entries == 0 {
             return Err(CoreError::Config(
                 "[fetch].cache.derived_max_entries must be > 0".to_string(),
+            ));
+        }
+        if self.fetch.cache.derived_max_bytes == 0 {
+            return Err(CoreError::Config(
+                "[fetch].cache.derived_max_bytes must be > 0".to_string(),
             ));
         }
 

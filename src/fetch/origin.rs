@@ -116,7 +116,9 @@ impl OriginController {
         }
 
         let sem = Arc::clone(&state.semaphore);
-        Ok(sem.acquire_owned().await.unwrap())
+        sem.acquire_owned()
+            .await
+            .map_err(|_| OriginBackoffError::LimiterClosed)
     }
 
     pub async fn record_success(&self, key: &OriginKey) {
@@ -243,6 +245,7 @@ impl OriginController {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OriginBackoffError {
     CircuitOpen { remaining_ms: u64 },
+    LimiterClosed,
 }
 
 impl std::fmt::Display for OriginBackoffError {
@@ -251,6 +254,7 @@ impl std::fmt::Display for OriginBackoffError {
             Self::CircuitOpen { remaining_ms } => {
                 write!(f, "origin circuit breaker open, retry in {remaining_ms}ms")
             }
+            Self::LimiterClosed => write!(f, "origin limiter closed"),
         }
     }
 }

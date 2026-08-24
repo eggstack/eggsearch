@@ -3239,13 +3239,14 @@ pub(crate) fn build_retrieval_failures(
                     RetrievalFailureKind::ProviderFailed
                 };
                 let roles = map_provider_to_intended_roles(provider_id, "source");
-                let role = roles.into_iter().next().unwrap_or_default();
-                failures.push(RetrievalFailure {
-                    kind,
-                    role,
-                    message: format!("[{}] {}", pf.error_class, pf.message),
-                    provider_id: Some(provider_id.clone()),
-                });
+                for role in roles {
+                    failures.push(RetrievalFailure {
+                        kind,
+                        role,
+                        message: format!("[{}] {}", pf.error_class, pf.message),
+                        provider_id: Some(provider_id.clone()),
+                    });
+                }
             }
         }
     }
