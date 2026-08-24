@@ -593,7 +593,7 @@ pub fn code_span_id(
 
 /// Canonical key for normalizing a repo locator's identity.
 ///
-/// All string fields are lowercased and stripped of common trivial
+/// Identity hashing lowercases all string fields and strips common trivial
 /// variations (`.git` suffix on repo, leading/trailing slashes on path).
 #[derive(Clone, Debug, Default)]
 pub struct RepoLocatorKey<'a> {
@@ -639,13 +639,21 @@ fn strip_dot_git(name: &str) -> &str {
 /// This is distinct from `fetch_id` because locators carry structured
 /// identity that should be normalized independently of URL form.
 pub fn compute_locator_id(key: &RepoLocatorKey<'_>) -> String {
+    let host = key.host.map(str::to_ascii_lowercase);
+    let owner = key.owner.map(str::to_ascii_lowercase);
+    let repo = key
+        .repo
+        .map(str::to_ascii_lowercase)
+        .map(|repo| strip_dot_git(&repo).to_string());
+    let ref_name = key.ref_name.map(str::to_ascii_lowercase);
+    let path = key.path.to_ascii_lowercase();
     let mut hasher = FnvHasher::new();
     hasher.write(&entity_prefix("locator"));
-    write_opt_str(&mut hasher, key.host);
-    write_opt_str(&mut hasher, key.owner);
-    write_opt_str(&mut hasher, key.repo);
-    write_opt_str(&mut hasher, key.ref_name);
-    write_str(&mut hasher, key.path);
+    write_opt_str(&mut hasher, host.as_deref());
+    write_opt_str(&mut hasher, owner.as_deref());
+    write_opt_str(&mut hasher, repo.as_deref());
+    write_opt_str(&mut hasher, ref_name.as_deref());
+    write_str(&mut hasher, path.trim_matches('/'));
     format!("loc_{:016x}", hasher.finish())
 }
 
@@ -1053,6 +1061,25 @@ mod tests {
         loc.repo = Some("repo.git".to_string());
         let b = locator_id(&loc);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn locator_id_normalizes_case_and_path_slashes() {
+        let make = |owner: &str, repo: &str, ref_name: &str, path: &str| RepoLocator {
+            kind: crate::core::repo_fetch::RepoLocatorKind::Remote,
+            host: Some(crate::core::code_metadata::CodeHost::Github),
+            owner: Some(owner.to_string()),
+            repo: Some(repo.to_string()),
+            ref_name: Some(ref_name.to_string()),
+            commit_sha: None,
+            path: path.to_string(),
+            workspace_root: None,
+        };
+
+        assert_eq!(
+            locator_id(&make("Owner", "Repo.GIT", "MAIN", "/SRC/MAIN.RS/")),
+            locator_id(&make("owner", "repo", "main", "src/main.rs"))
+        );
     }
 
     #[test]

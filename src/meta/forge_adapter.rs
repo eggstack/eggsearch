@@ -189,7 +189,7 @@ pub(crate) async fn read_with_budget(
         return Err(ForgeReadError::AggregateBudgetExhausted);
     }
     if let Some(content_length) = resp.content_length() {
-        if content_length as usize > effective_cap {
+        if content_length > effective_cap as u64 {
             return Err(ForgeReadError::ContentLengthTooLarge);
         }
     }
@@ -374,7 +374,7 @@ pub async fn fetch_tree(
         .await
         .map_err(|_| "concurrency limit exceeded".to_string())?;
     if let Some(ref base) = config.base_url {
-        validate_base_url(base, config.api_key.as_deref(), &config.endpoint_policy)?;
+        validate_base_url_async(base, config.api_key.as_deref(), &config.endpoint_policy).await?;
     }
     let client = build_client()?;
     let timeout = timeout_duration(req);
@@ -589,7 +589,7 @@ async fn fetch_github_tree(
         endpoint_origin: extract_host(base),
         response_bytes_observed: telemetry.aggregate_observed,
         response_cap_applied: telemetry.aggregate_observed >= telemetry.aggregate_limit,
-        dns_policy_class: classify_host_from_url(base),
+        dns_policy_class: classify_host_from_url(base).await,
         aggregate_byte_cap_reached: budget.exceeded(),
         aggregate_limit: telemetry.aggregate_limit,
         aggregate_remaining: telemetry.remaining,
@@ -929,7 +929,8 @@ async fn fetch_gitlab_tree(
         response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
         dns_policy_class: classify_host_from_url(
             config.base_url.as_deref().unwrap_or(GITLAB_API_BASE),
-        ),
+        )
+        .await,
         aggregate_byte_cap_reached: budget.exceeded(),
         aggregate_limit: telemetry.aggregate_limit,
         aggregate_remaining: telemetry.remaining,
@@ -1245,7 +1246,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
         endpoint_origin: extract_host(api_base),
         response_bytes_observed: telemetry.aggregate_observed,
         response_cap_applied: telemetry.aggregate_observed >= DEFAULT_MAX_RESPONSE_BYTES,
-        dns_policy_class: classify_host_from_url(api_base),
+        dns_policy_class: classify_host_from_url(api_base).await,
         aggregate_byte_cap_reached: budget.exceeded(),
         aggregate_limit: telemetry.aggregate_limit,
         aggregate_remaining: telemetry.remaining,
@@ -1484,6 +1485,35 @@ pub fn validate_base_url(
     api_key: Option<&str>,
     policy: &ForgeEndpointPolicy,
 ) -> Result<(), String> {
+    let host_to_resolve = validate_base_url_common(url, api_key, policy)?;
+    if let Some(host) = host_to_resolve {
+        let addrs = std::net::ToSocketAddrs::to_socket_addrs(&host)
+            .map_err(|e| format!("DNS resolution failed for {host}: {e}"))?;
+        validate_resolved_addresses(addrs, policy)?;
+    }
+    Ok(())
+}
+
+async fn validate_base_url_async(
+    url: &str,
+    api_key: Option<&str>,
+    policy: &ForgeEndpointPolicy,
+) -> Result<(), String> {
+    let host_to_resolve = validate_base_url_common(url, api_key, policy)?;
+    if let Some(host) = host_to_resolve {
+        let addrs = tokio::net::lookup_host(&host)
+            .await
+            .map_err(|e| format!("DNS resolution failed for {host}: {e}"))?;
+        validate_resolved_addresses(addrs, policy)?;
+    }
+    Ok(())
+}
+
+fn validate_base_url_common(
+    url: &str,
+    api_key: Option<&str>,
+    policy: &ForgeEndpointPolicy,
+) -> Result<Option<String>, String> {
     let parsed = url
         .parse::<reqwest::Url>()
         .map_err(|e| format!("invalid base URL: {e}"))?;
@@ -1518,19 +1548,25 @@ pub fn validate_base_url(
                 if let Some(ip) = parse_literal_ip(host) {
                     classify_and_reject_address(ip, policy)?;
                 } else {
-                    let addrs = std::net::ToSocketAddrs::to_socket_addrs(&format!("{host}:443"))
-                        .map_err(|e| format!("DNS resolution failed for {host}: {e}"))?;
-                    for addr in addrs {
-                        match addr {
-                            std::net::SocketAddr::V4(v4) => {
-                                classify_and_reject_address(IpAddr::V4(*v4.ip()), policy)?;
-                            }
-                            std::net::SocketAddr::V6(v6) => {
-                                classify_and_reject_address(IpAddr::V6(*v6.ip()), policy)?;
-                            }
-                        }
-                    }
+                    return Ok(Some(format!("{host}:443")));
                 }
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn validate_resolved_addresses(
+    addrs: impl IntoIterator<Item = std::net::SocketAddr>,
+    policy: &ForgeEndpointPolicy,
+) -> Result<(), String> {
+    for addr in addrs {
+        match addr {
+            std::net::SocketAddr::V4(v4) => {
+                classify_and_reject_address(IpAddr::V4(*v4.ip()), policy)?;
+            }
+            std::net::SocketAddr::V6(v6) => {
+                classify_and_reject_address(IpAddr::V6(*v6.ip()), policy)?;
             }
         }
     }
@@ -1704,7 +1740,7 @@ fn extract_host(url: &str) -> Option<String> {
         .and_then(|u| u.host_str().map(String::from))
 }
 
-fn classify_host_from_url(url: &str) -> Option<String> {
+async fn classify_host_from_url(url: &str) -> Option<String> {
     let parsed = url.parse::<reqwest::Url>().ok()?;
     let host = parsed.host_str()?;
     if let Some(ip) = parse_literal_ip(host) {
@@ -1714,7 +1750,7 @@ fn classify_host_from_url(url: &str) -> Option<String> {
         };
         return Some(class.as_str().to_string());
     }
-    let addrs = std::net::ToSocketAddrs::to_socket_addrs(&format!("{host}:443")).ok()?;
+    let addrs = tokio::net::lookup_host(format!("{host}:443")).await.ok()?;
     for addr in addrs {
         let class = match addr {
             std::net::SocketAddr::V4(v4) => classify_ipv4_forge(*v4.ip()),

@@ -849,7 +849,7 @@ pub fn search_warning_to_agent_warning(sw: &super::SearchWarning) -> AgentWarnin
     if msg.starts_with('[') {
         if let Some(bracket_end) = msg.find(']') {
             let error_class = &msg[1..bracket_end];
-            let description = msg.get(bracket_end + 2..).unwrap_or("");
+            let description = msg.get(bracket_end + 1..).unwrap_or("").trim_start();
             let code = error_class_to_code(error_class);
             let mut w = AgentWarning::new(code, description.to_string());
             if sw.provider_id != "_system" {
@@ -1405,10 +1405,12 @@ mod tests {
         let sw_timeout = SearchWarning::new("brave", "[timeout] request timed out");
         let aw_timeout = search_warning_to_agent_warning(&sw_timeout);
         assert_eq!(aw_timeout.code, WarningCode::ProviderTimeout);
+        assert_eq!(aw_timeout.message, "request timed out");
 
         let sw_rate = SearchWarning::new("brave", "[rate_limited] 429");
         let aw_rate = search_warning_to_agent_warning(&sw_rate);
         assert_eq!(aw_rate.code, WarningCode::ProviderRateLimited);
+        assert_eq!(aw_rate.message, "429");
 
         let sw_other = SearchWarning::new("brave", "[transport_error] connection refused");
         let aw_other = search_warning_to_agent_warning(&sw_other);

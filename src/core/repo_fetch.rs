@@ -534,7 +534,7 @@ pub fn apply_line_range(
         return (vec![], None, None, false, None);
     }
 
-    let total = lines.len() as u32;
+    let total = u32::try_from(lines.len()).unwrap_or(u32::MAX);
     let start = line_start.unwrap_or(1).clamp(1, total);
     let end = line_end.unwrap_or(total).min(total);
 

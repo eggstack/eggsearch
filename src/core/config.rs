@@ -745,8 +745,9 @@ impl AppConfig {
             .into_iter()
             .filter(|id| !API_PROVIDER_IDS.contains(&id.as_str()))
             .collect();
+        let mut seen: std::collections::HashSet<String> = out.iter().cloned().collect();
         for (id, cfg) in &self.search.api {
-            if api_provider_is_configured(id, cfg) && !out.iter().any(|existing| existing == id) {
+            if api_provider_is_configured(id, cfg) && seen.insert(id.clone()) {
                 out.push(id.clone());
             }
         }

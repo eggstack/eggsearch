@@ -263,9 +263,9 @@ fn workspace_relative_path_arg(args: &RepoFetchArgs) -> Result<String, ToolError
     let legacy_repo_path = args.repo.trim();
 
     if !path.is_empty() {
-        Ok(args.path.clone())
+        Ok(path.to_string())
     } else if !legacy_repo_path.is_empty() {
-        Ok(args.repo.clone())
+        Ok(legacy_repo_path.to_string())
     } else {
         Err(ToolError::Validation(
             "workspace fetch path must not be empty".to_string(),
@@ -967,6 +967,20 @@ pub async fn run_web_search(
         merge_selection_stage_attempts(&routing_decision, &mut ep.retrieval_summary);
     }
 
+    if providers_failed.len() == effective_providers.len()
+        && !effective_providers.is_empty()
+        && resp.results.is_empty()
+    {
+        return Err(ToolError::internal(format!(
+            "all providers failed: {}",
+            providers_failed
+                .iter()
+                .filter_map(|v| v.get("message").and_then(|m| m.as_str()))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )));
+    }
+
     let payload = serde_json::json!({
         "query": resp.query,
         "mode": resp.mode,
@@ -985,20 +999,6 @@ pub async fn run_web_search(
         "conflict_metadata": resp.evidence_postprocess.as_ref().map(|ep| &ep.conflict_metadata),
         "evidence_role_summary": resp.evidence_postprocess.as_ref().and_then(|ep| ep.evidence_role_summary.as_ref()),
     });
-
-    if providers_failed.len() == effective_providers.len()
-        && !effective_providers.is_empty()
-        && resp.results.is_empty()
-    {
-        return Err(ToolError::internal(format!(
-            "all providers failed: {}",
-            providers_failed
-                .iter()
-                .filter_map(|v| v.get("message").and_then(|m| m.as_str()))
-                .collect::<Vec<_>>()
-                .join("; ")
-        )));
-    }
 
     Ok(payload)
 }
@@ -2047,7 +2047,7 @@ pub async fn run_web_fetch(
     if !lower.starts_with("http://") && !lower.starts_with("https://") {
         return Err(ToolError::Validation(format!(
             "url scheme must be http or https, got: {}",
-            &trimmed_url[..trimmed_url.len().min(20)]
+            trimmed_url.chars().take(20).collect::<String>()
         )));
     }
 
@@ -3100,7 +3100,7 @@ pub async fn run_repo_fetch(
             let total_lines = if all_lines.is_empty() {
                 None
             } else {
-                Some(all_lines.len() as u32)
+                Some(u32::try_from(all_lines.len()).unwrap_or(u32::MAX))
             };
 
             // Apply span selection: resolve symbol/match_text/explicit range
@@ -3640,7 +3640,7 @@ pub async fn run_batch_fetch(
                 if !lower.starts_with("http://") && !lower.starts_with("https://") {
                     return Err(ToolError::Validation(format!(
                         "item {i}: url scheme must be http or https, got: {}",
-                        &trimmed[..trimmed.len().min(20)]
+                        trimmed.chars().take(20).collect::<String>()
                     )));
                 }
                 if let Some(mc) = max_chars {
@@ -4046,14 +4046,35 @@ fn truncate_batch_result_to_budget(
             obj.remove("title");
             current = text_chars(obj) + meta_chars(obj);
         }
-        result.chars_returned = current;
+        result.chars_returned =
+            if result.item_type == crate::core::batch_fetch::BatchFetchItemType::Repo {
+                batch_payload_chars(&payload)
+            } else {
+                current
+            };
     } else {
         result.chars_returned = 0;
+    }
+
+    if result.chars_returned > budget {
+        result.response = None;
+        result.error = Some(format!(
+            "batch_total_budget_exhausted: item omitted because its response metadata exceeds the remaining budget of {budget} of max_total_chars={total_cap}"
+        ));
+        result.chars_returned = 0;
+        result.truncated = true;
+        return result;
     }
 
     result.response = Some(payload);
     result.truncated = true;
     result
+}
+
+fn batch_payload_chars(payload: &serde_json::Value) -> usize {
+    serde_json::to_string(payload)
+        .map(|serialized| serialized.chars().count())
+        .unwrap_or(usize::MAX)
 }
 
 /// Build a boxed future that fetches a single batch item.
@@ -4642,11 +4663,7 @@ fn make_batch_fetch_future(
                     .map_err(|e| ToolError::internal(format!("semaphore closed: {e}")))?;
                 match run_repo_fetch(state, repo_args).await {
                     Ok(payload) => {
-                        let text_len = payload
-                            .get("text")
-                            .and_then(|t| t.as_str())
-                            .map(|s| s.chars().count())
-                            .unwrap_or(0);
+                        let text_len = batch_payload_chars(&payload);
                         let truncated = payload
                             .get("truncated")
                             .and_then(|t| t.as_bool())
@@ -4775,7 +4792,7 @@ async fn run_workspace_fetch(
     let total_lines = if all_lines.is_empty() {
         None
     } else {
-        Some(all_lines.len() as u32)
+        Some(u32::try_from(all_lines.len()).unwrap_or(u32::MAX))
     };
 
     let language =
@@ -5250,6 +5267,105 @@ mod tests {
     use crate::core::sanitize::TrustMarkers;
     use crate::mcp::state::ServerState;
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn invalid_unicode_url_scheme_returns_validation_errors() {
+        let url = format!("ftp://{}", "é".repeat(12));
+        let state = Arc::new(ServerState::build(AppConfig::default()).unwrap());
+
+        let web_error = run_web_fetch(
+            state.clone(),
+            WebFetchArgs {
+                url: url.clone(),
+                max_chars: None,
+                timeout_ms: None,
+                extract_mode: None,
+                include_links: None,
+                pdf: None,
+                cache_policy: None,
+                render: None,
+                browser_profile: None,
+            },
+        )
+        .await
+        .expect_err("invalid URL scheme should fail validation");
+        assert!(web_error
+            .to_string()
+            .contains("url scheme must be http or https"));
+
+        let batch_error = run_batch_fetch(
+            state,
+            BatchFetchArgs {
+                items: vec![crate::core::batch_fetch::BatchFetchItem::Web {
+                    url,
+                    extract_mode: None,
+                    include_links: None,
+                    max_chars: None,
+                }],
+                max_items: None,
+                max_chars_per_item: None,
+                max_total_chars: None,
+                timeout_ms: None,
+                continue_on_error: None,
+            },
+        )
+        .await
+        .expect_err("invalid URL scheme should fail batch validation");
+        assert!(batch_error
+            .to_string()
+            .contains("url scheme must be http or https"));
+    }
+
+    #[test]
+    fn repo_batch_budget_counts_serialized_metadata() {
+        let payload = serde_json::json!({
+            "text": "x",
+            "raw_url": "https://example.com/a-very-long-path"
+        });
+        let result = crate::core::batch_fetch::BatchFetchResult {
+            index: 0,
+            item_type: crate::core::batch_fetch::BatchFetchItemType::Repo,
+            label: "repo".to_string(),
+            stable_id: None,
+            ok: true,
+            response: Some(payload.clone()),
+            error: None,
+            chars_returned: batch_payload_chars(&payload),
+            truncated: false,
+        };
+        assert!(result.chars_returned > 1);
+
+        let bounded = truncate_batch_result_to_budget(result, 5, 5);
+        assert!(bounded.chars_returned <= 5);
+        assert!(bounded.truncated);
+    }
+
+    #[test]
+    fn workspace_fetch_path_is_trimmed_before_use() {
+        let args = RepoFetchArgs {
+            host: Some("workspace".to_string()),
+            owner: "root".to_string(),
+            repo: " legacy.rs ".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: " file.rs ".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        };
+
+        assert_eq!(workspace_relative_path_arg(&args).unwrap(), "file.rs");
+    }
 
     #[tokio::test]
     async fn safe_search_warning_emitted_when_requested() {

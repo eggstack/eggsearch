@@ -149,8 +149,9 @@ impl IssueMetadata {
     /// preserving `self`'s elements first.
     pub fn merge(self, other: IssueMetadata) -> IssueMetadata {
         let mut labels = self.labels;
+        let mut seen_labels: std::collections::HashSet<String> = labels.iter().cloned().collect();
         for label in other.labels {
-            if !labels.contains(&label) {
+            if seen_labels.insert(label.clone()) {
                 labels.push(label);
             }
         }

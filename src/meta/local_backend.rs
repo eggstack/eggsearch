@@ -132,7 +132,7 @@ impl LocalWorkspaceBackend {
 
         let timeout_ms = req
             .timeout_ms
-            .unwrap_or(self.config.max_indexed_files as u64 / 100);
+            .unwrap_or((self.config.max_indexed_files as u64 / 100).max(250));
         let timeout = Duration::from_millis(timeout_ms);
         let max_results = req
             .max_results
@@ -2084,6 +2084,27 @@ mod tests {
         let result = rt.block_on(backend.search(&req));
         assert_eq!(result.files_scanned, 1);
         assert!(result.truncated);
+    }
+
+    #[test]
+    fn small_index_cap_uses_nonzero_default_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("file.txt"), "item").unwrap();
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            max_indexed_files: 1,
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(config).unwrap();
+        let req = LocalSearchRequest {
+            query: "item".to_string(),
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(backend.search(&req));
+        assert_eq!(result.files_scanned, 1);
     }
 
     #[test]

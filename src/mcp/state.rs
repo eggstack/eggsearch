@@ -391,13 +391,19 @@ impl ServerState {
         let roots_for_walk: Vec<std::path::PathBuf> =
             roots.iter().map(|(_, p)| p.clone()).collect();
 
-        let inventory = tokio::task::spawn_blocking(move || {
+        let inventory = match tokio::task::spawn_blocking(move || {
             let mut cfg = local_config;
             cfg.roots = roots_for_walk;
             discover_local_repos(&cfg, 2)
         })
         .await
-        .unwrap_or_default();
+        {
+            Ok(inventory) => inventory,
+            Err(error) => {
+                tracing::error!(%error, "local repository inventory task failed");
+                return Vec::new();
+            }
+        };
 
         if let Ok(mut cache) = self.local_inventory_cache.lock() {
             *cache = Some(LocalInventoryCache {

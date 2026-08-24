@@ -626,7 +626,7 @@ pub fn classify_source_tier(url: &str) -> SecuritySourceTier {
     }
 
     // Vendor advisories
-    if url_lower.contains("advisory") || url_lower.contains("/security/advisories") {
+    if url_lower.contains("advisory") {
         return SecuritySourceTier::VendorAdvisory;
     }
 

@@ -476,6 +476,7 @@ impl FetchClient {
                     || ct_base == "application/javascript"
                     || ct_base == "application/typescript"
                     || ct_base == "application/x-sh"
+                    || ct_base == "application/xml"
             })
             .unwrap_or(false);
 
@@ -1451,6 +1452,31 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("just plain text"));
+    }
+
+    #[tokio::test]
+    async fn fetch_200_application_xml_happy_path() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/document.xml");
+            then.status(200)
+                .header("content-type", "application/xml")
+                .body("<root><item>xml content</item></root>");
+        });
+
+        let client = test_client();
+        let resp = client
+            .fetch(
+                &server.url("/document.xml"),
+                None,
+                ExtractMode::Text,
+                false,
+                None,
+            )
+            .await
+            .expect("application/xml should be fetchable");
+
+        assert!(resp.text.as_deref().unwrap_or("").contains("xml content"));
     }
 
     #[tokio::test]

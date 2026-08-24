@@ -93,6 +93,10 @@ pub fn render_blocks(
                         break;
                     }
                 }
+                blocks[i].text = truncated;
+                last_valid = i + 1;
+                block_truncated = true;
+                break;
             }
             last_valid = i;
             block_truncated = true;
@@ -964,6 +968,16 @@ mod tests {
             .any(|w| w.contains("truncated at block boundary")));
         assert_eq!(rendered.blocks.len(), 1);
         assert_eq!(rendered.blocks[0].text, "aaa");
+    }
+
+    #[test]
+    fn render_blocks_keeps_partial_code_block_when_snap_is_early() {
+        let html = b"<pre><code>a\nlong code line</code></pre>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 8, false);
+
+        assert!(rendered.block_truncated);
+        assert_eq!(rendered.blocks.len(), 1);
+        assert_eq!(rendered.blocks[0].text, "a\nlong c");
     }
 
     // --- Outline pruning after block-boundary truncation ---

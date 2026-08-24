@@ -39,7 +39,7 @@ pub fn classify_group(card: &SourceCard) -> RepoResultGroupKind {
         SourceKind::PullRequest => RepoResultGroupKind::PullRequests,
         SourceKind::ReleaseNotes => RepoResultGroupKind::Releases,
         SourceKind::Tag => RepoResultGroupKind::Releases,
-        SourceKind::SecurityAdvisory => RepoResultGroupKind::Releases,
+        SourceKind::SecurityAdvisory => RepoResultGroupKind::Other,
         SourceKind::SourceFile => {
             classify_source_file(code, card.metadata.code_evidence.as_ref(), &url_lower)
         }
@@ -680,7 +680,7 @@ mod tests {
             SourceKind::SecurityAdvisory,
             "https://osv.dev/vulnerability/GHSA-xxxx",
         );
-        assert_eq!(classify_group(&card), RepoResultGroupKind::Releases);
+        assert_eq!(classify_group(&card), RepoResultGroupKind::Other);
     }
 
     #[test]
