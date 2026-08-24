@@ -37,6 +37,7 @@ struct SourcegraphRepository {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     url: Option<String>,
 }
 
@@ -139,16 +140,7 @@ fn convert_result(result: SourcegraphResult) -> Option<SearchResult> {
         return None;
     }
 
-    let url = repo
-        .url
-        .as_deref()
-        .map(|u| {
-            let mut base = u.trim_end_matches('/').to_string();
-            base.push_str("/blob/main/");
-            base.push_str(&path);
-            base
-        })
-        .unwrap_or_else(|| format!("https://sourcegraph.com/{repo_name}/-/blob/{path}"));
+    let url = format!("https://sourcegraph.com/{repo_name}/-/blob/{path}");
 
     let title = format!("{path} - {repo_name}");
 
@@ -312,7 +304,7 @@ mod tests {
         assert_eq!(card.title, "src/lib.rs - tokio-rs/axum");
         assert_eq!(
             card.url,
-            "https://github.com/tokio-rs/axum/blob/main/src/lib.rs"
+            "https://sourcegraph.com/tokio-rs/axum/-/blob/src/lib.rs"
         );
         assert!(card.snippet.is_none());
         assert_eq!(card.source_engine, "sourcegraph");

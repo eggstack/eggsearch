@@ -467,7 +467,10 @@ fn collect_raw_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
 fn collect_raw_text_inner<'a>(node: NodeRef<'a, scraper::Node>, text: &mut String) {
     if let Some(t) = node.value().as_text() {
         text.push_str(t);
-    } else if let Some(_elem) = ElementRef::wrap(node) {
+    } else if let Some(elem) = ElementRef::wrap(node) {
+        if should_skip(&elem) {
+            return;
+        }
         for child in node.children() {
             collect_raw_text_inner(child, text);
         }

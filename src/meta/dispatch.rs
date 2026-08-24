@@ -235,6 +235,9 @@ pub(crate) async fn dispatch_parallel(
 
     // JoinSet for in-flight tasks
     let mut join_set: JoinSet<TaskResult> = JoinSet::new();
+    // Maps live task IDs to their (provider_id, subquery_id) so an
+    // abnormal task exit can release its concurrency counters.
+    let mut active_tasks: HashMap<tokio::task::Id, (String, String)> = HashMap::new();
 
     // Collected results and failures (collected as tasks complete)
     let mut collected_results: Vec<DispatchedResult> = Vec::with_capacity(sorted_jobs.len());
@@ -355,7 +358,7 @@ pub(crate) async fn dispatch_parallel(
                         tokio::time::Instant::now(),
                     );
 
-                    join_set.spawn(async move {
+                    let abort_handle = join_set.spawn(async move {
                         let provider_id_str_for_inner = provider_id_str.clone();
                         let inner = async move {
                             if job_remaining.is_zero() {
@@ -408,6 +411,10 @@ pub(crate) async fn dispatch_parallel(
                                 }
                             })
                     });
+                    active_tasks.insert(
+                        abort_handle.id(),
+                        (job.provider_id.clone(), job.subquery_id.clone()),
+                    );
 
                     // Remove from pending queue preserving order. The scan-forward
                     // loop re-checks slot i without incrementing i, so a stable
@@ -495,10 +502,11 @@ pub(crate) async fn dispatch_parallel(
         }
 
         // Wait for the next completion or deadline
-        match tokio::time::timeout(remaining, join_set.join_next()).await {
-            Ok(Some(task_result)) => {
-                match task_result {
-                    Ok(tr) => {
+        match tokio::time::timeout(remaining, join_set.join_next_with_id()).await {
+            Ok(Some(joined)) => {
+                match joined {
+                    Ok((task_id, tr)) => {
+                        active_tasks.remove(&task_id);
                         // Decrement active counts
                         global_active = global_active.saturating_sub(1);
                         if let Some(count) = provider_active.get_mut(&tr.provider_id) {
@@ -623,10 +631,16 @@ pub(crate) async fn dispatch_parallel(
                     Err(join_err) => {
                         warn!(?join_err, scope = search_scope, "dispatch task panicked");
                         global_active = global_active.saturating_sub(1);
-                        // We don't know which provider this was for, so we can't
-                        // decrement the per-provider count precisely. This is a rare
-                        // edge case (task panic) and the count will eventually be
-                        // corrected when we break out of the loop.
+                        if let Some((provider_id, subquery_id)) =
+                            active_tasks.remove(&join_err.id())
+                        {
+                            if let Some(count) = provider_active.get_mut(&provider_id) {
+                                *count = count.saturating_sub(1);
+                            }
+                            if let Some(count) = running_subquery_counts.get_mut(&subquery_id) {
+                                *count = count.saturating_sub(1);
+                            }
+                        }
                     }
                 }
             }

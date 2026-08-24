@@ -227,11 +227,10 @@ fn b1_strip_control_chars_removes_nul_cr_ascii_controls() {
 
 #[test]
 fn b2_strip_control_chars_removes_bidi_and_zero_width() {
-    let input =
-        "a\u{202A}b\u{202B}c\u{202C}d\u{202D}e\u{202E}f\u{200B}g\u{200C}h\u{200D}i\u{FEFF}j";
+    let input = "a\u{200E}b\u{200F}c\u{202A}d\u{202B}e\u{202C}f\u{202D}g\u{202E}h\u{200B}i\u{200C}j\u{200D}k\u{FEFF}l";
     let (cleaned, removed) = strip_control_chars(input);
-    assert_eq!(cleaned, "abcdefghij");
-    assert_eq!(removed, 9);
+    assert_eq!(cleaned, "abcdefghijkl");
+    assert_eq!(removed, 11);
 }
 
 #[test]

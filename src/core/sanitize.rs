@@ -2,7 +2,7 @@
 //!
 //! Three operations are provided:
 //! - [`strip_control_chars`]: removes NUL, CR, ASCII 1-8/11-12/14-31/127,
-//!   bidi controls (U+202A-202E, U+2066-2069), and zero-width
+//!   bidi controls (U+200E-200F, U+202A-202E, U+2066-2069), and zero-width
 //!   characters (U+200B-200D, U+FEFF). Returns the cleaned string and
 //!   the number of characters removed.
 //! - [`bound_text`]: clamps to at most `max_chars` characters. If
@@ -100,8 +100,9 @@ static CHATML_TAG: LazyLock<Regex> = LazyLock::new(|| {
 /// Strip "unsafe" control characters from `s`.
 ///
 /// Removes NUL (`\0`), CR (`\r`), ASCII 1-8/11-12/14-31/127, bidi
-/// controls (U+202A-202E, U+2066-2069), and zero-width characters
-/// (U+200B-200D, U+FEFF). LF (`\n`) and TAB (`\t`) are preserved.
+/// controls (U+200E-200F, U+202A-202E, U+2066-2069), and zero-width
+/// characters (U+200B-200D, U+FEFF). LF (`\n`) and TAB (`\t`) are
+/// preserved.
 ///
 /// Returns the cleaned string and the number of characters removed.
 pub fn strip_control_chars(s: &str) -> (String, usize) {
@@ -130,6 +131,7 @@ fn is_unsafe_char(c: char) -> bool {
         '\x0E'..='\x1F' => true,
         '\x7F' => true,
         // Bidi controls
+        '\u{200E}'..='\u{200F}' => true,
         '\u{202A}'..='\u{202E}' => true,
         '\u{2066}'..='\u{2069}' => true,
         // Zero-width
@@ -291,12 +293,11 @@ mod tests {
 
     #[test]
     fn strip_removes_bidi_controls() {
-        // LRE, RLE, PDF, LRO, RLO, plus isolates LRI/RLI/FSI/PDI
-        let s =
-            "a\u{202A}b\u{202B}c\u{202C}d\u{202D}e\u{202E}f\u{2066}g\u{2067}h\u{2068}i\u{2069}j";
+        // LRM, RLM, LRE, RLE, PDF, LRO, RLO, plus isolates LRI/RLI/FSI/PDI
+        let s = "a\u{200E}b\u{200F}c\u{202A}d\u{202B}e\u{202C}f\u{202D}g\u{202E}h\u{2066}i\u{2067}j\u{2068}k\u{2069}l";
         let (out, n) = strip_control_chars(s);
-        assert_eq!(out, "abcdefghij");
-        assert_eq!(n, 9);
+        assert_eq!(out, "abcdefghijkl");
+        assert_eq!(n, 11);
     }
 
     #[test]

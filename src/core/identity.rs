@@ -111,9 +111,15 @@ fn write_opt_str(hasher: &mut FnvHasher, s: Option<&str>) {
     write_str(hasher, s.unwrap_or(""));
 }
 
-/// Write an `Option<u32>` to the hasher (None = sentinel 0).
+/// Write an `Option<u32>` to the hasher (`None` = sentinel 0,
+/// `Some(0)` = sentinel u32::MAX so the encoding stays injective).
 fn write_opt_u32(hasher: &mut FnvHasher, v: Option<u32>) {
-    hasher.write(&v.unwrap_or(0).to_le_bytes());
+    let encoded = match v {
+        None => 0u32,
+        Some(0) => u32::MAX,
+        Some(n) => n,
+    };
+    hasher.write(&encoded.to_le_bytes());
 }
 
 /// Write a `usize` to the hasher.
@@ -488,10 +494,13 @@ pub struct SuggestedFetchKey<'a> {
 /// Compute a deterministic suggested-fetch ID from a canonical key.
 ///
 /// `suggested_id = suggested_<16hex(url + group + priority)>`
+///
+/// URLs are canonicalized before hashing (same rules as source and
+/// fetch IDs) so cosmetic differences do not produce spurious IDs.
 pub fn compute_suggested_fetch_id(key: &SuggestedFetchKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
     hasher.write(&entity_prefix("suggested"));
-    write_str(&mut hasher, key.url);
+    write_str(&mut hasher, &canonicalize_url(key.url));
     write_str(&mut hasher, key.group);
     hasher.write(&[key.priority]);
     format!("suggested_{:016x}", hasher.finish())

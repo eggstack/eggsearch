@@ -68,11 +68,15 @@ struct NvdMetrics {
 struct NvdCvssMetric {
     #[serde(default)]
     cvssData: Option<NvdCvssData>,
+    #[serde(default)]
+    baseSeverity: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
 struct NvdCvssData {
+    #[serde(default)]
+    version: Option<String>,
     #[serde(default)]
     baseScore: Option<f64>,
     #[serde(default)]
@@ -355,28 +359,47 @@ fn extract_cvss(cve: &NvdCve) -> (Option<f64>, Option<String>, Option<SeverityLe
         None => return (None, None, None),
     };
 
-    let severity = data.baseSeverity.as_ref().and_then(|s| {
-        let s_lower = s.to_ascii_lowercase();
-        match s_lower.as_str() {
-            "critical" => Some(SeverityLevel::Critical),
-            "high" => Some(SeverityLevel::High),
-            "medium" => Some(SeverityLevel::Medium),
-            "low" => Some(SeverityLevel::Low),
-            _ => None,
-        }
-    });
+    let is_v2 = data.version.as_deref().is_some_and(|v| v.starts_with('2'));
+
+    let severity = data
+        .baseSeverity
+        .as_deref()
+        .or_else(|| metric.and_then(|m| m.baseSeverity.as_deref()))
+        .and_then(parse_severity);
 
     let severity = severity.or_else(|| {
-        data.baseScore.map(|score| match score {
-            9.0..=10.0 => SeverityLevel::Critical,
-            7.0..=8.99 => SeverityLevel::High,
-            4.0..=6.99 => SeverityLevel::Medium,
-            0.1..=3.99 => SeverityLevel::Low,
-            _ => SeverityLevel::Unknown,
+        data.baseScore.map(|score| {
+            if is_v2 {
+                if score < 4.0 {
+                    SeverityLevel::Low
+                } else if score < 7.0 {
+                    SeverityLevel::Medium
+                } else {
+                    SeverityLevel::High
+                }
+            } else {
+                match score {
+                    9.0..=10.0 => SeverityLevel::Critical,
+                    7.0..=8.99 => SeverityLevel::High,
+                    4.0..=6.99 => SeverityLevel::Medium,
+                    0.1..=3.99 => SeverityLevel::Low,
+                    _ => SeverityLevel::Unknown,
+                }
+            }
         })
     });
 
     (data.baseScore, data.vectorString.clone(), severity)
+}
+
+fn parse_severity(s: &str) -> Option<SeverityLevel> {
+    match s.to_ascii_lowercase().as_str() {
+        "critical" => Some(SeverityLevel::Critical),
+        "high" => Some(SeverityLevel::High),
+        "medium" => Some(SeverityLevel::Medium),
+        "low" => Some(SeverityLevel::Low),
+        _ => None,
+    }
 }
 
 fn parse_cpe(criteria: &str) -> Option<(String, String)> {
@@ -505,12 +528,14 @@ mod tests {
             metrics: Some(NvdMetrics {
                 cvssMetricV31: vec![NvdCvssMetric {
                     cvssData: Some(NvdCvssData {
+                        version: Some("3.1".to_string()),
                         baseScore: Some(7.5),
                         vectorString: Some(
                             "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N".to_string(),
                         ),
                         baseSeverity: Some("HIGH".to_string()),
                     }),
+                    baseSeverity: None,
                 }],
                 cvssMetricV30: vec![],
                 cvssMetricV2: vec![],
@@ -524,5 +549,65 @@ mod tests {
         assert_eq!(m.cvss_score, Some(7.5));
         assert!(m.cvss_vector.is_some());
         assert_eq!(m.source, VulnerabilitySource::Nvd);
+    }
+
+    #[test]
+    fn test_v2_metric_severity_comes_from_metric_level() {
+        let cve = NvdCve {
+            id: Some("CVE-2024-12345".to_string()),
+            published: None,
+            lastModified: None,
+            descriptions: vec![],
+            metrics: Some(NvdMetrics {
+                cvssMetricV31: vec![],
+                cvssMetricV30: vec![],
+                cvssMetricV2: vec![NvdCvssMetric {
+                    cvssData: Some(NvdCvssData {
+                        version: Some("2.0".to_string()),
+                        baseScore: Some(9.8),
+                        vectorString: Some("AV:N/AC:L/Au:N/C:C/I:C/A:C".to_string()),
+                        baseSeverity: None,
+                    }),
+                    baseSeverity: Some("HIGH".to_string()),
+                }],
+            }),
+            configurations: vec![],
+            references: vec![],
+        };
+        let m = convert_cve(&cve);
+        assert_eq!(m.severity, Some(SeverityLevel::High));
+        assert_eq!(m.cvss_score, Some(9.8));
+    }
+
+    #[test]
+    fn test_v2_score_fallback_uses_v2_ranges() {
+        let build = |score: f64| {
+            let cve = NvdCve {
+                id: Some("CVE-2024-12345".to_string()),
+                published: None,
+                lastModified: None,
+                descriptions: vec![],
+                metrics: Some(NvdMetrics {
+                    cvssMetricV31: vec![],
+                    cvssMetricV30: vec![],
+                    cvssMetricV2: vec![NvdCvssMetric {
+                        cvssData: Some(NvdCvssData {
+                            version: Some("2.0".to_string()),
+                            baseScore: Some(score),
+                            vectorString: None,
+                            baseSeverity: None,
+                        }),
+                        baseSeverity: None,
+                    }],
+                }),
+                configurations: vec![],
+                references: vec![],
+            };
+            convert_cve(&cve).severity
+        };
+        assert_eq!(build(9.8), Some(SeverityLevel::High));
+        assert_eq!(build(7.0), Some(SeverityLevel::High));
+        assert_eq!(build(6.9), Some(SeverityLevel::Medium));
+        assert_eq!(build(3.9), Some(SeverityLevel::Low));
     }
 }

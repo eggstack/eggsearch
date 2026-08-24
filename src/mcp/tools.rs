@@ -1069,13 +1069,21 @@ pub async fn run_repo_search(
 
     let (owner, repo) = if let Some(r) = &args.repo {
         if r.contains('/') && args.owner.is_none() {
-            let (o, rest) = r.split_once('/').expect("contains('/') implies split_once");
-            if o.is_empty() || rest.is_empty() {
-                return Err(ToolError::Validation(format!(
-                    "invalid repo '{r}': must be owner/name with non-empty parts"
-                )));
+            match r.split_once('/') {
+                Some((o, rest)) => {
+                    if o.is_empty() || rest.is_empty() {
+                        return Err(ToolError::Validation(format!(
+                            "invalid repo '{r}': must be owner/name with non-empty parts"
+                        )));
+                    }
+                    (Some(o.to_string()), Some(rest.to_string()))
+                }
+                None => {
+                    return Err(ToolError::internal(format!(
+                        "repo '{r}' contains '/' but could not be split"
+                    )))
+                }
             }
-            (Some(o.to_string()), Some(rest.to_string()))
         } else {
             (args.owner.clone(), args.repo.clone())
         }
@@ -4209,6 +4217,15 @@ fn make_batch_fetch_future(
                                     "document": derived.response.document,
                                     "fetch_transform": serde_json::Value::Null,
                                     "structured_warnings": Vec::<serde_json::Value>::new(),
+                                    "cache_status": "hit",
+                                    "attempt_count": 1,
+                                    "retry_after_ms": serde_json::Value::Null,
+                                    "origin_backoff_ms": serde_json::Value::Null,
+                                    "browser_profile": serde_json::Value::Null,
+                                    "browser_profile_scope": "ephemeral",
+                                    "manual_interaction_required": false,
+                                    "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
+                                    "browser_escalated": raw_entry.browser_escalated,
                                 });
                                 let body_chars = derived
                                     .response
@@ -4319,6 +4336,15 @@ fn make_batch_fetch_future(
                                                     "document": derived.response.document,
                                                     "fetch_transform": serde_json::Value::Null,
                                                     "structured_warnings": Vec::<serde_json::Value>::new(),
+                                                    "cache_status": "revalidated",
+                                                    "attempt_count": 1,
+                                                    "retry_after_ms": serde_json::Value::Null,
+                                                    "origin_backoff_ms": serde_json::Value::Null,
+                                                    "browser_profile": serde_json::Value::Null,
+                                                    "browser_profile_scope": "ephemeral",
+                                                    "manual_interaction_required": false,
+                                                    "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
+                                                    "browser_escalated": raw_entry.browser_escalated,
                                                 });
                                                 let body_chars = derived
                                                     .response
@@ -4377,10 +4403,18 @@ fn make_batch_fetch_future(
                 let max_attempts = state.config.fetch.retry_max_attempts.max(1);
                 let mut last_err: Option<crate::fetch::FetchError> = None;
                 let mut response = None;
+                let mut attempts_made = 0usize;
+                let mut retry_after_ms: Option<u64> = None;
+                let mut cache_status = if state.fetch_cache.is_some() {
+                    "miss"
+                } else {
+                    "bypassed"
+                };
                 let deadline = std::time::Instant::now()
                     + std::time::Duration::from_millis(state.config.fetch.timeout_ms);
 
                 for attempt in 0..max_attempts {
+                    attempts_made += 1;
                     let _permit = if let Some(ref controller) = state.origin_controller {
                         match controller.acquire(&origin_key).await {
                             Ok(p) => Some(p),
@@ -4450,8 +4484,10 @@ fn make_batch_fetch_future(
                                     }
                                     crate::fetch::origin::OriginBackoffDecision::Backoff {
                                         delay_ms,
+                                        retry_after_ms: ra,
                                         ..
                                     } if is_retryable && attempt + 1 < max_attempts => {
+                                        retry_after_ms = ra;
                                         let remaining = deadline.saturating_duration_since(
                                             std::time::Instant::now(),
                                         );
@@ -4568,6 +4604,8 @@ fn make_batch_fetch_future(
                                         derived_cache_entry(raw_hash, &derived_key, &resp),
                                     )
                                     .await;
+                            } else {
+                                cache_status = "not_cacheable";
                             }
                         }
 
@@ -4596,6 +4634,15 @@ fn make_batch_fetch_future(
                             "document": resp.document,
                             "fetch_transform": resp.fetch_transform,
                             "structured_warnings": structured,
+                            "cache_status": cache_status,
+                            "attempt_count": attempts_made,
+                            "retry_after_ms": retry_after_ms,
+                            "origin_backoff_ms": serde_json::Value::Null,
+                            "browser_profile": serde_json::Value::Null,
+                            "browser_profile_scope": "ephemeral",
+                            "manual_interaction_required": false,
+                            "transport": resp.transport.as_deref().unwrap_or("http"),
+                            "browser_escalated": resp.browser_escalated,
                         });
                         let body_chars = resp
                             .document

@@ -7,6 +7,7 @@ fn is_unsafe_char(c: char) -> bool {
     matches!(c,
         '\0' | '\r'
         | '\x01'..='\x08' | '\x0B' | '\x0C' | '\x0E'..='\x1F' | '\x7F'
+        | '\u{200E}' | '\u{200F}'
         | '\u{202A}'..='\u{202E}'
         | '\u{2066}'..='\u{2069}'
         | '\u{200B}'..='\u{200D}'
@@ -32,6 +33,8 @@ fn arbitrary_string_with_known_unsafe() -> impl Strategy<Value = String> {
                 Just('\x0E'),
                 Just('\x1F'),
                 Just('\x7F'),
+                Just('\u{200E}'),
+                Just('\u{200F}'),
                 Just('\u{202A}'),
                 Just('\u{202E}'),
                 Just('\u{2066}'),
@@ -54,7 +57,7 @@ fn arbitrary_string_with_known_unsafe() -> impl Strategy<Value = String> {
 
 proptest! {
     #[test]
-    fn strip_output_has_no_unsafe(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
+    fn strip_output_has_no_unsafe(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
         let (out, _removed) = strip_control_chars(&s);
         for c in out.chars() {
             prop_assert!(!is_unsafe_char(c), "unsafe char found in output: {c:?}");
@@ -69,7 +72,7 @@ proptest! {
     }
 
     #[test]
-    fn strip_removal_count_correct(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
+    fn strip_removal_count_correct(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
         let (out, removed) = strip_control_chars(&s);
         let input_chars = s.chars().count();
         let output_chars = out.chars().count();
@@ -124,7 +127,7 @@ proptest! {
     }
 
     #[test]
-    fn scan_never_panics(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
+    fn scan_never_panics(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
         let _hits = scan_injection_markers(&s);
     }
 

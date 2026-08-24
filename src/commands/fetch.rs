@@ -43,6 +43,9 @@ pub async fn run(
 
     let mut limits = cfg.fetch_limits();
     if let Some(t) = timeout_ms {
+        if t == 0 {
+            anyhow::bail!("timeout_ms must be > 0");
+        }
         limits.timeout_ms = t;
     }
 
@@ -154,6 +157,27 @@ mod tests {
         .expect_err("expected max_chars validation error");
         assert!(
             err.to_string().contains("max_chars must be > 0"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_zero_timeout_ms_returns_error() {
+        let cfg = AppConfig::default();
+        let err = run(
+            &cfg,
+            "https://example.com",
+            None,
+            Some(0),
+            false,
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect_err("expected timeout_ms validation error");
+        assert!(
+            err.to_string().contains("timeout_ms must be > 0"),
             "got: {err}"
         );
     }
