@@ -7,6 +7,8 @@ description: Use when working with eggsearch internals, understanding crate layo
 
 Use when working with eggsearch internals, understanding crate layout, provider model, adapter pattern, deterministic IDs, sanitization tiers, or config structure.
 
+Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, testing, build, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
+
 ## Crate Layout
 
 Single library + binary crate (not a workspace). All source under `src/`:
@@ -16,7 +18,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `config.rs` — CLI config loader
 - `commands/` — subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
-- `meta/` — MetadataSearchAdapter + 34 vendored engines + forge tree adapter + local workspace backend + inventory cache
+- `meta/` — MetadataSearchAdapter + 33 vendored engine structs (+ local workspace backend) covering 34 registered provider IDs, forge adapter, inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio (rmcp), 10 tool definitions, server state, policy
 
@@ -43,11 +45,13 @@ Single library + binary crate (not a workspace). All source under `src/`:
 
 `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`.
 
-34 known providers across 4 search profiles:
-- `generic` — DuckDuckGo, Startpage, Yahoo
-- `coding` — adds GitHub/GitLab/Gitea code/issues/releases
-- `security` — adds OSV, NVD, CISA KEV, RustSec
+34 registered providers (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`) across 4 search profiles:
+- `generic` — DuckDuckGo, Brave (HTML), Startpage, Yahoo, Mojeek, SearXNG
+- `coding` — adds GitHub/GitLab/Gitea code/issues/releases, Sourcegraph
+- `security` — adds OSV, GitHub Advisory, NVD, CISA KEV, RustSec
 - `research` — adds OpenAlex, Crossref, Semantic Scholar
+
+Package registries (crates.io, PyPI, npm, Go, Maven Central, NuGet, RubyGems, Packagist) and the local workspace backend are available across profiles where applicable.
 
 Profiles are advisory; unavailable providers are skipped with warnings.
 

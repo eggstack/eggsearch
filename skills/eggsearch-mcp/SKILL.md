@@ -7,6 +7,8 @@ description: Use when integrating with eggsearch MCP tools, selecting the right 
 
 Use when integrating with eggsearch MCP tools, selecting the right tool for a task, understanding workflows, trust model, or evidence bundles.
 
+The full stable machine-readable response contract for harness developers lives in `architecture/codegg-contract.md`.
+
 ## Tool Catalog (10 tools)
 
 | Tool | Category | Purpose |

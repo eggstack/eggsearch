@@ -102,7 +102,7 @@ Use `provider_status` first when you need the current provider/capability pictur
 // Step 3: Bundle evidence for handoff
 // NOTE: sources and fetches are Vec<EvidenceSourceInput> / Vec<EvidenceFetchInput>
 // with specific fields (id, url, title, snippet, metadata, etc.) — see
-// docs/tool-matrix.md and docs/architecture/codegg-contract.md for the stable shapes.
+// docs/tool-matrix.md and architecture/codegg-contract.md for the stable shapes.
 {
   "goal": "rate limiting middleware implementation options",
   "sources": ["<SourceCards from step 1>"],

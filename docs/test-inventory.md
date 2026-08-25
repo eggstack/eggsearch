@@ -6,30 +6,37 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 4716 | 21 |
+| `--all-features` | 4774 | 21 |
 
-## Property Tests (17 suites)
+Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) — they run only via explicit opt-in targets.
+
+## Property Tests (16 suites)
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
 | `property_sanitize` | None | 15 | strip_control_chars, bound_text, scan_injection_markers, frame |
-| `property_identity` | None | 17 | source_id, canonicalize_url, cross-type collisions, Unicode normalization |
+| `property_identity` | None | 16 | source_id, canonicalize_url, cross-type collisions, Unicode normalization |
 | `property_identity2` | None | 15 | fetch_id, suggested_fetch_id, batch_fetch_id, doc_id |
 | `property_identity3` | None | 9 | chunk_id, code_span_id, locator_id |
 | `property_fetch_limits` | None | 11 | validate_url: scheme, length, localhost, private IP |
-| `property_fetch_redirects` | None | 24 | validate_url: TLDs, IP ranges, ports, schemes |
-| `property_fetch_url_edge` | None | 11 | URL scheme/path/length edge cases |
-| `property_fetch_response` | None | 16 | FetchClient: credentials, metadata-only, text mode, max_chars, Content-Length, timeout, redirect limit, sanitization |
-| `property_render_safety` | None | 15 | strip_control_chars, bound_text, frame, scan_injection_markers safety |
+| `property_fetch_redirects` | None | 27 | validate_url: TLDs, IP ranges, ports, schemes |
+| `property_fetch_url_edge` | None | 20 | URL scheme/path/length edge cases |
+| `property_fetch_response` | None | 18 | FetchClient: credentials, metadata-only, text mode, max_chars, Content-Length, timeout, redirect limit, sanitization |
+| `property_render_safety` | None | 16 | strip_control_chars, bound_text, frame, scan_injection_markers safety |
 | `property_render_code` | None | 12 | render_code, render_diff, render_plaintext, render_csv |
 | `property_render_metadata` | None | 11 | TrustMarkers merge, sanitization metadata consistency, outline-reference bounds |
-| `property_local_fs` | None | 12 | Path joining, extensions, skip dirs, binary extensions, scoring |
-| `property_local_fs_extended` | None | 25 | Symlinks, path traversal, hidden paths, root containment, permission denied |
+| `property_local_fs` | None | 22 | Path joining, extensions, skip dirs, binary extensions, scoring |
+| `property_local_fs_extended` | None | 35 | Symlinks, path traversal, hidden paths, root containment, permission denied |
 | `property_forge_url` | None | 17 | Forge URL validation, credential rejection, loopback, private ranges |
-| `property_conflict` | None | 38 | Conflict detection, entity scoping, source attribution |
-| `property_retrieval` | None | 61 | Retrieval attempt ledger, absence kinds, truncation evidence |
-| `dispatch_fault_injection` | `mock` | 29 | Provider failure, timeout, hang, health transitions, concurrency, panic |
-| `adversarial_corpus` | None | 10 | Structural validation of adversarial corpus JSON files |
+| `property_conflict` | None | 24 | Conflict detection, entity scoping, source attribution |
+| `property_retrieval` | None | 44 | Retrieval attempt ledger, absence kinds, truncation evidence |
+
+## Fault Injection & Adversarial
+
+| Suite | Feature Gate | Tests | Focus |
+|-------|-------------|-------|-------|
+| `dispatch_fault_injection` | `mock` | 32 | Provider failure, timeout, hang, health transitions, concurrency, panic |
+| `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
 
 ## Forge Adapter Tests (`tests/forge_adapter.rs`)
 
@@ -101,7 +108,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `workflow_resolution` | Workflow resolution |
 | `research_role_mapping` | Research role mapping |
 
-## Schema/Contract Tests (9 suites)
+## Schema/Contract Tests (10 suites)
 
 | Suite | Focus |
 |-------|-------|
@@ -125,7 +132,6 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `docs_tool_names` | Tool name validation |
 | `docs_safety_vocabulary` | Safety vocabulary validation |
 | `docs_keyless_contract` | Keyless-core runtime contract |
-| `browser_profiles` | Browser profile management (requires `browser` feature) |
 
 ## CI Jobs
 

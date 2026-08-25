@@ -4,7 +4,25 @@
 
 eggsearch is a lightweight MCP search/fetch server for AI agents. It queries upstream search providers, deduplicates with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. Transport is MCP over stdio. Single library + binary crate (not a workspace).
 
-Architecture deep dives live in `architecture/` (overview, core, meta, fetch, mcp, commands, testing, build). Operator-facing docs live in `docs/` (config, safety, threat model, tool matrix, agent workflows, provider setup).
+Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, testing, build) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
+
+| Topic | Deep dive |
+|-------|-----------|
+| Entry point / component map | `architecture/overview.md` |
+| Domain types, identity, sanitization | `architecture/core.md` |
+| Adapter, dispatch, planners, RRF grouping | `architecture/meta.md` |
+| Vendored engines per provider | `architecture/engines.md` |
+| Fetch pipeline, SSRF, cache, browser | `architecture/fetch.md` |
+| MCP server and tool surface | `architecture/mcp.md` |
+| CLI subcommands | `architecture/commands.md` |
+| Test suites and fuzz targets | `architecture/testing.md`, `architecture/hardening.md` |
+| Build, CI, release gates | `architecture/build.md` |
+| Stable response contract for harnesses | `architecture/codegg-contract.md` |
+| Config type model | `architecture/config.md` |
+| Evidence roles, bundles, workflow coverage | `architecture/evidence-workflow.md` |
+| Research subsystem | `architecture/research.md` |
+| Security subsystem | `architecture/security.md` |
+| Local workspace backend | `architecture/local-workspace.md` |
 
 ## Build & Verification
 
@@ -28,7 +46,7 @@ make bench-check             # compile-check benches without running
 make fuzz-smoke              # 60s runs of 3 key fuzz targets
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: ~4,800 tests pass with `--all-features` (21 ignored); ~4,500 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 4,774 tests pass with `--all-features` (21 ignored live-smoke); 4,545 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -40,8 +58,8 @@ src/
   lib.rs           # library root, re-exports core/fetch/mcp/meta
   config.rs        # CLI config loader
   commands/        # subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
-  core/            # types, config, error, query, sanitize, identity, warning, evidence roles, security, conflict, source cards
-  meta/            # MetadataSearchAdapter + 34 vendored engines + forge adapter + local workspace cache
+  core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
+  meta/            # MetadataSearchAdapter + 33 vendored engines (+ local workspace backend) covering 34 registered provider IDs, forge adapter, planners, inventory cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, contract, property, adversarial, and browser_profiles tests

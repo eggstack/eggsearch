@@ -56,7 +56,7 @@ fn config_presents_keyless_examples_before_enhanced() {
 
 #[test]
 fn codegg_contract_contains_restored_sections() {
-    let text = read_file("docs/architecture/codegg-contract.md");
+    let text = read_file("architecture/codegg-contract.md");
     assert!(
         text.contains("### 8.3 Dirty State"),
         "codegg contract must contain section 8.3 Dirty State"
@@ -73,7 +73,7 @@ fn codegg_contract_contains_restored_sections() {
 
 #[test]
 fn codegg_contract_state_tables_use_snake_case_wire_values() {
-    let text = read_file("docs/architecture/codegg-contract.md");
+    let text = read_file("architecture/codegg-contract.md");
     assert!(
         text.contains("`satisfied`"),
         "codegg contract state table must use snake_case wire value 'satisfied', not 'Satisfied'"
@@ -98,7 +98,7 @@ fn codegg_contract_state_tables_use_snake_case_wire_values() {
 
 #[test]
 fn codegg_contract_contains_keyless_core_section() {
-    let text = read_file("docs/architecture/codegg-contract.md");
+    let text = read_file("architecture/codegg-contract.md");
     assert!(
         text.contains("Keyless-Core Invariant"),
         "codegg contract must contain keyless-core invariant section"

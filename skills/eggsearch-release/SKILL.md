@@ -122,6 +122,7 @@ make native-forge-smoke-all
 | `docs-check` | `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps` | Docs check |
 | `release-build` | `cargo build --locked --release` | Release build |
 | `publish-check` | `cargo publish --dry-run --locked` | Pre-publish check |
+| `bench-check` | `cargo bench --locked --all-features --bench perf --no-run` | Compile-check benches without running |
 | `live-smoke` | `cargo test --features live-smoke --test corpus_runner -- --ignored` | Live network tests |
 | `fuzz-smoke` | Quick fuzz runs for 3 targets | Fuzz smoke test |
 

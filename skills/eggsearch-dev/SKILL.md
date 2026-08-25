@@ -20,6 +20,7 @@ cargo check --locked --no-default-features
 cargo test --locked --all-features
 cargo build --release
 cargo publish --dry-run --locked
+make bench-check        # compile-check benches without running
 ```
 
 ## Critical: Feature Flags
@@ -50,6 +51,8 @@ cargo publish --dry-run --locked
 | `tests/security_applicability_corpus.rs` | None | Security applicability pipeline regression |
 | `tests/browser_profiles.rs` | `browser` | Browser profile management |
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
+
+This table is representative, not exhaustive — 50 test binaries exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -98,4 +101,4 @@ cargo test --locked --all-features --test docs_config_snippets --test docs_provi
 
 ## Fuzz Targets
 
-Fuzz targets live under `fuzz/fuzz_targets` and are registered in `fuzz/Cargo.toml`.
+22 fuzz targets live under `fuzz/fuzz_targets` and are registered in `fuzz/Cargo.toml`. Smoke-run three key targets with `make fuzz-smoke`.

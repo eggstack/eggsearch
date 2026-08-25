@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Architecture docs consolidated into a single location.** All deep dives now live in `architecture/`; the seven unique cross-cutting documents (`codegg-contract.md`, `config.md`, `evidence-workflow.md`, `hardening.md`, `local-workspace.md`, `research.md`, `security.md`) moved from `docs/architecture/`, and eight stale duplicate copies (`overview`, `core`, `meta`, `engines`, `fetch`, `mcp`, `testing`, `commands`) were removed. `docs/architecture/` no longer exists. README and in-doc links updated; `tests/docs_keyless_contract.rs` reads the new path; `Cargo.toml` ships `architecture/**/*.md`.
+- **AGENTS.md restructured as an index** into the `architecture/` deep dives with a topic-to-file table; provider-model wording corrected (33 vendored engine structs covering 34 registered provider IDs); exact verified test counts recorded (4,774 passed / 21 ignored with `--all-features`; 4,545 with `--features mock`).
+- **Skills refreshed** (`skills/` canonical): architecture skill provider/profile lists corrected and deep-dive index added; dev skill gains `make bench-check`, non-exhaustive-test-table note, and fuzz-target count; release skill Makefile table gains `bench-check`; MCP skill points at the stable response contract.
+- **`plans/` removed.** All ~100 phase/milestone/closure planning documents described work shipped through 0.3.7; history preserves them.
+- **Docs accuracy fixes.** `docs/test-inventory.md` refreshed against a clean `--all-features` run (per-suite counts corrected, suite-group headers fixed); `docs/provider-setup.md` category count corrected to eight; stale `docs/architecture/` link targets repointed at `architecture/`.
+
 ## [0.3.7] - 2026-08-19
 
 ### Changed

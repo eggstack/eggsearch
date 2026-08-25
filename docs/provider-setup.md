@@ -1,6 +1,6 @@
 # Provider Setup
 
-eggsearch supports 34 search providers across six categories: web search (HTML scrapers), API-key providers, aggregators, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
+eggsearch supports 34 search providers across eight categories: web search (HTML scrapers), API-key providers, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
 ## Provider Categories at a Glance
 

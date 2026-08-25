@@ -73,6 +73,6 @@ Runs formatting, clippy, feature compilation, and the deterministic test suite. 
 - [Agent Workflows](docs/agent-workflows.md) — recommended tool call sequences, evidence roles
 - [Safety and Fetch Behavior](docs/safety.md) — fetch boundaries, blocked ranges, sanitization
 - [Threat Model](docs/threat-model.md) — trust boundaries, prompt injection, escape hatches
-- [Architecture Overview](docs/architecture/overview.md) — module map, data flows
-- [MCP Response Contract](docs/architecture/codegg-contract.md) — trust model, warnings, deterministic IDs
+- [Architecture Overview](architecture/overview.md) — component index with deep dives
+- [MCP Response Contract](architecture/codegg-contract.md) — trust model, warnings, deterministic IDs
 - [Release Process](docs/release.md) — preparation, verification, publication

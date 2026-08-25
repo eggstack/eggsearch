@@ -85,6 +85,22 @@ fetch ↗
 
 ---
 
+## Cross-Cutting Deep Dives
+
+| Deep Dive | Covers | Document |
+|-----------|--------|----------|
+| MCP response contract | Stable machine-readable response contract for harness consumers: trust markers, warnings, deterministic IDs, schema evolution rules | [codegg-contract.md](codegg-contract.md) |
+| Configuration model | `AppConfig` type model, provider resolution, validation rules, CLI config loading | [config.md](config.md) |
+| Evidence & workflow | Evidence bundles, 19-role taxonomy, workflow coverage models, conflict detection, retrieval ledger | [evidence-workflow.md](evidence-workflow.md) |
+| Research subsystem | Research planner, claims/gaps/conflicts, depth control, semantic roles | [research.md](research.md) |
+| Security subsystem | Advisory lookups (CVE/GHSA/OSV/RustSec/KEV), applicability assessment, severity filtering | [security.md](security.md) |
+| Local workspace | Filesystem search backend, inventory cache, git-aware fast path, `openat2` safe opening | [local-workspace.md](local-workspace.md) |
+| Hardening & fuzzing | Property-based testing, adversarial corpus, fuzz-target design | [hardening.md](hardening.md) |
+
+Operator-facing documentation lives in `docs/` (config reference, safety, threat model, tool matrix, agent workflows, provider setup). This directory is the contributor-facing deep-dive set.
+
+---
+
 ## Module Overviews
 
 ### core — pure domain model ([core.md](core.md))
