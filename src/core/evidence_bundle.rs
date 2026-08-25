@@ -482,10 +482,10 @@ pub fn compute_bundle_id(
     source_ids: &[String],
     fetch_ids: &[String],
 ) -> String {
-    use super::identity::{entity_prefix, write_str, FnvHasher};
+    use super::identity::{write_entity_prefix, write_str, FnvHasher};
 
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("bundle"));
+    write_entity_prefix(&mut hasher, "bundle");
     write_str(&mut hasher, goal.unwrap_or(""));
     for id in source_ids {
         write_str(&mut hasher, id);

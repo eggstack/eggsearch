@@ -1239,6 +1239,7 @@ pub async fn run_repo_search(
     let mut req = req;
     req.providers = effective_providers;
 
+    let local_inventory = state.local_inventory().await;
     let mut response = state
         .adapter
         .repo_search(
@@ -1246,6 +1247,7 @@ pub async fn run_repo_search(
             effective_max,
             state.config.search.max_results_cap,
             state.local_backend.as_deref(),
+            Some(&local_inventory),
         )
         .await;
 

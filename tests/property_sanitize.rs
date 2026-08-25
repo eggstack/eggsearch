@@ -12,6 +12,7 @@ fn is_unsafe_char(c: char) -> bool {
         | '\u{2066}'..='\u{2069}'
         | '\u{200B}'..='\u{200D}'
         | '\u{FEFF}'
+        | '\u{2028}' | '\u{2029}'
     )
 }
 
@@ -42,6 +43,8 @@ fn arbitrary_string_with_known_unsafe() -> impl Strategy<Value = String> {
                 Just('\u{200B}'),
                 Just('\u{200D}'),
                 Just('\u{FEFF}'),
+                Just('\u{2028}'),
+                Just('\u{2029}'),
             ],
             0..5,
         ),
@@ -57,7 +60,7 @@ fn arbitrary_string_with_known_unsafe() -> impl Strategy<Value = String> {
 
 proptest! {
     #[test]
-    fn strip_output_has_no_unsafe(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
+    fn strip_output_has_no_unsafe(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}\\u{2028}\\u{2029}]*") {
         let (out, _removed) = strip_control_chars(&s);
         for c in out.chars() {
             prop_assert!(!is_unsafe_char(c), "unsafe char found in output: {c:?}");
@@ -72,7 +75,7 @@ proptest! {
     }
 
     #[test]
-    fn strip_removal_count_correct(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
+    fn strip_removal_count_correct(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}\\u{2028}\\u{2029}]*") {
         let (out, removed) = strip_control_chars(&s);
         let input_chars = s.chars().count();
         let output_chars = out.chars().count();
@@ -127,7 +130,7 @@ proptest! {
     }
 
     #[test]
-    fn scan_never_panics(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}]*") {
+    fn scan_never_panics(s in "[\\x00-\\x7f\\u{200B}-\\u{200D}\\u{200E}\\u{200F}\\u{202A}-\\u{202E}\\u{2066}-\\u{2069}\\u{FEFF}\\u{2028}\\u{2029}]*") {
         let _hits = scan_injection_markers(&s);
     }
 

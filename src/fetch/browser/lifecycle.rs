@@ -163,31 +163,41 @@ impl BrowserLifecycle {
     }
 
     async fn create_user_data_dir(&self) -> Result<PathBuf, BrowserLaunchError> {
-        let base = std::env::temp_dir().join("eggsearch-browser");
-        std::fs::create_dir_all(&base).map_err(|e| {
-            BrowserLaunchError::LaunchFailed(format!("failed to create browser temp dir: {e}"))
-        })?;
+        let dir = tokio::task::spawn_blocking(|| -> Result<PathBuf, BrowserLaunchError> {
+            let base = std::env::temp_dir().join("eggsearch-browser");
+            std::fs::create_dir_all(&base).map_err(|e| {
+                BrowserLaunchError::LaunchFailed(format!("failed to create browser temp dir: {e}"))
+            })?;
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o700);
-            std::fs::set_permissions(&base, perms).map_err(|e| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o700);
+                std::fs::set_permissions(&base, perms).map_err(|e| {
+                    BrowserLaunchError::LaunchFailed(format!(
+                        "failed to set browser temp dir permissions: {e}"
+                    ))
+                })?;
+            }
+
+            let suffix = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+
+            let dir = base.join(format!("ctx-{suffix}"));
+            std::fs::create_dir(&dir).map_err(|e| {
                 BrowserLaunchError::LaunchFailed(format!(
-                    "failed to set browser temp dir permissions: {e}"
+                    "failed to create browser context dir: {e}"
                 ))
             })?;
-        }
 
-        let suffix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-
-        let dir = base.join(format!("ctx-{suffix}"));
-        std::fs::create_dir(&dir).map_err(|e| {
-            BrowserLaunchError::LaunchFailed(format!("failed to create browser context dir: {e}"))
-        })?;
+            Ok(dir)
+        })
+        .await
+        .map_err(|e| {
+            BrowserLaunchError::LaunchFailed(format!("browser temp dir task failed: {e}"))
+        })??;
 
         {
             let mut ud = self.user_data_dir.lock().await;
@@ -217,7 +227,7 @@ impl BrowserLifecycle {
         }
         let mut dir = self.user_data_dir.lock().await;
         if let Some(path) = dir.take() {
-            let _ = std::fs::remove_dir_all(&path);
+            let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&path)).await;
         }
     }
 

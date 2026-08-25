@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use super::types::{BrowserDiscovery, BrowserDiscoveryState, BrowserFamily, BrowserSource};
 
@@ -127,9 +128,36 @@ fn detect_family(path: &Path) -> BrowserFamily {
     }
 }
 
+const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const VERSION_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(20);
+
 fn run_version(path: &Path) -> Option<String> {
-    let output = Command::new(path).arg("--version").output().ok()?;
-    if !output.status.success() {
+    let mut child = Command::new(path)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let deadline = Instant::now() + VERSION_PROBE_TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(VERSION_PROBE_POLL_INTERVAL);
+            }
+            Err(_) => return None,
+        }
+    };
+
+    let output = child.wait_with_output().ok()?;
+    if !status.success() {
         return None;
     }
     let stdout = String::from_utf8_lossy(&output.stdout);

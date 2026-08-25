@@ -106,10 +106,10 @@ pub struct SourcedValue {
 }
 
 fn compute_conflict_id(source_ids: &[String], field: &str) -> String {
-    use super::identity::{entity_prefix, write_str, FnvHasher};
+    use super::identity::{write_entity_prefix, write_str, FnvHasher};
 
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("conflict"));
+    write_entity_prefix(&mut hasher, "conflict");
     write_str(&mut hasher, &source_ids.join(","));
     write_str(&mut hasher, field);
     format!("conflict_{:016x}", hasher.finish())

@@ -125,72 +125,18 @@ pub struct VulnerabilityMetadata {
 
 impl VulnerabilityMetadata {
     pub fn merge(self, other: VulnerabilityMetadata) -> VulnerabilityMetadata {
-        let mut cve_ids = self.cve_ids;
-        let mut seen_cve: std::collections::HashSet<String> = cve_ids.iter().cloned().collect();
-        for id in &other.cve_ids {
-            if seen_cve.insert(id.clone()) {
-                cve_ids.push(id.clone());
-            }
-        }
-        let mut ghsa_ids = self.ghsa_ids;
-        let mut seen_ghsa: std::collections::HashSet<String> = ghsa_ids.iter().cloned().collect();
-        for id in &other.ghsa_ids {
-            if seen_ghsa.insert(id.clone()) {
-                ghsa_ids.push(id.clone());
-            }
-        }
-        let mut osv_ids = self.osv_ids;
-        let mut seen_osv: std::collections::HashSet<String> = osv_ids.iter().cloned().collect();
-        for id in &other.osv_ids {
-            if seen_osv.insert(id.clone()) {
-                osv_ids.push(id.clone());
-            }
-        }
-        let mut rustsec_ids = self.rustsec_ids;
-        let mut seen_rustsec: std::collections::HashSet<String> =
-            rustsec_ids.iter().cloned().collect();
-        for id in &other.rustsec_ids {
-            if seen_rustsec.insert(id.clone()) {
-                rustsec_ids.push(id.clone());
-            }
-        }
-        let mut affected_ranges = self.affected_ranges;
-        let mut seen_affected: std::collections::HashSet<String> =
-            affected_ranges.iter().cloned().collect();
-        for r in &other.affected_ranges {
-            if seen_affected.insert(r.clone()) {
-                affected_ranges.push(r.clone());
-            }
-        }
-        let mut patched_ranges = self.patched_ranges;
-        let mut seen_patched: std::collections::HashSet<String> =
-            patched_ranges.iter().cloned().collect();
-        for r in &other.patched_ranges {
-            if seen_patched.insert(r.clone()) {
-                patched_ranges.push(r.clone());
-            }
-        }
-        let mut vulnerable_versions = self.vulnerable_versions;
-        let mut seen_vv: std::collections::HashSet<String> =
-            vulnerable_versions.iter().cloned().collect();
-        for v in &other.vulnerable_versions {
-            if seen_vv.insert(v.clone()) {
-                vulnerable_versions.push(v.clone());
-            }
-        }
-        let mut patched_versions = self.patched_versions;
-        let mut seen_pv: std::collections::HashSet<String> =
-            patched_versions.iter().cloned().collect();
-        for v in &other.patched_versions {
-            if seen_pv.insert(v.clone()) {
-                patched_versions.push(v.clone());
-            }
-        }
+        let cve_ids = merge_dedup_str(self.cve_ids, &other.cve_ids);
+        let ghsa_ids = merge_dedup_str(self.ghsa_ids, &other.ghsa_ids);
+        let osv_ids = merge_dedup_str(self.osv_ids, &other.osv_ids);
+        let rustsec_ids = merge_dedup_str(self.rustsec_ids, &other.rustsec_ids);
+        let affected_ranges = merge_dedup_str(self.affected_ranges, &other.affected_ranges);
+        let patched_ranges = merge_dedup_str(self.patched_ranges, &other.patched_ranges);
+        let vulnerable_versions =
+            merge_dedup_str(self.vulnerable_versions, &other.vulnerable_versions);
+        let patched_versions = merge_dedup_str(self.patched_versions, &other.patched_versions);
         let mut references = self.references;
-        let mut seen_refs: std::collections::HashSet<String> =
-            references.iter().map(|r| r.url.clone()).collect();
         for r in &other.references {
-            if seen_refs.insert(r.url.clone()) {
+            if !references.iter().any(|e| e.url == r.url) {
                 references.push(r.clone());
             }
         }
@@ -221,6 +167,15 @@ impl VulnerabilityMetadata {
             },
         }
     }
+}
+
+fn merge_dedup_str(mut base: Vec<String>, other: &[String]) -> Vec<String> {
+    for item in other {
+        if !base.contains(item) {
+            base.push(item.clone());
+        }
+    }
+    base
 }
 
 /// CISA Known Exploited Vulnerabilities metadata.

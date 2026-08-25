@@ -903,9 +903,80 @@ impl MetadataSearchAdapter {
             effective_timeout.as_millis() as u64,
         );
 
+        // Build attempt records from raw results and failures before
+        // aggregating/consuming them for provider failure classification.
+        let mut web_search_attempts: Vec<crate::core::retrieval_status::RetrievalAttempt> =
+            Vec::new();
+        for (id, results) in &raw_results {
+            web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
+                provider_id: id.clone(),
+                subquery_id: None,
+                operation_id: None,
+                intended_roles: crate::core::retrieval_status::map_provider_to_intended_roles(
+                    id,
+                    req.intent.as_str(),
+                ),
+                outcome: if results.is_empty() {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessZeroResults
+                } else {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessWithResults
+                },
+                result_count: results.len(),
+                error_class: None,
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: Default::default(),
+                query_fingerprint: Some(
+                    crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
+                ),
+                duration_ms: None,
+            });
+        }
+        for (id, err) in &raw_failures {
+            let ec = classify(err);
+            let outcome = match ec {
+                ErrorClass::Timeout => {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::TimedOut
+                }
+                ErrorClass::RateLimited => {
+                    crate::core::retrieval_status::RetrievalAttemptOutcome::RateLimited
+                }
+                _ => crate::core::retrieval_status::RetrievalAttemptOutcome::Failed,
+            };
+            web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
+                provider_id: id.clone(),
+                subquery_id: None,
+                operation_id: None,
+                intended_roles: crate::core::retrieval_status::map_provider_to_intended_roles(
+                    id,
+                    req.intent.as_str(),
+                ),
+                outcome,
+                result_count: 0,
+                error_class: Some(ec.as_str().to_string()),
+                deadline_interrupted: false,
+                truncated: false,
+                truncation_evidence: Default::default(),
+                query_fingerprint: Some(
+                    crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
+                ),
+                duration_ms: None,
+            });
+        }
+
+        // Collect the set of provider ids that already completed (success
+        // or individual failure) so we don't double-count.
+        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (id, _) in &raw_results {
+            accounted.insert(id.clone());
+        }
+        for (id, _) in &raw_failures {
+            accounted.insert(id.clone());
+        }
+
         // Aggregate up to the candidate pool size so intent/freshness
         // reranking has the larger pool to work with.
-        let aggregated = aggregate_rrf(raw_results.clone(), candidate_limit);
+        let aggregated = aggregate_rrf(raw_results, candidate_limit);
         let mut results: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
         let mut trust_markers = TrustMarkers::default();
         for a in aggregated {
@@ -995,77 +1066,6 @@ impl MetadataSearchAdapter {
             ));
         }
 
-        // Build attempt records from raw results and failures before
-        // consuming them for provider failure classification.
-        let mut web_search_attempts: Vec<crate::core::retrieval_status::RetrievalAttempt> =
-            Vec::new();
-        for (id, results) in &raw_results {
-            web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
-                provider_id: id.clone(),
-                subquery_id: None,
-                operation_id: None,
-                intended_roles: crate::core::retrieval_status::map_provider_to_intended_roles(
-                    id,
-                    req.intent.as_str(),
-                ),
-                outcome: if results.is_empty() {
-                    crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessZeroResults
-                } else {
-                    crate::core::retrieval_status::RetrievalAttemptOutcome::SuccessWithResults
-                },
-                result_count: results.len(),
-                error_class: None,
-                deadline_interrupted: false,
-                truncated: false,
-                truncation_evidence: Default::default(),
-                query_fingerprint: Some(
-                    crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
-                ),
-                duration_ms: None,
-            });
-        }
-        for (id, err) in &raw_failures {
-            let ec = classify(err);
-            let outcome = match ec {
-                ErrorClass::Timeout => {
-                    crate::core::retrieval_status::RetrievalAttemptOutcome::TimedOut
-                }
-                ErrorClass::RateLimited => {
-                    crate::core::retrieval_status::RetrievalAttemptOutcome::RateLimited
-                }
-                _ => crate::core::retrieval_status::RetrievalAttemptOutcome::Failed,
-            };
-            web_search_attempts.push(crate::core::retrieval_status::RetrievalAttempt {
-                provider_id: id.clone(),
-                subquery_id: None,
-                operation_id: None,
-                intended_roles: crate::core::retrieval_status::map_provider_to_intended_roles(
-                    id,
-                    req.intent.as_str(),
-                ),
-                outcome,
-                result_count: 0,
-                error_class: Some(ec.as_str().to_string()),
-                deadline_interrupted: false,
-                truncated: false,
-                truncation_evidence: Default::default(),
-                query_fingerprint: Some(
-                    crate::core::retrieval_status::query_fingerprint_from_query(&req.query),
-                ),
-                duration_ms: None,
-            });
-        }
-
-        // Collect the set of provider ids that already completed (success
-        // or individual failure) so we don't double-count.
-        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for (id, _) in &raw_results {
-            accounted.insert(id.clone());
-        }
-        for (id, _) in &raw_failures {
-            accounted.insert(id.clone());
-        }
-
         // Engines still in the join_set when the deadline hit are
         // considered timed-out. They were cancelled by the JoinSet drop.
         let mut providers_failed: Vec<ProviderFailure> = raw_failures
@@ -1148,6 +1148,7 @@ impl MetadataSearchAdapter {
         effective_max_results: usize,
         max_results_cap: usize,
         local_backend: Option<&crate::meta::local_backend::LocalWorkspaceBackend>,
+        local_inventory: Option<&[crate::meta::local_inventory::LocalRepoIdentity]>,
     ) -> crate::core::repo_search::RepoSearchResponse {
         use crate::core::repo_search::{RepoSearchSubqueryTelemetry, RepoSearchTelemetry};
 
@@ -1280,17 +1281,26 @@ impl MetadataSearchAdapter {
                 // Discover local repo identities and match to request.
                 // Use resolved_repo_locator() so that `repo: "owner/name"`
                 // (without explicit owner) correctly triggers local matching.
-                let inventory = crate::meta::local_inventory::discover_local_repos(
-                    &crate::core::local::LocalConfig {
-                        enabled: true,
-                        roots: roots.iter().map(|(_, p)| p.clone()).collect(),
-                        ..Default::default()
-                    },
-                    2,
-                );
+                let discovered_inventory;
+                let inventory: &[crate::meta::local_inventory::LocalRepoIdentity] =
+                    match local_inventory {
+                        Some(snapshot) => snapshot,
+                        None => {
+                            discovered_inventory =
+                                crate::meta::local_inventory::discover_local_repos(
+                                    &crate::core::local::LocalConfig {
+                                        enabled: true,
+                                        roots: roots.iter().map(|(_, p)| p.clone()).collect(),
+                                        ..Default::default()
+                                    },
+                                    2,
+                                );
+                            &discovered_inventory
+                        }
+                    };
                 let matched_repo = req.resolved_repo_locator().and_then(|(owner, repo)| {
                     crate::meta::local_inventory::match_local_repo(
-                        &inventory,
+                        inventory,
                         req.host.as_ref(),
                         &owner,
                         &repo,
@@ -5092,7 +5102,7 @@ mod tests {
             timeout_ms: Some(50),
             ..Default::default()
         };
-        let resp = adapter.repo_search(&req, 10, 50, None).await;
+        let resp = adapter.repo_search(&req, 10, 50, None, None).await;
 
         let deadline_warnings: Vec<_> = resp
             .warnings
@@ -5182,7 +5192,7 @@ mod tests {
             owner: Some("owner".to_string()),
             ..Default::default()
         };
-        let resp = adapter.repo_search(&req, 10, 50, None).await;
+        let resp = adapter.repo_search(&req, 10, 50, None, None).await;
 
         let deadline_warnings: Vec<_> = resp
             .warnings

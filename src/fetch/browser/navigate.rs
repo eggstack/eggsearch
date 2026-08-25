@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use chromiumoxide::page::Page;
 
 use super::classify::{classify_response, FetchDisposition};
-use super::intercept::{is_request_allowed, PolicyViolation};
+use super::intercept::{is_request_allowed_with_dns, PolicyViolation};
 use super::lifecycle::BrowserLifecycle;
 use super::types::{
     BrowserConfig, FetchTransportKind, ManualInteractionReason, ManualInteractionRequired,
@@ -81,7 +81,9 @@ pub async fn browser_fetch_with_policy(
         RenderPolicy::Auto | RenderPolicy::Browser => {}
     }
 
-    is_request_allowed(url).map_err(BrowserFetchError::PolicyViolation)?;
+    is_request_allowed_with_dns(url)
+        .await
+        .map_err(BrowserFetchError::PolicyViolation)?;
 
     let browser = lifecycle
         .ensure_browser()
@@ -499,6 +501,7 @@ pub fn browser_result_to_response(
 
 #[cfg(test)]
 mod tests {
+    use super::super::intercept::is_request_allowed;
     use super::*;
 
     #[test]

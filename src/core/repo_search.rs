@@ -392,6 +392,9 @@ impl RepoSearchRequest {
         if let Some(0) = self.max_results {
             return Err("max_results must be > 0".to_string());
         }
+        if let Some(0) = self.max_per_group {
+            return Err("max_per_group must be > 0".to_string());
+        }
         if let Some(0) = self.timeout_ms {
             return Err("timeout_ms must be > 0".to_string());
         }

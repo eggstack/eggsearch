@@ -898,11 +898,7 @@ pub async fn read_bounded_body(
     let mut stream = response.bytes_stream();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| EngineError::Http { engine, source: e })?;
-        let remaining = max_bytes.saturating_sub(body.len());
-        if chunk.len() > remaining {
-            if remaining > 0 {
-                body.extend_from_slice(&chunk[..remaining]);
-            }
+        if chunk.len() > max_bytes.saturating_sub(body.len()) {
             return Err(EngineError::ParseFailed {
                 engine,
                 reason: format!(

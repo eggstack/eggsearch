@@ -96,6 +96,14 @@ pub fn entity_prefix(entity: &str) -> Vec<u8> {
     prefix
 }
 
+/// Write the versioned entity prefix directly to `hasher` without an
+/// intermediate allocation. Equivalent to hashing `entity_prefix(entity)`.
+pub fn write_entity_prefix(hasher: &mut FnvHasher, entity: &str) {
+    hasher.write(ID_VERSION_PREFIX);
+    hasher.write(entity.as_bytes());
+    hasher.write(&[0]);
+}
+
 /// Write a length-prefixed byte slice to the hasher.
 /// Prefix prevents field-boundary ambiguity (e.g. "ab"+"c" vs "a"+"bc").
 /// Lengths above u32::MAX are clamped to u32::MAX to keep the prefix
@@ -398,7 +406,7 @@ pub struct SourceKey<'a> {
 /// fragments) do not produce spurious ID differences.
 pub fn compute_source_id(key: &SourceKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("source"));
+    write_entity_prefix(&mut hasher, "source");
     write_opt_str(&mut hasher, key.provider_id);
     match key.url {
         Some(u) => write_str(&mut hasher, &canonicalize_url(u)),
@@ -450,7 +458,7 @@ pub struct FetchKey<'a> {
 /// URLs are canonicalized before hashing (when no locator is present).
 pub fn compute_fetch_id(key: &FetchKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("fetch"));
+    write_entity_prefix(&mut hasher, "fetch");
     if let Some(loc) = key.locator {
         write_str(&mut hasher, &format!("{loc:?}"));
     } else {
@@ -507,7 +515,7 @@ pub struct SuggestedFetchKey<'a> {
 /// fetch IDs) so cosmetic differences do not produce spurious IDs.
 pub fn compute_suggested_fetch_id(key: &SuggestedFetchKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("suggested"));
+    write_entity_prefix(&mut hasher, "suggested");
     write_str(&mut hasher, &canonicalize_url(key.url));
     write_str(&mut hasher, key.group);
     hasher.write(&[key.priority]);
@@ -541,7 +549,7 @@ pub struct BatchFetchKey<'a> {
 /// `batch_id = batch_<16hex(label + index)>`
 pub fn compute_batch_fetch_id(key: &BatchFetchKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("batch"));
+    write_entity_prefix(&mut hasher, "batch");
     write_str(&mut hasher, key.label);
     write_usize(&mut hasher, key.index);
     format!("batch_{:016x}", hasher.finish())
@@ -581,7 +589,7 @@ pub struct CodeSpanKey<'a> {
 /// `span_id = span_<16hex(locator + line_start + line_end + symbol)>`
 pub fn compute_code_span_id(key: &CodeSpanKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("code_span"));
+    write_entity_prefix(&mut hasher, "code_span");
     write_str(&mut hasher, key.locator);
     write_opt_u32(&mut hasher, key.line_start);
     write_opt_u32(&mut hasher, key.line_end);
@@ -665,7 +673,7 @@ pub fn compute_locator_id(key: &RepoLocatorKey<'_>) -> String {
     let ref_name = key.ref_name.map(str::to_ascii_lowercase);
     let path = key.path.to_ascii_lowercase();
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("locator"));
+    write_entity_prefix(&mut hasher, "locator");
     write_opt_str(&mut hasher, host.as_deref());
     write_opt_str(&mut hasher, owner.as_deref());
     write_opt_str(&mut hasher, repo.as_deref());
@@ -699,7 +707,7 @@ pub struct DocKey<'a> {
 /// `doc_id = doc_<16hex(url + title + kind)>`
 pub fn compute_doc_id(key: &DocKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("doc"));
+    write_entity_prefix(&mut hasher, "doc");
     match key.url {
         Some(u) => write_str(&mut hasher, &canonicalize_url(u)),
         None => write_str(&mut hasher, ""),
@@ -730,7 +738,7 @@ pub struct DocChunkKey<'a> {
 /// `chunk_id = chunk_<16hex(doc_id + chunk_index + heading_path)>`
 pub fn compute_chunk_id(key: &DocChunkKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("chunk"));
+    write_entity_prefix(&mut hasher, "chunk");
     write_str(&mut hasher, key.doc_id);
     write_usize(&mut hasher, key.chunk_index);
     write_str(&mut hasher, key.heading_path);

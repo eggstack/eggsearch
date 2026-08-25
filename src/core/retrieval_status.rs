@@ -12,12 +12,9 @@ use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
 /// preserves no recoverable query content (credentials, file paths, tokens,
 /// or proprietary fragments are not leaked).
 pub fn query_fingerprint_from_query(query: &str) -> String {
-    let mut state: u64 = 14_695_981_039_346_656_037;
-    for &byte in query.as_bytes() {
-        state ^= byte as u64;
-        state = state.wrapping_mul(1_099_511_628_211);
-    }
-    format!("fp_{state:016x}")
+    let mut hasher = crate::core::identity::FnvHasher::new();
+    hasher.write(query.as_bytes());
+    format!("fp_{:016x}", hasher.finish())
 }
 
 #[allow(missing_docs)]

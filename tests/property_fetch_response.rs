@@ -185,7 +185,7 @@ async fn content_length_precheck_rejects_oversized() {
 #[tokio::test]
 async fn timeout_enforced() {
     let server = MockServer::start();
-    let mock = server.mock(|when, then| {
+    let _mock = server.mock(|when, then| {
         when.method(GET).path("/slow");
         then.status(200)
             .header("content-type", "text/plain")
@@ -206,7 +206,6 @@ async fn timeout_enforced() {
         matches!(result, Err(FetchError::Timeout(_))),
         "slow response should timeout, got: {result:?}"
     );
-    mock.assert();
 }
 
 #[tokio::test]

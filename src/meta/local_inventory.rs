@@ -193,9 +193,9 @@ pub fn compute_workspace_id(
     remotes: &[NormalizedRepoId],
     head_commit: Option<&str>,
 ) -> String {
-    use crate::core::identity::{entity_prefix, write_str, FnvHasher};
+    use crate::core::identity::{write_entity_prefix, write_str, FnvHasher};
     let mut hasher = FnvHasher::new();
-    hasher.write(&entity_prefix("workspace"));
+    write_entity_prefix(&mut hasher, "workspace");
     write_str(&mut hasher, &root.display().to_string());
     for r in remotes {
         write_str(&mut hasher, &r.to_string());

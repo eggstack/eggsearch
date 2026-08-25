@@ -363,6 +363,7 @@ impl FetchCache {
             raw_entries: raw.len(),
             derived_entries: derived.len(),
             raw_bytes: current_raw,
+            derived_bytes: self.current_derived_bytes.load(Ordering::Relaxed),
         }
     }
 }
@@ -372,6 +373,7 @@ pub struct CacheStats {
     pub raw_entries: usize,
     pub derived_entries: usize,
     pub raw_bytes: usize,
+    pub derived_bytes: usize,
 }
 
 #[derive(Clone, Debug, Default)]

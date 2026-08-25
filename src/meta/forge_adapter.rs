@@ -628,7 +628,11 @@ async fn resolve_github_default_branch(
 ) -> Option<String> {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let mut builder = client
-        .get(format!("{base}/repos/{owner}/{repo}"))
+        .get(format!(
+            "{base}/repos/{}/{}",
+            encode_url_component(owner),
+            encode_url_component(repo)
+        ))
         .timeout(timeout);
     if let Some(ref key) = config.api_key {
         builder = builder.header("Authorization", format!("Bearer {key}"));
@@ -707,7 +711,11 @@ async fn fetch_github_contents_root(
 ) -> Result<Vec<ForgeRawEntry>, String> {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
     let mut builder = client
-        .get(format!("{base}/repos/{owner}/{repo}/contents/"))
+        .get(format!(
+            "{base}/repos/{}/{}/contents/",
+            encode_url_component(owner),
+            encode_url_component(repo)
+        ))
         .query(&[("ref", tree_ref)])
         .timeout(timeout);
     if let Some(ref key) = config.api_key {
@@ -889,7 +897,15 @@ async fn fetch_gitlab_tree(
             return Err("permission_denied".into());
         }
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err("rate_limited".into());
+            if all_entries.is_empty() {
+                return Err("rate_limited".into());
+            }
+            warnings.push(SearchWarning::new(
+                "gitlab_tree",
+                "rate_limited_partial: rate limited mid-pagination; returning partial results",
+            ));
+            truncated_by_provider = true;
+            break;
         }
         if !status.is_success() {
             let msg = read_error_body_preview(resp).await;
@@ -1179,7 +1195,15 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             return Err("permission_denied".into());
         }
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err("rate_limited".into());
+            if all_entries.is_empty() {
+                return Err("rate_limited".into());
+            }
+            warnings.push(SearchWarning::new(
+                provider_id,
+                "rate_limited_partial: rate limited mid-pagination; returning partial results",
+            ));
+            truncated_by_provider = true;
+            break;
         }
         if !status.is_success() {
             let msg = read_error_body_preview(resp).await;
@@ -1285,7 +1309,11 @@ async fn resolve_forge_default_branch(
     budget: &mut ForgeReadBudget,
 ) -> Option<String> {
     let mut builder = client
-        .get(format!("{api_base}/repos/{owner}/{repo}"))
+        .get(format!(
+            "{api_base}/repos/{}/{}",
+            encode_url_component(owner),
+            encode_url_component(repo)
+        ))
         .timeout(timeout);
     if let Some(ref key) = config.api_key {
         builder = builder.header("Authorization", format!("token {key}"));

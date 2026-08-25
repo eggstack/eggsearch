@@ -6,7 +6,7 @@
 //! override explicit provider requests.
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -276,12 +276,25 @@ impl ProviderHealthRegistry {
         }
     }
 
+    /// Lock the entries map, recovering from a poisoned mutex by
+    /// resetting all entries to their defaults. A panic mid-update can
+    /// leave a provider incorrectly healthy or in cooldown; discarding
+    /// the half-applied state guarantees recovery starts from a clean
+    /// baseline (health rebuilds from subsequent calls).
+    fn lock_entries(&self) -> MutexGuard<'_, BTreeMap<String, ProviderHealthEntry>> {
+        match self.entries.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                guard.clear();
+                guard
+            }
+        }
+    }
+
     /// Record a successful provider call.
     pub fn record_success(&self, provider_id: &str, latency_ms: u64) {
-        let mut entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut entries = self.lock_entries();
         let entry = entries
             .entry(provider_id.to_string())
             .or_insert_with(ProviderHealthEntry::new);
@@ -302,10 +315,7 @@ impl ProviderHealthRegistry {
     ) {
         let now = Instant::now();
         let bounded = bound_error_message(message);
-        let mut entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut entries = self.lock_entries();
         let entry = entries
             .entry(provider_id.to_string())
             .or_insert_with(ProviderHealthEntry::new);
@@ -335,10 +345,7 @@ impl ProviderHealthRegistry {
 
     /// Check if a provider is currently in cooldown.
     pub fn is_in_cooldown(&self, provider_id: &str) -> bool {
-        let entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entries = self.lock_entries();
         if let Some(entry) = entries.get(provider_id) {
             if let Some(until) = entry.cooldown_until {
                 return Instant::now() < until;
@@ -349,10 +356,7 @@ impl ProviderHealthRegistry {
 
     /// Get a compact health view for a single provider.
     pub fn health_view(&self, provider_id: &str) -> ProviderHealthView {
-        let entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entries = self.lock_entries();
         let now = Instant::now();
         entries
             .get(provider_id)
@@ -377,10 +381,7 @@ impl ProviderHealthRegistry {
         enabled: bool,
         configured: bool,
     ) -> ProviderHealthSnapshot {
-        let entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entries = self.lock_entries();
         let now = Instant::now();
         let entry = entries.get(provider_id);
         ProviderHealthSnapshot {
@@ -453,10 +454,7 @@ impl Default for ProviderHealthRegistry {
 
 impl std::fmt::Debug for ProviderHealthRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entries = self.lock_entries();
         f.debug_struct("ProviderHealthRegistry")
             .field("entries_count", &entries.len())
             .finish()
