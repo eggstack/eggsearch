@@ -2788,13 +2788,15 @@ fn local_result_budget(effective_max_results: usize) -> usize {
 }
 
 fn aggregate_rrf(
-    engine_results: Vec<(String, Vec<SearchResult>)>,
+    mut engine_results: Vec<(String, Vec<SearchResult>)>,
     max_results: usize,
 ) -> Vec<AggregatedResult> {
+    engine_results.sort_by(|a, b| a.0.cmp(&b.0));
+
     let mut map: HashMap<String, AggregatedResult> = HashMap::new();
 
     for (engine_name, results) in engine_results {
-        for (index, result) in results.into_iter().enumerate() {
+        for (index, mut result) in results.into_iter().enumerate() {
             let rank = index + 1;
             let rrf_score = 1.0 / (RRF_K + rank as f64);
 
@@ -2813,15 +2815,24 @@ fn aggregate_rrf(
                         existing.engines.push(engine_name.clone());
                     }
                     if existing.snippet.is_none() && result.snippet.is_some() {
-                        existing.snippet = result.snippet;
+                        existing.snippet = result.snippet.take();
                     }
                     // Preserve the richer structured metadata. A row
                     // from `github_issues` carries real IssueMetadata
                     // and must not be replaced by `ResultMetadata::None`
                     // when a generic HTML scraper also returned the
                     // same URL.
+                    let existing_had_metadata = !matches!(existing.metadata, ResultMetadata::None);
+                    let incoming_has_metadata = !matches!(result.metadata, ResultMetadata::None);
                     existing.metadata =
                         std::mem::take(&mut existing.metadata).merge(result.metadata);
+                    // When the incoming row is the first structured one,
+                    // adopt its display fields too so the precise native
+                    // title (e.g. an issue subject) wins over a generic
+                    // scraper's title regardless of completion order.
+                    if !existing_had_metadata && incoming_has_metadata {
+                        existing.title = result.title;
+                    }
                 }
                 None => {
                     map.insert(
@@ -3285,6 +3296,114 @@ pub(crate) fn build_retrieval_failures(
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    fn sr(engine: &str, title: &str, url: &str, metadata: ResultMetadata) -> SearchResult {
+        SearchResult {
+            title: title.to_string(),
+            url: url.to_string(),
+            snippet: None,
+            source_engine: engine.to_string(),
+            metadata,
+        }
+    }
+
+    #[test]
+    fn aggregate_rrf_merge_order_is_deterministic() {
+        let results = vec![
+            (
+                "zebra".to_string(),
+                vec![sr(
+                    "zebra",
+                    "Scraper Title",
+                    "https://example.com/a",
+                    ResultMetadata::None,
+                )],
+            ),
+            (
+                "alpha".to_string(),
+                vec![sr(
+                    "alpha",
+                    "Other Title",
+                    "https://example.com/b",
+                    ResultMetadata::None,
+                )],
+            ),
+        ];
+        let reversed = vec![
+            (
+                "alpha".to_string(),
+                vec![sr(
+                    "alpha",
+                    "Other Title",
+                    "https://example.com/b",
+                    ResultMetadata::None,
+                )],
+            ),
+            (
+                "zebra".to_string(),
+                vec![sr(
+                    "zebra",
+                    "Scraper Title",
+                    "https://example.com/a",
+                    ResultMetadata::None,
+                )],
+            ),
+        ];
+        let a = aggregate_rrf(results, 10);
+        let b = aggregate_rrf(reversed, 10);
+        let titles_a: Vec<&str> = a.iter().map(|r| r.title.as_str()).collect();
+        let titles_b: Vec<&str> = b.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles_a, titles_b);
+    }
+
+    #[test]
+    fn aggregate_rrf_structured_metadata_promotes_native_title() {
+        let generic_first = vec![
+            (
+                "a_scraper".to_string(),
+                vec![sr(
+                    "a_scraper",
+                    "Click here",
+                    "https://github.com/o/r/issues/7",
+                    ResultMetadata::None,
+                )],
+            ),
+            (
+                "b_issues".to_string(),
+                vec![sr(
+                    "b_issues",
+                    "Precise issue title",
+                    "https://github.com/o/r/issues/7",
+                    ResultMetadata::Issue(Default::default()),
+                )],
+            ),
+        ];
+        let structured_last = vec![
+            (
+                "b_issues".to_string(),
+                vec![sr(
+                    "b_issues",
+                    "Precise issue title",
+                    "https://github.com/o/r/issues/7",
+                    ResultMetadata::Issue(Default::default()),
+                )],
+            ),
+            (
+                "a_scraper".to_string(),
+                vec![sr(
+                    "a_scraper",
+                    "Click here",
+                    "https://github.com/o/r/issues/7",
+                    ResultMetadata::None,
+                )],
+            ),
+        ];
+        for input in [generic_first, structured_last] {
+            let aggregated = aggregate_rrf(input, 10);
+            assert_eq!(aggregated.len(), 1);
+            assert_eq!(aggregated[0].title, "Precise issue title");
+        }
+    }
 
     #[test]
     fn error_class_strs_are_stable() {

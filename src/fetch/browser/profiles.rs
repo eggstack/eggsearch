@@ -405,11 +405,11 @@ impl ProfileManager {
             schema_version: PROFILE_SCHEMA_VERSION,
         };
 
-        self.write_metadata(&profile_dir, &metadata)?;
-
         let chrome_data = profile_dir.join("chrome-data");
         fs::create_dir_all(&chrome_data)
             .map_err(|e| ProfileError::IoError(format!("failed to create chrome-data dir: {e}")))?;
+
+        self.write_metadata(&profile_dir, &metadata)?;
 
         Ok(metadata)
     }

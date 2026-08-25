@@ -18,8 +18,14 @@ pub struct BrowserLifecycle {
     mode: BrowserExecutionMode,
     browser: Mutex<Option<Arc<chromiumoxide::Browser>>>,
     handler_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    restart_count: Mutex<u32>,
+    restart_state: Mutex<RestartState>,
     user_data_dir: Mutex<Option<PathBuf>>,
+}
+
+#[derive(Default)]
+struct RestartState {
+    ever_launched: bool,
+    restarts: u32,
 }
 
 const MAX_RESTARTS: u32 = 1;
@@ -32,7 +38,7 @@ impl BrowserLifecycle {
             mode: BrowserExecutionMode::AnonymousEphemeral,
             browser: Mutex::new(None),
             handler_handle: Mutex::new(None),
-            restart_count: Mutex::new(0),
+            restart_state: Mutex::new(RestartState::default()),
             user_data_dir: Mutex::new(None),
         }
     }
@@ -48,7 +54,7 @@ impl BrowserLifecycle {
             mode: BrowserExecutionMode::PersistentProfile { user_data_dir },
             browser: Mutex::new(None),
             handler_handle: Mutex::new(None),
-            restart_count: Mutex::new(0),
+            restart_state: Mutex::new(RestartState::default()),
             user_data_dir: Mutex::new(None),
         }
     }
@@ -63,11 +69,24 @@ impl BrowserLifecycle {
             }
         }
 
-        let mut restarts = self.restart_count.lock().await;
-        if *restarts >= MAX_RESTARTS {
-            return Err(BrowserLaunchError::RestartLimitReached);
+        let mut state = self.restart_state.lock().await;
+
+        // Re-check under the lock: a concurrent cold start may have
+        // finished launching while this task waited.
+        {
+            let browser = self.browser.lock().await;
+            if let Some(b) = browser.as_ref() {
+                return Ok(Arc::clone(b));
+            }
         }
-        *restarts += 1;
+
+        if state.ever_launched {
+            if state.restarts >= MAX_RESTARTS {
+                return Err(BrowserLaunchError::RestartLimitReached);
+            }
+            state.restarts += 1;
+        }
+        state.ever_launched = true;
 
         self.launch().await
     }
@@ -316,5 +335,30 @@ mod tests {
         assert!(path.exists());
         lifecycle.close().await;
         assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn concurrent_cold_starts_do_not_fail_with_restart_limit() {
+        let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+        let (a, b) = tokio::join!(lifecycle.ensure_browser(), lifecycle.ensure_browser());
+        assert!(matches!(a, Err(BrowserLaunchError::NoBrowser)));
+        assert!(matches!(b, Err(BrowserLaunchError::NoBrowser)));
+    }
+
+    #[tokio::test]
+    async fn restart_budget_allows_one_retry_then_limits() {
+        let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+        assert!(matches!(
+            lifecycle.ensure_browser().await,
+            Err(BrowserLaunchError::NoBrowser)
+        ));
+        assert!(matches!(
+            lifecycle.ensure_browser().await,
+            Err(BrowserLaunchError::NoBrowser)
+        ));
+        assert!(matches!(
+            lifecycle.ensure_browser().await,
+            Err(BrowserLaunchError::RestartLimitReached)
+        ));
     }
 }

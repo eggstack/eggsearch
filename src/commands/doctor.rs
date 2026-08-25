@@ -30,9 +30,13 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
 
+    let mode_off = cfg.search.mode == eggsearch::core::config::Mode::Off;
+    let healthy = !mode_off && !enabled_ids.is_empty();
+
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
+            "healthy": healthy,
             "config_path": path_display,
             "config_file_exists": config_file_exists,
             "config_file_loaded": config_file_loaded,
@@ -59,16 +63,15 @@ pub async fn run(cfg: &AppConfig, config_path: Option<&PathBuf>, probe: bool) ->
         }))?
     );
 
-    if cfg.search.mode == eggsearch::core::config::Mode::Off {
+    if mode_off {
         if probe {
             println!("\n--- Skipping provider probe (mode=off) ---");
         }
-        return Ok(());
+        anyhow::bail!("unhealthy: search mode is off; enable a search mode in [search].mode");
     }
 
     let state = ServerState::build(cfg.clone())?;
-    let healthy = !state.adapter.provider_ids().is_empty();
-    if !healthy {
+    if !healthy || state.adapter.provider_ids().is_empty() {
         anyhow::bail!("no providers enabled; enable at least one in [search].providers");
     }
 

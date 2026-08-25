@@ -24,6 +24,18 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
 
     let display_name = profile_name.unwrap_or("default");
 
+    // Discover the browser before creating any profile state so an
+    // invalid configured executable cannot leave an orphaned profile.
+    let discovery = match eggsearch::fetch::browser::discover_browser(
+        cfg.fetch.browser.executable.as_deref(),
+    ) {
+        eggsearch::fetch::browser::BrowserDiscoveryState::Available(discovery) => Some(discovery),
+        eggsearch::fetch::browser::BrowserDiscoveryState::ExplicitPathInvalid { path } => {
+            return Err(anyhow!("configured browser executable is invalid: {path}"));
+        }
+        _ => None,
+    };
+
     let meta = mgr
         .create_profile(display_name, origin)
         .map_err(|e| anyhow!("error creating profile: {e}"))?;
@@ -41,16 +53,6 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
     println!("  Origin:   {}", meta.allowed_origin);
     println!("  Profile:  {}", profile_dir.display());
     println!();
-
-    let discovery = match eggsearch::fetch::browser::discover_browser(
-        cfg.fetch.browser.executable.as_deref(),
-    ) {
-        eggsearch::fetch::browser::BrowserDiscoveryState::Available(discovery) => Some(discovery),
-        eggsearch::fetch::browser::BrowserDiscoveryState::ExplicitPathInvalid { path } => {
-            return Err(anyhow!("configured browser executable is invalid: {path}"));
-        }
-        _ => None,
-    };
 
     if let Some(ref discovery) = discovery {
         println!(

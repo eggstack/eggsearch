@@ -1498,8 +1498,27 @@ fn read_bounded_file(
     path: &str,
     allowed_roots: &[std::path::PathBuf],
 ) -> Result<String, std::io::Error> {
-    use std::fs::File;
     use std::io::Read;
+
+    const MAX_FILE_BYTES: usize = 1024 * 1024;
+
+    fn read_capped<R: Read>(mut file: R) -> Result<String, std::io::Error> {
+        let mut buf = Vec::with_capacity(64 * 1024);
+        let mut tmp = [0u8; 8192];
+        let mut total = 0usize;
+        loop {
+            let n = file.read(&mut tmp)?;
+            if n == 0 {
+                break;
+            }
+            total += n;
+            if total > MAX_FILE_BYTES {
+                return Err(std::io::Error::other("file exceeds 1MB cap"));
+            }
+            buf.extend_from_slice(&tmp[..n]);
+        }
+        Ok(String::from_utf8_lossy(&buf).into_owned())
+    }
 
     // Defense-in-depth: refuse paths outside the configured workspace
     // roots so this helper cannot become an arbitrary-read primitive
@@ -1511,23 +1530,33 @@ fn read_bounded_file(
         ));
     }
 
-    let mut file = File::open(&canonical)?;
-    let mut buf = Vec::with_capacity(64 * 1024);
-    let mut tmp = [0u8; 8192];
-    let cap = 1024 * 1024;
-    let mut total = 0usize;
-    loop {
-        let n = file.read(&mut tmp)?;
-        if n == 0 {
-            break;
+    // Open through the race-resistant contained opener so a symlink
+    // swapped between validation and this read cannot escape the root.
+    let config = crate::core::local::LocalConfig {
+        enabled: true,
+        max_file_bytes: MAX_FILE_BYTES,
+        include_hidden: true,
+        follow_symlinks: true,
+        ..crate::core::local::LocalConfig::default()
+    };
+
+    let mut last_err: Option<crate::meta::safe_open::SafeOpenError> = None;
+    for root in allowed_roots {
+        let Ok(relative) = canonical.strip_prefix(root) else {
+            continue;
+        };
+        match crate::meta::safe_open::safe_open_relative(root, &relative.to_string_lossy(), &config)
+        {
+            Ok(safe) => return read_capped(safe.fd),
+            Err(err) => last_err = Some(err),
         }
-        total += n;
-        if total > cap {
-            return Err(std::io::Error::other("file exceeds 1MB cap"));
-        }
-        buf.extend_from_slice(&tmp[..n]);
     }
-    Ok(String::from_utf8_lossy(&buf).into_owned())
+
+    if let Some(err) = last_err {
+        return Err(std::io::Error::other(err.to_string()));
+    }
+
+    std::fs::File::open(&canonical).and_then(read_capped)
 }
 
 #[cfg(test)]

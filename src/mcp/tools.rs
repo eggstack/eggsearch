@@ -897,6 +897,19 @@ pub async fn run_web_search(
     let mut structured_warnings: Vec<crate::core::warning::AgentWarning> =
         crate::core::warning::convert_warnings(&resp.warnings);
 
+    // Surface the max_results clamp on the machine-readable channel too
+    // so agents that only consume structured_warnings still learn their
+    // requested limit was downgraded.
+    if let Some(ref clamp_message) = resolution.warning {
+        structured_warnings.insert(
+            0,
+            crate::core::warning::AgentWarning::new(
+                crate::core::warning::WarningCode::MaxResultsClamped,
+                clamp_message.clone(),
+            ),
+        );
+    }
+
     // Add per-card injection warnings as structured
     for card in &resp.results {
         if card.trust_markers.injection_hits > 0 {

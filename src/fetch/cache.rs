@@ -429,7 +429,7 @@ pub fn build_derived_key(
     include_media: bool,
     sanitize_output: bool,
 ) -> DerivedCacheKey {
-    let max_chars_class = classify_max_chars(max_chars);
+    let max_chars_class = max_chars;
     DerivedCacheKey {
         scope: scope.clone(),
         raw_content_hash: raw_hash,
@@ -444,10 +444,6 @@ pub fn build_derived_key(
             sanitize_output,
         },
     }
-}
-
-fn classify_max_chars(max_chars: usize) -> usize {
-    max_chars
 }
 
 fn parse_http_date(s: &str) -> Option<SystemTime> {
@@ -853,14 +849,6 @@ mod tests {
     }
 
     #[test]
-    fn classify_max_chars_works() {
-        assert_eq!(classify_max_chars(1000), 1000);
-        assert_eq!(classify_max_chars(8000), 8000);
-        assert_eq!(classify_max_chars(30000), 30000);
-        assert_eq!(classify_max_chars(60000), 60000);
-    }
-
-    #[test]
     fn derived_keys_do_not_share_max_chars_buckets() {
         let low = build_derived_key(
             &CacheScope::Anonymous,
@@ -1253,6 +1241,60 @@ mod tests {
         };
         let headers = build_request_conditional_headers(&validators);
         assert!(headers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn invalidate_scope_evicts_raw_and_derived_entries() {
+        let cache = FetchCache::new(10, 10, 1024 * 1024, 1024 * 1024);
+
+        let raw_key = RawCacheKey {
+            url: "https://x.com".into(),
+            scope: CacheScope::Profile("prof_abc".into()),
+        };
+        let raw_entry = RawFetchCacheEntry {
+            final_url: "https://x.com".into(),
+            status: 200,
+            headers: HashMap::new(),
+            body: Arc::from(b"hello" as &[u8]),
+            fetched_at: SystemTime::now(),
+            freshness: CacheFreshness {
+                max_age: Some(Duration::from_secs(300)),
+                ..CacheFreshness::default()
+            },
+            validators: CacheValidators {
+                etag: None,
+                last_modified: None,
+            },
+            scope: CacheScope::Profile("prof_abc".into()),
+            content_type: Some("text/html".into()),
+            content_length_header: Some(5),
+            redirect_count: 0,
+            representation: RawRepresentation::Http,
+            truncated: false,
+            browser_escalated: false,
+        };
+        cache.insert_raw(raw_key.clone(), raw_entry).await;
+        cache
+            .insert_derived(make_derived_key(1), make_derived_entry(1, 100))
+            .await;
+
+        let before = cache.stats().await;
+        assert_eq!(before.raw_entries, 1);
+        assert_eq!(before.derived_entries, 1);
+
+        cache
+            .invalidate_scope(&CacheScope::Profile("prof_abc".into()))
+            .await;
+
+        let after = cache.stats().await;
+        assert_eq!(after.raw_entries, 0);
+        assert_eq!(after.raw_bytes, 0);
+        // Derived entries use a different scope and must survive.
+        assert_eq!(after.derived_entries, 1);
+        assert!(
+            cache.get_raw(&raw_key).await.is_none(),
+            "scoped raw entries must be evicted"
+        );
     }
 
     #[test]
