@@ -72,12 +72,21 @@ impl EggsearchServer {
         name = "provider_status",
         description = "Diagnostic provider configuration report for hosts and humans. Not needed for normal research."
     )]
-    fn provider_status(
+    async fn provider_status(
         &self,
         Parameters(args): Parameters<ProviderStatusArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        match run_provider_status(state, args) {
+        // Browser discovery probes candidate executables with blocking
+        // subprocesses; keep that work off the async runtime threads.
+        let res = match tokio::task::spawn_blocking(move || run_provider_status(state, args)).await
+        {
+            Ok(res) => res,
+            Err(e) => Err(ToolError::internal(format!(
+                "provider_status task failed: {e}"
+            ))),
+        };
+        match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
             Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),

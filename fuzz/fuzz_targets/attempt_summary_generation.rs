@@ -4,7 +4,7 @@ use libfuzzer_sys::fuzz_target;
 use eggsearch::core::evidence_role::EvidenceRole;
 use eggsearch::core::evidence_postprocess::build_retrieval_summary_from_attempts;
 use eggsearch::core::retrieval_status::{
-    RetrievalAttempt, RetrievalAttemptOutcome,
+    RetrievalAttempt, RetrievalAttemptOutcome, TruncationEvidence,
 };
 
 fuzz_target!(|data: &[u8]| {
@@ -49,6 +49,7 @@ fuzz_target!(|data: &[u8]| {
             RetrievalAttempt {
                 provider_id: format!("provider_{}", i % 5),
                 subquery_id: Some(format!("sq_{}", i % 4)),
+                operation_id: None,
                 intended_roles: vec![all_roles[role_idx]],
                 outcome: outcomes[outcome_idx].clone(),
                 result_count: ((seed as usize + i * 13) % 20) as usize,
@@ -59,6 +60,7 @@ fuzz_target!(|data: &[u8]| {
                 },
                 deadline_interrupted: i % 7 == 0,
                 truncated: i % 11 == 0,
+                truncation_evidence: TruncationEvidence::None,
                 query_fingerprint: None,
                 duration_ms: Some(((seed as u64) + i as u64 * 100) % 30000),
             }

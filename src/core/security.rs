@@ -1107,6 +1107,36 @@ pub struct TextSafetyWarning {
     pub category: TextSafetyCategory,
 }
 
+/// Returns `true` if `haystack` contains a purely alphanumeric keyword
+/// on word boundaries (surrounded by non-alphanumeric characters or
+/// string edges). This prevents high-collision short tokens such as
+/// "rop" or "pwn" from matching inside unrelated words like "drop" or
+/// "Europe". Keywords containing separators (e.g. phrases) fall back
+/// to plain substring matching.
+fn contains_keyword(haystack: &str, keyword: &str) -> bool {
+    if !keyword.chars().all(|c| c.is_alphanumeric()) {
+        return haystack.contains(keyword);
+    }
+    let mut search_from = 0;
+    while let Some(rel) = haystack[search_from..].find(keyword) {
+        let start = search_from + rel;
+        let end = start + keyword.len();
+        let before_ok = !haystack[..start]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphanumeric);
+        let after_ok = !haystack[end..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric);
+        if before_ok && after_ok {
+            return true;
+        }
+        search_from = end;
+    }
+    false
+}
+
 impl SecurityRemediation {
     /// Validate that remediation text does not contain exploit instructions.
     ///
@@ -1121,7 +1151,7 @@ impl SecurityRemediation {
             self.rationale.to_lowercase()
         );
         for &keyword in OFFENSIVE_INSTRUCTION_KEYWORDS {
-            if combined.contains(keyword) {
+            if contains_keyword(&combined, keyword) {
                 return Err(TextSafetyWarning {
                     keyword: keyword.to_string(),
                     category: TextSafetyCategory::OffensiveInstruction,
@@ -1129,7 +1159,7 @@ impl SecurityRemediation {
             }
         }
         for &keyword in VULNERABILITY_CLASS_KEYWORDS {
-            if combined.contains(keyword) {
+            if contains_keyword(&combined, keyword) {
                 return Err(TextSafetyWarning {
                     keyword: keyword.to_string(),
                     category: TextSafetyCategory::VulnerabilityClass,
@@ -1552,6 +1582,65 @@ pub struct SecuritySearchResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contains_keyword_requires_word_boundaries_for_tokens() {
+        assert!(contains_keyword("rop chain", "rop"));
+        assert!(contains_keyword("the rop.", "rop"));
+        assert!(!contains_keyword("drop the deprecated flag", "rop"));
+        assert!(!contains_keyword("europe", "rop"));
+        assert!(!contains_keyword("propagate", "rop"));
+        assert!(contains_keyword("pwn request", "pwn"));
+        assert!(!contains_keyword("downpour", "pwn"));
+        assert!(contains_keyword("payload delivered", "payload"));
+        assert!(!contains_keyword("payloads are sized", "payload"));
+        assert!(contains_keyword("exploit", "exploit"));
+        assert!(contains_keyword("pre-exploit hardening", "exploit"));
+        assert!(!contains_keyword("exploitable path", "exploit"));
+    }
+
+    #[test]
+    fn contains_keyword_substring_for_phrases() {
+        assert!(contains_keyword(
+            "review the proof of concept",
+            "proof of concept"
+        ));
+        assert!(contains_keyword("zero-day detail", "zero-day"));
+    }
+
+    #[test]
+    fn text_safety_allows_ordinary_prose_with_short_token_fragments() {
+        use crate::core::code_evidence::EvidenceConfidence;
+        let remediation = SecurityRemediation {
+            category: RemediationCategory::Upgrade,
+            description: "Drop the deprecated flag across European deployments".to_string(),
+            rationale: "Operators rely on this; do not propagate the old setting".to_string(),
+            evidence_urls: Vec::new(),
+            fixed_versions: Vec::new(),
+            affected_packages: Vec::new(),
+            source_ids: Vec::new(),
+            confidence: EvidenceConfidence::Strong,
+        };
+        assert!(remediation.validate_text_safety().is_ok());
+    }
+
+    #[test]
+    fn text_safety_still_flags_standalone_offensive_terms() {
+        use crate::core::code_evidence::EvidenceConfidence;
+        let remediation = SecurityRemediation {
+            category: RemediationCategory::ManualReview,
+            description: "Describes a rop chain gadget".to_string(),
+            rationale: "Shows how to assemble the chain end to end".to_string(),
+            evidence_urls: Vec::new(),
+            fixed_versions: Vec::new(),
+            affected_packages: Vec::new(),
+            source_ids: Vec::new(),
+            confidence: EvidenceConfidence::Unknown,
+        };
+        let result = remediation.validate_text_safety();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().keyword, "rop");
+    }
 
     #[test]
     fn severity_level_from_str_loose() {

@@ -1330,8 +1330,14 @@ fn sanitize_field(
 fn append_bounded(buf: &mut Vec<u8>, data: &[u8], max_bytes: usize) -> bool {
     let remaining = max_bytes.saturating_sub(buf.len());
     if data.len() > remaining {
-        if remaining > 0 {
-            buf.extend_from_slice(&data[..remaining]);
+        // Back off to the nearest char boundary so the truncated tail
+        // does not split a multi-byte UTF-8 sequence.
+        let mut take = remaining.min(data.len());
+        while take > 0 && (data[take] & 0xC0) == 0x80 {
+            take -= 1;
+        }
+        if take > 0 {
+            buf.extend_from_slice(&data[..take]);
         }
         return true;
     }
@@ -2296,5 +2302,16 @@ mod tests {
         let truncated = append_bounded(&mut buf, b"b", 10);
         assert!(truncated);
         assert_eq!(buf.len(), 10);
+    }
+
+    #[test]
+    fn append_bounded_does_not_split_multibyte_char() {
+        let data = "あああ"; // 9 bytes, 3 bytes per char
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, data.as_bytes(), 4);
+        assert!(truncated);
+        assert_eq!(buf.len(), 3);
+        assert!(std::str::from_utf8(&buf).is_ok());
+        assert_eq!(buf, "あ".as_bytes());
     }
 }

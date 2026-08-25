@@ -72,7 +72,7 @@ Inventory of all hardening and regression test suites.
 | `pdf_extended.json` | 28 | PDF magic bytes, encrypted, malformed xref, cyclic refs |
 | `filesystem_extended.json` | 30 | Symlinks, path traversal, hidden paths, binary files |
 
-## Fuzz Targets (23 registered targets)
+## Fuzz Targets (22 registered targets)
 
 Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 
@@ -81,8 +81,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `validate_url` | URL validation with default limits |
 | `validate_redirect_target` | URL validation with permissive limits |
 | `validate_redirect_chain` | Multi-hop redirect target sequences |
-| `validate_content_type` | extract_content with varying Content-Type |
-| `parse_content_length` | Content-Length header value parsing |
+| `validate_content_type` | Content-type classification plus extraction with varying Content-Type |
 | `chunk_boundary` | Bounded text splitting at various char boundaries |
 | `mixed_utf8_extract` | HTML extraction from mixed UTF-8 and lossy bytes |
 | `extract_content` | HTML extraction from strings |
@@ -93,7 +92,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `extract_pdf_text` | PDF text extraction |
 | `canonicalize_url` | URL canonicalization via source_id |
 | `sanitize_pipeline` | Full sanitize pipeline: strip → bound → scan |
-| `bounded_response_reader` | Forge response bounded reader (UTF-8 + byte cap) |
+| `bounded_response_reader` | Production bounded chunk-append logic (byte cap across streamed chunks) |
 | `workflow_kind_parse` | Workflow kind parsing |
 | `classify_absence` | Absence classification |
 | `detect_entity_scoped_conflicts` | Entity-scoped conflict detection |

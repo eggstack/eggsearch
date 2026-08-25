@@ -352,27 +352,24 @@ fn detect_language_from_bytes(bytes: &[u8]) -> Option<String> {
     if total_signals >= 2 || (fn_def_count >= 2 && brace_depth > 0) {
         // Likely code - try to determine language
         // Check for Rust-specific patterns
-        let text_full = String::from_utf8_lossy(sample);
-        if text_full.contains("fn main()")
-            || text_full.contains("fn ")
-                && text_full.contains("-> ")
-                && text_full.contains("Option<")
+        if text.contains("fn main()")
+            || text.contains("fn ") && text.contains("-> ") && text.contains("Option<")
         {
             return Some("rust".to_string());
         }
-        if text_full.contains("def ")
-            && text_full.contains(":")
-            && (text_full.contains("self") || text_full.contains("__init__"))
+        if text.contains("def ")
+            && text.contains(":")
+            && (text.contains("self") || text.contains("__init__"))
         {
             return Some("python".to_string());
         }
-        if text_full.contains("func ") && text_full.contains(":=") {
+        if text.contains("func ") && text.contains(":=") {
             return Some("go".to_string());
         }
-        if text_full.contains("class ") && text_full.contains("extends") {
+        if text.contains("class ") && text.contains("extends") {
             return Some("typescript".to_string());
         }
-        if text_full.contains("public class ") || text_full.contains("private ") {
+        if text.contains("public class ") || text.contains("private ") {
             return Some("java".to_string());
         }
         // Default to "code" if we can't determine specific language

@@ -100,13 +100,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "parse_content_length"
-path = "fuzz_targets/parse_content_length.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "chunk_boundary"
 path = "fuzz_targets/chunk_boundary.rs"
 test = false

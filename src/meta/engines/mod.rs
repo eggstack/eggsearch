@@ -898,18 +898,35 @@ pub async fn read_bounded_body(
     let mut stream = response.bytes_stream();
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| EngineError::Http { engine, source: e })?;
-        if chunk.len() > max_bytes.saturating_sub(body.len()) {
-            return Err(EngineError::ParseFailed {
-                engine,
-                reason: format!(
-                    "response body too large: read {} bytes, limit is {max_bytes} bytes",
-                    body.len().max(chunk.len())
-                ),
-            });
-        }
-        body.extend_from_slice(&chunk);
+        push_bounded_chunk(&mut body, &chunk, max_bytes, engine)?;
     }
     Ok(body)
+}
+
+/// Append one streamed chunk to `body` under a hard byte cap.
+///
+/// Returns `Ok(())` when the chunk fits within `max_bytes`, or an
+/// `EngineError::ParseFailed` overflow error otherwise. This is the
+/// single implementation of the streaming cap semantics shared by
+/// `read_bounded_body` (and exercised by the `bounded_response_reader`
+/// fuzz target).
+pub fn push_bounded_chunk(
+    body: &mut Vec<u8>,
+    chunk: &[u8],
+    max_bytes: usize,
+    engine: &'static str,
+) -> Result<(), EngineError> {
+    if chunk.len() > max_bytes.saturating_sub(body.len()) {
+        return Err(EngineError::ParseFailed {
+            engine,
+            reason: format!(
+                "response body too large: read {} bytes, limit is {max_bytes} bytes",
+                body.len().max(chunk.len())
+            ),
+        });
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
 }
 
 /// Returns `true` if `url` parses as an HTTP or HTTPS URL.

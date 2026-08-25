@@ -326,45 +326,48 @@ fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResu
     let base = Url::parse(base_url).ok();
 
     let mut total_seen: usize = 0;
-    let mut truncated = false;
+    let mut links: Vec<ExtractedLink> = Vec::new();
 
-    let links = selector
-        .map(|sel| {
-            let collected: Vec<ExtractedLink> = document
-                .select(&sel)
-                .filter_map(|el| {
-                    let href = el.value().attr("href")?;
-                    let text = el.text().collect::<String>().trim().to_string();
-                    let rel = el
-                        .value()
-                        .attr("rel")
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty());
-                    let page_url = base.as_ref()?;
-                    let url = page_url.join(href).ok()?;
-                    let same_domain = Some(page_url.host_str() == url.host_str());
-                    let link_kind = classify_link(page_url, &url);
-                    Some(ExtractedLink {
-                        text,
-                        url: url.to_string(),
-                        link_kind,
-                        rel,
-                        same_domain,
-                    })
-                })
-                .take(MAX_LINKS)
-                .collect();
-            let selector_all = Selector::parse("a[href]").unwrap();
-            total_seen = document.select(&selector_all).count();
-            truncated = total_seen > MAX_LINKS;
-            collected
-        })
-        .unwrap_or_default();
+    if let Some(sel) = selector {
+        for el in document.select(&sel) {
+            total_seen += 1;
+            if links.len() >= MAX_LINKS {
+                continue;
+            }
+            let href = match el.value().attr("href") {
+                Some(h) => h,
+                None => continue,
+            };
+            let text = el.text().collect::<String>().trim().to_string();
+            let rel = el
+                .value()
+                .attr("rel")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let page_url = match base.as_ref() {
+                Some(u) => u,
+                None => continue,
+            };
+            let url = match page_url.join(href) {
+                Ok(u) => u,
+                Err(_) => continue,
+            };
+            let same_domain = Some(page_url.host_str() == url.host_str());
+            let link_kind = classify_link(page_url, &url);
+            links.push(ExtractedLink {
+                text,
+                url: url.to_string(),
+                link_kind,
+                rel,
+                same_domain,
+            });
+        }
+    }
 
     LinkExtractionResult {
         links,
         total_seen,
-        truncated,
+        truncated: total_seen > MAX_LINKS,
     }
 }
 

@@ -374,7 +374,7 @@ fn normalize_path(path: &str) -> String {
     } else {
         path
     };
-    path.to_string()
+    normalize_percent_encoding(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -1013,6 +1013,13 @@ mod tests {
     fn canonicalize_url_no_scheme() {
         let a = canonicalize_url("example.com/path/to/file");
         assert_eq!(a, "example.com/path/to/file");
+    }
+
+    #[test]
+    fn canonicalize_url_no_scheme_normalizes_percent_encoding() {
+        let a = canonicalize_url("example.com/path%41");
+        let b = canonicalize_url("example.com/pathA");
+        assert_eq!(a, b);
     }
 
     #[test]

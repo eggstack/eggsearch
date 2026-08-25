@@ -31,8 +31,8 @@
 //!   reports the timeout per provider.
 //! - `web_search` cards are deduplicated when the same URL appears
 //!   in multiple engines.
-//! - `web_search` cards carry a per-card `id` of the form `src_<uuid>`
-//!   and the id is unique within a response.
+//! - `web_search` cards carry a per-card `id` of the form `src_<16hex>`
+//!   (FNV-1a content hash) and the id is unique within a response.
 //! - `provider_status` returns one entry per configured provider with
 //!   the documented field shape.
 
@@ -16090,8 +16090,6 @@ mod security_context_safety {
     /// available.
     #[tokio::test]
     async fn security_search_severity_min_unenforced_warning() {
-        use eggsearch::core::security::SeverityLevel;
-
         let engines = vec![MockEngine::success(
             "mock_a",
             vec![MockResult::new(
@@ -16125,7 +16123,6 @@ mod security_context_safety {
             has_warning,
             "should emit severity_min_unenforced warning when no severity metadata exists: {warnings:?}"
         );
-        let _ = SeverityLevel::High;
     }
 
     /// Bug #2 regression: when `include_exploit_context` is set to

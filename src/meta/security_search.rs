@@ -462,6 +462,7 @@ pub async fn run_security_search_plan(
     req: &SecuritySearchRequest,
     effective_max: usize,
     max_results_cap: usize,
+    dependency_file_roots: Vec<std::path::PathBuf>,
 ) -> SecuritySearchResponse {
     // 1. Parse identifiers from request fields and free-text query
     let resolved_ids = SecurityIdentifiers::parse(
@@ -887,7 +888,7 @@ pub async fn run_security_search_plan(
             std::collections::HashSet::new();
 
         for file_path in &req.dependency_files {
-            match read_bounded_file(file_path) {
+            match read_bounded_file(file_path, &dependency_file_roots) {
                 Ok(content) => {
                     let findings = parse_dependency_file(file_path, &content);
                     dependency_findings.extend(findings);
@@ -1413,6 +1414,7 @@ pub async fn run_security_search_plan(
         &providers_failed,
         &web_resp.providers_queried,
         &all_attempts,
+        "advisory",
     );
     let postprocess_result = crate::core::evidence_postprocess::postprocess(
         &all_cards,
@@ -1492,10 +1494,24 @@ fn ids_overlap(a: &VulnerabilityMetadata, b: &VulnerabilityMetadata) -> bool {
     false
 }
 
-fn read_bounded_file(path: &str) -> Result<String, std::io::Error> {
+fn read_bounded_file(
+    path: &str,
+    allowed_roots: &[std::path::PathBuf],
+) -> Result<String, std::io::Error> {
     use std::fs::File;
     use std::io::Read;
-    let mut file = File::open(path)?;
+
+    // Defense-in-depth: refuse paths outside the configured workspace
+    // roots so this helper cannot become an arbitrary-read primitive
+    // even if a future caller skips its own validation.
+    let canonical = std::fs::canonicalize(path)?;
+    if !allowed_roots.is_empty() && !allowed_roots.iter().any(|root| canonical.starts_with(root)) {
+        return Err(std::io::Error::other(
+            "path is outside the configured local workspace roots",
+        ));
+    }
+
+    let mut file = File::open(&canonical)?;
     let mut buf = Vec::with_capacity(64 * 1024);
     let mut tmp = [0u8; 8192];
     let cap = 1024 * 1024;

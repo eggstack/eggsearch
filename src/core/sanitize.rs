@@ -273,8 +273,9 @@ fn strip_evasive_for_scan(s: &str) -> (String, Vec<(usize, usize)>) {
 }
 
 fn map_offset_to_original(map: &[(usize, usize)], normalized_offset: usize) -> usize {
+    debug_assert!(!map.is_empty(), "offset map must not be empty");
     let idx = map.partition_point(|(norm, _)| *norm <= normalized_offset);
-    map[idx - 1].1
+    map[idx.saturating_sub(1)].1
 }
 
 /// Wrap `s` in `<<<EXTERNAL_UNTRUSTED field=... id=...>>>` ...

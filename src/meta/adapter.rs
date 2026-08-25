@@ -1115,8 +1115,12 @@ impl MetadataSearchAdapter {
 
         crate::core::evidence_postprocess::materialize_evidence_roles(&mut results);
 
-        let retrieval_failures =
-            build_retrieval_failures(&providers_failed, &providers_queried, &web_search_attempts);
+        let retrieval_failures = build_retrieval_failures(
+            &providers_failed,
+            &providers_queried,
+            &web_search_attempts,
+            "source",
+        );
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &results,
             &providers_failed,
@@ -1717,8 +1721,12 @@ impl MetadataSearchAdapter {
                     exact_error: is_exact_error,
                 },
             );
-        let retrieval_failures =
-            build_retrieval_failures(&providers_failed, &providers_queried, &dispatch.attempts);
+        let retrieval_failures = build_retrieval_failures(
+            &providers_failed,
+            &providers_queried,
+            &dispatch.attempts,
+            "source",
+        );
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
@@ -2077,8 +2085,12 @@ impl MetadataSearchAdapter {
                     exact_error: false,
                 },
             );
-        let retrieval_failures =
-            build_retrieval_failures(&providers_failed, &queried_ids, &dispatch.attempts);
+        let retrieval_failures = build_retrieval_failures(
+            &providers_failed,
+            &queried_ids,
+            &dispatch.attempts,
+            "research",
+        );
         let postprocess_result = crate::core::evidence_postprocess::postprocess(
             &all_cards,
             &providers_failed,
@@ -2151,7 +2163,7 @@ async fn dispatch_subqueries(
     };
 
     // Build flat job list: one (subquery, provider) pair per job
-    let mut jobs = Vec::new();
+    let mut jobs = Vec::with_capacity(subqueries.len() * engines.len());
     for (subquery_idx, subquery) in subqueries.iter().enumerate() {
         for (provider_idx, engine) in engines.iter().enumerate() {
             let intended_roles = if !subquery.intended_roles.is_empty() {
@@ -2250,7 +2262,7 @@ fn research_subquery_priority(source_type: &crate::core::research::ResearchSourc
         ResearchSourceType::RecentNews => 9,
         ResearchSourceType::CommunityDiscussion => 10,
         ResearchSourceType::Counterpoints => 11,
-        ResearchSourceType::AcademicOrFormalSources => 2,
+        ResearchSourceType::AcademicOrFormalSources => 12,
     }
 }
 
@@ -3226,6 +3238,7 @@ pub(crate) fn build_retrieval_failures(
     providers_failed: &[ProviderFailure],
     providers_queried: &[String],
     attempts: &[crate::core::retrieval_status::RetrievalAttempt],
+    fallback_scope: &str,
 ) -> Vec<crate::core::workflow_coverage::RetrievalFailure> {
     use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
 
@@ -3248,7 +3261,7 @@ pub(crate) fn build_retrieval_failures(
                 } else {
                     RetrievalFailureKind::ProviderFailed
                 };
-                let roles = map_provider_to_intended_roles(provider_id, "source");
+                let roles = map_provider_to_intended_roles(provider_id, fallback_scope);
                 for role in roles {
                     failures.push(RetrievalFailure {
                         kind,

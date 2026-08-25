@@ -326,12 +326,26 @@ fn e20_local_workspace_disabled_does_not_fail_startup() {
 #[tokio::test]
 async fn e21_keyless_web_fetch_succeeds_without_credentials() {
     use eggsearch::mcp::tools::{run_web_fetch, WebFetchArgs};
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.path("/get");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body><p>keyless fetch ok</p></body></html>");
+    });
     let engines: Vec<MockEngine> = vec![];
-    let state = mock_state(engines);
+    let mut cfg = scrubbed_config();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let adapter = MetadataSearchAdapter::from_engines(
+        mock_engines(engines),
+        std::time::Duration::from_secs(5),
+    );
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
     let result = run_web_fetch(
         state,
         WebFetchArgs {
-            url: "https://httpbin.org/get".into(),
+            url: server.url("/get"),
             max_chars: None,
             timeout_ms: None,
             extract_mode: None,
@@ -343,9 +357,12 @@ async fn e21_keyless_web_fetch_succeeds_without_credentials() {
         },
     )
     .await;
+    let v = result.expect("web_fetch should succeed against a loopback URL without credentials");
+    assert_eq!(v["status"], 200);
+    let text = v["text"].as_str().expect("text should be a string");
     assert!(
-        result.is_ok() || result.is_err(),
-        "web_fetch should not panic in keyless mode"
+        text.contains("keyless fetch ok"),
+        "fetched body should contain served content: {text}"
     );
 }
 

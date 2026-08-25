@@ -19,6 +19,8 @@ static GHSA_RE: LazyLock<Regex> =
 const ENGINE: &str = "github_advisory";
 const DEFAULT_BASE_URL: &str = "https://api.github.com";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+const KEYWORD_SEARCH_MAX_PAGES: usize = 3;
+const KEYWORD_SEARCH_PER_PAGE: usize = 100;
 
 #[derive(Debug, Deserialize)]
 struct GhAdvisoryResponse {
@@ -266,21 +268,27 @@ async fn search_by_keyword(
     timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
     let encoded = urlencoding::encode(keyword);
-    let url = format!("{DEFAULT_BASE_URL}/advisories?affects={encoded}");
-    let bytes = match fetch_json(client, api_key, &url, timeout).await? {
-        Some(b) => b,
-        None => return Ok(Vec::new()),
-    };
-    let parsed: GhAdvisoryResponse =
-        serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("invalid JSON: {e}"),
-        })?;
-    Ok(parsed
-        .advisories
-        .into_iter()
-        .map(convert_to_result)
-        .collect())
+    let mut results = Vec::new();
+    for page in 1..=KEYWORD_SEARCH_MAX_PAGES {
+        let url = format!(
+            "{DEFAULT_BASE_URL}/advisories?affects={encoded}&per_page={KEYWORD_SEARCH_PER_PAGE}&page={page}"
+        );
+        let bytes = match fetch_json(client, api_key, &url, timeout).await? {
+            Some(b) => b,
+            None => break,
+        };
+        let parsed: GhAdvisoryResponse =
+            serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
+                engine: ENGINE,
+                reason: format!("invalid JSON: {e}"),
+            })?;
+        let page_len = parsed.advisories.len();
+        results.extend(parsed.advisories.into_iter().map(convert_to_result));
+        if page_len < KEYWORD_SEARCH_PER_PAGE {
+            break;
+        }
+    }
+    Ok(results)
 }
 
 async fn search_by_package(

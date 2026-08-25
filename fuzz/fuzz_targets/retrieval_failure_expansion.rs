@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use eggsearch::core::evidence_role::EvidenceRole;
 use eggsearch::core::retrieval_status::{
-    RetrievalAttempt, RetrievalAttemptOutcome, attempts_to_failures,
+    RetrievalAttempt, RetrievalAttemptOutcome, TruncationEvidence, attempts_to_failures,
 };
 
 fuzz_target!(|data: &[u8]| {
@@ -47,12 +47,14 @@ fuzz_target!(|data: &[u8]| {
             RetrievalAttempt {
                 provider_id: format!("provider_{}", i % 4),
                 subquery_id: Some(format!("subquery_{}", i % 3)),
+                operation_id: None,
                 intended_roles: vec![roles[role_idx].clone()],
                 outcome: outcomes[outcome_idx].clone(),
                 result_count: 0,
                 error_class: None,
                 deadline_interrupted: false,
                 truncated: false,
+                truncation_evidence: TruncationEvidence::None,
                 query_fingerprint: None,
                 duration_ms: None,
             }

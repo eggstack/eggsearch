@@ -254,15 +254,14 @@ cargo test --locked --all-features --test adversarial_corpus # corpus validation
 
 ## Fuzz Harness
 
-Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys` (23 registered targets):
+Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys` (22 registered targets):
 
 | Target | What it fuzzes |
 |--------|---------------|
 | `validate_url` | URL parsing and policy validation |
 | `validate_redirect_target` | URL validation with permissive limits |
 | `validate_redirect_chain` | Multi-hop redirect target sequences |
-| `validate_content_type` | Content-Type-dependent extraction |
-| `parse_content_length` | Content-Length header value parsing |
+| `validate_content_type` | Content-type classification plus Content-Type-dependent extraction |
 | `chunk_boundary` | Bounded text splitting at various char boundaries |
 | `mixed_utf8_extract` | HTML extraction from mixed UTF-8 and lossy bytes |
 | `extract_content` | HTML content extraction from strings |
@@ -273,7 +272,7 @@ Cargo-fuzz targets in `fuzz/` using `libfuzzer-sys` (23 registered targets):
 | `extract_pdf_text` | PDF text extraction |
 | `canonicalize_url` | URL canonicalization via source_id |
 | `sanitize_pipeline` | Full sanitize pipeline: strip → bound → scan |
-| `bounded_response_reader` | Forge response bounded reader (UTF-8 validation + byte cap) |
+| `bounded_response_reader` | Production bounded chunk-append logic (byte cap across streamed chunks) |
 | `workflow_kind_parse` | Workflow kind parsing |
 | `classify_absence` | Absence classification |
 | `detect_entity_scoped_conflicts` | Entity-scoped conflict detection |

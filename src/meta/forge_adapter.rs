@@ -518,7 +518,7 @@ async fn fetch_github_tree(
     let tree: GitHubTreeResponse =
         serde_json::from_str(&body_str).map_err(|e| format!("malformed response: {e}"))?;
 
-    let mut truncated_by_provider = tree.truncated.unwrap_or(false);
+    let truncated_by_provider = tree.truncated.unwrap_or(false);
 
     let mut entries: Vec<ForgeRawEntry> = tree
         .tree
@@ -564,7 +564,6 @@ async fn fetch_github_tree(
     if entries.len() > max_e {
         entries.truncate(max_e);
         truncated_by_eggsearch = true;
-        truncated_by_provider = true;
     }
 
     let mut warnings = Vec::new();
@@ -944,7 +943,6 @@ async fn fetch_gitlab_tree(
     }
 
     if all_entries.len() >= max_e {
-        truncated_by_provider = true;
         warnings.push(SearchWarning::new(
             "gitlab_tree",
             "response_truncated_by_eggsearch: entry limit reached",
@@ -1250,7 +1248,6 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
     }
 
     if all_entries.len() >= max_e {
-        truncated_by_provider = true;
         warnings.push(SearchWarning::new(
             provider_id,
             "response_truncated_by_eggsearch: entry limit reached",

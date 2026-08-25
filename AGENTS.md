@@ -43,7 +43,7 @@ src/
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), tool definitions, server state
 tests/             # integration, corpus, contract, property, adversarial, and browser_profiles tests
-fuzz/              # cargo-fuzz + libfuzzer targets (23 registered)
+fuzz/              # cargo-fuzz + libfuzzer targets (22 registered)
 ```
 
 Read `src/lib.rs` for the module map, then explore submodules as needed.

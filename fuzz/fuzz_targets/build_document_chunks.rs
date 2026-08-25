@@ -36,6 +36,7 @@ fuzz_target!(|data: &str| {
         title: "Fuzzed".to_string(),
         anchor: None,
         block_index: Some(0),
+        page: None,
     }];
 
     let chunks = build_document_chunks("fuzz-doc", &outline, &blocks, 4096);

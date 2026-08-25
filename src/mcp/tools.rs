@@ -5188,6 +5188,7 @@ pub async fn run_security_search(
     // roots. Without this, an MCP caller could supply arbitrary
     // server-side paths to be read by the applicability pipeline,
     // bypassing the documented local workspace safety model.
+    let mut dependency_file_roots: Vec<std::path::PathBuf> = Vec::new();
     if !args.dependency_files.is_empty() {
         let backend = state.local_backend.clone().ok_or_else(|| {
             ToolError::Validation(
@@ -5200,7 +5201,7 @@ pub async fn run_security_search(
             ));
         }
         let dependency_files = args.dependency_files.clone();
-        tokio::task::spawn_blocking(move || {
+        let roots = tokio::task::spawn_blocking(move || -> Result<Vec<std::path::PathBuf>, ToolError> {
             let max_file_bytes = backend.config().max_file_bytes;
             let root_canonicals: Vec<std::path::PathBuf> = backend
                 .roots()
@@ -5250,10 +5251,11 @@ pub async fn run_security_search(
                     )));
                 }
             }
-            Ok(())
+            Ok(root_canonicals)
         })
         .await
         .map_err(|e| ToolError::internal(format!("dependency_files validation failed: {e}")))??;
+        dependency_file_roots = roots;
     }
 
     let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
@@ -5280,6 +5282,7 @@ pub async fn run_security_search(
         &req,
         effective_max,
         state.config.search.max_results_cap,
+        dependency_file_roots,
     )
     .await;
 

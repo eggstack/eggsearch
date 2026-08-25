@@ -12,6 +12,12 @@ const MAX_OUTLINE_ENTRIES: usize = 200;
 const MAX_OUTLINE_DEPTH: usize = 6;
 const MAX_OUTLINE_TITLE_LEN: usize = 200;
 
+/// Bound an outline title to `MAX_OUTLINE_TITLE_LEN` characters,
+/// never splitting a multi-byte UTF-8 sequence.
+fn bound_outline_title(title: &str) -> String {
+    title.chars().take(MAX_OUTLINE_TITLE_LEN).collect()
+}
+
 const CID_TOKEN_THRESHOLD: f32 = 0.05;
 const SPARSE_TEXT_THRESHOLD: usize = 50;
 
@@ -204,8 +210,12 @@ fn decode_pdf_string(raw: &[u8]) -> String {
                 .map(|c| u16::from_be_bytes([c[0], c[1]]))
                 .collect::<Vec<_>>(),
         )
+    } else if let Ok(s) = std::str::from_utf8(raw) {
+        s.to_string()
     } else {
-        String::from_utf8_lossy(raw).into_owned()
+        // PDFDocEncoding defaults differ from Latin-1 only in a handful
+        // of high-byte glyphs; Latin-1 is a close lossless approximation.
+        raw.iter().map(|&b| b as char).collect()
     }
 }
 
@@ -466,12 +476,7 @@ fn collect_outline_entries(
     let title = match dict.get(b"Title") {
         Ok(lopdf::Object::String(s, _)) => {
             let decoded = decode_pdf_string(s);
-            let trimmed = decoded.trim().to_string();
-            if trimmed.len() > MAX_OUTLINE_TITLE_LEN {
-                trimmed[..MAX_OUTLINE_TITLE_LEN].to_string()
-            } else {
-                trimmed
-            }
+            bound_outline_title(decoded.trim())
         }
         _ => String::new(),
     };
@@ -1426,6 +1431,25 @@ mod tests {
         assert_eq!(result.document.outline.len(), 2);
         assert_eq!(result.document.outline[0].title, "Page 1");
         assert_eq!(result.document.outline[1].title, "Page 2");
+    }
+
+    #[test]
+    fn outline_title_truncation_is_char_safe() {
+        let title = "あ".repeat(MAX_OUTLINE_TITLE_LEN + 100);
+        let bounded = bound_outline_title(&title);
+        assert_eq!(bounded.chars().count(), MAX_OUTLINE_TITLE_LEN);
+    }
+
+    #[test]
+    fn decode_pdf_string_latin1_fallback_for_non_utf8() {
+        let raw = [b'c', b'a', b'f', 0xE9];
+        assert_eq!(decode_pdf_string(&raw), "café");
+    }
+
+    #[test]
+    fn decode_pdf_string_utf16be_bom() {
+        let raw = [0xFE, 0xFF, 0x00, 0x41];
+        assert_eq!(decode_pdf_string(&raw), "A");
     }
 
     #[test]

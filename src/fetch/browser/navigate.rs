@@ -107,7 +107,7 @@ pub async fn browser_fetch_with_policy(
         )
     };
 
-    let page = browser
+    let page = match browser
         .new_page(
             chromiumoxide::cdp::browser_protocol::target::CreateTargetParams {
                 url: url.to_string(),
@@ -118,7 +118,15 @@ pub async fn browser_fetch_with_policy(
             },
         )
         .await
-        .map_err(|e| BrowserFetchError::NavigationFailed(e.to_string()))?;
+    {
+        Ok(page) => page,
+        Err(e) => {
+            if let Some(context_id) = context_id {
+                let _ = browser.dispose_browser_context(context_id).await;
+            }
+            return Err(BrowserFetchError::NavigationFailed(e.to_string()));
+        }
+    };
 
     let result = navigate_and_extract(&page, config, &params).await;
 
