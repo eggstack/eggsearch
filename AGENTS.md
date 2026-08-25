@@ -24,9 +24,11 @@ cargo check --locked --no-default-features  # no-default compilation check
 cargo test --locked --all-features    # all tests
 cargo build --release        # release build
 cargo publish --dry-run --locked  # pre-publish check
+make bench-check             # compile-check benches without running
+make fuzz-smoke              # 60s runs of 3 key fuzz targets
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Current test counts: 4716 passed and 21 ignored with `--all-features`; 4497 passed with `--features mock`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: ~4,800 tests pass with `--all-features` (21 ignored); ~4,500 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -53,6 +55,8 @@ Read `src/lib.rs` for the module map, then explore submodules as needed.
 | Job | What it runs |
 |-----|-------------|
 | **ci** | `make ci` — alias for `make check`: fmt, clippy, no-default-features compile check, all-features tests |
+
+CI clears all credential env vars (`GITHUB_TOKEN`, `BRAVE_API_KEY`, etc.) to empty strings — tests must pass keyless.
 
 ## Feature Flags
 
@@ -132,7 +136,7 @@ Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/ski
 
 `web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`.
 
-Tools are defined in `src/mcp/tools.rs`. The MCP server uses `rmcp` crate with `tool_router` proc macros.
+Tool registration and schemas live in `src/mcp/server.rs` (`#[tool]` attrs); implementations are in `src/mcp/tools.rs`. The MCP server uses the `rmcp` crate with `tool_router` proc macros.
 
 ## Pitfalls
 
