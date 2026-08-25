@@ -1,6 +1,6 @@
 # Metasearch Adapter Deep Dive
 
-**Location:** `src/meta/` (35 files + `engines/` with 34 files)
+**Location:** `src/meta/` (34 top-level files, plus `engines/` with 33 engine implementations and 5 support modules)
 **Purpose:** Central orchestrator for all search operations. Wraps vendored search engines, handles RRF aggregation, sanitization, provider health, and multi-subquery dispatch.
 
 ---
@@ -66,7 +66,7 @@ The central orchestrator. Methods:
 Request
   → build_search_plan() / build_repo_search_plan() / etc.
   → dispatch_subqueries()  (bounded parallel execution)
-  → engines[].search()     (34 engine implementations)
+  → engines[].search()     (per-provider implementations)
   → group_results()        (RRF aggregation, deduplication)
   → sanitize output        (3-tier sanitization)
   → SourceCard[] response
@@ -75,6 +75,8 @@ Request
 ---
 
 ## Search Engine Implementations (`engines/`)
+
+Per-engine inventory, the `SearchEngine` trait contract, credential resolution, and guidance for adding engines live in the dedicated deep dive: [engines.md](engines.md).
 
 ### Engine Categories
 

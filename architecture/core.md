@@ -38,7 +38,7 @@
 | `local.rs` | `LocalConfig`, `LocalSearchRequest`/`Result`, `LocalFileEntry`, `LocalMatch` |
 | `package.rs` | `PackageCoordinate`, `PackageEcosystem`, `PackageResolution` |
 | `code_context.rs` | `CodeContext`, `ExtractionLanguage`, `detect_language()`, `extract_code_context()` |
-| `code_evidence.rs` | `CodeEvidence`, `SourceRole` (16 variants), `EvidenceConfidence`, `infer_source_role()` |
+| `code_evidence.rs` | `CodeEvidence`, `SourceRole` (17 variants), `EvidenceConfidence`, `infer_source_role()` |
 | `code_host_fetch.rs` | `CodeHostFetchTarget`, `resolve_code_host_fetch_target()` |
 | `code_metadata.rs` | `CodeHost`, `CodeMetadata`, URL classification for GitHub/GitLab/Codeberg |
 | `error_query.rs` | `ErrorSearchContext`, `ErrorSubquery`, `ExactErrorConfig`, compiler/runtime error search mode |
@@ -53,7 +53,7 @@
 The canonical output type for all search results. Contains:
 - `id` — deterministic FNV-1a hash
 - `url`, `title`, `snippet` — basic metadata
-- `kind` — URL classification (16 variants: `Documentation`, `Code`, `Issue`, `Release`, `Package`, etc.)
+- `kind` — URL classification (21 variants: `OfficialDocs`, `PackageRegistry`, `SourceRepository`, `IssueThread`, `PullRequest`, `ReleaseNotes`, `SecurityAdvisory`, etc.)
 - `score`, `rank_reason` — quality/ranking metadata
 - `freshness`, `trust_level` — temporal and trust signals
 

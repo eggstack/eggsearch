@@ -12,7 +12,7 @@
 ```toml
 [package]
 name = "eggsearch"
-version = "0.3.5"
+version = "0.3.7"
 edition = "2021"
 rust-version = "1.88"
 authors = ["eggstack"]

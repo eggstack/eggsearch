@@ -1,6 +1,6 @@
 # Testing Infrastructure Deep Dive
 
-**Location:** `tests/` (54 files), `fuzz/` (23 targets)
+**Location:** `tests/` (50 test binaries), `fuzz/` (22 targets)
 **Purpose:** Comprehensive test suites for correctness, security, and performance.
 
 ---
@@ -121,7 +121,7 @@ Provider failures, timeouts, concurrency testing.
 
 ## Fuzz Targets (`fuzz/fuzz_targets/`)
 
-23 targets using `cargo-fuzz` + `libfuzzer`:
+22 targets using `cargo-fuzz` + `libfuzzer`:
 
 | Target | Purpose |
 |--------|---------|

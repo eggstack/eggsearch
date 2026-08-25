@@ -1,6 +1,6 @@
 # HTTP Fetch & Extraction Deep Dive
 
-**Location:** `src/fetch/` (12 files + 2 subdirectories)
+**Location:** `src/fetch/` (10 top-level files + 2 subdirectories)
 **Purpose:** Fetch HTTP(S) URLs, enforce limits, extract readable content, and render HTML. Independent of the metasearch adapter.
 
 ---
