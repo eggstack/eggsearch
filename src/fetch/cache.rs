@@ -554,6 +554,55 @@ pub fn build_request_conditional_headers(validators: &CacheValidators) -> Vec<(S
     headers
 }
 
+/// Merge header fields supplied by a 304 response into the stored
+/// entry's freshness and validators (RFC 9111 §4.3.4): only fields
+/// present in the 304 replace the stored values; absent fields keep
+/// their cached values.
+pub fn apply_304_headers(
+    freshness: &mut CacheFreshness,
+    validators: &mut CacheValidators,
+    headers_304: &HashMap<String, String>,
+) {
+    if headers_304.is_empty() {
+        return;
+    }
+    let mut map = reqwest::header::HeaderMap::new();
+    for (name, value) in headers_304 {
+        if let (Ok(name), Ok(value)) = (
+            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
+            reqwest::header::HeaderValue::from_str(value),
+        ) {
+            map.insert(name, value);
+        }
+    }
+    if map.is_empty() {
+        return;
+    }
+    let has_cache_control = map.contains_key("cache-control");
+    let has_expires = map.contains_key("expires");
+    let has_vary = map.contains_key("vary");
+    let (updated, updated_validators) = CacheFreshness::from_headers(&map);
+
+    if has_cache_control {
+        freshness.max_age = updated.max_age;
+        freshness.no_store = updated.no_store;
+        freshness.no_cache = updated.no_cache;
+        freshness.private = updated.private;
+    }
+    if has_expires && updated.expires.is_some() {
+        freshness.expires = updated.expires;
+    }
+    if has_vary {
+        freshness.vary = updated.vary;
+    }
+    if let Some(etag) = updated_validators.etag {
+        validators.etag = Some(etag);
+    }
+    if let Some(lm) = updated_validators.last_modified {
+        validators.last_modified = Some(lm);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,6 +643,83 @@ mod tests {
         let (freshness, _) = CacheFreshness::from_headers(&headers);
         assert_eq!(freshness.max_age, Some(Duration::from_secs(300)));
         assert!(!freshness.no_store);
+    }
+
+    #[test]
+    fn apply_304_headers_updates_supplied_fields() {
+        let mut freshness = CacheFreshness {
+            max_age: Some(Duration::from_secs(3600)),
+            ..Default::default()
+        };
+        let mut validators = CacheValidators {
+            etag: Some("\"old\"".to_string()),
+            last_modified: Some("Mon, 01 Jan 2024 00:00:00 GMT".to_string()),
+        };
+        let h304: HashMap<String, String> = [
+            (
+                "cache-control".to_string(),
+                "max-age=0, no-cache".to_string(),
+            ),
+            ("etag".to_string(), "\"new\"".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        apply_304_headers(&mut freshness, &mut validators, &h304);
+
+        assert_eq!(freshness.max_age, Some(Duration::from_secs(0)));
+        assert!(freshness.no_cache);
+        assert!(!freshness.no_store);
+        assert_eq!(validators.etag.as_deref(), Some("\"new\""));
+        assert_eq!(
+            validators.last_modified.as_deref(),
+            Some("Mon, 01 Jan 2024 00:00:00 GMT")
+        );
+    }
+
+    #[test]
+    fn apply_304_headers_keeps_absent_fields() {
+        let mut freshness = CacheFreshness {
+            max_age: Some(Duration::from_secs(60)),
+            expires: Some(SystemTime::now() + Duration::from_secs(120)),
+            ..Default::default()
+        };
+        let mut validators = CacheValidators {
+            etag: Some("\"keep\"".to_string()),
+            last_modified: None,
+        };
+
+        apply_304_headers(&mut freshness, &mut validators, &HashMap::new());
+
+        assert_eq!(freshness.max_age, Some(Duration::from_secs(60)));
+        assert!(freshness.expires.is_some());
+        assert_eq!(validators.etag.as_deref(), Some("\"keep\""));
+    }
+
+    #[test]
+    fn apply_304_headers_updates_vary_and_expires() {
+        let mut freshness = CacheFreshness {
+            vary: Some("Accept-Encoding".to_string()),
+            ..Default::default()
+        };
+        let mut validators = CacheValidators {
+            etag: None,
+            last_modified: None,
+        };
+        let h304: HashMap<String, String> = [
+            ("vary".to_string(), "User-Agent".to_string()),
+            (
+                "expires".to_string(),
+                "Wed, 21 Oct 2099 07:28:00 GMT".to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        apply_304_headers(&mut freshness, &mut validators, &h304);
+
+        assert_eq!(freshness.vary.as_deref(), Some("User-Agent"));
+        assert!(freshness.expires.is_some());
     }
 
     #[test]

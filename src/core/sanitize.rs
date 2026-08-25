@@ -273,7 +273,9 @@ fn strip_evasive_for_scan(s: &str) -> (String, Vec<(usize, usize)>) {
 }
 
 fn map_offset_to_original(map: &[(usize, usize)], normalized_offset: usize) -> usize {
-    debug_assert!(!map.is_empty(), "offset map must not be empty");
+    if map.is_empty() {
+        return 0;
+    }
     let idx = map.partition_point(|(norm, _)| *norm <= normalized_offset);
     map[idx.saturating_sub(1)].1
 }
@@ -300,6 +302,11 @@ pub fn frame(s: &str, field: &str, id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn map_offset_to_original_handles_empty_map() {
+        assert_eq!(map_offset_to_original(&[], 42), 0);
+    }
 
     // -----------------------------------------------------------------------
     // strip_control_chars

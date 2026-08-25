@@ -128,15 +128,35 @@ fn is_private_ipv4(ip: Ipv4Addr) -> bool {
         || (ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 2)
 }
 
+fn ipv4_compatible_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
+    let s = v6.segments();
+    if s[0] == 0
+        && s[1] == 0
+        && s[2] == 0
+        && s[3] == 0
+        && s[4] == 0
+        && s[5] == 0
+        && (s[6] != 0 || s[7] != 0)
+    {
+        let o = v6.octets();
+        Some(Ipv4Addr::new(o[12], o[13], o[14], o[15]))
+    } else {
+        None
+    }
+}
+
 fn is_private_ipv6(ip: Ipv6Addr) -> bool {
     if let Some(v4) = ip.to_ipv4_mapped() {
         return is_private_ipv4(v4);
     }
+    let seg0 = ip.segments()[0];
     ip.is_loopback()
         || ip.is_unspecified()
         || ip.is_unicast_link_local()
         || ip.octets()[0] == 0xfe && (ip.octets()[1] & 0xC0) == 0xC0
-        || ip.segments()[0] == 0x2001 && ip.segments()[1] == 0xdb8
+        || seg0 == 0x2001 && ip.segments()[1] == 0xdb8
+        || (seg0 & 0xfe00) == 0xfc00
+        || ipv4_compatible_from_v6(ip).is_some_and(is_private_ipv4)
         || ip.is_multicast()
 }
 
@@ -283,6 +303,40 @@ mod tests {
             is_request_allowed("http://[::ffff:127.0.0.1]/"),
             Err(PolicyViolation::PrivateNetworkTarget)
         );
+    }
+
+    #[test]
+    fn blocks_ipv6_ula_fc00_literal() {
+        assert_eq!(
+            is_request_allowed("http://[fc00::1]/"),
+            Err(PolicyViolation::PrivateNetworkTarget)
+        );
+    }
+
+    #[test]
+    fn blocks_ipv6_ula_fd00_literal() {
+        assert_eq!(
+            is_request_allowed("http://[fd00::1]/"),
+            Err(PolicyViolation::PrivateNetworkTarget)
+        );
+    }
+
+    #[test]
+    fn allows_public_ipv6_literal() {
+        assert!(is_request_allowed("http://[2607:f8b0:4004:800::200e]/").is_ok());
+    }
+
+    #[test]
+    fn blocks_ipv4_compatible_ipv6_literal() {
+        assert_eq!(
+            is_request_allowed("http://[::10.0.0.1]/"),
+            Err(PolicyViolation::PrivateNetworkTarget)
+        );
+    }
+
+    #[test]
+    fn allows_public_ipv4_compatible_ipv6_literal() {
+        assert!(is_request_allowed("http://[::93.184.216.34]/").is_ok());
     }
 
     #[test]

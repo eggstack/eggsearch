@@ -235,7 +235,7 @@ pub fn find_symbols_in_text(text: &str, symbol_hint: &str) -> Option<(String, Sy
                 if let Some(name_match) = caps.get(1) {
                     let name = name_match.as_str();
                     if name.to_lowercase() == hint_lower {
-                        let line_num = (line_idx + 1) as u32;
+                        let line_num = u32::try_from(line_idx + 1).unwrap_or(u32::MAX);
                         return Some((name.to_string(), *kind, line_num));
                     }
                 }
@@ -273,7 +273,7 @@ pub fn score_inventory_entry(
         score += 5.0;
     }
 
-    let penalty_extensions = ["lock", "min.js", "min.css", ".map"];
+    let penalty_extensions = [".lock", "min.js", "min.css", ".map"];
     for ext in &penalty_extensions {
         if file_name.ends_with(ext) {
             score -= 150.0;
@@ -1146,6 +1146,43 @@ mod tests {
         fs::write(root.join("data.bin"), vec![0u8; 100]).unwrap();
 
         dir
+    }
+
+    #[test]
+    fn score_inventory_entry_does_not_penalize_non_lock_filenames() {
+        let entry = InventoryEntry {
+            root_index: 0,
+            relative_path: "scripts/deadlock".to_string(),
+            absolute_path: PathBuf::from("/ws/scripts/deadlock"),
+            size: 10,
+            language: Some("python".to_string()),
+            role: SourceRole::Implementation,
+            is_binary: false,
+            mtime_secs: 0,
+            fingerprint: 0,
+        };
+        let score = score_inventory_entry(&entry, "deadlock", &["deadlock"]);
+        assert!(
+            score > 0.0,
+            "filename ending in 'lock' without .lock extension must not be penalized: {score}"
+        );
+    }
+
+    #[test]
+    fn score_inventory_entry_penalizes_lock_files() {
+        let entry = InventoryEntry {
+            root_index: 0,
+            relative_path: "Cargo.lock".to_string(),
+            absolute_path: PathBuf::from("/ws/Cargo.lock"),
+            size: 10,
+            language: None,
+            role: SourceRole::Implementation,
+            is_binary: false,
+            mtime_secs: 0,
+            fingerprint: 0,
+        };
+        let score = score_inventory_entry(&entry, "cargo.lock", &["cargo.lock"]);
+        assert!(score < 0.0, "expected lock-file penalty: {score}");
     }
 
     fn default_config() -> LocalConfig {

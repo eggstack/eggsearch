@@ -1168,7 +1168,7 @@ impl LocalWorkspaceBackend {
             score += token_score.min(30.0);
         }
 
-        let penalty_extensions = ["lock", "min.js", "min.css", ".map"];
+        let penalty_extensions = [".lock", "min.js", "min.css", ".map"];
         for ext in &penalty_extensions {
             if file_name.ends_with(ext) {
                 score -= 150.0;
@@ -1559,6 +1559,22 @@ mod tests {
         assert!(
             score < 0.0,
             "score should be negative for lock file: {score}"
+        );
+    }
+
+    #[test]
+    fn score_file_no_penalty_for_non_lock_suffix_names() {
+        let file = LocalFileEntry {
+            path: PathBuf::from("/test/deadlock"),
+            relative_path: "src/deadlock".to_string(),
+            root_index: 0,
+            size: 100,
+            language: Some("python".to_string()),
+        };
+        let score = LocalWorkspaceBackend::score_file(&file, "deadlock", &["deadlock"], None, None);
+        assert!(
+            score > 0.0,
+            "name ending in 'lock' but not '.lock' should not be penalized: {score}"
         );
     }
 

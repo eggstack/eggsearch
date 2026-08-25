@@ -99,6 +99,9 @@ fn classify_ipv6(v6: Ipv6Addr) -> AddressClass {
     if let Some(v4) = ipv4_mapped_from_v6(v6) {
         return classify_ipv4(v4);
     }
+    if let Some(v4) = ipv4_compatible_from_v6(v6) {
+        return classify_ipv4(v4);
+    }
     let seg1 = v6.segments()[1];
     if seg0 == 0x2001 && seg1 == 0x0db8 {
         return AddressClass::Documentation;
@@ -402,6 +405,25 @@ fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     }
 }
 
+fn ipv4_compatible_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
+    let s = v6.segments();
+    if s[0] == 0
+        && s[1] == 0
+        && s[2] == 0
+        && s[3] == 0
+        && s[4] == 0
+        && s[5] == 0
+        && (s[6] != 0 || s[7] != 0)
+    {
+        let octets = v6.octets();
+        Some(Ipv4Addr::new(
+            octets[12], octets[13], octets[14], octets[15],
+        ))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,6 +556,13 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn validate_fetch_target_handles_v4_compatible_v6_block() {
+        let limits = FetchLimits::default();
+        let compat: SocketAddr = "[::10.0.0.1]:80".parse().unwrap();
+        assert!(is_blocked_address(compat, &limits));
+    }
+
+    #[tokio::test]
     async fn validate_fetch_target_resolves_ipv6_literal_with_port() {
         let limits = FetchLimits {
             allow_localhost: true,
@@ -662,6 +691,22 @@ mod tests {
         assert_eq!(
             classify_ip(IpAddr::V6("fc00::1".parse().unwrap())),
             AddressClass::Private
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V6("fd00::1".parse().unwrap())),
+            AddressClass::Private
+        );
+    }
+
+    #[test]
+    fn classify_ip_v4_compatible_v6_uses_embedded_v4() {
+        assert_eq!(
+            classify_ip(IpAddr::V6("::10.0.0.1".parse().unwrap())),
+            AddressClass::Private
+        );
+        assert_eq!(
+            classify_ip(IpAddr::V6("::93.184.216.34".parse().unwrap())),
+            AddressClass::Public
         );
     }
 

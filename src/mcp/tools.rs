@@ -2346,12 +2346,18 @@ pub async fn run_web_fetch(
                                     &raw_entry.validators,
                                 );
                             if !conditional.is_empty() {
-                                if let Ok((status, _, _)) =
+                                if let Ok((status, reval_headers, _)) =
                                     client.fetch_conditional(trimmed_url, &conditional).await
                                 {
                                     if status == 304 {
                                         metadata.cache_status = CacheStatus::Revalidated;
                                         let mut updated_freshness = raw_entry.freshness.clone();
+                                        let mut updated_validators = raw_entry.validators.clone();
+                                        crate::fetch::cache::apply_304_headers(
+                                            &mut updated_freshness,
+                                            &mut updated_validators,
+                                            &reval_headers,
+                                        );
                                         updated_freshness.fetched_at =
                                             Some(std::time::SystemTime::now());
                                         cache
@@ -2359,6 +2365,7 @@ pub async fn run_web_fetch(
                                                 raw_key,
                                                 crate::fetch::cache::RawFetchCacheEntry {
                                                     freshness: updated_freshness,
+                                                    validators: updated_validators,
                                                     ..raw_entry.clone()
                                                 },
                                             )
