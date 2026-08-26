@@ -33,8 +33,13 @@ where
     Rerank: FnMut(K, &mut [SourceCard]),
 {
     let mut buckets: HashMap<K, Vec<SourceCard>> = HashMap::new();
+    let mut bucket_order = Vec::new();
     for card in cards {
-        buckets.entry(classify(&card)).or_default().push(card);
+        let kind = classify(&card);
+        if !buckets.contains_key(&kind) {
+            bucket_order.push(kind);
+        }
+        buckets.entry(kind).or_default().push(card);
     }
 
     for (kind, bucket) in buckets.iter_mut() {
@@ -42,7 +47,14 @@ where
     }
 
     let mut groups = Vec::new();
-    for &kind in canonical_order {
+    let mut ordered_kinds = canonical_order.to_vec();
+    ordered_kinds.extend(
+        bucket_order
+            .into_iter()
+            .filter(|kind| !canonical_order.contains(kind)),
+    );
+
+    for kind in ordered_kinds {
         if max_groups.is_some_and(|cap| groups.len() >= cap) {
             break;
         }
@@ -63,4 +75,51 @@ where
     }
 
     groups
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::result::TrustLevel;
+
+    fn card() -> SourceCard {
+        SourceCard::new(
+            "title",
+            "https://example.com",
+            vec!["test".into()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        )
+    }
+
+    #[test]
+    fn emits_buckets_missing_from_canonical_order() {
+        let groups = build_card_groups(
+            vec![card()],
+            |_| 2u8,
+            &[1u8],
+            |kind| format!("group-{kind}"),
+            10,
+            None,
+            |_, _| {},
+        );
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].kind, 2);
+    }
+
+    #[test]
+    fn max_groups_zero_emits_no_groups() {
+        let groups = build_card_groups(
+            vec![card()],
+            |_| 1u8,
+            &[1u8],
+            |kind| format!("group-{kind}"),
+            10,
+            Some(0),
+            |_, _| {},
+        );
+
+        assert!(groups.is_empty());
+    }
 }

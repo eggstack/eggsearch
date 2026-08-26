@@ -194,8 +194,11 @@ pub(crate) async fn read_with_budget(
     }
     if let Some(content_length) = resp.content_length() {
         if content_length > effective_cap as u64 {
-            budget.per_response_cap_hits += 1;
-            return Err(ForgeReadError::ContentLengthTooLarge);
+            if content_length > budget.per_response_limit as u64 {
+                budget.per_response_cap_hits += 1;
+                return Err(ForgeReadError::ContentLengthTooLarge);
+            }
+            return Err(ForgeReadError::AggregateBudgetExhausted);
         }
     }
     let mut body = Vec::with_capacity(effective_cap.min(64 * 1024));
@@ -206,8 +209,11 @@ pub(crate) async fn read_with_budget(
         let chunk = chunk.map_err(|_| ForgeReadError::StreamReadFailure)?;
         observed += chunk.len();
         if observed > effective_cap {
-            budget.per_response_cap_hits += 1;
-            return Err(ForgeReadError::PerResponseLimitExceeded);
+            if observed > budget.per_response_limit {
+                budget.per_response_cap_hits += 1;
+                return Err(ForgeReadError::PerResponseLimitExceeded);
+            }
+            return Err(ForgeReadError::AggregateBudgetExhausted);
         }
         body.extend_from_slice(&chunk);
     }
@@ -2508,6 +2514,26 @@ mod forge_budget_property_tests {
         assert_eq!(tel.remaining, 700);
         assert_eq!(tel.request_count, 2);
         assert!(!budget.exceeded());
+    }
+
+    #[tokio::test]
+    async fn aggregate_limit_does_not_count_as_per_response_cap() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path("/large");
+            then.status(200).body("x".repeat(2048));
+        });
+
+        let response = reqwest::Client::new()
+            .get(server.url("/large"))
+            .send()
+            .await
+            .unwrap();
+        let mut budget = ForgeReadBudget::new(1024);
+        let result = read_with_budget(response, &mut budget, ForgeRequestKind::TreePage).await;
+
+        assert_eq!(result, Err(ForgeReadError::AggregateBudgetExhausted));
+        assert_eq!(budget.per_response_cap_hits, 0);
     }
 
     #[test]

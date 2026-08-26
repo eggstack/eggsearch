@@ -14,7 +14,7 @@ use super::types::{
     RenderPolicy, TransportResponse, TransportTiming,
 };
 use crate::core::sanitize::{
-    bound_text, scan_injection_markers, strip_control_chars, TrustMarkers, TITLE_MAX_CHARS,
+    bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers, TITLE_MAX_CHARS,
 };
 
 /// Status and content type of the main document response, captured
@@ -452,7 +452,7 @@ pub fn browser_result_to_response(
     max_chars: Option<usize>,
     extract_mode: crate::core::fetch::ExtractMode,
     include_links: bool,
-    _sanitize_output: bool,
+    sanitize_output: bool,
 ) -> crate::core::fetch::WebFetchResponse {
     use crate::core::document::{DocumentKind, FetchDocument, FetchRenderMetadata, RenderFormat};
     use crate::fetch::detect;
@@ -463,7 +463,7 @@ pub fn browser_result_to_response(
     let final_url = &result.response.final_url;
     let max = max_chars.unwrap_or(12000);
     let mut warnings = result.warnings;
-    let trust_markers = result.trust_markers;
+    let mut trust_markers = result.trust_markers;
 
     // Surface injection hits on the machine-readable channel too;
     // web-search responses already do this for card content.
@@ -518,6 +518,24 @@ pub fn browser_result_to_response(
         let (bounded, _) = bound_text(&stripped, max);
         block.text = bounded;
     }
+
+    let text = if extract_mode == crate::core::fetch::ExtractMode::Markdown {
+        crate::fetch::render::markdown::render_blocks_markdown(&blocks)
+    } else {
+        crate::fetch::render::text::render_blocks_text(&blocks)
+    };
+
+    let (title, description, text) = if sanitize_output {
+        trust_markers.text_framed = true;
+        trust_markers.text_sanitized = true;
+        (
+            title.map(|value| frame(&value, "title", final_url)),
+            description.map(|value| frame(&value, "description", final_url)),
+            Some(frame(&text, "text", final_url)),
+        )
+    } else {
+        (title, description, Some(text))
+    };
 
     let mut outline = rendered_blocks.outline;
     for entry in &mut outline {
@@ -595,7 +613,7 @@ pub fn browser_result_to_response(
         fetched: true,
         truncated: trust_markers.text_truncated,
         trust: crate::core::fetch::FetchTrust::ExternalUntrusted,
-        text: None,
+        text,
         raw_text: None,
         raw_text_chars_returned: None,
         raw_text_truncated: false,
@@ -647,5 +665,48 @@ mod tests {
     fn http_only_policy_returns_error() {
         let policy = RenderPolicy::HttpOnly;
         assert!(matches!(policy, RenderPolicy::HttpOnly));
+    }
+
+    #[test]
+    fn browser_response_frames_untrusted_fields_when_enabled() {
+        let result = BrowserFetchResult {
+            response: TransportResponse {
+                transport: FetchTransportKind::Browser,
+                requested_url: "https://example.com".into(),
+                final_url: "https://example.com".into(),
+                status: Some(200),
+                headers: Vec::new(),
+                body: b"<html><title>Title</title><body>Hello</body></html>".to_vec(),
+                content_type: Some("text/html".into()),
+                redirects: Vec::new(),
+                timing: TransportTiming::default(),
+                classification: None,
+            },
+            extracted_title: Some("Title".into()),
+            extracted_text: "Hello".into(),
+            trust_markers: TrustMarkers::default(),
+            warnings: Vec::new(),
+        };
+
+        let response = browser_result_to_response(
+            result,
+            "https://example.com",
+            None,
+            crate::core::fetch::ExtractMode::Text,
+            false,
+            true,
+        );
+
+        assert!(response
+            .title
+            .as_deref()
+            .unwrap_or_default()
+            .contains("<<<EXTERNAL_UNTRUSTED"));
+        assert!(response
+            .text
+            .as_deref()
+            .unwrap_or_default()
+            .contains("<<<EXTERNAL_UNTRUSTED"));
+        assert!(response.trust_markers.text_framed);
     }
 }

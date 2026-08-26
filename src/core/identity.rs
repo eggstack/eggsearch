@@ -223,8 +223,8 @@ pub fn canonicalize_url(url: &str) -> String {
         path_query_frag
     };
 
-    // Normalize percent-encoding in path: decode unreserved chars,
-    // re-encode with consistent casing. Query params are left as-is.
+    // Normalize percent-encoding in path and query: decode unreserved
+    // chars and re-encode with consistent casing.
     let path_query_frag = normalize_percent_encoding(path_query_frag);
 
     let path_query_frag = {
@@ -271,8 +271,39 @@ fn normalize_percent_encoding(path_query: &str) -> String {
     // reserved encodings like %2F (encoded slash).
     let decoded = decode_unreserved(path);
     let normalized = percent_encode_path(&decoded);
+    let normalized_query = normalize_percent_encoding_component(query);
 
-    format!("{normalized}{query}")
+    format!("{normalized}{normalized_query}")
+}
+
+fn normalize_percent_encoding_component(component: &str) -> String {
+    let bytes = component.as_bytes();
+    let mut result = String::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                let byte = hi * 16 + lo;
+                if is_unreserved(byte) {
+                    result.push(byte as char);
+                } else {
+                    result.push('%');
+                    result.push(hex_digit(hi));
+                    result.push(hex_digit(lo));
+                }
+                i += 3;
+                continue;
+            }
+        }
+        let ch = component[i..].chars().next().unwrap();
+        result.push(ch);
+        i += ch.len_utf8();
+    }
+    result
+}
+
+fn hex_digit(value: u8) -> char {
+    b"0123456789ABCDEF"[value as usize] as char
 }
 
 /// Decode only unreserved percent-encoded characters in a string.
@@ -1004,6 +1035,22 @@ mod tests {
     }
 
     #[test]
+    fn canonicalize_url_preserves_ipv6_non_default_port() {
+        assert_eq!(
+            canonicalize_url("https://[::1]:4430/path"),
+            "https://[::1]:4430/path"
+        );
+    }
+
+    #[test]
+    fn canonicalize_url_strips_ipv6_default_port() {
+        assert_eq!(
+            canonicalize_url("http://[::1]:80/path"),
+            "http://[::1]/path"
+        );
+    }
+
+    #[test]
     fn canonicalize_url_bare_root_preserved() {
         let a = canonicalize_url("https://example.com/");
         assert_eq!(a, "https://example.com/");
@@ -1039,6 +1086,14 @@ mod tests {
         assert_eq!(base, variant2);
         assert_eq!(base, variant3);
         assert_eq!(base, variant4);
+    }
+
+    #[test]
+    fn canonicalize_url_normalizes_query_percent_encoding() {
+        assert_eq!(
+            canonicalize_url("https://example.com/path?x=a%2fb&y=%7e"),
+            "https://example.com/path?x=a%2Fb&y=~"
+        );
     }
 
     #[test]
