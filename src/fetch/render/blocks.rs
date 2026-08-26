@@ -600,7 +600,7 @@ fn render_table_text(table: &ElementRef) -> (String, bool) {
     for (i, row) in rows.iter().enumerate() {
         let mut line = String::from("|");
         for cell in row {
-            line.push_str(&format!(" {cell} |"));
+            line.push_str(&format!(" {} |", cell.replace('|', "\\|")));
         }
         for _ in row.len()..max_cols {
             line.push_str(" |");
@@ -862,6 +862,14 @@ mod tests {
         assert!(rendered.blocks[0].text.contains("| 1 | 2 |"));
         assert!(rendered.blocks[0].text.contains("---"));
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn render_blocks_escapes_table_cell_pipes() {
+        let html = b"<table><tr><th>A|B</th></tr><tr><td>C|D</td></tr></table>";
+        let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
+        assert!(rendered.blocks[0].text.contains("| A\\|B |"));
+        assert!(rendered.blocks[0].text.contains("| C\\|D |"));
     }
 
     #[test]

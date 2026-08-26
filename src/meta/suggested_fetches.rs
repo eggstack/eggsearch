@@ -15,6 +15,8 @@ use super::fetch_ranking::{
     FetchCandidate, FetchRankMode, RankContext,
 };
 
+const MAX_COMPLEMENTARY_SUGGESTIONS: usize = 8;
+
 /// Resolve the fetch URL from a card using the code_evidence URL priority.
 fn resolve_fetch_url(card: &crate::core::source_card::SourceCard) -> &str {
     card.metadata
@@ -226,7 +228,7 @@ pub fn generate_suggested_fetches_with_mode(
                 group: group_kind,
                 expected_kind: candidate.expected_kind,
                 recommended_extract_mode: candidate.recommended_extract_mode,
-                priority: (pos + 1) as u8,
+                priority: (pos + 1).min(usize::from(u8::MAX)) as u8,
                 structured_repo_fetch,
                 score: Some(candidate.score),
                 reason_code: Some(reason_code_for_group(&group_kind).to_string()),
@@ -413,6 +415,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
         }
     }
 
+    suggestions.truncate(MAX_COMPLEMENTARY_SUGGESTIONS);
     suggestions
 }
 

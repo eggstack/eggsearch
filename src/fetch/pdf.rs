@@ -394,15 +394,15 @@ fn to_alpha_upper(mut n: usize) -> String {
         return String::new();
     }
     n -= 1;
-    let mut result = String::new();
+    let mut result = Vec::new();
     result.push((b'A' + (n % 26) as u8) as char);
     n /= 26;
     while n > 0 {
         n -= 1;
-        result.insert(0, (b'A' + (n % 26) as u8) as char);
+        result.push((b'A' + (n % 26) as u8) as char);
         n /= 26;
     }
-    result
+    result.into_iter().rev().collect()
 }
 
 fn to_alpha_lower(n: usize) -> String {
@@ -2014,6 +2014,11 @@ mod tests {
         assert_eq!(to_alpha_upper(26), "Z");
         assert_eq!(to_alpha_upper(27), "AA");
         assert_eq!(to_alpha_upper(52), "AZ");
+    }
+
+    #[test]
+    fn to_alpha_upper_large_value() {
+        assert_eq!(to_alpha_upper(10_000_000).len(), 5);
     }
 
     #[test]

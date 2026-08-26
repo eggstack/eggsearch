@@ -395,23 +395,29 @@ impl MetadataSearchAdapter {
         &self,
         queried_ids: &[String],
         raw_results: &[(String, Vec<SearchResult>)],
+        result_latencies_ms: &[u64],
         raw_failures: &[(String, EngineError)],
+        failure_latencies_ms: &[u64],
         deadline_ms: u64,
     ) {
         // Track which providers responded (success or failure)
         let mut responded: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
         // Record successes (at least one result = success)
-        for (id, _) in raw_results {
-            self.health.record_success(id, 0);
+        for (index, (id, _)) in raw_results.iter().enumerate() {
+            self.health.record_success(id, result_latencies_ms[index]);
             responded.insert(id.as_str());
         }
 
         // Record failures
-        for (id, err) in raw_failures {
+        for (index, (id, err)) in raw_failures.iter().enumerate() {
             let class = classify(err);
-            self.health
-                .record_failure(id, class.into(), &err.to_string(), 0);
+            self.health.record_failure(
+                id,
+                class.into(),
+                &err.to_string(),
+                failure_latencies_ms[index],
+            );
             responded.insert(id.as_str());
         }
 
@@ -837,13 +843,14 @@ impl MetadataSearchAdapter {
             let engine_timeout = effective_timeout;
             let per_provider_limit = candidate_limit;
             join_set.spawn(async move {
+                let started = Instant::now();
                 let inner = async move {
                     let result = engine
                         .search(&query, per_provider_limit, engine_timeout)
                         .await;
                     (provider_id, result)
                 };
-                AssertUnwindSafe(inner)
+                let outcome = AssertUnwindSafe(inner)
                     .catch_unwind()
                     .await
                     .unwrap_or_else(|_| {
@@ -854,13 +861,16 @@ impl MetadataSearchAdapter {
                                 reason: "task panicked during dispatch".to_string(),
                             }),
                         )
-                    })
+                    });
+                (outcome.0, outcome.1, started.elapsed().as_millis() as u64)
             });
         }
 
         let deadline = tokio::time::Instant::now() + effective_timeout;
         let mut raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
+        let mut result_latencies_ms: Vec<u64> = Vec::new();
         let mut raw_failures: Vec<(String, EngineError)> = Vec::new();
+        let mut failure_latencies_ms: Vec<u64> = Vec::new();
 
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -873,11 +883,13 @@ impl MetadataSearchAdapter {
                 break;
             }
             match tokio::time::timeout(remaining, join_set.join_next()).await {
-                Ok(Some(Ok((name, Ok(results))))) => {
+                Ok(Some(Ok((name, Ok(results), duration_ms)))) => {
                     raw_results.push((name, results));
+                    result_latencies_ms.push(duration_ms);
                 }
-                Ok(Some(Ok((name, Err(err))))) => {
+                Ok(Some(Ok((name, Err(err), duration_ms)))) => {
                     raw_failures.push((name, err));
+                    failure_latencies_ms.push(duration_ms);
                 }
                 Ok(Some(Err(join_err))) => {
                     warn!(?join_err, "engine task panicked");
@@ -899,7 +911,9 @@ impl MetadataSearchAdapter {
         self.record_provider_health(
             &queried_ids,
             &raw_results,
+            &result_latencies_ms,
             &raw_failures,
+            &failure_latencies_ms,
             effective_timeout.as_millis() as u64,
         );
 
@@ -1254,7 +1268,9 @@ impl MetadataSearchAdapter {
         self.record_provider_health(
             &queried_ids,
             &dispatch.raw_results,
+            &dispatch.result_latencies_ms,
             &dispatch.raw_failures,
+            &dispatch.failure_latencies_ms,
             effective_timeout.as_millis() as u64,
         );
 
@@ -1847,7 +1863,9 @@ impl MetadataSearchAdapter {
         self.record_provider_health(
             &queried_ids,
             &dispatch.raw_results,
+            &dispatch.result_latencies_ms,
             &dispatch.raw_failures,
+            &dispatch.failure_latencies_ms,
             effective_timeout.as_millis() as u64,
         );
 
@@ -1941,7 +1959,9 @@ impl MetadataSearchAdapter {
         self.record_provider_health(
             &queried_ids,
             &dispatch.raw_results,
+            &dispatch.result_latencies_ms,
             &dispatch.raw_failures,
+            &dispatch.failure_latencies_ms,
             effective_timeout.as_millis() as u64,
         );
 

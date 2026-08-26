@@ -256,7 +256,7 @@ impl<'a> HtmlExtractor<'a> {
             })
             .unwrap_or_else(|| document.root_element().text().collect::<String>());
 
-        let normalized = normalize_whitespace(&body_text);
+        let normalized = normalize_html_whitespace(&body_text);
         let text_truncated = normalized.chars().count() > max_chars;
         let truncated_text: String = normalized.chars().take(max_chars).collect();
 
@@ -302,9 +302,13 @@ fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String, depth
             if STRIP_TAGS.contains(&tag_name) {
                 continue;
             }
+            if tag_name == "br" {
+                out.push('\n');
+                continue;
+            }
             let is_block = matches!(
                 tag_name,
-                "p" | "div" | "br" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+                "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
             );
             if is_block {
                 out.push(' ');
@@ -317,6 +321,14 @@ fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String, depth
             }
         }
     }
+}
+
+fn normalize_html_whitespace(s: &str) -> String {
+    s.split('\n')
+        .map(normalize_whitespace)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResult {
@@ -445,6 +457,14 @@ mod tests {
         let (_, _, text, _, _, truncated, _, _) = extractor.extract(1000, false);
         assert!(!truncated);
         assert!(text.contains("short"));
+    }
+
+    #[test]
+    fn html_break_preserves_line_break() {
+        let html = b"<!DOCTYPE html><html><body><p>before<br>after</p></body></html>";
+        let extractor = HtmlExtractor::new(html, "https://example.com/");
+        let (_, _, text, _, _, _, _, _) = extractor.extract(1000, false);
+        assert_eq!(text, "before\nafter");
     }
 
     #[test]

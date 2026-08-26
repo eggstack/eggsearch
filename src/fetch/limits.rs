@@ -192,13 +192,24 @@ impl Default for FetchLimits {
 
 /// Validates a URL for fetching (sync, shape-level only).
 ///
-/// Performs scheme, URL length, localhost literal, and obvious
-/// private-network literal checks. Does **not** perform DNS
-/// resolution or credential checks — use [`validate_fetch_target`]
-/// for the full validation pipeline.
+/// Performs scheme, URL length, credential, localhost literal, and obvious
+/// private-network literal checks. Does **not** perform DNS resolution — use
+/// [`validate_fetch_target`] for the full validation pipeline.
 pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchError> {
     if url_str.trim().is_empty() {
         return Err(FetchError::InvalidUrl("URL must not be empty".into()));
+    }
+
+    if let Some(host) = zone_id_host(url_str) {
+        let ip_str = host.split("%25").next().unwrap_or(host);
+        if let Ok(ip) = IpAddr::from_str(ip_str) {
+            let class = classify_ip(ip);
+            if !is_allowed_by_policy(class, limits.allow_localhost, limits.allow_private_network) {
+                return Err(FetchError::PrivateNetworkBlocked(format!(
+                    "address not allowed by policy: {ip}"
+                )));
+            }
+        }
     }
 
     let url =
@@ -222,6 +233,13 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
         return Err(FetchError::UrlTooLong(url_str.len(), limits.max_url_len));
     }
 
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(FetchError::EmbeddedCredentialsBlocked(format!(
+            "URL contains embedded credentials: {}",
+            url.host_str().unwrap_or("unknown")
+        )));
+    }
+
     if let Some(host_str) = url.host_str() {
         let host_lower = host_str.to_lowercase();
         if host_lower == "localhost" {
@@ -234,6 +252,9 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
             let ip_str = host_str
                 .strip_prefix('[')
                 .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(host_str)
+                .split('%')
+                .next()
                 .unwrap_or(host_str);
             if let Ok(ip) = IpAddr::from_str(ip_str) {
                 let class = classify_ip(ip);
@@ -259,6 +280,16 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
     }
 
     Ok(url)
+}
+
+fn zone_id_host(url_str: &str) -> Option<&str> {
+    let authority = url_str.split_once("://")?.1;
+    let authority = authority.split(['/', '?', '#']).next()?;
+    let host_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let host = host_port.strip_prefix('[')?.split_once(']')?.0;
+    host.contains("%25").then_some(host)
 }
 
 /// Full validation of a fetch target: scheme, credentials, localhost,
@@ -316,6 +347,9 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
             let ip_str = host_str
                 .strip_prefix('[')
                 .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(host_str)
+                .split('%')
+                .next()
                 .unwrap_or(host_str);
             if let Ok(ip) = IpAddr::from_str(ip_str) {
                 let class = classify_ip(ip);
@@ -463,6 +497,26 @@ mod tests {
         let limits = FetchLimits::default();
         assert!(validate_url("http://192.168.1.1/", &limits).is_err());
         assert!(validate_url("http://10.0.0.1/", &limits).is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_embedded_credentials() {
+        let limits = FetchLimits::default();
+        let result = validate_url("http://user:pass@example.com/", &limits);
+        assert!(matches!(
+            result,
+            Err(FetchError::EmbeddedCredentialsBlocked(_))
+        ));
+    }
+
+    #[test]
+    fn validate_url_rejects_ipv6_zone_id_loopback() {
+        let limits = FetchLimits::default();
+        let result = validate_url("http://[::1%25en0]:8080/", &limits);
+        assert!(
+            matches!(result, Err(FetchError::PrivateNetworkBlocked(_))),
+            "got: {result:?}"
+        );
     }
 
     #[test]

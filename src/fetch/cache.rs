@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use lru::LruCache;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::core::fetch::ExtractMode;
 
@@ -227,6 +227,7 @@ fn derived_entry_bytes(entry: &DerivedDocumentCacheEntry) -> usize {
 }
 
 pub struct FetchCache {
+    operation_gate: RwLock<()>,
     raw: Mutex<LruCache<RawCacheKey, RawFetchCacheEntry>>,
     derived: Mutex<LruCache<DerivedCacheKey, DerivedDocumentCacheEntry>>,
     raw_max_bytes: usize,
@@ -245,6 +246,7 @@ impl FetchCache {
         let raw_cap = std::num::NonZeroUsize::new(max_raw_entries.max(1)).unwrap();
         let derived_cap = std::num::NonZeroUsize::new(max_derived_entries.max(1)).unwrap();
         Self {
+            operation_gate: RwLock::new(()),
             raw: Mutex::new(LruCache::new(raw_cap)),
             derived: Mutex::new(LruCache::new(derived_cap)),
             raw_max_bytes,
@@ -255,11 +257,13 @@ impl FetchCache {
     }
 
     pub async fn get_raw(&self, key: &RawCacheKey) -> Option<RawFetchCacheEntry> {
+        let _operation = self.operation_gate.read().await;
         let mut raw = self.raw.lock().await;
         raw.get(key).cloned()
     }
 
     pub async fn insert_raw(&self, key: RawCacheKey, entry: RawFetchCacheEntry) -> bool {
+        let _operation = self.operation_gate.read().await;
         let body_len = entry.body.len();
         if body_len > self.raw_max_bytes {
             return false;
@@ -289,11 +293,13 @@ impl FetchCache {
     }
 
     pub async fn get_derived(&self, key: &DerivedCacheKey) -> Option<DerivedDocumentCacheEntry> {
+        let _operation = self.operation_gate.read().await;
         let mut derived = self.derived.lock().await;
         derived.get(key).cloned()
     }
 
     pub async fn insert_derived(&self, key: DerivedCacheKey, entry: DerivedDocumentCacheEntry) {
+        let _operation = self.operation_gate.read().await;
         let entry_len = derived_entry_bytes(&entry);
         if entry_len > self.derived_max_bytes {
             return;
@@ -323,6 +329,7 @@ impl FetchCache {
     }
 
     pub async fn invalidate_scope(&self, scope: &CacheScope) {
+        let _operation = self.operation_gate.write().await;
         let mut raw = self.raw.lock().await;
 
         let keys_to_remove: Vec<RawCacheKey> = raw
@@ -356,6 +363,7 @@ impl FetchCache {
     }
 
     pub async fn stats(&self) -> CacheStats {
+        let _operation = self.operation_gate.read().await;
         let raw = self.raw.lock().await;
         let derived = self.derived.lock().await;
         let current_raw = self.current_raw_bytes.load(Ordering::Relaxed);
@@ -694,6 +702,30 @@ mod tests {
         assert_eq!(freshness.max_age, Some(Duration::from_secs(60)));
         assert!(freshness.expires.is_some());
         assert_eq!(validators.etag.as_deref(), Some("\"keep\""));
+    }
+
+    #[test]
+    fn apply_304_headers_only_expires_preserves_max_age() {
+        let stored_max_age = Duration::from_secs(60);
+        let mut freshness = CacheFreshness {
+            max_age: Some(stored_max_age),
+            ..Default::default()
+        };
+        let mut validators = CacheValidators {
+            etag: Some("\"keep\"".to_string()),
+            last_modified: None,
+        };
+        let headers: HashMap<String, String> = [(
+            "expires".to_string(),
+            "Wed, 01 Jan 2025 00:00:00 GMT".to_string(),
+        )]
+        .into_iter()
+        .collect();
+
+        apply_304_headers(&mut freshness, &mut validators, &headers);
+
+        assert_eq!(freshness.max_age, Some(stored_max_age));
+        assert!(freshness.expires.is_some());
     }
 
     #[test]
