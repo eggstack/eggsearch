@@ -643,6 +643,7 @@ impl AppConfig {
         }
         let text = std::fs::read_to_string(path)?;
         let cfg: Self = toml::from_str(&text)?;
+        cfg.validate()?;
         Ok(cfg)
     }
 
@@ -1126,7 +1127,12 @@ impl AppConfig {
         }
 
         if self.search.mode == Mode::Live {
-            let enabled_scrape_count = self.search.providers.values().filter(|v| **v).count();
+            let enabled_scrape_count = self
+                .search
+                .providers
+                .iter()
+                .filter(|(id, enabled)| **enabled && id.as_str() != "searxng")
+                .count();
             let any_api_configured = self
                 .search
                 .api

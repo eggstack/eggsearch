@@ -428,6 +428,29 @@ pub struct SourceKey<'a> {
     pub source_kind: Option<SourceKind>,
 }
 
+fn source_kind_str(kind: Option<SourceKind>) -> &'static str {
+    match kind {
+        None => "",
+        Some(SourceKind::Unknown) => "unknown",
+        Some(SourceKind::OfficialDocs) => "official_docs",
+        Some(SourceKind::PackageRegistry) => "package_registry",
+        Some(SourceKind::SourceRepository) => "source_repository",
+        Some(SourceKind::RepositoryRoot) => "repository_root",
+        Some(SourceKind::SourceDirectory) => "source_directory",
+        Some(SourceKind::SourceFile) => "source_file",
+        Some(SourceKind::IssueThread) => "issue_thread",
+        Some(SourceKind::PullRequest) => "pull_request",
+        Some(SourceKind::ReleaseNotes) => "release_notes",
+        Some(SourceKind::Tag) => "tag",
+        Some(SourceKind::Commit) => "commit",
+        Some(SourceKind::SecurityAdvisory) => "security_advisory",
+        Some(SourceKind::Reference) => "reference",
+        Some(SourceKind::News) => "news",
+        Some(SourceKind::Tutorial) => "tutorial",
+        Some(SourceKind::Forum) => "forum",
+    }
+}
+
 /// Compute a deterministic source ID from a canonical key.
 ///
 /// `stable_id = src_<16hex(source\0provider\0url\0title\0kind)>`
@@ -444,7 +467,7 @@ pub fn compute_source_id(key: &SourceKey<'_>) -> String {
         None => write_str(&mut hasher, ""),
     }
     write_opt_str(&mut hasher, key.title);
-    write_str(&mut hasher, &format!("{:?}", key.source_kind));
+    write_str(&mut hasher, source_kind_str(key.source_kind));
     format!("src_{:016x}", hasher.finish())
 }
 
@@ -1416,7 +1439,7 @@ mod tests {
             Some("Example Page"),
             Some(SourceKind::OfficialDocs),
         );
-        assert_eq!(id, "src_b7c720d1013ccb55");
+        assert_eq!(id, "src_17b1daa97bc304f0");
     }
 
     #[test]

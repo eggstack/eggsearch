@@ -562,6 +562,8 @@ pub fn apply_line_range(
     let ctx_start = start.saturating_sub(context_before).max(1);
     let ctx_end = end.saturating_add(context_after).min(total);
 
+    // `truncated` is true when the requested range was clamped to fit the file,
+    // or when line_start/line_end exceeds total lines (returns a single clamped line).
     let truncated = line_end.is_some_and(|e| e > total) || line_start.is_some_and(|s| s > total);
 
     let sliced: Vec<RepoFetchedLine> = (ctx_start..=ctx_end)

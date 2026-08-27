@@ -276,6 +276,9 @@ fn map_offset_to_original(map: &[(usize, usize)], normalized_offset: usize) -> u
     if map.is_empty() {
         return 0;
     }
+    if normalized_offset < map[0].0 {
+        return map[0].1;
+    }
     let idx = map.partition_point(|(norm, _)| *norm <= normalized_offset);
     map[idx.saturating_sub(1)].1
 }
@@ -294,6 +297,11 @@ pub fn frame(s: &str, field: &str, id: &str) -> String {
     let body = s
         .replace("<<<END>>>", "<\\<\\<END>>>")
         .replace("<<<EXTERNAL_UNTRUSTED", "<\\<\\<EXTERNAL_UNTRUSTED");
+    let body = if body.contains("<<<") {
+        body.replace("<<<", "<\\<\\<")
+    } else {
+        body
+    };
     out.push_str(&body);
     out.push_str("\n<<<END>>>");
     out

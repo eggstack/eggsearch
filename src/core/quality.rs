@@ -279,6 +279,17 @@ fn is_zero_usize(n: &usize) -> bool {
 /// - `snippet` presence
 /// - `rank_reasons`
 pub fn compute_card_quality(card: &crate::core::source_card::SourceCard) -> ResultQuality {
+    compute_card_quality_with_now(card, chrono::Utc::now())
+}
+
+/// Compute `ResultQuality` for a `SourceCard` with an explicit timestamp.
+///
+/// Accepts `now` for deterministic testing. Prefer [`compute_card_quality`]
+/// for production callers.
+pub fn compute_card_quality_with_now(
+    card: &crate::core::source_card::SourceCard,
+    now: chrono::DateTime<chrono::Utc>,
+) -> ResultQuality {
     use crate::core::source_card::{RankReason, SourceKind};
 
     let mut authority = AuthorityEstimate::Unknown;
@@ -439,7 +450,6 @@ pub fn compute_card_quality(card: &crate::core::source_card::SourceCard) -> Resu
     };
 
     // --- Freshness ---
-    let now = chrono::Utc::now();
     let (freshness, freshness_uncertainty) =
         if let Some(ts) = freshness_timestamp_from_metadata(meta) {
             if let Some(dt) = parse_timestamp_str(ts) {

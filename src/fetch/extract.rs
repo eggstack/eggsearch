@@ -324,11 +324,17 @@ fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String, depth
 }
 
 fn normalize_html_whitespace(s: &str) -> String {
-    s.split('\n')
-        .map(normalize_whitespace)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+    let mut out = String::with_capacity(s.len());
+    for line in s.split('\n') {
+        let trimmed = normalize_whitespace(line);
+        if !trimmed.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&trimmed);
+        }
+    }
+    out
 }
 
 fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResult {

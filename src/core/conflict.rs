@@ -487,8 +487,12 @@ pub fn detect_entity_scoped_conflicts(
                                 let (ref id_a, ref dates_a) = date_source_keys[i];
                                 let (ref id_b, ref dates_b) = date_source_keys[j];
                                 if dates_a != dates_b {
-                                    let val_a = dates_a.iter().next().unwrap().clone();
-                                    let val_b = dates_b.iter().next().unwrap().clone();
+                                    let mut vals_a: Vec<String> = dates_a.iter().cloned().collect();
+                                    vals_a.sort();
+                                    let val_a = vals_a.join(", ");
+                                    let mut vals_b: Vec<String> = dates_b.iter().cloned().collect();
+                                    vals_b.sort();
+                                    let val_b = vals_b.join(", ");
                                     let ids_a = vec![id_a.clone()];
                                     let ids_b = vec![id_b.clone()];
                                     if let Some(conflict) = detect_date_conflicts(

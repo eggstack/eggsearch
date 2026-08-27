@@ -312,8 +312,9 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn persistent_profile_close_does_not_remove_profile_directory() {
-        let profile_dir = TempDir::new().expect("profile directory");
+    async fn persistent_profile_close_does_not_remove_profile_directory(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let profile_dir = TempDir::new()?;
         let path = profile_dir.path().to_path_buf();
         let lifecycle =
             BrowserLifecycle::for_persistent_profile(None, BrowserConfig::default(), path.clone());
@@ -321,6 +322,7 @@ mod tests {
         assert!(lifecycle.is_persistent_profile());
         lifecycle.close().await;
         assert!(path.exists());
+        Ok(())
     }
 
     #[tokio::test]

@@ -112,9 +112,9 @@ pub use provider::{
     KNOWN_PROVIDER_IDS,
 };
 pub use quality::{
-    compute_card_quality, compute_group_quality, AuthorityEstimate, EvidenceStrength,
-    FreshnessEstimate, GroupQualitySummary, QualityReason, RelevanceEstimate, ResultConfidence,
-    ResultQuality, SearchUncertaintySummary, UncertaintyReason,
+    compute_card_quality, compute_card_quality_with_now, compute_group_quality, AuthorityEstimate,
+    EvidenceStrength, FreshnessEstimate, GroupQualitySummary, QualityReason, RelevanceEstimate,
+    ResultConfidence, ResultQuality, SearchUncertaintySummary, UncertaintyReason,
 };
 pub use query::{
     resolve_max_results, Freshness, MaxResultsResolution, SafeSearch, SearchIntent,

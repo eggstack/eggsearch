@@ -602,7 +602,7 @@ impl FetchClient {
                     transport: Some("http".to_string()),
                     browser_escalated: false,
                     manual_interaction_required: false,
-                    raw_body: Some(body.clone()),
+                    raw_body: Some(body),
                 });
             }
 
@@ -740,12 +740,13 @@ impl FetchClient {
                 transport: Some("http".to_string()),
                 browser_escalated: false,
                 manual_interaction_required: false,
-                raw_body: Some(body.clone()),
+                raw_body: Some(body),
             });
         }
 
         let mut cached_html_render: Option<render::blocks::RenderedBlocks> = None;
         let mut raw_capped = false;
+        let decoded = String::from_utf8_lossy(&body);
 
         let (
             mut title,
@@ -818,25 +819,22 @@ impl FetchClient {
                 truncated,
             )
         } else {
-            let full_text = String::from_utf8_lossy(&body);
-            let tt = full_text.chars().count() > max_chars;
-            let text = full_text.chars().take(max_chars).collect::<String>();
+            let mut text = String::new();
+            let mut tt = false;
+            for (char_count, ch) in decoded.chars().enumerate() {
+                if char_count >= max_chars {
+                    tt = true;
+                    break;
+                }
+                text.push(ch);
+            }
             (None, None, Some(text), Vec::new(), Vec::new(), tt, 0, false)
         };
 
         let mut warnings = extract_warnings;
 
-        // Save raw extracted text before sanitization for document
-        // construction (blocks use Tier 1 only, no framing). `pre_framing_text`
-        // captures the bounded-by-max_chars Tier-1 text for
-        // `text_chars` computation; `raw_text` (the new
-        // `WebFetchResponse` field) holds the unframed text bounded
-        // by `max_chars_raw` (= `max_chars_cap`) so callers performing
-        // line/span selection (e.g. `repo_fetch`) get the full source
-        // text even when their requested `max_chars` is small.
         let pre_framing_text = text.clone();
         let raw_text: Option<String> = if extract_mode != ExtractMode::MetadataOnly {
-            let decoded = String::from_utf8_lossy(&body);
             let (stripped, _) = strip_control_chars(&decoded);
             let (bounded, raw_bounded) = bound_text(&stripped, max_chars_raw);
             if raw_bounded {

@@ -122,6 +122,7 @@ impl CacheFreshness {
                     _ => {}
                 }
             }
+            // RFC 7234: s-maxage takes precedence over max-age for shared caches.
             freshness.max_age = s_maxage.or(max_age);
         }
 
@@ -143,8 +144,6 @@ impl CacheFreshness {
         if let Some(vary) = headers.get("vary").and_then(|v| v.to_str().ok()) {
             freshness.vary = Some(vary.to_string());
         }
-
-        freshness.fetched_at = Some(SystemTime::now());
 
         (freshness, validators)
     }
@@ -329,6 +328,10 @@ impl FetchCache {
     }
 
     pub async fn invalidate_scope(&self, scope: &CacheScope) {
+        // Intentionally holds a single write gate across both raw and
+        // derived scans to prevent concurrent gets/inserts from
+        // observing a half-invalidated state. Profile deletion is
+        // infrequent; the latency spike under load is acceptable.
         let _operation = self.operation_gate.write().await;
         let mut raw = self.raw.lock().await;
 
@@ -414,6 +417,8 @@ pub enum CacheStatus {
 }
 
 pub fn build_raw_cache_key(url: &str, scope: &CacheScope) -> RawCacheKey {
+    // Canonicalize once here; callers should reuse this canonical
+    // form for identity hashing to avoid redundant canonicalization.
     let normalized = crate::core::identity::canonicalize_url(url);
     RawCacheKey {
         url: normalized,
@@ -589,6 +594,8 @@ pub fn apply_304_headers(
     let has_cache_control = map.contains_key("cache-control");
     let has_expires = map.contains_key("expires");
     let has_vary = map.contains_key("vary");
+    // Note: from_headers() does not set fetched_at; the caller
+    // preserves the original fetched_at and refreshes it explicitly.
     let (updated, updated_validators) = CacheFreshness::from_headers(&map);
 
     if has_cache_control {

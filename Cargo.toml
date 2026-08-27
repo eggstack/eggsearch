@@ -68,7 +68,7 @@ chromiumoxide = { version = "0.9", optional = true, default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 libc = "0.2"
-lru = "0.12"
+lru = "0.18"
 
 [dev-dependencies]
 pretty_assertions = "1"

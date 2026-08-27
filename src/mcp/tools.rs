@@ -2014,7 +2014,7 @@ fn cached_document_response(
         pdf_document_metadata: None,
         pdf_quality_score: None,
         pdf_content_ok: None,
-        cache_status: crate::fetch::cache::CacheStatus::default(),
+        cache_status: crate::fetch::cache::CacheStatus::Hit,
         attempt_count: Some(1),
         retry_after_ms: None,
         origin_backoff_ms: None,
@@ -2373,11 +2373,14 @@ pub async fn run_web_fetch(
                                         cached_response = if let Some(derived) =
                                             cache.get_derived(&derived_key).await
                                         {
-                                            Some(cached_document_response(
+                                            let mut resp = cached_document_response(
                                                 trimmed_url,
                                                 &raw_entry,
                                                 &derived.response,
-                                            ))
+                                            );
+                                            resp.cache_status =
+                                                crate::fetch::cache::CacheStatus::Revalidated;
+                                            Some(resp)
                                         } else {
                                             derive().await.ok()
                                         };
@@ -2631,6 +2634,7 @@ pub async fn run_web_fetch(
                                 ..
                             } if is_retryable && attempt + 1 < max_attempts => {
                                 retry_after_ms = ra;
+                                drop(_permit);
                                 let remaining =
                                     deadline.saturating_duration_since(std::time::Instant::now());
                                 let sleep_dur = std::time::Duration::from_millis(
@@ -2746,6 +2750,7 @@ pub async fn run_web_fetch(
                     },
                 )
             };
+            cache_freshness.fetched_at = Some(std::time::SystemTime::now());
             if cache_freshness.max_age.is_none() && cache_freshness.expires.is_none() {
                 let ttl =
                     std::time::Duration::from_secs(state.config.fetch.cache.default_ttl_seconds);

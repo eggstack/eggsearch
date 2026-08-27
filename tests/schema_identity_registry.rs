@@ -789,7 +789,7 @@ fn golden_source_id() {
         Some("Example Page"),
         Some(SourceKind::OfficialDocs),
     );
-    assert_eq!(id, "src_b7c720d1013ccb55");
+    assert_eq!(id, "src_17b1daa97bc304f0");
 }
 
 #[test]
