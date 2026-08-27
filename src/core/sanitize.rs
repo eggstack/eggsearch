@@ -153,15 +153,22 @@ pub fn bound_text(s: &str, max_chars: usize) -> (String, bool) {
     if max_chars == 0 {
         return (String::new(), true);
     }
-    let total = s.chars().count();
-    if total <= max_chars {
-        return (s.to_string(), false);
+
+    let mut chars = s.chars();
+    let mut out = String::new();
+    for _ in 0..max_chars {
+        let Some(ch) = chars.next() else {
+            return (out, false);
+        };
+        out.push(ch);
+    }
+    if chars.next().is_none() {
+        return (out, false);
     }
     if max_chars == 1 {
         return ("…".to_string(), true);
     }
-    let keep = max_chars - 1;
-    let mut out: String = s.chars().take(keep).collect();
+    out.pop();
     out.push('…');
     (out, true)
 }

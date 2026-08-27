@@ -349,7 +349,7 @@ impl MetadataSearchAdapter {
         provider_ids: &[String],
     ) -> (Vec<Arc<dyn SearchEngine>>, Vec<String>) {
         if provider_ids.is_empty() {
-            return (self.engines.clone(), Vec::new());
+            return (Vec::new(), Vec::new());
         }
         let mut out = Vec::new();
         let mut unknown = Vec::new();

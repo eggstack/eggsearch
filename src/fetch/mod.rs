@@ -23,6 +23,8 @@ pub mod render;
 pub mod span;
 pub mod types;
 
+pub(crate) const MAX_TREE_WALK_DEPTH: usize = 256;
+
 #[cfg(feature = "browser")]
 pub use browser::{
     browser_capability_report, browser_fetch, browser_fetch_with_policy,

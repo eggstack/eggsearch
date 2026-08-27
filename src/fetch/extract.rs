@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use scraper::{Html, Selector};
 
 use crate::core::fetch::{ExtractedLink, LinkKind};
-use crate::core::sanitize::normalize_whitespace;
+use crate::core::sanitize::{bound_text, normalize_whitespace, SNIPPET_MAX_CHARS};
 
 /// Maximum number of links the extractor will collect from a single
 /// page. A defensive upper bound to keep response payloads bounded
@@ -284,10 +284,8 @@ const STRIP_TAGS: &[&str] = &[
     "script", "style", "noscript", "svg", "nav", "footer", "header", "form", "aside",
 ];
 
-const MAX_EXTRACT_DEPTH: usize = 256;
-
 fn extract_text_recursive(element: &scraper::ElementRef, out: &mut String, depth: usize) {
-    if depth >= MAX_EXTRACT_DEPTH {
+    if depth >= super::MAX_TREE_WALK_DEPTH {
         return;
     }
     for child in element.children() {
@@ -370,11 +368,16 @@ fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResu
                 Ok(u) => u,
                 Err(_) => continue,
             };
+            let url_string = url.to_string();
+            if url_string.chars().count() > SNIPPET_MAX_CHARS {
+                continue;
+            }
+            let (text, _) = bound_text(&text, SNIPPET_MAX_CHARS);
             let same_domain = Some(page_url.host_str() == url.host_str());
             let link_kind = classify_link(page_url, &url);
             links.push(ExtractedLink {
                 text,
-                url: url.to_string(),
+                url: url_string,
                 link_kind,
                 rel,
                 same_domain,
@@ -774,6 +777,21 @@ mod tests {
         let (_, _, _, _, _, _, links_seen, links_truncated) = extractor.extract(1000, true);
         assert_eq!(links_seen, 3);
         assert!(!links_truncated);
+    }
+
+    #[test]
+    fn extracted_links_bound_text_and_reject_oversized_urls() {
+        let long_text = "x".repeat(SNIPPET_MAX_CHARS + 1);
+        let html = format!(
+            "<html><body><a href=\"/ok\">{long_text}</a><a href=\"https://example.com/{}\">ok</a></body></html>",
+            "x".repeat(SNIPPET_MAX_CHARS)
+        );
+        let result = extract_links_from_html(html.as_bytes(), "https://example.com/");
+
+        assert_eq!(result.total_seen, 2);
+        assert_eq!(result.links.len(), 1);
+        assert_eq!(result.links[0].text.chars().count(), SNIPPET_MAX_CHARS);
+        assert!(result.links[0].text.ends_with('…'));
     }
 
     #[test]

@@ -327,6 +327,9 @@ impl FetchCache {
             .fetch_add(entry_len, Ordering::Relaxed);
     }
 
+    /// Remove all raw and derived entries for a scope. Derived entries are
+    /// content-addressed and can otherwise outlive their raw cache entry
+    /// after ordinary LRU eviction.
     pub async fn invalidate_scope(&self, scope: &CacheScope) {
         // Intentionally holds a single write gate across both raw and
         // derived scans to prevent concurrent gets/inserts from

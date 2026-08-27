@@ -166,12 +166,25 @@ fn compute_dir_size(path: &std::path::Path) -> u64 {
         return 0;
     }
     let mut total = 0u64;
-    if let Ok(entries) = std::fs::read_dir(path) {
+    let mut pending = vec![(path.to_path_buf(), 0usize)];
+    while let Some((current, depth)) = pending.pop() {
+        if depth > 256 {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let p = entry.path();
-            if p.is_dir() {
-                total += compute_dir_size(&p);
-            } else if let Ok(meta) = std::fs::metadata(&p) {
+            let Ok(meta) = std::fs::symlink_metadata(&p) else {
+                continue;
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                pending.push((p, depth + 1));
+            } else if meta.is_file() {
                 total += meta.len();
             }
         }

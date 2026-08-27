@@ -34,6 +34,7 @@ use crate::mcp::state::ServerState;
 /// The `data` field is passed through the MCP error response's `data`
 /// member when present.
 #[derive(Debug)]
+#[must_use = "tool errors must be returned to the MCP caller"]
 pub enum ToolError {
     Validation(String),
     Internal {
@@ -5345,6 +5346,31 @@ fn mode_str(mode: Mode) -> &'static str {
 pub fn run_build_evidence_bundle(args: EvidenceBundleArgs) -> Result<serde_json::Value, ToolError> {
     use crate::core::evidence_bundle::EvidenceBundleRequest;
 
+    if let Some(max_sources) = args.max_sources {
+        if max_sources > crate::core::evidence_bundle::MAX_SOURCES_CAP {
+            return Err(ToolError::Validation(format!(
+                "max_sources must not exceed {}",
+                crate::core::evidence_bundle::MAX_SOURCES_CAP
+            )));
+        }
+    }
+    if let Some(max_fetched_items) = args.max_fetched_items {
+        if max_fetched_items > crate::core::evidence_bundle::MAX_FETCHED_ITEMS_CAP {
+            return Err(ToolError::Validation(format!(
+                "max_fetched_items must not exceed {}",
+                crate::core::evidence_bundle::MAX_FETCHED_ITEMS_CAP
+            )));
+        }
+    }
+    if let Some(max_total_chars) = args.max_total_chars {
+        if max_total_chars > crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP {
+            return Err(ToolError::Validation(format!(
+                "max_total_chars must not exceed {}",
+                crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP
+            )));
+        }
+    }
+
     if args.sources.is_empty() && args.fetches.is_empty() {
         return Err(ToolError::Validation(
             "at least one source or fetch input is required to build an evidence bundle"
@@ -5380,6 +5406,33 @@ mod tests {
     use crate::core::sanitize::TrustMarkers;
     use crate::mcp::state::ServerState;
     use std::sync::Arc;
+
+    #[test]
+    fn evidence_bundle_limits_reject_values_above_caps() {
+        let error = run_build_evidence_bundle(EvidenceBundleArgs {
+            goal: None,
+            sources: vec![],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: Some(crate::core::evidence_bundle::MAX_SOURCES_CAP + 1),
+            max_fetched_items: None,
+            max_total_chars: None,
+        })
+        .expect_err("oversized max_sources should be rejected");
+        assert!(error.to_string().contains("max_sources"));
+
+        let error = run_build_evidence_bundle(EvidenceBundleArgs {
+            goal: None,
+            sources: vec![],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: Some(crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP + 1),
+        })
+        .expect_err("oversized max_total_chars should be rejected");
+        assert!(error.to_string().contains("max_total_chars"));
+    }
 
     #[tokio::test]
     async fn invalid_unicode_url_scheme_returns_validation_errors() {

@@ -1092,6 +1092,18 @@ impl AppConfig {
                     .to_string(),
             ));
         }
+        if self
+            .fetch
+            .browser
+            .persistent_profiles
+            .profile_process_timeout_ms
+            > MAX_PROFILE_PROCESS_TIMEOUT_MS
+        {
+            return Err(CoreError::Config(format!(
+                "[fetch].browser.persistent_profiles.profile_process_timeout_ms exceeds maximum {}",
+                MAX_PROFILE_PROCESS_TIMEOUT_MS
+            )));
+        }
 
         // Local config validation
         if self.local.enabled {
@@ -1653,6 +1665,23 @@ mod tests {
         assert!(
             err2.to_string().contains("[search].timeout_ms"),
             "got: {err2}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_excessive_profile_process_timeout() {
+        let mut c = AppConfig::default();
+        c.fetch
+            .browser
+            .persistent_profiles
+            .profile_process_timeout_ms = MAX_PROFILE_PROCESS_TIMEOUT_MS + 1;
+        let err = c
+            .validate()
+            .expect_err("expected profile process timeout cap failure");
+        assert!(
+            err.to_string()
+                .contains("profile_process_timeout_ms exceeds maximum"),
+            "got: {err}"
         );
     }
 

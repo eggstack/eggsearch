@@ -458,7 +458,6 @@ pub fn compute_card_quality_with_now(
                     quality_reasons.push(QualityReason::FreshTimestamp);
                     FreshnessEstimate::Current
                 } else if age <= chrono::Duration::days(30) {
-                    quality_reasons.push(QualityReason::FreshTimestamp);
                     FreshnessEstimate::Recent
                 } else if age <= chrono::Duration::days(180) {
                     FreshnessEstimate::Historical

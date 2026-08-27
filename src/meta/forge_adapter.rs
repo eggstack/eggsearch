@@ -71,19 +71,12 @@ impl Default for ForgeEndpointPolicy {
 pub enum ForgeRequestKind {
     /// Commit SHA resolution request.
     CommitResolution,
-    /// Default branch lookup request.
-    #[allow(dead_code)]
-    DefaultBranchLookup,
     /// Tree page retrieval request.
     TreePage,
     /// Contents API fallback request.
-    #[allow(dead_code)]
     ContentsFallback,
     /// Repository metadata request (default branch, project info).
     RepositoryMetadata,
-    /// Error body preview request (separately capped, not part of operation budget).
-    #[allow(dead_code)]
-    ErrorPreview,
 }
 
 /// Error type for forge bounded-read operations.
@@ -231,17 +224,29 @@ pub async fn read_error_body_preview(resp: reqwest::Response) -> String {
     let mut body = Vec::with_capacity(ERROR_BODY_CAP.min(8192));
     let mut stream = resp.bytes_stream();
     let mut observed = 0usize;
+    let mut stream_read_failed = false;
     use futures::StreamExt;
     while let Some(chunk) = stream.next().await {
-        if let Ok(chunk) = chunk {
-            observed += chunk.len();
-            if observed > ERROR_BODY_CAP {
+        match chunk {
+            Ok(chunk) => {
+                observed += chunk.len();
+                if observed > ERROR_BODY_CAP {
+                    break;
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Err(error) => {
+                tracing::warn!(error = ?error, "failed to read forge error response body");
+                stream_read_failed = true;
                 break;
             }
-            body.extend_from_slice(&chunk);
-        } else {
-            break;
         }
+    }
+    if stream_read_failed {
+        const STREAM_FAILURE_MARKER: &[u8] = b"[error reading response body]";
+        let keep = ERROR_BODY_CAP.saturating_sub(STREAM_FAILURE_MARKER.len());
+        body.truncate(keep);
+        body.extend_from_slice(STREAM_FAILURE_MARKER);
     }
     String::from_utf8_lossy(&body)
         .chars()
@@ -1819,15 +1824,20 @@ fn encode_url_component(s: &str) -> String {
 }
 
 fn is_loopback_addr(host: &str) -> bool {
-    host == "localhost"
-        || host == "127.0.0.1"
-        || host == "::1"
-        || host == "0.0.0.0"
-        || (host.starts_with('[')
-            && host.ends_with(']')
-            && host[1..host.len() - 1]
-                .parse::<Ipv6Addr>()
-                .is_ok_and(|ip| ip.is_loopback()))
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    let Some(ip) = parse_literal_ip(host) else {
+        return false;
+    };
+    match ip {
+        IpAddr::V4(v4) => {
+            matches!(classify_ipv4_forge(v4), ForgeAddressClass::Loopback) || v4.is_unspecified()
+        }
+        IpAddr::V6(v6) => {
+            matches!(classify_ipv6_forge(v6), ForgeAddressClass::Loopback) || v6.is_unspecified()
+        }
+    }
 }
 
 /// Derive the Gitea/Forgejo instance root URL from an API base URL.
@@ -2060,11 +2070,9 @@ pub fn build_response(
             exhausted_by: budget_exhausted_by.map(|k| {
                 match k {
                     ForgeRequestKind::CommitResolution => "commit_resolution",
-                    ForgeRequestKind::DefaultBranchLookup => "default_branch_lookup",
                     ForgeRequestKind::TreePage => "tree_page",
                     ForgeRequestKind::ContentsFallback => "contents_fallback",
                     ForgeRequestKind::RepositoryMetadata => "repository_metadata",
-                    ForgeRequestKind::ErrorPreview => "error_preview",
                 }
                 .to_string()
             }),
@@ -2133,6 +2141,20 @@ mod tests {
     #[test]
     fn is_supported_host_unknown() {
         assert!(!is_supported_host(CodeHost::Unknown));
+    }
+
+    #[test]
+    fn loopback_detection_covers_literal_ranges_and_forms() {
+        assert!(is_loopback_addr("localhost"));
+        assert!(is_loopback_addr("LOCALHOST"));
+        assert!(is_loopback_addr("127.0.0.2"));
+        assert!(is_loopback_addr("127.255.255.255"));
+        assert!(is_loopback_addr("::1"));
+        assert!(is_loopback_addr("0:0:0:0:0:0:0:1"));
+        assert!(is_loopback_addr("[::1]"));
+        assert!(is_loopback_addr("0.0.0.0"));
+        assert!(!is_loopback_addr("192.168.1.1"));
+        assert!(!is_loopback_addr("example.com"));
     }
 
     #[test]

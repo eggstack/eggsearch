@@ -23,8 +23,6 @@ const SKIP_TAGS: &[&str] = &[
 
 /// Maximum recursion depth for HTML tree walks. Adversarial markup
 /// with extreme nesting must not overflow the stack.
-const MAX_RENDER_DEPTH: usize = 256;
-
 /// Language class mappings for code blocks.
 fn normalize_language(lang: &str) -> String {
     match lang {
@@ -273,7 +271,7 @@ fn walk_element(
     markdown: bool,
     depth: usize,
 ) {
-    if depth >= MAX_RENDER_DEPTH {
+    if depth >= super::super::MAX_TREE_WALK_DEPTH {
         return;
     }
     for child in element.children() {
@@ -439,7 +437,7 @@ fn collect_text_parts<'a>(
     base_url: &str,
     depth: usize,
 ) {
-    if depth >= MAX_RENDER_DEPTH {
+    if depth >= super::super::MAX_TREE_WALK_DEPTH {
         return;
     }
     if let Some(text) = node.value().as_text() {
@@ -486,7 +484,7 @@ fn collect_raw_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
 }
 
 fn collect_raw_text_inner<'a>(node: NodeRef<'a, scraper::Node>, text: &mut String, depth: usize) {
-    if depth >= MAX_RENDER_DEPTH {
+    if depth >= super::super::MAX_TREE_WALK_DEPTH {
         return;
     }
     if let Some(t) = node.value().as_text() {
@@ -535,7 +533,7 @@ fn render_list(
     markdown: bool,
     depth: usize,
 ) {
-    if depth >= MAX_RENDER_DEPTH {
+    if depth >= super::super::MAX_TREE_WALK_DEPTH {
         return;
     }
     for child in list.children() {

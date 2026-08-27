@@ -233,7 +233,7 @@ async fn select_engines_returns_unknown() {
 }
 
 #[tokio::test]
-async fn empty_providers_list_selects_all() {
+async fn empty_providers_list_selects_none() {
     let adapter = make_adapter(
         vec![
             MockEngine::success("alpha", vec![]),
@@ -242,7 +242,7 @@ async fn empty_providers_list_selects_all() {
         10,
     );
     let (selected, unknown) = adapter.select_engines(&[]);
-    assert_eq!(selected.len(), 2);
+    assert!(selected.is_empty());
     assert!(unknown.is_empty());
 }
 
@@ -376,7 +376,7 @@ async fn concurrent_searches_do_not_exceed_provider_count() {
     for i in 0..10 {
         let adapter_clone = MetadataSearchAdapter::from_engines(
             adapter
-                .select_engines(&[])
+                .select_engines(&["alpha".to_string(), "beta".to_string()])
                 .0
                 .into_iter()
                 .map(|e| Arc::clone(&e))
@@ -494,7 +494,7 @@ async fn concurrency_saturation_does_not_exceed_limit() {
     for i in 0..50 {
         let adapter_clone = MetadataSearchAdapter::from_engines(
             adapter
-                .select_engines(&[])
+                .select_engines(&["alpha".to_string()])
                 .0
                 .into_iter()
                 .map(|e| Arc::clone(&e))
