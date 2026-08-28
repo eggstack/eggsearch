@@ -103,6 +103,7 @@ fn is_private_host(host: &str) -> bool {
         || stripped == "0.0.0.0"
         || stripped == "metadata.google.internal"
         || stripped == "169.254.169.254"
+        || crate::fetch::limits::is_private_hostname(stripped)
     {
         return true;
     }
@@ -227,6 +228,16 @@ mod tests {
             is_request_allowed("http://localhost/"),
             Err(PolicyViolation::PrivateNetworkTarget)
         );
+    }
+
+    #[test]
+    fn blocks_private_hostname_suffixes() {
+        for host in ["service.internal", "service.private", "service.local"] {
+            assert_eq!(
+                is_request_allowed(&format!("http://{host}/")),
+                Err(PolicyViolation::PrivateNetworkTarget)
+            );
+        }
     }
 
     #[test]

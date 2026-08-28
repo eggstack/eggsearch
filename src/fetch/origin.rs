@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -157,10 +159,14 @@ impl OriginController {
         let base = self.defaults.retry_base_delay_ms;
         let max = self.defaults.retry_max_delay_ms;
         let cap = base.saturating_mul(1u64 << count.min(6)).min(max);
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        count.hash(&mut hasher);
         let jitter_seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .subsec_nanos() as u64;
+            .as_nanos() as u64
+            ^ hasher.finish();
         let delay_ms = (jitter_seed % (cap + 1)).max(1);
 
         if count >= self.defaults.circuit_failure_threshold {
@@ -404,6 +410,24 @@ mod tests {
         assert_eq!(classify_http_status(400), OriginFailureClass::NonRetryable);
         assert_eq!(classify_http_status(403), OriginFailureClass::NonRetryable);
         assert_eq!(classify_http_status(404), OriginFailureClass::NonRetryable);
+    }
+
+    #[tokio::test]
+    async fn retry_delay_is_bounded() {
+        let controller = OriginController::new(OriginPolicy::default(), 100);
+        let key = OriginKey {
+            scheme: "https".into(),
+            host: "example.com".into(),
+            port: 443,
+        };
+        let decision = controller
+            .record_failure(&key, OriginFailureClass::Retryable)
+            .await;
+        assert!(matches!(
+            decision,
+            OriginBackoffDecision::Backoff { delay_ms, .. }
+                if (1..=500).contains(&delay_ms)
+        ));
     }
 
     #[test]

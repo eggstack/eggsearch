@@ -455,7 +455,7 @@ fn try_match_rust(line: &str, symbol: &str) -> Option<(SymbolKind, SpanConfidenc
     for (re, kind, label) in checks {
         if let Some(caps) = re.captures(line) {
             if let Some(name_match) = caps.get(1) {
-                if name_match.as_str().eq_ignore_ascii_case(symbol) {
+                if name_match.as_str() == symbol {
                     let conf = if *kind == SymbolKind::Function
                         || *kind == SymbolKind::Struct
                         || *kind == SymbolKind::Enum
@@ -477,7 +477,7 @@ fn try_match_python(line: &str, symbol: &str) -> Option<(SymbolKind, SpanConfide
     // Class
     if let Some(caps) = PYTHON_CLASS_RE.captures(line) {
         if let Some(m) = caps.get(1) {
-            if m.as_str().eq_ignore_ascii_case(symbol) {
+            if m.as_str() == symbol {
                 return Some((
                     SymbolKind::Class,
                     SpanConfidence::Exact,
@@ -489,7 +489,7 @@ fn try_match_python(line: &str, symbol: &str) -> Option<(SymbolKind, SpanConfide
     // Function / async def
     if let Some(caps) = PYTHON_DEF_RE.captures(line) {
         if let Some(m) = caps.get(1) {
-            if m.as_str().eq_ignore_ascii_case(symbol) {
+            if m.as_str() == symbol {
                 return Some((
                     SymbolKind::Function,
                     SpanConfidence::Exact,
@@ -516,7 +516,7 @@ fn try_match_javascript(
     for (re, kind, label) in checks {
         if let Some(caps) = re.captures(line) {
             if let Some(m) = caps.get(1) {
-                if m.as_str().eq_ignore_ascii_case(symbol) {
+                if m.as_str() == symbol {
                     let conf = if *kind == SymbolKind::Function || *kind == SymbolKind::Class {
                         SpanConfidence::Exact
                     } else {
@@ -565,7 +565,7 @@ fn try_match_generic_brace(
     // Java/Kotlin/C++ class/interface/struct
     if let Some(caps) = JAVA_KW_RE.captures(line) {
         if let Some(m) = caps.get(1) {
-            if m.as_str().eq_ignore_ascii_case(symbol) {
+            if m.as_str() == symbol {
                 return Some((
                     SymbolKind::Class,
                     SpanConfidence::Strong,
@@ -576,7 +576,7 @@ fn try_match_generic_brace(
     }
     if let Some(caps) = CPP_STRUCT_RE.captures(line) {
         if let Some(m) = caps.get(1) {
-            if m.as_str().eq_ignore_ascii_case(symbol) {
+            if m.as_str() == symbol {
                 return Some((
                     SymbolKind::Struct,
                     SpanConfidence::Weak,
@@ -1219,6 +1219,14 @@ mod tests {
         assert_eq!(span.line_start, 1);
         assert_eq!(span.line_end, 1);
         assert_eq!(span.symbol_kind, Some(SymbolKind::Constant));
+    }
+
+    #[test]
+    fn symbol_matching_is_case_sensitive() {
+        assert!(try_match_rust("fn Foo() {}", "foo").is_none());
+        assert!(try_match_python("def Foo():", "foo").is_none());
+        assert!(try_match_javascript("function Foo() {}", "foo").is_none());
+        assert!(try_match_generic_brace("class Foo {}", "foo").is_none());
     }
 
     // --- Python class/function indentation expansion ---

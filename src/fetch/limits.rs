@@ -267,11 +267,7 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
                         "address not allowed by policy: {ip}"
                     )));
                 }
-            } else if (host_lower.ends_with(".internal")
-                || host_lower.ends_with(".private")
-                || host_lower.ends_with(".local"))
-                && !limits.allow_private_network
-            {
+            } else if is_private_hostname(&host_lower) && !limits.allow_private_network {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
                     "private network access is disabled: {host_str}"
                 )));
@@ -362,11 +358,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
                         "address not allowed by policy: {ip}"
                     )));
                 }
-            } else if (host_lower.ends_with(".internal")
-                || host_lower.ends_with(".private")
-                || host_lower.ends_with(".local"))
-                && !limits.allow_private_network
-            {
+            } else if is_private_hostname(&host_lower) && !limits.allow_private_network {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
                     "private network access is disabled: {host_str}"
                 )));
@@ -389,7 +381,8 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
         Ok(IpAddr::V6(_)) => format!("[{host}]:{port}"),
         _ => format!("{host}:{port}"),
     };
-    let dns_timeout = std::time::Duration::from_millis(limits.timeout_ms);
+    let dns_timeout = std::time::Duration::from_millis(limits.timeout_ms / 2)
+        .max(std::time::Duration::from_millis(1));
     let resolved = tokio::time::timeout(
         dns_timeout,
         tokio::task::spawn_blocking(move || {
@@ -425,6 +418,10 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
 fn is_blocked_address(addr: SocketAddr, limits: &FetchLimits) -> bool {
     let class = classify_ip(addr.ip());
     !is_allowed_by_policy(class, limits.allow_localhost, limits.allow_private_network)
+}
+
+pub(crate) fn is_private_hostname(host: &str) -> bool {
+    host.ends_with(".internal") || host.ends_with(".private") || host.ends_with(".local")
 }
 
 fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {

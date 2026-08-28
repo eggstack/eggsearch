@@ -141,8 +141,6 @@ impl BrowserLifecycle {
         bc = bc.arg("--disable-features=TranslateUI");
         bc = bc.arg("--disable-ipc-flooding-protection");
         bc = bc.arg("--disable-extensions-http-auth-schemes");
-        bc = bc.arg("--disable-backgrounding-occluded-windows");
-        bc = bc.arg("--disable-renderer-backgrounding");
 
         if self.config.block_media {
             bc = bc.arg("--autoplay-policy=no-user-gesture-required");
