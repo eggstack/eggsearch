@@ -281,7 +281,7 @@ fn strip_evasive_for_scan(s: &str) -> (String, Vec<(usize, usize)>) {
 
 fn map_offset_to_original(map: &[(usize, usize)], normalized_offset: usize) -> usize {
     if map.is_empty() {
-        return 0;
+        return normalized_offset;
     }
     if normalized_offset < map[0].0 {
         return map[0].1;
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn map_offset_to_original_handles_empty_map() {
-        assert_eq!(map_offset_to_original(&[], 42), 0);
+        assert_eq!(map_offset_to_original(&[], 42), 42);
     }
 
     // -----------------------------------------------------------------------

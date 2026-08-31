@@ -125,7 +125,7 @@ pub(crate) fn classify_ip(ip: IpAddr) -> AddressClass {
     }
 }
 
-fn is_allowed_by_policy(
+pub(crate) fn is_allowed_by_policy(
     class: AddressClass,
     allow_localhost: bool,
     allow_private_network: bool,

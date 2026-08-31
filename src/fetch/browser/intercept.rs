@@ -1,8 +1,10 @@
-use std::net::{Ipv4Addr, Ipv6Addr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
 use std::time::Duration;
 
 use tokio::time::timeout;
 use url::Url;
+
+use crate::fetch::limits::{classify_ip, is_allowed_by_policy};
 
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -25,7 +27,7 @@ pub fn is_request_allowed(url_str: &str) -> Result<(), PolicyViolation> {
     }
 
     if let Ok(ip) = host_str.parse::<Ipv4Addr>() {
-        if is_private_ipv4(ip) {
+        if is_private_ip(IpAddr::V4(ip)) {
             return Err(PolicyViolation::PrivateNetworkTarget);
         }
     }
@@ -33,7 +35,7 @@ pub fn is_request_allowed(url_str: &str) -> Result<(), PolicyViolation> {
     let v6_candidate = host_str.strip_prefix('[').unwrap_or(host_str);
     let v6_candidate = v6_candidate.strip_suffix(']').unwrap_or(v6_candidate);
     if let Ok(ip) = v6_candidate.parse::<Ipv6Addr>() {
-        if is_private_ipv6(ip) {
+        if is_private_ip(IpAddr::V6(ip)) {
             return Err(PolicyViolation::PrivateNetworkTarget);
         }
     }
@@ -72,21 +74,10 @@ pub async fn is_request_allowed_with_dns(url_str: &str) -> Result<(), PolicyViol
     .map_err(|_| PolicyViolation::DnsResolutionFailed)?;
 
     for addr in addrs {
-        match addr {
-            std::net::SocketAddr::V4(v4) => {
-                if is_private_ipv4(*v4.ip()) {
-                    return Err(PolicyViolation::ResolvedToPrivateNetwork(
-                        v4.ip().to_string(),
-                    ));
-                }
-            }
-            std::net::SocketAddr::V6(v6) => {
-                if is_private_ipv6(*v6.ip()) {
-                    return Err(PolicyViolation::ResolvedToPrivateNetwork(
-                        v6.ip().to_string(),
-                    ));
-                }
-            }
+        if is_private_ip(addr.ip()) {
+            return Err(PolicyViolation::ResolvedToPrivateNetwork(
+                addr.ip().to_string(),
+            ));
         }
     }
 
@@ -111,54 +102,8 @@ fn is_private_host(host: &str) -> bool {
     false
 }
 
-fn is_private_ipv4(ip: Ipv4Addr) -> bool {
-    ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_unspecified()
-        || ip.is_multicast()
-        || (ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64)
-        || (ip.octets()[0] == 192
-            && ip.octets()[1] == 0
-            && ip.octets()[2] == 0
-            && ip.octets()[3] == 1)
-        || (ip.octets()[0] == 192 && ip.octets()[1] == 88 && ip.octets()[2] == 99)
-        || (ip.octets()[0] == 198 && (ip.octets()[1] == 18 || ip.octets()[1] == 19))
-        || (ip.octets()[0] == 198 && ip.octets()[1] == 51 && ip.octets()[2] == 100)
-        || (ip.octets()[0] == 203 && ip.octets()[1] == 0 && ip.octets()[2] == 113)
-        || (ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 2)
-}
-
-fn ipv4_compatible_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
-    let s = v6.segments();
-    if s[0] == 0
-        && s[1] == 0
-        && s[2] == 0
-        && s[3] == 0
-        && s[4] == 0
-        && s[5] == 0
-        && (s[6] != 0 || s[7] != 0)
-    {
-        let o = v6.octets();
-        Some(Ipv4Addr::new(o[12], o[13], o[14], o[15]))
-    } else {
-        None
-    }
-}
-
-fn is_private_ipv6(ip: Ipv6Addr) -> bool {
-    if let Some(v4) = ip.to_ipv4_mapped() {
-        return is_private_ipv4(v4);
-    }
-    let seg0 = ip.segments()[0];
-    ip.is_loopback()
-        || ip.is_unspecified()
-        || ip.is_unicast_link_local()
-        || ip.octets()[0] == 0xfe && (ip.octets()[1] & 0xC0) == 0xC0
-        || seg0 == 0x2001 && ip.segments()[1] == 0xdb8
-        || (seg0 & 0xfe00) == 0xfc00
-        || ipv4_compatible_from_v6(ip).is_some_and(is_private_ipv4)
-        || ip.is_multicast()
+fn is_private_ip(ip: IpAddr) -> bool {
+    !is_allowed_by_policy(classify_ip(ip), false, false)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,10 +239,10 @@ mod tests {
         let mapped_loopback = "::ffff:127.0.0.1".parse::<Ipv6Addr>().unwrap();
         let mapped_link_local = "::ffff:169.254.169.254".parse::<Ipv6Addr>().unwrap();
         let mapped_public = "::ffff:93.184.216.34".parse::<Ipv6Addr>().unwrap();
-        assert!(is_private_ipv6(mapped_private));
-        assert!(is_private_ipv6(mapped_loopback));
-        assert!(is_private_ipv6(mapped_link_local));
-        assert!(!is_private_ipv6(mapped_public));
+        assert!(is_private_ip(IpAddr::V6(mapped_private)));
+        assert!(is_private_ip(IpAddr::V6(mapped_loopback)));
+        assert!(is_private_ip(IpAddr::V6(mapped_link_local)));
+        assert!(!is_private_ip(IpAddr::V6(mapped_public)));
     }
 
     #[test]
@@ -377,6 +322,39 @@ mod tests {
             is_request_allowed("http://192.0.2.1/"),
             Err(PolicyViolation::PrivateNetworkTarget)
         );
+    }
+
+    #[test]
+    fn blocks_zero_literal_range() {
+        for host in ["0.0.0.0", "0.1.2.3"] {
+            assert_eq!(
+                is_request_allowed(&format!("http://{host}/")),
+                Err(PolicyViolation::PrivateNetworkTarget),
+                "{host} should be denied"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_reserved_v4_range() {
+        for host in ["240.0.0.1", "250.1.2.3", "255.255.255.254"] {
+            assert_eq!(
+                is_request_allowed(&format!("http://{host}/")),
+                Err(PolicyViolation::PrivateNetworkTarget),
+                "{host} should be denied"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_full_192_0_0_reserved_range() {
+        for host in ["192.0.0.0", "192.0.0.1", "192.0.0.255"] {
+            assert_eq!(
+                is_request_allowed(&format!("http://{host}/")),
+                Err(PolicyViolation::PrivateNetworkTarget),
+                "{host} should be denied"
+            );
+        }
     }
 
     #[tokio::test]

@@ -1319,9 +1319,9 @@ fn append_bounded(buf: &mut Vec<u8>, data: &[u8], max_bytes: usize) -> bool {
                 0xc2..=0xdf => 2,
                 0xe0..=0xef => 3,
                 0xf0..=0xf4 => 4,
-                _ => 1,
+                _ => 0,
             };
-            if expected > remaining.saturating_sub(take - 1) {
+            if expected == 0 || expected > remaining.saturating_sub(take - 1) {
                 take -= 1;
             }
         }
@@ -2332,6 +2332,28 @@ mod tests {
         let truncated = append_bounded(&mut buf, b"a\xe3x", 2);
         assert!(truncated);
         assert_eq!(buf, b"a");
+    }
+
+    #[test]
+    fn append_bounded_drops_invalid_lead_bytes() {
+        for lead in [0xc0u8, 0xc1, 0xf5, 0xff] {
+            let mut buf = Vec::new();
+            let truncated = append_bounded(&mut buf, &[lead], 0);
+            assert!(truncated, "lead 0x{lead:02x} should signal truncation");
+            assert!(
+                buf.is_empty(),
+                "lead 0x{lead:02x} should be dropped, got {:?}",
+                buf
+            );
+        }
+    }
+
+    #[test]
+    fn append_bounded_drops_invalid_lead_in_truncation_tail() {
+        let mut buf = vec![b'a'; 3];
+        let truncated = append_bounded(&mut buf, &[0xc0], 3);
+        assert!(truncated);
+        assert_eq!(buf, b"aaa");
     }
 
     #[test]

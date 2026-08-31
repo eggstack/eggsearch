@@ -231,6 +231,12 @@ pub struct FetchCache {
     derived: Mutex<LruCache<DerivedCacheKey, DerivedDocumentCacheEntry>>,
     raw_max_bytes: usize,
     derived_max_bytes: usize,
+    // Byte counters live outside the per-tier Mutex but are only mutated
+    // while that Mutex is held by the writer. The Mutex provides
+    // happens-before, so Relaxed atomic ordering is sufficient: any
+    // reader that observes a counter update also observes the matching
+    // LruCache mutation. `invalidate_scope` upgrades the operation gate
+    // to a write lock, which serializes against concurrent inserts.
     current_raw_bytes: AtomicUsize,
     current_derived_bytes: AtomicUsize,
 }
@@ -379,11 +385,22 @@ impl FetchCache {
         let raw = self.raw.lock().await;
         let derived = self.derived.lock().await;
         let current_raw = self.current_raw_bytes.load(Ordering::Relaxed);
+        let summed_raw: usize = raw.iter().map(|(_, e)| e.body.len()).sum();
+        debug_assert_eq!(
+            current_raw, summed_raw,
+            "raw byte counter drifted from LruCache contents"
+        );
+        let current_derived = self.current_derived_bytes.load(Ordering::Relaxed);
+        let summed_derived: usize = derived.iter().map(|(_, e)| derived_entry_bytes(e)).sum();
+        debug_assert_eq!(
+            current_derived, summed_derived,
+            "derived byte counter drifted from LruCache contents"
+        );
         CacheStats {
             raw_entries: raw.len(),
             derived_entries: derived.len(),
             raw_bytes: current_raw,
-            derived_bytes: self.current_derived_bytes.load(Ordering::Relaxed),
+            derived_bytes: current_derived,
         }
     }
 }
