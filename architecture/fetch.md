@@ -95,6 +95,8 @@ HTML→text/markdown extraction pipeline:
 | `Stale` | Content may be outdated |
 | `Missing` | No cached content |
 
+Responses with `Vary: *` or any request header other than `Accept-Encoding` are not cached because the cache does not retain those request-header variants. This conservative rule also applies when supported and unsupported `Vary` tokens are mixed.
+
 ---
 
 ## Origin Controller (`origin.rs`)

@@ -564,7 +564,11 @@ pub fn apply_line_range(
 
     // `truncated` is true when the requested range was clamped to fit the file,
     // or when line_start/line_end exceeds total lines (returns a single clamped line).
-    let truncated = line_end.is_some_and(|e| e > total) || line_start.is_some_and(|s| s > total);
+    let context_truncated =
+        context_before > start.saturating_sub(1) || context_after > total.saturating_sub(end);
+    let truncated = line_end.is_some_and(|e| e > total)
+        || line_start.is_some_and(|s| s > total)
+        || context_truncated;
 
     let sliced: Vec<RepoFetchedLine> = (ctx_start..=ctx_end)
         .filter_map(|n| {
@@ -1453,11 +1457,12 @@ mod tests {
     #[test]
     fn apply_line_range_context_clamped() {
         let lines: Vec<String> = (1..=5).map(|n| format!("line {n}")).collect();
-        let (sliced, start, end, _truncated, _warn) =
+        let (sliced, start, end, truncated, _warn) =
             apply_line_range(&lines, Some(1), Some(2), 10, 10);
         assert_eq!(start, Some(1));
         assert_eq!(end, Some(5));
         assert_eq!(sliced.len(), 5);
+        assert!(truncated);
     }
 
     #[test]

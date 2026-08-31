@@ -285,7 +285,10 @@ impl FetchCache {
             }
         }
 
-        raw.put(key, entry);
+        if let Some((_, evicted)) = raw.push(key, entry) {
+            self.current_raw_bytes
+                .fetch_sub(evicted.body.len(), Ordering::Relaxed);
+        }
         self.current_raw_bytes
             .fetch_add(body_len, Ordering::Relaxed);
         true
@@ -322,7 +325,10 @@ impl FetchCache {
             }
         }
 
-        derived.put(key, entry);
+        if let Some((_, evicted)) = derived.push(key, entry) {
+            self.current_derived_bytes
+                .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+        }
         self.current_derived_bytes
             .fetch_add(entry_len, Ordering::Relaxed);
     }
@@ -1114,6 +1120,58 @@ mod tests {
         assert!(stats.raw_bytes <= 20);
     }
 
+    fn make_raw_entry(index: usize, body_len: usize) -> RawFetchCacheEntry {
+        RawFetchCacheEntry {
+            final_url: format!("https://x.com/{index}"),
+            status: 200,
+            headers: HashMap::new(),
+            body: Arc::from(vec![0u8; body_len]),
+            fetched_at: SystemTime::now(),
+            freshness: CacheFreshness {
+                max_age: Some(Duration::from_secs(300)),
+                ..CacheFreshness::default()
+            },
+            validators: CacheValidators {
+                etag: None,
+                last_modified: None,
+            },
+            scope: CacheScope::Anonymous,
+            content_type: Some("text/html".into()),
+            content_length_header: Some(body_len),
+            redirect_count: 0,
+            representation: RawRepresentation::Http,
+            truncated: false,
+            browser_escalated: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn cache_raw_capacity_eviction_keeps_byte_accounting_exact() {
+        let cache = FetchCache::new(2, 10, 10_000, 10_000);
+        for i in 0..3 {
+            cache
+                .insert_raw(
+                    RawCacheKey {
+                        url: format!("https://x.com/{i}"),
+                        scope: CacheScope::Anonymous,
+                    },
+                    make_raw_entry(i, 10),
+                )
+                .await;
+        }
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.raw_entries, 2);
+        assert_eq!(stats.raw_bytes, 20);
+        assert!(cache
+            .get_raw(&RawCacheKey {
+                url: "https://x.com/0".into(),
+                scope: CacheScope::Anonymous,
+            })
+            .await
+            .is_none());
+    }
+
     #[tokio::test]
     async fn cache_derived_insert_and_get() {
         let cache = FetchCache::new(10, 10, 1024 * 1024, 1024 * 1024);
@@ -1225,6 +1283,22 @@ mod tests {
 
         let stats = cache.stats().await;
         assert_eq!(stats.derived_entries, 2);
+    }
+
+    #[tokio::test]
+    async fn cache_derived_capacity_eviction_keeps_byte_accounting_exact() {
+        let cache = FetchCache::new(10, 2, 10_000, 10_000);
+        let entry_len = derived_entry_bytes(&make_derived_entry(0, 100));
+        for i in 0..3u64 {
+            cache
+                .insert_derived(make_derived_key(i), make_derived_entry(i, 100))
+                .await;
+        }
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.derived_entries, 2);
+        assert_eq!(stats.derived_bytes, entry_len * 2);
+        assert!(cache.get_derived(&make_derived_key(0)).await.is_none());
     }
 
     #[tokio::test]

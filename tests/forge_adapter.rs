@@ -478,8 +478,12 @@ fn forge_tree_codeberg_basic() {
 #[test]
 fn forge_tree_gitea_with_custom_base_url() {
     let server = MockServer::start();
+    let mock_commit = server.mock(|when, then| {
+        when.path("/api/v1/repos/test-owner/test-repo/commits/main");
+        then.json_body(serde_json::json!({ "sha": "commit_sha_gitea_basic" }));
+    });
     let mock_tree = server.mock(|when, then| {
-        when.path("/api/v1/repos/test-owner/test-repo/git/trees/main");
+        when.path("/api/v1/repos/test-owner/test-repo/git/trees/commit_sha_gitea_basic");
         then.json_body(serde_json::json!({
             "truncated": false,
             "tree": [
@@ -505,6 +509,7 @@ fn forge_tree_gitea_with_custom_base_url() {
         &config,
     ));
 
+    mock_commit.assert();
     mock_tree.assert();
 
     let resp = result.unwrap();
@@ -2453,7 +2458,7 @@ fn codeberg_slash_ref_encodes_correctly() {
         }));
     });
     let mock_tree = server.mock(|when, then| {
-        when.path("/api/v1/repos/test-owner/test-repo/git/trees/feature%2Fbar");
+        when.path("/api/v1/repos/test-owner/test-repo/git/trees/commit_sha_cb");
         then.json_body(serde_json::json!({
             "truncated": false,
             "tree": [
@@ -2506,7 +2511,7 @@ fn gitea_slash_ref_encodes_correctly() {
         }));
     });
     let mock_tree = server.mock(|when, then| {
-        when.path("/api/v1/repos/test-owner/test-repo/git/trees/release%2F2026.07");
+        when.path("/api/v1/repos/test-owner/test-repo/git/trees/commit_sha_gitea");
         then.json_body(serde_json::json!({
             "truncated": false,
             "tree": [
@@ -2559,7 +2564,7 @@ fn forgejo_slash_ref_encodes_correctly() {
         }));
     });
     let mock_tree = server.mock(|when, then| {
-        when.path("/api/v1/repos/test-owner/test-repo/git/trees/feature%2Fmy-feature");
+        when.path("/api/v1/repos/test-owner/test-repo/git/trees/commit_sha_forgejo");
         then.json_body(serde_json::json!({
             "truncated": false,
             "tree": [
@@ -2987,7 +2992,7 @@ fn budget_all_forge_families_same_semantics() {
                     then.json_body(serde_json::json!({"default_branch": "main"}));
                 });
                 server.mock(|when, then| {
-                    when.path("/api/v1/repos/test-owner/test-repo/git/trees/main");
+                    when.path("/api/v1/repos/test-owner/test-repo/git/trees/sha");
                     then.json_body(serde_json::json!({
                         "truncated": false,
                         "tree": [{"path": "README.md", "type": "blob", "mode": "100644", "size": 10, "sha": "sha1"}]

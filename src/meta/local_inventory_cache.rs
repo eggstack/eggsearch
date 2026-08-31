@@ -55,8 +55,10 @@ impl ProcessTerminationController {
             .is_ok()
         {
             self.trigger.store(trigger, Ordering::Relaxed);
-            unsafe {
-                libc::kill(-self.child_pgid, libc::SIGKILL);
+            if self.child_pgid > 1 {
+                unsafe {
+                    libc::kill(-self.child_pgid, libc::SIGKILL);
+                }
             }
             true
         } else {
@@ -273,7 +275,7 @@ pub fn score_inventory_entry(
         score += 5.0;
     }
 
-    let penalty_extensions = [".lock", "min.js", "min.css", ".map"];
+    let penalty_extensions = [".lock", ".min.js", ".min.css", ".map"];
     for ext in &penalty_extensions {
         if file_name.ends_with(ext) {
             score -= 150.0;
@@ -1183,6 +1185,26 @@ mod tests {
         };
         let score = score_inventory_entry(&entry, "cargo.lock", &["cargo.lock"]);
         assert!(score < 0.0, "expected lock-file penalty: {score}");
+    }
+
+    #[test]
+    fn score_inventory_entry_does_not_penalize_admin_js() {
+        let entry = InventoryEntry {
+            root_index: 0,
+            relative_path: "scripts/admin.js".to_string(),
+            absolute_path: PathBuf::from("/ws/scripts/admin.js"),
+            size: 10,
+            language: Some("javascript".to_string()),
+            role: SourceRole::Implementation,
+            is_binary: false,
+            mtime_secs: 0,
+            fingerprint: 0,
+        };
+        let score = score_inventory_entry(&entry, "admin.js", &["admin.js"]);
+        assert!(
+            score > 0.0,
+            "ordinary .js files must not receive minified penalty: {score}"
+        );
     }
 
     fn default_config() -> LocalConfig {

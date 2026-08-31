@@ -209,18 +209,7 @@ impl FetchClient {
                 // Validate the redirect target before following.
                 validate_fetch_target(&redirect_url, &self.limits)
                     .await
-                    .map_err(|e| match e {
-                        FetchError::PrivateNetworkBlocked(reason) => {
-                            FetchError::RedirectTargetBlocked(format!("private network: {reason}"))
-                        }
-                        FetchError::EmbeddedCredentialsBlocked(reason) => {
-                            FetchError::RedirectTargetBlocked(format!("credentials: {reason}"))
-                        }
-                        FetchError::UnsupportedScheme(reason) => {
-                            FetchError::RedirectTargetBlocked(reason)
-                        }
-                        other => FetchError::RedirectTargetBlocked(other.to_string()),
-                    })?;
+                    .map_err(map_redirect_validation_error)?;
 
                 current_url = redirect_url;
                 continue;
@@ -1202,18 +1191,7 @@ impl FetchClient {
                 }
                 validate_fetch_target(&redirect_url, &self.limits)
                     .await
-                    .map_err(|e| match e {
-                        FetchError::PrivateNetworkBlocked(reason) => {
-                            FetchError::RedirectTargetBlocked(format!("private network: {reason}"))
-                        }
-                        FetchError::EmbeddedCredentialsBlocked(reason) => {
-                            FetchError::RedirectTargetBlocked(format!("credentials: {reason}"))
-                        }
-                        FetchError::UnsupportedScheme(reason) => {
-                            FetchError::RedirectTargetBlocked(reason)
-                        }
-                        other => FetchError::RedirectTargetBlocked(other.to_string()),
-                    })?;
+                    .map_err(map_redirect_validation_error)?;
                 current_url = redirect_url;
                 continue;
             }
@@ -1331,8 +1309,21 @@ fn append_bounded(buf: &mut Vec<u8>, data: &[u8], max_bytes: usize) -> bool {
         // Back off to the nearest char boundary so the truncated tail
         // does not split a multi-byte UTF-8 sequence.
         let mut take = remaining.min(data.len());
-        while take > 0 && (data[take] & 0xC0) == 0x80 {
+        while take > 0 && (data[take - 1] & 0xC0) == 0x80 {
             take -= 1;
+        }
+        if take > 0 {
+            let lead = data[take - 1];
+            let expected = match lead {
+                0x00..=0x7f => 1,
+                0xc2..=0xdf => 2,
+                0xe0..=0xef => 3,
+                0xf0..=0xf4 => 4,
+                _ => 1,
+            };
+            if expected > remaining.saturating_sub(take - 1) {
+                take -= 1;
+            }
         }
         if take > 0 {
             buf.extend_from_slice(&data[..take]);
@@ -1341,6 +1332,19 @@ fn append_bounded(buf: &mut Vec<u8>, data: &[u8], max_bytes: usize) -> bool {
     }
     buf.extend_from_slice(data);
     false
+}
+
+fn map_redirect_validation_error(error: FetchError) -> FetchError {
+    match error {
+        FetchError::PrivateNetworkBlocked(reason) => {
+            FetchError::RedirectTargetBlocked(format!("private network: {reason}"))
+        }
+        FetchError::EmbeddedCredentialsBlocked(reason) => {
+            FetchError::RedirectTargetBlocked(format!("credentials: {reason}"))
+        }
+        FetchError::UnsupportedScheme(reason) => FetchError::RedirectTargetBlocked(reason),
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -2311,5 +2315,31 @@ mod tests {
         assert_eq!(buf.len(), 3);
         assert!(std::str::from_utf8(&buf).is_ok());
         assert_eq!(buf, "あ".as_bytes());
+    }
+
+    #[test]
+    fn append_bounded_does_not_split_four_byte_char() {
+        let data = "🦀🦀";
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, data.as_bytes(), 5);
+        assert!(truncated);
+        assert_eq!(buf, "🦀".as_bytes());
+    }
+
+    #[test]
+    fn append_bounded_drops_incomplete_trailing_lead_byte() {
+        let mut buf = Vec::new();
+        let truncated = append_bounded(&mut buf, b"a\xe3x", 2);
+        assert!(truncated);
+        assert_eq!(buf, b"a");
+    }
+
+    #[test]
+    fn redirect_dns_errors_are_not_policy_blocks() {
+        let error = FetchError::NetworkError("DNS resolution failed".into());
+        assert!(matches!(
+            map_redirect_validation_error(error),
+            FetchError::NetworkError(_)
+        ));
     }
 }

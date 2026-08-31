@@ -191,7 +191,7 @@ pub fn canonicalize_url(url: &str) -> String {
 
     // Lowercase only the host portion of the authority, preserving
     // case-sensitive userinfo (usernames and passwords).
-    let authority = if let Some(at_pos) = authority.find('@') {
+    let authority = if let Some(at_pos) = authority.rfind('@') {
         let (userinfo, host_port) = authority.split_at(at_pos);
         let host_port = host_port[1..].to_ascii_lowercase();
         format!("{userinfo}@{host_port}")
@@ -200,7 +200,7 @@ pub fn canonicalize_url(url: &str) -> String {
     };
 
     // Strip www. prefix
-    let authority = if let Some(at_pos) = authority.find('@') {
+    let authority = if let Some(at_pos) = authority.rfind('@') {
         let (userinfo, host_port) = authority.split_at(at_pos);
         let host_port = host_port[1..]
             .strip_prefix("www.")
@@ -246,11 +246,20 @@ pub fn canonicalize_url(url: &str) -> String {
 
 /// Strip default port from a host string.
 fn strip_default_port(host: &str, scheme: &str) -> String {
-    match scheme {
-        "http" => host.strip_suffix(":80").unwrap_or(host).to_string(),
-        "https" => host.strip_suffix(":443").unwrap_or(host).to_string(),
-        _ => host.to_string(),
+    let default_port = match scheme {
+        "http" => "80",
+        "https" => "443",
+        _ => return host.to_string(),
+    };
+    let host_start = host.rfind('@').map_or(0, |pos| pos + 1);
+    let host_port = &host[host_start..];
+    let Some(port_start) = host_port.rfind(':') else {
+        return host.to_string();
+    };
+    if &host_port[port_start + 1..] != default_port {
+        return host.to_string();
     }
+    format!("{}{}", &host[..host_start], &host_port[..port_start])
 }
 
 /// Normalize percent-encoding in a URL path+query string.
@@ -1049,6 +1058,14 @@ mod tests {
         let a = canonicalize_url("http://example.com:80/path");
         let b = canonicalize_url("http://example.com/path");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonicalize_url_uses_last_at_for_userinfo() {
+        assert_eq!(
+            canonicalize_url("HTTP://user@name@WWW.example.com:80/path"),
+            "http://user@name@example.com/path"
+        );
     }
 
     #[test]

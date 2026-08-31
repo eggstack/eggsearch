@@ -1137,6 +1137,12 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
     identity.resolved_commit_sha = commit_sha;
     identity.tree_sha = tree_sha;
 
+    let tree_ref = identity
+        .tree_sha
+        .as_deref()
+        .or(identity.resolved_commit_sha.as_deref())
+        .unwrap_or(ref_name);
+
     let default_branch =
         resolve_forge_default_branch(client, owner, repo, config, timeout, api_base, &mut budget)
             .await;
@@ -1172,7 +1178,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
                 "{api_base}/repos/{}/{}/git/trees/{}",
                 encode_url_component(owner),
                 encode_url_component(repo),
-                encode_url_component(ref_name)
+                encode_url_component(tree_ref)
             ))
             .query(&[
                 ("recursive", if max_d > 1 { "1" } else { "0" }),
