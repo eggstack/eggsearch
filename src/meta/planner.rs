@@ -554,7 +554,7 @@ fn build_gitea_releases_query(hints: &RepoQueryHints) -> String {
         parts.push(residual.to_string());
     }
     if let (Some(owner), Some(repo)) = (&hints.owner, &hints.repo) {
-        parts.push(format!("repo:{owner}/{repo}"));
+        parts.push(format!("{owner}/{repo}"));
     } else if let Some(org) = &hints.org {
         parts.push(org.clone());
     }

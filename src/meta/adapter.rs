@@ -401,6 +401,16 @@ impl MetadataSearchAdapter {
         failure_latencies_ms: &[u64],
         deadline_ms: u64,
     ) {
+        assert_eq!(
+            raw_results.len(),
+            result_latencies_ms.len(),
+            "raw_results and result_latencies_ms must be aligned"
+        );
+        assert_eq!(
+            raw_failures.len(),
+            failure_latencies_ms.len(),
+            "raw_failures and failure_latencies_ms must be aligned"
+        );
         // Track which providers responded (success or failure)
         let mut responded: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
@@ -2645,6 +2655,18 @@ pub fn build_default_engines(
             }));
             continue;
         }
+        if id == "semantic_scholar" {
+            let api_key = api_cfg
+                .api_key_env
+                .as_deref()
+                .and_then(|env| std::env::var(env).ok())
+                .filter(|k| !k.is_empty());
+            engines.push(Arc::new(SemanticScholarEngine {
+                client: client.clone(),
+                api_key,
+            }));
+            continue;
+        }
         let api_key = match api_cfg
             .api_key_env
             .as_deref()
@@ -2664,6 +2686,13 @@ pub fn build_default_engines(
             }
         };
         match id.as_str() {
+            "brave_api" => {
+                engines.push(Arc::new(BraveApiEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
             "github_code" => {
                 engines.push(Arc::new(GithubCodeEngine {
                     client: client.clone(),
@@ -2769,12 +2798,15 @@ pub fn build_default_engines(
                     api_key,
                 }));
             }
-            _ => {
-                engines.push(Arc::new(BraveApiEngine {
-                    client: client.clone(),
-                    api_key,
-                    base_url: api_cfg.base_url.clone(),
-                }));
+            other => {
+                skipped.push(SkippedProvider {
+                    id: other.to_string(),
+                    reason: format!(
+                        "[{}] {}",
+                        ProviderSkipCode::UnknownProvider.as_str(),
+                        ProviderSkipCode::UnknownProvider.display_name()
+                    ),
+                });
             }
         }
     }
@@ -3072,9 +3104,8 @@ fn sanitize_field(
     id: &str,
     max_chars: usize,
     sanitize: bool,
-    warnings: &mut Vec<String>,
+    _warnings: &mut Vec<String>,
 ) -> (String, TrustMarkers) {
-    let _ = warnings;
     let mut m = TrustMarkers::default();
 
     // Tier 1: always on.

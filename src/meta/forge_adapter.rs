@@ -77,6 +77,8 @@ pub enum ForgeRequestKind {
     ContentsFallback,
     /// Repository metadata request (default branch, project info).
     RepositoryMetadata,
+    /// Error response body preview.
+    ErrorBody,
 }
 
 /// Error type for forge bounded-read operations.
@@ -115,26 +117,42 @@ impl ForgeReadError {
     }
 }
 
-pub(crate) struct ForgeReadBudgetTelemetry {
+/// Telemetry snapshot for the forge read budget.
+pub struct ForgeReadBudgetTelemetry {
+    /// Configured aggregate byte limit for the operation.
     pub aggregate_limit: usize,
+    /// Total bytes observed across all counted responses.
     pub aggregate_observed: usize,
+    /// Remaining budget before exhaustion.
     pub remaining: usize,
+    /// Number of requests counted against the budget.
     pub request_count: usize,
+    /// Which request kind exhausted the budget, if any.
     pub exhausted_by: Option<ForgeRequestKind>,
+    /// Number of per-response cap hits.
     pub per_response_cap_hits: usize,
 }
 
-pub(crate) struct ForgeReadBudget {
+/// Aggregate byte budget for forge tree operations.
+pub struct ForgeReadBudget {
+    /// Maximum bytes allowed for a single response.
     pub per_response_limit: usize,
+    /// Maximum aggregate bytes for the whole operation.
     pub aggregate_limit: usize,
+    /// Bytes observed so far.
     pub aggregate_observed: usize,
+    /// Whether the budget has been exhausted.
     pub exhausted: bool,
+    /// Which request kind caused exhaustion.
     pub exhausted_by: Option<ForgeRequestKind>,
+    /// Number of requests observed.
     pub request_count: usize,
+    /// Count of per-response cap hits.
     pub per_response_cap_hits: usize,
 }
 
 impl ForgeReadBudget {
+    /// Create a new budget with the given aggregate limit.
     pub fn new(aggregate_limit: usize) -> Self {
         Self {
             per_response_limit: DEFAULT_MAX_RESPONSE_BYTES,
@@ -147,10 +165,12 @@ impl ForgeReadBudget {
         }
     }
 
+    /// Remaining budget before exhaustion.
     pub fn remaining(&self) -> usize {
         self.aggregate_limit.saturating_sub(self.aggregate_observed)
     }
 
+    /// Consume bytes against the budget and mark exhaustion if reached.
     pub fn consume(&mut self, bytes: usize, kind: ForgeRequestKind) {
         self.aggregate_observed = self.aggregate_observed.saturating_add(bytes);
         self.request_count += 1;
@@ -160,10 +180,12 @@ impl ForgeReadBudget {
         }
     }
 
+    /// Whether the aggregate budget has been exhausted.
     pub fn exceeded(&self) -> bool {
         self.exhausted
     }
 
+    /// Snapshot telemetry for the current budget state.
     pub fn telemetry(&self) -> ForgeReadBudgetTelemetry {
         ForgeReadBudgetTelemetry {
             aggregate_limit: self.aggregate_limit,
@@ -189,8 +211,10 @@ pub(crate) async fn read_with_budget(
         if content_length > effective_cap as u64 {
             if content_length > budget.per_response_limit as u64 {
                 budget.per_response_cap_hits += 1;
+                budget.consume(content_length as usize, kind);
                 return Err(ForgeReadError::ContentLengthTooLarge);
             }
+            budget.consume(content_length as usize, kind);
             return Err(ForgeReadError::AggregateBudgetExhausted);
         }
     }
@@ -204,8 +228,10 @@ pub(crate) async fn read_with_budget(
         if observed > effective_cap {
             if observed > budget.per_response_limit {
                 budget.per_response_cap_hits += 1;
+                budget.consume(observed, kind);
                 return Err(ForgeReadError::PerResponseLimitExceeded);
             }
+            budget.consume(observed, kind);
             return Err(ForgeReadError::AggregateBudgetExhausted);
         }
         body.extend_from_slice(&chunk);
@@ -219,9 +245,17 @@ const ERROR_BODY_CAP: usize = 8 * 1024;
 /// Read a preview of an error response body, capped at 8KB.
 ///
 /// Strips control characters (except newline, carriage return, tab)
-/// and truncates at the byte cap.
-pub async fn read_error_body_preview(resp: reqwest::Response) -> String {
-    let mut body = Vec::with_capacity(ERROR_BODY_CAP.min(8192));
+/// and truncates at the byte cap. Charges the observed bytes against
+/// the aggregate budget.
+pub async fn read_error_body_preview(
+    resp: reqwest::Response,
+    budget: &mut ForgeReadBudget,
+) -> String {
+    let cap = ERROR_BODY_CAP.min(budget.remaining());
+    if cap == 0 {
+        return String::new();
+    }
+    let mut body = Vec::with_capacity(cap.min(8192));
     let mut stream = resp.bytes_stream();
     let mut observed = 0usize;
     let mut stream_read_failed = false;
@@ -230,7 +264,7 @@ pub async fn read_error_body_preview(resp: reqwest::Response) -> String {
         match chunk {
             Ok(chunk) => {
                 observed += chunk.len();
-                if observed > ERROR_BODY_CAP {
+                if observed > cap {
                     break;
                 }
                 body.extend_from_slice(&chunk);
@@ -242,12 +276,14 @@ pub async fn read_error_body_preview(resp: reqwest::Response) -> String {
             }
         }
     }
+    let charged = observed.min(cap);
     if stream_read_failed {
         const STREAM_FAILURE_MARKER: &[u8] = b"[error reading response body]";
-        let keep = ERROR_BODY_CAP.saturating_sub(STREAM_FAILURE_MARKER.len());
+        let keep = cap.saturating_sub(STREAM_FAILURE_MARKER.len());
         body.truncate(keep);
         body.extend_from_slice(STREAM_FAILURE_MARKER);
     }
+    budget.consume(charged, ForgeRequestKind::ErrorBody);
     String::from_utf8_lossy(&body)
         .chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\r' || *c == '\t')
@@ -507,14 +543,14 @@ async fn fetch_github_tree(
         return Err("authentication_required".into());
     }
     if status == reqwest::StatusCode::FORBIDDEN {
-        let msg = read_error_body_preview(resp).await;
+        let msg = read_error_body_preview(resp, &mut budget).await;
         if msg.contains("rate limit") || msg.contains("Rate limit") {
             return Err("rate_limited".into());
         }
         return Err("permission_denied".into());
     }
     if !status.is_success() {
-        let msg = read_error_body_preview(resp).await;
+        let msg = read_error_body_preview(resp, &mut budget).await;
         return Err(format!("provider_unavailable: {status} - {msg}"));
     }
 
@@ -937,7 +973,7 @@ async fn fetch_gitlab_tree(
             break;
         }
         if !status.is_success() {
-            let msg = read_error_body_preview(resp).await;
+            let msg = read_error_body_preview(resp, &mut budget).await;
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
@@ -1259,7 +1295,7 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             break;
         }
         if !status.is_success() {
-            let msg = read_error_body_preview(resp).await;
+            let msg = read_error_body_preview(resp, &mut budget).await;
             return Err(format!("provider_unavailable: {status} - {msg}"));
         }
 
@@ -2136,6 +2172,7 @@ pub fn build_response(
                     ForgeRequestKind::TreePage => "tree_page",
                     ForgeRequestKind::ContentsFallback => "contents_fallback",
                     ForgeRequestKind::RepositoryMetadata => "repository_metadata",
+                    ForgeRequestKind::ErrorBody => "error_body",
                 }
                 .to_string()
             }),

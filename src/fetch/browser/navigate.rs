@@ -367,6 +367,20 @@ async fn navigate_and_extract(
         _ => {}
     }
 
+    let dom_len: usize = page
+        .evaluate("document.documentElement ? document.documentElement.outerHTML.length : 0")
+        .await
+        .ok()
+        .and_then(|v| v.into_value::<f64>().ok())
+        .map(|v| v as usize)
+        .unwrap_or(0);
+    if dom_len > config.max_dom_bytes {
+        return Err(BrowserFetchError::DomExtractionFailed(format!(
+            "DOM size {dom_len} exceeds limit {}",
+            config.max_dom_bytes
+        )));
+    }
+
     let dom_html: String = page
         .content()
         .await

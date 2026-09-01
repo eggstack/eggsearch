@@ -177,13 +177,21 @@ pub fn canonicalize_url(url: &str) -> String {
         (&rest[..slash_pos], &rest[slash_pos..])
     } else {
         // No slash after authority: entire rest is authority.
-        // Split fragment and query from authority.
-        let authority = if let Some(hash_pos) = rest.find('#') {
-            &rest[..hash_pos]
-        } else if let Some(qmark_pos) = rest.find('?') {
-            &rest[..qmark_pos]
-        } else {
-            rest
+        // Split fragment and query from authority — pick the earliest delimiter.
+        let authority = {
+            let q = rest.find('?');
+            let h = rest.find('#');
+            let end = match (q, h) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                _ => None,
+            };
+            if let Some(pos) = end {
+                &rest[..pos]
+            } else {
+                rest
+            }
         };
         let suffix = &rest[authority.len()..];
         (authority, suffix)

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -143,6 +144,8 @@ impl BrowserLifecycle {
         bc = bc.arg("--disable-extensions-http-auth-schemes");
 
         if self.config.block_media {
+            bc = bc.arg("--autoplay-policy=user-gesture-required");
+        } else {
             bc = bc.arg("--autoplay-policy=no-user-gesture-required");
         }
 
@@ -181,6 +184,7 @@ impl BrowserLifecycle {
 
     async fn create_user_data_dir(&self) -> Result<PathBuf, BrowserLaunchError> {
         let dir = tokio::task::spawn_blocking(|| -> Result<PathBuf, BrowserLaunchError> {
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
             let base = std::env::temp_dir().join("eggsearch-browser");
             std::fs::create_dir_all(&base).map_err(|e| {
                 BrowserLaunchError::LaunchFailed(format!("failed to create browser temp dir: {e}"))
@@ -197,19 +201,40 @@ impl BrowserLifecycle {
                 })?;
             }
 
-            let suffix = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-
-            let dir = base.join(format!("ctx-{suffix}"));
-            std::fs::create_dir(&dir).map_err(|e| {
-                BrowserLaunchError::LaunchFailed(format!(
-                    "failed to create browser context dir: {e}"
-                ))
-            })?;
-
-            Ok(dir)
+            let pid = std::process::id() as u64;
+            for _ in 0..10 {
+                let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                let suffix = nanos ^ ((pid as u128) << 32) ^ (counter as u128);
+                let dir = base.join(format!("ctx-{suffix}"));
+                match std::fs::create_dir(&dir) {
+                    Ok(()) => {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let perms = std::fs::Permissions::from_mode(0o700);
+                            std::fs::set_permissions(&dir, perms).map_err(|e| {
+                                BrowserLaunchError::LaunchFailed(format!(
+                                    "failed to set browser context dir permissions: {e}"
+                                ))
+                            })?;
+                        }
+                        return Ok(dir);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => {
+                        return Err(BrowserLaunchError::LaunchFailed(format!(
+                            "failed to create browser context dir: {e}"
+                        )))
+                    }
+                }
+            }
+            Err(BrowserLaunchError::LaunchFailed(
+                "failed to create browser context dir after retries".into(),
+            ))
         })
         .await
         .map_err(|e| {

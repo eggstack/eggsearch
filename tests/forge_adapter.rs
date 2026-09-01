@@ -1916,7 +1916,8 @@ async fn test_error_body_preview_caps_at_8kb() {
         .await
         .unwrap();
 
-    let preview = eggsearch::meta::forge_adapter::read_error_body_preview(resp).await;
+    let mut budget = eggsearch::meta::forge_adapter::ForgeReadBudget::new(10 * 1024 * 1024);
+    let preview = eggsearch::meta::forge_adapter::read_error_body_preview(resp, &mut budget).await;
     assert!(
         preview.len() <= 8 * 1024,
         "preview should be capped at 8KB, got {} bytes",

@@ -312,6 +312,11 @@ impl FetchClient {
                         self.limits.max_bytes,
                     ));
                 }
+            } else {
+                tracing::warn!(
+                    header = ?cl_header,
+                    "unparseable content-length header; proceeding to streaming cap"
+                );
             }
         }
 
@@ -1185,6 +1190,11 @@ impl FetchClient {
                         self.limits.max_bytes,
                     ));
                 }
+            } else {
+                tracing::warn!(
+                    header = ?cl_header,
+                    "unparseable content-length header; proceeding to streaming cap"
+                );
             }
         }
 
