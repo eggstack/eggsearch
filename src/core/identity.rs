@@ -408,13 +408,20 @@ fn normalize_path(path: &str) -> String {
     } else {
         path
     };
-    // Strip trailing slash
-    let path = if path.len() > 1 && path.ends_with('/') {
-        &path[..path.len() - 1]
+    // Split path from query before trimming trailing slash so that
+    // slashes inside the query value are preserved.
+    let (path, query) = if let Some(qpos) = path.find('?') {
+        (&path[..qpos], &path[qpos..])
     } else {
-        path
+        (path, "")
     };
-    normalize_percent_encoding(path)
+    let trimmed = path.trim_end_matches('/');
+    let combined = if trimmed.is_empty() {
+        format!("/{query}")
+    } else {
+        format!("{trimmed}{query}")
+    };
+    normalize_percent_encoding(&combined)
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,6 +1114,13 @@ mod tests {
         let a = canonicalize_url("example.com/path%41");
         let b = canonicalize_url("example.com/pathA");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonicalize_url_no_scheme_preserves_query_value_trailing_slash() {
+        let a = canonicalize_url("example.com/path?query=1/");
+        let b = canonicalize_url("example.com/path?query=1");
+        assert_ne!(a, b);
     }
 
     #[test]

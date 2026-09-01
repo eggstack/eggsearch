@@ -24,6 +24,59 @@ use crate::core::sanitize::{
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
 };
 
+/// Classification of the response body for the content extraction
+/// pipeline. Returned by [`classify_content_type`] so both the
+/// pre-body and post-body classification steps share a single source
+/// of truth and cannot drift.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ContentKind {
+    pub is_html: bool,
+    pub is_pdf: bool,
+    pub is_text: bool,
+}
+
+fn classify_content_type(
+    content_type: Option<&str>,
+    final_url: &str,
+    body_starts_with_pdf: bool,
+) -> ContentKind {
+    let base = content_type
+        .map(|ct| {
+            let ct_lower = ct.to_lowercase();
+            ct_lower.split(';').next().unwrap_or("").trim().to_string()
+        })
+        .unwrap_or_default();
+
+    let is_html = base == "text/html" || base == "application/xhtml+xml";
+    let is_pdf_by_ct = base == "application/pdf";
+    let is_pdf_by_url = !is_pdf_by_ct
+        && url::Url::parse(final_url)
+            .ok()
+            .map(|u| u.path().to_ascii_lowercase().ends_with(".pdf"))
+            .unwrap_or(false);
+    let mut is_pdf = is_pdf_by_ct || is_pdf_by_url;
+    if !is_pdf && body_starts_with_pdf {
+        is_pdf = true;
+    }
+    let is_text = base.starts_with("text/")
+        || base == "application/json"
+        || base == "application/ld+json"
+        || (base.starts_with("application/") && base.ends_with("+json"))
+        || base == "application/toml"
+        || base == "application/x-yaml"
+        || base == "application/yaml"
+        || base == "application/javascript"
+        || base == "application/typescript"
+        || base == "application/x-sh"
+        || base == "application/xml";
+
+    ContentKind {
+        is_html,
+        is_pdf,
+        is_text,
+    }
+}
+
 /// HTTP client for fetching URLs.
 pub struct FetchClient {
     client: Client,
@@ -266,54 +319,18 @@ impl FetchClient {
             return Err(FetchError::HttpStatus(status, format!("HTTP {status}")));
         }
 
-        let is_html = content_type
-            .as_ref()
-            .map(|ct| {
-                let ct_lower = ct.to_lowercase();
-                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
-                ct_base == "text/html" || ct_base == "application/xhtml+xml"
-            })
-            .unwrap_or(false);
-
-        // Detect PDF by Content-Type or URL extension. PDFs are
-        // binary documents that require a separate extraction path.
-        let is_pdf_by_ct = content_type
-            .as_ref()
-            .map(|ct| {
-                let ct_lower = ct.to_lowercase();
-                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
-                ct_base == "application/pdf"
-            })
-            .unwrap_or(false);
-
-        let is_pdf_by_url = if !is_pdf_by_ct {
-            url::Url::parse(&final_url)
-                .ok()
-                .and_then(|u| {
-                    let path = u.path().to_lowercase();
-                    if path.ends_with(".pdf") {
-                        Some(true)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
-        let mut is_pdf = is_pdf_by_ct || is_pdf_by_url;
+        let mut kind = classify_content_type(content_type.as_deref(), &final_url, false);
 
         // If neither Content-Type nor URL extension indicates PDF,
         // peek at the first 5 bytes of the body for the `%PDF-` magic.
         // This catches misconfigured servers that serve PDFs as
         // application/octet-stream or text/plain.
         let mut pdf_magic_chunk = None;
-        if !is_pdf {
+        if !kind.is_pdf {
             match response.chunk().await {
                 Ok(Some(first_chunk)) => {
                     if first_chunk.len() >= 5 && &first_chunk[..5] == b"%PDF-" {
-                        is_pdf = true;
+                        kind.is_pdf = true;
                     }
                     pdf_magic_chunk = Some(first_chunk);
                 }
@@ -324,39 +341,17 @@ impl FetchClient {
             }
         }
 
-        // Accept a broad set of text-based content types. Binary
-        // types (images, PDFs, etc.) are rejected; text/* and known
-        // application types are accepted for content extraction.
-        let is_text = content_type
-            .as_ref()
-            .map(|ct| {
-                let ct_lower = ct.to_lowercase();
-                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
-                ct_base.starts_with("text/")
-                    || ct_base == "application/json"
-                    || ct_base == "application/ld+json"
-                    || (ct_base.starts_with("application/") && ct_base.ends_with("+json"))
-                    || ct_base == "application/toml"
-                    || ct_base == "application/x-yaml"
-                    || ct_base == "application/yaml"
-                    || ct_base == "application/javascript"
-                    || ct_base == "application/typescript"
-                    || ct_base == "application/x-sh"
-                    || ct_base == "application/xml"
-            })
-            .unwrap_or(false);
-
-        if !is_html && !is_text && !is_pdf {
+        if !kind.is_html && !kind.is_text && !kind.is_pdf {
             return Err(FetchError::UnsupportedContentType(
                 content_type.clone().unwrap_or_else(|| "unknown".into()),
             ));
         }
 
         // Handle PDF-specific gates before reading the body.
-        if is_pdf && !cfg!(feature = "pdf") {
+        if kind.is_pdf && !cfg!(feature = "pdf") {
             return Err(FetchError::PdfNotCompiledIn);
         }
-        if is_pdf && !self.limits.pdf_enabled {
+        if kind.is_pdf && !self.limits.pdf_enabled {
             return Err(FetchError::PdfDisabled);
         }
 
@@ -422,62 +417,21 @@ impl FetchClient {
 
         let final_url_parsed = url::Url::parse(&final_url).ok();
 
-        let is_html = content_type
-            .as_ref()
-            .map(|ct| {
-                let ct_lower = ct.to_lowercase();
-                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
-                ct_base == "text/html" || ct_base == "application/xhtml+xml"
-            })
-            .unwrap_or(false);
-        let is_pdf_by_ct = content_type
-            .as_ref()
-            .map(|ct| {
-                let ct_lower = ct.to_lowercase();
-                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
-                ct_base == "application/pdf"
-            })
-            .unwrap_or(false);
-        let is_pdf_by_url = if !is_pdf_by_ct {
-            final_url_parsed
-                .as_ref()
-                .map(|u| u.path().to_ascii_lowercase().ends_with(".pdf"))
-                .unwrap_or(false)
-        } else {
-            false
-        };
-        let mut is_pdf = is_pdf_by_ct || is_pdf_by_url;
-        if !is_pdf && body.starts_with(b"%PDF-") {
-            is_pdf = true;
-        }
-        let is_text = content_type
-            .as_ref()
-            .map(|ct| {
-                let ct_lower = ct.to_lowercase();
-                let ct_base = ct_lower.split(';').next().unwrap_or("").trim();
-                ct_base.starts_with("text/")
-                    || ct_base == "application/json"
-                    || ct_base == "application/ld+json"
-                    || (ct_base.starts_with("application/") && ct_base.ends_with("+json"))
-                    || ct_base == "application/toml"
-                    || ct_base == "application/x-yaml"
-                    || ct_base == "application/yaml"
-                    || ct_base == "application/javascript"
-                    || ct_base == "application/typescript"
-                    || ct_base == "application/x-sh"
-                    || ct_base == "application/xml"
-            })
-            .unwrap_or(false);
+        let kind = classify_content_type(
+            content_type.as_deref(),
+            &final_url,
+            body.starts_with(b"%PDF-"),
+        );
 
-        if !is_html && !is_text && !is_pdf {
+        if !kind.is_html && !kind.is_text && !kind.is_pdf {
             return Err(FetchError::UnsupportedContentType(
                 content_type.clone().unwrap_or_else(|| "unknown".into()),
             ));
         }
-        if is_pdf && !cfg!(feature = "pdf") {
+        if kind.is_pdf && !cfg!(feature = "pdf") {
             return Err(FetchError::PdfNotCompiledIn);
         }
-        if is_pdf && !self.limits.pdf_enabled {
+        if kind.is_pdf && !self.limits.pdf_enabled {
             return Err(FetchError::PdfDisabled);
         }
 
@@ -486,7 +440,7 @@ impl FetchClient {
         // extraction, sanitization, and document construction differ
         // from the shared HTML/text pipeline.
         #[cfg(feature = "pdf")]
-        if is_pdf {
+        if kind.is_pdf {
             // Metadata-only mode: skip expensive text extraction.
             // Return fetch metadata and a minimal empty document.
             if extract_mode == ExtractMode::MetadataOnly {
@@ -747,7 +701,7 @@ impl FetchClient {
             links_seen,
             links_truncated,
         ) = if extract_mode == ExtractMode::MetadataOnly {
-            if is_html {
+            if kind.is_html {
                 // Keep metadata extraction bounded, but skip body text
                 // and structured document construction.
                 let (t, d, _blocks, w, _) =
@@ -769,7 +723,7 @@ impl FetchClient {
             } else {
                 (None, None, None, Vec::new(), Vec::new(), false, 0, false)
             }
-        } else if is_html {
+        } else if kind.is_html {
             let is_markdown = extract_mode == ExtractMode::Markdown;
             let (t, d, rendered, w, _non_utf8) =
                 render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown);
@@ -893,7 +847,7 @@ impl FetchClient {
             // language, and rendering strategy.
             let detected = detect::classify(content_type.as_deref(), &final_url, &body);
 
-            let doc_kind = if is_html {
+            let doc_kind = if kind.is_html {
                 DocumentKind::Html
             } else {
                 detected.kind
@@ -929,7 +883,7 @@ impl FetchClient {
                 })
                 .filter(|e| !e.is_empty());
 
-            let (blocks, outline, text_chars, block_truncated) = if is_html {
+            let (blocks, outline, text_chars, block_truncated) = if kind.is_html {
                 // Reuse cached render from the extraction phase (avoids
                 // a second parse + DOM walk of the same HTML body).
                 let rendered = cached_html_render.take().unwrap_or_else(|| {

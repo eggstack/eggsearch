@@ -386,13 +386,13 @@ impl FetchCache {
         let derived = self.derived.lock().await;
         let current_raw = self.current_raw_bytes.load(Ordering::Relaxed);
         let summed_raw: usize = raw.iter().map(|(_, e)| e.body.len()).sum();
-        debug_assert_eq!(
+        assert_eq!(
             current_raw, summed_raw,
             "raw byte counter drifted from LruCache contents"
         );
         let current_derived = self.current_derived_bytes.load(Ordering::Relaxed);
         let summed_derived: usize = derived.iter().map(|(_, e)| derived_entry_bytes(e)).sum();
-        debug_assert_eq!(
+        assert_eq!(
             current_derived, summed_derived,
             "derived byte counter drifted from LruCache contents"
         );
@@ -1003,6 +1003,53 @@ mod tests {
             &freshness,
             &CacheScope::Anonymous
         ));
+    }
+
+    #[test]
+    fn vary_semantics_survive_304_refresh() {
+        let empty_validators = CacheValidators {
+            etag: None,
+            last_modified: None,
+        };
+        let vary_values = [
+            "Accept-Encoding",
+            "accept-encoding",
+            "ACCEPT-ENCODING",
+            "Accept-Encoding, Accept-Encoding",
+        ];
+        for v in vary_values {
+            let mut freshness = CacheFreshness::default();
+            let mut validators = empty_validators.clone();
+            let mut map = HashMap::new();
+            map.insert("vary".to_string(), v.to_string());
+            map.insert("cache-control".to_string(), "max-age=300".to_string());
+            apply_304_headers(&mut freshness, &mut validators, &map);
+            assert!(
+                should_cache_response(200, Some("text/html"), &freshness, &CacheScope::Anonymous),
+                "expected cacheable after 304 refresh for Vary: {v:?}, got vary={:?}",
+                freshness.vary
+            );
+        }
+
+        let reject_values = [
+            "Authorization",
+            "User-Agent",
+            "Accept-Encoding, User-Agent",
+            "Cookie",
+        ];
+        for v in reject_values {
+            let mut freshness = CacheFreshness::default();
+            let mut validators = empty_validators.clone();
+            let mut map = HashMap::new();
+            map.insert("vary".to_string(), v.to_string());
+            map.insert("cache-control".to_string(), "max-age=300".to_string());
+            apply_304_headers(&mut freshness, &mut validators, &map);
+            assert!(
+                !should_cache_response(200, Some("text/html"), &freshness, &CacheScope::Anonymous),
+                "expected rejected after 304 refresh for Vary: {v:?}, got vary={:?}",
+                freshness.vary
+            );
+        }
     }
 
     #[test]

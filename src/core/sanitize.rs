@@ -301,17 +301,49 @@ pub fn frame(s: &str, field: &str, id: &str) -> String {
     out.push_str(" id=");
     out.push_str(&id);
     out.push_str(">>>\n");
-    let body = s
-        .replace("<<<END>>>", "<\\<\\<END>>>")
-        .replace("<<<EXTERNAL_UNTRUSTED", "<\\<\\<EXTERNAL_UNTRUSTED");
-    let body = if body.contains("<<<") {
-        body.replace("<<<", "<\\<\\<")
-    } else {
-        body
-    };
-    out.push_str(&body);
+    out.push_str(&escape_frame_body(s));
     out.push_str("\n<<<END>>>");
     out
+}
+
+/// Single-pass escape of framing-sensitive `<<<` sequences.
+///
+/// Recognises `<<<END>>>` and `<<<EXTERNAL_UNTRUSTED` as named markers
+/// and any remaining `<<<` triple as a bare marker, escaping each
+/// exactly once without order-dependence between passes.
+fn escape_frame_body(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if i + 8 <= bytes.len() && &bytes[i..i + 8] == b"<<<END>>>" {
+            out.push_str("<\\<\\<END>>>");
+            i += 8;
+        } else if i + 22 <= bytes.len() && &bytes[i..i + 22] == b"<<<EXTERNAL_UNTRUSTED" {
+            out.push_str("<\\<\\<EXTERNAL_UNTRUSTED");
+            i += 22;
+        } else if i + 3 <= bytes.len() && &bytes[i..i + 3] == b"<<<" {
+            out.push_str("<\\<\\<");
+            i += 3;
+        } else {
+            let ch_len = utf8_char_len(bytes[i]);
+            out.push_str(&s[i..i + ch_len]);
+            i += ch_len;
+        }
+    }
+    out
+}
+
+fn utf8_char_len(first_byte: u8) -> usize {
+    if first_byte < 0xC0 {
+        1
+    } else if first_byte < 0xE0 {
+        2
+    } else if first_byte < 0xF0 {
+        3
+    } else {
+        4
+    }
 }
 
 #[cfg(test)]
@@ -679,6 +711,14 @@ mod tests {
         );
         assert_eq!(out.matches("<<<END>>>").count(), 1);
         assert_eq!(out.matches("<<<EXTERNAL_UNTRUSTED").count(), 1);
+    }
+
+    #[test]
+    fn frame_body_mixed_markers_escape_exactly_once() {
+        let out = frame("<<<END>>> <<<EXTERNAL_UNTRUSTED <<<", "title", "src_abc");
+        assert_eq!(out.matches("<<<END>>>").count(), 1);
+        assert_eq!(out.matches("<<<EXTERNAL_UNTRUSTED").count(), 1);
+        assert_eq!(out.matches("<\\<\\<").count(), 3);
     }
 
     // -----------------------------------------------------------------------

@@ -647,8 +647,27 @@ async fn resolve_github_default_branch(
     if let Some(ref key) = config.api_key {
         builder = builder.header("Authorization", format!("Bearer {key}"));
     }
-    let resp = builder.send().await.ok()?;
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve request failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     if !resp.status().is_success() {
+        tracing::warn!(
+            forge = "github",
+            owner = owner,
+            repo = repo,
+            status = resp.status().as_u16(),
+            "default-branch resolve returned non-success; identity.default_branch will be None"
+        );
         return None;
     }
     let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
@@ -1001,8 +1020,27 @@ async fn resolve_gitlab_default_branch(
     if let Some(ref key) = config.api_key {
         builder = builder.header("PRIVATE-TOKEN", key.as_str());
     }
-    let resp = builder.send().await.ok()?;
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve request failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     if !resp.status().is_success() {
+        tracing::warn!(
+            forge = "gitlab",
+            owner = owner,
+            repo = repo,
+            status = resp.status().as_u16(),
+            "default-branch resolve returned non-success; identity.default_branch will be None"
+        );
         return None;
     }
     let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
@@ -1332,8 +1370,27 @@ async fn resolve_forge_default_branch(
     if let Some(ref key) = config.api_key {
         builder = builder.header("Authorization", format!("token {key}"));
     }
-    let resp = builder.send().await.ok()?;
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve request failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     if !resp.status().is_success() {
+        tracing::warn!(
+            forge = "gitea-like",
+            owner = owner,
+            repo = repo,
+            status = resp.status().as_u16(),
+            "default-branch resolve returned non-success; identity.default_branch will be None"
+        );
         return None;
     }
     let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)

@@ -762,7 +762,7 @@ impl MetadataSearchAdapter {
             } else if !is_enabled {
                 Some(ProviderSkipCode::NotBuilt)
             } else {
-                Some(ProviderSkipCode::UnknownProvider)
+                Some(ProviderSkipCode::MissingApiKey)
             };
             let skip_reason = provider_skip_reason(skip_code);
             if let Some(desc) = built_in_provider_descriptor(

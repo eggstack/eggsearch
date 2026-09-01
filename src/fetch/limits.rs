@@ -154,6 +154,12 @@ pub struct FetchLimits {
     /// Maximum character count cap.
     pub max_chars_cap: usize,
     /// Request timeout in milliseconds.
+    ///
+    /// The DNS resolution phase consumes at most `timeout_ms / 2`
+    /// (with a 1500 ms floor), so a fetch with `timeout_ms = 1000`
+    /// has only ~500 ms left for the HTTP round-trip after DNS.
+    /// Increase `timeout_ms` if cold DNS resolvers cause spurious
+    /// `DNS resolution timed out` errors under short budgets.
     pub timeout_ms: u64,
     /// Maximum redirect count.
     pub redirect_limit: usize,
@@ -198,18 +204,6 @@ impl Default for FetchLimits {
 pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchError> {
     if url_str.trim().is_empty() {
         return Err(FetchError::InvalidUrl("URL must not be empty".into()));
-    }
-
-    if let Some(host) = zone_id_host(url_str) {
-        let ip_str = host.split("%25").next().unwrap_or(host);
-        if let Ok(ip) = IpAddr::from_str(ip_str) {
-            let class = classify_ip(ip);
-            if !is_allowed_by_policy(class, limits.allow_localhost, limits.allow_private_network) {
-                return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "address not allowed by policy: {ip}"
-                )));
-            }
-        }
     }
 
     let url =
@@ -276,16 +270,6 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
     }
 
     Ok(url)
-}
-
-fn zone_id_host(url_str: &str) -> Option<&str> {
-    let authority = url_str.split_once("://")?.1;
-    let authority = authority.split(['/', '?', '#']).next()?;
-    let host_port = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    let host = host_port.strip_prefix('[')?.split_once(']')?.0;
-    host.contains("%25").then_some(host)
 }
 
 /// Full validation of a fetch target: scheme, credentials, localhost,
@@ -382,7 +366,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
         _ => format!("{host}:{port}"),
     };
     let dns_timeout = std::time::Duration::from_millis(limits.timeout_ms / 2)
-        .max(std::time::Duration::from_millis(1));
+        .max(std::time::Duration::from_millis(1500));
     let resolved = tokio::time::timeout(
         dns_timeout,
         tokio::task::spawn_blocking(move || {
@@ -511,8 +495,11 @@ mod tests {
         let limits = FetchLimits::default();
         let result = validate_url("http://[::1%25en0]:8080/", &limits);
         assert!(
-            matches!(result, Err(FetchError::PrivateNetworkBlocked(_))),
-            "got: {result:?}"
+            matches!(
+                result,
+                Err(FetchError::PrivateNetworkBlocked(_)) | Err(FetchError::InvalidUrl(_))
+            ),
+            "zone-ID loopback URL must be rejected (either as blocked or invalid URL), got: {result:?}"
         );
     }
 

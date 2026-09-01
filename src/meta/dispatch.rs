@@ -288,9 +288,6 @@ pub(crate) async fn dispatch_parallel(
                         job.intended_roles.clone(),
                     ))
                     .map(|t| t.elapsed().as_millis() as u64);
-                *terminal_subquery_counts
-                    .entry(job.subquery_id.clone())
-                    .or_insert(0) += 1;
                 let (outcome, intended_roles) = match &job.capability_disposition {
                     CapabilityDisposition::Unsupported { unsupported_roles } => (
                         RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
@@ -1056,6 +1053,50 @@ mod tests {
             attempt.truncation_evidence,
             crate::core::retrieval_status::TruncationEvidence::LimitReachedUnknown
         );
+    }
+
+    #[tokio::test]
+    async fn capability_skips_do_not_count_toward_subquery_completion() {
+        let engine: Arc<dyn SearchEngine> = Arc::new(RoleEngine {
+            unsupported: EvidenceRole::OfficialDocumentation,
+        });
+        let mut unsupported_only =
+            make_job("skipped", "q", "role_engine", Arc::clone(&engine), 0, 0, 0);
+        unsupported_only.intended_roles = vec![EvidenceRole::OfficialDocumentation];
+        unsupported_only.capability_disposition = CapabilityDisposition::Unsupported {
+            unsupported_roles: vec![EvidenceRole::OfficialDocumentation],
+        };
+
+        let mut supported_only = make_job(
+            "completed",
+            "q",
+            "role_engine",
+            Arc::clone(&engine),
+            1,
+            1,
+            0,
+        );
+        supported_only.intended_roles = vec![EvidenceRole::PrimaryImplementation];
+        supported_only.capability_disposition = CapabilityDisposition::FullySupported;
+
+        let output = dispatch_parallel(
+            vec![unsupported_only, supported_only],
+            DispatchConfig {
+                candidate_limit: 10,
+                global_timeout: Duration::from_secs(1),
+                max_concurrent_jobs: 2,
+                max_concurrent_per_provider: 2,
+            },
+            "test",
+        )
+        .await;
+
+        assert!(!output.deadline.exceeded);
+        assert_eq!(
+            output.deadline.subqueries_completed, 1,
+            "only the supported subquery should be marked completed; capability-skipped subquery must not count"
+        );
+        assert_eq!(output.deadline.subqueries_interrupted, 0);
     }
 
     fn make_job(
