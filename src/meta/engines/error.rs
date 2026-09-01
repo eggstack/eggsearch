@@ -26,6 +26,12 @@ pub enum EngineError {
         engine: &'static str,
         reason: String,
     },
+
+    #[error("engine '{engine}' unsupported operation: {reason}")]
+    Unsupported {
+        engine: &'static str,
+        reason: String,
+    },
 }
 
 #[cfg(test)]

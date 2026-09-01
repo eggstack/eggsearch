@@ -229,18 +229,7 @@ fn strip_html_tags(html: &str) -> String {
 }
 
 fn truncate(s: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let char_len = s.chars().count();
-    if char_len <= max_chars {
-        return s.to_string();
-    }
-    let truncated: String = s.chars().take(max_chars).collect();
-    match truncated.rfind(char::is_whitespace) {
-        Some(pos) if pos > 0 => truncated[..pos].to_string(),
-        _ => truncated,
-    }
+    crate::core::sanitize::truncate_at_word(s, max_chars)
 }
 
 #[cfg(test)]

@@ -1189,7 +1189,7 @@ pub fn built_in_provider_descriptor(
                 supports_security_search: true,
                 supports_package_metadata: false,
                 supports_advisory_lookup_by_id: true,
-                supports_advisory_lookup_by_package: true,
+                supports_advisory_lookup_by_package: false,
                 supports_exploit_kev_status: false,
                 supports_scholarly_search: false,
                 supports_doi_lookup: false,

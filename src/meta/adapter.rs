@@ -88,6 +88,7 @@ fn classify(err: &EngineError) -> ErrorClass {
             ErrorClass::Panic
         }
         Http { .. } | NetworkError { .. } => ErrorClass::NetworkError,
+        Unsupported { .. } => ErrorClass::Unknown,
     }
 }
 
@@ -2580,13 +2581,16 @@ pub fn build_default_engines(
                 }));
             }
             "sourcegraph" => {
-                let api_key = std::env::var("SOURCEGRAPH_API_KEY")
-                    .ok()
-                    .filter(|k| !k.is_empty());
-                engines.push(Arc::new(SourcegraphCodeEngine {
-                    client: client.clone(),
-                    api_key,
-                }));
+                if !api_providers.contains_key("sourcegraph") {
+                    let api_key = std::env::var("SOURCEGRAPH_API_KEY")
+                        .ok()
+                        .filter(|k| !k.is_empty());
+                    engines.push(Arc::new(SourcegraphCodeEngine {
+                        client: client.clone(),
+                        api_key,
+                        base_url: None,
+                    }));
+                }
             }
             "nvd" => {
                 let api_key = std::env::var("NVD_API_KEY").ok().filter(|k| !k.is_empty());
@@ -2626,6 +2630,19 @@ pub fn build_default_engines(
             continue;
         }
         if !enabled_providers.iter().any(|p| p == id) {
+            continue;
+        }
+        if id == "sourcegraph" {
+            let api_key = api_cfg
+                .api_key_env
+                .as_deref()
+                .and_then(|env| std::env::var(env).ok())
+                .filter(|k| !k.is_empty());
+            engines.push(Arc::new(SourcegraphCodeEngine {
+                client: client.clone(),
+                api_key,
+                base_url: api_cfg.base_url.clone(),
+            }));
             continue;
         }
         let api_key = match api_cfg

@@ -386,15 +386,26 @@ impl FetchCache {
         let derived = self.derived.lock().await;
         let current_raw = self.current_raw_bytes.load(Ordering::Relaxed);
         let summed_raw: usize = raw.iter().map(|(_, e)| e.body.len()).sum();
-        assert_eq!(
-            current_raw, summed_raw,
-            "raw byte counter drifted from LruCache contents"
-        );
+        if current_raw != summed_raw {
+            tracing::error!(
+                current_raw,
+                summed_raw,
+                "raw byte counter drifted from LruCache contents"
+            );
+        }
         let current_derived = self.current_derived_bytes.load(Ordering::Relaxed);
         let summed_derived: usize = derived.iter().map(|(_, e)| derived_entry_bytes(e)).sum();
-        assert_eq!(
+        if current_derived != summed_derived {
+            tracing::error!(
+                current_derived,
+                summed_derived,
+                "derived byte counter drifted from LruCache contents"
+            );
+        }
+        debug_assert_eq!(current_raw, summed_raw, "raw byte counter drifted");
+        debug_assert_eq!(
             current_derived, summed_derived,
-            "derived byte counter drifted from LruCache contents"
+            "derived byte counter drifted"
         );
         CacheStats {
             raw_entries: raw.len(),

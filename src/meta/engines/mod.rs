@@ -249,6 +249,7 @@ pub struct SemanticScholarEngine {
 pub struct SourcegraphCodeEngine {
     pub client: Arc<Client>,
     pub api_key: Option<String>,
+    pub base_url: Option<String>,
 }
 
 impl SearchEngine for DuckDuckGoEngine {
@@ -853,6 +854,7 @@ impl SearchEngine for SourcegraphCodeEngine {
             sourcegraph::search(
                 &self.client,
                 self.api_key.as_deref(),
+                self.base_url.as_deref(),
                 query,
                 max_results,
                 timeout,

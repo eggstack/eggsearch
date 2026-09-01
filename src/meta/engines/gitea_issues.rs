@@ -52,20 +52,8 @@ struct GiteaRepo {
     full_name: Option<String>,
 }
 
-/// UTF-8-safe snippet truncation.
 fn truncate_body(body: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let body_char_len = body.chars().count();
-    if body_char_len <= max_chars {
-        return body.to_string();
-    }
-    let truncated: String = body.chars().take(max_chars).collect();
-    match truncated.rfind(char::is_whitespace) {
-        Some(pos) if pos > 0 => truncated[..pos].to_string(),
-        _ => truncated,
-    }
+    crate::core::sanitize::truncate_at_word(body, max_chars)
 }
 
 pub async fn search(
@@ -142,6 +130,9 @@ fn convert(response: GiteaSearchResponse, max_results: usize) -> Vec<SearchResul
                 continue;
             };
             if raw_url.is_empty() {
+                continue;
+            }
+            if !super::is_http_url(raw_url) {
                 continue;
             }
 
@@ -463,8 +454,8 @@ mod tests {
                         {
                             "scope": "issue",
                             "result": [
-                                {"title": "Bug in parser", "url": "/tokio-rs/axum/issues/1", "body": "Parser crashes", "state": "open", "labels": ["bug"], "repository": {"full_name": "tokio-rs/axum"}},
-                                {"title": "Add feature", "url": "/tokio-rs/axum/issues/2", "body": "Need feature X", "state": "closed", "repository": {"full_name": "tokio-rs/axum"}}
+                                {"title": "Bug in parser", "url": "https://gitea.example.com/tokio-rs/axum/issues/1", "body": "Parser crashes", "state": "open", "labels": ["bug"], "repository": {"full_name": "tokio-rs/axum"}},
+                                {"title": "Add feature", "url": "https://gitea.example.com/tokio-rs/axum/issues/2", "body": "Need feature X", "state": "closed", "repository": {"full_name": "tokio-rs/axum"}}
                             ]
                         }
                     ]

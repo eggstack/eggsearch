@@ -252,6 +252,9 @@ fn native_error_outcome(error: &EngineError) -> (RetrievalAttemptOutcome, String
         EngineError::NetworkError { .. } | EngineError::Http { .. } => {
             (RetrievalAttemptOutcome::Failed, "network_error".to_string())
         }
+        EngineError::Unsupported { .. } => {
+            (RetrievalAttemptOutcome::Failed, "unsupported".to_string())
+        }
     }
 }
 

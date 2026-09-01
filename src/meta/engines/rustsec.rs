@@ -84,7 +84,7 @@ impl super::SearchEngine for RustSecEngine {
     fn advisory_capabilities(&self) -> super::AdvisoryCapabilities {
         super::AdvisoryCapabilities {
             lookup_by_id: true,
-            query_by_package: true,
+            query_by_package: false,
         }
     }
 
@@ -211,13 +211,14 @@ async fn lookup_by_id(
 }
 
 async fn search_by_keyword(
-    client: &Client,
-    keyword: &str,
-    timeout: Duration,
+    _client: &Client,
+    _keyword: &str,
+    _timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
-    let _ = keyword;
-    let _ = (client, timeout);
-    Ok(Vec::new())
+    Err(EngineError::Unsupported {
+        engine: ENGINE,
+        reason: "keyword search not supported; use RUSTSEC-YYYY-NNNN ID lookup".to_string(),
+    })
 }
 
 fn convert_to_result(advisory: &RustSecAdvisory) -> SearchResult {
@@ -323,18 +324,7 @@ fn convert_to_metadata(advisory: &RustSecAdvisory) -> VulnerabilityMetadata {
 }
 
 fn truncate(s: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let char_len = s.chars().count();
-    if char_len <= max_chars {
-        return s.to_string();
-    }
-    let truncated: String = s.chars().take(max_chars).collect();
-    match truncated.rfind(char::is_whitespace) {
-        Some(pos) if pos > 0 => truncated[..pos].to_string(),
-        _ => truncated,
-    }
+    crate::core::sanitize::truncate_at_word(s, max_chars)
 }
 
 #[cfg(test)]
@@ -401,6 +391,6 @@ mod tests {
         assert_eq!(desc.id, "rustsec");
         assert!(desc.capabilities.supports_security_search);
         assert!(desc.capabilities.supports_advisory_lookup_by_id);
-        assert!(desc.capabilities.supports_advisory_lookup_by_package);
+        assert!(!desc.capabilities.supports_advisory_lookup_by_package);
     }
 }

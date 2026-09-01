@@ -89,31 +89,8 @@ pub async fn search(
     Ok(convert(parsed.items, max_results))
 }
 
-/// UTF-8-safe snippet truncation that preserves the historical
-/// word-boundary-trim semantics without ever slicing by byte offset
-/// inside a multi-byte code point.
-///
-/// Counts Unicode scalar values (chars), not bytes. The returned
-/// `pos` from `rfind(char::is_whitespace)` is a valid UTF-8 boundary
-/// because it indexes inside the already-valid truncated string.
-///
-/// `max_chars == 0` returns an empty string. Inputs shorter than
-/// `max_chars` characters are returned unchanged (no word-boundary
-/// trim applied — a body that already fits should not be shortened
-/// just because it contains whitespace).
 fn truncate_body(body: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let body_char_len = body.chars().count();
-    if body_char_len <= max_chars {
-        return body.to_string();
-    }
-    let truncated: String = body.chars().take(max_chars).collect();
-    match truncated.rfind(char::is_whitespace) {
-        Some(pos) if pos > 0 => truncated[..pos].to_string(),
-        _ => truncated,
-    }
+    crate::core::sanitize::truncate_at_word(body, max_chars)
 }
 
 fn parse_owner_repo(html_url: &str) -> Option<(String, String)> {

@@ -69,6 +69,7 @@ struct SourcegraphPosition {
 pub async fn search(
     client: &Client,
     api_key: Option<&str>,
+    base_url: Option<&str>,
     query: &str,
     max_results: usize,
     timeout: Duration,
@@ -77,10 +78,12 @@ pub async fn search(
         return Ok(Vec::new());
     }
 
+    let effective_base = base_url.filter(|s| !s.is_empty());
+    let resolved_base = effective_base.unwrap_or(DEFAULT_BASE_URL);
     let count = max_results.clamp(1, 100);
     let url = format!(
         "{}/json?query={}&display={}",
-        DEFAULT_BASE_URL,
+        resolved_base.trim_end_matches('/'),
         urlencoding::encode(query),
         count,
     );
@@ -112,23 +115,59 @@ pub async fn search(
             reason: format!("invalid JSON: {e}"),
         })?;
 
-    Ok(convert(parsed.results, max_results))
+    Ok(convert_with_base(
+        parsed.results,
+        max_results,
+        effective_base,
+    ))
 }
 
+#[allow(dead_code)]
 fn convert(results: Vec<SourcegraphResult>, max_results: usize) -> Vec<SearchResult> {
+    convert_with_base(results, max_results, None)
+}
+
+fn convert_with_base(
+    results: Vec<SourcegraphResult>,
+    max_results: usize,
+    base_url: Option<&str>,
+) -> Vec<SearchResult> {
     let mut out = Vec::with_capacity(max_results.min(results.len()));
     for result in results {
         if out.len() >= max_results {
             break;
         }
-        if let Some(card) = convert_result(result) {
+        if let Some(card) = convert_result_with_base(result, base_url) {
             out.push(card);
         }
     }
     out
 }
 
+#[allow(dead_code)]
 fn convert_result(result: SourcegraphResult) -> Option<SearchResult> {
+    convert_result_with_base(result, None)
+}
+
+fn web_base_from_api_base(base_url: Option<&str>) -> Option<String> {
+    let base = base_url?.trim();
+    if base.is_empty() {
+        return None;
+    }
+    if let Some(idx) = base.find("/.api") {
+        let origin = base[..idx].trim_end_matches('/');
+        if origin.is_empty() {
+            return None;
+        }
+        return Some(origin.to_string());
+    }
+    Some(base.trim_end_matches('/').to_string())
+}
+
+fn convert_result_with_base(
+    result: SourcegraphResult,
+    base_url: Option<&str>,
+) -> Option<SearchResult> {
     let repo = result.repository?;
     let repo_name = repo.name?.trim().to_string();
     if repo_name.is_empty() {
@@ -140,7 +179,9 @@ fn convert_result(result: SourcegraphResult) -> Option<SearchResult> {
         return None;
     }
 
-    let url = format!("https://sourcegraph.com/{repo_name}/-/blob/{path}");
+    let web_base =
+        web_base_from_api_base(base_url).unwrap_or_else(|| "https://sourcegraph.com".to_string());
+    let url = format!("{web_base}/{repo_name}/-/blob/{path}");
 
     let title = format!("{path} - {repo_name}");
 

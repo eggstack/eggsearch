@@ -184,6 +184,22 @@ pub(crate) fn normalize_whitespace(s: &str) -> String {
     out
 }
 
+/// Truncate `s` to at most `max_chars` characters at a word boundary.
+pub fn truncate_at_word(s: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    let char_len = s.chars().count();
+    if char_len <= max_chars {
+        return s.to_string();
+    }
+    let truncated: String = s.chars().take(max_chars).collect();
+    match truncated.rfind(char::is_whitespace) {
+        Some(pos) if pos > 0 => truncated[..pos].to_string(),
+        _ => truncated,
+    }
+}
+
 /// Scan `s` for known prompt-injection markers. The input is not
 /// modified. Multiple hits in the same input are all returned.
 ///
@@ -316,12 +332,12 @@ fn escape_frame_body(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if i + 8 <= bytes.len() && &bytes[i..i + 8] == b"<<<END>>>" {
+        if i + 9 <= bytes.len() && &bytes[i..i + 9] == b"<<<END>>>" {
             out.push_str("<\\<\\<END>>>");
-            i += 8;
-        } else if i + 22 <= bytes.len() && &bytes[i..i + 22] == b"<<<EXTERNAL_UNTRUSTED" {
+            i += 9;
+        } else if i + 21 <= bytes.len() && &bytes[i..i + 21] == b"<<<EXTERNAL_UNTRUSTED" {
             out.push_str("<\\<\\<EXTERNAL_UNTRUSTED");
-            i += 22;
+            i += 21;
         } else if i + 3 <= bytes.len() && &bytes[i..i + 3] == b"<<<" {
             out.push_str("<\\<\\<");
             i += 3;

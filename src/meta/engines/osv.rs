@@ -680,18 +680,7 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
 
 #[allow(dead_code)]
 fn truncate_body(body: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let body_char_len = body.chars().count();
-    if body_char_len <= max_chars {
-        return body.to_string();
-    }
-    let truncated: String = body.chars().take(max_chars).collect();
-    match truncated.rfind(char::is_whitespace) {
-        Some(pos) if pos > 0 => truncated[..pos].to_string(),
-        _ => truncated,
-    }
+    crate::core::sanitize::truncate_at_word(body, max_chars)
 }
 
 #[cfg(test)]

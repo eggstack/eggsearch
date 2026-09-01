@@ -52,7 +52,6 @@ pub async fn search(
             .get(url)
             .query(&[("q", query), ("count", &max_results.to_string())])
             .header("Accept", "application/json")
-            .header("Accept", "application/x-ndjson")
             .header("X-Subscription-Token", api_key)
             .send()
             .await

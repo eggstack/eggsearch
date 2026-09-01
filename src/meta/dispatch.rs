@@ -595,6 +595,10 @@ pub(crate) async fn dispatch_parallel(
                                         RetrievalAttemptOutcome::Failed,
                                         Some("network_error".to_string()),
                                     ),
+                                    EngineError::Unsupported { .. } => (
+                                        RetrievalAttemptOutcome::Failed,
+                                        Some("unsupported".to_string()),
+                                    ),
                                 };
                                 *terminal_subquery_counts
                                     .entry(tr.subquery_id.clone())
