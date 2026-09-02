@@ -405,7 +405,23 @@ fn is_blocked_address(addr: SocketAddr, limits: &FetchLimits) -> bool {
 }
 
 pub(crate) fn is_private_hostname(host: &str) -> bool {
-    host.ends_with(".internal") || host.ends_with(".private") || host.ends_with(".local")
+    if host == "host-gateway"
+        || host == "host.docker.internal"
+        || host == "metadata.google.internal"
+        || host == "metadata.google"
+    {
+        return true;
+    }
+    host.ends_with(".internal")
+        || host.ends_with(".private")
+        || host.ends_with(".local")
+        || host.ends_with(".corp")
+        || host.ends_with(".lan")
+        || host.ends_with(".home")
+        || host.ends_with(".home.arpa")
+        || host.ends_with(".invalid")
+        || host.ends_with(".test")
+        || host.ends_with(".localhost")
 }
 
 fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {

@@ -10,11 +10,9 @@ use crate::meta::version_compare::{compare_versions_for_ecosystem, version_satis
 pub fn extract_advisory_ranges(vuln: &VulnerabilityMetadata) -> Vec<AdvisoryRange> {
     let mut ranges = Vec::new();
 
-    let ecosystem = vuln
-        .ecosystem
-        .as_deref()
-        .and_then(PackageEcosystem::parse)
-        .unwrap_or(PackageEcosystem::CratesIo);
+    let Some(ecosystem) = vuln.ecosystem.as_deref().and_then(PackageEcosystem::parse) else {
+        return ranges;
+    };
     let package = vuln.package.clone().unwrap_or_default();
 
     if package.is_empty() {

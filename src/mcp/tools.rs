@@ -1082,21 +1082,16 @@ pub async fn run_repo_search(
     )?;
 
     let (owner, repo) = if let Some(r) = &args.repo {
-        if r.contains('/') && args.owner.is_none() {
-            match r.split_once('/') {
-                Some((o, rest)) => {
-                    if o.is_empty() || rest.is_empty() {
-                        return Err(ToolError::Validation(format!(
-                            "invalid repo '{r}': must be owner/name with non-empty parts"
-                        )));
-                    }
-                    (Some(o.to_string()), Some(rest.to_string()))
+        if let Some((o, rest)) = r.split_once('/') {
+            if args.owner.is_none() {
+                if o.is_empty() || rest.is_empty() {
+                    return Err(ToolError::Validation(format!(
+                        "invalid repo '{r}': must be owner/name with non-empty parts"
+                    )));
                 }
-                None => {
-                    return Err(ToolError::internal(format!(
-                        "repo '{r}' contains '/' but could not be split"
-                    )))
-                }
+                (Some(o.to_string()), Some(rest.to_string()))
+            } else {
+                (args.owner.clone(), args.repo.clone())
             }
         } else {
             (args.owner.clone(), args.repo.clone())
@@ -1563,15 +1558,13 @@ pub fn run_provider_status(
         {
             let compiled = true;
             let configured = state.config.fetch.browser.enabled;
-            let discovery_state = crate::fetch::browser::discover_browser(
-                state.config.fetch.browser.executable.as_deref(),
-            );
+            let discovery_state = &state.browser_discovery_state;
             let discovered = discovery_state.is_available();
             let usable = compiled && configured && discovered;
             let reason = if !configured {
                 Some("disabled in config".to_string())
             } else {
-                match &discovery_state {
+                match discovery_state {
                     crate::fetch::browser::types::BrowserDiscoveryState::ExplicitPathInvalid {
                         path,
                     } => Some(format!("explicit path invalid: {path}")),
@@ -1887,6 +1880,7 @@ fn build_code_hosts_summary(descriptors: &[ProviderDescriptor]) -> Vec<serde_jso
             "github_code" | "github_issues" | "github_releases" => "github",
             "gitlab_code" | "gitlab_issues" | "gitlab_releases" => "gitlab",
             "gitea_code" | "gitea_issues" | "gitea_releases" => "gitea",
+            "forgejo_code" | "forgejo_issues" | "forgejo_releases" => "forgejo",
             _ => continue,
         };
 
@@ -2215,7 +2209,7 @@ pub async fn run_web_fetch(
     }
 
     let scope = if let Some(ref id) = profile_cache_scope_id {
-        CacheScope::Profile(id.clone())
+        CacheScope::Profile(crate::fetch::cache::ProfileId::opaque(id.clone()))
     } else {
         CacheScope::Anonymous
     };

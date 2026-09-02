@@ -169,6 +169,14 @@ fn run_version(path: &Path) -> Option<String> {
 }
 
 fn find_in_path(name: &str) -> Option<PathBuf> {
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(name);
+            if candidate.exists() && candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
     let output = Command::new("which").arg(name).output().ok()?;
     if !output.status.success() {
         return None;

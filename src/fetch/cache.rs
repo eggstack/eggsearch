@@ -34,9 +34,36 @@ pub struct ExtractionCacheKey {
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub struct ProfileId(pub String);
+
+impl ProfileId {
+    pub fn opaque(id: String) -> Self {
+        Self(id)
+    }
+}
+
+impl AsRef<str> for ProfileId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for ProfileId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for ProfileId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum CacheScope {
     Anonymous,
-    Profile(String),
+    Profile(ProfileId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -664,13 +691,13 @@ mod tests {
     #[test]
     fn cache_scope_anonymous() {
         let scope = CacheScope::Anonymous;
-        assert_ne!(scope, CacheScope::Profile("test".into()));
+        assert_ne!(scope, CacheScope::Profile(ProfileId("test".into())));
     }
 
     #[test]
     fn cache_scope_profile_partitioning() {
-        let s1 = CacheScope::Profile("alice".into());
-        let s2 = CacheScope::Profile("bob".into());
+        let s1 = CacheScope::Profile(ProfileId("alice".into()));
+        let s2 = CacheScope::Profile(ProfileId("bob".into()));
         assert_ne!(s1, s2);
     }
 
@@ -684,7 +711,10 @@ mod tests {
     #[test]
     fn raw_key_scope_partitioning() {
         let k1 = build_raw_cache_key("https://x.com", &CacheScope::Anonymous);
-        let k2 = build_raw_cache_key("https://x.com", &CacheScope::Profile("test".into()));
+        let k2 = build_raw_cache_key(
+            "https://x.com",
+            &CacheScope::Profile(ProfileId("test".into())),
+        );
         assert_ne!(k1, k2);
     }
 
@@ -967,7 +997,7 @@ mod tests {
             200,
             Some("text/html"),
             &freshness,
-            &CacheScope::Profile("alice".into())
+            &CacheScope::Profile(ProfileId("alice".into()))
         ));
     }
 
@@ -1566,7 +1596,7 @@ mod tests {
 
         let raw_key = RawCacheKey {
             url: "https://x.com".into(),
-            scope: CacheScope::Profile("prof_abc".into()),
+            scope: CacheScope::Profile(ProfileId("prof_abc".into())),
         };
         let raw_entry = RawFetchCacheEntry {
             final_url: "https://x.com".into(),
@@ -1582,7 +1612,7 @@ mod tests {
                 etag: None,
                 last_modified: None,
             },
-            scope: CacheScope::Profile("prof_abc".into()),
+            scope: CacheScope::Profile(ProfileId("prof_abc".into())),
             content_type: Some("text/html".into()),
             content_length_header: Some(5),
             redirect_count: 0,
@@ -1600,7 +1630,7 @@ mod tests {
         assert_eq!(before.derived_entries, 1);
 
         cache
-            .invalidate_scope(&CacheScope::Profile("prof_abc".into()))
+            .invalidate_scope(&CacheScope::Profile(ProfileId("prof_abc".into())))
             .await;
 
         let after = cache.stats().await;

@@ -538,7 +538,30 @@ pub fn compute_fetch_id(key: &FetchKey<'_>) -> String {
     let mut hasher = FnvHasher::new();
     write_entity_prefix(&mut hasher, "fetch");
     if let Some(loc) = key.locator {
-        write_str(&mut hasher, &format!("{loc:?}"));
+        write_str(
+            &mut hasher,
+            match loc.kind {
+                crate::core::repo_fetch::RepoLocatorKind::Remote => "remote",
+                crate::core::repo_fetch::RepoLocatorKind::Workspace => "workspace",
+            },
+        );
+        write_opt_str(
+            &mut hasher,
+            loc.host.as_ref().map(|h| match h {
+                crate::core::code_metadata::CodeHost::Github => "github",
+                crate::core::code_metadata::CodeHost::Gitlab => "gitlab",
+                crate::core::code_metadata::CodeHost::Codeberg => "codeberg",
+                crate::core::code_metadata::CodeHost::Gitea => "gitea",
+                crate::core::code_metadata::CodeHost::Forgejo => "forgejo",
+                crate::core::code_metadata::CodeHost::Unknown => "unknown",
+            }),
+        );
+        write_opt_str(&mut hasher, loc.owner.as_deref());
+        write_opt_str(&mut hasher, loc.repo.as_deref());
+        write_opt_str(&mut hasher, loc.ref_name.as_deref());
+        write_opt_str(&mut hasher, loc.commit_sha.as_deref());
+        write_str(&mut hasher, &loc.path);
+        write_opt_str(&mut hasher, loc.workspace_root.as_deref());
     } else {
         match key.url {
             Some(u) => write_str(&mut hasher, &canonicalize_url(u)),

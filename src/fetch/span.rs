@@ -608,9 +608,9 @@ fn kind_name(kind: SymbolKind) -> &'static str {
 
 /// Find the first line containing `match_text`.
 fn find_match_text_line(all_lines: &[String], match_text: &str) -> Option<(usize, Vec<String>)> {
-    let needle = match_text.to_lowercase();
+    let needle = match_text.to_ascii_lowercase();
     for (idx, line) in all_lines.iter().enumerate() {
-        if line.to_lowercase().contains(&needle) {
+        if line.to_ascii_lowercase().contains(&needle) {
             return Some((idx, vec![]));
         }
     }

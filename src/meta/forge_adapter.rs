@@ -400,7 +400,16 @@ fn build_client() -> Result<Client, String> {
 
 fn timeout_duration(req: &RepoMapRequest) -> Duration {
     let ms = req.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_SECS * 1000);
-    Duration::from_millis(ms.clamp(1000, DEFAULT_TIMEOUT_SECS * 1000))
+    let clamped = ms.clamp(1000, DEFAULT_TIMEOUT_SECS * 1000);
+    if clamped != ms {
+        tracing::warn!(
+            requested_ms = ms,
+            clamped_ms = clamped,
+            "forge timeout clamped to [1000, {}]ms",
+            DEFAULT_TIMEOUT_SECS * 1000
+        );
+    }
+    Duration::from_millis(clamped)
 }
 
 fn max_entries(req: &RepoMapRequest) -> usize {

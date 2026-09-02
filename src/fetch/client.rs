@@ -300,18 +300,17 @@ impl FetchClient {
         // chunked/encoded responses; this is an early bailout.
         let mut content_length_header: Option<usize> = None;
         if let Some(cl_header) = response.headers().get("content-length") {
-            if let Some(content_length) = cl_header
-                .to_str()
-                .ok()
-                .and_then(|s| s.parse::<usize>().ok())
+            if let Some(content_length_u64) =
+                cl_header.to_str().ok().and_then(|s| s.parse::<u64>().ok())
             {
-                content_length_header = Some(content_length);
-                if content_length > self.limits.max_bytes {
+                if content_length_u64 > self.limits.max_bytes as u64 {
                     return Err(FetchError::ContentTooLarge(
-                        content_length,
+                        content_length_u64 as usize,
                         self.limits.max_bytes,
                     ));
                 }
+                let content_length = content_length_u64 as usize;
+                content_length_header = Some(content_length);
             } else {
                 tracing::warn!(
                     header = ?cl_header,
@@ -1179,14 +1178,12 @@ impl FetchClient {
         }
 
         if let Some(cl_header) = response.headers().get("content-length") {
-            if let Some(content_length) = cl_header
-                .to_str()
-                .ok()
-                .and_then(|s| s.parse::<usize>().ok())
+            if let Some(content_length_u64) =
+                cl_header.to_str().ok().and_then(|s| s.parse::<u64>().ok())
             {
-                if content_length > self.limits.max_bytes {
+                if content_length_u64 > self.limits.max_bytes as u64 {
                     return Err(FetchError::ContentTooLarge(
-                        content_length,
+                        content_length_u64 as usize,
                         self.limits.max_bytes,
                     ));
                 }

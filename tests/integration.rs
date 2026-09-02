@@ -16449,6 +16449,9 @@ mod security_context_safety {
             profile_manager: None,
             #[cfg(feature = "browser")]
             browser_lifecycle: None,
+            #[cfg(feature = "browser")]
+            browser_discovery_state:
+                eggsearch::fetch::browser::types::BrowserDiscoveryState::NotFound,
         });
 
         let first = state.local_inventory().await;
@@ -16509,6 +16512,9 @@ mod security_context_safety {
             profile_manager: None,
             #[cfg(feature = "browser")]
             browser_lifecycle: None,
+            #[cfg(feature = "browser")]
+            browser_discovery_state:
+                eggsearch::fetch::browser::types::BrowserDiscoveryState::NotFound,
         });
         let inventory = state.local_inventory().await;
         let names: Vec<&str> = inventory.iter().map(|r| r.root_name.as_str()).collect();

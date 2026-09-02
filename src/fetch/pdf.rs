@@ -298,7 +298,11 @@ fn try_extract_page_labels(doc: &lopdf::Document) -> Option<Vec<String>> {
     let mut i = 0;
     while i < nums_arr.len() {
         let page_idx = match &nums_arr[i] {
-            lopdf::Object::Integer(n) => *n as usize,
+            lopdf::Object::Integer(n) if *n >= 0 => *n as usize,
+            lopdf::Object::Integer(_) => {
+                i += 1;
+                continue;
+            }
             _ => {
                 i += 1;
                 continue;

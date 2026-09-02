@@ -292,16 +292,28 @@ impl BrowserLifecycle {
 
 impl Drop for BrowserLifecycle {
     fn drop(&mut self) {
-        if let Ok(mut handle) = self.handler_handle.try_lock() {
-            if handle.is_some() {
-                let h = handle.take().unwrap();
-                h.abort();
+        match self.handler_handle.try_lock() {
+            Ok(mut handle) => {
+                if handle.is_some() {
+                    let h = handle.take().unwrap();
+                    h.abort();
+                }
+            }
+            Err(_) => {
+                tracing::warn!("browser lifecycle drop: handler_handle mutex already locked");
             }
         }
         if matches!(&self.mode, BrowserExecutionMode::AnonymousEphemeral) {
-            if let Ok(mut dir) = self.user_data_dir.try_lock() {
-                if let Some(path) = dir.take() {
-                    let _ = std::fs::remove_dir_all(&path);
+            match self.user_data_dir.try_lock() {
+                Ok(mut dir) => {
+                    if let Some(path) = dir.take() {
+                        let _ = std::fs::remove_dir_all(&path);
+                    }
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "browser lifecycle drop: user_data_dir mutex locked, leaking ephemeral dir"
+                    );
                 }
             }
         }

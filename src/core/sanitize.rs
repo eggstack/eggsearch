@@ -213,7 +213,7 @@ pub fn scan_injection_markers(s: &str) -> Vec<MarkerHit> {
     if s.chars().any(is_evasive_char) {
         let (normalized, map) = strip_evasive_for_scan(s);
         for hit in scan_all_patterns(&normalized) {
-            let orig_start = map_offset_to_original(&map, hit.byte_offset);
+            let orig_start = map_offset_to_original(&map, hit.byte_offset, s.len());
             if !hits
                 .iter()
                 .any(|h| h.pattern == hit.pattern && h.byte_offset == orig_start)
@@ -295,15 +295,20 @@ fn strip_evasive_for_scan(s: &str) -> (String, Vec<(usize, usize)>) {
     (out, map)
 }
 
-fn map_offset_to_original(map: &[(usize, usize)], normalized_offset: usize) -> usize {
-    if map.is_empty() {
-        return normalized_offset;
-    }
-    if normalized_offset < map[0].0 {
-        return map[0].1;
-    }
-    let idx = map.partition_point(|(norm, _)| *norm <= normalized_offset);
-    map[idx.saturating_sub(1)].1
+fn map_offset_to_original(
+    map: &[(usize, usize)],
+    normalized_offset: usize,
+    original_len: usize,
+) -> usize {
+    let result = if map.is_empty() {
+        normalized_offset
+    } else if normalized_offset < map[0].0 {
+        map[0].1
+    } else {
+        let idx = map.partition_point(|(norm, _)| *norm <= normalized_offset);
+        map[idx.saturating_sub(1)].1
+    };
+    result.min(original_len)
 }
 
 /// Wrap `s` in `<<<EXTERNAL_UNTRUSTED field=... id=...>>>` ...
@@ -368,7 +373,7 @@ mod tests {
 
     #[test]
     fn map_offset_to_original_handles_empty_map() {
-        assert_eq!(map_offset_to_original(&[], 42), 42);
+        assert_eq!(map_offset_to_original(&[], 42, 100), 42);
     }
 
     // -----------------------------------------------------------------------

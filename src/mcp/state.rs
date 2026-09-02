@@ -63,6 +63,10 @@ pub struct ServerState {
     /// warm browser process for reuse across requests.
     #[cfg(feature = "browser")]
     pub browser_lifecycle: Option<Arc<BrowserLifecycle>>,
+    /// Cached browser discovery result computed at startup. Stored to
+    /// avoid re-probing the filesystem on every `provider_status` call.
+    #[cfg(feature = "browser")]
+    pub browser_discovery_state: crate::fetch::browser::types::BrowserDiscoveryState,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -79,6 +83,7 @@ impl std::fmt::Debug for ServerState {
         {
             d.field("profile_manager", &self.profile_manager.is_some());
             d.field("browser_lifecycle", &self.browser_lifecycle.is_some());
+            d.field("browser_discovery_state", &self.browser_discovery_state);
         }
         d.finish()
     }
@@ -230,9 +235,10 @@ impl ServerState {
         };
 
         #[cfg(feature = "browser")]
+        let browser_discovery_state = discover_browser(config.fetch.browser.executable.as_deref());
+        #[cfg(feature = "browser")]
         let browser_lifecycle = if config.fetch.browser.enabled {
-            let discovery_state = discover_browser(config.fetch.browser.executable.as_deref());
-            let discovery = discovery_state.discovery().cloned();
+            let discovery = browser_discovery_state.discovery().cloned();
             let render_policy: crate::fetch::browser::RenderPolicy = serde_json::from_value(
                 serde_json::Value::String(config.fetch.browser.policy.clone()),
             )
@@ -286,6 +292,8 @@ impl ServerState {
             profile_manager,
             #[cfg(feature = "browser")]
             browser_lifecycle,
+            #[cfg(feature = "browser")]
+            browser_discovery_state,
         })
     }
 
@@ -346,6 +354,8 @@ impl ServerState {
             profile_manager: None,
             #[cfg(feature = "browser")]
             browser_lifecycle: None,
+            #[cfg(feature = "browser")]
+            browser_discovery_state: crate::fetch::browser::types::BrowserDiscoveryState::NotFound,
         }
     }
 

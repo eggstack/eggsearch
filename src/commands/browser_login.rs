@@ -24,6 +24,25 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
 
     let display_name = profile_name.unwrap_or("default");
 
+    let parsed_origin =
+        url::Url::parse(origin).map_err(|e| anyhow!("invalid origin URL '{origin}': {e}"))?;
+    match parsed_origin.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(anyhow!(
+                "origin scheme must be http or https, got '{other}'"
+            ));
+        }
+    }
+    if parsed_origin.host_str().is_none() {
+        return Err(anyhow!("origin must have a host: '{origin}'"));
+    }
+    if !parsed_origin.username().is_empty() || parsed_origin.password().is_some() {
+        return Err(anyhow!(
+            "origin must not contain embedded credentials: '{origin}'"
+        ));
+    }
+
     // Discover the browser before creating any profile state so an
     // invalid configured executable cannot leave an orphaned profile.
     let discovery = match eggsearch::fetch::browser::discover_browser(

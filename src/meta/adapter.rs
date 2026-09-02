@@ -1468,18 +1468,9 @@ impl MetadataSearchAdapter {
         push_deadline_warning(&mut warnings, "repo_search", &dispatch.deadline);
 
         // Capability-aware warnings
-        let has_native_code = engines.iter().any(|e| {
-            let n = e.name();
-            n == "github_code" || n == "gitlab_code" || n == "gitea_code"
-        });
-        let has_native_issues = engines.iter().any(|e| {
-            let n = e.name();
-            n == "github_issues" || n == "gitlab_issues" || n == "gitea_issues"
-        });
-        let has_native_releases = engines.iter().any(|e| {
-            let n = e.name();
-            n == "github_releases" || n == "gitlab_releases" || n == "gitea_releases"
-        });
+        let has_native_code = any_engine_supports(&engines, |c| c.supports_code_search);
+        let has_native_issues = any_engine_supports(&engines, |c| c.supports_issue_search);
+        let has_native_releases = any_engine_supports(&engines, |c| c.supports_release_search);
         let has_any_native = has_native_code || has_native_issues || has_native_releases;
 
         if plan.hints.has_any() && !has_any_native {
@@ -1501,10 +1492,7 @@ impl MetadataSearchAdapter {
         if (plan.hints.owner.is_some()
             || plan.hints.path.is_some()
             || plan.hints.language.is_some())
-            && !engines.iter().any(|e| {
-                let n = e.name();
-                n == "github_code" || n == "gitlab_code" || n == "gitea_code"
-            })
+            && !has_native_code
         {
             warnings.push(SearchWarning::new(
                 "_system",
@@ -2482,6 +2470,9 @@ fn any_engine_supports(
     check: impl Fn(&crate::core::provider::ProviderCapabilities) -> bool,
 ) -> bool {
     engines.iter().any(|e| {
+        // `engines` only contains successfully built providers, so
+        // `configured` is always true for this check. A missing API
+        // key would have prevented the engine from being built.
         let configured = true;
         built_in_provider_descriptor(e.name(), true, false, configured, true, None, None)
             .is_some_and(|desc| check(&desc.capabilities))
