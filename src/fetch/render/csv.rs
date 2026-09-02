@@ -32,7 +32,7 @@ pub fn render_csv(text: &str, max_chars: usize) -> RenderedContent {
         };
         let (truncated, did_truncate) = truncate_to_budget(&meta, char_budget);
         if let Some(t) = truncated {
-            char_budget = char_budget.saturating_sub(t.len());
+            char_budget = char_budget.saturating_sub(t.chars().count());
             blocks.push(RenderedBlock {
                 kind: BlockKind::Code,
                 text: t,
@@ -62,7 +62,7 @@ pub fn render_csv(text: &str, max_chars: usize) -> RenderedContent {
         };
         let (truncated, did_truncate) = truncate_to_budget(&formatted, char_budget);
         if let Some(t) = truncated {
-            char_budget = char_budget.saturating_sub(t.len());
+            char_budget = char_budget.saturating_sub(t.chars().count());
             blocks.push(RenderedBlock {
                 kind: BlockKind::Code,
                 text: t,

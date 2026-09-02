@@ -23,7 +23,9 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub(crate) struct IgnoreRule {
     /// Original pattern text (without `!` or trailing `/`).
+    #[allow(dead_code)]
     pattern: String,
+    regex: Option<regex::Regex>,
     /// Whether the rule negates a previous match.
     negate: bool,
     /// Whether the rule only applies to directories.
@@ -57,8 +59,11 @@ impl IgnoreRule {
         if rest.is_empty() {
             return None;
         }
+        let regex_src = glob_to_regex(rest);
+        let regex = regex::Regex::new(&format!("^(?:{regex_src})$")).ok();
         Some(Self {
             pattern: rest.to_string(),
+            regex,
             negate,
             dir_only,
             anchored,
@@ -70,34 +75,23 @@ impl IgnoreRule {
             return false;
         }
         let path = rel_path.trim_start_matches('/');
-        glob_match(&self.pattern, path, self.anchored)
-    }
-}
-
-/// Convert a simple gitignore glob to a regex and test it against the
-/// path. `anchored` means the pattern must match the full relative
-/// path (after stripping the leading `/`); otherwise the pattern
-/// matches any path component or suffix.
-fn glob_match(pattern: &str, path: &str, anchored: bool) -> bool {
-    let regex_src = glob_to_regex(pattern);
-    let regex = match regex::Regex::new(&format!("^(?:{regex_src})$")) {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-    if anchored {
-        regex.is_match(path)
-    } else {
-        // Unanchored patterns match against each path segment and the
-        // full path.
-        if regex.is_match(path) {
-            return true;
-        }
-        for component in path.split('/') {
-            if regex.is_match(component) {
+        let regex = match &self.regex {
+            Some(r) => r,
+            None => return false,
+        };
+        if self.anchored {
+            regex.is_match(path)
+        } else {
+            if regex.is_match(path) {
                 return true;
             }
+            for component in path.split('/') {
+                if regex.is_match(component) {
+                    return true;
+                }
+            }
+            false
         }
-        false
     }
 }
 

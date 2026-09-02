@@ -2341,7 +2341,7 @@ pub async fn run_web_fetch(
                                     &raw_entry.validators,
                                 );
                             if !conditional.is_empty() {
-                                if let Ok((status, reval_headers, _)) =
+                                if let Ok((status, reval_headers, _, _)) =
                                     client.fetch_conditional(trimmed_url, &conditional).await
                                 {
                                     if status == 304 {
@@ -4309,7 +4309,7 @@ fn make_batch_fetch_future(
                                         &raw_entry.validators,
                                     );
                                 if !conditional.is_empty() {
-                                    if let Ok((status, _headers, _body)) =
+                                    if let Ok((status, _headers, _body, _)) =
                                         web_client.fetch_conditional(&url, &conditional).await
                                     {
                                         if status == 304 {

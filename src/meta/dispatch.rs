@@ -270,9 +270,10 @@ pub(crate) async fn dispatch_parallel(
         // examined once; blocked jobs are rotated to the back in order.
         let pending_count = pending_queue.len();
         for _ in 0..pending_count {
-            let idx = pending_queue
-                .pop_front()
-                .expect("pending queue length changed");
+            let Some(idx) = pending_queue.pop_front() else {
+                warn!("pending queue length changed unexpectedly");
+                continue;
+            };
             let provider_id = &sorted_jobs[idx].provider_id;
 
             if !matches!(
@@ -296,7 +297,13 @@ pub(crate) async fn dispatch_parallel(
                     CapabilityDisposition::NotApplicable { roles } => {
                         (RetrievalAttemptOutcome::NotApplicable, roles.clone())
                     }
-                    _ => unreachable!("supported jobs are dispatched"),
+                    other => {
+                        warn!(?other, "unexpected disposition; skipping");
+                        (
+                            RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+                            Vec::new(),
+                        )
+                    }
                 };
                 collected_attempts.push(RetrievalAttempt {
                     provider_id: job.provider_id.clone(),

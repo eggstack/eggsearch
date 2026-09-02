@@ -305,11 +305,11 @@ impl FetchClient {
             {
                 if content_length_u64 > self.limits.max_bytes as u64 {
                     return Err(FetchError::ContentTooLarge(
-                        content_length_u64 as usize,
+                        usize::try_from(content_length_u64).unwrap_or(usize::MAX),
                         self.limits.max_bytes,
                     ));
                 }
-                let content_length = content_length_u64 as usize;
+                let content_length = usize::try_from(content_length_u64).unwrap_or(usize::MAX);
                 content_length_header = Some(content_length);
             } else {
                 tracing::warn!(
@@ -887,7 +887,9 @@ impl FetchClient {
                 })
                 .filter(|e| !e.is_empty());
 
-            let (blocks, outline, text_chars, block_truncated) = if kind.is_html {
+            let outer_text_truncated = text_truncated;
+            let (blocks, outline, text_chars, block_truncated, doc_text_truncated) = if kind.is_html
+            {
                 // Reuse cached render from the extraction phase (avoids
                 // a second parse + DOM walk of the same HTML body).
                 let rendered = cached_html_render.take().unwrap_or_else(|| {
@@ -933,7 +935,13 @@ impl FetchClient {
                     }
                 }
 
-                (blocks, outline, text_chars, block_truncated)
+                (
+                    blocks,
+                    outline,
+                    text_chars,
+                    block_truncated,
+                    outer_text_truncated,
+                )
             } else if let Some(ref t) = pre_framing_text {
                 // Non-HTML path: use detected kind to pick the right
                 // renderer. `text_chars` is computed from
@@ -981,11 +989,17 @@ impl FetchClient {
                     entry.title = bounded;
                 }
                 let block_truncated = rendered.block_truncated;
-                let _text_truncated = rendered.text_truncated;
+                let doc_text_truncated = outer_text_truncated || rendered.text_truncated;
 
-                (blocks, outline, text_chars, block_truncated)
+                (
+                    blocks,
+                    outline,
+                    text_chars,
+                    block_truncated,
+                    doc_text_truncated,
+                )
             } else {
-                (Vec::new(), Vec::new(), 0, false)
+                (Vec::new(), Vec::new(), 0, false, outer_text_truncated)
             };
 
             let document_id = crate::core::identity::doc_id(
@@ -1004,7 +1018,7 @@ impl FetchClient {
                     "plain".to_string()
                 },
                 text_chars_returned: text_chars,
-                text_truncated,
+                text_truncated: doc_text_truncated,
                 block_truncated,
                 link_truncated: links_truncated,
                 metadata: Some(FetchRenderMetadata {
@@ -1089,7 +1103,15 @@ impl FetchClient {
         &self,
         url_str: &str,
         conditional_headers: &[(String, String)],
-    ) -> Result<(u16, std::collections::HashMap<String, String>, Vec<u8>), FetchError> {
+    ) -> Result<
+        (
+            u16,
+            std::collections::HashMap<String, String>,
+            Vec<u8>,
+            bool,
+        ),
+        FetchError,
+    > {
         let initial_url = validate_url(url_str, &self.limits)?;
         let code_host_target = resolve_code_host_fetch_target(url_str);
         let fetch_url = if let Some(ref target) = code_host_target {
@@ -1174,7 +1196,7 @@ impl FetchClient {
             .collect();
 
         if status == 304 {
-            return Ok((304, headers, Vec::new()));
+            return Ok((304, headers, Vec::new(), false));
         }
 
         if let Some(cl_header) = response.headers().get("content-length") {
@@ -1183,7 +1205,7 @@ impl FetchClient {
             {
                 if content_length_u64 > self.limits.max_bytes as u64 {
                     return Err(FetchError::ContentTooLarge(
-                        content_length_u64 as usize,
+                        usize::try_from(content_length_u64).unwrap_or(usize::MAX),
                         self.limits.max_bytes,
                     ));
                 }
@@ -1205,8 +1227,7 @@ impl FetchClient {
                 break;
             }
         }
-        let _ = truncated;
-        Ok((status, headers, body))
+        Ok((status, headers, body, truncated))
     }
 }
 

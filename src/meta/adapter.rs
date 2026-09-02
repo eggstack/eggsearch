@@ -401,12 +401,28 @@ impl MetadataSearchAdapter {
         failure_latencies_ms: &[u64],
         deadline_ms: u64,
     ) {
-        assert_eq!(
+        if raw_results.len() != result_latencies_ms.len() {
+            warn!(
+                results_len = raw_results.len(),
+                latencies_len = result_latencies_ms.len(),
+                "raw_results and result_latencies_ms must be aligned; skipping health record"
+            );
+            return;
+        }
+        if raw_failures.len() != failure_latencies_ms.len() {
+            warn!(
+                failures_len = raw_failures.len(),
+                latencies_len = failure_latencies_ms.len(),
+                "raw_failures and failure_latencies_ms must be aligned; skipping health record"
+            );
+            return;
+        }
+        debug_assert_eq!(
             raw_results.len(),
             result_latencies_ms.len(),
             "raw_results and result_latencies_ms must be aligned"
         );
-        assert_eq!(
+        debug_assert_eq!(
             raw_failures.len(),
             failure_latencies_ms.len(),
             "raw_failures and failure_latencies_ms must be aligned"

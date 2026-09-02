@@ -103,7 +103,7 @@ pub fn render_notebook(text: &str, max_chars: usize) -> RenderedContent {
         let content = format!("{header}\n{source}");
         let (truncated, did_truncate) = truncate_to_budget(&content, char_budget);
         if let Some(t) = truncated {
-            char_budget = char_budget.saturating_sub(t.len());
+            char_budget = char_budget.saturating_sub(t.chars().count());
             blocks.push(RenderedBlock {
                 kind,
                 text: t,

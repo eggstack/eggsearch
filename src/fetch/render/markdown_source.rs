@@ -30,7 +30,7 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
 
     let mut blocks = Vec::new();
     let mut outline = Vec::new();
-    let char_budget = max_chars;
+    let budget = max_chars;
     let mut block_truncated = false;
 
     // State for accumulating events into blocks
@@ -215,10 +215,26 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
     // Apply char budget truncation
     let mut used_chars = 0;
     let mut truncated_at = blocks.len();
+    let mut partial_text: Option<String> = None;
     for (idx, block) in blocks.iter().enumerate() {
         let block_chars = block.text.chars().count();
-        if used_chars + block_chars > char_budget {
-            truncated_at = idx;
+        if used_chars + block_chars > budget {
+            if block.kind == BlockKind::Code && budget > used_chars {
+                let remaining = budget - used_chars;
+                let truncated: String = block.text.chars().take(remaining).collect();
+                if let Some(last_nl) = truncated.rfind('\n') {
+                    if last_nl > remaining / 2 {
+                        partial_text = Some(truncated[..last_nl].to_string());
+                        truncated_at = idx + 1;
+                        block_truncated = true;
+                        break;
+                    }
+                }
+                partial_text = Some(truncated);
+                truncated_at = idx + 1;
+            } else {
+                truncated_at = idx;
+            }
             block_truncated = true;
             break;
         }
@@ -228,6 +244,12 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
     if truncated_at < blocks.len() {
         blocks.truncate(truncated_at);
     }
+    if let Some(text) = partial_text.take() {
+        if truncated_at > 0 && truncated_at <= blocks.len() {
+            blocks[truncated_at - 1].text = text;
+        }
+    }
+    outline.retain(|e| e.block_index.is_none_or(|i| i < blocks.len()));
 
     let text_truncated = block_truncated;
 

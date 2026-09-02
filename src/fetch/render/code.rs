@@ -101,52 +101,6 @@ pub fn render_code(text: &str, language: Option<&str>, max_chars: usize) -> Rend
             continue;
         }
 
-        // Check if we've exceeded total budget
-        if start_line == 0 && end_line < total_lines && chunk_chars > max_chars {
-            end_line = start_line;
-            while end_line < total_lines {
-                let line_chars = lines[end_line].chars().count() + 1;
-                if chunk_chars > max_chars {
-                    break;
-                }
-                chunk_chars += line_chars;
-                end_line += 1;
-            }
-            if end_line == start_line {
-                // First line alone exceeds budget - truncate it
-                let line = lines[start_line];
-                if let Some((truncated_text, line_truncated)) =
-                    truncate_to_budget(line, char_budget)
-                {
-                    block_truncated = true;
-                    if line_truncated {
-                        text_truncated = true;
-                    }
-                    blocks.push(RenderedBlock {
-                        kind: BlockKind::Code,
-                        text: truncated_text,
-                        level: None,
-                        anchor: None,
-                        language: language.map(|s| s.to_string()),
-                        line_start: Some(start_line + 1),
-                        line_end: Some(start_line + 1),
-                        page: None,
-                    });
-                    if line_truncated {
-                        char_budget = 0;
-                    }
-                }
-                last_line = start_line + 1;
-                start_line += 1;
-                if char_budget == 0 {
-                    block_truncated = true;
-                    break;
-                }
-                continue;
-            }
-            block_truncated = true;
-        }
-
         char_budget = char_budget.saturating_sub(chunk_chars);
         last_line = end_line;
 

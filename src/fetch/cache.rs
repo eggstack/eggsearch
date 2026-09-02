@@ -661,6 +661,10 @@ pub fn apply_304_headers(
     // Note: from_headers() does not set fetched_at; the caller
     // preserves the original fetched_at and refreshes it explicitly.
     let (updated, updated_validators) = CacheFreshness::from_headers(&map);
+    debug_assert!(
+        updated.fetched_at.is_none(),
+        "from_headers must never set fetched_at"
+    );
 
     if has_cache_control {
         freshness.max_age = updated.max_age;
