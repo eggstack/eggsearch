@@ -3254,7 +3254,7 @@ fn sanitize_field(
     id: &str,
     max_chars: usize,
     sanitize: bool,
-    _warnings: &mut Vec<String>,
+    _warnings: &mut [String],
 ) -> (String, TrustMarkers) {
     let mut m = TrustMarkers::default();
 

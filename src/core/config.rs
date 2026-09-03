@@ -1100,8 +1100,7 @@ impl AppConfig {
             > MAX_PROFILE_PROCESS_TIMEOUT_MS
         {
             return Err(CoreError::Config(format!(
-                "[fetch].browser.persistent_profiles.profile_process_timeout_ms exceeds maximum {}",
-                MAX_PROFILE_PROCESS_TIMEOUT_MS
+                "[fetch].browser.persistent_profiles.profile_process_timeout_ms exceeds maximum {MAX_PROFILE_PROCESS_TIMEOUT_MS}"
             )));
         }
 

@@ -2324,8 +2324,7 @@ mod tests {
             assert!(truncated, "lead 0x{lead:02x} should signal truncation");
             assert!(
                 buf.is_empty(),
-                "lead 0x{lead:02x} should be dropped, got {:?}",
-                buf
+                "lead 0x{lead:02x} should be dropped, got {buf:?}"
             );
         }
     }
