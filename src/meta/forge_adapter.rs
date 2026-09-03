@@ -99,7 +99,7 @@ impl std::fmt::Display for ForgeReadError {
         match self {
             Self::PerResponseLimitExceeded => write!(f, "response_too_large"),
             Self::AggregateBudgetExhausted => write!(f, "aggregate_budget_exhausted"),
-            Self::ContentLengthTooLarge => write!(f, "response_too_large"),
+            Self::ContentLengthTooLarge => write!(f, "content_length_too_large"),
             Self::StreamReadFailure => write!(f, "stream_read_failure"),
         }
     }
@@ -111,7 +111,7 @@ impl ForgeReadError {
         match self {
             Self::PerResponseLimitExceeded => "response_too_large",
             Self::AggregateBudgetExhausted => "aggregate_budget_exhausted",
-            Self::ContentLengthTooLarge => "response_too_large",
+            Self::ContentLengthTooLarge => "content_length_too_large",
             Self::StreamReadFailure => "stream_read_failure",
         }
     }
@@ -209,12 +209,13 @@ pub(crate) async fn read_with_budget(
     }
     if let Some(content_length) = resp.content_length() {
         if content_length > effective_cap as u64 {
+            let charge = (content_length as usize).min(effective_cap.saturating_add(1));
             if content_length > budget.per_response_limit as u64 {
                 budget.per_response_cap_hits += 1;
-                budget.consume(content_length as usize, kind);
+                budget.consume(charge, kind);
                 return Err(ForgeReadError::ContentLengthTooLarge);
             }
-            budget.consume(content_length as usize, kind);
+            budget.consume(charge, kind);
             return Err(ForgeReadError::AggregateBudgetExhausted);
         }
     }
@@ -1694,7 +1695,14 @@ fn validate_base_url_common(
         let is_loopback = is_loopback_addr(host);
 
         if parsed.scheme() == "http" {
-            if !is_loopback {
+            if is_loopback {
+                if !policy.allow_loopback {
+                    return Err(format!("base URL must not point to localhost: {host}"));
+                }
+                if api_key.is_some() {
+                    return Err("credential-bearing endpoint must use HTTPS".into());
+                }
+            } else {
                 if api_key.is_some() {
                     return Err("credential-bearing endpoint must use HTTPS".into());
                 }

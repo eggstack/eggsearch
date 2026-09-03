@@ -144,6 +144,10 @@ pub(crate) struct DispatchedFailure {
     pub duration_ms: u64,
 }
 
+/// Identity retained for in-flight dispatch tasks so an abnormal exit
+/// can release counters and record a failure.
+type ActiveTaskInfo = (String, String, usize, usize, Vec<EvidenceRole>, String);
+
 /// Deadline tracking statistics.
 #[derive(Default, Debug)]
 pub(crate) struct RequestDeadlineStats {
@@ -239,9 +243,10 @@ pub(crate) async fn dispatch_parallel(
 
     // JoinSet for in-flight tasks
     let mut join_set: JoinSet<TaskResult> = JoinSet::new();
-    // Maps live task IDs to their (provider_id, subquery_id) so an
-    // abnormal task exit can release its concurrency counters.
-    let mut active_tasks: HashMap<tokio::task::Id, (String, String)> = HashMap::new();
+    // Maps live task IDs to job identity so an abnormal task exit can
+    // release concurrency counters and record a failure instead of being
+    // misclassified as a timeout.
+    let mut active_tasks: HashMap<tokio::task::Id, ActiveTaskInfo> = HashMap::new();
 
     // Collected results and failures (collected as tasks complete)
     let mut collected_results: Vec<DispatchedResult> = Vec::with_capacity(sorted_jobs.len());
@@ -419,7 +424,14 @@ pub(crate) async fn dispatch_parallel(
                 });
                 active_tasks.insert(
                     abort_handle.id(),
-                    (job.provider_id.clone(), job.subquery_id.clone()),
+                    (
+                        job.provider_id.clone(),
+                        job.subquery_id.clone(),
+                        job.subquery_order,
+                        job.provider_order,
+                        job.intended_roles.clone(),
+                        query_fingerprint_from_query(&job.query),
+                    ),
                 );
             } else {
                 pending_queue.push_back(idx);
@@ -643,8 +655,14 @@ pub(crate) async fn dispatch_parallel(
                     Err(join_err) => {
                         warn!(?join_err, scope = search_scope, "dispatch task panicked");
                         global_active = global_active.saturating_sub(1);
-                        if let Some((provider_id, subquery_id)) =
-                            active_tasks.remove(&join_err.id())
+                        if let Some((
+                            provider_id,
+                            subquery_id,
+                            subquery_order,
+                            provider_order,
+                            intended_roles,
+                            query_fingerprint,
+                        )) = active_tasks.remove(&join_err.id())
                         {
                             let remove_provider =
                                 if let Some(count) = provider_active.get_mut(&provider_id) {
@@ -659,6 +677,46 @@ pub(crate) async fn dispatch_parallel(
                             if let Some(count) = running_subquery_counts.get_mut(&subquery_id) {
                                 *count = count.saturating_sub(1);
                             }
+                            let duration_ms = job_start_times
+                                .remove(&(
+                                    subquery_id.clone(),
+                                    provider_id.clone(),
+                                    intended_roles.clone(),
+                                ))
+                                .map(|t| t.elapsed().as_millis() as u64)
+                                .unwrap_or_default();
+                            let err = EngineError::NetworkError {
+                                engine: "dispatch",
+                                reason: "task panicked during dispatch".to_string(),
+                            };
+                            *terminal_subquery_counts
+                                .entry(subquery_id.clone())
+                                .or_insert(0) += 1;
+                            collected_failures.push(DispatchedFailure {
+                                subquery_id: subquery_id.clone(),
+                                subquery_order,
+                                provider_id: provider_id.clone(),
+                                provider_order,
+                                error: err,
+                                duration_ms,
+                            });
+                            collected_attempts.push(RetrievalAttempt {
+                                provider_id,
+                                subquery_id: Some(subquery_id.clone()),
+                                operation_id: Some(
+                                    RetrievalOperationIdentity::from_search_subquery(&subquery_id)
+                                        .stable_id(),
+                                ),
+                                intended_roles,
+                                outcome: RetrievalAttemptOutcome::Failed,
+                                result_count: 0,
+                                error_class: Some("network_error".to_string()),
+                                deadline_interrupted: false,
+                                truncated: false,
+                                truncation_evidence: Default::default(),
+                                query_fingerprint: Some(query_fingerprint),
+                                duration_ms: Some(duration_ms),
+                            });
                         }
                     }
                 }

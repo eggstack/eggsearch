@@ -875,9 +875,19 @@ fn expand_statement_block(all_lines: &[String], line_idx: usize) -> (usize, usiz
     (start, end)
 }
 
-/// Count leading spaces (not tabs) for indentation.
+/// Count leading indentation, treating each tab as 4 spaces.
 fn count_indent(line: &str) -> usize {
-    line.chars().take_while(|c| *c == ' ').count()
+    let mut indent = 0usize;
+    for c in line.chars() {
+        if c == ' ' {
+            indent += 1;
+        } else if c == '\t' {
+            indent += 4;
+        } else {
+            break;
+        }
+    }
+    indent
 }
 
 /// Expand to a Markdown heading section.
@@ -893,7 +903,9 @@ fn expand_markdown_heading(all_lines: &[String], line_idx: usize) -> (usize, usi
 
     let current_level = {
         let caps = MARKDOWN_HEADING_RE.captures(&all_lines[line_idx]);
-        caps.map(|c| c.get(1).unwrap().as_str().len()).unwrap_or(6)
+        caps.and_then(|c| c.get(1))
+            .map(|g| g.as_str().len())
+            .unwrap_or(6)
     };
 
     let start = line_idx;
@@ -901,7 +913,7 @@ fn expand_markdown_heading(all_lines: &[String], line_idx: usize) -> (usize, usi
     let mut end = total.saturating_sub(1);
     for (i, line) in all_lines.iter().enumerate().skip(line_idx + 1) {
         if let Some(caps) = MARKDOWN_HEADING_RE.captures(line) {
-            let level = caps.get(1).unwrap().as_str().len();
+            let level = caps.get(1).map(|g| g.as_str().len()).unwrap_or(6);
             if level <= current_level {
                 end = i - 1;
                 break;

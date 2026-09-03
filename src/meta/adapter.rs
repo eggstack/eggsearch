@@ -858,6 +858,8 @@ impl MetadataSearchAdapter {
         // incrementally. When the global deadline hits we keep whatever
         // arrived and cancel the rest.
         let mut join_set = tokio::task::JoinSet::new();
+        let mut active_tasks: std::collections::HashMap<tokio::task::Id, (String, Instant)> =
+            std::collections::HashMap::new();
         for engine in &engines {
             let engine = Arc::clone(engine);
             let provider_id = engine.name().to_string();
@@ -869,7 +871,9 @@ impl MetadataSearchAdapter {
                 .unwrap_or_else(|| plan.generic_query.clone());
             let engine_timeout = effective_timeout;
             let per_provider_limit = candidate_limit;
-            join_set.spawn(async move {
+            let spawn_started = Instant::now();
+            let provider_id_for_map = provider_id.clone();
+            let abort_handle = join_set.spawn(async move {
                 let started = Instant::now();
                 let inner = async move {
                     let result = engine
@@ -891,6 +895,7 @@ impl MetadataSearchAdapter {
                     });
                 (outcome.0, outcome.1, started.elapsed().as_millis() as u64)
             });
+            active_tasks.insert(abort_handle.id(), (provider_id_for_map, spawn_started));
         }
 
         let deadline = tokio::time::Instant::now() + effective_timeout;
@@ -909,17 +914,30 @@ impl MetadataSearchAdapter {
                 join_set.abort_all();
                 break;
             }
-            match tokio::time::timeout(remaining, join_set.join_next()).await {
-                Ok(Some(Ok((name, Ok(results), duration_ms)))) => {
+            match tokio::time::timeout(remaining, join_set.join_next_with_id()).await {
+                Ok(Some(Ok((task_id, (name, Ok(results), duration_ms))))) => {
+                    active_tasks.remove(&task_id);
                     raw_results.push((name, results));
                     result_latencies_ms.push(duration_ms);
                 }
-                Ok(Some(Ok((name, Err(err), duration_ms)))) => {
+                Ok(Some(Ok((task_id, (name, Err(err), duration_ms))))) => {
+                    active_tasks.remove(&task_id);
                     raw_failures.push((name, err));
                     failure_latencies_ms.push(duration_ms);
                 }
                 Ok(Some(Err(join_err))) => {
                     warn!(?join_err, "engine task panicked");
+                    if let Some((provider_id, started)) = active_tasks.remove(&join_err.id()) {
+                        let latency_ms = started.elapsed().as_millis() as u64;
+                        raw_failures.push((
+                            provider_id,
+                            crate::meta::engines::error::EngineError::NetworkError {
+                                engine: "dispatch",
+                                reason: "task panicked during dispatch".to_string(),
+                            },
+                        ));
+                        failure_latencies_ms.push(latency_ms);
+                    }
                 }
                 Ok(None) => break,
                 Err(_) => {
@@ -1301,8 +1319,12 @@ impl MetadataSearchAdapter {
             effective_timeout.as_millis() as u64,
         );
 
-        let providers_failed =
-            provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        let providers_failed = provider_failures(
+            &queried_ids,
+            &dispatch.raw_results,
+            &dispatch.raw_failures,
+            &dispatch.attempts,
+        );
         let mut warnings: Vec<SearchWarning> = Vec::new();
         push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
         let mut cards =
@@ -1884,8 +1906,12 @@ impl MetadataSearchAdapter {
             effective_timeout.as_millis() as u64,
         );
 
-        let providers_failed =
-            provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        let providers_failed = provider_failures(
+            &queried_ids,
+            &dispatch.raw_results,
+            &dispatch.raw_failures,
+            &dispatch.attempts,
+        );
 
         let mut warnings: Vec<SearchWarning> = Vec::new();
         push_deadline_warning(&mut warnings, "security_search", &dispatch.deadline);
@@ -1980,8 +2006,12 @@ impl MetadataSearchAdapter {
             effective_timeout.as_millis() as u64,
         );
 
-        let providers_failed =
-            provider_failures(&queried_ids, &dispatch.raw_results, &dispatch.raw_failures);
+        let providers_failed = provider_failures(
+            &queried_ids,
+            &dispatch.raw_results,
+            &dispatch.raw_failures,
+            &dispatch.attempts,
+        );
         let mut warnings: Vec<SearchWarning> = Vec::new();
         push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
         let cards =
@@ -2387,6 +2417,7 @@ fn provider_failures(
     queried_ids: &[String],
     raw_results: &[(String, Vec<SearchResult>)],
     raw_failures: &[(String, EngineError)],
+    attempts: &[crate::core::retrieval_status::RetrievalAttempt],
 ) -> Vec<ProviderFailure> {
     // Count successes and failures per provider, and track the last error class/message
     let mut success_count: std::collections::HashMap<String, usize> =
@@ -2425,6 +2456,28 @@ fn provider_failures(
                 });
             }
         } else if successes == 0 && fails == 0 {
+            let only_skipped = {
+                let mut saw_attempt = false;
+                let mut all_skipped = true;
+                for a in attempts {
+                    if a.provider_id.as_str() != id.as_str() {
+                        continue;
+                    }
+                    saw_attempt = true;
+                    match a.outcome {
+                        crate::core::retrieval_status::RetrievalAttemptOutcome::SkippedCapabilityUnavailable
+                        | crate::core::retrieval_status::RetrievalAttemptOutcome::NotApplicable => {}
+                        _ => {
+                            all_skipped = false;
+                            break;
+                        }
+                    }
+                }
+                saw_attempt && all_skipped
+            };
+            if only_skipped {
+                continue;
+            }
             // Never responded — timed out
             failures.push(ProviderFailure {
                 id: id.clone(),
@@ -5592,7 +5645,7 @@ mod tests {
         let raw_failures: Vec<(String, EngineError)> =
             vec![("p1".to_string(), EngineError::Timeout { engine: "p1" })];
 
-        let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
+        let failures = super::provider_failures(&queried, &raw_results, &raw_failures, &[]);
         // p1 should NOT be in failures because it had a success
         assert!(
             failures.iter().all(|f| f.id != "p1"),
@@ -5610,7 +5663,7 @@ mod tests {
         let raw_failures: Vec<(String, EngineError)> =
             vec![("p1".to_string(), EngineError::Timeout { engine: "p1" })];
 
-        let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
+        let failures = super::provider_failures(&queried, &raw_results, &raw_failures, &[]);
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].id, "p1");
     }
@@ -5628,9 +5681,38 @@ mod tests {
         )];
         let raw_failures: Vec<(String, EngineError)> = vec![];
 
-        let failures = super::provider_failures(&queried, &raw_results, &raw_failures);
+        let failures = super::provider_failures(&queried, &raw_results, &raw_failures, &[]);
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].id, "p2");
         assert_eq!(failures[0].error_class, "timeout");
+    }
+
+    #[test]
+    fn provider_failures_capability_skipped_not_timeout() {
+        use crate::core::retrieval_status::{RetrievalAttempt, RetrievalAttemptOutcome};
+
+        let queried = vec!["p1".to_string(), "p2".to_string()];
+        let raw_results: Vec<(String, Vec<crate::meta::engines::models::SearchResult>)> = vec![];
+        let raw_failures: Vec<(String, crate::meta::engines::error::EngineError)> = vec![];
+        let attempts = vec![RetrievalAttempt {
+            provider_id: "p2".to_string(),
+            subquery_id: Some("rq_test".to_string()),
+            operation_id: None,
+            intended_roles: vec![],
+            outcome: RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
+            result_count: 0,
+            error_class: None,
+            deadline_interrupted: false,
+            truncated: false,
+            truncation_evidence: Default::default(),
+            query_fingerprint: None,
+            duration_ms: None,
+        }];
+
+        let failures = super::provider_failures(&queried, &raw_results, &raw_failures, &attempts);
+        assert!(
+            failures.iter().all(|f| f.id != "p2"),
+            "capability-skipped p2 must not be reported as timeout: {failures:?}"
+        );
     }
 }

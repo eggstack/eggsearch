@@ -61,8 +61,10 @@ impl TrustMarkers {
         self.text_sanitized |= other.text_sanitized;
         self.text_truncated |= other.text_truncated;
         self.text_framed |= other.text_framed;
-        self.control_chars_removed += other.control_chars_removed;
-        self.injection_hits += other.injection_hits;
+        self.control_chars_removed = self
+            .control_chars_removed
+            .saturating_add(other.control_chars_removed);
+        self.injection_hits = self.injection_hits.saturating_add(other.injection_hits);
     }
 }
 

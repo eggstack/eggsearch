@@ -103,7 +103,11 @@ fn github_tree_small_repo() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -164,7 +168,11 @@ fn github_tree_truncated_falls_back_to_contents_api() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -201,7 +209,11 @@ fn github_tree_404_returns_repository_not_found() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -232,7 +244,11 @@ fn github_tree_rate_limited() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -261,9 +277,13 @@ fn github_tree_auth_required() {
 
     let req = default_request(CodeHost::Github, "test-owner", "test-repo");
     let config = ForgeTreeConfig {
-        api_key: Some("test-token".into()),
+        api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -309,7 +329,11 @@ fn gitlab_tree_basic() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -351,7 +375,11 @@ fn gitlab_tree_nested_namespace() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -383,7 +411,11 @@ fn gitlab_tree_404_returns_repository_not_found() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -412,9 +444,13 @@ fn gitlab_tree_auth_required() {
 
     let req = default_request(CodeHost::Gitlab, "test-owner", "test-repo");
     let config = ForgeTreeConfig {
-        api_key: Some("test-token".into()),
+        api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -455,7 +491,11 @@ fn forge_tree_codeberg_basic() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -496,7 +536,11 @@ fn forge_tree_gitea_with_custom_base_url() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -943,7 +987,11 @@ fn forge_partial_result_when_page_limit_reached() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -1152,12 +1200,27 @@ fn validate_base_url_https_ok() {
 
 #[test]
 fn validate_base_url_http_localhost_ok() {
+    let policy = ForgeEndpointPolicy {
+        allow_loopback: true,
+        allow_private_network: false,
+        require_https: true,
+    };
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://localhost:3000/api/v1",
+        None,
+        &policy
+    )
+    .is_ok());
+}
+
+#[test]
+fn validate_base_url_http_localhost_rejected_without_allow_loopback() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "http://localhost:3000/api/v1",
         None,
         &ForgeEndpointPolicy::default()
     )
-    .is_ok());
+    .is_err());
 }
 
 #[test]
@@ -1211,13 +1274,18 @@ fn validate_base_url_credential_bearing_http_rejected() {
 }
 
 #[test]
-fn validate_base_url_credential_bearing_http_localhost_ok() {
+fn validate_base_url_credential_bearing_http_localhost_rejected() {
+    let policy = ForgeEndpointPolicy {
+        allow_loopback: true,
+        allow_private_network: false,
+        require_https: true,
+    };
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "http://localhost:3000/api/v1",
         Some("my-token"),
-        &ForgeEndpointPolicy::default()
+        &policy
     )
-    .is_ok());
+    .is_err());
 }
 
 #[test]
@@ -1344,7 +1412,11 @@ fn bounded_reader_rejects_honest_content_length_over_cap() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -1361,7 +1433,10 @@ fn bounded_reader_rejects_honest_content_length_over_cap() {
 
     let err = result.unwrap_err();
     assert!(
-        err == "response_too_large" || err.contains("failed to read") || err.contains("malformed"),
+        err == "response_too_large"
+            || err == "content_length_too_large"
+            || err.contains("failed to read")
+            || err.contains("malformed"),
         "expected response_too_large or parse error, got: {err}"
     );
 }
@@ -1407,7 +1482,11 @@ fn bounded_reader_enforces_total_bytes_across_pages() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -1432,7 +1511,9 @@ fn bounded_reader_enforces_total_bytes_across_pages() {
         }
         Err(e) => {
             assert!(
-                e.contains("response_too_large") || e.contains("malformed"),
+                e.contains("response_too_large")
+                    || e.contains("content_length_too_large")
+                    || e.contains("malformed"),
                 "expected response_too_large or parse error, got: {e}"
             );
         }
@@ -1593,7 +1674,11 @@ fn provenance_branch_ref_resolves_to_commit_sha() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2234,7 +2319,11 @@ fn bounded_reader_caps_chunked_response() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2251,7 +2340,9 @@ fn bounded_reader_caps_chunked_response() {
 
     let err = result.unwrap_err();
     assert!(
-        err.contains("response_too_large") || err.contains("malformed"),
+        err.contains("response_too_large")
+            || err.contains("content_length_too_large")
+            || err.contains("malformed"),
         "expected response_too_large or parse error for oversized chunked response, got: {err}"
     );
 }
@@ -2365,7 +2456,11 @@ fn gitlab_slash_ref_encodes_correctly() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2422,7 +2517,11 @@ fn gitlab_release_slash_ref_encodes_correctly() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2475,7 +2574,11 @@ fn codeberg_slash_ref_encodes_correctly() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2528,7 +2631,11 @@ fn gitea_slash_ref_encodes_correctly() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2581,7 +2688,11 @@ fn forgejo_slash_ref_encodes_correctly() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v1", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2636,7 +2747,11 @@ fn github_slash_ref_encodes_commit_path_correctly() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2695,7 +2810,11 @@ fn budget_operation_wide_accounting_github() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: None,
     };
 
@@ -2752,7 +2871,11 @@ fn budget_exhausted_by_tree_page_github() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: Some(1),
     };
 
@@ -2767,7 +2890,9 @@ fn budget_exhausted_by_tree_page_github() {
 
     let err = result.unwrap_err();
     assert!(
-        err.contains("aggregate_budget_exhausted") || err.contains("response_too_large"),
+        err.contains("aggregate_budget_exhausted")
+            || err.contains("response_too_large")
+            || err.contains("content_length_too_large"),
         "expected budget exhaustion or response too large, got: {err}"
     );
 }
@@ -2798,7 +2923,11 @@ fn budget_commit_resolution_consumes_before_tree() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: Some(20000),
     };
 
@@ -2848,7 +2977,11 @@ fn budget_telemetry_never_exceeds_aggregate_limit() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(format!("{}/api/v4", server.base_url())),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: Some(500),
     };
 
@@ -2901,7 +3034,11 @@ fn budget_fallback_skipped_when_exhausted() {
     let config = ForgeTreeConfig {
         api_key: None,
         base_url: Some(server.base_url()),
-        endpoint_policy: ForgeEndpointPolicy::default(),
+        endpoint_policy: ForgeEndpointPolicy {
+            allow_loopback: true,
+            allow_private_network: true,
+            require_https: false,
+        },
         forge_budget_limit: Some(1),
     };
 
@@ -2916,7 +3053,9 @@ fn budget_fallback_skipped_when_exhausted() {
 
     let err = result.unwrap_err();
     assert!(
-        err.contains("aggregate_budget_exhausted") || err.contains("response_too_large"),
+        err.contains("aggregate_budget_exhausted")
+            || err.contains("response_too_large")
+            || err.contains("content_length_too_large"),
         "expected budget exhaustion, got: {err}"
     );
     mock_contents.assert_hits(0);
@@ -3006,7 +3145,11 @@ fn budget_all_forge_families_same_semantics() {
         let config = ForgeTreeConfig {
             api_key: None,
             base_url: Some(base),
-            endpoint_policy: ForgeEndpointPolicy::default(),
+            endpoint_policy: ForgeEndpointPolicy {
+                allow_loopback: true,
+                allow_private_network: true,
+                require_https: false,
+            },
             forge_budget_limit: Some(5000),
         };
 

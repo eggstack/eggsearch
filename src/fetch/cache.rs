@@ -219,10 +219,12 @@ pub struct CachedExtractedDocument {
 }
 
 /// Approximate in-memory size of a derived cache entry: the byte
-/// length of every stored text payload.
+/// length of every stored text payload plus a fixed overhead covering
+/// small scalar fields (`transport`, `trust_markers`, flags).
 fn derived_entry_bytes(entry: &DerivedDocumentCacheEntry) -> usize {
+    const DERIVED_ENTRY_OVERHEAD: usize = 128;
     let r = &entry.response;
-    let mut bytes = 0usize;
+    let mut bytes = DERIVED_ENTRY_OVERHEAD;
     if let Some(t) = &r.title {
         bytes += t.len();
     }
@@ -237,6 +239,17 @@ fn derived_entry_bytes(entry: &DerivedDocumentCacheEntry) -> usize {
     }
     for link in &r.links {
         bytes += link.url.len() + link.text.len();
+    }
+    bytes += r.transport.as_ref().map(|s| s.len()).unwrap_or(0);
+    bytes += std::mem::size_of::<crate::core::sanitize::TrustMarkers>();
+    if r.links_truncated {
+        bytes += 1;
+    }
+    if r.truncated {
+        bytes += 1;
+    }
+    if r.browser_escalated {
+        bytes += 1;
     }
     if let Some(doc) = &r.document {
         for block in &doc.blocks {
@@ -307,7 +320,11 @@ impl FetchCache {
                 .fetch_sub(evicted.body.len(), Ordering::Relaxed);
         }
 
-        while self.current_raw_bytes.load(Ordering::Relaxed) + body_len > self.raw_max_bytes
+        while self
+            .current_raw_bytes
+            .load(Ordering::Relaxed)
+            .saturating_add(body_len)
+            > self.raw_max_bytes
             && !raw.is_empty()
         {
             if let Some((_, evicted)) = raw.pop_lru() {
@@ -346,7 +363,10 @@ impl FetchCache {
                 .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
         }
 
-        while self.current_derived_bytes.load(Ordering::Relaxed) + entry_len
+        while self
+            .current_derived_bytes
+            .load(Ordering::Relaxed)
+            .saturating_add(entry_len)
             > self.derived_max_bytes
             && !derived.is_empty()
         {
@@ -574,7 +594,7 @@ fn parse_http_date(s: &str) -> Option<SystemTime> {
         parts.push(normalized_zone);
         parts.join(" ")
     } else {
-        s.trim().to_string()
+        parts.join(" ")
     };
     if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(&normalized) {
         return Some(dt.into());
@@ -1373,7 +1393,7 @@ mod tests {
 
     #[tokio::test]
     async fn cache_derived_evicts_oldest_on_byte_pressure() {
-        let cache = FetchCache::new(10, 10, 500, 500);
+        let cache = FetchCache::new(10, 10, 500, 800);
         for i in 0..5u64 {
             cache
                 .insert_derived(make_derived_key(i), make_derived_entry(i, 100))

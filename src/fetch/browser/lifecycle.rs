@@ -294,8 +294,7 @@ impl Drop for BrowserLifecycle {
     fn drop(&mut self) {
         match self.handler_handle.try_lock() {
             Ok(mut handle) => {
-                if handle.is_some() {
-                    let h = handle.take().unwrap();
+                if let Some(h) = handle.take() {
                     h.abort();
                 }
             }

@@ -312,15 +312,21 @@ fn normalize_percent_encoding_component(component: &str) -> String {
                 continue;
             }
         }
-        let ch = component[i..].chars().next().unwrap();
-        result.push(ch);
-        i += ch.len_utf8();
+        if let Some(ch) = component[i..].chars().next() {
+            result.push(ch);
+            i += ch.len_utf8();
+        } else {
+            result.push('\u{FFFD}');
+            i += 1;
+        }
     }
     result
 }
 
 fn hex_digit(value: u8) -> char {
-    b"0123456789ABCDEF"[value as usize] as char
+    char::from_digit(value as u32, 16)
+        .unwrap_or('F')
+        .to_ascii_uppercase()
 }
 
 /// Decode only unreserved percent-encoded characters in a string.

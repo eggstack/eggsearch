@@ -272,12 +272,10 @@ impl LocalWorkspaceBackend {
             cache.and_then(|c| c.as_deref().cloned())
         };
 
-        let inventory_usable = inventory
+        if let Some(inv) = inventory
             .as_ref()
-            .is_some_and(|inv| !needs_rebuild(inv, config, INVENTORY_REBUILD_TTL));
-
-        if inventory_usable {
-            let inv = inventory.unwrap();
+            .filter(|inv| !needs_rebuild(inv, config, INVENTORY_REBUILD_TTL))
+        {
             telemetry.used_inventory = true;
             telemetry.inventory_fresh = true;
             telemetry.inventory_entries = inv.roots.iter().map(|r| r.entries.len()).sum();

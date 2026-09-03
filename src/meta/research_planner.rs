@@ -140,7 +140,7 @@ fn intent_for_source_type(source_type: ResearchSourceType) -> SearchIntent {
         ResearchSourceType::SecurityConsiderations => SearchIntent::Security,
         ResearchSourceType::IssueThreads => SearchIntent::Issues,
         ResearchSourceType::ReleaseNotes => SearchIntent::Releases,
-        ResearchSourceType::AcademicOrFormalSources => SearchIntent::Web,
+        ResearchSourceType::AcademicOrFormalSources => SearchIntent::Docs,
         ResearchSourceType::RecentNews => SearchIntent::News,
         ResearchSourceType::CommunityDiscussion => SearchIntent::Web,
         ResearchSourceType::Counterpoints => SearchIntent::Web,
