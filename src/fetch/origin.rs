@@ -60,7 +60,7 @@ pub struct OriginState {
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
+        .map(|d| d.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or(1)
 }
 
@@ -112,7 +112,10 @@ impl OriginController {
 
         if let Some(open_until) = state.failures.lock().await.circuit_open_until {
             if Instant::now() < open_until {
-                let remaining_ms = open_until.duration_since(Instant::now()).as_millis() as u64;
+                let remaining_ms = open_until
+                    .duration_since(Instant::now())
+                    .as_millis()
+                    .min(u128::from(u64::MAX)) as u64;
                 return Err(OriginBackoffError::CircuitOpen { remaining_ms });
             }
         }
@@ -175,7 +178,7 @@ impl OriginController {
             failures.circuit_open_until = Some(Instant::now() + circuit_dur);
             return OriginBackoffDecision::CircuitOpened {
                 delay_ms,
-                circuit_duration_ms: circuit_dur.as_millis() as u64,
+                circuit_duration_ms: circuit_dur.as_millis().min(u128::from(u64::MAX)) as u64,
             };
         }
 

@@ -466,7 +466,7 @@ impl LocalWorkspaceBackend {
 
             let build_start = Instant::now();
             let new_inventory = build_inventory(config, roots);
-            let build_time = build_start.elapsed().as_millis() as u64;
+            let build_time = build_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
 
             let total_entries: usize = new_inventory.roots.iter().map(|r| r.entry_count).sum();
 

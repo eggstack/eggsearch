@@ -209,7 +209,9 @@ pub(crate) async fn read_with_budget(
     }
     if let Some(content_length) = resp.content_length() {
         if content_length > effective_cap as u64 {
-            let charge = (content_length as usize).min(effective_cap.saturating_add(1));
+            let charge = usize::try_from(content_length)
+                .unwrap_or(usize::MAX)
+                .min(effective_cap.saturating_add(1));
             if content_length > budget.per_response_limit as u64 {
                 budget.per_response_cap_hits += 1;
                 budget.consume(charge, kind);
@@ -716,11 +718,45 @@ async fn resolve_github_default_branch(
         );
         return None;
     }
-    let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
-        .await
-        .ok()?;
-    let body_str = std::str::from_utf8(&body).ok()?;
-    let repo_info: GitHubRepoInfo = serde_json::from_str(body_str).ok()?;
+    let body = match read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body read failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
+    let body_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body was not UTF-8; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
+    let repo_info: GitHubRepoInfo = match serde_json::from_str(body_str) {
+        Ok(info) => info,
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body parse failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     Some(repo_info.default_branch)
 }
 
@@ -753,22 +789,65 @@ async fn resolve_github_commit(
     }
     let resp = match builder.send().await {
         Ok(r) => r,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve request failed"
+            );
+            return (None, None);
+        }
     };
     if !resp.status().is_success() {
+        tracing::warn!(
+            forge = "github",
+            owner = owner,
+            repo = repo,
+            status = resp.status().as_u16(),
+            "commit resolve returned non-success"
+        );
         return (None, None);
     }
     let body = match read_with_budget(resp, budget, ForgeRequestKind::CommitResolution).await {
         Ok(b) => b,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body read failed"
+            );
+            return (None, None);
+        }
     };
     let body_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body was not UTF-8"
+            );
+            return (None, None);
+        }
     };
     let commit: GitHubCommitInfo = match serde_json::from_str(body_str) {
         Ok(c) => c,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body parse failed"
+            );
+            return (None, None);
+        }
     };
     let commit_sha = Some(commit.sha);
     let tree_sha = Some(commit.commit_info.tree.sha);
@@ -1089,11 +1168,45 @@ async fn resolve_gitlab_default_branch(
         );
         return None;
     }
-    let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
-        .await
-        .ok()?;
-    let body_str = std::str::from_utf8(&body).ok()?;
-    let info: GitLabProjectInfo = serde_json::from_str(body_str).ok()?;
+    let body = match read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body read failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
+    let body_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body was not UTF-8; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
+    let info: GitLabProjectInfo = match serde_json::from_str(body_str) {
+        Ok(info) => info,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body parse failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     Some(info.default_branch)
 }
 
@@ -1131,22 +1244,65 @@ async fn resolve_gitlab_commit(
     }
     let resp = match builder.send().await {
         Ok(r) => r,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve request failed"
+            );
+            return (None, None);
+        }
     };
     if !resp.status().is_success() {
+        tracing::warn!(
+            forge = "gitlab",
+            owner = owner,
+            repo = repo,
+            status = resp.status().as_u16(),
+            "commit resolve returned non-success"
+        );
         return (None, None);
     }
     let body = match read_with_budget(resp, budget, ForgeRequestKind::CommitResolution).await {
         Ok(b) => b,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body read failed"
+            );
+            return (None, None);
+        }
     };
     let body_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body was not UTF-8"
+            );
+            return (None, None);
+        }
     };
     let commit: GitLabCommitInfo = match serde_json::from_str(body_str) {
         Ok(c) => c,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body parse failed"
+            );
+            return (None, None);
+        }
     };
     let commit_sha = Some(commit.id);
     let tree_sha = commit.tree_id;
@@ -1439,11 +1595,45 @@ async fn resolve_forge_default_branch(
         );
         return None;
     }
-    let body = read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata)
-        .await
-        .ok()?;
-    let body_str = std::str::from_utf8(&body).ok()?;
-    let info: ForgeRepoInfo = serde_json::from_str(body_str).ok()?;
+    let body = match read_with_budget(resp, budget, ForgeRequestKind::RepositoryMetadata).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body read failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
+    let body_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body was not UTF-8; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
+    let info: ForgeRepoInfo = match serde_json::from_str(body_str) {
+        Ok(info) => info,
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve body parse failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     Some(info.default_branch)
 }
 
@@ -1477,22 +1667,65 @@ async fn resolve_forge_commit(
     }
     let resp = match builder.send().await {
         Ok(r) => r,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve request failed"
+            );
+            return (None, None);
+        }
     };
     if !resp.status().is_success() {
+        tracing::warn!(
+            forge = "gitea-like",
+            owner = owner,
+            repo = repo,
+            status = resp.status().as_u16(),
+            "commit resolve returned non-success"
+        );
         return (None, None);
     }
     let body = match read_with_budget(resp, budget, ForgeRequestKind::CommitResolution).await {
         Ok(b) => b,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body read failed"
+            );
+            return (None, None);
+        }
     };
     let body_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body was not UTF-8"
+            );
+            return (None, None);
+        }
     };
     let commit: ForgeCommitInfo = match serde_json::from_str(body_str) {
         Ok(c) => c,
-        Err(_) => return (None, None),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve body parse failed"
+            );
+            return (None, None);
+        }
     };
     let commit_sha = Some(commit.sha);
     (commit_sha, None)

@@ -394,7 +394,7 @@ async fn navigate_and_extract(
         )));
     }
 
-    let elapsed = params.start.elapsed().as_millis() as u64;
+    let elapsed = params.start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
 
     let dom_b = dom_html.as_bytes();
 

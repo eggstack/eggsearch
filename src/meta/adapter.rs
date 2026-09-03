@@ -554,7 +554,7 @@ impl MetadataSearchAdapter {
                 provider_id,
                 operation: operation.clone(),
                 status,
-                duration_ms: start.elapsed().as_millis() as u64,
+                duration_ms: start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
             });
         }
         outcomes
@@ -628,7 +628,7 @@ impl MetadataSearchAdapter {
                 provider_id,
                 operation: operation.clone(),
                 status,
-                duration_ms: start.elapsed().as_millis() as u64,
+                duration_ms: start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
             });
         }
         outcomes
@@ -893,7 +893,11 @@ impl MetadataSearchAdapter {
                             }),
                         )
                     });
-                (outcome.0, outcome.1, started.elapsed().as_millis() as u64)
+                (
+                    outcome.0,
+                    outcome.1,
+                    started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                )
             });
             active_tasks.insert(abort_handle.id(), (provider_id_for_map, spawn_started));
         }
@@ -928,7 +932,8 @@ impl MetadataSearchAdapter {
                 Ok(Some(Err(join_err))) => {
                     warn!(?join_err, "engine task panicked");
                     if let Some((provider_id, started)) = active_tasks.remove(&join_err.id()) {
-                        let latency_ms = started.elapsed().as_millis() as u64;
+                        let latency_ms =
+                            started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
                         raw_failures.push((
                             provider_id,
                             crate::meta::engines::error::EngineError::NetworkError {
@@ -959,7 +964,7 @@ impl MetadataSearchAdapter {
             &result_latencies_ms,
             &raw_failures,
             &failure_latencies_ms,
-            effective_timeout.as_millis() as u64,
+            effective_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
         );
 
         // Build attempt records from raw results and failures before
@@ -1316,7 +1321,7 @@ impl MetadataSearchAdapter {
             &dispatch.result_latencies_ms,
             &dispatch.raw_failures,
             &dispatch.failure_latencies_ms,
-            effective_timeout.as_millis() as u64,
+            effective_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
         );
 
         let providers_failed = provider_failures(
@@ -1903,7 +1908,7 @@ impl MetadataSearchAdapter {
             &dispatch.result_latencies_ms,
             &dispatch.raw_failures,
             &dispatch.failure_latencies_ms,
-            effective_timeout.as_millis() as u64,
+            effective_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
         );
 
         let providers_failed = provider_failures(
@@ -2003,7 +2008,7 @@ impl MetadataSearchAdapter {
             &dispatch.result_latencies_ms,
             &dispatch.raw_failures,
             &dispatch.failure_latencies_ms,
-            effective_timeout.as_millis() as u64,
+            effective_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
         );
 
         let providers_failed = provider_failures(

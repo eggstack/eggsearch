@@ -887,7 +887,7 @@ pub async fn read_bounded_body(
     max_bytes: usize,
 ) -> Result<Vec<u8>, EngineError> {
     if let Some(content_length) = response.content_length() {
-        if content_length as usize > max_bytes {
+        if content_length > max_bytes as u64 {
             return Err(EngineError::ParseFailed {
                 engine,
                 reason: format!(

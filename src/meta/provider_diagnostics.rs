@@ -277,18 +277,13 @@ impl ProviderHealthRegistry {
     }
 
     /// Lock the entries map, recovering from a poisoned mutex by
-    /// resetting all entries to their defaults. A panic mid-update can
-    /// leave a provider incorrectly healthy or in cooldown; discarding
-    /// the half-applied state guarantees recovery starts from a clean
-    /// baseline (health rebuilds from subsequent calls).
+    /// preserving existing entries. A panic mid-update can leave one
+    /// entry half-applied; the next record for that provider overwrites
+    /// its fields, while unrelated providers keep their cooldowns.
     fn lock_entries(&self) -> MutexGuard<'_, BTreeMap<String, ProviderHealthEntry>> {
         match self.entries.lock() {
             Ok(guard) => guard,
-            Err(poisoned) => {
-                let mut guard = poisoned.into_inner();
-                guard.clear();
-                guard
-            }
+            Err(poisoned) => poisoned.into_inner(),
         }
     }
 

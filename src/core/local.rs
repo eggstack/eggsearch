@@ -388,12 +388,16 @@ pub fn is_eligible(
     }
 
     if let Some(r) = root {
-        if let Ok(root_canonical) = r.canonicalize() {
-            if let Ok(file_canonical) = abs_path.canonicalize() {
-                if !file_canonical.starts_with(&root_canonical) {
-                    return false;
-                }
-            }
+        let root_canonical = match r.canonicalize() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        let file_canonical = match abs_path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        if !file_canonical.starts_with(&root_canonical) {
+            return false;
         }
     }
 

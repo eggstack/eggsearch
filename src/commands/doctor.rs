@@ -303,7 +303,7 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
             .adapter
             .web_search(&req, 1, state.config.search.max_results_cap)
             .await;
-        let elapsed = start.elapsed().as_millis() as u64;
+        let elapsed = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
 
         if resp.providers_failed.is_empty() {
             println!(

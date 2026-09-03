@@ -131,7 +131,7 @@ impl KevClient {
                 ));
             }
             if let Some(content_length) = resp.content_length() {
-                if content_length as usize > MAX_BODY_BYTES {
+                if content_length > MAX_BODY_BYTES as u64 {
                     return Err(anyhow::anyhow!(
                         "KEV catalog too large (Content-Length: {content_length} bytes)",
                     ));

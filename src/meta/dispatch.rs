@@ -293,7 +293,7 @@ pub(crate) async fn dispatch_parallel(
                         job.provider_id.clone(),
                         job.intended_roles.clone(),
                     ))
-                    .map(|t| t.elapsed().as_millis() as u64);
+                    .map(|t| t.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
                 let (outcome, intended_roles) = match &job.capability_disposition {
                     CapabilityDisposition::Unsupported { unsupported_roles } => (
                         RetrievalAttemptOutcome::SkippedCapabilityUnavailable,
@@ -541,7 +541,7 @@ pub(crate) async fn dispatch_parallel(
                         );
                         let duration_ms = job_start_times
                             .remove(&start_key)
-                            .map(|t| t.elapsed().as_millis() as u64);
+                            .map(|t| t.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
 
                         match tr.result {
                             Ok(results) => {
@@ -683,7 +683,7 @@ pub(crate) async fn dispatch_parallel(
                                     provider_id.clone(),
                                     intended_roles.clone(),
                                 ))
-                                .map(|t| t.elapsed().as_millis() as u64)
+                                .map(|t| t.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
                                 .unwrap_or_default();
                             let err = EngineError::NetworkError {
                                 engine: "dispatch",
@@ -828,7 +828,7 @@ pub(crate) async fn dispatch_parallel(
             );
             let duration_ms = job_start_times
                 .remove(&start_key)
-                .map(|t| t.elapsed().as_millis() as u64);
+                .map(|t| t.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
             collected_attempts.push(RetrievalAttempt {
                 provider_id: job.provider_id.clone(),
                 subquery_id: Some(job.subquery_id.clone()),
@@ -871,7 +871,7 @@ pub(crate) async fn dispatch_parallel(
                 truncated: false,
                 truncation_evidence: Default::default(),
                 query_fingerprint: Some(query_fingerprint_from_query(&job_query)),
-                duration_ms: Some(start.elapsed().as_millis() as u64),
+                duration_ms: Some(start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
             });
         }
     }

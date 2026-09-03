@@ -202,7 +202,7 @@ fn native_advisory_attempt(
         query_fingerprint: Some(crate::core::retrieval_status::query_fingerprint_from_query(
             query_text,
         )),
-        duration_ms: Some(start.elapsed().as_millis() as u64),
+        duration_ms: Some(start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
     }
 }
 

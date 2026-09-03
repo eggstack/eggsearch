@@ -294,11 +294,12 @@ pub fn score_inventory_entry(
     score
 }
 
-fn compute_fingerprint(path: &str, size: u64, mtime_secs: u64) -> u64 {
-    let mut data = Vec::with_capacity(path.len() + 16);
+fn compute_fingerprint(path: &str, size: u64, mtime_secs: u64, mtime_nanos: u32) -> u64 {
+    let mut data = Vec::with_capacity(path.len() + 20);
     data.extend_from_slice(path.as_bytes());
     data.extend_from_slice(&size.to_le_bytes());
     data.extend_from_slice(&mtime_secs.to_le_bytes());
+    data.extend_from_slice(&mtime_nanos.to_le_bytes());
     xxh3_64(&data)
 }
 
@@ -316,13 +317,13 @@ fn compute_config_fingerprint(config: &LocalConfig) -> u64 {
     xxh3_64(&data)
 }
 
-fn mtime_secs(path: &Path) -> u64 {
+fn file_mtime_parts(path: &Path) -> (u64, u32) {
     std::fs::metadata(path)
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map(|d| (d.as_secs(), d.subsec_nanos()))
+        .unwrap_or((0, 0))
 }
 
 /// Build a workspace inventory from configured roots and local config.
@@ -527,8 +528,8 @@ fn build_entry_for_file(
     let role = infer_source_role(&relative_path);
     let is_binary = is_binary_extension(&relative_path);
     let size = metadata.len();
-    let mtime = mtime_secs(path);
-    let fingerprint = compute_fingerprint(&relative_path, size, mtime);
+    let (mtime, mtime_nanos) = file_mtime_parts(path);
+    let fingerprint = compute_fingerprint(&relative_path, size, mtime, mtime_nanos);
 
     Some(InventoryEntry {
         root_index,
@@ -898,11 +899,11 @@ pub fn build_inventory_git(
         };
 
         let size = metadata.len();
-        let mtime = mtime_secs(&absolute_path);
+        let (mtime, mtime_nanos) = file_mtime_parts(&absolute_path);
         let language = language_from_extension(line).map(|s| s.to_string());
         let role = infer_source_role(line);
         let is_binary = is_binary_extension(line);
-        let fingerprint = compute_fingerprint(line, size, mtime);
+        let fingerprint = compute_fingerprint(line, size, mtime, mtime_nanos);
 
         entries.push(InventoryEntry {
             root_index,
@@ -1092,17 +1093,21 @@ pub(crate) fn validate_entry(entry: &InventoryEntry, config: &LocalConfig) -> bo
         return false;
     }
 
-    let current_mtime = entry
+    let (current_mtime_secs, current_mtime_nanos) = entry
         .absolute_path
         .metadata()
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .map(|d| (d.as_secs(), d.subsec_nanos()))
+        .unwrap_or((0, 0));
 
-    let current_fingerprint =
-        compute_fingerprint(&entry.relative_path, metadata.len(), current_mtime);
+    let current_fingerprint = compute_fingerprint(
+        &entry.relative_path,
+        metadata.len(),
+        current_mtime_secs,
+        current_mtime_nanos,
+    );
 
     entry.fingerprint == current_fingerprint
 }

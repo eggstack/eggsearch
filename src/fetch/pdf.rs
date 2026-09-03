@@ -101,8 +101,11 @@ pub fn parse_pdf_pages(
 
 /// Validate parsed page numbers against an actual document page count.
 fn validate_pdf_page_range(pages: &[u32], total_pages: usize) -> Result<(), FetchError> {
-    let total = total_pages as u32;
-    let out_of_range: Vec<u32> = pages.iter().copied().filter(|&p| p > total).collect();
+    let out_of_range: Vec<u32> = pages
+        .iter()
+        .copied()
+        .filter(|&p| p as usize > total_pages)
+        .collect();
     if !out_of_range.is_empty() {
         return Err(FetchError::PdfPageOutOfRange {
             requested: out_of_range,

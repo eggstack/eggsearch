@@ -359,7 +359,7 @@ pub fn generate_security_suggested_fetches(
                 url: candidate.url,
                 reason,
                 group: group_kind,
-                priority: i as u8,
+                priority: i.min(usize::from(u8::MAX)) as u8,
                 score: Some(candidate.score),
                 rank_reasons: candidate
                     .reasons

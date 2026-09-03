@@ -121,7 +121,7 @@ pub fn generate_research_suggested_fetches(
                 evidence_quality,
                 reason,
                 recommended_extract_mode: candidate.recommended_extract_mode,
-                priority: (i + 1) as u8,
+                priority: (i + 1).min(usize::from(u8::MAX)) as u8,
                 score: Some(candidate.score),
                 rank_reasons: candidate
                     .reasons
@@ -569,7 +569,7 @@ mod tests {
         for (i, fetch) in fetches.iter().enumerate() {
             assert_eq!(
                 fetch.priority,
-                (i + 1) as u8,
+                (i + 1).min(usize::from(u8::MAX)) as u8,
                 "priority should be sequential starting at 1"
             );
         }

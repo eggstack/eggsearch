@@ -265,6 +265,17 @@ fn derived_entry_bytes(entry: &DerivedDocumentCacheEntry) -> usize {
     bytes
 }
 
+fn saturating_sub_counter(counter: &AtomicUsize, n: usize) {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let next = current.saturating_sub(n);
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
 pub struct FetchCache {
     operation_gate: RwLock<()>,
     raw: Mutex<LruCache<RawCacheKey, RawFetchCacheEntry>>,
@@ -316,8 +327,7 @@ impl FetchCache {
         let mut raw = self.raw.lock().await;
 
         if let Some(evicted) = raw.pop(&key) {
-            self.current_raw_bytes
-                .fetch_sub(evicted.body.len(), Ordering::Relaxed);
+            saturating_sub_counter(&self.current_raw_bytes, evicted.body.len());
         }
 
         while self
@@ -328,16 +338,14 @@ impl FetchCache {
             && !raw.is_empty()
         {
             if let Some((_, evicted)) = raw.pop_lru() {
-                self.current_raw_bytes
-                    .fetch_sub(evicted.body.len(), Ordering::Relaxed);
+                saturating_sub_counter(&self.current_raw_bytes, evicted.body.len());
             } else {
                 break;
             }
         }
 
         if let Some((_, evicted)) = raw.push(key, entry) {
-            self.current_raw_bytes
-                .fetch_sub(evicted.body.len(), Ordering::Relaxed);
+            saturating_sub_counter(&self.current_raw_bytes, evicted.body.len());
         }
         self.current_raw_bytes
             .fetch_add(body_len, Ordering::Relaxed);
@@ -359,8 +367,7 @@ impl FetchCache {
         let mut derived = self.derived.lock().await;
 
         if let Some(evicted) = derived.pop(&key) {
-            self.current_derived_bytes
-                .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+            saturating_sub_counter(&self.current_derived_bytes, derived_entry_bytes(&evicted));
         }
 
         while self
@@ -371,16 +378,14 @@ impl FetchCache {
             && !derived.is_empty()
         {
             if let Some((_, evicted)) = derived.pop_lru() {
-                self.current_derived_bytes
-                    .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+                saturating_sub_counter(&self.current_derived_bytes, derived_entry_bytes(&evicted));
             } else {
                 break;
             }
         }
 
         if let Some((_, evicted)) = derived.push(key, entry) {
-            self.current_derived_bytes
-                .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+            saturating_sub_counter(&self.current_derived_bytes, derived_entry_bytes(&evicted));
         }
         self.current_derived_bytes
             .fetch_add(entry_len, Ordering::Relaxed);
@@ -405,8 +410,7 @@ impl FetchCache {
 
         for key in keys_to_remove {
             if let Some(evicted) = raw.pop(&key) {
-                self.current_raw_bytes
-                    .fetch_sub(evicted.body.len(), Ordering::Relaxed);
+                saturating_sub_counter(&self.current_raw_bytes, evicted.body.len());
             }
         }
 
@@ -421,8 +425,7 @@ impl FetchCache {
 
         for key in derived_keys_to_remove {
             if let Some(evicted) = derived.pop(&key) {
-                self.current_derived_bytes
-                    .fetch_sub(derived_entry_bytes(&evicted), Ordering::Relaxed);
+                saturating_sub_counter(&self.current_derived_bytes, derived_entry_bytes(&evicted));
             }
         }
     }
@@ -431,7 +434,7 @@ impl FetchCache {
         let _operation = self.operation_gate.read().await;
         let raw = self.raw.lock().await;
         let derived = self.derived.lock().await;
-        let current_raw = self.current_raw_bytes.load(Ordering::Relaxed);
+        let mut current_raw = self.current_raw_bytes.load(Ordering::Relaxed);
         let summed_raw: usize = raw.iter().map(|(_, e)| e.body.len()).sum();
         if current_raw != summed_raw {
             tracing::error!(
@@ -439,8 +442,10 @@ impl FetchCache {
                 summed_raw,
                 "raw byte counter drifted from LruCache contents"
             );
+            self.current_raw_bytes.store(summed_raw, Ordering::Relaxed);
+            current_raw = summed_raw;
         }
-        let current_derived = self.current_derived_bytes.load(Ordering::Relaxed);
+        let mut current_derived = self.current_derived_bytes.load(Ordering::Relaxed);
         let summed_derived: usize = derived.iter().map(|(_, e)| derived_entry_bytes(e)).sum();
         if current_derived != summed_derived {
             tracing::error!(
@@ -448,6 +453,9 @@ impl FetchCache {
                 summed_derived,
                 "derived byte counter drifted from LruCache contents"
             );
+            self.current_derived_bytes
+                .store(summed_derived, Ordering::Relaxed);
+            current_derived = summed_derived;
         }
         debug_assert_eq!(current_raw, summed_raw, "raw byte counter drifted");
         debug_assert_eq!(

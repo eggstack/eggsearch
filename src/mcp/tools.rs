@@ -2632,11 +2632,13 @@ pub async fn run_web_fetch(
                                 drop(_permit);
                                 let remaining =
                                     deadline.saturating_duration_since(std::time::Instant::now());
-                                let sleep_dur = std::time::Duration::from_millis(
-                                    delay_ms
-                                        .min(state.config.fetch.timeout_ms / 2)
-                                        .min(remaining.as_millis() as u64),
-                                );
+                                let sleep_dur =
+                                    std::time::Duration::from_millis(
+                                        delay_ms
+                                            .min(state.config.fetch.timeout_ms / 2)
+                                            .min(remaining.as_millis().min(u128::from(u64::MAX))
+                                                as u64),
+                                    );
                                 if !sleep_dur.is_zero() {
                                     tokio::time::sleep(sleep_dur).await;
                                 }
@@ -4517,7 +4519,7 @@ fn make_batch_fetch_future(
                                         let sleep_dur = std::time::Duration::from_millis(
                                             delay_ms
                                                 .min(state.config.fetch.timeout_ms / 2)
-                                                .min(remaining.as_millis() as u64),
+                                                .min(remaining.as_millis().min(u128::from(u64::MAX)) as u64),
                                         );
                                         if !sleep_dur.is_zero() {
                                             tokio::time::sleep(sleep_dur).await;
