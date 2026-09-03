@@ -229,6 +229,11 @@ async fn e13_keyless_web_search_dispatches_through_mock_engines() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;
@@ -389,6 +394,11 @@ async fn e22_mixed_providers_keyless_result_survives_credentialed_skip() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;

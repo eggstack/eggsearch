@@ -29,6 +29,19 @@ pub struct SearchPlan {
     /// `"duckduckgo"`, `"brave"`). Providers not listed here receive
     /// `generic_query`.
     pub provider_queries: BTreeMap<String, String>,
+    /// Exact date range constraint, carried through planning without
+    /// being encoded into opaque query text.
+    pub date_range: Option<crate::core::query::SearchDateRange>,
+    /// Include-only domain filters, preserved for local enforcement.
+    pub include_domains: Vec<String>,
+    /// Exclude domain filters, preserved for local enforcement.
+    pub exclude_domains: Vec<String>,
+    /// Language hint, preserved for native provider parameters.
+    pub language: Option<String>,
+    /// Region hint, preserved for native provider parameters.
+    pub region: Option<String>,
+    /// Safe-search mode, preserved for native provider parameters.
+    pub safe_search: Option<crate::core::query::SafeSearch>,
 }
 
 /// Build a [`SearchPlan`] from a [`WebSearchRequest`].
@@ -53,6 +66,12 @@ pub fn build_search_plan(req: &WebSearchRequest, selected_provider_ids: &[String
         hints,
         generic_query,
         provider_queries,
+        date_range: req.date_range.clone(),
+        include_domains: req.include_domains.clone(),
+        exclude_domains: req.exclude_domains.clone(),
+        language: req.language.clone(),
+        region: req.region.clone(),
+        safe_search: req.safe_search,
     }
 }
 

@@ -71,6 +71,11 @@ fn web_args(query: &str) -> WebSearchArgs {
         timeout_ms: None,
         intent: None,
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     }
 }
 
@@ -1208,6 +1213,11 @@ async fn corpus_web_search_deduplicates_by_url() {
         timeout_ms: None,
         intent: None,
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -1251,6 +1261,11 @@ async fn corpus_web_search_provider_failure_partial_results() {
         timeout_ms: None,
         intent: None,
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -1286,6 +1301,11 @@ async fn corpus_web_search_with_intent_returns_metadata() {
         safe_search: None,
         timeout_ms: None,
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -2619,6 +2639,11 @@ mod live_smoke {
                 timeout_ms: None,
                 intent: None,
                 freshness: None,
+                date_range: None,
+                include_domains: Vec::new(),
+                exclude_domains: Vec::new(),
+                language: None,
+                region: None,
             },
         )
         .await

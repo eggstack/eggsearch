@@ -39,6 +39,11 @@ pub async fn run(
         timeout_ms: None,
         intent: eggsearch::core::query::SearchIntent::default(),
         freshness: eggsearch::core::query::Freshness::default(),
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
 
     if let Err(e) = req.validate(cfg.search.max_query_chars) {

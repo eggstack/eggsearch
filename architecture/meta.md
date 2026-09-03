@@ -9,9 +9,9 @@
 
 | File | Responsibility |
 |------|---------------|
-| `adapter.rs` | `MetadataSearchAdapter` — central orchestrator: engine fan-out, RRF aggregation, sanitization, intent reranking, provider health |
-| `dispatch.rs` | `dispatch_subqueries()` — bounded parallel executor with priority queue, global/per-provider concurrency limits, panic recovery |
-| `planner.rs` | `build_search_plan()`, `SearchPlan` — transforms `WebSearchRequest` into provider-specific queries |
+| `adapter.rs` | `MetadataSearchAdapter` — central orchestrator: engine fan-out, RRF aggregation, sanitization, intent reranking, provider health, local domain enforcement, web capability telemetry |
+| `dispatch.rs` | `dispatch_subqueries()` — bounded parallel executor with priority queue, global/per-provider concurrency limits, panic recovery; all jobs use `EngineSearchRequest` |
+| `planner.rs` | `build_search_plan()`, `SearchPlan` — transforms `WebSearchRequest` into provider-specific queries while preserving date/domain/language/region constraints for native parameters |
 | `response.rs` | `WebSearchResponse`, `ProviderFailure` |
 | `grouping.rs` | RRF aggregation, deduplication, `AggregatedResult` merging |
 | `repo_planner.rs` | `build_repo_search_plan()`, `RepoSearchPlan`, `RepoSubquery` — multi-subquery generation from repo hints |
@@ -93,13 +93,15 @@ Per-engine inventory, the `SearchEngine` trait contract, credential resolution, 
 
 ```rust
 trait SearchEngine {
-    fn search(&self, query: &str, ...) -> Result<Vec<SearchResult>>;
+    fn search(&self, request: &EngineSearchRequest) -> Result<Vec<SearchResult>>;
     fn lookup_advisory(&self, ...) -> Result<VulnerabilityMetadata>;
     fn query_advisories_by_package(&self, ...) -> Result<Vec<VulnerabilityMetadata>>;
     fn supports_role(&self, role: EvidenceRole) -> bool;
     fn advisory_capabilities(&self) -> AdvisoryCapabilities;
 }
 ```
+
+`EngineSearchRequest` (`engines/request.rs`) is the single structured request contract: query, max-results, timeout, intent, safe-search, freshness, exact date range, include/exclude domains, language, and region. Direct web fan-out and multiquery dispatch both use it; multiquery jobs use the minimal `simple()` constructor with defaults.
 
 ### Provider Model
 

@@ -3,27 +3,39 @@
 //! Uses the official Brave Search API (JSON) with an API key passed via
 //! the `X-Subscription-Token` header.
 
-use std::time::Duration;
-
 use reqwest::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
 use super::models::SearchResult;
+use super::request::EngineSearchRequest;
+use crate::core::query::{Freshness, SafeSearch, SearchIntent};
 
 const ENGINE: &str = "brave_api";
-const DEFAULT_BASE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
+const DEFAULT_WEB_URL: &str = "https://api.search.brave.com/res/v1/web/search";
+const DEFAULT_NEWS_URL: &str = "https://api.search.brave.com/res/v1/news/search";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+const BRAVE_MAX_COUNT: usize = 20;
 
 /// Parsed Brave Search API response.
 #[derive(Debug, Deserialize)]
 struct BraveApiResponse {
     #[serde(default)]
     web: Option<BraveWebResults>,
+    #[serde(default)]
+    news: Option<BraveNewsResults>,
+    #[serde(default)]
+    results: Option<Vec<BraveResult>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct BraveWebResults {
+    #[serde(default)]
+    results: Vec<BraveResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BraveNewsResults {
     #[serde(default)]
     results: Vec<BraveResult>,
 }
@@ -37,20 +49,122 @@ struct BraveResult {
     age: Option<String>,
 }
 
+fn brave_endpoint(intent: SearchIntent) -> &'static str {
+    match intent {
+        SearchIntent::News => DEFAULT_NEWS_URL,
+        _ => DEFAULT_WEB_URL,
+    }
+}
+
+fn resolve_brave_url(base_url: Option<&str>, intent: SearchIntent) -> String {
+    match base_url {
+        None => brave_endpoint(intent).to_string(),
+        Some(url) => {
+            if intent == SearchIntent::News && url.contains("/web/search") {
+                url.replace("/web/search", "/news/search")
+            } else {
+                url.to_string()
+            }
+        }
+    }
+}
+
+fn map_freshness(request: &EngineSearchRequest) -> Option<String> {
+    if let Some(range) = &request.date_range {
+        let start = range.start.trim();
+        let end = range.end.trim();
+        if !start.is_empty() && !end.is_empty() {
+            return Some(format!("{start}to{end}"));
+        }
+        return None;
+    }
+    match request.freshness {
+        Freshness::Any => None,
+        Freshness::Day => Some("pd".to_string()),
+        Freshness::Week => Some("pw".to_string()),
+        Freshness::Month => Some("pm".to_string()),
+        Freshness::Year => Some("py".to_string()),
+    }
+}
+
+fn map_safe_search(value: Option<SafeSearch>) -> Option<String> {
+    value.map(|v| match v {
+        SafeSearch::Off => "off".to_string(),
+        SafeSearch::Moderate => "moderate".to_string(),
+        SafeSearch::Strict => "strict".to_string(),
+    })
+}
+
+fn map_language(value: Option<&str>) -> Option<String> {
+    let raw = value?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let normalized = raw.replace('_', "-");
+    let parts: Vec<&str> = normalized.split('-').collect();
+    match parts.as_slice() {
+        [primary]
+            if (2..=3).contains(&primary.len())
+                && primary.chars().all(|c| c.is_ascii_alphabetic()) =>
+        {
+            Some(primary.to_ascii_lowercase())
+        }
+        [primary, region]
+            if (2..=3).contains(&primary.len())
+                && region.len() == 2
+                && primary.chars().all(|c| c.is_ascii_alphabetic())
+                && region.chars().all(|c| c.is_ascii_alphabetic()) =>
+        {
+            Some(format!(
+                "{}-{}",
+                primary.to_ascii_lowercase(),
+                region.to_ascii_uppercase()
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn map_country(value: Option<&str>) -> Option<String> {
+    let raw = value?.trim();
+    if raw.len() == 2 && raw.chars().all(|c| c.is_ascii_alphabetic()) {
+        return Some(raw.to_ascii_uppercase());
+    }
+    None
+}
+
 pub async fn search(
     client: &Client,
     api_key: &str,
     base_url: Option<&str>,
-    query: &str,
-    max_results: usize,
-    timeout: Duration,
+    request: &EngineSearchRequest,
 ) -> Result<Vec<SearchResult>, EngineError> {
-    let url = base_url.unwrap_or(DEFAULT_BASE_URL);
+    let url = resolve_brave_url(base_url, request.intent);
+    let count = request.max_results.clamp(1, BRAVE_MAX_COUNT).to_string();
 
+    let mut params: Vec<(String, String)> = vec![
+        ("q".to_string(), request.query.clone()),
+        ("count".to_string(), count),
+    ];
+    if let Some(safe) = map_safe_search(request.safe_search) {
+        params.push(("safesearch".to_string(), safe));
+    }
+    if let Some(fresh) = map_freshness(request) {
+        params.push(("freshness".to_string(), fresh));
+    }
+    if let Some(lang) = map_language(request.language.as_deref()) {
+        params.push(("search_lang".to_string(), lang));
+    }
+    if let Some(country) = map_country(request.region.as_deref()) {
+        params.push(("country".to_string(), country));
+    }
+
+    let timeout = request.timeout;
+    let max_results = request.max_results;
     let bytes = tokio::time::timeout(timeout, async {
         let resp = client
             .get(url)
-            .query(&[("q", query), ("count", &max_results.to_string())])
+            .query(&params)
             .header("Accept", "application/json")
             .header("X-Subscription-Token", api_key)
             .send()
@@ -77,7 +191,16 @@ pub async fn search(
             reason: format!("invalid JSON: {e}"),
         })?;
 
-    let raw = parsed.web.map(|w| w.results).unwrap_or_default();
+    let mut raw: Vec<BraveResult> = Vec::new();
+    if let Some(web) = parsed.web {
+        raw.extend(web.results);
+    }
+    if let Some(news) = parsed.news {
+        raw.extend(news.results);
+    }
+    if let Some(results) = parsed.results {
+        raw.extend(results);
+    }
     Ok(convert(raw, max_results))
 }
 
@@ -116,6 +239,11 @@ fn convert(raw: Vec<BraveResult>, max_results: usize) -> Vec<SearchResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    fn simple_req(query: &str, max_results: usize) -> EngineSearchRequest {
+        EngineSearchRequest::simple(query, max_results, Duration::from_secs(5))
+    }
 
     #[test]
     fn test_convert_extracts_results() {
@@ -250,9 +378,110 @@ mod tests {
         assert!(parsed.web.is_none());
     }
 
-    // -----------------------------------------------------------------------
-    // HTTP-level tests using httpmock
-    // -----------------------------------------------------------------------
+    #[test]
+    fn test_parse_news_response() {
+        let body = r#"{
+            "news": {
+                "results": [
+                    {"title": "Breaking", "url": "https://example.com/news", "description": "News story"}
+                ]
+            }
+        }"#;
+        let parsed: BraveApiResponse = serde_json::from_str(body).unwrap();
+        let news = parsed.news.expect("news results");
+        assert_eq!(news.results.len(), 1);
+        let out = convert(news.results, 10);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].title, "Breaking");
+    }
+
+    #[test]
+    fn endpoint_selection_is_intent_driven() {
+        assert_eq!(brave_endpoint(SearchIntent::News), DEFAULT_NEWS_URL);
+        assert_eq!(brave_endpoint(SearchIntent::Web), DEFAULT_WEB_URL);
+        assert_eq!(brave_endpoint(SearchIntent::Code), DEFAULT_WEB_URL);
+        assert_eq!(
+            resolve_brave_url(None, SearchIntent::News),
+            DEFAULT_NEWS_URL.to_string()
+        );
+        assert_eq!(
+            resolve_brave_url(None, SearchIntent::Web),
+            DEFAULT_WEB_URL.to_string()
+        );
+    }
+
+    #[test]
+    fn resolve_rewrites_web_override_to_news_for_news_intent() {
+        let web_override = "http://127.0.0.1:1/web/search";
+        let resolved = resolve_brave_url(Some(web_override), SearchIntent::News);
+        assert_eq!(resolved, "http://127.0.0.1:1/news/search");
+        let kept = resolve_brave_url(Some(web_override), SearchIntent::Web);
+        assert_eq!(kept, web_override.to_string());
+    }
+
+    #[test]
+    fn map_freshness_relative() {
+        let mut req = simple_req("q", 10);
+        req.freshness = Freshness::Day;
+        assert_eq!(map_freshness(&req).as_deref(), Some("pd"));
+        req.freshness = Freshness::Week;
+        assert_eq!(map_freshness(&req).as_deref(), Some("pw"));
+        req.freshness = Freshness::Month;
+        assert_eq!(map_freshness(&req).as_deref(), Some("pm"));
+        req.freshness = Freshness::Year;
+        assert_eq!(map_freshness(&req).as_deref(), Some("py"));
+        req.freshness = Freshness::Any;
+        assert_eq!(map_freshness(&req), None);
+    }
+
+    #[test]
+    fn map_freshness_exact_range() {
+        let mut req = simple_req("q", 10);
+        req.freshness = Freshness::Any;
+        req.date_range = Some(crate::core::query::SearchDateRange::new(
+            "2024-01-01",
+            "2024-01-31",
+        ));
+        assert_eq!(
+            map_freshness(&req).as_deref(),
+            Some("2024-01-01to2024-01-31")
+        );
+    }
+
+    #[test]
+    fn map_language_supported_and_unsupported() {
+        assert_eq!(map_language(Some("en")).as_deref(), Some("en"));
+        assert_eq!(map_language(Some("en-US")).as_deref(), Some("en-US"));
+        assert_eq!(map_language(Some("en_US")).as_deref(), Some("en-US"));
+        assert_eq!(map_language(Some("not-a-locale!!!")).as_deref(), None);
+        assert_eq!(map_language(None), None);
+    }
+
+    #[test]
+    fn map_country_supported_and_unsupported() {
+        assert_eq!(map_country(Some("us")).as_deref(), Some("US"));
+        assert_eq!(map_country(Some("US")).as_deref(), Some("US"));
+        assert_eq!(map_country(Some("USA")), None);
+        assert_eq!(map_country(Some("u1")), None);
+        assert_eq!(map_country(None), None);
+    }
+
+    #[test]
+    fn map_safe_search_values() {
+        assert_eq!(
+            map_safe_search(Some(SafeSearch::Off)).as_deref(),
+            Some("off")
+        );
+        assert_eq!(
+            map_safe_search(Some(SafeSearch::Moderate)).as_deref(),
+            Some("moderate")
+        );
+        assert_eq!(
+            map_safe_search(Some(SafeSearch::Strict)).as_deref(),
+            Some("strict")
+        );
+        assert_eq!(map_safe_search(None), None);
+    }
 
     use crate::meta::engines::error::EngineError;
 
@@ -283,9 +512,7 @@ mod tests {
             &client,
             "test-api-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect("search should succeed");
@@ -315,9 +542,7 @@ mod tests {
             &client,
             "test-api-key",
             Some(&server.url("/search")),
-            "xyznonexistent",
-            10,
-            Duration::from_secs(5),
+            &simple_req("xyznonexistent", 10),
         )
         .await
         .expect("search should succeed");
@@ -342,9 +567,7 @@ mod tests {
             &client,
             "test-api-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect("search should succeed");
@@ -367,9 +590,7 @@ mod tests {
             &client,
             "bad-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect_err("should fail with 401");
@@ -398,9 +619,7 @@ mod tests {
             &client,
             "bad-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect_err("should fail with 403");
@@ -429,9 +648,7 @@ mod tests {
             &client,
             "test-api-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect_err("should fail with 429");
@@ -462,9 +679,7 @@ mod tests {
             &client,
             "test-api-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect_err("should fail with parse error");
@@ -491,11 +706,9 @@ mod tests {
         let client = reqwest::Client::new();
         let err = search(
             &client,
-            "test-api-key",
+            "bad-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect_err("should fail with 500");
@@ -536,9 +749,7 @@ mod tests {
             &client,
             "test-api-key",
             Some(&server.url("/search")),
-            "rust",
-            2,
-            Duration::from_secs(5),
+            &simple_req("rust", 2),
         )
         .await
         .expect("search should succeed");
@@ -563,17 +774,138 @@ mod tests {
         });
 
         let client = reqwest::Client::new();
-        // Should succeed because the mock verifies the header
         search(
             &client,
             "my-secret-key",
             Some(&server.url("/search")),
-            "rust",
-            10,
-            Duration::from_secs(5),
+            &simple_req("rust", 10),
         )
         .await
         .expect("search should succeed with correct API key header");
+    }
+
+    #[tokio::test]
+    async fn test_web_request_contains_expected_params() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .query_param("count", "5")
+                .query_param("safesearch", "strict")
+                .query_param("freshness", "pw")
+                .query_param("search_lang", "en")
+                .query_param("country", "US");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"web": {"results": []}}"#);
+        });
+
+        let client = reqwest::Client::new();
+        let mut req = simple_req("rust", 5);
+        req.safe_search = Some(SafeSearch::Strict);
+        req.freshness = Freshness::Week;
+        req.language = Some("en".to_string());
+        req.region = Some("US".to_string());
+        search(&client, "k", Some(&server.url("/search")), &req)
+            .await
+            .expect("search should succeed");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_exact_date_range_sent_as_freshness() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("freshness", "2024-01-01to2024-01-31");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"web": {"results": []}}"#);
+        });
+
+        let client = reqwest::Client::new();
+        let mut req = simple_req("rust", 5);
+        req.date_range = Some(crate::core::query::SearchDateRange::new(
+            "2024-01-01",
+            "2024-01-31",
+        ));
+        search(&client, "k", Some(&server.url("/search")), &req)
+            .await
+            .expect("search should succeed");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_unsupported_locale_is_omitted() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .query_param("count", "5");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"web": {"results": []}}"#);
+        });
+
+        let client = reqwest::Client::new();
+        let mut req = simple_req("rust", 5);
+        req.language = Some("not-a-locale!!!".to_string());
+        req.region = Some("USA".to_string());
+        let url = server.url("/search");
+        search(&client, "k", Some(&url), &req)
+            .await
+            .expect("search should succeed");
+        mock.assert();
+        assert_eq!(map_language(Some("not-a-locale!!!")), None);
+        assert_eq!(map_country(Some("USA")), None);
+    }
+
+    #[tokio::test]
+    async fn test_news_intent_hits_news_endpoint() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let web_mock = server.mock(|when, then| {
+            when.method(GET).path("/web/search");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"web": {"results": []}}"#);
+        });
+        let news_mock = server.mock(|when, then| {
+            when.method(GET).path("/news/search");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(
+                    r#"{"news": {"results": [{"title": "N", "url": "https://example.com/n", "description": "d"}]}}"#,
+                );
+        });
+
+        let client = reqwest::Client::new();
+        let web_base = server.url("/web/search");
+        let mut news_req = simple_req("election", 5);
+        news_req.intent = SearchIntent::News;
+        let results = search(&client, "k", Some(&web_base), &news_req)
+            .await
+            .expect("news search should succeed");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "N");
+        news_mock.assert();
+        assert_eq!(web_mock.hits(), 0);
+
+        let web_req = simple_req("election", 5);
+        search(&client, "k", Some(&web_base), &web_req)
+            .await
+            .expect("web search should succeed");
+        assert!(web_mock.hits() >= 1);
     }
 
     #[test]
@@ -589,12 +921,13 @@ mod tests {
         assert!(desc.configured);
         assert!(desc.enabled);
         assert!(!desc.default);
-        // Brave API adapter only forwards q and count; safe_search,
-        // freshness, language, and region are not passed through.
-        assert!(!desc.capabilities.supports_safe_search);
-        assert!(!desc.capabilities.supports_freshness);
-        assert!(!desc.capabilities.supports_language);
-        assert!(!desc.capabilities.supports_region);
+        assert!(desc.capabilities.supports_safe_search);
+        assert!(desc.capabilities.supports_freshness);
+        assert!(desc.capabilities.supports_language);
+        assert!(desc.capabilities.supports_region);
+        assert!(desc.capabilities.supports_news);
+        assert!(!desc.capabilities.supports_domain_filters);
+        assert!(!desc.capabilities.supports_result_timestamps);
     }
 
     #[test]

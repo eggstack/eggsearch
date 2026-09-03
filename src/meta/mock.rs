@@ -140,16 +140,14 @@ impl SearchEngine for MockEngine {
 
     fn search<'a>(
         &'a self,
-        _query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a crate::meta::engines::EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         if let Some(sink) = &self.timeout_sink {
             if let Ok(mut g) = sink.lock() {
-                *g = Some(timeout);
+                *g = Some(request.timeout);
             }
         }
-        let limit = max_results;
+        let limit = request.max_results;
         Box::pin(async move {
             if self.hang {
                 pending::<()>().await;
@@ -229,15 +227,13 @@ impl SearchEngine for RecordingMockEngine {
 
     fn search<'a>(
         &'a self,
-        _query: &'a str,
-        max_results: usize,
-        _timeout: Duration,
+        request: &'a crate::meta::engines::EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         if let Ok(mut g) = self.seen_limit.lock() {
-            *g = Some(max_results);
+            *g = Some(request.max_results);
         }
         let results = self.results.clone();
-        let limit = max_results;
+        let limit = request.max_results;
         Box::pin(async move {
             let mut out = results;
             out.truncate(limit);

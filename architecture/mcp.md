@@ -63,9 +63,13 @@ impl EggsearchServer {
 | `max_results` | Option<usize> | Max results (1-50, default 10) |
 | `providers` | Option<Vec<String>> | Specific provider IDs |
 | `freshness` | Option<String> | Time filter: day, week, month, year |
-| `safe_search` | Option<String> | Safe search: off, moderate, strict |
+| `safe_search` | Option<String> | Safe search: off, moderate, strict (native on Brave API) |
+| `date_range` | Option<SearchDateRange> | Exact `YYYY-MM-DD` start/end, exclusive with `freshness` |
+| `include_domains`/`exclude_domains` | Vec<String> | Hostname filters, locally enforced, telemetry `approximated` |
+| `language`/`region` | Option<String> | Conservative hints, native on Brave API when representable |
+| `intent` | Option<String> | `news` routes Brave API to `/res/v1/news/search` |
 
-**Returns:** Array of `SourceCard` objects.
+**Returns:** Array of `SourceCard` objects plus additive `capability_enforcement` telemetry.
 
 ### 2. `web_fetch`
 **Purpose:** Bounded extraction of one explicit HTTP(S) URL.

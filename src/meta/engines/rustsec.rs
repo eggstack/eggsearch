@@ -90,22 +90,21 @@ impl super::SearchEngine for RustSecEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a super::EngineSearchRequest,
     ) -> super::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
-            if max_results == 0 {
+            if request.max_results == 0 {
                 return Ok(Vec::new());
             }
-            match parse_query_type(query) {
+            match parse_query_type(&request.query) {
                 QueryType::ById(id) => {
-                    let results = lookup_by_id(&self.client, &id, timeout).await?;
-                    Ok(results.into_iter().take(max_results).collect())
+                    let results = lookup_by_id(&self.client, &id, request.timeout).await?;
+                    Ok(results.into_iter().take(request.max_results).collect())
                 }
                 QueryType::ByKeyword(keyword) => {
-                    let results = search_by_keyword(&self.client, &keyword, timeout).await?;
-                    Ok(results.into_iter().take(max_results).collect())
+                    let results =
+                        search_by_keyword(&self.client, &keyword, request.timeout).await?;
+                    Ok(results.into_iter().take(request.max_results).collect())
                 }
             }
         })

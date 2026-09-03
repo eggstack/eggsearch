@@ -506,6 +506,7 @@ pub async fn run_security_search_plan(
         warnings: dispatch_warnings,
         trust_markers,
         evidence_postprocess: None,
+        capability_enforcement: None,
     };
 
     // 3. Check whether any selected provider exposes native advisory capability.

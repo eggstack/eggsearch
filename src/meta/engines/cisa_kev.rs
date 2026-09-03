@@ -28,15 +28,19 @@ impl super::SearchEngine for CisaKevEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a super::EngineSearchRequest,
     ) -> super::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
-            if max_results == 0 {
+            if request.max_results == 0 {
                 return Ok(Vec::new());
             }
-            search_kev_catalog(&self.kev_client, query, max_results, timeout).await
+            search_kev_catalog(
+                &self.kev_client,
+                &request.query,
+                request.max_results,
+                request.timeout,
+            )
+            .await
         })
     }
 

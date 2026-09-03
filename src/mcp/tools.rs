@@ -287,10 +287,9 @@ pub struct WebSearchArgs {
     /// configured defaults".
     #[serde(default)]
     pub providers: Vec<String>,
-    /// Optional safe-search mode. Reserved for future use; the
-    /// current HTML providers do not enforce it. Supplying this
-    /// field causes the server to emit an advisory warning on the
-    /// response.
+    /// Optional safe-search mode. Enforced natively by capable
+    /// providers (e.g. Brave Search API); otherwise the server emits
+    /// an advisory warning.
     #[serde(default)]
     pub safe_search: Option<crate::core::SafeSearch>,
     /// Optional per-request timeout override in milliseconds.
@@ -306,6 +305,26 @@ pub struct WebSearchArgs {
     /// support date filtering.
     #[serde(default)]
     pub freshness: Option<crate::core::query::Freshness>,
+    /// Exact calendar date range (`YYYY-MM-DD` start/end). Mutually
+    /// exclusive with a non-`any` `freshness`.
+    #[serde(default)]
+    pub date_range: Option<crate::core::query::SearchDateRange>,
+    /// Include-only domain filters (lowercase hostnames, max 32).
+    /// Enforced locally; reported as approximated telemetry.
+    #[serde(default)]
+    pub include_domains: Vec<String>,
+    /// Exclude domain filters (lowercase hostnames, max 32).
+    /// Enforced locally.
+    #[serde(default)]
+    pub exclude_domains: Vec<String>,
+    /// Language hint (e.g. `en`, `en-US`). Best-effort unless
+    /// capability-enforced.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Region hint (e.g. `US`, `GB`). Best-effort unless
+    /// capability-enforced.
+    #[serde(default)]
+    pub region: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -822,6 +841,11 @@ pub async fn run_web_search(
         timeout_ms: args.timeout_ms,
         intent: args.intent.unwrap_or_default(),
         freshness: args.freshness.unwrap_or_default(),
+        date_range: args.date_range.clone(),
+        include_domains: args.include_domains.clone(),
+        exclude_domains: args.exclude_domains.clone(),
+        language: args.language.clone(),
+        region: args.region.clone(),
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
@@ -946,15 +970,21 @@ pub async fn run_web_search(
     }
 
     if args.safe_search.is_some() {
-        warnings.push(
-            "safe_search_unenforced: safe_search is not enforced by current HTML providers; results may include unexpected content".to_string()
-        );
-        structured_warnings.push(
-            crate::core::warning::AgentWarning::new(
-                crate::core::warning::WarningCode::SafeSearchUnenforced,
-                "safe_search is not enforced by current HTML providers; results may include unexpected content",
-            ),
-        );
+        let enforced = resp
+            .capability_enforcement
+            .as_ref()
+            .is_some_and(|t| t.enforced.iter().any(|c| c == "safe_search"));
+        if !enforced {
+            warnings.push(
+                "safe_search_unenforced: safe_search is not enforced by selected providers; results may include unexpected content".to_string()
+            );
+            structured_warnings.push(
+                crate::core::warning::AgentWarning::new(
+                    crate::core::warning::WarningCode::SafeSearchUnenforced,
+                    "safe_search is not enforced by selected providers; results may include unexpected content",
+                ),
+            );
+        }
     }
 
     let providers_failed: Vec<serde_json::Value> = resp
@@ -1012,6 +1042,7 @@ pub async fn run_web_search(
         "retrieval_summary": resp.evidence_postprocess.as_ref().and_then(|ep| ep.retrieval_summary.as_ref()),
         "conflict_metadata": resp.evidence_postprocess.as_ref().map(|ep| &ep.conflict_metadata),
         "evidence_role_summary": resp.evidence_postprocess.as_ref().and_then(|ep| ep.evidence_role_summary.as_ref()),
+        "capability_enforcement": resp.capability_enforcement.as_ref().map(|t| serde_json::to_value(t).unwrap_or(serde_json::json!({}))).unwrap_or(serde_json::json!({})),
     });
 
     Ok(payload)
@@ -5542,6 +5573,11 @@ mod tests {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         };
 
         let result = run_web_search(state, args).await;
@@ -5566,6 +5602,11 @@ mod tests {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         };
 
         let result = run_web_search(state, args).await;
@@ -5704,6 +5745,11 @@ mod tests {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         };
 
         let value = run_web_search(state, args).await.unwrap();
@@ -5730,6 +5776,11 @@ mod tests {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         };
 
         let value = run_web_search(state, args).await.unwrap();
@@ -5757,6 +5808,11 @@ mod tests {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         };
 
         let value = run_web_search(state, args).await.unwrap();

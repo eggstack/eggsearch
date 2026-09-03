@@ -167,6 +167,184 @@ impl Freshness {
     }
 }
 
+/// Exact calendar date range for provider-neutral freshness filtering.
+///
+/// Both bounds are ISO `YYYY-MM-DD` dates. When present, the range is
+/// mutually exclusive with a non-`any` relative [`Freshness`] hint to
+/// avoid provider-precedence ambiguity.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SearchDateRange {
+    /// Inclusive start date in `YYYY-MM-DD` form.
+    pub start: String,
+    /// Inclusive end date in `YYYY-MM-DD` form.
+    pub end: String,
+}
+
+impl SearchDateRange {
+    /// Build a date range from two ISO date strings.
+    pub fn new<S: Into<String>>(start: S, end: S) -> Self {
+        Self {
+            start: start.into(),
+            end: end.into(),
+        }
+    }
+}
+
+/// Maximum entries allowed per domain include/exclude list.
+pub const MAX_DOMAIN_FILTERS: usize = 32;
+/// Maximum total hostname length (DNS-compatible).
+pub const MAX_HOSTNAME_LEN: usize = 253;
+/// Maximum single DNS label length.
+pub const MAX_LABEL_LEN: usize = 63;
+/// Maximum language hint length.
+pub const MAX_LANGUAGE_LEN: usize = 32;
+/// Maximum region hint length.
+pub const MAX_REGION_LEN: usize = 32;
+
+/// Normalize a single domain filter entry to a lowercase hostname.
+///
+/// Rejects schemes, credentials, ports, paths, query strings,
+/// fragments, empty labels, and wildcard syntax.
+pub fn normalize_domain(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("domain must not be empty".to_string());
+    }
+    if trimmed.len() > MAX_HOSTNAME_LEN {
+        return Err(format!(
+            "domain '{trimmed}' exceeds max length {MAX_HOSTNAME_LEN}"
+        ));
+    }
+    if trimmed.contains("://") {
+        return Err(format!("domain '{trimmed}' must not contain a scheme"));
+    }
+    if trimmed.contains('@') {
+        return Err(format!("domain '{trimmed}' must not contain credentials"));
+    }
+    if trimmed.contains('/') || trimmed.contains('?') || trimmed.contains('#') {
+        return Err(format!(
+            "domain '{trimmed}' must not contain a path, query, or fragment"
+        ));
+    }
+    if trimmed.contains(':') {
+        return Err(format!("domain '{trimmed}' must not contain a port"));
+    }
+    if trimmed.contains('*') {
+        return Err(format!(
+            "domain '{trimmed}' must not contain wildcard syntax"
+        ));
+    }
+    if trimmed.chars().any(|c| c.is_whitespace()) {
+        return Err(format!("domain '{trimmed}' must not contain whitespace"));
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with('.') || lower.ends_with('.') {
+        return Err(format!("domain '{trimmed}' must not have empty labels"));
+    }
+    if lower.contains("..") {
+        return Err(format!("domain '{trimmed}' must not have empty labels"));
+    }
+    for label in lower.split('.') {
+        if label.is_empty() {
+            return Err(format!("domain '{trimmed}' must not have empty labels"));
+        }
+        if label.len() > MAX_LABEL_LEN {
+            return Err(format!(
+                "domain '{trimmed}' has a label exceeding {MAX_LABEL_LEN} chars"
+            ));
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err(format!(
+                "domain '{trimmed}' has a label with leading/trailing hyphen"
+            ));
+        }
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(format!(
+                "domain '{trimmed}' must contain only alphanumeric characters and hyphens"
+            ));
+        }
+    }
+    Ok(lower)
+}
+
+/// Returns `true` when `host` matches `filter` on a label boundary.
+///
+/// `example.com` matches `example.com` and `docs.example.com` but not
+/// `notexample.com`. Both inputs should already be lowercase hostnames.
+pub fn domain_matches_filter(host: &str, filter: &str) -> bool {
+    if host == filter {
+        return true;
+    }
+    host.len() > filter.len()
+        && host.ends_with(filter)
+        && host.as_bytes()[host.len() - filter.len() - 1] == b'.'
+}
+
+/// Extract the lowercase hostname from an HTTP(S) URL for domain filtering.
+///
+/// Returns `None` when the URL does not parse or has no host.
+pub fn hostname_from_url(url: &str) -> Option<String> {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+}
+
+/// Validate a language hint string.
+///
+/// Bounded and syntactically conservative: 2-32 chars, starts with a
+/// letter, contains only alphanumerics, hyphens, and underscores, and
+/// ends with an alphanumeric. Provider support is best-effort unless
+/// capability-enforced.
+pub fn validate_language(value: &str) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("language must not be empty".to_string());
+    }
+    if trimmed.len() < 2 || trimmed.len() > MAX_LANGUAGE_LEN {
+        return Err(format!("language must be 2-{MAX_LANGUAGE_LEN} chars"));
+    }
+    validate_locale_syntax(trimmed, "language")
+}
+
+/// Validate a region hint string.
+///
+/// Same conservative syntax as [`validate_language`]; documented as
+/// best-effort unless a provider natively enforces it.
+pub fn validate_region(value: &str) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("region must not be empty".to_string());
+    }
+    if trimmed.len() < 2 || trimmed.len() > MAX_REGION_LEN {
+        return Err(format!("region must be 2-{MAX_REGION_LEN} chars"));
+    }
+    validate_locale_syntax(trimmed, "region")
+}
+
+fn validate_locale_syntax(value: &str, field: &str) -> Result<(), String> {
+    let bytes = value.as_bytes();
+    if !bytes[0].is_ascii_alphabetic() {
+        return Err(format!("{field} must start with a letter"));
+    }
+    if !bytes[bytes.len() - 1].is_ascii_alphanumeric() {
+        return Err(format!("{field} must end with an alphanumeric"));
+    }
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!(
+            "{field} must contain only alphanumerics, hyphens, and underscores"
+        ));
+    }
+    Ok(())
+}
+
+fn parse_iso_date(value: &str) -> Result<chrono::NaiveDate, String> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| format!("invalid date '{value}'; expected YYYY-MM-DD"))
+}
+
 /// Input shape for the MCP `web_search` tool.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebSearchRequest {
@@ -198,6 +376,26 @@ pub struct WebSearchRequest {
     /// ignore this. Default is `Any`.
     #[serde(default)]
     pub freshness: Freshness,
+    /// Exact calendar date range (`YYYY-MM-DD` start/end). Mutually
+    /// exclusive with a non-`any` relative `freshness`.
+    #[serde(default)]
+    pub date_range: Option<SearchDateRange>,
+    /// Include-only domain filters (lowercase hostnames). Enforced
+    /// locally on result URLs; provider-native enforcement is tracked
+    /// separately in capability telemetry.
+    #[serde(default)]
+    pub include_domains: Vec<String>,
+    /// Exclude domain filters (lowercase hostnames). Enforced locally.
+    #[serde(default)]
+    pub exclude_domains: Vec<String>,
+    /// Language hint (e.g. `en`, `en-US`). Bounded conservative
+    /// syntax; provider support is best-effort unless enforced.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Region hint (e.g. `US`, `GB`). Bounded conservative syntax;
+    /// provider support is best-effort unless enforced.
+    #[serde(default)]
+    pub region: Option<String>,
 }
 
 impl WebSearchRequest {
@@ -227,6 +425,11 @@ impl WebSearchRequest {
             timeout_ms: None,
             intent: SearchIntent::default(),
             freshness: Freshness::default(),
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         }
     }
 
@@ -245,6 +448,67 @@ impl WebSearchRequest {
         }
         if let Some(0) = self.timeout_ms {
             return Err(CoreError::InvalidQuery("timeout_ms must be > 0".into()));
+        }
+        if let Some(range) = &self.date_range {
+            let start = parse_iso_date(range.start.trim()).map_err(CoreError::InvalidQuery)?;
+            let end = parse_iso_date(range.end.trim()).map_err(CoreError::InvalidQuery)?;
+            if start > end {
+                return Err(CoreError::InvalidQuery(
+                    "date_range start must be <= end".into(),
+                ));
+            }
+            if self.freshness != Freshness::Any {
+                return Err(CoreError::InvalidQuery(
+                    "date_range and freshness are mutually exclusive".into(),
+                ));
+            }
+        }
+        if self.include_domains.len() > MAX_DOMAIN_FILTERS {
+            return Err(CoreError::InvalidQuery(format!(
+                "include_domains must contain <= {MAX_DOMAIN_FILTERS} entries"
+            )));
+        }
+        if self.exclude_domains.len() > MAX_DOMAIN_FILTERS {
+            return Err(CoreError::InvalidQuery(format!(
+                "exclude_domains must contain <= {MAX_DOMAIN_FILTERS} entries"
+            )));
+        }
+        let mut normalized_include = Vec::with_capacity(self.include_domains.len());
+        for raw in &self.include_domains {
+            match normalize_domain(raw) {
+                Ok(n) => normalized_include.push(n),
+                Err(reason) => {
+                    return Err(CoreError::InvalidQuery(format!(
+                        "invalid include_domains entry: {reason}"
+                    )));
+                }
+            }
+        }
+        let mut normalized_exclude = Vec::with_capacity(self.exclude_domains.len());
+        for raw in &self.exclude_domains {
+            match normalize_domain(raw) {
+                Ok(n) => normalized_exclude.push(n),
+                Err(reason) => {
+                    return Err(CoreError::InvalidQuery(format!(
+                        "invalid exclude_domains entry: {reason}"
+                    )));
+                }
+            }
+        }
+        for host in &normalized_include {
+            if normalized_exclude.iter().any(|e| e == host) {
+                return Err(CoreError::InvalidQuery(format!(
+                    "domain '{host}' appears in both include_domains and exclude_domains"
+                )));
+            }
+        }
+        if let Some(lang) = &self.language {
+            validate_language(lang)
+                .map_err(|reason| CoreError::InvalidQuery(format!("invalid language: {reason}")))?;
+        }
+        if let Some(region) = &self.region {
+            validate_region(region)
+                .map_err(|reason| CoreError::InvalidQuery(format!("invalid region: {reason}")))?;
         }
         Ok(())
     }
@@ -522,5 +786,82 @@ mod tests {
             result.is_err(),
             "\"recent\" should not be accepted as a search intent"
         );
+    }
+
+    #[test]
+    fn date_range_accepts_leap_day() {
+        let mut req = WebSearchRequest::new("test");
+        req.date_range = Some(SearchDateRange::new("2024-02-29", "2024-03-01"));
+        assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn date_range_rejects_invalid_calendar_date() {
+        let mut req = WebSearchRequest::new("test");
+        req.date_range = Some(SearchDateRange::new("2023-02-29", "2023-03-01"));
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn date_range_rejects_reversed_range() {
+        let mut req = WebSearchRequest::new("test");
+        req.date_range = Some(SearchDateRange::new("2024-03-01", "2024-02-01"));
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn date_range_mutually_exclusive_with_freshness() {
+        let mut req = WebSearchRequest::new("test");
+        req.freshness = Freshness::Week;
+        req.date_range = Some(SearchDateRange::new("2024-01-01", "2024-01-31"));
+        let err = req.validate(512).unwrap_err().to_string();
+        assert!(err.contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn domain_normalization_lowercases_and_trims() {
+        assert_eq!(normalize_domain("Example.COM").unwrap(), "example.com");
+    }
+
+    #[test]
+    fn domain_rejects_scheme_port_path_wildcard() {
+        assert!(normalize_domain("https://example.com").is_err());
+        assert!(normalize_domain("example.com:443").is_err());
+        assert!(normalize_domain("example.com/path").is_err());
+        assert!(normalize_domain("*.example.com").is_err());
+        assert!(normalize_domain("bad..example.com").is_err());
+    }
+
+    #[test]
+    fn domain_overlap_rejected() {
+        let mut req = WebSearchRequest::new("test");
+        req.include_domains = vec!["example.com".to_string()];
+        req.exclude_domains = vec!["EXAMPLE.com".to_string()];
+        assert!(req.validate(512).is_err());
+    }
+
+    #[test]
+    fn domain_matches_exact_and_subdomain_not_deceptive() {
+        assert!(domain_matches_filter("example.com", "example.com"));
+        assert!(domain_matches_filter("docs.example.com", "example.com"));
+        assert!(!domain_matches_filter("notexample.com", "example.com"));
+    }
+
+    #[test]
+    fn language_region_validation() {
+        assert!(validate_language("en").is_ok());
+        assert!(validate_language("en-US").is_ok());
+        assert!(validate_language("x").is_err());
+        assert!(validate_region("US").is_ok());
+        assert!(validate_region("x").is_err());
+        assert!(validate_region("US!").is_err());
+    }
+
+    #[test]
+    fn legacy_request_deserializes_without_new_fields() {
+        let req: WebSearchRequest = serde_json::from_str(r#"{"query":"rust"}"#).unwrap();
+        assert!(req.date_range.is_none());
+        assert!(req.include_domains.is_empty());
+        assert!(req.validate(512).is_ok());
     }
 }

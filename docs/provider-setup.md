@@ -72,6 +72,8 @@ api_key_env = "BRAVE_API_KEY"
 
 The environment variable `BRAVE_API_KEY` must be set at runtime.
 
+Native capabilities: `safe_search`, `freshness` (relative `pd|pw|pm|py` and exact `YYYY-MM-DDtoYYYY-MM-DD`), `language` (`search_lang`), `region` (`country` for 2-letter codes), and `news` (dedicated `/res/v1/news/search` endpoint for `intent=news`). Domain filters are enforced locally, not provider-native. Result timestamps are not yet preserved.
+
 ### GitHub Code Search
 
 - ID: `github_code`

@@ -117,8 +117,10 @@ pub use quality::{
     ResultConfidence, ResultQuality, SearchUncertaintySummary, UncertaintyReason,
 };
 pub use query::{
-    resolve_max_results, Freshness, MaxResultsResolution, SafeSearch, SearchIntent,
-    WebSearchRequest,
+    domain_matches_filter, hostname_from_url, normalize_domain, resolve_max_results,
+    validate_language, validate_region, Freshness, MaxResultsResolution, SafeSearch,
+    SearchDateRange, SearchIntent, WebSearchRequest, MAX_DOMAIN_FILTERS, MAX_HOSTNAME_LEN,
+    MAX_LABEL_LEN, MAX_LANGUAGE_LEN, MAX_REGION_LEN,
 };
 pub use repo_fetch::{
     apply_line_range, github_browser_url, github_permalink_url, github_raw_url, gitlab_browser_url,

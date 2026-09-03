@@ -386,9 +386,12 @@ pub(crate) async fn dispatch_parallel(
                             };
                         }
 
-                        let result = provider
-                            .search(&query, candidate_limit, job_remaining)
-                            .await;
+                        let request = crate::meta::engines::EngineSearchRequest::simple(
+                            &query,
+                            candidate_limit,
+                            job_remaining,
+                        );
+                        let result = provider.search(&request).await;
                         TaskResult {
                             subquery_id,
                             subquery_order,
@@ -950,9 +953,7 @@ mod tests {
 
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
         {
             self.call_count.fetch_add(1, Ordering::SeqCst);
@@ -976,9 +977,7 @@ mod tests {
 
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
         {
             Box::pin(async { Err(EngineError::Timeout { engine: "mock" }) })
@@ -1000,9 +999,7 @@ mod tests {
 
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
         {
             Box::pin(async {
@@ -1425,12 +1422,11 @@ mod tests {
 
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            timeout: Duration,
+            request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
         {
             let recorded = Arc::clone(&self.recorded_timeout);
+            let timeout = request.timeout;
             Box::pin(async move {
                 *recorded.lock().unwrap() = Some(timeout);
                 Ok(vec![])
@@ -1466,14 +1462,12 @@ mod tests {
 
         fn search<'a>(
             &'a self,
-            query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
         {
             let start_log = Arc::clone(&self.start_log);
             let delay = self.delay;
-            let marker = query.to_string();
+            let marker = request.query.clone();
             Box::pin(async move {
                 start_log.lock().unwrap().push(marker);
                 tokio::time::sleep(delay).await;
@@ -1603,9 +1597,7 @@ mod tests {
 
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
         {
             let current = Arc::clone(&self.current_concurrent);
@@ -2258,9 +2250,7 @@ mod tests {
 
             fn search<'a>(
                 &'a self,
-                _query: &'a str,
-                _max_results: usize,
-                _timeout: Duration,
+                _request: &'a crate::meta::engines::EngineSearchRequest,
             ) -> Pin<Box<dyn Future<Output = Result<Vec<SearchResult>, EngineError>> + Send + 'a>>
             {
                 Box::pin(async {

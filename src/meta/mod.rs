@@ -65,6 +65,7 @@ pub use adapter::{
     ErrorClass, MetadataSearchAdapter, NativeAdvisoryOperation, ProviderAdvisoryOutcome,
     ProviderAdvisoryStatus,
 };
+pub use engines::EngineSearchRequest;
 pub use evidence_bundle::build_evidence_bundle;
 pub use planner::{build_search_plan, SearchPlan};
 pub use provider_diagnostics::{

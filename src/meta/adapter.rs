@@ -26,9 +26,13 @@ use tracing::{debug, warn};
 
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::{AggregatedResult, ResultMetadata, SearchResult};
-use crate::meta::engines::{build_http_client, AdvisoryCapabilities, SearchEngine};
+use crate::meta::engines::{
+    build_http_client, AdvisoryCapabilities, EngineSearchRequest, SearchEngine,
+};
 use crate::meta::planner::build_search_plan;
-use crate::meta::provider_diagnostics::{FailureClass, ProviderHealthRegistry};
+use crate::meta::provider_diagnostics::{
+    CapabilityEnforcementTelemetry, FailureClass, ProviderHealthRegistry,
+};
 use crate::meta::research_evidence_analysis::analyze_research_evidence;
 use crate::meta::response::{ProviderFailure, WebSearchResponse};
 
@@ -838,7 +842,18 @@ impl MetadataSearchAdapter {
         // each provider is asked for the candidate limit rather than
         // the final return count. This is what lets intent-aware
         // reranking promote results just outside the final window.
-        let candidate_limit = candidate_pool_size(final_max_results, candidate_cap);
+        // When domain filters are present, double the pool (bounded by
+        // the cap) so local post-filtering does not trivially starve
+        // final results.
+        let has_domain_filters = !req.include_domains.is_empty() || !req.exclude_domains.is_empty();
+        let base_candidate = candidate_pool_size(final_max_results, candidate_cap);
+        let candidate_limit = if has_domain_filters {
+            base_candidate
+                .saturating_mul(2)
+                .min(candidate_cap.max(final_max_results))
+        } else {
+            base_candidate
+        };
 
         let plan = build_search_plan(req, &queried_ids);
 
@@ -869,16 +884,18 @@ impl MetadataSearchAdapter {
                 .get(&provider_id)
                 .cloned()
                 .unwrap_or_else(|| plan.generic_query.clone());
-            let engine_timeout = effective_timeout;
-            let per_provider_limit = candidate_limit;
+            let engine_request = EngineSearchRequest::from_web_request(
+                req,
+                query,
+                candidate_limit,
+                effective_timeout,
+            );
             let spawn_started = Instant::now();
             let provider_id_for_map = provider_id.clone();
             let abort_handle = join_set.spawn(async move {
                 let started = Instant::now();
                 let inner = async move {
-                    let result = engine
-                        .search(&query, per_provider_limit, engine_timeout)
-                        .await;
+                    let result = engine.search(&engine_request).await;
                     (provider_id, result)
                 };
                 let outcome = AssertUnwindSafe(inner)
@@ -1050,6 +1067,18 @@ impl MetadataSearchAdapter {
             }
         }
 
+        // Deterministic local domain enforcement after aggregation and
+        // before final truncation. Provider-native filtering is tracked
+        // separately; this step is always local approximation.
+        if has_domain_filters {
+            results = apply_domain_filters(results, &req.include_domains, &req.exclude_domains);
+            let mut filtered_markers = TrustMarkers::default();
+            for card in &results {
+                filtered_markers.merge(&card.trust_markers);
+            }
+            trust_markers = filtered_markers;
+        }
+
         // --- bounded intent/freshness reranking ---
         apply_intent_reranking(&mut results, req.intent, req.freshness);
 
@@ -1058,34 +1087,50 @@ impl MetadataSearchAdapter {
         // final window can be promoted into the returned set.
         results.truncate(final_max_results);
 
-        // --- capability warnings ---
-        // Advisory warnings when the request asks for behavior that
-        // selected providers cannot enforce. These are non-fatal and
-        // appended to the existing warnings vector.
+        // --- capability enforcement telemetry + warnings ---
+        // Telemetry is the source of truth; human-readable warnings are
+        // derived from the same decision so they cannot disagree.
+        let telemetry = CapabilityEnforcementTelemetry::for_web_search(req, &queried_ids);
         let mut capability_warnings: Vec<SearchWarning> = Vec::new();
 
-        // 1. safe_search requested but no provider enforces it.
-        if req.safe_search.is_some() && !any_engine_supports(&engines, |c| c.supports_safe_search) {
+        if telemetry.not_enforced.iter().any(|c| c == "safe_search") {
             capability_warnings.push(SearchWarning::new(
                 "_system",
                 "safe_search_unenforced: safe_search requested but no selected provider enforces safe search filtering",
             ));
         }
-
-        // 2. Freshness requested but no provider-side filtering
-        //    and no result-level timestamps available.
-        if req.freshness != crate::core::query::Freshness::Any {
-            let has_freshness = any_engine_supports(&engines, |c| c.supports_freshness);
-            let has_timestamps = any_engine_supports(&engines, |c| c.supports_result_timestamps);
-            if !has_freshness && !has_timestamps {
-                capability_warnings.push(SearchWarning::new(
-                    "_system",
-                    format!(
-                        "freshness_unenforced: freshness hint '{}' requested but no provider applies server-side freshness filtering",
-                        req.freshness.as_str()
-                    ),
-                ));
-            }
+        if telemetry.not_enforced.iter().any(|c| c == "freshness") {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                format!(
+                    "freshness_unenforced: freshness hint '{}' requested but no provider applies server-side freshness filtering",
+                    req.freshness.as_str()
+                ),
+            ));
+        }
+        if telemetry.not_enforced.iter().any(|c| c == "date_range") {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "date_range_unenforced: exact date_range requested but no selected provider enforces server-side date filtering",
+            ));
+        }
+        if telemetry.not_enforced.iter().any(|c| c == "language") {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "language_unenforced: language hint requested but no selected provider enforces language filtering",
+            ));
+        }
+        if telemetry.not_enforced.iter().any(|c| c == "region") {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "region_unenforced: region hint requested but no selected provider enforces region filtering",
+            ));
+        }
+        if telemetry.approximated.iter().any(|c| c == "domain_filters") {
+            capability_warnings.push(SearchWarning::new(
+                "_system",
+                "domain_filters_local: domain filters enforced locally on result URLs, not provider-native",
+            ));
         }
 
         // 3. Code intent with no native code/repository providers.
@@ -1204,6 +1249,11 @@ impl MetadataSearchAdapter {
             warnings,
             trust_markers,
             evidence_postprocess: Some(postprocess_result),
+            capability_enforcement: if telemetry.requested.is_empty() {
+                None
+            } else {
+                Some(telemetry)
+            },
         }
     }
 
@@ -2913,6 +2963,41 @@ fn candidate_pool_size(final_max_results: usize, candidate_cap: usize) -> usize 
     desired.min(candidate_cap.max(final_max_results))
 }
 
+fn apply_domain_filters(
+    cards: Vec<SourceCard>,
+    include_raw: &[String],
+    exclude_raw: &[String],
+) -> Vec<SourceCard> {
+    use crate::core::query::{domain_matches_filter, hostname_from_url, normalize_domain};
+
+    let include: Vec<String> = include_raw
+        .iter()
+        .filter_map(|d| normalize_domain(d).ok())
+        .collect();
+    let exclude: Vec<String> = exclude_raw
+        .iter()
+        .filter_map(|d| normalize_domain(d).ok())
+        .collect();
+    if include.is_empty() && exclude.is_empty() {
+        return cards;
+    }
+    cards
+        .into_iter()
+        .filter(|card| {
+            let Some(host) = hostname_from_url(&card.url) else {
+                return include.is_empty();
+            };
+            if !include.is_empty() && !include.iter().any(|f| domain_matches_filter(&host, f)) {
+                return false;
+            }
+            if exclude.iter().any(|f| domain_matches_filter(&host, f)) {
+                return false;
+            }
+            true
+        })
+        .collect()
+}
+
 fn local_result_budget(effective_max_results: usize) -> usize {
     if effective_max_results == 0 {
         0
@@ -3667,9 +3752,7 @@ mod tests {
         }
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: std::time::Duration,
+            _request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
             let results = self.results.clone();
             Box::pin(async move { Ok(results) })
@@ -3693,9 +3776,7 @@ mod tests {
 
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
             Box::pin(async { Ok(Vec::new()) })
         }
@@ -4246,18 +4327,16 @@ mod tests {
             }
             fn search<'a>(
                 &'a self,
-                _query: &'a str,
-                max_results: usize,
-                _timeout: Duration,
+                request: &'a crate::meta::engines::EngineSearchRequest,
             ) -> crate::meta::engines::BoxFuture<
                 'a,
                 Result<Vec<SearchResult>, crate::meta::engines::error::EngineError>,
             > {
                 if let Ok(mut g) = self.sink.lock() {
-                    *g = Some(max_results);
+                    *g = Some(request.max_results);
                 }
                 let results = self.results.clone();
-                let limit = max_results;
+                let limit = request.max_results;
                 Box::pin(async move {
                     let mut out = results;
                     out.truncate(limit);
@@ -4328,21 +4407,19 @@ mod tests {
         }
         fn search<'a>(
             &'a self,
-            query: &'a str,
-            max_results: usize,
-            _timeout: Duration,
+            request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> crate::meta::engines::BoxFuture<
             'a,
             Result<Vec<SearchResult>, crate::meta::engines::error::EngineError>,
         > {
             if let Ok(mut g) = self.seen_query.lock() {
-                *g = Some(query.to_string());
+                *g = Some(request.query.clone());
             }
             if let Ok(mut g) = self.seen_limit.lock() {
-                *g = Some(max_results);
+                *g = Some(request.max_results);
             }
             let results = self.results.clone();
-            let limit = max_results;
+            let limit = request.max_results;
             Box::pin(async move {
                 let mut out = results;
                 out.truncate(limit);
@@ -5337,9 +5414,7 @@ mod tests {
         }
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a crate::meta::engines::EngineSearchRequest,
         ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
             let delay = self.delay;
             let results = self.results.clone();

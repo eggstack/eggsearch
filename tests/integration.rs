@@ -135,6 +135,11 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         timeout_ms: None,
         intent: None,
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     }
 }
 
@@ -212,6 +217,11 @@ async fn web_search_empty_query_returns_validation_error() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;
@@ -233,6 +243,11 @@ async fn web_search_oversized_query_returns_validation_error() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;
@@ -254,6 +269,11 @@ async fn web_search_zero_max_results_returns_validation_error() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;
@@ -277,6 +297,11 @@ async fn web_search_zero_timeout_ms_returns_validation_error() {
             timeout_ms: Some(0),
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;
@@ -307,6 +332,11 @@ async fn web_search_oversized_max_results_clamps_and_warns() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await
@@ -332,6 +362,11 @@ async fn web_search_blocked_when_mode_off() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;
@@ -352,6 +387,11 @@ async fn web_search_unknown_provider_returns_error() {
             timeout_ms: None,
             intent: None,
             freshness: None,
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         },
     )
     .await;
@@ -4713,6 +4753,11 @@ async fn github_code_adapter_dispatches_provider_specific_query() {
         timeout_ms: None,
         intent: Some(eggsearch::core::query::SearchIntent::Code),
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4778,6 +4823,11 @@ async fn github_code_result_card_has_source_file_metadata() {
         timeout_ms: None,
         intent: Some(eggsearch::core::query::SearchIntent::Code),
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4840,6 +4890,11 @@ async fn github_code_respects_max_results() {
         timeout_ms: None,
         intent: Some(eggsearch::core::query::SearchIntent::Code),
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4884,6 +4939,11 @@ async fn github_code_empty_results_returned() {
         timeout_ms: None,
         intent: Some(eggsearch::core::query::SearchIntent::Code),
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4926,6 +4986,11 @@ async fn github_code_auth_error_returns_failure() {
         timeout_ms: None,
         intent: Some(eggsearch::core::query::SearchIntent::Code),
         freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
     };
     let result = run_web_search(state, args).await;
     assert!(
@@ -5624,9 +5689,7 @@ mod intent_reranking_regression {
         }
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a eggsearch::meta::engines::EngineSearchRequest,
         ) -> eggsearch::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>
         {
             let results = self.results.clone();

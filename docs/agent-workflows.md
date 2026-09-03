@@ -6,6 +6,8 @@ Use `provider_status` first when you need the current provider/capability pictur
 
 `web_fetch` also supports `extract_mode = "metadata_only"` when you only need page metadata and do not need the body text.
 
+`web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, local exact-host-plus-subdomain enforcement), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API when representable).
+
 ## 1. Repo Map → Repo Search → Repo Fetch (Repository Exploration)
 
 ```jsonc

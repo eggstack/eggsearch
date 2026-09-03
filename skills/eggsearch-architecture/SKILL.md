@@ -34,7 +34,8 @@ Single library + binary crate (not a workspace). All source under `src/`:
 ## Adapter Pattern
 
 `MetadataSearchAdapter` wraps all search engines. MCP tools call the adapter, never engines directly. The adapter handles:
-- Engine dispatch and RRF aggregation
+- Engine dispatch via single `EngineSearchRequest` contract (`src/meta/engines/request.rs`) for both direct fan-out and multiquery dispatch
+- RRF aggregation and local domain post-filtering (exact-host-plus-subdomain, bounded pool, additive telemetry)
 - Provider health tracking (3 failures → cooldown)
 - Sanitization and result grouping
 - Evidence postprocessing (roles, coverage, conflicts, retrieval summaries)

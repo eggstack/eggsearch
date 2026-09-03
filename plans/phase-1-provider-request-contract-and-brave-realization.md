@@ -1,6 +1,6 @@
 # Phase 1 — Provider Request Contract and Brave Capability Realization
 
-Status: planned
+Status: complete
 Depends on: none
 Baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b`
 Roadmap: `plans/roadmap.md`

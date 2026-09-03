@@ -11,7 +11,8 @@ Engines are paired 1:1 with the 34 registered provider IDs (`KNOWN_PROVIDER_IDS`
 
 | File | Responsibility |
 |------|---------------|
-| `mod.rs` | `SearchEngine` trait, `AdvisoryCapabilities`, engine struct definitions (~1000 lines) |
+| `mod.rs` | `SearchEngine` trait (`search(&EngineSearchRequest)`), `AdvisoryCapabilities`, engine struct definitions (~1000 lines) |
+| `request.rs` | `EngineSearchRequest` — provider-neutral structured request (query, budgets, intent, safe-search, freshness, date range, domains, language, region) |
 | `models.rs` | `SearchResult` and structured metadata payloads (`CodeSearchMetadata`, issue/release metadata) promoted into source cards during conversion |
 | `normalizer.rs` | URL canonicalization + tracking-param stripping (`utm_*`, `fbclid`, `gclid`, `msclkid`, `yclid`) before results enter aggregation |
 | `error.rs` | `EngineError` |
@@ -25,7 +26,7 @@ Engines are paired 1:1 with the 34 registered provider IDs (`KNOWN_PROVIDER_IDS`
 pub trait SearchEngine: Send + Sync {
     fn name(&self) -> &'static str;
 
-    fn search<'a>(&'a self, query: &'a str, max_results: usize, timeout: Duration)
+    fn search<'a>(&'a self, request: &'a EngineSearchRequest)
         -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
 
     fn supports_role(&self, role: &EvidenceRole) -> bool { true }
@@ -68,7 +69,7 @@ Key semantics:
 | Provider ID | Engine | Credential / Config |
 |-------------|--------|---------------------|
 | `searxng` | `SearxngEngine` | Requires `base_url` from config; skipped `[missing_searxng_config]` otherwise |
-| `brave_api` | `BraveApiEngine` | API key via `ApiProviderConfig.api_key_env` (default `BRAVE_API_KEY`) |
+| `brave_api` | `BraveApiEngine` | API key via `ApiProviderConfig.api_key_env` (default `BRAVE_API_KEY`); natively maps safe-search, freshness/date-range, `search_lang`, `country`, and news intent (`/res/v1/news/search`) |
 
 ### Forge code/issues/releases (API key + optional base URL)
 

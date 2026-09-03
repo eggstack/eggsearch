@@ -127,29 +127,30 @@ impl super::SearchEngine for GithubAdvisoryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a super::EngineSearchRequest,
     ) -> super::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
-            if max_results == 0 {
+            if request.max_results == 0 {
                 return Ok(Vec::new());
             }
-            match parse_query_type(query) {
+            match parse_query_type(&request.query) {
                 QueryType::CveId(cve_id) => {
                     let results =
-                        search_by_cve(&self.client, &self.api_key, &cve_id, timeout).await?;
-                    Ok(results.into_iter().take(max_results).collect())
+                        search_by_cve(&self.client, &self.api_key, &cve_id, request.timeout)
+                            .await?;
+                    Ok(results.into_iter().take(request.max_results).collect())
                 }
                 QueryType::GhsaId(ghsa_id) => {
                     let results =
-                        search_by_ghsa(&self.client, &self.api_key, &ghsa_id, timeout).await?;
-                    Ok(results.into_iter().take(max_results).collect())
+                        search_by_ghsa(&self.client, &self.api_key, &ghsa_id, request.timeout)
+                            .await?;
+                    Ok(results.into_iter().take(request.max_results).collect())
                 }
                 QueryType::Keyword(keyword) => {
                     let results =
-                        search_by_keyword(&self.client, &self.api_key, &keyword, timeout).await?;
-                    Ok(results.into_iter().take(max_results).collect())
+                        search_by_keyword(&self.client, &self.api_key, &keyword, request.timeout)
+                            .await?;
+                    Ok(results.into_iter().take(request.max_results).collect())
                 }
             }
         })

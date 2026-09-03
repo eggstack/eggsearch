@@ -34,6 +34,7 @@ pub mod openalex;
 pub mod osv;
 pub mod packagist;
 pub mod pypi;
+pub mod request;
 pub mod rubygems;
 pub mod rustsec;
 pub mod searxng;
@@ -53,6 +54,8 @@ use reqwest::Client;
 use self::error::EngineError;
 use self::models::SearchResult;
 
+pub use self::request::EngineSearchRequest;
+
 // A heap-allocated future that is Send — required for dyn trait + tokio multi-thread.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -65,14 +68,12 @@ pub struct AdvisoryCapabilities {
 pub trait SearchEngine: Send + Sync {
     fn name(&self) -> &'static str;
 
-    /// Run a single search query. `timeout` is the per-engine request
-    /// timeout, supplied by the adapter (bounded above by the
-    /// configured global timeout).
+    /// Run a single structured search request. Engines read
+    /// query/max-results/timeout from the request and ignore optional
+    /// constraints they do not natively support.
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
 
     /// Whether this engine can serve the given evidence role.
@@ -259,15 +260,13 @@ impl SearchEngine for DuckDuckGoEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(duckduckgo::search(
             &self.client,
-            query,
-            max_results,
-            timeout,
+            &request.query,
+            request.max_results,
+            request.timeout,
         ))
     }
 }
@@ -279,11 +278,14 @@ impl SearchEngine for BraveEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(brave::search(&self.client, query, max_results, timeout))
+        Box::pin(brave::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -294,11 +296,14 @@ impl SearchEngine for StartpageEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(startpage::search(&self.client, query, max_results, timeout))
+        Box::pin(startpage::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -309,11 +314,14 @@ impl SearchEngine for YahooEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(yahoo::search(&self.client, query, max_results, timeout))
+        Box::pin(yahoo::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -324,11 +332,14 @@ impl SearchEngine for MojeekEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(mojeek::search(&self.client, query, max_results, timeout))
+        Box::pin(mojeek::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -339,17 +350,15 @@ impl SearchEngine for SearxngEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             searxng::search(
                 &self.client,
                 self.base_url.as_str(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -363,18 +372,14 @@ impl SearchEngine for BraveApiEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             brave_api::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                request,
             )
             .await
         })
@@ -388,18 +393,16 @@ impl SearchEngine for GithubCodeEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             github_code::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -413,18 +416,16 @@ impl SearchEngine for GithubIssuesEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             github_issues::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -438,18 +439,16 @@ impl SearchEngine for GithubReleasesEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             github_releases::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -463,18 +462,16 @@ impl SearchEngine for GitlabCodeEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             gitlab_code::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -488,18 +485,16 @@ impl SearchEngine for GitlabIssuesEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             gitlab_issues::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -513,18 +508,16 @@ impl SearchEngine for GitlabReleasesEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             gitlab_releases::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -538,18 +531,16 @@ impl SearchEngine for GiteaCodeEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             gitea_code::search(
                 &self.client,
                 &self.api_key,
                 Some(self.base_url.as_str()),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -563,18 +554,16 @@ impl SearchEngine for GiteaIssuesEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             gitea_issues::search(
                 &self.client,
                 &self.api_key,
                 Some(self.base_url.as_str()),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -588,18 +577,16 @@ impl SearchEngine for GiteaReleasesEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             gitea_releases::search(
                 &self.client,
                 &self.api_key,
                 Some(self.base_url.as_str()),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })
@@ -620,11 +607,14 @@ impl SearchEngine for OsvEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(osv::search(&self.client, query, max_results, timeout))
+        Box::pin(osv::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 
     fn lookup_advisory<'a>(
@@ -662,11 +652,14 @@ impl SearchEngine for CratesIoRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(crates_io::search(&self.client, query, max_results, timeout))
+        Box::pin(crates_io::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -677,11 +670,14 @@ impl SearchEngine for PypiRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(pypi::search(&self.client, query, max_results, timeout))
+        Box::pin(pypi::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -692,15 +688,13 @@ impl SearchEngine for NpmRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(npm_registry::search(
             &self.client,
-            query,
-            max_results,
-            timeout,
+            &request.query,
+            request.max_results,
+            request.timeout,
         ))
     }
 }
@@ -712,11 +706,14 @@ impl SearchEngine for GoPkgRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(go_pkg::search(&self.client, query, max_results, timeout))
+        Box::pin(go_pkg::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -727,15 +724,13 @@ impl SearchEngine for MavenCentralRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(maven_central::search(
             &self.client,
-            query,
-            max_results,
-            timeout,
+            &request.query,
+            request.max_results,
+            request.timeout,
         ))
     }
 }
@@ -747,11 +742,14 @@ impl SearchEngine for NugetRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(nuget::search(&self.client, query, max_results, timeout))
+        Box::pin(nuget::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -762,11 +760,14 @@ impl SearchEngine for RubygemsRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(rubygems::search(&self.client, query, max_results, timeout))
+        Box::pin(rubygems::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -777,11 +778,14 @@ impl SearchEngine for PackagistRegistryEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(packagist::search(&self.client, query, max_results, timeout))
+        Box::pin(packagist::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -792,11 +796,14 @@ impl SearchEngine for OpenAlexEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(openalex::search(&self.client, query, max_results, timeout))
+        Box::pin(openalex::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -807,11 +814,14 @@ impl SearchEngine for CrossRefEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(crossref::search(&self.client, query, max_results, timeout))
+        Box::pin(crossref::search(
+            &self.client,
+            &request.query,
+            request.max_results,
+            request.timeout,
+        ))
     }
 }
 
@@ -822,16 +832,14 @@ impl SearchEngine for SemanticScholarEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             semantic_scholar::search(
                 &self.client,
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
                 self.api_key.as_deref(),
             )
             .await
@@ -846,18 +854,16 @@ impl SearchEngine for SourcegraphCodeEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             sourcegraph::search(
                 &self.client,
                 self.api_key.as_deref(),
                 self.base_url.as_deref(),
-                query,
-                max_results,
-                timeout,
+                &request.query,
+                request.max_results,
+                request.timeout,
             )
             .await
         })

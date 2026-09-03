@@ -905,7 +905,6 @@ fn bench_capability_partition(c: &mut Criterion) {
     use eggsearch::meta::dispatch::partition_roles_for_engine;
     use eggsearch::meta::engines::{error::EngineError, models::SearchResult};
     use eggsearch::meta::engines::{BoxFuture, SearchEngine};
-    use std::time::Duration;
 
     struct BenchEngine;
 
@@ -916,9 +915,7 @@ fn bench_capability_partition(c: &mut Criterion) {
 
         fn search<'a>(
             &'a self,
-            _query: &'a str,
-            _max_results: usize,
-            _timeout: Duration,
+            _request: &'a eggsearch::meta::engines::EngineSearchRequest,
         ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
             Box::pin(async { Ok(Vec::new()) })
         }

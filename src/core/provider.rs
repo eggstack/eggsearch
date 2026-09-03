@@ -639,12 +639,12 @@ pub fn built_in_provider_descriptor(
             requires_api_key: true,
             configured: configured && enabled,
             capabilities: ProviderCapabilities {
-                supports_safe_search: false,
-                supports_freshness: false,
-                supports_language: false,
-                supports_region: false,
+                supports_safe_search: true,
+                supports_freshness: true,
+                supports_language: true,
+                supports_region: true,
                 supports_domain_filters: false,
-                supports_news: false,
+                supports_news: true,
                 supports_code_search: false,
                 supports_repo_filter: false,
                 supports_org_filter: false,
@@ -1876,14 +1876,13 @@ mod tests {
     fn brave_api_descriptor_capabilities() {
         let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None, None)
             .unwrap();
-        // Brave API adapter only forwards q and count; safe_search,
-        // freshness, language, and region are not passed through.
-        assert!(!desc.capabilities.supports_safe_search);
-        assert!(!desc.capabilities.supports_freshness);
-        assert!(!desc.capabilities.supports_language);
-        assert!(!desc.capabilities.supports_region);
+        assert!(desc.capabilities.supports_safe_search);
+        assert!(desc.capabilities.supports_freshness);
+        assert!(desc.capabilities.supports_language);
+        assert!(desc.capabilities.supports_region);
         assert!(!desc.capabilities.supports_domain_filters);
-        assert!(!desc.capabilities.supports_news);
+        assert!(desc.capabilities.supports_news);
+        assert!(!desc.capabilities.supports_result_timestamps);
     }
 
     #[test]
@@ -1891,7 +1890,7 @@ mod tests {
         let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None, None)
             .unwrap();
         let summary = desc.capabilities.summary();
-        assert_eq!(summary, "basic");
+        assert_eq!(summary, "safe_search, freshness, language, region, news");
     }
 
     #[test]

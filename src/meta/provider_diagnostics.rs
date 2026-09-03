@@ -1042,6 +1042,144 @@ impl CapabilityEnforcementTelemetry {
             not_enforced,
         }
     }
+
+    /// Build enforcement telemetry for a `web_search` request.
+    ///
+    /// Distinguishes provider-native enforcement from locally
+    /// enforced/approximated behavior (domain post-filtering) and
+    /// not-enforced constraints. Local filtering is reported as
+    /// `approximated`, never as native `enforced`.
+    pub fn for_web_search(
+        req: &crate::core::query::WebSearchRequest,
+        selected_providers: &[String],
+    ) -> Self {
+        let wants_safe = req.safe_search.is_some();
+        let wants_freshness = req.freshness != crate::core::query::Freshness::Any;
+        let wants_date_range = req.date_range.is_some();
+        let wants_domains = !req.include_domains.is_empty() || !req.exclude_domains.is_empty();
+        let wants_language = req.language.is_some();
+        let wants_region = req.region.is_some();
+        let wants_news = req.intent == crate::core::query::SearchIntent::News;
+
+        let mut requested = Vec::new();
+        if wants_safe {
+            requested.push("safe_search".to_string());
+        }
+        if wants_freshness {
+            requested.push("freshness".to_string());
+        }
+        if wants_date_range {
+            requested.push("date_range".to_string());
+        }
+        if wants_domains {
+            requested.push("domain_filters".to_string());
+        }
+        if wants_language {
+            requested.push("language".to_string());
+        }
+        if wants_region {
+            requested.push("region".to_string());
+        }
+        if wants_news {
+            requested.push("news".to_string());
+        }
+
+        if requested.is_empty() {
+            return Self::default();
+        }
+
+        let mut has_safe = false;
+        let mut has_freshness = false;
+        let mut has_timestamps = false;
+        let mut has_language = false;
+        let mut has_region = false;
+        let mut has_news = false;
+        for id in selected_providers {
+            if let Some(desc) =
+                built_in_provider_descriptor(id, true, false, true, false, None, None)
+            {
+                if desc.capabilities.supports_safe_search {
+                    has_safe = true;
+                }
+                if desc.capabilities.supports_freshness {
+                    has_freshness = true;
+                }
+                if desc.capabilities.supports_result_timestamps {
+                    has_timestamps = true;
+                }
+                if desc.capabilities.supports_language {
+                    has_language = true;
+                }
+                if desc.capabilities.supports_region {
+                    has_region = true;
+                }
+                if desc.capabilities.supports_news {
+                    has_news = true;
+                }
+            }
+        }
+
+        let mut enforced = Vec::new();
+        let mut approximated = Vec::new();
+        let mut not_enforced = Vec::new();
+
+        if wants_safe {
+            if has_safe {
+                enforced.push("safe_search".to_string());
+            } else {
+                not_enforced.push("safe_search".to_string());
+            }
+        }
+        if wants_freshness {
+            if has_freshness {
+                enforced.push("freshness".to_string());
+            } else if has_timestamps {
+                approximated.push("freshness".to_string());
+            } else {
+                not_enforced.push("freshness".to_string());
+            }
+        }
+        if wants_date_range {
+            if has_freshness {
+                enforced.push("date_range".to_string());
+            } else if has_timestamps {
+                approximated.push("date_range".to_string());
+            } else {
+                not_enforced.push("date_range".to_string());
+            }
+        }
+        if wants_domains {
+            approximated.push("domain_filters".to_string());
+        }
+        if wants_language {
+            if has_language {
+                enforced.push("language".to_string());
+            } else {
+                not_enforced.push("language".to_string());
+            }
+        }
+        if wants_region {
+            if has_region {
+                enforced.push("region".to_string());
+            } else {
+                not_enforced.push("region".to_string());
+            }
+        }
+        if wants_news {
+            if has_news {
+                enforced.push("news".to_string());
+            } else {
+                approximated.push("news".to_string());
+            }
+        }
+
+        Self {
+            requested,
+            enforced,
+            approximated,
+            not_enforced,
+        }
+    }
 }
 
 #[cfg(test)]

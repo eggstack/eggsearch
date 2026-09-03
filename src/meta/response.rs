@@ -44,6 +44,10 @@ pub struct WebSearchResponse {
     /// Evidence integration postprocessing result, populated by
     /// `materialize_evidence_roles()` and `postprocess()`.
     pub evidence_postprocess: Option<EvidencePostprocessResult>,
+    /// Capability enforcement telemetry for web constraints. Additive;
+    /// `None` when no constrained fields were requested.
+    pub capability_enforcement:
+        Option<crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry>,
 }
 
 #[cfg(test)]

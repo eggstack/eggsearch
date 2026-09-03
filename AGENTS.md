@@ -46,7 +46,7 @@ make bench-check             # compile-check benches without running
 make fuzz-smoke              # 60s runs of 3 key fuzz targets
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 4,774 tests pass with `--all-features` (21 ignored live-smoke); 4,545 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 4,867 tests pass with `--all-features` (21 ignored live-smoke); 4,545 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -142,7 +142,8 @@ Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/ski
 ## Key Architecture
 
 - **Adapter pattern:** `MetadataSearchAdapter` wraps all search engines, handles RRF aggregation, sanitization, and provider health. MCP tools call the adapter, never engines directly. See `architecture/meta.md`.
-- **Provider model:** `ProviderKind` enum (`HtmlScrape`, `JsonApi`, `ApiKey`, `Local`). 24 boolean capability flags per provider. HTML scrapers report `ProviderCapabilities::none()`. See `architecture/core.md`.
+- **Provider request contract:** `EngineSearchRequest` (`src/meta/engines/request.rs`) is the single structured engine request (query, budgets, intent, safe-search, freshness/date-range, domains, language, region). Direct web fan-out and `dispatch_parallel` multiquery dispatch both use it.
+- **Provider model:** `ProviderKind` enum (`HtmlScrape`, `JsonApi`, `ApiKey`, `Local`). 24 boolean capability flags per provider. HTML scrapers report `ProviderCapabilities::none()`. `brave_api` natively enforces safe-search, freshness/date-range, language, region, and news. Domain filters are always local approximation. See `architecture/core.md`.
 - **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors. Defined in `src/core/repo_search.rs`.
 - **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`. See `docs/config.md`.
 - **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP profile-scoped browser fetches launch a request-scoped browser against that exact directory and use its default browser context; anonymous browser fetches retain the warm ephemeral lifecycle. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default. Profile cache isolation uses opaque IDs internally; display names are used only in MCP response metadata. See `architecture/fetch.md`.

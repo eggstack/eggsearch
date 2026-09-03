@@ -296,6 +296,11 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
             timeout_ms: Some(timeout_per_provider),
             intent: eggsearch::core::query::SearchIntent::default(),
             freshness: eggsearch::core::query::Freshness::default(),
+            date_range: None,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            language: None,
+            region: None,
         };
 
         let start = std::time::Instant::now();

@@ -138,17 +138,20 @@ impl super::SearchEngine for NvdEngine {
 
     fn search<'a>(
         &'a self,
-        query: &'a str,
-        max_results: usize,
-        timeout: Duration,
+        request: &'a super::EngineSearchRequest,
     ) -> super::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
-            if max_results == 0 {
+            if request.max_results == 0 {
                 return Ok(Vec::new());
             }
-            let results =
-                keyword_search(&self.client, self.api_key.as_deref(), query, timeout).await?;
-            Ok(results.into_iter().take(max_results).collect())
+            let results = keyword_search(
+                &self.client,
+                self.api_key.as_deref(),
+                &request.query,
+                request.timeout,
+            )
+            .await?;
+            Ok(results.into_iter().take(request.max_results).collect())
         })
     }
 
