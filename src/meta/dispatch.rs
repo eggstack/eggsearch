@@ -45,6 +45,10 @@ pub(crate) struct DispatchJob {
     /// Evidence roles this job was intended to produce.
     pub intended_roles: Vec<EvidenceRole>,
     pub capability_disposition: CapabilityDisposition,
+    /// Provider-neutral repository scope for native repo filtering.
+    pub repo_scope: Option<crate::meta::engines::request::RepoScope>,
+    /// Bounded excerpt demand for this job.
+    pub excerpt_count: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -171,6 +175,13 @@ pub(crate) struct DispatchOutput {
     pub deadline: RequestDeadlineStats,
     /// Attempt records for every dispatched and skipped job.
     pub attempts: Vec<RetrievalAttempt>,
+    /// Provider-neutral retrieval metadata per successful job,
+    /// as `(provider_id, subquery_id, metadata)`, sorted deterministically.
+    pub retrieval_metadata: Vec<(
+        String,
+        String,
+        crate::meta::engines::models::EngineRetrievalMetadata,
+    )>,
 }
 
 /// Result returned by a spawned task, including ordering metadata.
@@ -181,7 +192,7 @@ struct TaskResult {
     provider_order: usize,
     intended_roles: Vec<EvidenceRole>,
     query_fingerprint: String,
-    result: Result<Vec<SearchResult>, EngineError>,
+    result: Result<crate::meta::engines::models::EngineSearchBatch, EngineError>,
 }
 
 type JobKey = (String, String, Vec<EvidenceRole>);
@@ -251,6 +262,11 @@ pub(crate) async fn dispatch_parallel(
     // Collected results and failures (collected as tasks complete)
     let mut collected_results: Vec<DispatchedResult> = Vec::with_capacity(sorted_jobs.len());
     let mut collected_failures: Vec<DispatchedFailure> = Vec::with_capacity(sorted_jobs.len());
+    let mut collected_metadata: Vec<(
+        String,
+        String,
+        crate::meta::engines::models::EngineRetrievalMetadata,
+    )> = Vec::new();
 
     // Track spawn time per (subquery_id, provider_id) for duration measurement.
     let mut job_start_times: HashMap<JobKey, tokio::time::Instant> = HashMap::new();
@@ -348,6 +364,8 @@ pub(crate) async fn dispatch_parallel(
                 let intended_roles_panic = intended_roles.clone();
                 let query_fingerprint = query_fingerprint_from_query(&query);
                 let query_fingerprint_panic = query_fingerprint.clone();
+                let repo_scope = job.repo_scope.clone();
+                let excerpt_count = job.excerpt_count;
                 let job_remaining =
                     overall_deadline.saturating_duration_since(tokio::time::Instant::now());
 
@@ -386,12 +404,14 @@ pub(crate) async fn dispatch_parallel(
                             };
                         }
 
-                        let request = crate::meta::engines::EngineSearchRequest::simple(
+                        let mut request = crate::meta::engines::EngineSearchRequest::simple(
                             &query,
                             candidate_limit,
                             job_remaining,
                         );
-                        let result = provider.search(&request).await;
+                        request.repo_scope = repo_scope;
+                        request.excerpt_count = excerpt_count;
+                        let result = provider.search_batch(&request).await;
                         TaskResult {
                             subquery_id,
                             subquery_order,
@@ -547,7 +567,9 @@ pub(crate) async fn dispatch_parallel(
                             .map(|t| t.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
 
                         match tr.result {
-                            Ok(results) => {
+                            Ok(batch) => {
+                                let results = batch.results;
+                                let retrieval_metadata = batch.retrieval_metadata;
                                 let result_count = results.len();
                                 *terminal_subquery_counts
                                     .entry(tr.subquery_id.clone())
@@ -560,6 +582,11 @@ pub(crate) async fn dispatch_parallel(
                                     results,
                                     duration_ms: duration_ms.unwrap_or_default(),
                                 });
+                                collected_metadata.push((
+                                    tr.provider_id.clone(),
+                                    tr.subquery_id.clone(),
+                                    retrieval_metadata,
+                                ));
                                 let limit_reached_unknown =
                                     result_count > 0 && result_count >= config.candidate_limit;
                                 let outcome = if result_count == 0 {
@@ -911,6 +938,8 @@ pub(crate) async fn dispatch_parallel(
         .map(|f| (f.provider_id, f.error))
         .collect();
 
+    collected_metadata.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
     DispatchOutput {
         raw_results,
         raw_failures,
@@ -918,6 +947,7 @@ pub(crate) async fn dispatch_parallel(
         failure_latencies_ms,
         deadline,
         attempts: collected_attempts,
+        retrieval_metadata: collected_metadata,
     }
 }
 
@@ -1054,6 +1084,8 @@ mod tests {
                     supported_roles: vec![EvidenceRole::PrimaryImplementation],
                     unsupported_roles: vec![EvidenceRole::OfficialDocumentation],
                 },
+                repo_scope: None,
+                excerpt_count: 0,
             },
             DispatchJob {
                 subquery_id: "partial".to_string(),
@@ -1067,6 +1099,8 @@ mod tests {
                 capability_disposition: CapabilityDisposition::Unsupported {
                     unsupported_roles: vec![EvidenceRole::OfficialDocumentation],
                 },
+                repo_scope: None,
+                excerpt_count: 0,
             },
         ];
         let output = dispatch_parallel(
@@ -1186,6 +1220,8 @@ mod tests {
             provider_order,
             intended_roles: vec![],
             capability_disposition: CapabilityDisposition::FullySupported,
+            repo_scope: None,
+            excerpt_count: 0,
         }
     }
 

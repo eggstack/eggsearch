@@ -18,8 +18,55 @@ fn api_provider_is_configured(id: &str, cfg: &ApiProviderConfig) -> bool {
         return false;
     }
     match cfg.api_key_env.as_deref() {
-        Some(env) if !env.is_empty() => std::env::var(env).is_ok(),
+        Some(env) if !env.is_empty() => std::env::var(env).ok().is_some_and(|v| !v.is_empty()),
         _ => false,
+    }
+}
+
+/// Resolve an optional API key for providers that work keyless.
+///
+/// Returns `Some(key)` only when the `[search.api.<id>]` entry is enabled,
+/// names a non-empty `api_key_env`, and the referenced env var is present
+/// and non-empty. All other states (absent entry, disabled entry, missing
+/// env, empty value) yield `None` so the caller falls back to keyless.
+/// Empty configured values fall back keyless; callers emit a precise
+/// warning rather than failing configuration.
+pub fn optional_api_key(
+    id: &str,
+    api: &std::collections::BTreeMap<String, ApiProviderConfig>,
+) -> Option<String> {
+    if !crate::core::provider::is_optional_api_provider(id) {
+        return None;
+    }
+    let cfg = api.get(id)?;
+    if !cfg.enabled {
+        return None;
+    }
+    let env = cfg.api_key_env.as_deref().filter(|s| !s.is_empty())?;
+    std::env::var(env).ok().filter(|v| !v.is_empty())
+}
+
+/// Whether an optional-credential entry is explicitly configured but
+/// unusable (enabled with a missing or empty env value).
+///
+/// Used to emit a precise keyless-fallback warning without failing
+/// configuration or marking the provider unroutable.
+pub fn optional_api_key_misconfigured(
+    id: &str,
+    api: &std::collections::BTreeMap<String, ApiProviderConfig>,
+) -> bool {
+    if !crate::core::provider::is_optional_api_provider(id) {
+        return false;
+    }
+    let Some(cfg) = api.get(id) else {
+        return false;
+    };
+    if !cfg.enabled {
+        return false;
+    }
+    match cfg.api_key_env.as_deref() {
+        None | Some("") => true,
+        Some(env) => std::env::var(env).ok().is_none_or(|v| v.is_empty()),
     }
 }
 
@@ -182,6 +229,7 @@ impl Default for SearchSection {
         providers.insert("mojeek".to_string(), false);
         providers.insert("searxng".to_string(), false);
         providers.insert("osv".to_string(), true);
+        providers.insert("firecrawl_developer".to_string(), false);
         Self {
             mode: Mode::default(),
             default_max_results: 10,
@@ -925,7 +973,8 @@ impl AppConfig {
 
         // API provider validation
         for (id, api_cfg) in &self.search.api {
-            if !API_PROVIDER_IDS.contains(&id.as_str()) {
+            let is_optional = crate::core::provider::is_optional_api_provider(id);
+            if !API_PROVIDER_IDS.contains(&id.as_str()) && !is_optional {
                 tracing::warn!(
                     api_provider_id = %id,
                     "unknown API provider id in [search].api; \
@@ -933,20 +982,43 @@ impl AppConfig {
                 );
             }
             if api_cfg.enabled {
-                match api_cfg.api_key_env.as_deref() {
-                    None | Some("") => {
-                        return Err(CoreError::Config(format!(
-                            "[search].api.{id}.enabled is true but [search].api.{id}.api_key_env is missing or empty"
-                        )));
-                    }
-                    Some(env_name) => {
-                        if std::env::var(env_name).is_err() {
+                if is_optional {
+                    match api_cfg.api_key_env.as_deref() {
+                        None | Some("") => {
                             tracing::warn!(
                                 api_provider_id = %id,
-                                env_name = %env_name,
-                                "API provider is enabled but its api_key_env variable is not set; \
-                                 the provider will fail at runtime"
+                                "optional API provider is enabled without api_key_env; \
+                                 continuing keyless"
                             );
+                        }
+                        Some(env_name) => match std::env::var(env_name) {
+                            Ok(v) if !v.is_empty() => {}
+                            _ => {
+                                tracing::warn!(
+                                    api_provider_id = %id,
+                                    env_name = %env_name,
+                                    "optional API provider is enabled but its api_key_env variable is missing or empty; \
+                                     continuing keyless"
+                                );
+                            }
+                        },
+                    }
+                } else {
+                    match api_cfg.api_key_env.as_deref() {
+                        None | Some("") => {
+                            return Err(CoreError::Config(format!(
+                                "[search].api.{id}.enabled is true but [search].api.{id}.api_key_env is missing or empty"
+                            )));
+                        }
+                        Some(env_name) => {
+                            if std::env::var(env_name).ok().is_none_or(|v| v.is_empty()) {
+                                tracing::warn!(
+                                    api_provider_id = %id,
+                                    env_name = %env_name,
+                                    "API provider is enabled but its api_key_env variable is not set; \
+                                     the provider will fail at runtime"
+                                );
+                            }
                         }
                     }
                 }

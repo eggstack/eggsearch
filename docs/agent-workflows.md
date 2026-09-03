@@ -51,6 +51,33 @@ Use `provider_status` first when you need the current provider/capability pictur
 }
 ```
 
+## 2b. Issue/PR Behind a Behavior (Developer Index)
+
+```jsonc
+// Enable once in config:
+// [search.providers] firecrawl_developer = true
+// Optional: [search.api.firecrawl_developer] enabled = true, api_key_env = "FIRECRAWL_API_KEY"
+
+// repo_search with an unambiguous repo scope fans out to the Firecrawl
+// Developer Index for docs/issues/PRs without claiming source-code search.
+// Matched passages arrive as bounded ProviderPassage excerpts (search-result
+// evidence, not fetched content); unindexed scopes emit a stable
+// scope_unindexed warning instead of ordinary zero evidence.
+{
+  "query": "retry backoff never runs on 429",
+  "owner": "firecrawl",
+  "repo": "firecrawl",
+  "include_docs": true,
+  "include_issues": true,
+  "include_pull_requests": true,
+  "profile": "coding",
+  "providers": ["firecrawl_developer", "github_issues"]
+}
+
+// Follow up with web_fetch on the issue/PR URL from suggested_fetches
+// to read the full thread; excerpts alone never authorize code changes.
+```
+
 ## 3. Security Package/Version Triage
 
 ```jsonc

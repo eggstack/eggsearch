@@ -74,7 +74,7 @@ fetch ↗
 |-----------|----------|-------------------------|-----------|
 | Core domain types | `src/core/` (35 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
 | Metasearch adapter | `src/meta/` (34 top-level files) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing | [meta.md](meta.md) |
-| Vendored search engines | `src/meta/engines/` (33 engines + 5 support modules) | One implementation per upstream provider: HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
+| Vendored search engines | `src/meta/engines/` (34 engines + 5 support modules) | One implementation per upstream provider: HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (10 top-level files) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
@@ -110,7 +110,7 @@ Everything else speaks in these types. Zero external dependencies beyond seriali
 - `source_card.rs` — `SourceCard`, the canonical output type; `SourceKind` classifies URLs into 21 kinds
 - `identity.rs` — deterministic FNV-1a content hashes for every stable ID (never random UUIDs)
 - `sanitize.rs` — 3-tier sanitization all untrusted text flows through
-- `provider.rs` — `ProviderKind`, 24-flag `ProviderCapabilities`, `KNOWN_PROVIDER_IDS` (34)
+- `provider.rs` — `ProviderKind`, 24-flag `ProviderCapabilities`, `KNOWN_PROVIDER_IDS` (35)
 - Evidence subsystem — roles (19 variants), workflow coverage, conflicts, retrieval ledger, bundles
 - Workflow request/response types per tool: web/repo/security/research/local/package
 
@@ -126,9 +126,10 @@ Wraps all search behind `MetadataSearchAdapter`; callers never touch engines dir
 
 ### engines — vendored providers ([engines.md](engines.md))
 
-33 engine structs plus the local workspace backend cover 34 registered provider IDs:
+34 engine structs plus the local workspace backend cover 35 registered provider IDs:
 
 - Generic web: DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, SearXNG, Brave Search API
+- Developer index: Firecrawl Developer (keyless-optional, issues/PRs/READMEs/docs with passages)
 - Forge (code/issues/releases × GitHub/GitLab/Gitea), Sourcegraph
 - Security advisories: OSV, GitHub Advisory, NVD, CISA KEV, RustSec
 - Package registries: crates.io, PyPI, npm, Go, Maven Central, NuGet, RubyGems, Packagist
@@ -209,7 +210,7 @@ web_fetch / batch_fetch / repo_fetch call
 
 `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`.
 
-34 registered providers across 4 search profiles:
+35 registered providers across 4 search profiles:
 
 | Profile | Providers |
 |---------|-----------|

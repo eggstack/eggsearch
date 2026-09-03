@@ -11,6 +11,7 @@ pub mod crates_io;
 pub mod crossref;
 pub mod duckduckgo;
 pub mod error;
+pub mod firecrawl_developer;
 pub mod gitea_code;
 pub mod gitea_issues;
 pub mod gitea_releases;
@@ -75,6 +76,21 @@ pub trait SearchEngine: Send + Sync {
         &'a self,
         request: &'a EngineSearchRequest,
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
+
+    /// Run a search returning results plus provider-neutral retrieval
+    /// metadata (e.g. scope-index evidence). Defaults to `search` with
+    /// empty metadata so existing engines need no changes; specialist
+    /// engines override to preserve retrieval-state evidence.
+    fn search_batch<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<models::EngineSearchBatch, EngineError>> {
+        Box::pin(async move {
+            self.search(request)
+                .await
+                .map(models::EngineSearchBatch::from_results)
+        })
+    }
 
     /// Whether this engine can serve the given evidence role.
     /// Returns `true` by default (conservative: assume all roles are
@@ -248,6 +264,12 @@ pub struct SemanticScholarEngine {
 }
 
 pub struct SourcegraphCodeEngine {
+    pub client: Arc<Client>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+}
+
+pub struct FirecrawlDeveloperEngine {
     pub client: Arc<Client>,
     pub api_key: Option<String>,
     pub base_url: Option<String>,
@@ -867,6 +889,53 @@ impl SearchEngine for SourcegraphCodeEngine {
             )
             .await
         })
+    }
+}
+
+impl SearchEngine for FirecrawlDeveloperEngine {
+    fn name(&self) -> &'static str {
+        "firecrawl_developer"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            firecrawl_developer::search(
+                &self.client,
+                self.api_key.as_deref(),
+                self.base_url.as_deref(),
+                request,
+            )
+            .await
+            .map(|batch| batch.results)
+        })
+    }
+
+    fn search_batch<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<models::EngineSearchBatch, EngineError>> {
+        Box::pin(async move {
+            firecrawl_developer::search(
+                &self.client,
+                self.api_key.as_deref(),
+                self.base_url.as_deref(),
+                request,
+            )
+            .await
+        })
+    }
+
+    fn supports_role(&self, role: &crate::core::evidence_role::EvidenceRole) -> bool {
+        use crate::core::evidence_role::EvidenceRole;
+        matches!(
+            role,
+            EvidenceRole::OfficialDocumentation
+                | EvidenceRole::IssueOrIncidentDiscussion
+                | EvidenceRole::PullRequestOrDesignReview
+        )
     }
 }
 

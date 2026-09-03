@@ -1,6 +1,6 @@
 # Metasearch Adapter Deep Dive
 
-**Location:** `src/meta/` (34 top-level files, plus `engines/` with 33 engine implementations and 5 support modules)
+**Location:** `src/meta/` (34 top-level files, plus `engines/` with 34 engine implementations and 5 support modules)
 **Purpose:** Central orchestrator for all search operations. Wraps vendored search engines, handles RRF aggregation, sanitization, provider health, and multi-subquery dispatch.
 
 ---
@@ -10,7 +10,7 @@
 | File | Responsibility |
 |------|---------------|
 | `adapter.rs` | `MetadataSearchAdapter` — central orchestrator: engine fan-out, RRF aggregation, sanitization, intent reranking, provider health, local domain enforcement, web capability telemetry |
-| `dispatch.rs` | `dispatch_subqueries()` — bounded parallel executor with priority queue, global/per-provider concurrency limits, panic recovery; all jobs use `EngineSearchRequest` |
+| `dispatch.rs` | `dispatch_subqueries()` — bounded parallel executor with priority queue, global/per-provider concurrency limits, panic recovery; all jobs use `EngineSearchRequest` (including optional `RepoScope`) and return `EngineSearchBatch` retrieval metadata |
 | `planner.rs` | `build_search_plan()`, `SearchPlan` — transforms `WebSearchRequest` into provider-specific queries while preserving date/domain/language/region constraints for native parameters |
 | `response.rs` | `WebSearchResponse`, `ProviderFailure` |
 | `grouping.rs` | RRF aggregation, deduplication, `AggregatedResult` merging |
@@ -83,7 +83,7 @@ Per-engine inventory, the `SearchEngine` trait contract, credential resolution, 
 | Category | Engines | Transport |
 |----------|---------|-----------|
 | **HTML Scrape** | DuckDuckGo, Brave, Startpage, Yahoo, Mojeek | HTML parsing |
-| **JSON API** | SearXNG | JSON API |
+| **JSON API** | SearXNG, Firecrawl Developer (keyless-optional specialist) | JSON API |
 | **API Key** | Brave API, GitHub Code/Issues/Releases, GitLab Code/Issues/Releases, Gitea Code/Issues/Releases, Semantic Scholar, Sourcegraph | Authenticated API |
 | **Security** | OSV, GitHub Advisory, NVD, CISA KEV, RustSec | Advisory APIs |
 | **Package Registries** | crates.io, PyPI, npm, Go, Maven Central, NuGet, RubyGems, Packagist | Registry APIs |
@@ -94,6 +94,7 @@ Per-engine inventory, the `SearchEngine` trait contract, credential resolution, 
 ```rust
 trait SearchEngine {
     fn search(&self, request: &EngineSearchRequest) -> Result<Vec<SearchResult>>;
+    fn search_batch(&self, request: &EngineSearchRequest) -> Result<EngineSearchBatch>;
     fn lookup_advisory(&self, ...) -> Result<VulnerabilityMetadata>;
     fn query_advisories_by_package(&self, ...) -> Result<Vec<VulnerabilityMetadata>>;
     fn supports_role(&self, role: EvidenceRole) -> bool;
@@ -101,15 +102,16 @@ trait SearchEngine {
 }
 ```
 
-`EngineSearchRequest` (`engines/request.rs`) is the single structured request contract: query, max-results, timeout, intent, safe-search, freshness, exact date range, include/exclude domains, language, region, and bounded excerpt demand (`excerpt_count`, default 0). Direct web fan-out and multiquery dispatch both use it; multiquery jobs use the minimal `simple()` constructor with defaults.
+`EngineSearchRequest` (`engines/request.rs`) is the single structured request contract: query, max-results, timeout, intent, safe-search, freshness, exact date range, include/exclude domains, language, region, bounded excerpt demand (`excerpt_count`, default 0), and optional provider-neutral `RepoScope` (`owner`/`repo` from `repo_search` resolved identity, never reparsed from free text). Direct web fan-out uses `from_web_request()`; multiquery dispatch carries `repo_scope`/`excerpt_count` per `DispatchJob` and calls `search_batch()` so Firecrawl scope-index evidence survives as `EngineRetrievalMetadata`.
 
-`SearchResult`/`AggregatedResult` (`engines/models.rs`) carry optional `excerpts` (`Vec<SourceExcerpt>`) and a provider-neutral `published_at` timestamp alongside title/URL/snippet/engine/metadata. `aggregate_rrf` merges excerpts deterministically (per-provider score order, normalized-text dedup including the primary snippet, hard caps) and keeps the first valid timestamp in sorted engine order. `web_search` clears unrequested excerpts when demand is zero; `convert_aggregated` sanitizes excerpt text through the normal trust pipeline (500 chars per excerpt, 1,200 total per card) and surfaces `published_at` additively in `SourceMetadata` without touching stable IDs. Freshness reranking consumes the generic timestamp before specialist issue/release metadata.
+`SearchResult`/`AggregatedResult` (`engines/models.rs`) carry optional `excerpts` (`Vec<SourceExcerpt>`) and a provider-neutral `published_at` timestamp alongside title/URL/snippet/engine/metadata. `EngineSearchBatch` pairs results with `EngineRetrievalMetadata { scope_index }`; `repo_search` translates unindexed scopes into stable `scope_unindexed` warnings so "scope not indexed" is never mislabeled as ordinary zero evidence. `aggregate_rrf` merges excerpts deterministically (per-provider score order, normalized-text dedup including the primary snippet, hard caps) and keeps the first valid timestamp in sorted engine order. `web_search` clears unrequested excerpts when demand is zero; `convert_aggregated` sanitizes excerpt text through the normal trust pipeline (500 chars per excerpt, 1,200 total per card) and surfaces `published_at` additively in `SourceMetadata` without touching stable IDs. Freshness reranking consumes the generic timestamp before specialist issue/release metadata.
 
 ### Provider Model
 
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`
 - `ProviderCapabilities` — 24 boolean flags per provider
-- `KNOWN_PROVIDER_IDS` — 34 registered provider identifiers
+- `KNOWN_PROVIDER_IDS` — 35 registered provider identifiers
+- `CredentialRequirement` — `None`/`Optional`/`Required`; `firecrawl_developer` is the only `Optional` provider (keyless routes, key raises limits)
 
 ---
 

@@ -1,6 +1,6 @@
 # Provider Setup
 
-eggsearch supports 34 search providers across eight categories: web search (HTML scrapers), API-key providers, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
+eggsearch supports 35 search providers across nine categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
 ## Provider Categories at a Glance
 
@@ -8,11 +8,12 @@ eggsearch supports 34 search providers across eight categories: web search (HTML
 |----------|----------|-----------------|
 | **Keyless defaults** | DuckDuckGo, Startpage, Yahoo | none |
 | **Keyless specialist** | OSV, NVD, CISA KEV, RustSec, OpenAlex, Crossref, all package registries | none |
+| **Keyless-optional specialist** | Firecrawl Developer Index | none (optional `FIRECRAWL_API_KEY` raises limits) |
 | **Optional configured endpoint** | SearXNG, self-hosted forge base URL | operator configuration |
 | **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Semantic Scholar, GitHub Advisory | opt-in credential |
 | **Optional local** | local workspace | configured local root |
 
-All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy.
+All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy. The Firecrawl Developer Index routes keyless when enabled; a missing optional key never produces `missing_api_key`.
 
 ## Web Search Providers
 
@@ -54,6 +55,33 @@ These providers require no API key and work via HTML scraping.
 - Enabled by default: **no**
 - Independent search engine with its own index
 - Enable: set `mojeek = true` in `[search.providers]`
+
+## Keyless-Optional Developer Index
+
+### Firecrawl Developer Index
+
+- ID: `firecrawl_developer`
+- Dedicated `POST https://api.firecrawl.dev/v2/search/developer` (never the generic `/v2/search` SERP)
+- Enabled by default: **no**; opt-in specialist for `repo_search` coding evidence
+- Included in `default_providers`: **no**; never becomes default automatically
+- Enable keyless:
+
+```toml
+[search.providers]
+firecrawl_developer = true
+```
+
+- Optionally raise rate limits with a key (never required, never logged):
+
+```toml
+[search.api.firecrawl_developer]
+enabled = true
+api_key_env = "FIRECRAWL_API_KEY"
+```
+
+A missing or empty optional env var falls back keyless with a startup warning; it never yields `missing_api_key` and never makes the provider unroutable. An explicitly invalid base URL in `[search.api.firecrawl_developer]` is still a configuration error.
+
+Native behavior: `issue_search` + `repo_filter` (no `code_search`, no `release_search`, no `scholarly_search`, no `repo_indexing`). Artifact kinds `issue:`/`pull_request:`/`readme:`/`doc:` map via URL classification with deterministic URL-fallback titles when upstream titles are absent. Matched markdown passages become bounded `ProviderPassage` excerpts (at most 3 per card, never `fetched=true`). `repos` scope comes from `repo_search` resolved `owner/repo` (never reparsed from free text); `types` is restricted only for `Docs` (`doc`+`readme`) and `Issues` (`issue`+`pull_request`) intents. Scoped `repos`/`sources` echo with `indexed=false` surfaces as a stable `scope_unindexed` warning so "scope not indexed" is never mislabeled as ordinary zero evidence. `provider_status` reports `requires_api_key=false`, `configured=true` when enabled, and `routable=true` keyless.
 
 ## API-Key Providers
 

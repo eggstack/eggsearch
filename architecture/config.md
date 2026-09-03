@@ -24,9 +24,9 @@ AppConfig
 | `max_query_chars` | `usize` | `512` | Maximum query length |
 | `timeout_ms` | `u64` | `8000` | Per-request timeout |
 | `default_providers` | `Vec<String>` | `["duckduckgo", "startpage", "yahoo"]` | Default provider list |
-| `providers` | `BTreeMap<String, bool>` | 6 built-in providers | Per-provider enable/disable |
+| `providers` | `BTreeMap<String, bool>` | 8 built-in providers (incl. `firecrawl_developer=false`) | Per-provider enable/disable |
 | `searxng` | `SearxngConfig` | disabled | SearXNG upstream adapter |
-| `api` | `BTreeMap<String, ApiProviderConfig>` | empty | API-key backed providers |
+| `api` | `BTreeMap<String, ApiProviderConfig>` | empty | API-key backed providers (required-key plus keyless-optional `firecrawl_developer`) |
 | `sanitize_output` | `bool` | `true` | Tier 2/3 sanitization toggle |
 | `profiles` | `BTreeMap<String, ProfileConfig>` | empty | Named search profiles |
 | `exact_error` | `ExactErrorConfig` | defaults | Compiler error search mode |
@@ -60,9 +60,11 @@ AppConfig
 
 ### Provider Kinds
 
-**Built-in providers** (`providers` map): `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `osv` — configured via enable/disable flags.
+**Built-in providers** (`providers` map): `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `osv`, `firecrawl_developer` (disabled by default) — configured via enable/disable flags. `firecrawl_developer = true` alone routes keyless.
 
 **API providers** (`api` map): `brave_api`, `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph`, `semantic_scholar`, `github_advisory`, `osv`, `nvd`, `rustsec`, `cisa_kev` — configured with `enabled`, `api_key_env`, and optional `base_url`.
+
+**Keyless-optional providers** (`api` map, optional): `firecrawl_developer` — `[search.api.firecrawl_developer]` may name `FIRECRAWL_API_KEY`; when enabled with a resolvable non-empty value the bearer header is attached, otherwise the provider falls back keyless with a startup warning (never `missing_api_key`).
 
 **SearXNG**: Requires both `searxng.enabled = true` and `providers.searxng = true` plus a non-empty `base_url`.
 
@@ -78,12 +80,13 @@ resolve_providers(override_list):
   3. If resolved is empty → return error
 
 effective_provider_ids():
-  1. Collect all enabled built-in providers (not API)
-  2. For each API provider: check enabled, known, api_key_env set, env var present
+  1. Collect all enabled built-in providers (excluding required-key `API_PROVIDER_IDS`; keyless-optional providers stay here)
+  2. For each required API provider: check enabled, known, api_key_env set, env var present and non-empty
   3. Return union
 
 provider_is_available(id):
-  - API providers: enabled + known + api_key_env present + env var set
+  - Required API providers: enabled + known + api_key_env present + env var set and non-empty
+  - Keyless-optional (`firecrawl_developer`): `providers[id] == true` (api entry only upgrades to keyed)
   - SearXNG: providers.searxng + searxng.enabled + base_url non-empty
   - Built-in: providers[id] == true
 ```
@@ -115,7 +118,7 @@ Built-in profile defaults:
 - All `default_providers` are known provider IDs
 - All `providers` map keys are known provider IDs
 - SearXNG: if enabled, `base_url` must be valid HTTP/HTTPS with a host
-- API providers: if enabled, `api_key_env` must be non-empty; if env var missing, warns at startup
+- API providers: if enabled, `api_key_env` must be non-empty; if env var missing/empty, warns at startup. Keyless-optional `firecrawl_developer` never errors on missing/empty optional credentials; it warns and continues keyless.
 - Batch fetch: `batch_max_items > 0`, `batch_max_items_cap >= batch_max_items`, total chars caps validated
 - Local: if enabled, roots must exist and be directories, `max_file_bytes > 0`, `max_indexed_files > 0`
 - Live mode: at least one provider must be enabled or an API provider configured

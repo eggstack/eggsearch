@@ -14,7 +14,7 @@
 | `error.rs` | `CoreError`/`CoreResult<T>` via `thiserror` |
 | `source_card.rs` | `SourceCard` (canonical output), `SourceKind`, `SourceMetadata`, `RankReason`, `IssueMetadata`, `ReleaseMetadata`, `SourceExcerpt`/`ExcerptProvenance` (bounded extractive excerpts), excerpt/timestamp helpers |
 | `identity.rs` | Deterministic FNV-1a ID system: `source_id`, `fetch_id`, `suggested_fetch_id`, `batch_fetch_id`, `locator_id`, `doc_id`, `chunk_id`, `code_span_id` |
-| `provider.rs` | `ProviderKind`, `ProviderCapabilities` (24 flags), `ProviderDescriptor`, `KNOWN_PROVIDER_IDS` (34 ids) |
+| `provider.rs` | `ProviderKind`, `ProviderCapabilities` (24 flags), `ProviderDescriptor`, `KNOWN_PROVIDER_IDS` (35 ids), `CredentialRequirement` (`None`/`Optional`/`Required`) |
 | `query.rs` | `WebSearchRequest` (query plus validated `date_range`, `include_domains`/`exclude_domains`, `language`, `region`), `SearchDateRange`, `Freshness`, `SafeSearch`, `SearchIntent`, `MaxResultsResolution`, domain/language helpers |
 | `sanitize.rs` | `strip_control_chars`, `bound_text`, `frame`, `scan_injection_markers` (3-tier sanitization) |
 | `fetch.rs` | `WebFetchRequest`/`WebFetchResponse`, `ExtractMode`, `FetchTransform`, `FetchTrust`, `FetchCachePolicy`, `FocusedFetchSelection`, focus/cache-age bounds |

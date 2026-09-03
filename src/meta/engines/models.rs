@@ -105,6 +105,67 @@ pub struct AggregatedResult {
     pub published_at: Option<String>,
 }
 
+/// Provider-neutral scope-index status for a requested repository or
+/// documentation scope.
+///
+/// Preserved at the response/retrieval layer, never on `SourceCard`.
+/// Lets callers distinguish "scope not indexed" from "indexed but zero
+/// matches".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScopeIndexStatus {
+    /// The requested scope as echoed upstream (e.g. `owner/repo`).
+    pub scope: String,
+    /// Whether the upstream index holds this scope.
+    pub indexed: bool,
+}
+
+/// Provider-neutral retrieval metadata attached to one engine batch.
+///
+/// Currently carries only scope-index evidence (e.g. Firecrawl Developer
+/// `repos`/`sources` echo). Empty by default for providers without
+/// scope semantics.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EngineRetrievalMetadata {
+    /// Scope-index evidence for explicitly requested scopes.
+    #[serde(default)]
+    pub scope_index: Vec<ScopeIndexStatus>,
+}
+
+impl EngineRetrievalMetadata {
+    /// Scopes reported as not indexed.
+    pub fn unindexed_scopes(&self) -> Vec<&str> {
+        self.scope_index
+            .iter()
+            .filter(|s| !s.indexed)
+            .map(|s| s.scope.as_str())
+            .collect()
+    }
+
+    /// Whether any requested scope was reported as not indexed.
+    pub fn has_unindexed(&self) -> bool {
+        self.scope_index.iter().any(|s| !s.indexed)
+    }
+}
+
+/// One engine's results plus provider-neutral retrieval metadata.
+#[derive(Clone, Debug, Default)]
+pub struct EngineSearchBatch {
+    /// Ranked results from the provider.
+    pub results: Vec<SearchResult>,
+    /// Retrieval-state evidence (scope-index, etc.).
+    pub retrieval_metadata: EngineRetrievalMetadata,
+}
+
+impl EngineSearchBatch {
+    /// Batch with results and empty retrieval metadata.
+    pub fn from_results(results: Vec<SearchResult>) -> Self {
+        Self {
+            results,
+            retrieval_metadata: EngineRetrievalMetadata::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

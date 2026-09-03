@@ -151,6 +151,10 @@ struct PlannedSubquery {
     /// When non-empty, `dispatch_subqueries` uses these directly
     /// instead of calling `map_provider_to_intended_roles()`.
     intended_roles: Vec<crate::core::evidence_role::EvidenceRole>,
+    /// Provider-neutral repository scope for native repo filtering.
+    repo_scope: Option<crate::meta::engines::request::RepoScope>,
+    /// Bounded excerpt demand for this subquery.
+    excerpt_count: usize,
 }
 
 /// Constructed once at server startup. Holds the `SearchEngine`
@@ -1354,6 +1358,10 @@ impl MetadataSearchAdapter {
             "dispatching repo_search"
         );
 
+        let repo_scope = req
+            .resolved_repo_locator()
+            .and_then(|(owner, repo)| crate::meta::engines::request::RepoScope::new(&owner, &repo));
+
         let dispatch = dispatch_subqueries(
             &engines,
             plan.subqueries
@@ -1365,6 +1373,8 @@ impl MetadataSearchAdapter {
                         query: subquery.query.clone(),
                         priority,
                         intended_roles: Vec::new(),
+                        repo_scope: repo_scope.clone(),
+                        excerpt_count: 0,
                     }
                 })
                 .collect(),
@@ -1394,6 +1404,16 @@ impl MetadataSearchAdapter {
         );
         let mut warnings: Vec<SearchWarning> = Vec::new();
         push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
+        for (provider_id, subquery_id, metadata) in &dispatch.retrieval_metadata {
+            for scope in metadata.unindexed_scopes() {
+                warnings.push(SearchWarning::new(
+                    provider_id.clone(),
+                    format!(
+                        "scope_unindexed: requested scope '{scope}' is not indexed by {provider_id} (subquery '{subquery_id}'); zero results do not mean the scope was searched and contained no match"
+                    ),
+                ));
+            }
+        }
         let mut cards =
             aggregate_source_cards(dispatch.raw_results, candidate_limit, self.sanitize_output);
 
@@ -1937,18 +1957,24 @@ impl MetadataSearchAdapter {
                 query: plan.generic_query.clone(),
                 priority: security_subquery_priority("advisory"),
                 intended_roles: Vec::new(),
+                repo_scope: None,
+                excerpt_count: 0,
             },
             PlannedSubquery {
                 label: "vendor".to_string(),
                 query: format!("{query} vendor advisory security bulletin"),
                 priority: security_subquery_priority("vendor"),
                 intended_roles: Vec::new(),
+                repo_scope: None,
+                excerpt_count: 0,
             },
             PlannedSubquery {
                 label: "defensive".to_string(),
                 query: format!("{query} mitigation workaround fix patch"),
                 priority: security_subquery_priority("defensive"),
                 intended_roles: Vec::new(),
+                repo_scope: None,
+                excerpt_count: 0,
             },
         ];
 
@@ -2052,6 +2078,8 @@ impl MetadataSearchAdapter {
                         query: subquery.query.clone(),
                         priority,
                         intended_roles,
+                        repo_scope: None,
+                        excerpt_count: 0,
                     }
                 })
                 .collect(),
@@ -2326,6 +2354,8 @@ async fn dispatch_subqueries(
                     provider_order: provider_idx,
                     intended_roles: partition.supported_roles,
                     capability_disposition,
+                    repo_scope: subquery.repo_scope.clone(),
+                    excerpt_count: subquery.excerpt_count,
                 });
             }
             if !partition.unsupported_roles.is_empty() {
@@ -2341,6 +2371,8 @@ async fn dispatch_subqueries(
                     capability_disposition: CapabilityDisposition::Unsupported {
                         unsupported_roles: partition.unsupported_roles,
                     },
+                    repo_scope: subquery.repo_scope.clone(),
+                    excerpt_count: subquery.excerpt_count,
                 });
             }
         }
@@ -2639,13 +2671,13 @@ pub fn build_default_engines(
 ) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
     use crate::meta::engines::{
         BraveApiEngine, BraveEngine, CisaKevEngine, CratesIoRegistryEngine, CrossRefEngine,
-        DuckDuckGoEngine, GiteaCodeEngine, GiteaIssuesEngine, GiteaReleasesEngine,
-        GithubAdvisoryEngine, GithubCodeEngine, GithubIssuesEngine, GithubReleasesEngine,
-        GitlabCodeEngine, GitlabIssuesEngine, GitlabReleasesEngine, GoPkgRegistryEngine,
-        MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine, NugetRegistryEngine,
-        NvdEngine, OpenAlexEngine, OsvEngine, PackagistRegistryEngine, PypiRegistryEngine,
-        RubygemsRegistryEngine, RustSecEngine, SearxngEngine, SemanticScholarEngine,
-        SourcegraphCodeEngine, StartpageEngine, YahooEngine,
+        DuckDuckGoEngine, FirecrawlDeveloperEngine, GiteaCodeEngine, GiteaIssuesEngine,
+        GiteaReleasesEngine, GithubAdvisoryEngine, GithubCodeEngine, GithubIssuesEngine,
+        GithubReleasesEngine, GitlabCodeEngine, GitlabIssuesEngine, GitlabReleasesEngine,
+        GoPkgRegistryEngine, MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine,
+        NugetRegistryEngine, NvdEngine, OpenAlexEngine, OsvEngine, PackagistRegistryEngine,
+        PypiRegistryEngine, RubygemsRegistryEngine, RustSecEngine, SearxngEngine,
+        SemanticScholarEngine, SourcegraphCodeEngine, StartpageEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -2736,6 +2768,24 @@ pub fn build_default_engines(
                     api_key,
                 }));
             }
+            "firecrawl_developer" => {
+                let api_key = crate::core::config::optional_api_key(id, api_providers);
+                if crate::core::config::optional_api_key_misconfigured(id, api_providers) {
+                    warn!(
+                        provider_id = %id,
+                        "optional API provider enabled without usable credential; continuing keyless"
+                    );
+                }
+                let base_url = api_providers
+                    .get(id)
+                    .and_then(|cfg| cfg.base_url.clone())
+                    .filter(|u| !u.is_empty());
+                engines.push(Arc::new(FirecrawlDeveloperEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url,
+                }));
+            }
             "searxng" => match searxng_base_url.as_deref().filter(|s| !s.is_empty()) {
                 Some(base) => engines.push(Arc::new(SearxngEngine {
                     client: client.clone(),
@@ -2763,6 +2813,9 @@ pub fn build_default_engines(
     }
 
     for (id, api_cfg) in api_providers {
+        if crate::core::provider::is_optional_api_provider(id) {
+            continue;
+        }
         if !api_cfg.enabled {
             continue;
         }

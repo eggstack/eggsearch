@@ -37,7 +37,7 @@ roots = []
 
 ## Provider Requirements
 
-All 34 built-in providers:
+All 35 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
@@ -74,6 +74,7 @@ All 34 built-in providers:
 | `crossref` | json_api | — | Crossref scholarly search |
 | `semantic_scholar` | api_key | `SEMANTIC_SCHOLAR_API_KEY` | Semantic Scholar scholarly search |
 | `sourcegraph` | api_key | `SOURCEGRAPH_API_KEY` | Sourcegraph code search |
+| `firecrawl_developer` | json_api | optional `FIRECRAWL_API_KEY` | Firecrawl Developer Index (keyless-optional; enable in [search.providers]) |
 | `local_workspace` | local | — | Requires `[local]` config |
 
 `provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured") and a machine-readable `skip_code` (e.g. `missing_api_key`, `missing_searxng_config`, `disabled_by_user`, `cooldown_active`).
@@ -284,6 +285,21 @@ searxng = true
 enabled = true
 base_url = "https://search.example.org"
 ```
+
+### Developer Index (keyless-optional)
+
+Firecrawl Developer Index is an opt-in specialist for repo_search coding evidence. It routes keyless; a key only raises limits.
+
+```toml eggsearch-config-parse-only
+[search.providers]
+firecrawl_developer = true
+
+[search.api.firecrawl_developer]
+enabled = true
+api_key_env = "FIRECRAWL_API_KEY"
+```
+
+A missing or empty optional env var falls back keyless with a warning, never `missing_api_key`.
 
 ### Local Workspace
 

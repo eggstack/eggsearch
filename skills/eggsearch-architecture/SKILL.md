@@ -18,7 +18,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `config.rs` — CLI config loader
 - `commands/` — subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
-- `meta/` — MetadataSearchAdapter + 33 vendored engine structs (+ local workspace backend) covering 34 registered provider IDs, forge adapter, inventory cache
+- `meta/` — MetadataSearchAdapter + 34 vendored engine structs (+ local workspace backend) covering 35 registered provider IDs, forge adapter, inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio (rmcp), 10 tool definitions, server state, policy
 
@@ -46,7 +46,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 
 `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`.
 
-34 registered providers (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`) across 4 search profiles:
+35 registered providers (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`) across 4 search profiles:
 - `generic` — DuckDuckGo, Brave (HTML), Startpage, Yahoo, Mojeek, SearXNG
 - `coding` — adds GitHub/GitLab/Gitea code/issues/releases, Sourcegraph
 - `security` — adds OSV, GitHub Advisory, NVD, CISA KEV, RustSec

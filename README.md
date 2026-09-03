@@ -67,7 +67,7 @@ Runs formatting, clippy, feature compilation, and the deterministic test suite. 
 ## Documentation
 
 - [Configuration](docs/config.md) — config file reference, profiles, defaults
-- [Provider Setup](docs/provider-setup.md) — all 34 providers, skip codes, health
+- [Provider Setup](docs/provider-setup.md) — all 35 providers, skip codes, health
 - [Optional Features](docs/features.md) — PDF extraction, browser rendering, browser profiles
 - [Tool Matrix](docs/tool-matrix.md) — compact tool reference with trust semantics
 - [Agent Workflows](docs/agent-workflows.md) — recommended tool call sequences, evidence roles

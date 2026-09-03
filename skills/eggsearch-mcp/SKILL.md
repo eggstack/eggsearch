@@ -32,6 +32,7 @@ The full stable machine-readable response contract for harness developers lives 
 | Focused page read | `web_fetch` with `focus` | Deterministic query-relevant chunk selection, no extra traversal; `focus_max_chunks`/`focus_max_chars` bound output |
 | Fresh/stale control | `web_fetch`/`batch_fetch` cache fields | `cache_policy` (`default`/`bypass`/`refresh`) and per-item `max_cache_age_seconds` (tightens only); never bypass safety policy |
 | Repository exploration | `repo_map` → `repo_search` → `repo_fetch` | Follow the chain |
+| Issue/PR behind a behavior | `repo_search` with `firecrawl_developer` + explicit repo scope | Opt-in Developer Index returns bounded ProviderPassage excerpts (search evidence, not fetched); unindexed scopes emit scope_unindexed warnings |
 | Debugging errors | `repo_search` with `mode: "exact_error"` | Include the error text |
 | Security triage | `security_search` | Set `assess_applicability: true` for package/version checks |
 | Research comparison | `research_search` | Use `workflow` parameter for structured evidence |

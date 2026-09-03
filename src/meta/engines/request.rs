@@ -2,6 +2,43 @@ use std::time::Duration;
 
 use crate::core::query::{Freshness, SafeSearch, SearchDateRange, SearchIntent};
 
+/// Provider-neutral repository scope for engines that support
+/// server-side repository filtering (e.g. Firecrawl Developer `repos`).
+///
+/// Populated from `RepoSearchRequest::resolved_repo_locator()` earlier in
+/// the planner so engines never reparse `owner/repo` from free text.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RepoScope {
+    /// Repository owner or namespace.
+    pub owner: String,
+    /// Repository name.
+    pub repo: String,
+}
+
+impl RepoScope {
+    /// Build a scope from owner/repo parts, trimming whitespace.
+    /// Returns `None` when either part is empty.
+    pub fn new(owner: &str, repo: &str) -> Option<Self> {
+        let owner = owner.trim();
+        let repo = repo.trim();
+        if owner.is_empty() || repo.is_empty() {
+            return None;
+        }
+        if owner.contains('/') || repo.contains('/') || repo.contains(' ') || owner.contains(' ') {
+            return None;
+        }
+        Some(Self {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+        })
+    }
+
+    /// Canonical `owner/repo` slug for upstream filters.
+    pub fn slug(&self) -> String {
+        format!("{}/{}", self.owner, self.repo)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct EngineSearchRequest {
     pub query: String,
@@ -16,6 +53,9 @@ pub struct EngineSearchRequest {
     pub language: Option<String>,
     pub region: Option<String>,
     pub excerpt_count: usize,
+    /// Optional provider-neutral repository scope. Engines that support
+    /// native repo filtering use it; all others ignore it.
+    pub repo_scope: Option<RepoScope>,
 }
 
 impl EngineSearchRequest {
@@ -33,6 +73,7 @@ impl EngineSearchRequest {
             language: None,
             region: None,
             excerpt_count: 0,
+            repo_scope: None,
         }
     }
 
@@ -62,6 +103,7 @@ impl EngineSearchRequest {
                 .excerpt_count
                 .unwrap_or(0)
                 .min(crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT),
+            repo_scope: None,
         }
     }
 
@@ -90,6 +132,7 @@ mod tests {
         assert!(req.region.is_none());
         assert_eq!(req.excerpt_count, 0);
         assert!(!req.wants_excerpts());
+        assert!(req.repo_scope.is_none());
     }
 
     #[test]
@@ -113,5 +156,16 @@ mod tests {
         assert_eq!(engine.language.as_deref(), Some("en"));
         assert_eq!(engine.region.as_deref(), Some("US"));
         assert_eq!(engine.include_domains, vec!["example.com".to_string()]);
+        assert!(engine.repo_scope.is_none());
+    }
+
+    #[test]
+    fn repo_scope_validates_parts() {
+        let scope = RepoScope::new("tokio-rs", "axum").expect("valid");
+        assert_eq!(scope.slug(), "tokio-rs/axum");
+        assert!(RepoScope::new("", "axum").is_none());
+        assert!(RepoScope::new("tokio-rs", "").is_none());
+        assert!(RepoScope::new("a/b", "c").is_none());
+        assert!(RepoScope::new("a", "b c").is_none());
     }
 }

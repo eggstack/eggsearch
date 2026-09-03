@@ -1,9 +1,9 @@
 # Vendored Search Engines Deep Dive
 
-**Location:** `src/meta/engines/` (38 files: 33 engine implementations plus support modules)
+**Location:** `src/meta/engines/` (39 files: 34 engine implementations plus support modules)
 **Purpose:** One self-contained implementation per upstream provider. Internal to the metasearch adapter — engine types never leak past `MetadataSearchAdapter`; callers receive `crate::core::SourceCard` values.
 
-Engines are paired 1:1 with the 34 registered provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`), except that `local_workspace` is served by the local workspace backend (`src/meta/local_backend.rs`), not an engine file.
+Engines are paired 1:1 with the 35 registered provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`), except that `local_workspace` is served by the local workspace backend (`src/meta/local_backend.rs`), not an engine file.
 
 ---
 
@@ -11,11 +11,12 @@ Engines are paired 1:1 with the 34 registered provider IDs (`KNOWN_PROVIDER_IDS`
 
 | File | Responsibility |
 |------|---------------|
-| `mod.rs` | `SearchEngine` trait (`search(&EngineSearchRequest)`), `AdvisoryCapabilities`, engine struct definitions (~1000 lines) |
-| `request.rs` | `EngineSearchRequest` — provider-neutral structured request (query, budgets, intent, safe-search, freshness, date range, domains, language, region, bounded excerpt demand) |
-| `models.rs` | `SearchResult` and structured metadata payloads (`CodeSearchMetadata`, issue/release metadata) promoted into source cards during conversion |
+| `mod.rs` | `SearchEngine` trait (`search(&EngineSearchRequest)` + `search_batch` with retrieval metadata, `supports_role`), `AdvisoryCapabilities`, engine struct definitions |
+| `request.rs` | `EngineSearchRequest` — provider-neutral structured request (query, budgets, intent, safe-search, freshness, date range, domains, language, region, bounded excerpt demand, optional `RepoScope` for native repo filtering) |
+| `models.rs` | `SearchResult` and structured metadata payloads (`CodeSearchMetadata`, issue/release metadata) promoted into source cards during conversion; `EngineSearchBatch`/`EngineRetrievalMetadata`/`ScopeIndexStatus` preserve scope-index evidence without touching `SourceCard` |
 | `normalizer.rs` | URL canonicalization + tracking-param stripping (`utm_*`, `fbclid`, `gclid`, `msclkid`, `yclid`) before results enter aggregation |
 | `error.rs` | `EngineError` |
+| `firecrawl_developer.rs` | Firecrawl Developer Index (`POST /v2/search/developer`): `k`/`passages`/`types`/`repos` mapping, artifact-kind conversion, `ProviderPassage` excerpts, `repos`/`sources` indexed echo |
 | `kev.rs` | Shared `KevClient`: fetches/caches the CISA Known Exploited Vulnerabilities catalog (used by the `cisa_kev` engine and by `ServerState` for KEV enrichment) |
 
 ---
@@ -28,6 +29,9 @@ pub trait SearchEngine: Send + Sync {
 
     fn search<'a>(&'a self, request: &'a EngineSearchRequest)
         -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>>;
+
+    fn search_batch<'a>(&'a self, request: &'a EngineSearchRequest)
+        -> BoxFuture<'a, Result<EngineSearchBatch, EngineError>>; // default: search + empty metadata
 
     fn supports_role(&self, role: &EvidenceRole) -> bool { true }
 
@@ -45,7 +49,8 @@ pub trait SearchEngine: Send + Sync {
 Key semantics:
 
 - **Defaulted advisory methods** — engines without advisory support return `Ok(None)` / `Ok(vec![])`. Absence of support is indistinguishable from absence of results at this layer; the adapter's capability partitioning prevents unsupported lookups from being dispatched at all.
-- **Conservative `supports_role`** — defaults to `true` (assume generic search can reach any evidence role); only overridden where an engine provably cannot serve a role.
+- **Defaulted `search_batch`** — returns `search` results with empty `EngineRetrievalMetadata`. Specialist engines (Firecrawl Developer) override to preserve scope-index evidence; all other engines need no changes.
+- **Conservative `supports_role`** — defaults to `true` (assume generic search can reach any evidence role); only overridden where an engine provably cannot serve a role. Firecrawl Developer supports only `OfficialDocumentation`, `IssueOrIncidentDiscussion`, `PullRequestOrDesignReview`.
 - **`AdvisoryCapabilities { lookup_by_id, query_by_package }`** — declared per engine; drives which native advisory operations are attempted.
 - **Timeout is supplied by the adapter**, bounded above by the configured global timeout. Engines never set their own timeouts.
 - **Boxed futures** (`Pin<Box<dyn Future + Send>>`) — required for dyn-compatible dispatch across tokio's multi-thread runtime.
@@ -70,6 +75,7 @@ Key semantics:
 |-------------|--------|---------------------|
 | `searxng` | `SearxngEngine` | Requires `base_url` from config; skipped `[missing_searxng_config]` otherwise |
 | `brave_api` | `BraveApiEngine` | API key via `ApiProviderConfig.api_key_env` (default `BRAVE_API_KEY`); natively maps safe-search, freshness/date-range, `search_lang`, `country`, and news intent (`/res/v1/news/search`); sends `extra_snippets=true` only when excerpt demand is present and preserves parseable `age` timestamps; never requests summaries |
+| `firecrawl_developer` | `FirecrawlDeveloperEngine` | Keyless-optional `JsonApi` specialist for the dedicated `POST /v2/search/developer` endpoint (never the generic `/v2/search` SERP). `[search.providers].firecrawl_developer = true` routes keyless; optional `[search.api.firecrawl_developer]` with `FIRECRAWL_API_KEY` attaches `Authorization: Bearer` for higher limits and is never logged. Maps `query`/`k` (clamped 1–20)/`passages` (default 2, max 3)/`types` (Docs→`doc`+`readme`, Issues→`issue`+`pull_request`, else omitted)/`repos` (from `RepoScope`, never parsed from free text). Converts `issue:`/`pull_request:`/`readme:`/`doc:` artifacts via URL classification with deterministic URL-fallback titles; passages become `ProviderPassage` excerpts (never `fetched=true`); `repos`/`sources` indexed echo is preserved as `EngineRetrievalMetadata`, surfaced as stable `scope_unindexed` warnings rather than ordinary zero evidence. Never claims `supports_code_search`. |
 
 ### Forge code/issues/releases (API key + optional base URL)
 
@@ -143,8 +149,9 @@ build_default_engines(
 
 - All keyless engines share one `Arc<reqwest::Client>` built once (shared connection pool, UA override).
 - Keyed engines receive their key at construction; keys are read from env at startup and never logged.
+- Firecrawl Developer is keyless-optional: `[search.providers].firecrawl_developer = true` builds keyless; an enabled `[search.api.firecrawl_developer]` entry with a resolvable non-empty `api_key_env` attaches the bearer header. Missing/empty optional credentials fall back keyless with a startup warning, never `missing_api_key`.
 - Every enabled provider ID resolves to exactly one outcome: a constructed engine or a `SkippedProvider` carrying a typed reason code (`missing_searxng_config`, `missing_api_key`, `missing_base_url`, `unknown_provider`, …). Skips surface later as provider-scoped warnings — never global failures.
-- Credential resolution order: direct env vars for Semantic Scholar / Sourcegraph / NVD; `api_key_env`-named env vars for everything in `api_providers`.
+- Credential resolution order: direct env vars for Semantic Scholar / Sourcegraph / NVD; `api_key_env`-named env vars for everything in `api_providers`; `optional_api_key()` for keyless-optional providers.
 
 ---
 

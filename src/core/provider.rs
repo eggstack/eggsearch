@@ -45,6 +45,7 @@ pub const KNOWN_PROVIDER_IDS: &[&str] = &[
     "crossref",
     "semantic_scholar",
     "sourcegraph",
+    "firecrawl_developer",
 ];
 
 /// Provider ids that require an operator-supplied API key via
@@ -70,6 +71,39 @@ pub fn is_api_provider(id: &str) -> bool {
     API_PROVIDER_IDS.contains(&id)
 }
 
+/// Provider ids that accept an optional API key via
+/// `[search].api.<id>.api_key_env` but remain routable keyless.
+///
+/// The key raises upstream rate limits; it never gates construction.
+pub const OPTIONAL_API_PROVIDER_IDS: &[&str] = &["firecrawl_developer"];
+
+/// Returns `true` if `id` accepts an optional API key but works keyless.
+pub fn is_optional_api_provider(id: &str) -> bool {
+    OPTIONAL_API_PROVIDER_IDS.contains(&id)
+}
+
+/// Provider credential requirement: none, optional, or required.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CredentialRequirement {
+    /// No credential is used.
+    None,
+    /// A credential may be configured to raise limits; keyless still routes.
+    Optional,
+    /// A credential is required for routing.
+    Required,
+}
+
+/// Return the credential requirement for a provider id.
+pub fn credential_requirement(id: &str) -> CredentialRequirement {
+    if is_optional_api_provider(id) {
+        CredentialRequirement::Optional
+    } else if is_api_provider(id) {
+        CredentialRequirement::Required
+    } else {
+        CredentialRequirement::None
+    }
+}
+
 /// Return the provider-specific readiness signal used by status
 /// surfaces before the generic `enabled` gate is applied.
 pub fn provider_configured_state(
@@ -81,6 +115,7 @@ pub fn provider_configured_state(
     match id {
         "searxng" => searxng_configured,
         "local_workspace" => local_backend_available,
+        _ if is_optional_api_provider(id) => true,
         _ if is_api_provider(id) => api_configured,
         _ => true,
     }
@@ -1688,6 +1723,44 @@ pub fn built_in_provider_descriptor(
                 supports_scholarly_search: false,
                 supports_doi_lookup: false,
                 supports_repo_indexing: true,
+                supports_structured_changelog: false,
+            },
+            routable,
+            skip_reason,
+            skip_code,
+        }),
+        "firecrawl_developer" => Some(ProviderDescriptor {
+            id: "firecrawl_developer".into(),
+            display_name: "Firecrawl Developer Index".into(),
+            kind: ProviderKind::JsonApi,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured: configured && enabled,
+            capabilities: ProviderCapabilities {
+                supports_safe_search: false,
+                supports_freshness: false,
+                supports_language: false,
+                supports_region: false,
+                supports_domain_filters: false,
+                supports_news: false,
+                supports_code_search: false,
+                supports_repo_filter: true,
+                supports_org_filter: false,
+                supports_path_filter: false,
+                supports_language_filter: false,
+                supports_symbol_hint: false,
+                supports_issue_search: true,
+                supports_release_search: false,
+                supports_result_timestamps: false,
+                supports_security_search: false,
+                supports_package_metadata: false,
+                supports_advisory_lookup_by_id: false,
+                supports_advisory_lookup_by_package: false,
+                supports_exploit_kev_status: false,
+                supports_scholarly_search: false,
+                supports_doi_lookup: false,
+                supports_repo_indexing: false,
                 supports_structured_changelog: false,
             },
             routable,
