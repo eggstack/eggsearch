@@ -11,6 +11,7 @@ pub mod crates_io;
 pub mod crossref;
 pub mod duckduckgo;
 pub mod error;
+pub mod exa;
 pub mod firecrawl_developer;
 pub mod gitea_code;
 pub mod gitea_issues;
@@ -272,6 +273,12 @@ pub struct SourcegraphCodeEngine {
 pub struct FirecrawlDeveloperEngine {
     pub client: Arc<Client>,
     pub api_key: Option<String>,
+    pub base_url: Option<String>,
+}
+
+pub struct ExaEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
     pub base_url: Option<String>,
 }
 
@@ -936,6 +943,27 @@ impl SearchEngine for FirecrawlDeveloperEngine {
                 | EvidenceRole::IssueOrIncidentDiscussion
                 | EvidenceRole::PullRequestOrDesignReview
         )
+    }
+}
+
+impl SearchEngine for ExaEngine {
+    fn name(&self) -> &'static str {
+        "exa"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            exa::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                request,
+            )
+            .await
+        })
     }
 }
 

@@ -1,6 +1,6 @@
 # Phase 4 — Exa Semantic Search Provider
 
-Status: planned
+Status: implemented
 Depends on: phases 1-2
 Baseline for planning: `e645a3fe42090fb7b7e1ce8639681fe69878f57b`
 Roadmap: `plans/roadmap.md`

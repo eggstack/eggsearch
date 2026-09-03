@@ -10,7 +10,7 @@ Baseline audited: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 | Provider capability realization and Brave completion | complete | none | `phase-1-provider-request-contract-and-brave-realization.md` |
 | Extractive evidence and fetch/cache controls | complete | phase 1 | `phase-2-extractive-evidence-and-fetch-control.md` |
 | Firecrawl Developer Index | implemented | phases 1-2 | `phase-3-firecrawl-developer-index.md` |
-| Exa semantic search provider | planned | phases 1-2 | `phase-4-exa-semantic-search-provider.md` |
+| Exa semantic search provider | implemented | phases 1-2 | `phase-4-exa-semantic-search-provider.md` |
 | Tavily search provider and closure pass | planned | phases 1-2; may run after phase 4 or in parallel with it | `phase-5-tavily-provider-and-closure.md` |
 
 The governing rationale and cross-phase invariants are in `roadmap.md`.

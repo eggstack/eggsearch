@@ -2671,7 +2671,7 @@ pub fn build_default_engines(
 ) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
     use crate::meta::engines::{
         BraveApiEngine, BraveEngine, CisaKevEngine, CratesIoRegistryEngine, CrossRefEngine,
-        DuckDuckGoEngine, FirecrawlDeveloperEngine, GiteaCodeEngine, GiteaIssuesEngine,
+        DuckDuckGoEngine, ExaEngine, FirecrawlDeveloperEngine, GiteaCodeEngine, GiteaIssuesEngine,
         GiteaReleasesEngine, GithubAdvisoryEngine, GithubCodeEngine, GithubIssuesEngine,
         GithubReleasesEngine, GitlabCodeEngine, GitlabIssuesEngine, GitlabReleasesEngine,
         GoPkgRegistryEngine, MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine,
@@ -2868,6 +2868,13 @@ pub fn build_default_engines(
         match id.as_str() {
             "brave_api" => {
                 engines.push(Arc::new(BraveApiEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "exa" => {
+                engines.push(Arc::new(ExaEngine {
                     client: client.clone(),
                     api_key,
                     base_url: api_cfg.base_url.clone(),

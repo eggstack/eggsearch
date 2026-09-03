@@ -62,7 +62,7 @@ AppConfig
 
 **Built-in providers** (`providers` map): `duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `osv`, `firecrawl_developer` (disabled by default) — configured via enable/disable flags. `firecrawl_developer = true` alone routes keyless.
 
-**API providers** (`api` map): `brave_api`, `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph`, `semantic_scholar`, `github_advisory`, `osv`, `nvd`, `rustsec`, `cisa_kev` — configured with `enabled`, `api_key_env`, and optional `base_url`.
+**API providers** (`api` map): `brave_api`, `exa`, `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph`, `semantic_scholar`, `github_advisory`, `osv`, `nvd`, `rustsec`, `cisa_kev` — configured with `enabled`, `api_key_env`, and optional `base_url`. `exa` uses `EXA_API_KEY` and defaults to `https://api.exa.ai/search`.
 
 **Keyless-optional providers** (`api` map, optional): `firecrawl_developer` — `[search.api.firecrawl_developer]` may name `FIRECRAWL_API_KEY`; when enabled with a resolvable non-empty value the bearer header is attached, otherwise the provider falls back keyless with a startup warning (never `missing_api_key`).
 

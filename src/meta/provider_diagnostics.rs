@@ -1046,9 +1046,10 @@ impl CapabilityEnforcementTelemetry {
     /// Build enforcement telemetry for a `web_search` request.
     ///
     /// Distinguishes provider-native enforcement from locally
-    /// enforced/approximated behavior (domain post-filtering) and
-    /// not-enforced constraints. Local filtering is reported as
-    /// `approximated`, never as native `enforced`.
+    /// enforced/approximated behavior. Domain post-filtering always runs
+    /// locally as defense-in-depth, but when a selected provider
+    /// natively enforces domain filters the capability is reported as
+    /// `enforced`; otherwise it is `approximated`.
     pub fn for_web_search(
         req: &crate::core::query::WebSearchRequest,
         selected_providers: &[String],
@@ -1094,6 +1095,7 @@ impl CapabilityEnforcementTelemetry {
         let mut has_language = false;
         let mut has_region = false;
         let mut has_news = false;
+        let mut has_domains = false;
         for id in selected_providers {
             if let Some(desc) =
                 built_in_provider_descriptor(id, true, false, true, false, None, None)
@@ -1115,6 +1117,9 @@ impl CapabilityEnforcementTelemetry {
                 }
                 if desc.capabilities.supports_news {
                     has_news = true;
+                }
+                if desc.capabilities.supports_domain_filters {
+                    has_domains = true;
                 }
             }
         }
@@ -1149,7 +1154,11 @@ impl CapabilityEnforcementTelemetry {
             }
         }
         if wants_domains {
-            approximated.push("domain_filters".to_string());
+            if has_domains {
+                enforced.push("domain_filters".to_string());
+            } else {
+                approximated.push("domain_filters".to_string());
+            }
         }
         if wants_language {
             if has_language {

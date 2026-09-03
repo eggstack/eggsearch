@@ -6,7 +6,7 @@ Use `provider_status` first when you need the current provider/capability pictur
 
 `web_fetch` also supports `extract_mode = "metadata_only"` when you only need page metadata and do not need the body text.
 
-`web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, local exact-host-plus-subdomain enforcement), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API when representable). Pass `excerpt_count` (1-3) when short source passages help triage, and `web_fetch` with `focus` to read only the query-relevant chunks of the selected page.
+`web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, natively enforced by Exa when selected and locally enforced otherwise), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API when representable). Pass `excerpt_count` (1-3) when short source passages help triage, and `web_fetch` with `focus` to read only the query-relevant chunks of the selected page.
 
 ## 1. Repo Map → Repo Search → Repo Fetch (Repository Exploration)
 
@@ -76,6 +76,30 @@ Use `provider_status` first when you need the current provider/capability pictur
 
 // Follow up with web_fetch on the issue/PR URL from suggested_fetches
 // to read the full thread; excerpts alone never authorize code changes.
+```
+
+## 2c. Semantic Search With Date/Domain Constraints (Exa)
+
+```jsonc
+// Enable once in config:
+// [search.api.exa] enabled = true, api_key_env = "EXA_API_KEY"
+
+// web_search with explicit Exa selection for semantic/neural discovery
+// that complements the HTML/SERP sources. Exact date_range and
+// include/exclude domains are enforced natively by Exa; other
+// constraints fall back to local enforcement with telemetry.
+// Highlights arrive as bounded ProviderHighlight excerpts (search-result
+// evidence, not fetched content, never generated summaries).
+{
+  "query": "retrieval-augmented generation evaluation benchmarks",
+  "providers": ["exa", "duckduckgo"],
+  "date_range": {"start": "2024-01-01", "end": "2024-12-31"},
+  "include_domains": ["arxiv.org"],
+  "excerpt_count": 2
+}
+
+// Follow up with web_fetch on the selected URL from suggested_fetches
+// to read the full page; excerpts alone never authorize conclusions.
 ```
 
 ## 3. Security Package/Version Triage

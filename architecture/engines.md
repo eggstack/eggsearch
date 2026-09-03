@@ -1,9 +1,9 @@
 # Vendored Search Engines Deep Dive
 
-**Location:** `src/meta/engines/` (39 files: 34 engine implementations plus support modules)
+**Location:** `src/meta/engines/` (40 files: 35 engine implementations plus support modules)
 **Purpose:** One self-contained implementation per upstream provider. Internal to the metasearch adapter — engine types never leak past `MetadataSearchAdapter`; callers receive `crate::core::SourceCard` values.
 
-Engines are paired 1:1 with the 35 registered provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`), except that `local_workspace` is served by the local workspace backend (`src/meta/local_backend.rs`), not an engine file.
+Engines are paired 1:1 with the 36 registered provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`), except that `local_workspace` is served by the local workspace backend (`src/meta/local_backend.rs`), not an engine file.
 
 ---
 
@@ -16,6 +16,7 @@ Engines are paired 1:1 with the 35 registered provider IDs (`KNOWN_PROVIDER_IDS`
 | `models.rs` | `SearchResult` and structured metadata payloads (`CodeSearchMetadata`, issue/release metadata) promoted into source cards during conversion; `EngineSearchBatch`/`EngineRetrievalMetadata`/`ScopeIndexStatus` preserve scope-index evidence without touching `SourceCard` |
 | `normalizer.rs` | URL canonicalization + tracking-param stripping (`utm_*`, `fbclid`, `gclid`, `msclkid`, `yclid`) before results enter aggregation |
 | `error.rs` | `EngineError` |
+| `exa.rs` | Exa semantic search (`POST /search`): `numResults`/`type=auto`/`includeDomains`/`excludeDomains`/`startPublishedDate`/`endPublishedDate` mapping, `ProviderHighlight` excerpts with provider-local scores, parseable `publishedDate` timestamps; never requests summaries, output schemas, system prompts, full text, subpages, or live crawl |
 | `firecrawl_developer.rs` | Firecrawl Developer Index (`POST /v2/search/developer`): `k`/`passages`/`types`/`repos` mapping, artifact-kind conversion, `ProviderPassage` excerpts, `repos`/`sources` indexed echo |
 | `kev.rs` | Shared `KevClient`: fetches/caches the CISA Known Exploited Vulnerabilities catalog (used by the `cisa_kev` engine and by `ServerState` for KEV enrichment) |
 
@@ -75,6 +76,7 @@ Key semantics:
 |-------------|--------|---------------------|
 | `searxng` | `SearxngEngine` | Requires `base_url` from config; skipped `[missing_searxng_config]` otherwise |
 | `brave_api` | `BraveApiEngine` | API key via `ApiProviderConfig.api_key_env` (default `BRAVE_API_KEY`); natively maps safe-search, freshness/date-range, `search_lang`, `country`, and news intent (`/res/v1/news/search`); sends `extra_snippets=true` only when excerpt demand is present and preserves parseable `age` timestamps; never requests summaries |
+| `exa` | `ExaEngine` | API key via `ApiProviderConfig.api_key_env` (`EXA_API_KEY`); semantic retrieval with native freshness/date-range (`startPublishedDate`/`endPublishedDate`), domain filters (`includeDomains`/`excludeDomains`), and `publishedDate` timestamps; sends `contents: { highlights: true }` only on excerpt demand and converts `highlights`/`highlightScores` to `ProviderHighlight` excerpts; never requests summaries, output schemas, system prompts, full text, subpages, or live crawl |
 | `firecrawl_developer` | `FirecrawlDeveloperEngine` | Keyless-optional `JsonApi` specialist for the dedicated `POST /v2/search/developer` endpoint (never the generic `/v2/search` SERP). `[search.providers].firecrawl_developer = true` routes keyless; optional `[search.api.firecrawl_developer]` with `FIRECRAWL_API_KEY` attaches `Authorization: Bearer` for higher limits and is never logged. Maps `query`/`k` (clamped 1–20)/`passages` (default 2, max 3)/`types` (Docs→`doc`+`readme`, Issues→`issue`+`pull_request`, else omitted)/`repos` (from `RepoScope`, never parsed from free text). Converts `issue:`/`pull_request:`/`readme:`/`doc:` artifacts via URL classification with deterministic URL-fallback titles; passages become `ProviderPassage` excerpts (never `fetched=true`); `repos`/`sources` indexed echo is preserved as `EngineRetrievalMetadata`, surfaced as stable `scope_unindexed` warnings rather than ordinary zero evidence. Never claims `supports_code_search`. |
 
 ### Forge code/issues/releases (API key + optional base URL)

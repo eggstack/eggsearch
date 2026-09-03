@@ -37,7 +37,7 @@ roots = []
 
 ## Provider Requirements
 
-All 35 built-in providers:
+All 36 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
@@ -48,6 +48,7 @@ All 35 built-in providers:
 | `mojeek` | html_scrape | — | |
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
 | `brave_api` | api_key | `BRAVE_API_KEY` | |
+| `exa` | api_key | `EXA_API_KEY` | Exa semantic search (native freshness/domain filters, highlights on excerpt demand) |
 | `github_code` | api_key | `GITHUB_TOKEN` | |
 | `github_issues` | api_key | `GITHUB_TOKEN` | |
 | `github_releases` | api_key | `GITHUB_TOKEN` | |

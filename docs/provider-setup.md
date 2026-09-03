@@ -1,6 +1,6 @@
 # Provider Setup
 
-eggsearch supports 35 search providers across nine categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
+eggsearch supports 36 search providers across nine categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
 ## Provider Categories at a Glance
 
@@ -10,7 +10,7 @@ eggsearch supports 35 search providers across nine categories: web search (HTML 
 | **Keyless specialist** | OSV, NVD, CISA KEV, RustSec, OpenAlex, Crossref, all package registries | none |
 | **Keyless-optional specialist** | Firecrawl Developer Index | none (optional `FIRECRAWL_API_KEY` raises limits) |
 | **Optional configured endpoint** | SearXNG, self-hosted forge base URL | operator configuration |
-| **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Semantic Scholar, GitHub Advisory | opt-in credential |
+| **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Exa, Semantic Scholar, GitHub Advisory | opt-in credential |
 | **Optional local** | local workspace | configured local root |
 
 All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy. The Firecrawl Developer Index routes keyless when enabled; a missing optional key never produces `missing_api_key`.
@@ -101,6 +101,28 @@ api_key_env = "BRAVE_API_KEY"
 The environment variable `BRAVE_API_KEY` must be set at runtime.
 
 Native capabilities: `safe_search`, `freshness` (relative `pd|pw|pm|py` and exact `YYYY-MM-DDtoYYYY-MM-DD`), `language` (`search_lang`), `region` (`country` for 2-letter codes), `news` (dedicated `/res/v1/news/search` endpoint for `intent=news`), and `result_timestamps` (the `age` field is preserved when it parses as RFC 3339 or `YYYY-MM-DD`, and feeds freshness reranking). Set `extra_snippets=true` automatically when `web_search` requests `excerpt_count > 0` (up to 3 alternate excerpts per result, converted to provider-neutral excerpts). Domain filters are enforced locally, not provider-native. Summaries are never requested.
+
+### Exa Semantic Search
+
+- ID: `exa`
+- Semantic/neural web retrieval through `POST https://api.exa.ai/search` (auth `x-api-key: <EXA_API_KEY>`)
+- Enabled by default: **no**; opt-in semantic complement to the HTML/SERP sources
+- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["exa"]`
+- Enable and configure in `[search.api.exa]`:
+
+```toml
+[search.api.exa]
+enabled = true
+api_key_env = "EXA_API_KEY"
+```
+
+The environment variable `EXA_API_KEY` must be set at runtime. `base_url` remains overridable through the same section for tests/proxies; the production default is `https://api.exa.ai/search`.
+
+Native capabilities: `freshness` (exact `YYYY-MM-DD` ranges map to `startPublishedDate`/`endPublishedDate` as UTC day boundaries; relative `day|week|month|year` maps to a UTC `startPublishedDate` lower bound 1/7/30/365 days ago with the end bound omitted), `domain_filters` (`includeDomains`/`excludeDomains` from the generic host lists), and `result_timestamps` (`publishedDate` preserved when it parses as RFC 3339 or `YYYY-MM-DD`, feeding freshness reranking). Safe-search, language, region, news, code, repo, issue, and release search are not claimed. crawl-date fields are never used.
+
+Excerpts: `contents: { highlights: true }` is sent only when `web_search` requests `excerpt_count > 0`; `highlights[i]` becomes a bounded `ProviderHighlight` excerpt with the aligned `highlightScores[i]` as provider-local score (ordering only, never compared across providers). Unrequested highlights are never fetched or stored. Excerpt count/char caps and sanitization apply through the common pipeline.
+
+eggsearch uses Exa only for search metadata/highlights. Generated summaries, output schemas, system prompts, additional queries, full-text retrieval, subpage crawling, live crawl, and agent/answer endpoints are never requested. Missing/invalid credentials and quota/rate failures are provider-scoped and never make the server unhealthy.
 
 ### GitHub Code Search
 
