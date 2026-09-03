@@ -1,6 +1,6 @@
 # Provider Setup
 
-eggsearch supports 36 search providers across nine categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
+eggsearch supports 37 search providers across nine categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
 ## Provider Categories at a Glance
 
@@ -10,7 +10,7 @@ eggsearch supports 36 search providers across nine categories: web search (HTML 
 | **Keyless specialist** | OSV, NVD, CISA KEV, RustSec, OpenAlex, Crossref, all package registries | none |
 | **Keyless-optional specialist** | Firecrawl Developer Index | none (optional `FIRECRAWL_API_KEY` raises limits) |
 | **Optional configured endpoint** | SearXNG, self-hosted forge base URL | operator configuration |
-| **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Exa, Semantic Scholar, GitHub Advisory | opt-in credential |
+| **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Exa, Tavily, Semantic Scholar, GitHub Advisory | opt-in credential |
 | **Optional local** | local workspace | configured local root |
 
 All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy. The Firecrawl Developer Index routes keyless when enabled; a missing optional key never produces `missing_api_key`.
@@ -123,6 +123,28 @@ Native capabilities: `freshness` (exact `YYYY-MM-DD` ranges map to `startPublish
 Excerpts: `contents: { highlights: true }` is sent only when `web_search` requests `excerpt_count > 0`; `highlights[i]` becomes a bounded `ProviderHighlight` excerpt with the aligned `highlightScores[i]` as provider-local score (ordering only, never compared across providers). Unrequested highlights are never fetched or stored. Excerpt count/char caps and sanitization apply through the common pipeline.
 
 eggsearch uses Exa only for search metadata/highlights. Generated summaries, output schemas, system prompts, additional queries, full-text retrieval, subpage crawling, live crawl, and agent/answer endpoints are never requested. Missing/invalid credentials and quota/rate failures are provider-scoped and never make the server unhealthy.
+
+### Tavily Search
+
+- ID: `tavily`
+- General web retrieval through `POST https://api.tavily.com/search` (auth `Authorization: Bearer <TAVILY_API_KEY>`)
+- Enabled by default: **no**; opt-in complement to the HTML/SERP sources
+- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["tavily"]`
+- Enable and configure in `[search.api.tavily]`:
+
+```toml
+[search.api.tavily]
+enabled = true
+api_key_env = "TAVILY_API_KEY"
+```
+
+The environment variable `TAVILY_API_KEY` must be set at runtime. `base_url` remains overridable through the same section for tests/proxies; the production default is `https://api.tavily.com/search`.
+
+Native capabilities: `safe_search` (`Off -> false`, `Moderate|Strict -> true`; `Strict` collapses to `true` and is therefore approximate), `freshness` (exact `YYYY-MM-DD` ranges map to `start_date`/`end_date`; relative `day|week|month|year` maps to `time_range`), `language` (BCP47 `en`/`en-US` normalized to lowercase with `filter_by_language=true` for strict enforcement; unrepresentable values omitted), `region` (2-letter ISO codes mapped to Tavily country names e.g. `US -> united states`, single-word names passed through when known; omitted for `topic=news` because Tavily country is general-topic only; unrepresentable values omitted), `domain_filters` (`include_domains`/`exclude_domains` with `include_domains_mode=filter` for strict filtering), and `news` (`intent=news -> topic=news`, otherwise `general`). Result timestamps are not claimed because Tavily results carry no per-result published dates.
+
+Excerpts: `chunks_per_source` 1-3 is derived from `web_search` `excerpt_count` (1 when no excerpts requested, otherwise the demanded count clamped 1-3); result `content` is split on `[...]` into source chunks, the first chunk becomes the card snippet, and up to the demanded count become bounded `ProviderSnippet` excerpts. Unrequested chunks are discarded before card construction. Excerpt count/char caps and sanitization apply through the common pipeline.
+
+eggsearch uses Tavily only for search metadata/chunks with `search_depth=basic`. Generated answers (`include_answer=false`), raw page content (`include_raw_content=false`), images (`include_images=false`), and automatic parameter rewriting (`auto_parameters=false`) are always disabled; `web_fetch` remains the fetch owner. Missing/invalid credentials and quota/rate failures are provider-scoped and never make the server unhealthy.
 
 ### GitHub Code Search
 

@@ -37,7 +37,7 @@ roots = []
 
 ## Provider Requirements
 
-All 36 built-in providers:
+All 37 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
@@ -49,6 +49,7 @@ All 36 built-in providers:
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
 | `brave_api` | api_key | `BRAVE_API_KEY` | |
 | `exa` | api_key | `EXA_API_KEY` | Exa semantic search (native freshness/domain filters, highlights on excerpt demand) |
+| `tavily` | api_key | `TAVILY_API_KEY` | Tavily search (native safe-search/freshness/language/region/domain/news, chunks on excerpt demand) |
 | `github_code` | api_key | `GITHUB_TOKEN` | |
 | `github_issues` | api_key | `GITHUB_TOKEN` | |
 | `github_releases` | api_key | `GITHUB_TOKEN` | |

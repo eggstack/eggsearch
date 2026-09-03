@@ -819,9 +819,10 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"sourcegraph"));
     assert!(ids.contains(&"firecrawl_developer"));
     assert!(ids.contains(&"exa"));
+    assert!(ids.contains(&"tavily"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 36);
+    assert_eq!(ids.len(), 37);
 }
 
 #[cfg(feature = "mock")]

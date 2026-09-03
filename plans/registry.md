@@ -11,7 +11,7 @@ Baseline audited: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 | Extractive evidence and fetch/cache controls | complete | phase 1 | `phase-2-extractive-evidence-and-fetch-control.md` |
 | Firecrawl Developer Index | implemented | phases 1-2 | `phase-3-firecrawl-developer-index.md` |
 | Exa semantic search provider | implemented | phases 1-2 | `phase-4-exa-semantic-search-provider.md` |
-| Tavily search provider and closure pass | planned | phases 1-2; may run after phase 4 or in parallel with it | `phase-5-tavily-provider-and-closure.md` |
+| Tavily search provider and closure pass | implemented | phases 1-2 | `phase-5-tavily-provider-and-closure.md` |
 
 The governing rationale and cross-phase invariants are in `roadmap.md`.
 
@@ -21,8 +21,8 @@ The following capabilities were researched but are not implementation commitment
 
 - recursive crawling or autonomous browser interaction;
 - provider-generated answers, summaries, deep-research agents, or schema-generation layers;
-- a new general-purpose `site_map` MCP tool;
-- Firecrawl Research Index passage/citation-graph operations.
+- a new general-purpose `site_map` MCP tool — deferred — insufficient demonstrated need (no recurring search-engine site-discovery failure observed during phases 1-5; repo/docs link extraction remains sufficient);
+- Firecrawl Research Index passage/citation-graph operations — deferred — insufficient demonstrated need (biomedical/arXiv recall met by OpenAlex/Crossref/Semantic Scholar; no evidence that paper passages or citation expansion justify new provider-neutral types).
 
 A bounded same-origin site-discovery tool and Firecrawl Research Index integration remain plausible follow-on work. Phase 5 must record whether evidence gathered during implementation changes their priority. If either is promoted, create a separate plan rather than expanding an existing provider phase.
 

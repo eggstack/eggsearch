@@ -6,7 +6,7 @@ Use `provider_status` first when you need the current provider/capability pictur
 
 `web_fetch` also supports `extract_mode = "metadata_only"` when you only need page metadata and do not need the body text.
 
-`web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, natively enforced by Exa when selected and locally enforced otherwise), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API when representable). Pass `excerpt_count` (1-3) when short source passages help triage, and `web_fetch` with `focus` to read only the query-relevant chunks of the selected page.
+`web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, natively enforced by Exa/Tavily when selected and locally enforced otherwise), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API and Tavily when representable). Pass `excerpt_count` (1-3) when short source passages help triage, and `web_fetch` with `focus` to read only the query-relevant chunks of the selected page.
 
 ## 1. Repo Map → Repo Search → Repo Fetch (Repository Exploration)
 
@@ -95,6 +95,32 @@ Use `provider_status` first when you need the current provider/capability pictur
   "providers": ["exa", "duckduckgo"],
   "date_range": {"start": "2024-01-01", "end": "2024-12-31"},
   "include_domains": ["arxiv.org"],
+  "excerpt_count": 2
+}
+
+// Follow up with web_fetch on the selected URL from suggested_fetches
+// to read the full page; excerpts alone never authorize conclusions.
+```
+
+## 2d. General Search With Safe-Search/Language/News Constraints (Tavily)
+
+```jsonc
+// Enable once in config:
+// [search.api.tavily] enabled = true, api_key_env = "TAVILY_API_KEY"
+
+// web_search with explicit Tavily selection for general discovery with
+// provider-neutral constraints. Safe-search, freshness/date-range,
+// language, region, domain filters, and news intent are enforced
+// natively by Tavily when representable; other constraints fall back
+// to local enforcement with telemetry. Source chunks arrive as bounded
+// ProviderSnippet excerpts (search-result evidence, not fetched content;
+// answers and raw content are never requested).
+{
+  "query": "rust async runtime scheduling benchmarks",
+  "providers": ["tavily", "duckduckgo"],
+  "freshness": "month",
+  "include_domains": ["docs.rs"],
+  "language": "en",
   "excerpt_count": 2
 }
 

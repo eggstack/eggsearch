@@ -43,6 +43,7 @@ pub mod searxng;
 pub mod semantic_scholar;
 pub mod sourcegraph;
 pub mod startpage;
+pub mod tavily;
 pub mod yahoo;
 
 use std::future::Future;
@@ -277,6 +278,12 @@ pub struct FirecrawlDeveloperEngine {
 }
 
 pub struct ExaEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+pub struct TavilyEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: Option<String>,
@@ -957,6 +964,27 @@ impl SearchEngine for ExaEngine {
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             exa::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                request,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for TavilyEngine {
+    fn name(&self) -> &'static str {
+        "tavily"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            tavily::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),

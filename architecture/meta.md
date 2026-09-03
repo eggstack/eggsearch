@@ -1,6 +1,6 @@
 # Metasearch Adapter Deep Dive
 
-**Location:** `src/meta/` (34 top-level files, plus `engines/` with 35 engine implementations and 5 support modules)
+**Location:** `src/meta/` (34 top-level files, plus `engines/` with 36 engine implementations and 5 support modules)
 **Purpose:** Central orchestrator for all search operations. Wraps vendored search engines, handles RRF aggregation, sanitization, provider health, and multi-subquery dispatch.
 
 ---
@@ -110,8 +110,8 @@ trait SearchEngine {
 
 - `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`
 - `ProviderCapabilities` — 24 boolean flags per provider
-- `KNOWN_PROVIDER_IDS` — 36 registered provider identifiers
-- `CredentialRequirement` — `None`/`Optional`/`Required`; `firecrawl_developer` is the only `Optional` provider (keyless routes, key raises limits); `exa` is `Required` (opt-in semantic search with native freshness/domain/timestamp support)
+- `KNOWN_PROVIDER_IDS` — 37 registered provider identifiers
+- `CredentialRequirement` — `None`/`Optional`/`Required`; `firecrawl_developer` is the only `Optional` provider (keyless routes, key raises limits); `exa` is `Required` (opt-in semantic search with native freshness/domain/timestamp support); `tavily` is `Required` (opt-in search with native safe-search/freshness/language/region/domain/news support, no result timestamps)
 
 ---
 

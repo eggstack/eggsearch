@@ -2677,7 +2677,7 @@ pub fn build_default_engines(
         GoPkgRegistryEngine, MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine,
         NugetRegistryEngine, NvdEngine, OpenAlexEngine, OsvEngine, PackagistRegistryEngine,
         PypiRegistryEngine, RubygemsRegistryEngine, RustSecEngine, SearxngEngine,
-        SemanticScholarEngine, SourcegraphCodeEngine, StartpageEngine, YahooEngine,
+        SemanticScholarEngine, SourcegraphCodeEngine, StartpageEngine, TavilyEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client(user_agent.as_deref())?);
@@ -2875,6 +2875,13 @@ pub fn build_default_engines(
             }
             "exa" => {
                 engines.push(Arc::new(ExaEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "tavily" => {
+                engines.push(Arc::new(TavilyEngine {
                     client: client.clone(),
                     api_key,
                     base_url: api_cfg.base_url.clone(),

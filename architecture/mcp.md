@@ -63,11 +63,11 @@ impl EggsearchServer {
 | `max_results` | Option<usize> | Max results (1-50, default 10) |
 | `providers` | Option<Vec<String>> | Specific provider IDs |
 | `freshness` | Option<String> | Time filter: day, week, month, year |
-| `safe_search` | Option<String> | Safe search: off, moderate, strict (native on Brave API) |
+| `safe_search` | Option<String> | Safe search: off, moderate, strict (native on Brave API and Tavily; Tavily collapses Moderate/Strict to `true`) |
 | `date_range` | Option<SearchDateRange> | Exact `YYYY-MM-DD` start/end, exclusive with `freshness` |
-| `include_domains`/`exclude_domains` | Vec<String> | Hostname filters; natively enforced by providers advertising `supports_domain_filters` (currently `exa`), otherwise locally enforced with telemetry `approximated` |
-| `language`/`region` | Option<String> | Conservative hints, native on Brave API when representable |
-| `intent` | Option<String> | `news` routes Brave API to `/res/v1/news/search` |
+| `include_domains`/`exclude_domains` | Vec<String> | Hostname filters; natively enforced by providers advertising `supports_domain_filters` (currently `exa`, `tavily`), otherwise locally enforced with telemetry `approximated` |
+| `language`/`region` | Option<String> | Conservative hints, native on Brave API and Tavily when representable (Tavily region maps ISO codes to country names, general topic only) |
+| `intent` | Option<String> | `news` routes Brave API to `/res/v1/news/search` and Tavily to `topic=news` |
 
 **Returns:** Array of `SourceCard` objects plus additive `capability_enforcement` telemetry.
 

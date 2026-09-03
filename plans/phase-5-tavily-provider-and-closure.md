@@ -1,6 +1,6 @@
 # Phase 5 — Tavily Search Provider and Workstream Closure
 
-Status: planned
+Status: implemented
 Depends on: phases 1-2; may execute after phase 4 or in parallel with phase 4 once shared primitives are stable
 Baseline for planning: `e645a3fe42090fb7b7e1ce8639681fe69878f57b`
 Roadmap: `plans/roadmap.md`

@@ -21,7 +21,7 @@ fn provider_inventory_reflects_new_count() {
     assert!(KNOWN_PROVIDER_IDS.contains(&"exa"));
     assert!(API_PROVIDER_IDS.contains(&"exa"));
     assert!(is_api_provider("exa"));
-    assert_eq!(KNOWN_PROVIDER_IDS.len(), 36);
+    assert_eq!(KNOWN_PROVIDER_IDS.len(), 37);
     assert_eq!(
         credential_requirement("exa"),
         CredentialRequirement::Required
