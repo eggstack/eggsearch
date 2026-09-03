@@ -34,6 +34,7 @@ fn vuln_card(
             ..Default::default()
         },
         quality: None,
+        excerpts: Vec::new(),
     }
 }
 
@@ -336,6 +337,7 @@ fn f7_06_same_repository_name_on_different_host_is_excluded() {
                 ..Default::default()
             },
             quality: None,
+            excerpts: Vec::new(),
         },
         SourceCard {
             id: "repo_gitlab".to_string(),
@@ -353,6 +355,7 @@ fn f7_06_same_repository_name_on_different_host_is_excluded() {
                 ..Default::default()
             },
             quality: None,
+            excerpts: Vec::new(),
         },
     ];
     let conflicts = detect_entity_scoped_conflicts(&cards);

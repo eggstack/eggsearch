@@ -256,6 +256,7 @@ fn codegg_consumes_conflict_source_ids() {
                 ..Default::default()
             },
             quality: None,
+            excerpts: Vec::new(),
         },
         SourceCard {
             id: "c2".to_string(),
@@ -279,6 +280,7 @@ fn codegg_consumes_conflict_source_ids() {
                 ..Default::default()
             },
             quality: None,
+            excerpts: Vec::new(),
         },
     ];
     let conflicts = detect_entity_scoped_conflicts(&cards);

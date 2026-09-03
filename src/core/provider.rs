@@ -653,7 +653,7 @@ pub fn built_in_provider_descriptor(
                 supports_symbol_hint: false,
                 supports_issue_search: false,
                 supports_release_search: false,
-                supports_result_timestamps: false,
+                supports_result_timestamps: true,
                 supports_security_search: false,
                 supports_package_metadata: false,
                 supports_advisory_lookup_by_id: false,
@@ -1882,7 +1882,7 @@ mod tests {
         assert!(desc.capabilities.supports_region);
         assert!(!desc.capabilities.supports_domain_filters);
         assert!(desc.capabilities.supports_news);
-        assert!(!desc.capabilities.supports_result_timestamps);
+        assert!(desc.capabilities.supports_result_timestamps);
     }
 
     #[test]
@@ -1890,7 +1890,10 @@ mod tests {
         let desc = built_in_provider_descriptor("brave_api", true, false, true, false, None, None)
             .unwrap();
         let summary = desc.capabilities.summary();
-        assert_eq!(summary, "safe_search, freshness, language, region, news");
+        assert_eq!(
+            summary,
+            "safe_search, freshness, language, region, news, result_timestamps"
+        );
     }
 
     #[test]

@@ -28,7 +28,9 @@ The full stable machine-readable response contract for harness developers lives 
 
 | Task | Tool(s) | Notes |
 |------|---------|-------|
-| General web search | `web_search` | Use `provider_status` first to check capabilities; supports `date_range`, `include_domains`/`exclude_domains`, `language`/`region` with `capability_enforcement` telemetry |
+| General web search | `web_search` | Use `provider_status` first to check capabilities; supports `date_range`, `include_domains`/`exclude_domains`, `language`/`region` with `capability_enforcement` telemetry; `excerpt_count` (1-3) adds bounded source passages for triage |
+| Focused page read | `web_fetch` with `focus` | Deterministic query-relevant chunk selection, no extra traversal; `focus_max_chunks`/`focus_max_chars` bound output |
+| Fresh/stale control | `web_fetch`/`batch_fetch` cache fields | `cache_policy` (`default`/`bypass`/`refresh`) and per-item `max_cache_age_seconds` (tightens only); never bypass safety policy |
 | Repository exploration | `repo_map` → `repo_search` → `repo_fetch` | Follow the chain |
 | Debugging errors | `repo_search` with `mode: "exact_error"` | Include the error text |
 | Security triage | `security_search` | Set `assess_applicability: true` for package/version checks |

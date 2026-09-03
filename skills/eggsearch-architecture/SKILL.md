@@ -105,6 +105,9 @@ not remove the underlying attempts.
 - Additive schema evolution (new optional fields, never removal)
 - Anonymous browser rendering uses the warm ephemeral lifecycle; profile-scoped rendering uses the resolved opaque profile's Eggsearch-owned `chrome-data` directory and default browser context for one request
 - Raw cache entries distinguish original HTTP bytes from rendered browser DOM; a fresh raw hit may be re-derived locally without another network request
+- Search excerpts are bounded source passages (max 3 per card, 500 chars each, 1,200 total) merged deterministically in RRF, sanitized through the trust pipeline, and never part of stable IDs; unrequested excerpts are stripped before aggregation
+- Focus selection is a deterministic lexical projection of extracted chunks (no traversal, no models), additive on the fetch response and never in cache keys
+- Cache policy (`default`/`bypass`/`refresh`) and caller max-age tighten reuse only; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy
 - `NotApplicable` is reserved for operations that do not apply; provider incapability is `SkippedCapabilityUnavailable`
 - `RetrievalAttempt` carries an optional `operation_id` field; ledger uniqueness is `(provider_id, operation_id, role)`
 - State-aware helpers prefer `RetrievalDimensionState` when present, falling back to `absence_kind` for legacy dimensions

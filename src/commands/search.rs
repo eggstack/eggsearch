@@ -44,6 +44,7 @@ pub async fn run(
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
 
     if let Err(e) = req.validate(cfg.search.max_query_chars) {

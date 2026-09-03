@@ -94,6 +94,8 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
             url,
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
             metadata: Default::default(),
         });
     }

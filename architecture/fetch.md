@@ -71,12 +71,12 @@ HTML→text/markdown extraction pipeline:
 ## Two-Tier Cache (`cache.rs`)
 
 ### Raw Cache
-- Stores original bounded transport bytes (HTML/PDF/text)
-- Keyed by URL + content hash
+- Stores original bounded transport bytes (HTML/PDF/text) or bounded rendered browser DOM
+- Keyed by canonical URL + scope; a fresh raw hit can be re-derived locally for changed extraction params
 - Preserves original format for re-extraction
 
 ### Derived Cache
-- Stores extracted/sanitized content
+- Stores extracted/sanitized content including the structured `FetchDocument` with stable chunks
 - Keyed by scope + raw hash + extraction params
 - Avoids re-extraction for same content
 
@@ -84,18 +84,30 @@ HTML→text/markdown extraction pipeline:
 
 | Scope | Purpose |
 |-------|---------|
-| `Global` | Default shared cache |
-| `Profile(opaque_id)` | Browser profile-scoped cache |
+| `Anonymous` | Default shared cache |
+| `Profile(opaque_id)` | Browser profile-scoped cache (opaque IDs, never display names) |
+
+### Cache Policy (`FetchCachePolicy`, `max_cache_age_seconds`)
+
+Agent-visible controls on `web_fetch` (and per web item on `batch_fetch`):
+
+| Policy | Behavior |
+|--------|----------|
+| `default` | Serve a fresh eligible entry; otherwise revalidate with validators when possible, else fetch |
+| `bypass` | Skip cache reads; network fetch still populates the cache unless the origin forbids storage |
+| `refresh` | Never serve solely for being locally fresh; revalidate with `ETag`/`Last-Modified` when available, else fetch |
+
+`max_cache_age_seconds` (0-2,592,000) is an upper bound on acceptable entry age that only tightens origin freshness; `0` forces revalidation without disabling storage. Neither control bypasses SSRF, redirect, origin-concurrency, profile-isolation, content, or sanitization policy. `CacheStatus` reports `hit`, `revalidated`, `miss` (fresh fetch, including after refresh), `bypassed`, or `not_cacheable`. Conditional revalidation treats HTTP 304 as a revalidation signal (not a redirect).
 
 ### Cache Freshness
 
-| Status | Meaning |
-|--------|---------|
-| `Fresh` | Content is current |
-| `Stale` | Content may be outdated |
-| `Missing` | No cached content |
+`CacheFreshness::is_fresh()` consults `no_store`/`no_cache`, `max-age` vs `fetched_at`, and `Expires`. Entries without origin freshness headers get the configured default TTL. Batch fetch stores set `fetched_at` like single fetch stores do, so batch entries are equally eligible for hits.
 
 Responses with `Vary: *` or any request header other than `Accept-Encoding` are not cached because the cache does not retain those request-header variants. This conservative rule also applies when supported and unsupported `Vary` tokens are mixed.
+
+## Focused Fetch (`core/focus.rs`)
+
+`select_focus_chunks()` ranks the already-extracted `FetchDocument` chunks against a caller `focus` query with dependency-free lexical scoring (normalized token overlap, exact-phrase boost, heading-path overlap, case-sensitive code-symbol boost; stable tie-break by document order), expands picks to scoring neighbors within the chunk cap, and enforces chunk/character budgets in document order. No embeddings, no model calls, no extra URL traversal. The `FocusedFetchSelection` (`chunks`, `truncated`, `total_chars`) is additive on `WebFetchResponse`; focus projection never enters the raw or derived cache keys.
 
 ---
 

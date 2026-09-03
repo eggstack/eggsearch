@@ -272,6 +272,8 @@ fn convert_to_result(cve: &NvdCve) -> SearchResult {
         url,
         snippet,
         source_engine: ENGINE.to_string(),
+        excerpts: Vec::new(),
+        published_at: None,
         metadata: ResultMetadata::Advisory(Box::new(metadata)),
     }
 }

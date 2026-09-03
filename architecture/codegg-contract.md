@@ -782,6 +782,27 @@ fetches.
 
 Use `metadata_only` when you need page metadata but not the body.
 
+### 10.6 Extractive Excerpts and Result Timestamps (Additive)
+
+`SourceCard` may carry `excerpts: Vec<SourceExcerpt>` (at most 3,
+500 chars each, 1,200 total) and `metadata.published_at` (RFC 3339).
+Excerpts appear only when the caller requested them and are
+`external_untrusted` like snippets. Stable IDs never include
+excerpt/timestamp evidence, so harness deduplication keys are
+unaffected. Harnesses should treat unknown `provenance` variants as
+opaque and skip them, never crash.
+
+### 10.7 Focused Fetch and Cache Controls (Additive)
+
+`web_fetch` may return a `focus` selection (`chunks` in document
+order with stable chunk IDs, `truncated`, `total_chars`) alongside
+unchanged `text`/`document` fields. `focus` is null when the caller
+did not request it. `cache_status` distinguishes `hit`,
+`revalidated`, `miss`, `bypassed`, and `not_cacheable`; a `miss`
+after `refresh` is a normal fresh fetch. Harnesses must not infer
+transport internals from cache status beyond these documented
+values.
+
 ---
 
 ## 11. Implementation Checklist

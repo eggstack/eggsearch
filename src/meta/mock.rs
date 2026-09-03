@@ -22,6 +22,8 @@ pub struct MockResult {
     pub url: String,
     pub snippet: Option<String>,
     pub source_engine: String,
+    pub excerpts: Vec<crate::core::source_card::SourceExcerpt>,
+    pub published_at: Option<String>,
 }
 
 impl MockResult {
@@ -35,11 +37,23 @@ impl MockResult {
             url: url.into(),
             snippet: None,
             source_engine: source_engine.into(),
+            excerpts: Vec::new(),
+            published_at: None,
         }
     }
 
     pub fn with_snippet(mut self, snippet: impl Into<String>) -> Self {
         self.snippet = Some(snippet.into());
+        self
+    }
+
+    pub fn with_excerpts(mut self, excerpts: Vec<crate::core::source_card::SourceExcerpt>) -> Self {
+        self.excerpts = excerpts;
+        self
+    }
+
+    pub fn with_published_at(mut self, published_at: impl Into<String>) -> Self {
+        self.published_at = Some(published_at.into());
         self
     }
 }
@@ -91,6 +105,8 @@ impl MockEngine {
                 snippet: r.snippet,
                 source_engine: r.source_engine,
                 metadata: Default::default(),
+                excerpts: r.excerpts,
+                published_at: r.published_at,
             })
             .collect();
         Self {
@@ -204,6 +220,8 @@ impl RecordingMockEngine {
                 snippet: r.snippet,
                 source_engine: r.source_engine,
                 metadata: Default::default(),
+                excerpts: r.excerpts,
+                published_at: r.published_at,
             })
             .collect();
         Self {

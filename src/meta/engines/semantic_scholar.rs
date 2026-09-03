@@ -202,6 +202,8 @@ fn convert_paper(paper: SemanticScholarPaper) -> Option<SearchResult> {
         url,
         snippet,
         source_engine: ENGINE.to_string(),
+        excerpts: Vec::new(),
+        published_at: None,
         metadata: ResultMetadata::None,
     })
 }

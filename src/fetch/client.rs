@@ -549,6 +549,7 @@ impl FetchClient {
                     transport: Some("http".to_string()),
                     browser_escalated: false,
                     manual_interaction_required: false,
+                    focus: None,
                     raw_body: Some(body),
                 });
             }
@@ -687,6 +688,7 @@ impl FetchClient {
                 transport: Some("http".to_string()),
                 browser_escalated: false,
                 manual_interaction_required: false,
+                focus: None,
                 raw_body: Some(body),
             });
         }
@@ -1090,6 +1092,7 @@ impl FetchClient {
             transport: Some("http".to_string()),
             browser_escalated: false,
             manual_interaction_required: false,
+            focus: None,
             raw_body: Some(body),
         })
     }
@@ -1146,6 +1149,9 @@ impl FetchClient {
             })?;
 
             let status = resp.status().as_u16();
+            if status == 304 {
+                break resp;
+            }
             if (300..400).contains(&status) {
                 let location = resp
                     .headers()

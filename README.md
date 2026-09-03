@@ -25,9 +25,9 @@ eggsearch mcp stdio
 
 | Tool | Purpose |
 |------|---------|
-| `web_search` | Live metasearch over configured providers |
-| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL |
-| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators |
+| `web_search` | Live metasearch over configured providers (opt-in bounded excerpts, result timestamps) |
+| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL (deterministic focus reads, cache controls) |
+| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators (per-item cache controls) |
 | `provider_status` | Diagnostic provider/capability report with workflow recipes |
 | `repo_search` | Structured repository evidence discovery with grouped bundles |
 | `repo_fetch` | Fetch a specific repo file span or symbol |

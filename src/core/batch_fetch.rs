@@ -13,6 +13,10 @@ use crate::core::fetch::ExtractMode;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BatchFetchItem {
     /// Fetch an explicit HTTP(S) URL.
+    ///
+    /// Query-focused `focus` selection is intentionally not supported
+    /// per batch item in this phase; use `web_fetch` for focused
+    /// reads. Retrieval-affecting cache controls are supported.
     Web {
         /// The URL to fetch. Must be a valid HTTP(S) URL.
         url: String,
@@ -25,6 +29,13 @@ pub enum BatchFetchItem {
         /// Maximum characters to extract for this item.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_chars: Option<usize>,
+        /// Cache policy for this item. Omitted means `default`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_policy: Option<crate::core::fetch::FetchCachePolicy>,
+        /// Caller maximum acceptable cache age in seconds for this
+        /// item. Only tightens origin freshness.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_cache_age_seconds: Option<u64>,
     },
     /// Fetch a repository file by structured locator.
     Repo {
@@ -159,6 +170,8 @@ mod tests {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         };
         let v = serde_json::to_value(&web).unwrap();
         assert_eq!(v["type"], "web");
@@ -189,6 +202,8 @@ mod tests {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         };
         assert_eq!(web.label(), "https://example.com");
 

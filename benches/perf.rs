@@ -702,6 +702,7 @@ fn bench_conflict_detection_20_vuln_cards(c: &mut Criterion) {
                 trust: eggsearch::core::result::TrustLevel::ExternalUntrusted,
                 fetched: false,
                 snippet: None,
+                excerpts: Vec::new(),
                 trust_markers: eggsearch::core::sanitize::TrustMarkers::default(),
                 metadata: SourceMetadata {
                     source_kind: SourceKind::SecurityAdvisory,

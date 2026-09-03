@@ -301,6 +301,7 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         };
 
         let start = std::time::Instant::now();

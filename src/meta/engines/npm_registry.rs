@@ -122,6 +122,8 @@ fn resolution_to_result(resolution: &crate::core::package::PackageResolution) ->
             Some(snippet_parts.join(" | "))
         },
         source_engine: "npm_registry".to_string(),
+        excerpts: Vec::new(),
+        published_at: None,
         metadata: ResultMetadata::None,
     }
 }

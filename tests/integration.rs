@@ -140,6 +140,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     }
 }
 
@@ -222,6 +223,7 @@ async fn web_search_empty_query_returns_validation_error() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;
@@ -248,6 +250,7 @@ async fn web_search_oversized_query_returns_validation_error() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;
@@ -274,6 +277,7 @@ async fn web_search_zero_max_results_returns_validation_error() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;
@@ -302,6 +306,7 @@ async fn web_search_zero_timeout_ms_returns_validation_error() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;
@@ -337,6 +342,7 @@ async fn web_search_oversized_max_results_clamps_and_warns() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await
@@ -367,6 +373,7 @@ async fn web_search_blocked_when_mode_off() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;
@@ -392,6 +399,7 @@ async fn web_search_unknown_provider_returns_error() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;
@@ -933,6 +941,10 @@ async fn web_fetch_disabled_by_policy_returns_error() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -977,6 +989,10 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -1010,6 +1026,10 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -1052,6 +1072,10 @@ async fn web_fetch_respects_include_links_default() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -1099,6 +1123,10 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -1139,6 +1167,10 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -1568,6 +1600,10 @@ async fn web_fetch_sanitize_emits_marker_warning() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -1616,6 +1652,10 @@ async fn web_fetch_empty_url_returns_validation_error() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -1641,6 +1681,10 @@ async fn web_fetch_unsupported_scheme_returns_error() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -1666,6 +1710,10 @@ async fn web_fetch_embedded_credentials_returns_error() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -1689,6 +1737,10 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
                 cache_policy: None,
                 render: None,
                 browser_profile: None,
+                max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
             },
         )
         .await;
@@ -1729,6 +1781,10 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -1901,6 +1957,10 @@ async fn web_fetch_mcp_level_full_response_shape() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2043,6 +2103,10 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2104,6 +2168,10 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2204,6 +2272,10 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2248,6 +2320,10 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2297,6 +2373,10 @@ async fn web_fetch_document_metadata_only_no_body_text() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2350,6 +2430,10 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2410,6 +2494,10 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2468,6 +2556,10 @@ async fn web_fetch_document_has_blocks_and_chunks() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2538,6 +2630,10 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2619,6 +2715,10 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2680,6 +2780,10 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2742,6 +2846,10 @@ async fn web_fetch_document_outline_populated_from_title() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2804,6 +2912,10 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2863,6 +2975,10 @@ async fn web_fetch_document_rust_source_has_code_kind() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2920,6 +3036,10 @@ async fn web_fetch_document_json_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -2966,6 +3086,10 @@ async fn web_fetch_document_markdown_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3035,6 +3159,10 @@ async fn web_fetch_document_toml_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3083,6 +3211,10 @@ async fn web_fetch_document_yaml_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3128,6 +3260,10 @@ async fn web_fetch_document_diff_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3176,6 +3312,10 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3233,6 +3373,10 @@ async fn web_fetch_document_code_preserves_line_ranges() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3292,6 +3436,10 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3342,6 +3490,10 @@ async fn web_fetch_document_truncation_at_line_boundary() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3404,6 +3556,10 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3451,6 +3607,10 @@ async fn web_fetch_document_application_json_no_extension() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3507,6 +3667,10 @@ async fn web_fetch_links_classification() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3579,6 +3743,10 @@ async fn web_fetch_links_seen_metadata() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3628,6 +3796,10 @@ async fn web_fetch_links_empty_when_not_requested() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3680,6 +3852,10 @@ async fn web_fetch_links_same_domain_detection() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3750,6 +3926,10 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3813,6 +3993,10 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3873,6 +4057,10 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -3937,6 +4125,10 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4006,6 +4198,10 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4130,6 +4326,10 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4220,6 +4420,10 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4303,6 +4507,10 @@ async fn web_fetch_empty_main_falls_back_to_body() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4352,6 +4560,10 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4406,6 +4618,10 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4453,6 +4669,10 @@ async fn web_fetch_body_only_page_still_works() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4512,6 +4732,10 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4587,6 +4811,10 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4654,6 +4882,10 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -4758,6 +4990,7 @@ async fn github_code_adapter_dispatches_provider_specific_query() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4828,6 +5061,7 @@ async fn github_code_result_card_has_source_file_metadata() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4895,6 +5129,7 @@ async fn github_code_respects_max_results() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4944,6 +5179,7 @@ async fn github_code_empty_results_returned() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -4991,6 +5227,7 @@ async fn github_code_auth_error_returns_failure() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let result = run_web_search(state, args).await;
     assert!(
@@ -5131,6 +5368,10 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
         cache_policy: None,
         render: None,
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
 
     // We can't easily test the actual GitHub raw URL rewrite through
@@ -5340,6 +5581,7 @@ fn web_fetch_response_includes_fetch_transform_field() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        focus: None,
         raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
@@ -5392,6 +5634,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        focus: None,
         raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
@@ -5708,6 +5951,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/blog".to_string(),
                     snippet: Some("A blog post".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
                 SearchResult {
@@ -5715,6 +5960,8 @@ mod intent_reranking_regression {
                     url: "https://docs.rs/tower-http/latest/tower_http/".to_string(),
                     snippet: Some("Official docs".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
             ],
@@ -5751,6 +5998,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/article".to_string(),
                     snippet: Some("An article".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
                 SearchResult {
@@ -5758,6 +6007,8 @@ mod intent_reranking_regression {
                     url: "https://github.com/tokio-rs/axum".to_string(),
                     snippet: Some("A web framework".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
             ],
@@ -5791,6 +6042,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/blog".to_string(),
                     snippet: Some("A blog post".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
                 SearchResult {
@@ -5798,6 +6051,8 @@ mod intent_reranking_regression {
                     url: "https://github.com/tokio-rs/axum/issues/42".to_string(),
                     snippet: Some("Bug report".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
             ],
@@ -5831,6 +6086,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/blog".to_string(),
                     snippet: Some("A blog post".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
                 SearchResult {
@@ -5838,6 +6095,8 @@ mod intent_reranking_regression {
                     url: "https://github.com/tokio-rs/axum/releases/tag/v0.7.0".to_string(),
                     snippet: Some("Release notes".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
             ],
@@ -5871,6 +6130,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/blog".to_string(),
                     snippet: Some("A blog post".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
                 SearchResult {
@@ -5878,6 +6139,8 @@ mod intent_reranking_regression {
                     url: "https://nvd.nist.gov/vuln/detail/CVE-2024-12345".to_string(),
                     snippet: Some("Security advisory".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
             ],
@@ -5921,6 +6184,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/article".to_string(),
                     snippet: Some("An article".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
                 SearchResult {
@@ -5928,6 +6193,8 @@ mod intent_reranking_regression {
                     url: "https://techcrunch.com/2024/axum-v8".to_string(),
                     snippet: Some("News coverage".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
             ],
@@ -5966,6 +6233,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/generic".to_string(),
                     snippet: Some("No timestamp".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 },
                 SearchResult {
@@ -5973,6 +6242,8 @@ mod intent_reranking_regression {
                     url: "https://github.com/test/repo/issues/1".to_string(),
                     snippet: Some("Has timestamp".to_string()),
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::Issue(eggsearch::core::source_card::IssueMetadata {
                         updated_at: Some(chrono::Utc::now().to_rfc3339()),
                         ..Default::default()
@@ -6028,6 +6299,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/dedup".to_string(),
                     snippet: None,
                     source_engine: "mock_a".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 }],
             }),
@@ -6038,6 +6311,8 @@ mod intent_reranking_regression {
                     url: "https://example.com/dedup".to_string(),
                     snippet: None,
                     source_engine: "mock_b".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::None,
                 }],
             }),
@@ -9744,6 +10019,10 @@ async fn repo_fetch_via_web_fetch_full_file() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -9786,6 +10065,10 @@ async fn repo_fetch_via_web_fetch_404() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -9830,6 +10113,10 @@ async fn repo_fetch_via_web_fetch_429() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -9873,6 +10160,10 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -9925,6 +10216,10 @@ async fn repo_fetch_via_web_fetch_truncation() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -14055,6 +14350,8 @@ async fn batch_fetch_disabled_by_policy_returns_error() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -14077,6 +14374,8 @@ async fn batch_fetch_over_item_cap_returns_validation_error() {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
     let res = run_batch_fetch(
@@ -14128,6 +14427,8 @@ async fn batch_fetch_single_web_item_succeeds() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -14179,6 +14480,8 @@ async fn batch_fetch_multiple_web_items_return_in_order() {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -14239,12 +14542,16 @@ async fn batch_fetch_web_item_failure_with_continue_on_error() {
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
             ],
             max_items: None,
@@ -14290,18 +14597,24 @@ async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
             ],
             max_items: None,
@@ -14354,6 +14667,8 @@ async fn batch_fetch_per_item_max_chars_enforced() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: Some(20),
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -14401,6 +14716,8 @@ async fn batch_fetch_total_budget_enforced() {
             extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
             include_links: None,
             max_chars: Some(50),
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -14461,18 +14778,24 @@ async fn batch_fetch_continue_on_error_across_waves() {
                     extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: "https://198.51.100.1/nope".to_string(),
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
                     extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
             ],
             max_items: None,
@@ -14524,6 +14847,8 @@ async fn batch_fetch_concurrent_total_budget_not_exceeded() {
             extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
             include_links: None,
             max_chars: Some(50),
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -14580,6 +14905,8 @@ async fn batch_fetch_metadata_overhead_cannot_exceed_total_budget() {
             extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
             include_links: None,
             max_chars: Some(50),
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -14648,6 +14975,8 @@ async fn batch_fetch_empty_web_url_returns_error_in_result() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -14721,6 +15050,8 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -14815,6 +15146,8 @@ async fn batch_fetch_mixed_web_and_repo_items_return_separate_responses() {
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                     host: Some("workspace".to_string()),
@@ -14987,6 +15320,8 @@ async fn batch_fetch_rejects_malformed_url() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -15017,6 +15352,8 @@ async fn batch_fetch_rejects_unsupported_scheme() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -15121,6 +15458,8 @@ async fn batch_fetch_rejects_zero_max_chars_web() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: Some(0),
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -15188,6 +15527,8 @@ async fn batch_fetch_rejects_zero_max_items() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: Some(0),
             max_chars_per_item: None,
@@ -15218,6 +15559,8 @@ async fn batch_fetch_rejects_zero_max_chars_per_item() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: Some(0),
@@ -15248,6 +15591,8 @@ async fn batch_fetch_rejects_zero_max_total_chars() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -15288,6 +15633,8 @@ async fn batch_fetch_budget_exhaustion_returns_warning() {
             extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -15347,6 +15694,8 @@ async fn batch_fetch_budget_clamps_to_cap() {
                 extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -15388,6 +15737,8 @@ async fn batch_fetch_result_order_preserved() {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -15440,6 +15791,8 @@ async fn batch_fetch_preserves_order_and_indices_under_concurrency() {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -15511,12 +15864,16 @@ async fn batch_fetch_preserves_result_payloads_when_wave_completes_out_of_order(
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         },
         eggsearch::core::batch_fetch::BatchFetchItem::Web {
             url: fast.url("/fast"),
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         },
     ];
 
@@ -15597,6 +15954,8 @@ async fn batch_fetch_concurrent_wave_budget_does_not_exceed_total_cap() {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -15650,6 +16009,8 @@ async fn batch_fetch_url_scheme_error_message_is_spaced_correctly() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -15685,6 +16046,8 @@ async fn batch_fetch_rejects_zero_timeout_ms() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -15728,6 +16091,8 @@ async fn batch_fetch_uppercase_scheme_is_accepted() {
                 extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -16391,6 +16756,8 @@ mod security_context_safety {
                     extract_mode: Some(ExtractMode::Text),
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 }],
                 max_items: None,
                 max_chars_per_item: None,
@@ -16448,6 +16815,8 @@ mod security_context_safety {
                     extract_mode: Some(ExtractMode::Text),
                     include_links: None,
                     max_chars: Some(1000),
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 }],
                 max_items: None,
                 max_chars_per_item: None,
@@ -18999,6 +19368,8 @@ async fn batch_fetch_returns_results_with_same_length_as_input() {
             extract_mode: None,
             include_links: None,
             max_chars: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
         })
         .collect();
 
@@ -19268,6 +19639,8 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -19291,6 +19664,8 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -19413,6 +19788,8 @@ async fn batch_fetch_with_single_empty_url_returns_validation_error() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -20170,6 +20547,10 @@ async fn web_fetch_retries_on_network_error_then_succeeds() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20229,6 +20610,10 @@ async fn web_fetch_respects_deadline_during_retry() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -20277,6 +20662,10 @@ async fn web_fetch_concurrent_same_origin_respects_semaphore() {
                     cache_policy: None,
                     render: None,
                     browser_profile: None,
+                    max_cache_age_seconds: None,
+                    focus: None,
+                    focus_max_chunks: None,
+                    focus_max_chars: None,
                 },
             )
             .await
@@ -20325,6 +20714,10 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20344,6 +20737,10 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20383,6 +20780,10 @@ async fn web_fetch_cache_refresh_policy_refetches() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20410,6 +20811,10 @@ async fn web_fetch_cache_refresh_policy_refetches() {
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Refresh),
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20450,6 +20855,10 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20476,6 +20885,10 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20516,6 +20929,10 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20534,6 +20951,10 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20574,6 +20995,10 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20592,6 +21017,10 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20631,6 +21060,10 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await
@@ -20645,6 +21078,8 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
                 extract_mode: Some(ExtractMode::Text),
                 include_links: Some(false),
                 max_chars: Some(12000),
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -20702,6 +21137,8 @@ async fn batch_fetch_respects_per_origin_concurrency() {
                 extract_mode: Some(ExtractMode::Text),
                 include_links: Some(false),
                 max_chars: Some(12000),
+                cache_policy: None,
+                max_cache_age_seconds: None,
             }
         })
         .collect();
@@ -20758,6 +21195,10 @@ async fn web_fetch_render_http_only_never_uses_browser() {
         cache_policy: None,
         render: Some("http_only".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -20787,6 +21228,10 @@ async fn web_fetch_render_auto_returns_useful_http_content() {
         cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -20816,6 +21261,10 @@ async fn web_fetch_render_auto_no_escalate_401() {
         cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "401 should return an error");
@@ -20844,6 +21293,10 @@ async fn web_fetch_render_auto_no_escalate_429() {
         cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "429 should return an error, not escalate");
@@ -20872,6 +21325,10 @@ async fn web_fetch_render_auto_no_escalate_404() {
         cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "404 should return an error, not escalate");
@@ -20900,6 +21357,10 @@ async fn web_fetch_render_auto_no_escalate_403() {
         cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "403 should return an error, not escalate");
@@ -20919,6 +21380,10 @@ async fn web_fetch_render_invalid_returns_validation_error() {
         cache_policy: None,
         render: Some("invalid_policy".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(
@@ -20947,6 +21412,10 @@ async fn web_fetch_profile_with_http_only_rejected() {
         cache_policy: None,
         render: Some("http_only".to_string()),
         browser_profile: Some("test-profile".to_string()),
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -20978,6 +21447,10 @@ async fn web_fetch_response_has_transport_field() {
         cache_policy: None,
         render: None,
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert!(result.get("transport").is_some());
@@ -21029,6 +21502,10 @@ async fn web_fetch_profile_lock_acquired_and_released() {
         cache_policy: None,
         render: Some("http_only".to_string()),
         browser_profile: Some("test-lock".to_string()),
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(
@@ -21082,6 +21559,10 @@ async fn web_fetch_profile_origin_mismatch_rejected() {
         cache_policy: None,
         render: Some("http_only".to_string()),
         browser_profile: Some("test-origin".to_string()),
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -21122,6 +21603,10 @@ async fn web_fetch_auto_preserves_http_when_browser_unavailable() {
         cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -21156,6 +21641,10 @@ async fn web_fetch_explicit_browser_unavailable_returns_failure() {
         cache_policy: None,
         render: Some("browser".to_string()),
         browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -21202,6 +21691,10 @@ async fn web_fetch_profile_lock_contention_rejected() {
         cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: Some("test-contention".to_string()),
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());

@@ -1,6 +1,6 @@
 # Phase 2 — Extractive Evidence and Fetch/Cache Controls
 
-Status: planned
+Status: complete
 Depends on: phase 1
 Baseline for planning: `e645a3fe42090fb7b7e1ce8639681fe69878f57b`
 Roadmap: `plans/roadmap.md`

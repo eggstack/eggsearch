@@ -57,6 +57,15 @@ pub enum ExtractMode {
     MetadataOnly,
 }
 
+/// Maximum focused chunks returned for one `web_fetch` focus query.
+pub const MAX_FOCUS_CHUNKS: usize = 5;
+/// Maximum characters for a `web_fetch` focus query string.
+pub const MAX_FOCUS_QUERY_CHARS: usize = 512;
+/// Maximum caller-controlled cache age in seconds (30 days). Larger
+/// values are rejected; the caller maximum can only tighten, never
+/// extend, origin freshness.
+pub const MAX_CACHE_AGE_SECONDS: u64 = 2_592_000;
+
 /// Request type for the `web_fetch` tool.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct WebFetchRequest {
@@ -77,6 +86,47 @@ pub struct WebFetchRequest {
     /// PDF-specific options. Only applies when fetching a PDF document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pdf: Option<PdfFetchOptions>,
+    /// Cache policy. Omitted means `default` (use a fresh eligible
+    /// cache entry, otherwise revalidate or fetch).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_policy: Option<FetchCachePolicy>,
+    /// Caller maximum acceptable cache age in seconds. Only tightens
+    /// origin freshness; `0` forces revalidation without disabling
+    /// cache storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_cache_age_seconds: Option<u64>,
+    /// Optional focus query for deterministic query-focused chunk
+    /// selection over the extracted document. No extra URL traversal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<String>,
+    /// Maximum focused chunks to return (default [`MAX_FOCUS_CHUNKS`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_max_chunks: Option<usize>,
+    /// Maximum focused characters to return. Defaults to the effective
+    /// `max_chars` budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_max_chars: Option<usize>,
+}
+
+/// Bounded query-focused chunk selection over an already-extracted
+/// document.
+///
+/// Focus selection is a deterministic request-time projection of the
+/// fetched document chunks: it never causes extra URL traversal and
+/// never calls a model. Chunk texts carry the same Tier-1
+/// sanitization as the stored document; response-level
+/// `trust_markers` cover the extracted text the selection was drawn
+/// from. The ordinary extracted response fields are unchanged when
+/// focus is present; this selection is purely additive.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FocusedFetchSelection {
+    /// Selected chunks in original document order.
+    pub chunks: Vec<crate::core::document::DocumentChunk>,
+    /// Whether more matching content existed beyond the
+    /// chunk/character caps.
+    pub truncated: bool,
+    /// Total characters across the returned chunk texts.
+    pub total_chars: usize,
 }
 
 /// PDF-specific fetch options.
@@ -386,6 +436,11 @@ pub struct WebFetchResponse {
     /// next-action hint.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub manual_interaction_required: bool,
+    /// Query-focused chunk selection, present only when the request
+    /// supplied a `focus` query and the fetched document had chunks.
+    /// Additive: ordinary extracted fields are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<FocusedFetchSelection>,
 }
 
 impl WebFetchResponse {

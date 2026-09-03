@@ -168,6 +168,8 @@ fn convert(items: Vec<GitlabCodeBlob>, max_results: usize) -> Vec<SearchResult> 
             url: url.clone(),
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
             metadata,
         });
     }

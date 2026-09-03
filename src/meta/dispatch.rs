@@ -1008,6 +1008,8 @@ mod tests {
                     url: "https://example.test/result".to_string(),
                     snippet: None,
                     source_engine: "role_engine".to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: crate::meta::engines::models::ResultMetadata::None,
                 }])
             })

@@ -213,6 +213,85 @@ impl ReleaseMetadata {
     }
 }
 
+/// Maximum extractive excerpts carried by one `SourceCard`.
+pub const MAX_EXCERPTS_PER_CARD: usize = 3;
+/// Maximum characters per excerpt after sanitization/bounding.
+pub const MAX_EXCERPT_CHARS: usize = 500;
+/// Maximum total excerpt characters per card after sanitization/bounding.
+pub const MAX_EXCERPT_TOTAL_CHARS: usize = 1200;
+/// Maximum excerpt demand a caller may request on one search.
+pub const MAX_EXCERPT_REQUEST_COUNT: usize = 3;
+
+/// Provider-neutral provenance for an extractive search excerpt.
+///
+/// The vocabulary is intentionally small and vendor-neutral: it records
+/// which class of source-derived passage an excerpt came from without
+/// carrying opaque provider-specific field names.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ExcerptProvenance {
+    /// An alternate provider snippet (e.g. Brave `extra_snippets`).
+    #[default]
+    ProviderSnippet,
+    /// A query-relevant provider highlight (e.g. Exa `highlights`).
+    ProviderHighlight,
+    /// A matched provider passage (e.g. Firecrawl Developer `passages`).
+    ProviderPassage,
+}
+
+/// A small source-derived extractive excerpt attached to a `SourceCard`.
+///
+/// Excerpts are bounded provider passages, never fetched page bodies and
+/// never generated summaries. All excerpt text is `external_untrusted`
+/// and passes through the normal sanitization path.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SourceExcerpt {
+    /// Source-derived excerpt text, bounded to [`MAX_EXCERPT_CHARS`].
+    pub text: String,
+    /// Optional provider-local relevance score. Scores are only
+    /// comparable within the provider that produced them and are never
+    /// compared across providers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+    /// Which class of provider passage this excerpt came from.
+    #[serde(default)]
+    pub provenance: ExcerptProvenance,
+}
+
+/// Normalized excerpt key for deterministic deduplication.
+///
+/// Lowercases and collapses whitespace so provider passages that differ
+/// only in casing or spacing merge to one excerpt.
+pub fn excerpt_normalized_key(text: &str) -> String {
+    crate::core::sanitize::normalize_whitespace(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
+/// Accept only parseable timestamp evidence for generic result timestamps.
+///
+/// Accepts RFC 3339 datetimes and calendar dates (`YYYY-MM-DD`),
+/// normalizing both to RFC 3339 UTC. Returns `None` for anything else;
+/// publication timestamps are never inferred from snippet text.
+pub fn parse_result_timestamp(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
+        return Some(dt.with_timezone(&chrono::Utc).to_rfc3339());
+    }
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
+        let dt = date.and_hms_opt(0, 0, 0)?.and_utc();
+        return Some(dt.to_rfc3339());
+    }
+    None
+}
+
 /// Deterministic metadata attached to each `SourceCard` to help
 /// agents choose which result to inspect first. All fields are
 /// computed from URL/domain heuristics — no generated prose.
@@ -267,6 +346,11 @@ pub struct SourceMetadata {
     /// Deterministic evidence role classification for workflow-aware grouping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_role: Option<EvidenceRole>,
+    /// Generic provider-neutral result timestamp (RFC 3339), when a
+    /// provider returned parseable timestamp evidence. Additive only;
+    /// never part of `SourceCard` identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
 }
 
 /// Metadata for a local repository match, attached to local workspace
@@ -335,6 +419,11 @@ pub struct SourceCard {
     /// Short text snippet (truncated, never full content).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
+    /// Bounded source-derived excerpts (at most [`MAX_EXCERPTS_PER_CARD`]).
+    /// Present only when the caller requested excerpts. Additive only;
+    /// never part of `SourceCard` identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excerpts: Vec<SourceExcerpt>,
     /// All upstream engines that contributed to this card.
     #[serde(default)]
     pub providers: Vec<String>,
@@ -384,6 +473,7 @@ fn is_default_metadata(m: &SourceMetadata) -> bool {
         && m.is_config.is_none()
         && m.is_lockfile.is_none()
         && m.evidence_role.is_none()
+        && m.published_at.is_none()
 }
 
 impl SourceCard {
@@ -430,6 +520,7 @@ impl SourceCard {
             title,
             url,
             snippet: None,
+            excerpts: Vec::new(),
             providers,
             score,
             trust,
@@ -688,6 +779,65 @@ mod tests {
     #[test]
     fn source_kind_default_is_unknown() {
         assert_eq!(SourceKind::default(), SourceKind::Unknown);
+    }
+
+    #[test]
+    fn excerpt_bounds_are_below_upstream_maxima() {
+        assert_eq!(MAX_EXCERPTS_PER_CARD, 3);
+        assert_eq!(MAX_EXCERPT_CHARS, 500);
+        assert_eq!(MAX_EXCERPT_TOTAL_CHARS, 1200);
+        assert_eq!(MAX_EXCERPT_REQUEST_COUNT, 3);
+    }
+
+    #[test]
+    fn excerpt_normalized_key_folds_case_and_whitespace() {
+        assert_eq!(
+            excerpt_normalized_key("  Hello   World "),
+            excerpt_normalized_key("hello world")
+        );
+        assert_ne!(
+            excerpt_normalized_key("hello world"),
+            excerpt_normalized_key("hello rust")
+        );
+    }
+
+    #[test]
+    fn parse_result_timestamp_accepts_rfc3339_and_date() {
+        let rfc = parse_result_timestamp("2024-01-15T10:30:00Z").unwrap();
+        assert!(rfc.starts_with("2024-01-15T10:30:00"));
+        assert_eq!(
+            parse_result_timestamp("2024-01-15").as_deref(),
+            Some("2024-01-15T00:00:00+00:00")
+        );
+        assert!(parse_result_timestamp("2 days ago").is_none());
+        assert!(parse_result_timestamp("").is_none());
+        assert!(parse_result_timestamp("2023-02-29").is_none());
+        assert!(parse_result_timestamp("January 15, 2024").is_none());
+    }
+
+    #[test]
+    fn new_card_has_empty_excerpts_and_no_timestamp() {
+        let c = SourceCard::new(
+            "t",
+            "https://example.com",
+            vec!["a".to_string()],
+            None,
+            TrustLevel::ExternalUntrusted,
+        );
+        assert!(c.excerpts.is_empty());
+        assert!(c.metadata.published_at.is_none());
+    }
+
+    #[test]
+    fn source_excerpt_serde_roundtrip() {
+        let e = SourceExcerpt {
+            text: "a passage".to_string(),
+            score: Some(0.9),
+            provenance: ExcerptProvenance::ProviderSnippet,
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: SourceExcerpt = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, e);
     }
 
     #[test]

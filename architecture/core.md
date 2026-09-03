@@ -12,13 +12,14 @@
 | `mod.rs` | Module declarations + ~300 re-exports |
 | `config.rs` | `AppConfig`, `SearchSection`, `FetchSection`, `Mode`, `ProviderConfig`, validation, provider resolution |
 | `error.rs` | `CoreError`/`CoreResult<T>` via `thiserror` |
-| `source_card.rs` | `SourceCard` (canonical output), `SourceKind`, `SourceMetadata`, `RankReason`, `IssueMetadata`, `ReleaseMetadata` |
+| `source_card.rs` | `SourceCard` (canonical output), `SourceKind`, `SourceMetadata`, `RankReason`, `IssueMetadata`, `ReleaseMetadata`, `SourceExcerpt`/`ExcerptProvenance` (bounded extractive excerpts), excerpt/timestamp helpers |
 | `identity.rs` | Deterministic FNV-1a ID system: `source_id`, `fetch_id`, `suggested_fetch_id`, `batch_fetch_id`, `locator_id`, `doc_id`, `chunk_id`, `code_span_id` |
 | `provider.rs` | `ProviderKind`, `ProviderCapabilities` (24 flags), `ProviderDescriptor`, `KNOWN_PROVIDER_IDS` (34 ids) |
 | `query.rs` | `WebSearchRequest` (query plus validated `date_range`, `include_domains`/`exclude_domains`, `language`, `region`), `SearchDateRange`, `Freshness`, `SafeSearch`, `SearchIntent`, `MaxResultsResolution`, domain/language helpers |
 | `sanitize.rs` | `strip_control_chars`, `bound_text`, `frame`, `scan_injection_markers` (3-tier sanitization) |
-| `fetch.rs` | `WebFetchRequest`/`WebFetchResponse`, `ExtractMode`, `FetchTransform`, `FetchTrust` |
-| `batch_fetch.rs` | `BatchFetchItem`, `BatchFetchResponse`, `BatchFetchResult` |
+| `fetch.rs` | `WebFetchRequest`/`WebFetchResponse`, `ExtractMode`, `FetchTransform`, `FetchTrust`, `FetchCachePolicy`, `FocusedFetchSelection`, focus/cache-age bounds |
+| `focus.rs` | `select_focus_chunks()` — deterministic lexical chunk ranking over extracted documents |
+| `batch_fetch.rs` | `BatchFetchItem`, `BatchFetchResponse`, `BatchFetchResult` (web items carry per-item cache controls; focus deferred) |
 | `document.rs` | `FetchDocument`, `DocumentChunk`, `RenderFormat`, `RenderedBlock` |
 | `result.rs` | `SearchWarning`, `TrustLevel` |
 | `warning.rs` | `AgentWarning`, `WarningCode`, `WarningSeverity`, `WarningAccumulator` |
@@ -56,6 +57,8 @@ The canonical output type for all search results. Contains:
 - `kind` — URL classification (21 variants: `OfficialDocs`, `PackageRegistry`, `SourceRepository`, `IssueThread`, `PullRequest`, `ReleaseNotes`, `SecurityAdvisory`, etc.)
 - `score`, `rank_reason` — quality/ranking metadata
 - `freshness`, `trust_level` — temporal and trust signals
+- `excerpts` — bounded source-derived passages (`SourceExcerpt` with `ExcerptProvenance`: at most 3 per card, 500 chars each, 1,200 total; opt-in, never part of stable IDs)
+- `metadata.published_at` — generic RFC 3339 result timestamp from parseable provider evidence (never inferred from snippet text; feeds freshness reranking)
 
 ### ProviderCapabilities (`provider.rs`)
 24 boolean capability flags per provider:

@@ -21,6 +21,8 @@ pub mod evidence_postprocess;
 /// Unified evidence role taxonomy mapping across source kinds, roles, classes, and tiers.
 pub mod evidence_role;
 pub mod fetch;
+/// Deterministic query-focused chunk selection over extracted documents.
+pub mod focus;
 /// Deterministic cross-tool identity model for stable source/fetch/suggested IDs.
 pub mod identity;
 /// Local workspace search types: config, file entries, and search requests.
@@ -93,9 +95,11 @@ pub use evidence_postprocess::{
 };
 pub use evidence_role::EvidenceRole;
 pub use fetch::{
-    ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust, WebFetchRequest,
-    WebFetchResponse,
+    ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust,
+    FocusedFetchSelection, WebFetchRequest, WebFetchResponse, MAX_CACHE_AGE_SECONDS,
+    MAX_FOCUS_CHUNKS, MAX_FOCUS_QUERY_CHARS,
 };
+pub use focus::select_focus_chunks;
 pub use identity::{
     batch_fetch_id, canonicalize_url, chunk_id, code_span_id, compute_batch_fetch_id,
     compute_chunk_id, compute_code_span_id, compute_doc_id, compute_fetch_id, compute_locator_id,
@@ -173,7 +177,11 @@ pub use security_applicability::{
     AdvisoryRange, ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
     DependencyFinding, DependencyRelation, DependencySource,
 };
-pub use source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
+pub use source_card::{
+    excerpt_normalized_key, parse_result_timestamp, ExcerptProvenance, RankReason, SourceCard,
+    SourceExcerpt, SourceKind, SourceMetadata, MAX_EXCERPTS_PER_CARD, MAX_EXCERPT_CHARS,
+    MAX_EXCERPT_REQUEST_COUNT, MAX_EXCERPT_TOTAL_CHARS,
+};
 pub use warning::{
     convert_warnings, AgentWarning, WarningAccumulator, WarningCode, WarningSeverity,
 };

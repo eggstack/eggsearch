@@ -565,6 +565,7 @@ mod tests {
                 ..Default::default()
             },
             quality: None,
+            excerpts: Vec::new(),
         }
     }
 

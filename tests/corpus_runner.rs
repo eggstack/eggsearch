@@ -76,6 +76,7 @@ fn web_args(query: &str) -> WebSearchArgs {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     }
 }
 
@@ -1218,6 +1219,7 @@ async fn corpus_web_search_deduplicates_by_url() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -1266,6 +1268,7 @@ async fn corpus_web_search_provider_failure_partial_results() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -1306,6 +1309,7 @@ async fn corpus_web_search_with_intent_returns_metadata() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -2027,12 +2031,16 @@ async fn corpus_batch_fetch_returns_structured_results() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             },
             BatchFetchItem::Web {
                 url: format!("{base}/page2.html"),
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             },
         ],
         max_items: None,
@@ -2091,12 +2099,16 @@ async fn corpus_batch_fetch_handles_mixed_success_failure() {
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             },
             BatchFetchItem::Web {
                 url: format!("{base}/fail.html"),
                 extract_mode: None,
                 include_links: None,
                 max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
             },
         ],
         max_items: None,
@@ -2644,6 +2656,7 @@ mod live_smoke {
                 exclude_domains: Vec::new(),
                 language: None,
                 region: None,
+                excerpt_count: None,
             },
         )
         .await

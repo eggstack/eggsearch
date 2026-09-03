@@ -90,7 +90,9 @@ Setting `sanitize_output = false` disables framing and marker scanning, but cont
 ### What gets sanitized
 
 - **Title and description fields** — Tier 1 (strip + bound at 200/500 chars respectively), plus Tier 2/3 when sanitization is enabled.
+- **Search excerpts** — same pipeline as snippets (bound at 500 chars per excerpt, 1,200 chars total per card), with injection hits merged into the card's `trust_markers`.
 - **Body text** — Tier 1 (strip + bound at `max_chars`), plus Tier 2/3 when sanitization is enabled.
+- **Focused fetch chunks** — Tier-1 text drawn from the already-sanitized stored document; the response-level `trust_markers` cover the extracted text the selection was drawn from.
 - **Document block text** — Tier 1 only (strip + bound per block).
 - **Document outline titles** — Tier 1 (strip + bound at 500 chars) applied to all outline entries from HTML, Markdown, and notebook renderers.
 - **Outline anchors** — HTML `id` attributes passed through as-is; `make_slug()`-generated anchors are filtered to alphanumeric/hyphen/underscore.
@@ -108,6 +110,12 @@ Setting `sanitize_output = false` disables framing and marker scanning, but cont
 - For PDF responses when the `pdf` feature is enabled, eggsearch returns a minimal document with fetch context but no extracted body text.
 
 Use `metadata_only` when you need page metadata but do not need the body content itself.
+
+## Focused Fetch and Cache Controls
+
+`web_fetch` accepts an optional `focus` query for deterministic query-focused chunk selection. Focus ranking is lexical and local (token overlap, exact-phrase, heading, and code-symbol boosts); it performs no extra URL traversal and calls no model. Focused chunk texts are projections of the already-fetched document, never generated summaries.
+
+`cache_policy` (`default`/`bypass`/`refresh`) and `max_cache_age_seconds` affect cache reuse and revalidation only. They never bypass target validation, redirect checks, origin concurrency/circuit breakers, browser-profile isolation, content limits, or sanitization. `bypass` still stores the fresh response unless the origin forbids caching; `refresh` revalidates with `ETag`/`Last-Modified` when validators exist.
 
 ## Trust Markers
 

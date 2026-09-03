@@ -165,6 +165,8 @@ async fn search_kev_catalog(
             url,
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
             metadata: ResultMetadata::Advisory(Box::new(metadata)),
         });
     }

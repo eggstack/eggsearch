@@ -101,7 +101,9 @@ trait SearchEngine {
 }
 ```
 
-`EngineSearchRequest` (`engines/request.rs`) is the single structured request contract: query, max-results, timeout, intent, safe-search, freshness, exact date range, include/exclude domains, language, and region. Direct web fan-out and multiquery dispatch both use it; multiquery jobs use the minimal `simple()` constructor with defaults.
+`EngineSearchRequest` (`engines/request.rs`) is the single structured request contract: query, max-results, timeout, intent, safe-search, freshness, exact date range, include/exclude domains, language, region, and bounded excerpt demand (`excerpt_count`, default 0). Direct web fan-out and multiquery dispatch both use it; multiquery jobs use the minimal `simple()` constructor with defaults.
+
+`SearchResult`/`AggregatedResult` (`engines/models.rs`) carry optional `excerpts` (`Vec<SourceExcerpt>`) and a provider-neutral `published_at` timestamp alongside title/URL/snippet/engine/metadata. `aggregate_rrf` merges excerpts deterministically (per-provider score order, normalized-text dedup including the primary snippet, hard caps) and keeps the first valid timestamp in sorted engine order. `web_search` clears unrequested excerpts when demand is zero; `convert_aggregated` sanitizes excerpt text through the normal trust pipeline (500 chars per excerpt, 1,200 total per card) and surfaces `published_at` additively in `SourceMetadata` without touching stable IDs. Freshness reranking consumes the generic timestamp before specialist issue/release metadata.
 
 ### Provider Model
 

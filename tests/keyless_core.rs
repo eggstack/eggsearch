@@ -234,6 +234,7 @@ async fn e13_keyless_web_search_dispatches_through_mock_engines() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;
@@ -359,6 +360,10 @@ async fn e21_keyless_web_fetch_succeeds_without_credentials() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         },
     )
     .await;
@@ -399,6 +404,7 @@ async fn e22_mixed_providers_keyless_result_survives_credentialed_skip() {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         },
     )
     .await;

@@ -36,6 +36,7 @@ fn make_card(source_kind: SourceKind, url: &str) -> SourceCard {
             ..Default::default()
         },
         quality: None,
+        excerpts: Vec::new(),
     }
 }
 

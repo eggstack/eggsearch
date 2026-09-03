@@ -308,6 +308,7 @@ async fn server_state_web_search_with_new_fields() {
         exclude_domains: Vec::new(),
         language: None,
         region: None,
+        excerpt_count: None,
     };
     let v = eggsearch::mcp::tools::run_web_search(state, args)
         .await

@@ -220,6 +220,8 @@ fn convert(items: Vec<GitlabReleaseItem>, max_results: usize) -> Vec<SearchResul
             url,
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
             metadata,
         });
     }

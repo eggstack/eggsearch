@@ -150,6 +150,8 @@ fn convert(response: GiteaSearchResponse, base_url: &str, max_results: usize) ->
                 url,
                 snippet,
                 source_engine: ENGINE.to_string(),
+                excerpts: Vec::new(),
+                published_at: None,
                 metadata,
             });
         }

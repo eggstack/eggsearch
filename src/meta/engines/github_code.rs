@@ -147,6 +147,8 @@ fn convert(items: Vec<GithubCodeItem>, max_results: usize) -> Vec<SearchResult> 
             url: html_url.clone(),
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
             metadata,
         });
     }

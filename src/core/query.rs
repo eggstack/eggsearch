@@ -396,6 +396,11 @@ pub struct WebSearchRequest {
     /// provider support is best-effort unless enforced.
     #[serde(default)]
     pub region: Option<String>,
+    /// Optional excerpt demand: how many additional source-derived
+    /// excerpts each `SourceCard` may carry (0-3). Defaults to zero so
+    /// search output remains compact discovery-only cards.
+    #[serde(default)]
+    pub excerpt_count: Option<usize>,
 }
 
 impl WebSearchRequest {
@@ -430,6 +435,7 @@ impl WebSearchRequest {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         }
     }
 
@@ -510,7 +516,22 @@ impl WebSearchRequest {
             validate_region(region)
                 .map_err(|reason| CoreError::InvalidQuery(format!("invalid region: {reason}")))?;
         }
+        if let Some(count) = self.excerpt_count {
+            if count > crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT {
+                return Err(CoreError::InvalidQuery(format!(
+                    "excerpt_count must be <= {}",
+                    crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT
+                )));
+            }
+        }
         Ok(())
+    }
+
+    /// Effective excerpt demand, defaulting to zero (compact cards).
+    pub fn effective_excerpt_count(&self) -> usize {
+        self.excerpt_count
+            .unwrap_or(0)
+            .min(crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT)
     }
 
     /// Effective max_results, defaulting to the given default.
@@ -862,6 +883,25 @@ mod tests {
         let req: WebSearchRequest = serde_json::from_str(r#"{"query":"rust"}"#).unwrap();
         assert!(req.date_range.is_none());
         assert!(req.include_domains.is_empty());
+        assert!(req.excerpt_count.is_none());
+        assert_eq!(req.effective_excerpt_count(), 0);
         assert!(req.validate(512).is_ok());
+    }
+
+    #[test]
+    fn excerpt_count_defaults_to_zero_and_caps() {
+        let req = WebSearchRequest::new("test");
+        assert_eq!(req.effective_excerpt_count(), 0);
+        let mut capped = WebSearchRequest::new("test");
+        capped.excerpt_count = Some(99);
+        assert_eq!(
+            capped.effective_excerpt_count(),
+            crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT
+        );
+        assert!(capped.validate(512).is_err());
+        let mut ok = WebSearchRequest::new("test");
+        ok.excerpt_count = Some(2);
+        assert!(ok.validate(512).is_ok());
+        assert_eq!(ok.effective_excerpt_count(), 2);
     }
 }

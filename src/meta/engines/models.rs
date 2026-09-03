@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::security::VulnerabilityMetadata;
-use crate::core::source_card::{IssueMetadata, ReleaseMetadata};
+use crate::core::source_card::{IssueMetadata, ReleaseMetadata, SourceExcerpt};
 
 /// Structured metadata from a code-search provider (e.g. GitHub Code Search).
 ///
@@ -84,6 +84,10 @@ pub struct SearchResult {
     pub source_engine: String,
     #[serde(default)]
     pub metadata: ResultMetadata,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excerpts: Vec<SourceExcerpt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +99,10 @@ pub struct AggregatedResult {
     pub score: f64,
     #[serde(default)]
     pub metadata: ResultMetadata,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excerpts: Vec<SourceExcerpt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
 }
 
 #[cfg(test)]

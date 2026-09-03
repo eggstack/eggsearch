@@ -213,6 +213,8 @@ fn convert_work(work: OpenAlexWork) -> Option<SearchResult> {
         url,
         snippet,
         source_engine: ENGINE.to_string(),
+        excerpts: Vec::new(),
+        published_at: None,
         metadata: ResultMetadata::None,
     })
 }

@@ -1897,6 +1897,7 @@ fn web_fetch_response_raw_text_metadata_present_when_raw_text_present() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        focus: None,
         raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
@@ -1948,6 +1949,7 @@ fn web_fetch_response_raw_text_metadata_absent_when_raw_text_none() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        focus: None,
         raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
@@ -2007,6 +2009,7 @@ fn web_fetch_response_raw_text_truncated_omitted_when_false() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        focus: None,
         raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();
@@ -2055,6 +2058,7 @@ fn web_fetch_response_raw_text_truncated_present_when_true() {
         transport: Some("http".to_string()),
         browser_escalated: false,
         manual_interaction_required: false,
+        focus: None,
         raw_body: None,
     };
     let json = serde_json::to_value(&resp).unwrap();

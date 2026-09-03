@@ -325,6 +325,11 @@ pub struct WebSearchArgs {
     /// capability-enforced.
     #[serde(default)]
     pub region: Option<String>,
+    /// Optional excerpt demand (0-3). When set, each `SourceCard` may
+    /// carry up to that many bounded source-derived excerpts. Defaults
+    /// to zero (compact discovery-only cards).
+    #[serde(default)]
+    pub excerpt_count: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -653,6 +658,22 @@ pub struct WebFetchArgs {
     /// or "refresh" (revalidate even if fresh).
     #[serde(default)]
     pub cache_policy: Option<crate::core::fetch::FetchCachePolicy>,
+    /// Caller maximum acceptable cache age in seconds. Only tightens
+    /// origin freshness; `0` forces revalidation without disabling
+    /// cache storage. Ignored when `cache_policy = "bypass"`.
+    #[serde(default)]
+    pub max_cache_age_seconds: Option<u64>,
+    /// Optional focus query for deterministic query-focused chunk
+    /// selection over the extracted document. No extra URL traversal.
+    #[serde(default)]
+    pub focus: Option<String>,
+    /// Maximum focused chunks to return (1-5, default 5).
+    #[serde(default)]
+    pub focus_max_chunks: Option<usize>,
+    /// Maximum focused characters to return. Defaults to the effective
+    /// `max_chars` budget.
+    #[serde(default)]
+    pub focus_max_chars: Option<usize>,
     /// Render policy: "http_only" (default), "auto", or "browser".
     /// Controls whether fetch may escalate to headless browser rendering
     /// for JavaScript-heavy pages. Requires the `browser` feature.
@@ -846,6 +867,7 @@ pub async fn run_web_search(
         exclude_domains: args.exclude_domains.clone(),
         language: args.language.clone(),
         region: args.region.clone(),
+        excerpt_count: args.excerpt_count,
     };
 
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
@@ -2048,6 +2070,7 @@ fn cached_document_response(
         transport: document.transport.clone(),
         browser_escalated: document.browser_escalated,
         manual_interaction_required: false,
+        focus: None,
         raw_body: None,
     }
 }
@@ -2135,6 +2158,52 @@ pub async fn run_web_fetch(
         .unwrap_or(state.config.fetch.include_links_default);
 
     let cache_policy = args.cache_policy.unwrap_or_default();
+
+    if let Some(age) = args.max_cache_age_seconds {
+        if age > crate::core::fetch::MAX_CACHE_AGE_SECONDS {
+            return Err(ToolError::Validation(format!(
+                "max_cache_age_seconds must be <= {}",
+                crate::core::fetch::MAX_CACHE_AGE_SECONDS
+            )));
+        }
+    }
+    let focus_query = match args.focus.as_deref() {
+        None => None,
+        Some(q) if q.trim().is_empty() => {
+            return Err(ToolError::Validation("focus must not be empty".to_string()));
+        }
+        Some(q) if q.chars().count() > crate::core::fetch::MAX_FOCUS_QUERY_CHARS => {
+            return Err(ToolError::Validation(format!(
+                "focus must be <= {} characters",
+                crate::core::fetch::MAX_FOCUS_QUERY_CHARS
+            )));
+        }
+        Some(q) => Some(q.trim().to_string()),
+    };
+    if let Some(0) = args.focus_max_chunks {
+        return Err(ToolError::Validation(
+            "focus_max_chunks must be > 0".to_string(),
+        ));
+    }
+    if let Some(n) = args.focus_max_chunks {
+        if n > crate::core::fetch::MAX_FOCUS_CHUNKS {
+            return Err(ToolError::Validation(format!(
+                "focus_max_chunks must be <= {}",
+                crate::core::fetch::MAX_FOCUS_CHUNKS
+            )));
+        }
+    }
+    if let Some(0) = args.focus_max_chars {
+        return Err(ToolError::Validation(
+            "focus_max_chars must be > 0".to_string(),
+        ));
+    }
+    if focus_query.is_some() && extract_mode == ExtractMode::MetadataOnly {
+        return Err(ToolError::Validation(
+            "focus requires extracted content; it is not valid with extract_mode = \"metadata_only\""
+                .to_string(),
+        ));
+    }
 
     #[cfg(feature = "browser")]
     #[allow(unused_mut)]
@@ -2269,8 +2338,21 @@ pub async fn run_web_fetch(
         .unwrap_or(state.config.fetch.max_chars_default)
         .min(state.config.fetch.max_chars_cap);
 
+    let caller_max_age = args
+        .max_cache_age_seconds
+        .map(std::time::Duration::from_secs);
+    let entry_satisfies_caller_max_age = |entry: &crate::fetch::cache::RawFetchCacheEntry| -> bool {
+        let Some(max) = caller_max_age else {
+            return true;
+        };
+        let age = std::time::SystemTime::now()
+            .duration_since(entry.fetched_at)
+            .unwrap_or(std::time::Duration::ZERO);
+        age <= max
+    };
+
     let mut cached_response: Option<crate::core::fetch::WebFetchResponse> = None;
-    if cache_policy == crate::core::fetch::FetchCachePolicy::Default {
+    if cache_policy != crate::core::fetch::FetchCachePolicy::Bypass {
         if let Some(ref cache) = state.fetch_cache {
             let raw_key = build_raw_cache_key(trimmed_url, &scope);
             if let Some(raw_entry) = cache.get_raw(&raw_key).await {
@@ -2341,7 +2423,11 @@ pub async fn run_web_fetch(
                             .await;
                         Ok::<_, crate::fetch::FetchError>(derived)
                     };
-                    if raw_entry.freshness.is_fresh() {
+                    let locally_fresh = raw_entry.freshness.is_fresh()
+                        && entry_satisfies_caller_max_age(&raw_entry);
+                    let force_revalidation =
+                        cache_policy == crate::core::fetch::FetchCachePolicy::Refresh;
+                    if locally_fresh && !force_revalidation {
                         metadata.cache_status = CacheStatus::Hit;
                         cached_response =
                             if let Some(derived) = cache.get_derived(&derived_key).await {
@@ -2851,6 +2937,23 @@ pub async fn run_web_fetch(
             "link list was truncated; not all links are included".to_string(),
         ));
     }
+    let focus_selection = match (&focus_query, &resp.document) {
+        (Some(query), Some(document)) if resp.fetched => {
+            let max_chunks = args
+                .focus_max_chunks
+                .unwrap_or(crate::core::fetch::MAX_FOCUS_CHUNKS)
+                .clamp(1, crate::core::fetch::MAX_FOCUS_CHUNKS);
+            let max_chars = args
+                .focus_max_chars
+                .unwrap_or(requested_max_chars)
+                .min(state.config.fetch.max_chars_cap)
+                .max(1);
+            Some(crate::core::focus::select_focus_chunks(
+                document, query, max_chunks, max_chars,
+            ))
+        }
+        _ => None,
+    };
     let payload = serde_json::json!({
         "url": resp.url,
         "final_url": resp.final_url,
@@ -2871,6 +2974,7 @@ pub async fn run_web_fetch(
         "trust_markers": serde_json::to_value(&resp.trust_markers)
             .unwrap_or(serde_json::json!({})),
         "document": resp.document,
+        "focus": focus_selection,
         "fetch_transform": resp.fetch_transform,
         "structured_warnings": structured,
         "cache_status": serde_json::to_value(metadata.cache_status).unwrap_or(serde_json::json!("miss")),
@@ -4191,12 +4295,37 @@ fn make_batch_fetch_future(
             extract_mode,
             include_links,
             max_chars,
+            cache_policy,
+            max_cache_age_seconds,
         } => {
             let stable_id = batch_fetch_id(&label, i);
             let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
             let em = effective_max.max(1);
             let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
             let il = include_links.unwrap_or(include_links_default);
+            let item_cache_policy =
+                (*cache_policy).unwrap_or(crate::core::fetch::FetchCachePolicy::Default);
+            let item_max_age = *max_cache_age_seconds;
+            if let Some(age) = item_max_age {
+                if age > crate::core::fetch::MAX_CACHE_AGE_SECONDS {
+                    return Box::pin(async move {
+                        Ok(BatchFetchResult {
+                            index: i,
+                            item_type: BatchFetchItemType::Web,
+                            label,
+                            stable_id: Some(stable_id),
+                            ok: false,
+                            response: None,
+                            error: Some(format!(
+                                "max_cache_age_seconds must be <= {}",
+                                crate::core::fetch::MAX_CACHE_AGE_SECONDS
+                            )),
+                            chars_returned: 0,
+                            truncated: false,
+                        })
+                    });
+                }
+            }
             let url = url.clone();
             Box::pin(async move {
                 let _permit = semaphore
@@ -4237,216 +4366,235 @@ fn make_batch_fetch_future(
 
                 let scope = CacheScope::Anonymous;
 
-                if let Some(ref cache) = state.fetch_cache {
-                    let raw_key = build_raw_cache_key(&url, &scope);
-                    if let Some(raw_entry) = cache.get_raw(&raw_key).await {
-                        if raw_entry.freshness.is_fresh() {
-                            let derived_key = crate::fetch::cache::build_derived_key(
-                                &scope,
-                                build_raw_response_hash(&raw_entry.body),
-                                mode,
-                                em,
-                                il,
-                                None,
-                                None,
-                                false,
-                                state.config.fetch.sanitize_output,
-                            );
-                            if let Some(derived) = cache.get_derived(&derived_key).await {
-                                let payload = serde_json::json!({
-                                    "url": url,
-                                    "final_url": raw_entry.final_url,
-                                    "title": derived.response.title,
-                                    "description": derived.response.description,
-                                    "content_type": raw_entry.content_type,
-                                    "status": raw_entry.status,
-                                    "fetched": true,
-                                    "truncated": derived.response.truncated,
-                                    "trust": "external_untrusted",
-                                    "text": derived.response.text,
-                                    "links": derived.response.links,
-                                    "links_seen": derived.response.links_seen,
-                                    "links_truncated": derived.response.links_truncated,
-                                    "warnings": Vec::<String>::new(),
-                                    "trust_markers": serde_json::to_value(&derived.response.trust_markers)
-                                        .unwrap_or(serde_json::json!({})),
-                                    "document": derived.response.document,
-                                    "fetch_transform": serde_json::Value::Null,
-                                    "structured_warnings": Vec::<serde_json::Value>::new(),
-                                    "cache_status": "hit",
-                                    "attempt_count": 1,
-                                    "retry_after_ms": serde_json::Value::Null,
-                                    "origin_backoff_ms": serde_json::Value::Null,
-                                    "browser_profile": serde_json::Value::Null,
-                                    "browser_profile_scope": "ephemeral",
-                                    "manual_interaction_required": false,
-                                    "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
-                                    "browser_escalated": raw_entry.browser_escalated,
-                                });
-                                let body_chars = derived
-                                    .response
-                                    .document
-                                    .as_ref()
-                                    .map(|d| d.text_chars_returned)
-                                    .unwrap_or_else(|| {
-                                        derived
-                                            .response
-                                            .text
-                                            .as_ref()
-                                            .map(|t| t.chars().count())
-                                            .unwrap_or(0)
+                let bypass_cache =
+                    item_cache_policy == crate::core::fetch::FetchCachePolicy::Bypass;
+                let caller_max_age = item_max_age.map(std::time::Duration::from_secs);
+                if !bypass_cache {
+                    if let Some(ref cache) = state.fetch_cache {
+                        let raw_key = build_raw_cache_key(&url, &scope);
+                        if let Some(raw_entry) = cache.get_raw(&raw_key).await {
+                            let age_ok = match caller_max_age {
+                                None => true,
+                                Some(max) => {
+                                    std::time::SystemTime::now()
+                                        .duration_since(raw_entry.fetched_at)
+                                        .unwrap_or(std::time::Duration::ZERO)
+                                        <= max
+                                }
+                            };
+                            let serve_hit = raw_entry.freshness.is_fresh()
+                                && age_ok
+                                && item_cache_policy
+                                    == crate::core::fetch::FetchCachePolicy::Default;
+                            if serve_hit {
+                                let derived_key = crate::fetch::cache::build_derived_key(
+                                    &scope,
+                                    build_raw_response_hash(&raw_entry.body),
+                                    mode,
+                                    em,
+                                    il,
+                                    None,
+                                    None,
+                                    false,
+                                    state.config.fetch.sanitize_output,
+                                );
+                                if let Some(derived) = cache.get_derived(&derived_key).await {
+                                    let payload = serde_json::json!({
+                                        "url": url,
+                                        "final_url": raw_entry.final_url,
+                                        "title": derived.response.title,
+                                        "description": derived.response.description,
+                                        "content_type": raw_entry.content_type,
+                                        "status": raw_entry.status,
+                                        "fetched": true,
+                                        "truncated": derived.response.truncated,
+                                        "trust": "external_untrusted",
+                                        "text": derived.response.text,
+                                        "links": derived.response.links,
+                                        "links_seen": derived.response.links_seen,
+                                        "links_truncated": derived.response.links_truncated,
+                                        "warnings": Vec::<String>::new(),
+                                        "trust_markers": serde_json::to_value(&derived.response.trust_markers)
+                                            .unwrap_or(serde_json::json!({})),
+                                        "document": derived.response.document,
+                                        "fetch_transform": serde_json::Value::Null,
+                                        "structured_warnings": Vec::<serde_json::Value>::new(),
+                                        "cache_status": "hit",
+                                        "attempt_count": 1,
+                                        "retry_after_ms": serde_json::Value::Null,
+                                        "origin_backoff_ms": serde_json::Value::Null,
+                                        "browser_profile": serde_json::Value::Null,
+                                        "browser_profile_scope": "ephemeral",
+                                        "manual_interaction_required": false,
+                                        "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
+                                        "browser_escalated": raw_entry.browser_escalated,
                                     });
-                                let meta_chars = derived
-                                    .response
-                                    .title
-                                    .as_ref()
-                                    .map(|s| s.chars().count())
-                                    .unwrap_or(0)
-                                    + derived
+                                    let body_chars = derived
                                         .response
-                                        .description
+                                        .document
+                                        .as_ref()
+                                        .map(|d| d.text_chars_returned)
+                                        .unwrap_or_else(|| {
+                                            derived
+                                                .response
+                                                .text
+                                                .as_ref()
+                                                .map(|t| t.chars().count())
+                                                .unwrap_or(0)
+                                        });
+                                    let meta_chars = derived
+                                        .response
+                                        .title
                                         .as_ref()
                                         .map(|s| s.chars().count())
                                         .unwrap_or(0)
-                                    + derived
-                                        .response
-                                        .links
-                                        .iter()
-                                        .map(|l| l.url.chars().count() + l.text.chars().count())
-                                        .sum::<usize>();
-                                return Ok(BatchFetchResult {
-                                    index: i,
-                                    item_type: BatchFetchItemType::Web,
-                                    label,
-                                    stable_id: Some(stable_id),
-                                    ok: true,
-                                    response: Some(payload),
-                                    error: None,
-                                    chars_returned: body_chars + meta_chars,
-                                    truncated: derived.response.truncated,
-                                });
-                            }
-                        } else if !raw_entry.freshness.no_store
-                            && !raw_entry.freshness.no_cache
-                            && (raw_entry.validators.etag.is_some()
-                                || raw_entry.validators.last_modified.is_some())
-                        {
-                            let circuit_blocked = if let Some(ref ctrl) = state.origin_controller {
-                                ctrl.circuit_is_open(&origin_key).await.is_some()
-                            } else {
-                                false
-                            };
-                            if !circuit_blocked {
-                                let conditional =
-                                    crate::fetch::cache::build_request_conditional_headers(
-                                        &raw_entry.validators,
-                                    );
-                                if !conditional.is_empty() {
-                                    if let Ok((status, _headers, _body, _)) =
-                                        web_client.fetch_conditional(&url, &conditional).await
-                                    {
-                                        if status == 304 {
-                                            let derived_key =
-                                                crate::fetch::cache::build_derived_key(
-                                                    &scope,
-                                                    build_raw_response_hash(&raw_entry.body),
-                                                    mode,
-                                                    em,
-                                                    il,
-                                                    None,
-                                                    None,
-                                                    false,
-                                                    state.config.fetch.sanitize_output,
-                                                );
-                                            if let Some(derived) =
-                                                cache.get_derived(&derived_key).await
-                                            {
-                                                let mut updated_freshness =
-                                                    raw_entry.freshness.clone();
-                                                updated_freshness.fetched_at =
-                                                    Some(std::time::SystemTime::now());
-                                                let updated_entry =
-                                                    crate::fetch::cache::RawFetchCacheEntry {
-                                                        freshness: updated_freshness,
-                                                        ..raw_entry.clone()
-                                                    };
-                                                cache.insert_raw(raw_key, updated_entry).await;
+                                        + derived
+                                            .response
+                                            .description
+                                            .as_ref()
+                                            .map(|s| s.chars().count())
+                                            .unwrap_or(0)
+                                        + derived
+                                            .response
+                                            .links
+                                            .iter()
+                                            .map(|l| l.url.chars().count() + l.text.chars().count())
+                                            .sum::<usize>();
+                                    return Ok(BatchFetchResult {
+                                        index: i,
+                                        item_type: BatchFetchItemType::Web,
+                                        label,
+                                        stable_id: Some(stable_id),
+                                        ok: true,
+                                        response: Some(payload),
+                                        error: None,
+                                        chars_returned: body_chars + meta_chars,
+                                        truncated: derived.response.truncated,
+                                    });
+                                }
+                            } else if !raw_entry.freshness.no_store
+                                && !raw_entry.freshness.no_cache
+                                && (raw_entry.validators.etag.is_some()
+                                    || raw_entry.validators.last_modified.is_some())
+                            {
+                                let circuit_blocked =
+                                    if let Some(ref ctrl) = state.origin_controller {
+                                        ctrl.circuit_is_open(&origin_key).await.is_some()
+                                    } else {
+                                        false
+                                    };
+                                if !circuit_blocked {
+                                    let conditional =
+                                        crate::fetch::cache::build_request_conditional_headers(
+                                            &raw_entry.validators,
+                                        );
+                                    if !conditional.is_empty() {
+                                        if let Ok((status, _headers, _body, _)) =
+                                            web_client.fetch_conditional(&url, &conditional).await
+                                        {
+                                            if status == 304 {
+                                                let derived_key =
+                                                    crate::fetch::cache::build_derived_key(
+                                                        &scope,
+                                                        build_raw_response_hash(&raw_entry.body),
+                                                        mode,
+                                                        em,
+                                                        il,
+                                                        None,
+                                                        None,
+                                                        false,
+                                                        state.config.fetch.sanitize_output,
+                                                    );
+                                                if let Some(derived) =
+                                                    cache.get_derived(&derived_key).await
+                                                {
+                                                    let mut updated_freshness =
+                                                        raw_entry.freshness.clone();
+                                                    updated_freshness.fetched_at =
+                                                        Some(std::time::SystemTime::now());
+                                                    let updated_entry =
+                                                        crate::fetch::cache::RawFetchCacheEntry {
+                                                            freshness: updated_freshness,
+                                                            ..raw_entry.clone()
+                                                        };
+                                                    cache.insert_raw(raw_key, updated_entry).await;
 
-                                                let payload = serde_json::json!({
-                                                    "url": url,
-                                                    "final_url": raw_entry.final_url,
-                                                    "title": derived.response.title,
-                                                    "description": derived.response.description,
-                                                    "content_type": raw_entry.content_type,
-                                                    "status": raw_entry.status,
-                                                    "fetched": true,
-                                                    "truncated": derived.response.truncated,
-                                                    "trust": "external_untrusted",
-                                                    "text": derived.response.text,
-                                                    "links": derived.response.links,
-                                                    "links_seen": derived.response.links_seen,
-                                                    "links_truncated": derived.response.links_truncated,
-                                                    "warnings": Vec::<String>::new(),
-                                                    "trust_markers": serde_json::to_value(&derived.response.trust_markers)
-                                                        .unwrap_or(serde_json::json!({})),
-                                                    "document": derived.response.document,
-                                                    "fetch_transform": serde_json::Value::Null,
-                                                    "structured_warnings": Vec::<serde_json::Value>::new(),
-                                                    "cache_status": "revalidated",
-                                                    "attempt_count": 1,
-                                                    "retry_after_ms": serde_json::Value::Null,
-                                                    "origin_backoff_ms": serde_json::Value::Null,
-                                                    "browser_profile": serde_json::Value::Null,
-                                                    "browser_profile_scope": "ephemeral",
-                                                    "manual_interaction_required": false,
-                                                    "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
-                                                    "browser_escalated": raw_entry.browser_escalated,
-                                                });
-                                                let body_chars = derived
-                                                    .response
-                                                    .document
-                                                    .as_ref()
-                                                    .map(|d| d.text_chars_returned)
-                                                    .unwrap_or_else(|| {
-                                                        derived
-                                                            .response
-                                                            .text
-                                                            .as_ref()
-                                                            .map(|t| t.chars().count())
-                                                            .unwrap_or(0)
+                                                    let payload = serde_json::json!({
+                                                        "url": url,
+                                                        "final_url": raw_entry.final_url,
+                                                        "title": derived.response.title,
+                                                        "description": derived.response.description,
+                                                        "content_type": raw_entry.content_type,
+                                                        "status": raw_entry.status,
+                                                        "fetched": true,
+                                                        "truncated": derived.response.truncated,
+                                                        "trust": "external_untrusted",
+                                                        "text": derived.response.text,
+                                                        "links": derived.response.links,
+                                                        "links_seen": derived.response.links_seen,
+                                                        "links_truncated": derived.response.links_truncated,
+                                                        "warnings": Vec::<String>::new(),
+                                                        "trust_markers": serde_json::to_value(&derived.response.trust_markers)
+                                                            .unwrap_or(serde_json::json!({})),
+                                                        "document": derived.response.document,
+                                                        "fetch_transform": serde_json::Value::Null,
+                                                        "structured_warnings": Vec::<serde_json::Value>::new(),
+                                                        "cache_status": "revalidated",
+                                                        "attempt_count": 1,
+                                                        "retry_after_ms": serde_json::Value::Null,
+                                                        "origin_backoff_ms": serde_json::Value::Null,
+                                                        "browser_profile": serde_json::Value::Null,
+                                                        "browser_profile_scope": "ephemeral",
+                                                        "manual_interaction_required": false,
+                                                        "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
+                                                        "browser_escalated": raw_entry.browser_escalated,
                                                     });
-                                                let meta_chars = derived
-                                                    .response
-                                                    .title
-                                                    .as_ref()
-                                                    .map(|s| s.chars().count())
-                                                    .unwrap_or(0)
-                                                    + derived
+                                                    let body_chars = derived
                                                         .response
-                                                        .description
+                                                        .document
+                                                        .as_ref()
+                                                        .map(|d| d.text_chars_returned)
+                                                        .unwrap_or_else(|| {
+                                                            derived
+                                                                .response
+                                                                .text
+                                                                .as_ref()
+                                                                .map(|t| t.chars().count())
+                                                                .unwrap_or(0)
+                                                        });
+                                                    let meta_chars = derived
+                                                        .response
+                                                        .title
                                                         .as_ref()
                                                         .map(|s| s.chars().count())
                                                         .unwrap_or(0)
-                                                    + derived
-                                                        .response
-                                                        .links
-                                                        .iter()
-                                                        .map(|l| {
-                                                            l.url.chars().count()
-                                                                + l.text.chars().count()
-                                                        })
-                                                        .sum::<usize>();
-                                                return Ok(BatchFetchResult {
-                                                    index: i,
-                                                    item_type: BatchFetchItemType::Web,
-                                                    label,
-                                                    stable_id: Some(stable_id),
-                                                    ok: true,
-                                                    response: Some(payload),
-                                                    error: None,
-                                                    chars_returned: body_chars + meta_chars,
-                                                    truncated: derived.response.truncated,
-                                                });
+                                                        + derived
+                                                            .response
+                                                            .description
+                                                            .as_ref()
+                                                            .map(|s| s.chars().count())
+                                                            .unwrap_or(0)
+                                                        + derived
+                                                            .response
+                                                            .links
+                                                            .iter()
+                                                            .map(|l| {
+                                                                l.url.chars().count()
+                                                                    + l.text.chars().count()
+                                                            })
+                                                            .sum::<usize>();
+                                                    return Ok(BatchFetchResult {
+                                                        index: i,
+                                                        item_type: BatchFetchItemType::Web,
+                                                        label,
+                                                        stable_id: Some(stable_id),
+                                                        ok: true,
+                                                        response: Some(payload),
+                                                        error: None,
+                                                        chars_returned: body_chars + meta_chars,
+                                                        truncated: derived.response.truncated,
+                                                    });
+                                                }
                                             }
                                         }
                                     }
@@ -4461,10 +4609,10 @@ fn make_batch_fetch_future(
                 let mut response = None;
                 let mut attempts_made = 0usize;
                 let mut retry_after_ms: Option<u64> = None;
-                let mut cache_status = if state.fetch_cache.is_some() {
-                    "miss"
-                } else {
+                let mut cache_status = if bypass_cache || state.fetch_cache.is_none() {
                     "bypassed"
+                } else {
+                    "miss"
                 };
                 let deadline = std::time::Instant::now()
                     + std::time::Duration::from_millis(state.config.fetch.timeout_ms);
@@ -4605,6 +4753,7 @@ fn make_batch_fetch_future(
                                 );
                                 cache_freshness.max_age = Some(ttl);
                             }
+                            cache_freshness.fetched_at = Some(std::time::SystemTime::now());
                             if should_cache_response(
                                 resp.status,
                                 resp.content_type.as_deref(),
@@ -5476,6 +5625,10 @@ mod tests {
                 include_links: None,
                 pdf: None,
                 cache_policy: None,
+                max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
                 render: None,
                 browser_profile: None,
             },
@@ -5494,6 +5647,8 @@ mod tests {
                     extract_mode: None,
                     include_links: None,
                     max_chars: None,
+                    cache_policy: None,
+                    max_cache_age_seconds: None,
                 }],
                 max_items: None,
                 max_chars_per_item: None,
@@ -5578,6 +5733,7 @@ mod tests {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         };
 
         let result = run_web_search(state, args).await;
@@ -5607,6 +5763,7 @@ mod tests {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         };
 
         let result = run_web_search(state, args).await;
@@ -5750,6 +5907,7 @@ mod tests {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         };
 
         let value = run_web_search(state, args).await.unwrap();
@@ -5781,6 +5939,7 @@ mod tests {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         };
 
         let value = run_web_search(state, args).await.unwrap();
@@ -5813,6 +5972,7 @@ mod tests {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: None,
         };
 
         let value = run_web_search(state, args).await.unwrap();
@@ -5856,6 +6016,10 @@ mod tests {
             include_links: Some(false),
             pdf: None,
             cache_policy: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
             render: None,
             browser_profile: None,
         };
@@ -5879,6 +6043,10 @@ mod tests {
             include_links: Some(false),
             pdf: None,
             cache_policy: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
             render: None,
             browser_profile: None,
         };

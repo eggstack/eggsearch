@@ -161,6 +161,8 @@ fn convert(
             url: html_url.clone(),
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
             metadata,
         });
     }

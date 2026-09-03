@@ -72,7 +72,7 @@ api_key_env = "BRAVE_API_KEY"
 
 The environment variable `BRAVE_API_KEY` must be set at runtime.
 
-Native capabilities: `safe_search`, `freshness` (relative `pd|pw|pm|py` and exact `YYYY-MM-DDtoYYYY-MM-DD`), `language` (`search_lang`), `region` (`country` for 2-letter codes), and `news` (dedicated `/res/v1/news/search` endpoint for `intent=news`). Domain filters are enforced locally, not provider-native. Result timestamps are not yet preserved.
+Native capabilities: `safe_search`, `freshness` (relative `pd|pw|pm|py` and exact `YYYY-MM-DDtoYYYY-MM-DD`), `language` (`search_lang`), `region` (`country` for 2-letter codes), `news` (dedicated `/res/v1/news/search` endpoint for `intent=news`), and `result_timestamps` (the `age` field is preserved when it parses as RFC 3339 or `YYYY-MM-DD`, and feeds freshness reranking). Set `extra_snippets=true` automatically when `web_search` requests `excerpt_count > 0` (up to 3 alternate excerpts per result, converted to provider-neutral excerpts). Domain filters are enforced locally, not provider-native. Summaries are never requested.
 
 ### GitHub Code Search
 

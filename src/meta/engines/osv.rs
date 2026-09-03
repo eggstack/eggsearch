@@ -209,6 +209,8 @@ pub async fn search(
                         url,
                         snippet,
                         source_engine: ENGINE.to_string(),
+                        excerpts: Vec::new(),
+                        published_at: None,
                         metadata: ResultMetadata::Advisory(Box::new(m)),
                     }])
                 }
@@ -258,6 +260,8 @@ pub async fn search(
                     url,
                     snippet,
                     source_engine: ENGINE.to_string(),
+                    excerpts: Vec::new(),
+                    published_at: None,
                     metadata: ResultMetadata::Advisory(Box::new(m)),
                 });
             }
@@ -417,6 +421,8 @@ fn convert(vulns: Vec<OsvVulnerability>, max_results: usize) -> Vec<SearchResult
             url,
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
             metadata,
         });
     }

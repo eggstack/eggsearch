@@ -15,6 +15,7 @@ pub struct EngineSearchRequest {
     pub exclude_domains: Vec<String>,
     pub language: Option<String>,
     pub region: Option<String>,
+    pub excerpt_count: usize,
 }
 
 impl EngineSearchRequest {
@@ -31,6 +32,7 @@ impl EngineSearchRequest {
             exclude_domains: Vec::new(),
             language: None,
             region: None,
+            excerpt_count: 0,
         }
     }
 
@@ -56,7 +58,16 @@ impl EngineSearchRequest {
             exclude_domains: req.exclude_domains.clone(),
             language: req.language.clone(),
             region: req.region.clone(),
+            excerpt_count: req
+                .excerpt_count
+                .unwrap_or(0)
+                .min(crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT),
         }
+    }
+
+    /// Whether any provider should return additional excerpts.
+    pub fn wants_excerpts(&self) -> bool {
+        self.excerpt_count > 0
     }
 }
 
@@ -77,6 +88,8 @@ mod tests {
         assert!(req.exclude_domains.is_empty());
         assert!(req.language.is_none());
         assert!(req.region.is_none());
+        assert_eq!(req.excerpt_count, 0);
+        assert!(!req.wants_excerpts());
     }
 
     #[test]

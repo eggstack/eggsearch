@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Extractive evidence and fetch controls (phase 2).** `web_search` accepts opt-in `excerpt_count` (0-3); cards carry bounded source-derived `excerpts` (3 per card, 500 chars each, 1,200 total) merged deterministically across providers and sanitized through the trust pipeline, plus a generic `published_at` timestamp that feeds freshness reranking. Brave Search API sends `extra_snippets=true` only on excerpt demand and preserves parseable `age` timestamps. `web_fetch` gains deterministic query-focused `focus` reads (lexical chunk ranking, no extra traversal, additive output) and agent-visible cache controls (`cache_policy`, per-item on `batch_fetch`, plus tightening-only `max_cache_age_seconds`). HTTP 304 is now handled as revalidation rather than a redirect error in conditional fetches, and batch cache stores record `fetched_at` so batch hits work. New `tests/phase2_extract_fetch.rs` suite; docs (`tool-matrix`, `safety`, `provider-setup`, `agent-workflows`), `architecture/` deep dives, skills, and the CodeGG contract updated.
+
 ### Changed
 
 - **Architecture docs consolidated into a single location.** All deep dives now live in `architecture/`; the seven unique cross-cutting documents (`codegg-contract.md`, `config.md`, `evidence-workflow.md`, `hardening.md`, `local-workspace.md`, `research.md`, `security.md`) moved from `docs/architecture/`, and eight stale duplicate copies (`overview`, `core`, `meta`, `engines`, `fetch`, `mcp`, `testing`, `commands`) were removed. `docs/architecture/` no longer exists. README and in-doc links updated; `tests/docs_keyless_contract.rs` reads the new path; `Cargo.toml` ships `architecture/**/*.md`.

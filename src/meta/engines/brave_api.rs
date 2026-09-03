@@ -45,8 +45,8 @@ struct BraveResult {
     title: Option<String>,
     url: Option<String>,
     description: Option<String>,
-    #[allow(dead_code)]
     age: Option<String>,
+    extra_snippets: Option<Vec<String>>,
 }
 
 fn brave_endpoint(intent: SearchIntent) -> &'static str {
@@ -158,9 +158,15 @@ pub async fn search(
     if let Some(country) = map_country(request.region.as_deref()) {
         params.push(("country".to_string(), country));
     }
+    if request.wants_excerpts() {
+        params.push(("extra_snippets".to_string(), "true".to_string()));
+    }
 
     let timeout = request.timeout;
     let max_results = request.max_results;
+    let excerpt_count = request
+        .excerpt_count
+        .min(crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT);
     let bytes = tokio::time::timeout(timeout, async {
         let resp = client
             .get(url)
@@ -201,10 +207,10 @@ pub async fn search(
     if let Some(results) = parsed.results {
         raw.extend(results);
     }
-    Ok(convert(raw, max_results))
+    Ok(convert(raw, max_results, excerpt_count))
 }
 
-fn convert(raw: Vec<BraveResult>, max_results: usize) -> Vec<SearchResult> {
+fn convert(raw: Vec<BraveResult>, max_results: usize, excerpt_count: usize) -> Vec<SearchResult> {
     let mut out = Vec::with_capacity(max_results);
     for r in raw {
         if out.len() >= max_results {
@@ -225,11 +231,38 @@ fn convert(raw: Vec<BraveResult>, max_results: usize) -> Vec<SearchResult> {
             .map(|s| crate::core::sanitize::normalize_whitespace(&s))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
+        let published_at = r
+            .age
+            .as_deref()
+            .and_then(crate::core::source_card::parse_result_timestamp);
+        let mut excerpts = Vec::new();
+        if excerpt_count > 0 {
+            if let Some(extra) = r.extra_snippets {
+                for text in extra {
+                    if excerpts.len() >= excerpt_count {
+                        break;
+                    }
+                    let text = crate::core::sanitize::normalize_whitespace(&text)
+                        .trim()
+                        .to_string();
+                    if text.is_empty() {
+                        continue;
+                    }
+                    excerpts.push(crate::core::source_card::SourceExcerpt {
+                        text,
+                        score: None,
+                        provenance: crate::core::source_card::ExcerptProvenance::ProviderSnippet,
+                    });
+                }
+            }
+        }
         out.push(SearchResult {
             title,
             url,
             snippet,
             source_engine: ENGINE.to_string(),
+            excerpts,
+            published_at,
             metadata: Default::default(),
         });
     }
@@ -253,15 +286,17 @@ mod tests {
                 url: Some("https://example.com".to_string()),
                 description: Some("An example website for testing.".to_string()),
                 age: Some("2024-01-15".to_string()),
+                extra_snippets: None,
             },
             BraveResult {
                 title: Some("Rust Language".to_string()),
                 url: Some("https://rust-lang.org".to_string()),
                 description: Some("Systems programming language.".to_string()),
                 age: None,
+                extra_snippets: None,
             },
         ];
-        let out = convert(raw, 10);
+        let out = convert(raw, 10, 0);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].title, "Example Site");
         assert_eq!(out[0].url, "https://example.com");
@@ -270,6 +305,54 @@ mod tests {
             Some("An example website for testing.")
         );
         assert_eq!(out[0].source_engine, "brave_api");
+        assert_eq!(
+            out[0].published_at.as_deref(),
+            Some("2024-01-15T00:00:00+00:00")
+        );
+        assert!(out[0].excerpts.is_empty());
+        assert!(out[1].published_at.is_none());
+    }
+
+    #[test]
+    fn test_convert_rejects_unparseable_age() {
+        let raw = vec![BraveResult {
+            title: Some("T".to_string()),
+            url: Some("https://example.com".to_string()),
+            description: None,
+            age: Some("2 days ago".to_string()),
+            extra_snippets: None,
+        }];
+        let out = convert(raw, 10, 0);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].published_at.is_none());
+    }
+
+    #[test]
+    fn test_convert_populates_excerpts_only_when_requested() {
+        let make = || BraveResult {
+            title: Some("T".to_string()),
+            url: Some("https://example.com".to_string()),
+            description: Some("primary".to_string()),
+            age: None,
+            extra_snippets: Some(vec![
+                "first alternate".to_string(),
+                "second alternate".to_string(),
+                String::new(),
+                "third alternate".to_string(),
+                "fourth alternate".to_string(),
+            ]),
+        };
+        let without = convert(vec![make()], 10, 0);
+        assert!(without[0].excerpts.is_empty());
+        let with = convert(vec![make()], 10, 2);
+        assert_eq!(with.len(), 1);
+        assert_eq!(with[0].excerpts.len(), 2);
+        assert_eq!(with[0].excerpts[0].text, "first alternate");
+        assert_eq!(with[0].excerpts[1].text, "second alternate");
+        assert!(matches!(
+            with[0].excerpts[0].provenance,
+            crate::core::source_card::ExcerptProvenance::ProviderSnippet
+        ));
     }
 
     #[test]
@@ -280,9 +363,10 @@ mod tests {
                 url: Some(format!("https://example.com/{i}")),
                 description: None,
                 age: None,
+                extra_snippets: None,
             })
             .collect();
-        let out = convert(raw, 2);
+        let out = convert(raw, 2, 0);
         assert_eq!(out.len(), 2);
     }
 
@@ -293,8 +377,9 @@ mod tests {
             url: None,
             description: None,
             age: None,
+            extra_snippets: None,
         }];
-        let out = convert(raw, 10);
+        let out = convert(raw, 10, 0);
         assert!(out.is_empty());
     }
 
@@ -305,8 +390,9 @@ mod tests {
             url: Some(String::new()),
             description: None,
             age: None,
+            extra_snippets: None,
         }];
-        let out = convert(raw, 10);
+        let out = convert(raw, 10, 0);
         assert!(out.is_empty());
     }
 
@@ -318,15 +404,17 @@ mod tests {
                 url: Some("/relative".to_string()),
                 description: None,
                 age: None,
+                extra_snippets: None,
             },
             BraveResult {
                 title: Some("Valid".to_string()),
                 url: Some("https://valid.com".to_string()),
                 description: None,
                 age: None,
+                extra_snippets: None,
             },
         ];
-        let out = convert(raw, 10);
+        let out = convert(raw, 10, 0);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].url, "https://valid.com");
     }
@@ -338,8 +426,9 @@ mod tests {
             url: Some("https://example.com".to_string()),
             description: None,
             age: None,
+            extra_snippets: None,
         }];
-        let out = convert(raw, 10);
+        let out = convert(raw, 10, 0);
         assert!(out.is_empty());
     }
 
@@ -350,8 +439,9 @@ mod tests {
             url: Some("https://example.com".to_string()),
             description: Some(String::new()),
             age: None,
+            extra_snippets: None,
         }];
-        let out = convert(raw, 10);
+        let out = convert(raw, 10, 0);
         assert_eq!(out.len(), 1);
         assert!(out[0].snippet.is_none());
     }
@@ -390,7 +480,7 @@ mod tests {
         let parsed: BraveApiResponse = serde_json::from_str(body).unwrap();
         let news = parsed.news.expect("news results");
         assert_eq!(news.results.len(), 1);
-        let out = convert(news.results, 10);
+        let out = convert(news.results, 10, 0);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].title, "Breaking");
     }
@@ -908,6 +998,56 @@ mod tests {
         assert!(web_mock.hits() >= 1);
     }
 
+    #[tokio::test]
+    async fn test_extra_snippets_param_only_when_requested() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let with_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .query_param("extra_snippets", "true");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"web": {"results": []}}"#);
+        });
+        let without_mock = server.mock(|when, then| {
+            when.method(GET).path("/plain");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"web": {"results": []}}"#);
+        });
+
+        let client = reqwest::Client::new();
+        let mut req = simple_req("rust", 5);
+        req.excerpt_count = 2;
+        search(&client, "k", Some(&server.url("/search")), &req)
+            .await
+            .expect("search should succeed");
+        with_mock.assert();
+
+        let plain = simple_req("rust", 5);
+        assert_eq!(plain.excerpt_count, 0);
+        let snippet_probe = server.mock(|when, then| {
+            when.method(GET)
+                .path("/plain")
+                .query_param("extra_snippets", "true");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"web": {"results": []}}"#);
+        });
+        search(&client, "k", Some(&server.url("/plain")), &plain)
+            .await
+            .expect("search should succeed");
+        without_mock.assert();
+        assert_eq!(
+            snippet_probe.hits(),
+            0,
+            "extra_snippets must not be sent without excerpt demand"
+        );
+    }
+
     #[test]
     fn test_provider_descriptor_for_brave_api() {
         use crate::core::provider::built_in_provider_descriptor;
@@ -927,7 +1067,7 @@ mod tests {
         assert!(desc.capabilities.supports_region);
         assert!(desc.capabilities.supports_news);
         assert!(!desc.capabilities.supports_domain_filters);
-        assert!(!desc.capabilities.supports_result_timestamps);
+        assert!(desc.capabilities.supports_result_timestamps);
     }
 
     #[test]
