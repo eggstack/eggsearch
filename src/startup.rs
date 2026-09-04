@@ -1137,6 +1137,7 @@ fn is_privileged() -> bool {
     }
 }
 
+#[cfg(any(target_os = "macos", windows))]
 fn find_program(program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
@@ -1159,8 +1160,7 @@ fn command_ok(program: &str, args: &[&str]) -> io::Result<()> {
         Ok(())
     } else {
         Err(io::Error::other(format!(
-            "{program} {:?} exited with {status}",
-            args
+            "{program} {args:?} exited with {status}"
         )))
     }
 }
