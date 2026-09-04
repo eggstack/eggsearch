@@ -1,6 +1,6 @@
 # Binary Distribution and Deployment Roadmap
 
-Status: active — phase 6 implemented; phases 7–10 planned
+Status: active — phases 6–7 implemented; phases 8–10 planned
 Updated: 2026-09-04
 Audited repository baseline: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Primary downstream consumer reviewed: `dbowm91/codegg` main at `b3faf5050a1813bdef9e58d760f758318cb3dfcd`
@@ -27,7 +27,7 @@ The work should optimize for reproducible fleet bootstrap, old/SBC Linux compati
 At the audited baseline:
 
 - `Cargo.toml` publishes one `eggsearch` binary at version 0.3.8, requires Rust 1.88, and uses default features that do not include optional PDF/browser support.
-- `src/main.rs` exposes search/fetch/provider commands and `eggsearch mcp stdio`; there is no persistent MCP transport, service manager, restart command, or updater.
+- `src/main.rs` exposes search/fetch/provider/update commands and `eggsearch mcp stdio`; there is no persistent MCP transport, service manager, or restart command yet.
 - `.github/workflows/ci.yml` remains the routine-verification job, and `.github/workflows/release-binaries.yml` now owns the tagged binary matrix and draft-release assembly.
 - `docs/release.md` documents the manual crates.io-first sequence followed by the release-binary workflow; GitHub release publication remains a maintainer-controlled draft review step.
 - README installation is binary-first, with verified release assets and a narrow exact-version Cargo fallback for Raspberry Pi/Le Potato class systems.
@@ -180,7 +180,7 @@ The release-only GitHub Actions matrix, stable asset/checksum contract, Unix and
 
 ### Phase 7 — Binary-first self-update
 
-Add shared target/version/download/replacement logic and `eggsearch update`/`update --check`. crates.io is authoritative; exact GitHub assets are preferred; exact-version Cargo compilation is fallback only for absent/unsupported assets. Phase 9 later adds restart-state integration.
+Shared target/version/download/replacement logic and `eggsearch update`/`update --check` are implemented. crates.io is authoritative; exact GitHub assets are preferred; exact-version Cargo compilation is fallback only for absent/unsupported assets. Phase 9 later adds restart-state integration.
 
 ### Phase 8 — Persistent Streamable HTTP MCP
 

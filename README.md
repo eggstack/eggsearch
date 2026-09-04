@@ -39,6 +39,19 @@ checksum, and version failures stop without falling back. See
 [Installation](docs/installation.md) for the target matrix and verification
 rules.
 
+After installation, check for a newer stable release or update the currently
+running binary:
+
+```bash
+eggsearch update --check
+eggsearch update
+```
+
+The updater uses crates.io for version discovery, verifies the exact release
+checksum and candidate version, and uses an isolated exact-version Cargo build
+only when the host is unsupported or the exact asset returns HTTP 404. It never
+downgrades or elevates itself. See [Update](docs/update.md) for the policy.
+
 For a source/manual installation, use Cargo:
 
 ```bash
@@ -107,3 +120,4 @@ Runs formatting, clippy, feature compilation, and the deterministic test suite. 
 - [MCP Response Contract](architecture/codegg-contract.md) — trust model, warnings, deterministic IDs
 - [Release Process](docs/release.md) — preparation, verification, publication
 - [Installation](docs/installation.md) — binary targets, installers, checksums, and fallback rules
+- [Update](docs/update.md) — binary-first self-update, verification, and fallback rules

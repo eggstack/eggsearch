@@ -67,6 +67,14 @@ confirmed HTTP 404 for the exact binary. They fail closed on all other download,
 integrity, identity, or version errors. Service installation is not part of
 this phase.
 
+The installed `eggsearch update` command consumes this same seven-target asset
+contract. crates.io `crate.max_stable_version` is its version authority; it then
+requests only the matching `vX.Y.Z` release asset and checksum, verifies the
+candidate, and replaces the currently running executable. Exact asset 404 or an
+unsupported host may use an isolated exact-version Cargo build. Other network or
+integrity failures never fall back to compilation. Update replacement does not
+restart services until phase 9.
+
 ## Routine verification
 
 The daily developer command is:

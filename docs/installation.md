@@ -76,3 +76,18 @@ failures. They never trigger a potentially long local Rust compilation.
 The install command only installs the executable. Persistent service
 registration and startup supervision are separate future work and are not
 available from these installers.
+
+## Updating an installed binary
+
+The bootstrap installer is intended for first installation or selecting an
+explicit destination. For routine upgrades, use the installed executable:
+
+```bash
+eggsearch update --check
+eggsearch update
+```
+
+The updater uses crates.io as its stable-version authority and then consumes the
+exact matching GitHub Release asset, with the same target names and checksum
+contract documented above. See [Self-update](update.md) for verification,
+Cargo fallback, permission, and lifecycle behavior.

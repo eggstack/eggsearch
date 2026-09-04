@@ -9,3 +9,4 @@ pub mod fetch;
 pub mod mcp;
 pub mod providers;
 pub mod search;
+pub mod update;

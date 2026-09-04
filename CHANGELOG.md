@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Binary-first release artifacts, checksums, and bootstrap installers for supported desktop and SBC targets.
+- Binary-first `eggsearch update` and `update --check` commands. Updates use
+  crates.io stable metadata, exact GitHub release assets, bounded SHA-256 and
+  candidate identity verification, and exact-version Cargo fallback only for
+  unsupported hosts or confirmed asset 404 responses.
 
 ## [0.3.8] - 2026-09-04
 

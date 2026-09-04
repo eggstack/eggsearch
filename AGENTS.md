@@ -60,7 +60,9 @@ src/
   main.rs          # binary entry point (clap, tokio main)
   lib.rs           # library root, re-exports core/fetch/mcp/meta
   config.rs        # CLI config loader
-  commands/        # subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
+  commands/        # subcommands: doctor, search, providers, mcp, fetch, update, browser_login, browser_profiles
+  platform.rs      # release target/asset contract and host mapping
+  update.rs        # crates.io-authoritative binary-first self-update
   core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
   meta/            # MetadataSearchAdapter + 36 vendored engines (+ local workspace backend) covering 37 registered provider IDs, forge adapter, planners, inventory cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
@@ -156,6 +158,7 @@ Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/ski
 - **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded HTTP bytes or bounded rendered browser DOM before extraction. A fresh raw hit can create a missing derived representation locally, including changed HTML extraction/link settings and PDF page selection. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params and preserves transport provenance. Agent-visible `FetchCachePolicy` (`default`/`bypass`/`refresh`) plus caller `max_cache_age_seconds` (tightens only) control reuse/revalidation; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy. HTTP 304 is a revalidation signal, not a redirect. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes. See `architecture/fetch.md`.
 - **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`. See `architecture/mcp.md`.
 - **Windows source/runtime qualification:** Unix-specific hardening paths are conditionally unavailable on Windows; Windows release jobs still compile and smoke the default binary on native x86-64 and ARM64 runners, and failures remain explicit release blockers.
+- **Self-update:** `eggsearch update --check` only compares against crates.io `crate.max_stable_version`; `eggsearch update` consumes the exact matching GitHub tag asset, verifies SHA-256 and candidate identity before replacing `current_exe()`, and uses isolated exact-version Cargo only for unsupported hosts or confirmed asset HTTP 404. It never elevates or restarts services; phase 9 owns restart integration.
 
 ## MCP Tools (10 total)
 

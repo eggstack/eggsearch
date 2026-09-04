@@ -36,6 +36,8 @@ pub mod core;
 pub mod fetch;
 pub mod mcp;
 pub mod meta;
+pub mod platform;
+pub mod update;
 
 #[cfg(feature = "mock")]
 pub use meta::local_inventory_cache::test_harness as bounded_command_test;

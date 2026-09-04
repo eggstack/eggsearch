@@ -78,6 +78,12 @@ enum Commands {
         #[arg(short, long)]
         json: bool,
     },
+    /// Check for and install the latest stable release.
+    Update {
+        /// Only compare versions; never download, compile, or replace.
+        #[arg(long, default_value_t = false)]
+        check: bool,
+    },
     /// Open a headed browser for manual login/verification.
     #[cfg(feature = "browser")]
     BrowserLogin {
@@ -106,47 +112,58 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
 
-    let cfg = config::load(cli.config.as_deref())?;
-
     match cli.command {
-        Commands::Doctor { probe } => commands::doctor::run(&cfg, cli.config.as_ref(), probe).await,
-        Commands::Search {
-            query,
-            max_results,
-            json,
-            providers,
-        } => commands::search::run(&cfg, &query, max_results, json, &providers).await,
-        Commands::Mcp { cmd } => match cmd {
-            McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
-        },
-        Commands::Providers { json } => commands::providers::run(&cfg, json),
-        Commands::Fetch {
-            url,
-            max_chars,
-            timeout_ms,
-            metadata_only,
-            markdown,
-            include_links,
-            json,
-        } => {
-            commands::fetch::run(
-                &cfg,
-                &url,
-                max_chars,
-                timeout_ms,
-                metadata_only,
-                markdown,
-                include_links,
-                json,
-            )
-            .await
+        Commands::Update { check } => commands::update::run(check).await,
+        command => {
+            let cfg = config::load(cli.config.as_deref())?;
+            match command {
+                Commands::Doctor { probe } => {
+                    commands::doctor::run(&cfg, cli.config.as_ref(), probe).await
+                }
+                Commands::Search {
+                    query,
+                    max_results,
+                    json,
+                    providers,
+                } => commands::search::run(&cfg, &query, max_results, json, &providers).await,
+                Commands::Mcp { cmd } => match cmd {
+                    McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
+                },
+                Commands::Providers { json } => commands::providers::run(&cfg, json),
+                Commands::Fetch {
+                    url,
+                    max_chars,
+                    timeout_ms,
+                    metadata_only,
+                    markdown,
+                    include_links,
+                    json,
+                } => {
+                    commands::fetch::run(
+                        &cfg,
+                        &url,
+                        max_chars,
+                        timeout_ms,
+                        metadata_only,
+                        markdown,
+                        include_links,
+                        json,
+                    )
+                    .await
+                }
+                #[cfg(feature = "browser")]
+                Commands::BrowserLogin { origin, profile } => {
+                    commands::browser_login::run(&cfg, &origin, profile.as_deref()).await
+                }
+                #[cfg(feature = "browser")]
+                Commands::BrowserProfiles { cmd } => {
+                    commands::browser_profiles::run(&cfg, &cmd).await
+                }
+                Commands::Update { .. } => {
+                    unreachable!("update is handled before configuration loading")
+                }
+            }
         }
-        #[cfg(feature = "browser")]
-        Commands::BrowserLogin { origin, profile } => {
-            commands::browser_login::run(&cfg, &origin, profile.as_deref()).await
-        }
-        #[cfg(feature = "browser")]
-        Commands::BrowserProfiles { cmd } => commands::browser_profiles::run(&cfg, &cmd).await,
     }
 }
 

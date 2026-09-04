@@ -1,6 +1,6 @@
 # Phase 7 — Binary-First Self-Update
 
-Status: planned
+Status: implemented
 Depends on: phase 6 asset contract
 Baseline for planning: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Roadmap: `plans/deployment-roadmap.md`
@@ -311,3 +311,19 @@ Phase 7 is complete only when:
 14. phase 6 target/asset contract and updater mapping agree under tests;
 15. `make check` passes on the exact final candidate;
 16. `registry.md` and this phase status are updated in the closure commit.
+
+## Closure evidence
+
+Implemented in the binary-first updater (`src/platform.rs` and `src/update.rs`)
+with the `eggsearch update` and `eggsearch update --check` CLI commands. The
+all-features test suite covers stable semantic comparison, pre-release and
+malformed registry rejection, bounded registry responses, all phase-6 target
+and asset mappings, exact tag URL construction, checksum parsing and mismatch
+fail-closed behavior, candidate identity checks, 404-only fallback eligibility,
+isolated Cargo arguments, permission guidance, and fixture replacement. The
+fixture replacement path never targets the test runner; actual running-image
+replacement uses `self-replace` on Unix and Windows.
+
+Routine CI remains network-free. Native Windows running-image smoke is provided
+by the cross-platform release qualification path and is not required by the
+ordinary repository CI job.
