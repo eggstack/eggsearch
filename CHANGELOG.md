@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-09-04
+
 ### Added
 
 - **Tavily search provider and workstream closure (phase 5).** Opt-in `tavily` engine (`POST https://api.tavily.com/search`, `Authorization: Bearer TAVILY_API_KEY`) using the provider-neutral request/evidence model. Stable `search_depth=basic` with `chunks_per_source` 1-3 derived from `excerpt_count`; native `topic` news routing, `time_range`/`start_date`/`end_date`, strict `include_domains`/`exclude_domains` (`include_domains_mode=filter`), `country` (ISO-to-name mapping, general topic only), `language` with `filter_by_language=true`, and boolean `safe_search` (`Off -> false`, `Moderate|Strict -> true` with `Strict` documented as approximate). Source `content` split on `[...]` into bounded `ProviderSnippet` excerpts with first chunk as snippet; `include_answer`, `include_raw_content`, `include_images`, and `auto_parameters` always false. No result timestamps claimed. Missing credentials stay provider-local; defaults/keyless baseline and MCP tool count unchanged. New `tests/tavily.rs` and `tests/phase5_closure.rs` suites (constraint matrix, determinism/budget, trust, CodeGG compatibility); docs, `architecture/` deep dives, skills, and provider inventories updated. Deferred extensions recorded as insufficient demonstrated need (no `site_map` tool, no Firecrawl Research Index integration).

@@ -992,7 +992,7 @@ dependencies = [
 
 [[package]]
 name = "eggsearch"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "chromiumoxide",

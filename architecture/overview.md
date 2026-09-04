@@ -2,7 +2,7 @@
 
 **eggsearch** is a lightweight MCP (Model Context Protocol) metasearch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. Transport is MCP over stdio.
 
-Single library + binary crate (not a workspace). All source under `src/`. Version `0.3.7`, edition 2021, MSRV 1.88. Linux/macOS only — Windows is unsupported (Unix-specific APIs: `openat2`, `setsid`, process groups).
+Single library + binary crate (not a workspace). All source under `src/`. Version `0.3.8`, edition 2021, MSRV 1.88. Linux/macOS only — Windows is unsupported (Unix-specific APIs: `openat2`, `setsid`, process groups).
 
 This document is the bird's-eye view: what each module is for, how they connect, and where to go for depth. Each component links to a dedicated deep dive in this directory. Use it as the entry point when focusing review on one discrete aspect of the codebase.
 
