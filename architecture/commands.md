@@ -1,6 +1,6 @@
 # CLI Commands Deep Dive
 
-**Location:** `src/commands/` (8 files)
+**Location:** `src/commands/` (9 files)
 **Purpose:** CLI subcommands for direct user interaction. Entry point is `src/main.rs`.
 
 ---
@@ -14,6 +14,7 @@
 | `search.rs` | `eggsearch search` — live metasearch from CLI |
 | `fetch.rs` | `eggsearch fetch` — fetch and extract a URL from CLI |
 | `providers.rs` | `eggsearch providers` — show provider configuration/status |
+| `update.rs` | `eggsearch update` — check and install the latest stable binary |
 | `mcp.rs` | `eggsearch mcp stdio` — start MCP server |
 | `browser_login.rs` | `eggsearch browser-login` — headed browser login (feature-gated `browser`) |
 | `browser_profiles.rs` | `eggsearch browser-profiles` — manage persistent profiles (feature-gated `browser`) |
@@ -31,6 +32,7 @@ Commands:
   mcp stdio        Run the MCP server over stdio
   providers        Show provider configuration and status
   fetch            Fetch and extract content from a URL
+  update           Check for and install the latest stable release
   browser-login    Open a headed browser for manual login/verification
   browser-profiles Manage persistent browser profiles
 ```
@@ -110,6 +112,21 @@ eggsearch providers [--json]
 - Provider list with capabilities
 - Configuration status
 - Feature flag requirements
+
+### `update` (`update.rs`)
+
+Check for or install the latest stable release.
+
+```bash
+eggsearch update [--check]
+```
+
+`--check` performs crates.io version discovery and semantic comparison only.
+Without it, the updater prefers the exact GitHub Release asset for the current
+host, verifies its checksum and `--version` identity, and atomically replaces
+the current executable. Unsupported hosts and confirmed exact-asset 404s use
+an isolated exact-version Cargo build; other failures stop without compiling.
+The command does not load search configuration and does not restart services.
 
 ### `mcp stdio` (`mcp.rs`)
 

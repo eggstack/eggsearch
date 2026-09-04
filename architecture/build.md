@@ -120,6 +120,10 @@ strip = true
 | `release-build` | `cargo build --locked --release` | Release build |
 | `publish-check` | `cargo publish --dry-run --locked` | Pre-publish check |
 
+The binary-first updater is covered by the all-features test suite. Its routine
+tests use local HTTP fixtures and fixture executables; they do not contact
+crates.io or GitHub and never replace the test runner.
+
 ### Packaging target
 
 | `packaging-check` | `./packaging/check-contract.sh` | Cross-check target/asset declarations and installer guards |

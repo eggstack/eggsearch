@@ -60,3 +60,14 @@ They invoke Cargo only for an unsupported target or a confirmed binary HTTP
 failures stop immediately. They never invoke `sudo` or request UAC elevation.
 Service registration is deliberately absent until a later deployment phase.
 
+## Self-update
+
+`eggsearch update --check` uses crates.io `crate.max_stable_version` as the
+stable-version authority. A normal update requests the exact `vX.Y.Z` asset and
+checksum from this contract, verifies bounded bytes and candidate identity, and
+replaces `std::env::current_exe()` through the cross-platform `self-replace`
+primitive. Only an unsupported host or a confirmed exact-asset HTTP 404 may
+enter an exact-version Cargo build under a temporary `--root`; transient
+network, status, checksum, and identity failures are hard stops. No updater
+path invokes elevation or restarts processes. Persistent-service restart
+integration is reserved for phase 9.

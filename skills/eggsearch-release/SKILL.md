@@ -70,6 +70,13 @@ installer behavior. The routine `make check` remains network-free; release
 workflow jobs are the only place that require GitHub/crates.io and hosted
 cross-platform runners.
 
+The installed `eggsearch update` command consumes the same release target and
+asset contract. It uses crates.io `crate.max_stable_version`, requests the exact
+`vX.Y.Z` asset/checksum, verifies both checksum and candidate identity, and only
+uses an isolated exact-version Cargo build for unsupported targets or confirmed
+asset HTTP 404. It never invokes elevation or restarts services; phase 9 owns
+service restart integration.
+
 ## Feature Flags
 
 | Flag | Purpose | Default? |

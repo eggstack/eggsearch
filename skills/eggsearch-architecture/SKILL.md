@@ -17,6 +17,8 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `lib.rs` — library root, re-exports `core`, `fetch`, `mcp`, `meta`
 - `config.rs` — CLI config loader
 - `commands/` — subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
+- `platform.rs` — shared host, target, public asset, and exact release URL contract
+- `update.rs` — crates.io-authoritative self-update, candidate verification, and replacement orchestration
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
 - `meta/` — MetadataSearchAdapter + 36 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
@@ -105,6 +107,8 @@ not remove the underlying attempts.
 - MCP tools return `Result<serde_json::Value, ToolError>`
 - Additive schema evolution (new optional fields, never removal)
 - Anonymous browser rendering uses the warm ephemeral lifecycle; profile-scoped rendering uses the resolved opaque profile's Eggsearch-owned `chrome-data` directory and default browser context for one request
+- `eggsearch update --check` is registry-only and never mutates; normal update uses the exact matching `vX.Y.Z` asset, verifies checksum and candidate identity, and only falls back to isolated exact-version Cargo for unsupported hosts or confirmed asset 404
+- Self-update replacement targets `std::env::current_exe()` and never invokes elevation or restarts arbitrary processes; persistent-service restart belongs to phase 9
 - Raw cache entries distinguish original HTTP bytes from rendered browser DOM; a fresh raw hit may be re-derived locally without another network request
 - Search excerpts are bounded source passages (max 3 per card, 500 chars each, 1,200 total) merged deterministically in RRF, sanitized through the trust pipeline, and never part of stable IDs; unrequested excerpts are stripped before aggregation
 - Focus selection is a deterministic lexical projection of extracted chunks (no traversal, no models), additive on the fetch response and never in cache keys
