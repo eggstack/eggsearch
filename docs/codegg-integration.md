@@ -49,9 +49,19 @@ eggsearch mcp stdio
 
 ### Transport
 
-eggsearch uses **MCP over stdio** only (no HTTP/SSE). The harness starts
-the server as a child process and communicates via stdin/stdout JSON
-messages.
+CodeGG's default integration remains **MCP over stdio**. The harness starts
+the server as a child process and communicates via stdin/stdout JSON messages.
+
+For an explicitly configured persistent local server, eggsearch also supports
+Streamable HTTP:
+
+```bash
+eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp
+```
+
+Use the endpoint `http://127.0.0.1:11320/mcp` in CodeGG's explicit remote MCP
+declaration. This does not change the default stdio bootstrap. The listener is
+loopback-only and `GET /healthz` is the identity-safe readiness check.
 
 ```bash
 # Start the server

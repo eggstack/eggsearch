@@ -55,6 +55,7 @@ make bench-check        # compile-check benches without running
 | `tests/security_applicability_corpus.rs` | None | Security applicability pipeline regression |
 | `tests/browser_profiles.rs` | `browser` | Browser profile management |
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
+| `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 
 This table is representative, not exhaustive — 50 test binaries exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
@@ -67,6 +68,12 @@ cargo test --locked --all-features --test forge_adapter
 cargo test --locked --all-features --test dispatch_fault_injection
 cargo test --locked --all-features --test adversarial_corpus
 cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test static_guards
+```
+
+For the persistent MCP transport:
+
+```bash
+cargo test --locked --all-features --test mcp_http
 ```
 
 ## Code Style

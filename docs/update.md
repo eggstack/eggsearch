@@ -49,6 +49,6 @@ written, it prints the resolved elevated rerun command, for example:
 sudo /usr/local/bin/eggsearch update
 ```
 
-Phase 9 will add persistent-service state and restart integration. Until then,
-`eggsearch mcp stdio` remains client-owned and an update does not restart a
-running service or stdio child.
+Phase 9 will add persistent-service registration and restart integration.
+`eggsearch mcp stdio` remains client-owned, and an update does not restart a
+running `mcp serve` process or stdio child.

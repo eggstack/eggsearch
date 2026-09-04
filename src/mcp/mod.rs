@@ -19,11 +19,19 @@
 
 #![allow(missing_docs)]
 
+pub mod http;
 pub mod policy;
 pub mod server;
 pub mod state;
 pub mod tools;
 
+pub use http::{McpPath, ServeOptions};
 pub use policy::Policy;
 pub use server::EggsearchServer;
 pub use state::ServerState;
+
+pub fn build_server(config: crate::core::config::AppConfig) -> anyhow::Result<EggsearchServer> {
+    Ok(EggsearchServer::new(std::sync::Arc::new(
+        ServerState::build(config)?,
+    )))
+}

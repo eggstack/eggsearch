@@ -5,6 +5,8 @@ mod config;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use eggsearch::mcp::{McpPath, ServeOptions};
+use std::net::SocketAddr;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -105,6 +107,15 @@ enum Commands {
 enum McpCmd {
     /// Run the MCP server over stdio.
     Stdio,
+    /// Run the MCP server over persistent loopback Streamable HTTP.
+    Serve {
+        /// Loopback socket address to bind.
+        #[arg(long, default_value = "127.0.0.1:11320")]
+        bind: SocketAddr,
+        /// MCP endpoint path.
+        #[arg(long, default_value = "/mcp")]
+        path: McpPath,
+    },
 }
 
 #[tokio::main]
@@ -128,6 +139,9 @@ async fn main() -> Result<()> {
                 } => commands::search::run(&cfg, &query, max_results, json, &providers).await,
                 Commands::Mcp { cmd } => match cmd {
                     McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
+                    McpCmd::Serve { bind, path } => {
+                        commands::mcp::run_http(&cfg, ServeOptions { bind, path }).await
+                    }
                 },
                 Commands::Providers { json } => commands::providers::run(&cfg, json),
                 Commands::Fetch {
@@ -178,4 +192,44 @@ fn init_tracing(verbose: u8) {
         .with_target(false)
         .with_writer(std::io::stderr)
         .try_init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mcp_serve_defaults_are_stable() {
+        let cli = Cli::try_parse_from(["eggsearch", "mcp", "serve"]).unwrap();
+        let Commands::Mcp {
+            cmd: McpCmd::Serve { bind, path },
+        } = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(bind, eggsearch::mcp::http::DEFAULT_BIND);
+        assert_eq!(path.as_str(), eggsearch::mcp::http::DEFAULT_PATH);
+    }
+
+    #[test]
+    fn mcp_serve_accepts_typed_socket_and_path_values() {
+        let cli = Cli::try_parse_from([
+            "eggsearch",
+            "mcp",
+            "serve",
+            "--bind",
+            "[::1]:12345",
+            "--path",
+            "/local/mcp",
+        ])
+        .unwrap();
+        let Commands::Mcp {
+            cmd: McpCmd::Serve { bind, path },
+        } = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(bind, "[::1]:12345".parse().unwrap());
+        assert_eq!(path.as_str(), "/local/mcp");
+    }
 }

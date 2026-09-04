@@ -35,7 +35,9 @@ command -v python3 >/dev/null 2>&1 || {
 
 python3 - "$BINARY" "$EXPECTED_VERSION" <<'PY'
 import json
+import http.client
 import selectors
+import socket
 import subprocess
 import sys
 import time
@@ -120,4 +122,96 @@ finally:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=5)
+
+with socket.socket() as probe:
+    probe.bind(("127.0.0.1", 0))
+    http_port = probe.getsockname()[1]
+
+http_process = subprocess.Popen(
+    [binary, "mcp", "serve", "--bind", f"127.0.0.1:{http_port}"],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.PIPE,
+    text=True,
+)
+
+def http_request(method, path, body=None, headers=None):
+    connection = http.client.HTTPConnection("127.0.0.1", http_port, timeout=15)
+    connection.request(method, path, body=body, headers=headers or {})
+    response = connection.getresponse()
+    payload = response.read()
+    response_headers = response.headers
+    connection.close()
+    return response, response_headers, payload
+
+try:
+    health = None
+    for _ in range(50):
+        try:
+            candidate, _, payload = http_request("GET", "/healthz")
+            if candidate.status == 200:
+                health = json.loads(payload)
+                break
+        except (ConnectionError, OSError, TimeoutError):
+            pass
+        time.sleep(0.1)
+    if health is None:
+        raise RuntimeError("HTTP health endpoint did not become ready")
+    if health.get("service") != "eggsearch" or health.get("status") != "ready" or health.get("version") != expected_version:
+        raise RuntimeError(f"unexpected HTTP health response: {health}")
+
+    common_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    initialize_body = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "eggsearch-release-smoke", "version": "1"},
+        },
+    })
+    response, response_headers, payload = http_request("POST", "/mcp", initialize_body, common_headers)
+    if response.status != 200:
+        raise RuntimeError(f"HTTP initialize failed: {response.status}: {payload[:200]!r}")
+    session_id = response_headers.get("Mcp-Session-Id")
+    if not session_id:
+        raise RuntimeError("HTTP initialize did not return a session identifier")
+    events = [line[6:] for line in payload.decode().splitlines() if line.startswith("data: ") and line[6:]]
+    initialize = json.loads(events[0])
+    server_info = initialize.get("result", {}).get("serverInfo", {})
+    if server_info.get("name") != "eggsearch" or server_info.get("version") != expected_version:
+        raise RuntimeError(f"unexpected HTTP server info: {server_info}")
+
+    headers = dict(common_headers)
+    headers.update({"MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": session_id})
+    response, _, _ = http_request(
+        "POST", "/mcp", json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}), headers
+    )
+    if response.status != 202:
+        raise RuntimeError(f"HTTP initialized notification failed: {response.status}")
+    response, _, payload = http_request(
+        "POST", "/mcp", json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}), headers
+    )
+    if response.status != 200:
+        raise RuntimeError(f"HTTP tools/list failed: {response.status}: {payload[:200]!r}")
+    events = [line[6:] for line in payload.decode().splitlines() if line.startswith("data: ") and line[6:]]
+    tools = json.loads(events[0]).get("result", {}).get("tools", [])
+    names = {tool.get("name") for tool in tools}
+    if names != expected_tools:
+        raise RuntimeError(f"unexpected HTTP MCP tool set: {sorted(names)}")
+finally:
+    http_process.terminate()
+    try:
+        http_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        http_process.kill()
+        http_process.wait(timeout=5)
+        raise RuntimeError("HTTP MCP server did not stop gracefully")
+    if http_process.returncode != 0:
+        stderr = http_process.stderr.read() if http_process.stderr else ""
+        raise RuntimeError(f"HTTP MCP server exited with {http_process.returncode}: {stderr[-500:]}")
 PY

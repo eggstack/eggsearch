@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   crates.io stable metadata, exact GitHub release assets, bounded SHA-256 and
   candidate identity verification, and exact-version Cargo fallback only for
   unsupported hosts or confirmed asset 404 responses.
+- Persistent loopback-only Streamable HTTP MCP via `eggsearch mcp serve`, with
+  typed bind/path options, rmcp 3.2.0 transport support, bounded `/healthz`
+  readiness, request hardening, graceful shutdown, shared stdio/HTTP service
+  construction, and native release smoke coverage.
 
 ## [0.3.8] - 2026-09-04
 

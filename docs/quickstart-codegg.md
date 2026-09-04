@@ -5,7 +5,7 @@ This guide walks through installing eggsearch, configuring it, and using it from
 ## Prerequisites
 
 - Rust 1.88 or later installed
-- An MCP-compatible client (CodeGG, Claude Code, or any client supporting MCP over stdio)
+- An MCP-compatible client (CodeGG, Claude Code, or any client supporting MCP over stdio or Streamable HTTP)
 
 ## Installation
 
@@ -79,9 +79,21 @@ eggsearch --config /path/to/config.toml mcp stdio
 
 The server reads MCP JSON-RPC messages from stdin and writes responses to stdout.
 
+For a persistent local endpoint instead, run:
+
+```bash
+eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp
+```
+
+Check `http://127.0.0.1:11320/healthz` before connecting. This mode is
+foreground-only and loopback-only; the installer does not register it as a
+service.
+
 ## Client Configuration
 
-Configure your MCP client to launch eggsearch as a child process over stdio. The exact configuration depends on your client.
+Configure your MCP client to launch eggsearch as a child process over stdio, or
+declare the explicit local HTTP endpoint if the client supports Streamable HTTP.
+The exact configuration depends on your client.
 
 ### CodeGG
 
@@ -93,6 +105,18 @@ In your CodeGG MCP server configuration:
     "eggsearch": {
       "command": "eggsearch",
       "args": ["mcp", "stdio"]
+    }
+  }
+}
+```
+
+An HTTP-capable client can use the persistent endpoint explicitly:
+
+```json
+{
+  "mcpServers": {
+    "eggsearch-http": {
+      "url": "http://127.0.0.1:11320/mcp"
     }
   }
 }

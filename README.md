@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/crates/l/eggsearch.svg)](https://github.com/eggstack/eggsearch#license)
 [![Downloads](https://img.shields.io/crates/d/eggsearch.svg)](https://crates.io/crates/eggsearch)
 
-Lightweight MCP (Model Context Protocol) search and fetch server for AI agents. Combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio.
+Lightweight MCP (Model Context Protocol) search and fetch server for AI agents. Combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio or explicit loopback-only Streamable HTTP.
 
 **No API keys are required for the default installation.** eggsearch ships with keyless web, fetch, advisory, registry, and scholarly paths. Credentialed forge and search adapters are optional enhancements.
 
@@ -60,9 +60,22 @@ cargo install eggsearch --locked
 
 ## Run
 
+For a client-owned local process, use stdio:
+
 ```bash
 eggsearch mcp stdio
 ```
+
+For a persistent foreground endpoint, use Streamable HTTP:
+
+```bash
+eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp
+```
+
+Persistent mode accepts loopback binds only, serves MCP at `/mcp`, and exposes
+`GET /healthz` for local readiness checks. The ordinary installer does not
+start or register a service. See [Deployment](docs/deployment.md) for the
+transport choice and safety boundaries.
 
 ## MCP Tools
 
@@ -120,4 +133,5 @@ Runs formatting, clippy, feature compilation, and the deterministic test suite. 
 - [MCP Response Contract](architecture/codegg-contract.md) — trust model, warnings, deterministic IDs
 - [Release Process](docs/release.md) — preparation, verification, publication
 - [Installation](docs/installation.md) — binary targets, installers, checksums, and fallback rules
+- [Deployment](docs/deployment.md) — stdio versus persistent loopback Streamable HTTP
 - [Update](docs/update.md) — binary-first self-update, verification, and fallback rules

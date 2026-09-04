@@ -61,7 +61,7 @@ crates.io, tag and push `vX.Y.Z`. `.github/workflows/release-binaries.yml`
 validates the tag, package version, tagged commit, clean checkout, lockfile,
 and registry visibility before building. It produces default-feature assets
 using the contract in `packaging/release-targets.txt`, runs native CLI/MCP
-smoke where possible, qualifies ARMv7 under QEMU, and assembles a draft
+stdio and loopback Streamable HTTP smoke where possible, qualifies ARMv7 under QEMU, and assembles a draft
 release with checksums and the reviewed installers. It refuses to overwrite a
 published release and never publishes the crate.
 

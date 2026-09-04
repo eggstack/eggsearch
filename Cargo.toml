@@ -44,6 +44,7 @@ live-smoke = ["mock"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 futures = "0.3"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
@@ -53,7 +54,8 @@ schemars = "1"
 thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-rmcp = { version = "1", features = ["server", "transport-io", "macros"] }
+rmcp = { version = "3.2.0", features = ["server", "transport-io", "transport-streamable-http-server", "macros"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 url = { version = "2", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json"] }
 semver = "1"

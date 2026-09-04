@@ -3,8 +3,9 @@
 **Location:** `packaging/`, `.github/workflows/release-binaries.yml`
 
 Phase 6 adds a binary distribution boundary without changing the MCP
-application architecture. The crate remains one default-feature binary and
-`eggsearch mcp stdio` remains the client-owned lifecycle.
+application architecture. The crate remains one default-feature binary;
+`eggsearch mcp stdio` remains the client-owned lifecycle and
+`eggsearch mcp serve` is the explicit foreground persistent lifecycle.
 
 ## Contract
 
@@ -36,8 +37,9 @@ The release-only workflow runs for `v*` tag pushes or an explicit
 Linux x86-64 and ARM64 use cargo-zigbuild; ARMv7 is built and checked under
 QEMU before it can be attached. macOS uses native Intel and Apple Silicon
 runners. Windows x86-64 and ARM64 use separate native runner labels. All
-native jobs run `--version`, `--help`, and a keyless MCP initialize plus
-`tools/list` smoke. The ARMv7 hosted job uses the full CLI smoke under QEMU;
+native jobs run `--version`, `--help`, keyless MCP stdio initialize plus
+`tools/list`, and loopback Streamable HTTP health/initialize plus `tools/list`
+smoke. The ARMv7 hosted job uses the full CLI smoke under QEMU;
 its protocol path is intentionally not treated as reliable release evidence.
 
 The assembler verifies all seven binaries and checksums from the same workflow

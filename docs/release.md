@@ -44,8 +44,9 @@ git push origin vX.Y.Z
 The `Release binaries` workflow validates the tag, checked-out commit,
 `Cargo.lock`, and exact crates.io version before starting the matrix. It builds
 default-feature assets for the seven targets in [installation.md](installation.md),
-uses a glibc 2.17 floor for Linux GNU artifacts, runs CLI and keyless MCP
-stdio/tool-list smoke tests, and writes checksums only after smoke completes.
+uses a glibc 2.17 floor for Linux GNU artifacts, runs CLI plus keyless MCP
+stdio and Streamable HTTP/health/tool-list smoke tests, and writes checksums
+only after smoke completes.
 The ARMv7 job runs CLI smoke under QEMU; native jobs run the full protocol
 smoke. macOS artifacts are unsigned.
 
@@ -65,7 +66,8 @@ checksums.
 Installers never elevate and only use Cargo for unsupported targets or a
 confirmed HTTP 404 for the exact binary. They fail closed on all other download,
 integrity, identity, or version errors. Service installation is not part of
-this phase.
+this phase; the smoke starts `mcp serve` in the foreground and requests its
+bounded graceful shutdown.
 
 The installed `eggsearch update` command consumes this same seven-target asset
 contract. crates.io `crate.max_stable_version` is its version authority; it then

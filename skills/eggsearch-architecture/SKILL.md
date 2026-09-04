@@ -22,7 +22,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
 - `meta/` — MetadataSearchAdapter + 36 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
-- `mcp/` — MCP server over stdio (rmcp), 10 tool definitions, server state, policy
+- `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), 10 tool definitions, server state, policy
 
 ## Module Responsibilities
 
@@ -31,7 +31,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 | `core` | `identity.rs`, `sanitize.rs`, `warning.rs`, `evidence_role.rs`, `workflow_coverage.rs`, `conflict.rs`, `retrieval_status.rs`, `evidence_postprocess.rs`, `local.rs` | Canonical data model with zero external dependencies beyond serialization |
 | `meta` | `adapter.rs`, `forge_adapter.rs`, `local_backend.rs`, `local_inventory_cache.rs`, `local_inventory.rs`, `dispatch.rs`, `planner.rs` | Search orchestration, RRF aggregation, provider health, forge API client, local workspace |
 | `fetch` | `client.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, SSRF protection, content extraction, cache, and browser transport |
-| `mcp` | `server.rs`, `state.rs`, `tools.rs`, `policy.rs` | MCP protocol, 10 tool handlers, shared state |
+| `mcp` | `server.rs`, `http.rs`, `state.rs`, `tools.rs`, `policy.rs` | MCP protocol, shared tool service, stdio/HTTP transports, health and shutdown |
 | `packaging` | `packaging/`, `.github/workflows/release-binaries.yml` | Release target contract, checksums, installers, artifact smoke, draft assembly |
 
 ## Adapter Pattern
@@ -112,6 +112,7 @@ not remove the underlying attempts.
 - Raw cache entries distinguish original HTTP bytes from rendered browser DOM; a fresh raw hit may be re-derived locally without another network request
 - Search excerpts are bounded source passages (max 3 per card, 500 chars each, 1,200 total) merged deterministically in RRF, sanitized through the trust pipeline, and never part of stable IDs; unrequested excerpts are stripped before aggregation
 - Focus selection is a deterministic lexical projection of extracted chunks (no traversal, no models), additive on the fetch response and never in cache keys
+- `mcp stdio` remains the client-owned transport; `mcp serve` is persistent Streamable HTTP on loopback only, with `/healthz`, bounded headers/bodies/timeouts, and graceful cancellation. Both use `mcp::build_server`.
 - Cache policy (`default`/`bypass`/`refresh`) and caller max-age tighten reuse only; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy
 - `NotApplicable` is reserved for operations that do not apply; provider incapability is `SkippedCapabilityUnavailable`
 - `RetrievalAttempt` carries an optional `operation_id` field; ledger uniqueness is `(provider_id, operation_id, role)`

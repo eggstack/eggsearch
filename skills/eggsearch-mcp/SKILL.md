@@ -5,7 +5,13 @@ description: Use when integrating with eggsearch MCP tools, selecting the right 
 
 # eggsearch MCP Integration Skill
 
-Use when integrating with eggsearch MCP tools, selecting the right tool for a task, understanding workflows, trust model, or evidence bundles.
+Use when integrating with eggsearch MCP tools, selecting the right tool for a task, understanding workflows, trust model, evidence bundles, or choosing stdio versus persistent loopback Streamable HTTP.
+
+Transport selection:
+
+- Use `eggsearch mcp stdio` for the default client-owned child process. It remains the backward-compatible CodeGG bootstrap.
+- Use `eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp` for an explicitly configured persistent local endpoint. It exposes `GET /healthz`, accepts loopback only, and uses the same server/tool factory as stdio.
+- The HTTP transport is rmcp 3.2.0 Streamable HTTP. It supports legacy initialize sessions and current stateless discovery/request metadata. Do not assume HTTP is public or LAN-capable.
 
 The full stable machine-readable response contract for harness developers lives in `architecture/codegg-contract.md`.
 

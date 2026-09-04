@@ -73,9 +73,10 @@ checksum download failures, malformed or mismatched checksums, candidate
 execution failures, and candidate identity/version mismatches are hard
 failures. They never trigger a potentially long local Rust compilation.
 
-The install command only installs the executable. Persistent service
-registration and startup supervision are separate future work and are not
-available from these installers.
+The install command only installs the executable. It does not start or
+register a service. To run the persistent local endpoint in the foreground,
+start it explicitly with `eggsearch mcp serve`; service registration and
+startup supervision remain separate deployment work.
 
 ## Updating an installed binary
 

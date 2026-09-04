@@ -1,6 +1,6 @@
 # Phase 8 — Persistent Streamable HTTP MCP
 
-Status: planned
+Status: implemented
 Depends on: none for protocol work; should land after or alongside phase 6 so release artifacts exercise the final CLI surface
 Baseline for planning: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Roadmap: `plans/deployment-roadmap.md`
@@ -269,3 +269,23 @@ Phase 8 is complete only when:
 12. CodeGG can connect to the persistent endpoint through an explicit remote MCP declaration without changing its default stdio behavior;
 13. `make check` passes on the exact final candidate;
 14. `registry.md` and this phase status are updated in the closure commit.
+
+## Closure evidence
+
+- `rmcp` 3.2.0 is selected with `transport-streamable-http-server`; its
+  declared MSRV is Rust 1.88, matching this crate. Axum 0.8 supplies the
+  listener and routing layer.
+- `src/mcp/http.rs` uses rmcp's Streamable HTTP service for legacy session
+  requests and current stateless discovery/request metadata, with loopback
+  Host/Origin policy, 1 MiB MCP body cap, bounded headers, request timeout,
+  `/healthz`, and cancellation-driven graceful shutdown.
+- `tests/mcp_http.rs` covers CLI/endpoint validation, health, both protocol
+  flows, local tool execution, shared tool definitions, malformed and bounded
+  requests, origin/Host rejection, session cleanup, and shutdown.
+- `packaging/release-smoke.sh` and `packaging/release-smoke.ps1` exercise
+  health, initialize, initialized, and `tools/list` against a staged persistent
+  HTTP server in addition to the existing stdio smoke. Unix smoke requests
+  SIGTERM; Windows SCM cancellation uses the shared serve cancellation seam in
+  phase 9, while the native script validates the HTTP lifecycle and performs a
+  bounded process teardown.
+- `make check` is the final local CI gate for this closure commit.

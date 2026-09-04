@@ -1,6 +1,6 @@
 # Testing Infrastructure Deep Dive
 
-**Location:** `tests/` (50 test binaries), `fuzz/` (22 targets)
+**Location:** `tests/` (51 test binaries), `fuzz/` (22 targets)
 **Purpose:** Comprehensive test suites for correctness, security, and performance.
 
 ---
@@ -10,6 +10,11 @@
 ### Integration Tests (`tests/integration.rs`)
 
 MCP tool input validation, provider failures, tool response shape.
+
+### Streamable HTTP Tests (`tests/mcp_http.rs`)
+
+Loopback lifecycle, health identity, current and legacy protocol flows, shared
+tool definitions, request hardening, session cleanup, and shutdown behavior.
 
 **Key scenarios:**
 - Input validation for all 10 tools

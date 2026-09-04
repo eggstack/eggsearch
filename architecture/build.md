@@ -44,7 +44,9 @@ license = "MIT"
 | `thiserror` | 1 | Error derive macros |
 | `tracing` | 0.1 | Structured logging |
 | `tracing-subscriber` | 0.3 | Log formatting |
-| `rmcp` | 1 (server, transport-io, macros) | MCP protocol |
+| `rmcp` | 3.2.0 (server, transport-io, transport-streamable-http-server, macros) | MCP protocol and Streamable HTTP server |
+| `axum` | 0.8 (http1, tokio) | Persistent HTTP listener and health routing |
+| `tokio-util` | 0.7 | Cancellation tokens shared with rmcp HTTP transport |
 
 #### HTTP & Parsing
 
@@ -234,6 +236,8 @@ make check
 
 # Start MCP server
 cargo run -- mcp stdio
+# Start persistent loopback HTTP MCP
+cargo run -- mcp serve
 ```
 
 ### Feature Development

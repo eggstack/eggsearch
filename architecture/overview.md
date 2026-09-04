@@ -1,6 +1,6 @@
 # eggsearch Architecture Overview
 
-**eggsearch** is a lightweight MCP (Model Context Protocol) metasearch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. Transport is MCP over stdio.
+**eggsearch** is a lightweight MCP (Model Context Protocol) metasearch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. MCP transport is client-owned stdio or explicit loopback-only Streamable HTTP.
 
 Single library + binary crate (not a workspace). All application source under `src/`. Version `0.3.8`, edition 2021, MSRV 1.88. Release packaging lives under `packaging/`; source/runtime qualification remains Unix-focused while the release workflow explicitly qualifies Windows targets.
 
@@ -14,14 +14,14 @@ This document is the bird's-eye view: what each module is for, how they connect,
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CLI Entry Point                          │
 │                     src/main.rs + src/commands/                 │
-│  doctor | search | fetch | providers | update | mcp stdio      │
+│  doctor | search | fetch | providers | update | mcp stdio/serve│
 │  browser-*                                                     │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                        MCP Server                               │
-│                  src/mcp/ (rmcp stdio transport)                │
+│              src/mcp/ (rmcp stdio + HTTP transports)            │
 │  10 tools: web_search, web_fetch, batch_fetch, provider_status │
 │            repo_search, repo_fetch, repo_map, security_search  │
 │            research_search, build_evidence_bundle               │
@@ -79,8 +79,8 @@ fetch ↗
 | HTTP fetch pipeline | `src/fetch/` (10 top-level files) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
-| MCP server & tools | `src/mcp/` (5 files) | rmcp ServerHandler with 10 tools, shared state, policy enforcement | [mcp.md](mcp.md) |
-| CLI commands | `src/commands/` (9 files) | Subcommand wiring: doctor, search, fetch, providers, update, mcp stdio, browser-login/profiles | [commands.md](commands.md) |
+| MCP server & tools | `src/mcp/` (6 files) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
+| CLI commands | `src/commands/` (9 files) | Subcommand wiring: doctor, search, fetch, providers, update, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
 | Testing infrastructure | `tests/` (50 test binaries), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
 | Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |
@@ -155,7 +155,7 @@ Independent of the search path; used by `web_fetch`/`batch_fetch`/`repo_fetch` a
 
 ### commands — CLI surface ([commands.md](commands.md))
 
-Thin wrappers over the same library pieces; `mcp stdio` is how agents run the server. `doctor --probe` diagnoses provider health live.
+Thin wrappers over the same library pieces; `mcp stdio` is the client-owned agent transport and `mcp serve` is the persistent loopback transport. `doctor --probe` diagnoses provider health live.
 
 ---
 
@@ -312,7 +312,8 @@ make release-check            # routine + docs + release build + publish dry-run
 cargo test --locked --all-features          # ~4,800 tests, <2 min
 cargo test --locked --features mock --test integration   # integration only
 
-cargo run -- mcp stdio        # start MCP server
+cargo run -- mcp stdio        # start MCP server over stdio
+cargo run -- mcp serve        # start persistent loopback Streamable HTTP
 cargo run -- search "query"   # CLI search
 cargo run -- fetch <URL>      # CLI fetch
 cargo run -- doctor --probe   # diagnose providers

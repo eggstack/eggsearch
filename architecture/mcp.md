@@ -1,7 +1,7 @@
 # MCP Server Deep Dive
 
-**Location:** `src/mcp/` (5 files)
-**Purpose:** MCP (Model Context Protocol) server exposing 10 stable tools for AI agents. Transport is stdio.
+**Location:** `src/mcp/` (6 files)
+**Purpose:** MCP (Model Context Protocol) server exposing 10 stable tools for AI agents over client-owned stdio or explicit loopback-only Streamable HTTP.
 
 ---
 
@@ -9,13 +9,20 @@
 
 | File | Responsibility |
 |------|---------------|
-| `mod.rs` | Module declarations and re-exports |
+| `mod.rs` | Module declarations, canonical server factory, and re-exports |
 | `server.rs` | `EggsearchServer` — rmcp `ServerHandler` impl, 10 `#[tool]` handlers, `EGGSEARCH_INSTRUCTIONS` |
+| `http.rs` | Streamable HTTP service, `/healthz`, typed endpoint options, request bounds, and graceful shutdown |
 | `tools.rs` | Tool implementations: validation, adapter calls, response formatting (~5600 lines) |
 | `state.rs` | `ServerState` — shared state: config, adapter, fetch client, cache, etc. |
 | `policy.rs` | `Policy` enum, `live_allowed()`, `fetch_allowed()`, policy denial messages |
 
 ---
+
+## Canonical service factory (`mod.rs`)
+
+`build_server(AppConfig)` constructs `ServerState` and one `EggsearchServer`
+implementation. Both transports use this factory; tool registration, metadata,
+schemas, provider construction, and policy behavior are not duplicated.
 
 ## MCP Server (`server.rs`)
 
@@ -161,7 +168,7 @@ impl EggsearchServer {
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `sources` | Vec<EvidenceSourceInput> | Evidence sources to bundle |
-| `fetched` | Option<Vec<EvidenceFetchInput>> | Fetched content to include |
+| `fetches` | Vec<EvidenceFetchInput> | Fetched content to include |
 
 **Returns:** `EvidenceBundle` with trust summary and gaps.
 
@@ -255,6 +262,26 @@ MCP Server
 - **Policy enforcement** — Dry-run/offline modes block network
 - **Bounded responses** — All responses have size limits
 - **No secrets in logs** — Sensitive data redacted
+
+## Streamable HTTP transport (`http.rs`)
+
+`eggsearch mcp serve` uses rmcp 3.2.0's `StreamableHttpService` behind an Axum
+HTTP/1 listener. The selected rmcp release supports Rust 1.88 and the current
+MCP Streamable HTTP revisions, including legacy initialize sessions and the
+2026-07-28 stateless discovery/request metadata flow.
+
+The default endpoint is `127.0.0.1:11320/mcp`. Only loopback socket addresses
+are accepted. rmcp validates Host and the configured local browser origins;
+the wrapper caps header count/size/value lengths, while rmcp caps MCP POST
+bodies at 1 MiB. Requests have a 120-second wrapper timeout. `GET /healthz`
+returns bounded JSON containing only eggsearch identity, readiness, version,
+and transport. It does not call providers or create MCP sessions.
+
+The rmcp service owns MCP session semantics and cancellation. Ctrl-C and Unix
+SIGTERM cancel the shared token; the listener then drains for at most ten
+seconds. The cancellation-token entry point is retained for a future Windows
+SCM control handler. Normal logs remain on stderr so stdio stdout stays pure
+JSON-RPC.
 
 ---
 

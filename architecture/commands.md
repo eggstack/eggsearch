@@ -15,7 +15,7 @@
 | `fetch.rs` | `eggsearch fetch` — fetch and extract a URL from CLI |
 | `providers.rs` | `eggsearch providers` — show provider configuration/status |
 | `update.rs` | `eggsearch update` — check and install the latest stable binary |
-| `mcp.rs` | `eggsearch mcp stdio` — start MCP server |
+| `mcp.rs` | `eggsearch mcp stdio` or `eggsearch mcp serve` — start MCP server |
 | `browser_login.rs` | `eggsearch browser-login` — headed browser login (feature-gated `browser`) |
 | `browser_profiles.rs` | `eggsearch browser-profiles` — manage persistent profiles (feature-gated `browser`) |
 
@@ -30,6 +30,7 @@ Commands:
   doctor           Diagnose configuration and provider status
   search           Run a live metasearch and print compact source cards
   mcp stdio        Run the MCP server over stdio
+  mcp serve        Run the MCP server over persistent loopback Streamable HTTP
   providers        Show provider configuration and status
   fetch            Fetch and extract content from a URL
   update           Check for and install the latest stable release
@@ -140,6 +141,21 @@ eggsearch mcp stdio
 - Reads MCP protocol messages from stdin
 - Writes responses to stdout
 - Logs to stderr (controlled by `--verbose`)
+
+### `mcp serve` (`mcp.rs`)
+
+Start the persistent Streamable HTTP server in the foreground:
+
+```bash
+eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp
+```
+
+`--bind` is a typed socket address and must be IPv4/IPv6 loopback. `--path`
+is a normalized absolute path using safe URL-path characters and cannot be
+`/healthz`. The listener exposes `GET /healthz` separately from MCP session
+state. `SIGTERM` and Ctrl-C cancel rmcp sessions and drain active connections
+for a bounded period. Persistent mode logs to stderr and never writes normal
+logs to stdout.
 
 ### `browser-login` (`browser_login.rs`)
 

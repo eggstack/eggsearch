@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    CallToolResult, Content, Implementation, InitializeResult, ListToolsResult,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, ListToolsResult,
     PaginatedRequestParams, ServerCapabilities, ServerInfo,
 };
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
@@ -43,9 +43,10 @@ impl EggsearchServer {
     }
 
     fn json_result(v: serde_json::Value) -> Result<CallToolResult, McpError> {
-        Ok(CallToolResult::success(vec![Content::json(v).map_err(
-            |e| McpError::internal_error(format!("serialization failed: {e}"), None),
-        )?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(v)
+            .map_err(|e| {
+                McpError::internal_error(format!("serialization failed: {e}"), None)
+            })?]))
     }
 }
 
@@ -246,8 +247,7 @@ impl ServerHandler for EggsearchServer {
         let tools = self.tool_router.list_all();
         Ok(ListToolsResult {
             tools,
-            meta: None,
-            next_cursor: None,
+            ..Default::default()
         })
     }
 }

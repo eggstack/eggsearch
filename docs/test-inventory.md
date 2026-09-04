@@ -118,6 +118,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `fetch_safety` | Fetch safety bounds |
 | `security_applicability_corpus` | Security applicability pipeline |
 | `security_applicability_phase8` | Security applicability phase 8 regression |
+| `mcp_http` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `security_applicability_regression` | Security applicability regression |
 | `research_evidence_corpus` | Research evidence regression |
 | `research_semantic_roles` | Research semantic role mapping |
