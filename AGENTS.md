@@ -4,7 +4,7 @@
 
 eggsearch is a lightweight MCP search/fetch server for AI agents. It queries upstream search providers, deduplicates with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. Transport is MCP over stdio. Single library + binary crate (not a workspace).
 
-Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, testing, build) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
+Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, testing, build, packaging) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, installation, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
 
 | Topic | Deep dive |
 |-------|-----------|
@@ -17,6 +17,7 @@ Architecture deep dives live in `architecture/` — [overview.md](architecture/o
 | CLI subcommands | `architecture/commands.md` |
 | Test suites and fuzz targets | `architecture/testing.md`, `architecture/hardening.md` |
 | Build, CI, release gates | `architecture/build.md` |
+| Release target contract and installers | `architecture/packaging.md` |
 | Stable response contract for harnesses | `architecture/codegg-contract.md` |
 | Config type model | `architecture/config.md` |
 | Evidence roles, bundles, workflow coverage | `architecture/evidence-workflow.md` |
@@ -50,6 +51,8 @@ make fuzz-smoke              # 60s runs of 3 key fuzz targets
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
+Binary releases are assembled by the tagged `.github/workflows/release-binaries.yml` workflow after the exact crate version is visible on crates.io. Run `make packaging-check` when changing target mappings or installer behavior; service installation is not part of phase 6.
+
 ## Project Structure
 
 ```
@@ -62,6 +65,7 @@ src/
   meta/            # MetadataSearchAdapter + 36 vendored engines (+ local workspace backend) covering 37 registered provider IDs, forge adapter, planners, inventory cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), tool definitions, server state
+packaging/          # release target contract, installers, artifact smoke helpers
 tests/             # integration, corpus, contract, property, adversarial, and browser_profiles tests
 fuzz/              # cargo-fuzz + libfuzzer targets (22 registered)
 ```
@@ -151,7 +155,7 @@ Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/ski
 - **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP profile-scoped browser fetches launch a request-scoped browser against that exact directory and use its default browser context; anonymous browser fetches retain the warm ephemeral lifecycle. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default. Profile cache isolation uses opaque IDs internally; display names are used only in MCP response metadata. See `architecture/fetch.md`.
 - **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded HTTP bytes or bounded rendered browser DOM before extraction. A fresh raw hit can create a missing derived representation locally, including changed HTML extraction/link settings and PDF page selection. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params and preserves transport provenance. Agent-visible `FetchCachePolicy` (`default`/`bypass`/`refresh`) plus caller `max_cache_age_seconds` (tightens only) control reuse/revalidation; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy. HTTP 304 is a revalidation signal, not a redirect. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes. See `architecture/fetch.md`.
 - **Transport:** MCP over stdio only. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`. See `architecture/mcp.md`.
-- **Windows is unsupported:** The crate uses Unix-specific APIs (`openat2`, `setsid`, process groups). Windows is not included in the CI matrix.
+- **Windows source/runtime qualification:** Unix-specific hardening paths are conditionally unavailable on Windows; Windows release jobs still compile and smoke the default binary on native x86-64 and ARM64 runners, and failures remain explicit release blockers.
 
 ## MCP Tools (10 total)
 

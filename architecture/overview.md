@@ -2,7 +2,7 @@
 
 **eggsearch** is a lightweight MCP (Model Context Protocol) metasearch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. Transport is MCP over stdio.
 
-Single library + binary crate (not a workspace). All source under `src/`. Version `0.3.8`, edition 2021, MSRV 1.88. Linux/macOS only — Windows is unsupported (Unix-specific APIs: `openat2`, `setsid`, process groups).
+Single library + binary crate (not a workspace). All application source under `src/`. Version `0.3.8`, edition 2021, MSRV 1.88. Release packaging lives under `packaging/`; source/runtime qualification remains Unix-focused while the release workflow explicitly qualifies Windows targets.
 
 This document is the bird's-eye view: what each module is for, how they connect, and where to go for depth. Each component links to a dedicated deep dive in this directory. Use it as the entry point when focusing review on one discrete aspect of the codebase.
 
@@ -82,6 +82,7 @@ fetch ↗
 | CLI commands | `src/commands/` (8 files) | Subcommand wiring: doctor, search, fetch, providers, mcp stdio, browser-login/profiles | [commands.md](commands.md) |
 | Testing infrastructure | `tests/` (50 test binaries), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
+| Release packaging | `packaging/`, `.github/workflows/release-binaries.yml` | Target contract, checksums, installers, artifact smoke, draft assembly | [packaging.md](packaging.md) |
 
 ---
 
@@ -318,4 +319,4 @@ cargo run -- doctor --probe   # diagnose providers
 
 ---
 
-[Core Types →](core.md) | [Metasearch Adapter →](meta.md) | [Search Engines →](engines.md) | [HTTP Fetch →](fetch.md) | [MCP Server →](mcp.md) | [CLI Commands →](commands.md) | [Testing →](testing.md) | [Build & CI →](build.md)
+[Core Types →](core.md) | [Metasearch Adapter →](meta.md) | [Search Engines →](engines.md) | [HTTP Fetch →](fetch.md) | [MCP Server →](mcp.md) | [CLI Commands →](commands.md) | [Testing →](testing.md) | [Build & CI →](build.md) | [Release packaging →](packaging.md)

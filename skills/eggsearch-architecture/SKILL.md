@@ -7,7 +7,7 @@ description: Use when working with eggsearch internals, understanding crate layo
 
 Use when working with eggsearch internals, understanding crate layout, provider model, adapter pattern, deterministic IDs, sanitization tiers, or config structure.
 
-Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, testing, build, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
+Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, testing, build, and packaging, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
 
 ## Crate Layout
 
@@ -30,6 +30,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 | `meta` | `adapter.rs`, `forge_adapter.rs`, `local_backend.rs`, `local_inventory_cache.rs`, `local_inventory.rs`, `dispatch.rs`, `planner.rs` | Search orchestration, RRF aggregation, provider health, forge API client, local workspace |
 | `fetch` | `client.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, SSRF protection, content extraction, cache, and browser transport |
 | `mcp` | `server.rs`, `state.rs`, `tools.rs`, `policy.rs` | MCP protocol, 10 tool handlers, shared state |
+| `packaging` | `packaging/`, `.github/workflows/release-binaries.yml` | Release target contract, checksums, installers, artifact smoke, draft assembly |
 
 ## Adapter Pattern
 

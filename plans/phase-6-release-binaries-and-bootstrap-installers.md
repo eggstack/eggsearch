@@ -1,6 +1,6 @@
 # Phase 6 — Release Binaries and Bootstrap Installers
 
-Status: planned
+Status: implemented
 Depends on: none
 Baseline for planning: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Roadmap: `plans/deployment-roadmap.md`
@@ -277,6 +277,10 @@ Update:
 - `docs/release.md`: exact release ordering, tag/version preflight, target matrix, asset contract, rerun behavior, draft/publish policy;
 - `CHANGELOG.md` when implementation lands;
 - architecture/packaging docs if the repository maintains a deployment architecture index.
+
+## Implementation note
+
+The release contract, installers, local contract tests, and artifact smoke harness are implemented. The first tagged release created from this implementation is the hosted qualification candidate for the full GitHub Actions target matrix; the existing `v0.3.8` tag predates these assets and is intentionally not reused.
 
 Do not document service installation until phase 9 is implemented.
 

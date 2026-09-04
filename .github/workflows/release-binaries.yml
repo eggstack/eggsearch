@@ -1,0 +1,303 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z tag to qualify and assemble as a draft release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  ZIG_VERSION: 0.13.0
+  CARGO_ZIGBUILD_VERSION: 0.20.1
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - name: Validate tag, version, commit, and registry publication
+        id: release
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$REQUESTED_TAG"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag '$tag' is not a v<semver> tag." >&2
+            exit 1
+          fi
+          version="${tag#v}"
+          package_version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "eggsearch") | .version')"
+          if [[ "$package_version" != "$version" ]]; then
+            echo "Cargo.toml version $package_version does not match tag $tag." >&2
+            exit 1
+          fi
+          tag_commit="$(git rev-list -n 1 "$tag")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$head_commit" ]]; then
+            echo "Checked out commit $head_commit is not the commit tagged by $tag ($tag_commit)." >&2
+            exit 1
+          fi
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Release checkout is dirty." >&2
+            exit 1
+          fi
+          test -f Cargo.lock || {
+            echo "Cargo.lock is required for release builds." >&2
+            exit 1
+          }
+          registry_status="$(curl --silent --show-error --location --output /tmp/eggsearch-crate.json --write-out '%{http_code}' --header 'User-Agent: eggsearch-release-preflight' "https://crates.io/api/v1/crates/eggsearch/$version")"
+          if [[ "$registry_status" != "200" ]]; then
+            echo "crates.io does not expose eggsearch $version yet (HTTP $registry_status). Publish with cargo publish --locked and wait for the registry index before pushing this tag." >&2
+            exit 1
+          fi
+          registry_version="$(jq -r '.version.num' /tmp/eggsearch-crate.json)"
+          if [[ "$registry_version" != "$version" ]]; then
+            echo "crates.io returned version $registry_version for the requested $version." >&2
+            exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "commit=$head_commit"
+          } >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux ${{ matrix.target }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: eggsearch-x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: eggsearch-aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88'
+          targets: ${{ matrix.target }}
+      - name: Install pinned cargo-zigbuild
+        run: cargo install cargo-zigbuild --version "$CARGO_ZIGBUILD_VERSION" --locked
+      - name: Build and stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo zigbuild --locked --release --target "${{ matrix.target }}.2.17"
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/eggsearch" "dist/${{ matrix.asset }}"
+          chmod 0755 "dist/${{ matrix.asset }}"
+          file "dist/${{ matrix.asset }}" | grep -E 'ELF 64-bit.*(x86-64|ARM aarch64)' >/dev/null
+          versions="$(readelf --version-info "dist/${{ matrix.asset }}" | grep -oE 'GLIBC_[0-9.]+' | sort -Vu || true)"
+          if printf '%s\n' "$versions" | grep -Eq 'GLIBC_([3-9]|2\.(1[8-9]|[2-9][0-9]))'; then
+            echo "binary requires a glibc newer than the documented 2.17 floor" >&2
+            exit 1
+          fi
+          ./packaging/release-smoke.sh "dist/${{ matrix.asset }}" "${{ needs.preflight.outputs.version }}"
+          sha256sum "dist/${{ matrix.asset }}" | sed "s#  .*#  ${{ matrix.asset }}#" > "dist/${{ matrix.asset }}.sha256"
+          (cd dist && sha256sum -c "${{ matrix.asset }}.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist
+
+  linux-armv7:
+    name: Linux armv7 qualification
+    needs: preflight
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88'
+          targets: armv7-unknown-linux-gnueabihf
+      - name: Install pinned cargo-zigbuild
+        run: cargo install cargo-zigbuild --version "$CARGO_ZIGBUILD_VERSION" --locked
+      - name: Build, qualify, and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="eggsearch-armv7-unknown-linux-gnueabihf"
+          cargo zigbuild --locked --release --target armv7-unknown-linux-gnueabihf.2.17
+          mkdir -p dist
+          cp target/armv7-unknown-linux-gnueabihf/release/eggsearch "dist/$asset"
+          chmod 0755 "dist/$asset"
+          file "dist/$asset" | grep -E 'ELF 32-bit.*ARM' >/dev/null
+          docker run --rm --platform linux/arm/v7 -v "$PWD/dist:/dist:ro" ubuntu:20.04 "/dist/$asset" --version | grep -F "${{ needs.preflight.outputs.version }}"
+          docker run --rm --platform linux/arm/v7 -v "$PWD/dist:/dist:ro" ubuntu:20.04 "/dist/$asset" --help >/dev/null
+          ./packaging/release-smoke.sh "dist/$asset" "${{ needs.preflight.outputs.version }}" --skip-mcp
+          sha256sum "dist/$asset" | sed "s#  .*#  $asset#" > "dist/$asset.sha256"
+          (cd dist && sha256sum -c "$asset.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-armv7-unknown-linux-gnueabihf
+          path: dist
+
+  macos:
+    name: macOS ${{ matrix.target }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            target: x86_64-apple-darwin
+            asset: eggsearch-x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            asset: eggsearch-aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88'
+          targets: ${{ matrix.target }}
+      - name: Build, smoke, and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --target "${{ matrix.target }}"
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/eggsearch" "dist/${{ matrix.asset }}"
+          chmod 0755 "dist/${{ matrix.asset }}"
+          ./packaging/release-smoke.sh "dist/${{ matrix.asset }}" "${{ needs.preflight.outputs.version }}"
+          shasum -a 256 "dist/${{ matrix.asset }}" | sed "s#  .*#  ${{ matrix.asset }}#" > "dist/${{ matrix.asset }}.sha256"
+          (cd dist && shasum -a 256 -c "${{ matrix.asset }}.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist
+
+  windows:
+    name: Windows ${{ matrix.target }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: eggsearch-x86_64-pc-windows-msvc.exe
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            asset: eggsearch-aarch64-pc-windows-msvc.exe
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88'
+          targets: ${{ matrix.target }}
+      - name: Build, smoke, and checksum
+        run: |
+          cargo build --locked --release --target ${{ matrix.target }}
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/eggsearch.exe" "dist/${{ matrix.asset }}"
+          & .\packaging\release-smoke.ps1 "dist\${{ matrix.asset }}" "${{ needs.preflight.outputs.version }}"
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath "dist\${{ matrix.asset }}").Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.asset }}" | Set-Content -NoNewline "dist\${{ matrix.asset }}.sha256"
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath "dist\${{ matrix.asset }}").Hash.ToLowerInvariant()
+          if ($actual -ne $hash) { throw 'checksum verification failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist
+
+  assemble:
+    name: Assemble draft GitHub Release
+    needs: [preflight, linux, linux-armv7, macos, windows]
+    if: ${{ needs.preflight.result == 'success' && needs.linux.result == 'success' && needs['linux-armv7'].result == 'success' && needs.macos.result == 'success' && needs.windows.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Verify complete asset set
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS='|' read -r target asset os arch; do
+            test -n "$target"
+            test -f "dist/$asset" || { echo "missing dist/$asset" >&2; exit 1; }
+            test -f "dist/$asset.sha256" || { echo "missing dist/$asset.sha256" >&2; exit 1; }
+            (cd dist && sha256sum -c "$asset.sha256")
+          done < packaging/release-targets.txt
+          cp packaging/install.sh packaging/install.ps1 dist/
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 16
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ needs.preflight.outputs.tag }}"
+          version="${{ needs.preflight.outputs.version }}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --draft --title "eggsearch $version" --notes "Default-feature release binaries for eggsearch $version."
+          else
+            draft="$(gh release view "$tag" --json isDraft --jq .isDraft)"
+            if [[ "$draft" != "true" ]]; then
+              echo "release $tag already exists and is published; refusing to overwrite it" >&2
+              exit 1
+            fi
+          fi
+          gh release upload "$tag" dist/* --clobber

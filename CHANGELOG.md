@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Binary-first release artifacts, checksums, and bootstrap installers for supported desktop and SBC targets.
+
 ## [0.3.8] - 2026-09-04
 
 ### Added

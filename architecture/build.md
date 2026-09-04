@@ -1,7 +1,7 @@
 # Build & CI Deep Dive
 
 **Location:** `Cargo.toml`, `Makefile`
-**Purpose:** Build configuration, CI pipeline, feature flags, and release process.
+**Purpose:** Build configuration, CI pipeline, feature flags, routine gates, and release handoff.
 
 ---
 
@@ -119,6 +119,10 @@ strip = true
 | `docs-check` | `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps` | Docs check |
 | `release-build` | `cargo build --locked --release` | Release build |
 | `publish-check` | `cargo publish --dry-run --locked` | Pre-publish check |
+
+### Packaging target
+
+| `packaging-check` | `./packaging/check-contract.sh` | Cross-check target/asset declarations and installer guards |
 
 ### Smoke Targets
 

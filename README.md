@@ -11,8 +11,38 @@ Lightweight MCP (Model Context Protocol) search and fetch server for AI agents. 
 
 ## Install
 
+On supported desktop and SBC targets, the installer downloads the matching
+GitHub Release binary, verifies its SHA-256 checksum, and checks its version
+before installation:
+
 ```bash
-cargo install eggsearch
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
+```
+
+Pin an exact published version with `--version`:
+
+```bash
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.8
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
+```
+
+The installer never elevates. It uses `/usr/local/bin` or
+`%ProgramFiles%\\Eggsearch` only when already privileged, and otherwise uses
+`$HOME/.local/bin` or `%LOCALAPPDATA%\\Eggsearch`. Unsupported targets and a
+confirmed missing release asset fall back to an exact Cargo install; download,
+checksum, and version failures stop without falling back. See
+[Installation](docs/installation.md) for the target matrix and verification
+rules.
+
+For a source/manual installation, use Cargo:
+
+```bash
+cargo install eggsearch --locked
 ```
 
 ## Run
@@ -76,3 +106,4 @@ Runs formatting, clippy, feature compilation, and the deterministic test suite. 
 - [Architecture Overview](architecture/overview.md) — component index with deep dives
 - [MCP Response Contract](architecture/codegg-contract.md) — trust model, warnings, deterministic IDs
 - [Release Process](docs/release.md) — preparation, verification, publication
+- [Installation](docs/installation.md) — binary targets, installers, checksums, and fallback rules

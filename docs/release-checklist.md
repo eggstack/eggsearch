@@ -9,14 +9,17 @@ Short operational checklist. The authoritative release process lives in
 - [ ] Version bumped in `Cargo.toml`
 - [ ] `CHANGELOG.md` updated
 - [ ] `make release-check` passes from a clean tree
+- [ ] `make packaging-check` passes
 
 ## Publication
 
 - [ ] `cargo publish --locked`
 - [ ] Verify crates.io listing at <https://crates.io/crates/eggsearch>
+- [ ] Verify the exact version is visible on crates.io before tagging
 
 ## Post-publication
 
 - [ ] `git tag vX.Y.Z`
 - [ ] `git push origin vX.Y.Z`
-- [ ] Optionally create a GitHub release with changelog excerpt
+- [ ] Confirm `Release binaries` workflow creates a complete draft release
+- [ ] Review binary checksums and publish the draft release manually

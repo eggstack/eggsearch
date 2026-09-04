@@ -1,6 +1,6 @@
 # Binary Distribution and Deployment Roadmap
 
-Status: planned
+Status: active — phase 6 implemented; phases 7–10 planned
 Updated: 2026-09-04
 Audited repository baseline: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Primary downstream consumer reviewed: `dbowm91/codegg` main at `b3faf5050a1813bdef9e58d760f758318cb3dfcd`
@@ -28,9 +28,10 @@ At the audited baseline:
 
 - `Cargo.toml` publishes one `eggsearch` binary at version 0.3.8, requires Rust 1.88, and uses default features that do not include optional PDF/browser support.
 - `src/main.rs` exposes search/fetch/provider commands and `eggsearch mcp stdio`; there is no persistent MCP transport, service manager, restart command, or updater.
-- `.github/workflows/ci.yml` is one Ubuntu routine-verification job. No release artifact matrix exists.
-- `docs/release.md` explicitly describes a manual crates.io-first release sequence and treats GitHub Releases as optional/manual.
-- README installation is currently `cargo install eggsearch`, which forces compilation on Raspberry Pi/Le Potato class systems.
+- `.github/workflows/ci.yml` remains the routine-verification job, and `.github/workflows/release-binaries.yml` now owns the tagged binary matrix and draft-release assembly.
+- `docs/release.md` documents the manual crates.io-first sequence followed by the release-binary workflow; GitHub release publication remains a maintainer-controlled draft review step.
+- README installation is binary-first, with verified release assets and a narrow exact-version Cargo fallback for Raspberry Pi/Le Potato class systems.
+- `packaging/release-targets.txt`, the Unix/PowerShell installers, and `make packaging-check` enforce the shared target, checksum, and fallback contract.
 - the existing code already depends on async HTTP/JSON primitives (`tokio`, `reqwest`, `serde_json`), so a self-updater does not need to shell out to curl for its network operations.
 - CodeGG already treats eggsearch as its external search backend. `src/search_backend/bootstrap.rs` defaults to a local stdio launch when `[search.eggsearch]` is selected and can also consume an explicitly configured MCP server through CodeGG's existing local/remote MCP transport layer. This means eggsearch must preserve stdio even after persistent HTTP is added.
 
@@ -175,7 +176,7 @@ Do not make MCPB, apt, Homebrew, Winget, MSI, Debian/RPM packaging, Docker image
 
 ### Phase 6 — Release binaries and bootstrap installers
 
-Create the release-only GitHub Actions matrix, stable asset/checksum contract, Unix and PowerShell binary-first installers, Cargo fallback, target/installer verification, and README copy/paste installation path. This phase provides immediate value to SBC deployments and can land without daemon support.
+The release-only GitHub Actions matrix, stable asset/checksum contract, Unix and PowerShell binary-first installers, Cargo fallback, target/installer verification, and README copy/paste installation path are implemented. This phase provides immediate value to SBC deployments without daemon support.
 
 ### Phase 7 — Binary-first self-update
 

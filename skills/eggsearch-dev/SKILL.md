@@ -12,6 +12,7 @@ Use when building, testing, or contributing to eggsearch. Covers cargo commands,
 ```bash
 # Routine verification gate
 make check
+make packaging-check
 
 # Individual targets
 cargo fmt --check
@@ -20,6 +21,7 @@ cargo check --locked --no-default-features
 cargo test --locked --all-features
 cargo build --release
 cargo publish --dry-run --locked
+./packaging/check-contract.sh
 make bench-check        # compile-check benches without running
 ```
 
@@ -99,6 +101,8 @@ cargo test --locked --all-features --test docs_config_snippets --test docs_provi
 - **Running no-default full test suite in routine gate** — the routine gate runs `cargo check --locked --no-default-features` (compile-only); full test pass uses `--all-features` only
 - **Using anonymous browser state for a selected profile** — profile-scoped browser fetches must use the profile manager's opaque-ID-resolved `chrome-data` directory and the configured browser runtime values
 - **Skipping raw-cache re-derivation** — a fresh raw hit with a derived miss must run the shared extraction pipeline locally rather than issuing another network request
+- **Editing only one release target table** — keep `packaging/release-targets.txt`, the release workflow, installers, and installation docs synchronized; `make packaging-check` catches contract drift
+- **Broadening installer fallback** — Cargo is allowed only for unsupported targets or a confirmed binary HTTP 404; checksum, transport, identity, and version failures are hard stops
 
 ## Fuzz Targets
 

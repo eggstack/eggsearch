@@ -207,10 +207,11 @@ fn decode_pdf_string(raw: &[u8]) -> String {
     if raw.len() >= 2 && raw[0] == 0xFE && raw[1] == 0xFF {
         let payload = &raw[2..];
         let payload = &payload[..payload.len() & !1];
+        let (chunks, _) = payload.as_chunks::<2>();
         String::from_utf16_lossy(
-            &payload
-                .chunks_exact(2)
-                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            &chunks
+                .iter()
+                .map(|c| u16::from_be_bytes(*c))
                 .collect::<Vec<_>>(),
         )
     } else if let Ok(s) = std::str::from_utf8(raw) {

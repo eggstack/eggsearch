@@ -1,0 +1,8 @@
+x86_64-unknown-linux-gnu|eggsearch-x86_64-unknown-linux-gnu|linux|x86_64
+aarch64-unknown-linux-gnu|eggsearch-aarch64-unknown-linux-gnu|linux|aarch64
+armv7-unknown-linux-gnueabihf|eggsearch-armv7-unknown-linux-gnueabihf|linux|armv7
+x86_64-apple-darwin|eggsearch-x86_64-apple-darwin|darwin|x86_64
+aarch64-apple-darwin|eggsearch-aarch64-apple-darwin|darwin|aarch64
+x86_64-pc-windows-msvc|eggsearch-x86_64-pc-windows-msvc.exe|windows|x86_64
+aarch64-pc-windows-msvc|eggsearch-aarch64-pc-windows-msvc.exe|windows|aarch64
+

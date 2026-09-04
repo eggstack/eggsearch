@@ -1,6 +1,6 @@
-.PHONY: check ci fmt clippy feature-check test release-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
+.PHONY: check ci fmt clippy feature-check test packaging-check release-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
 
-check: fmt clippy feature-check test
+check: fmt clippy feature-check test packaging-check
 
 ci: check
 
@@ -15,6 +15,9 @@ feature-check:
 
 test:
 	cargo test --locked --all-features
+
+packaging-check:
+	./packaging/check-contract.sh
 
 release-check: check docs-check release-build publish-check
 

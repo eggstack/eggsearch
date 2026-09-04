@@ -10,7 +10,7 @@ This guide walks through installing eggsearch, configuring it, and using it from
 ## Installation
 
 ```bash
-cargo install eggsearch
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
 ```
 
 Or build from source:

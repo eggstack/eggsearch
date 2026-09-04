@@ -44,13 +44,31 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-Creating a GitHub release from the changelog is optional and manual.
+The tagged `Release binaries` workflow assembles a draft GitHub Release after
+all target jobs and checksums pass; publish that draft manually after review.
 
 ## CI Pipeline
 
 | Job | What it runs |
 |-----|-------------|
 | `ci` | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
+| `Release binaries` | Tagged/manual workflow — preflight, seven-target binary qualification, checksums, draft assembly |
+
+## Binary release workflow
+
+After `cargo publish --locked` succeeds and the exact version is visible on
+crates.io, tag and push `vX.Y.Z`. `.github/workflows/release-binaries.yml`
+validates the tag, package version, tagged commit, clean checkout, lockfile,
+and registry visibility before building. It produces default-feature assets
+using the contract in `packaging/release-targets.txt`, runs native CLI/MCP
+smoke where possible, qualifies ARMv7 under QEMU, and assembles a draft
+release with checksums and the reviewed installers. It refuses to overwrite a
+published release and never publishes the crate.
+
+Run `make packaging-check` locally when changing release target mappings or
+installer behavior. The routine `make check` remains network-free; release
+workflow jobs are the only place that require GitHub/crates.io and hosted
+cross-platform runners.
 
 ## Feature Flags
 

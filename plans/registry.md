@@ -20,7 +20,7 @@ The governing rationale and cross-phase invariants for this workstream are in `r
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 6 | Release binaries and bootstrap installers | planned | none | `phase-6-release-binaries-and-bootstrap-installers.md` |
+| 6 | Release binaries and bootstrap installers | implemented | none | `phase-6-release-binaries-and-bootstrap-installers.md` |
 | 7 | Binary-first self-update | planned | phase 6 asset contract | `phase-7-binary-first-self-update.md` |
 | 8 | Persistent Streamable HTTP MCP | planned | none; coordinate with phase 6 release smoke | `phase-8-persistent-streamable-http-mcp.md` |
 | 9 | Startup supervision, croncheck, and restart | planned | phases 7-8 | `phase-9-startup-supervision-croncheck-and-restart.md` |
