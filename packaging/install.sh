@@ -9,9 +9,10 @@ set -euo pipefail
 
 REPOSITORY="eggstack/eggsearch"
 VERSION=""
+SERVICE=0
 
 usage() {
-    printf 'Usage: %s [--version X.Y.Z]\n' "$0"
+    printf 'Usage: %s [--version X.Y.Z] [--service]\n' "$0"
 }
 
 while (($# > 0)); do
@@ -24,6 +25,10 @@ while (($# > 0)); do
             fi
             VERSION="$2"
             shift 2
+            ;;
+        --service)
+            SERVICE=1
+            shift
             ;;
         --help|-h)
             usage
@@ -141,6 +146,12 @@ install_candidate() {
         *":$INSTALL_DIR:"*) ;;
         *) echo "add $INSTALL_DIR to PATH to invoke eggsearch directly" ;;
     esac
+    if ((SERVICE)); then
+        if ! "$destination" startup install; then
+            echo "binary installed at $destination, but startup registration failed; run '$destination startup instructions' for next steps" >&2
+            return 1
+        fi
+    fi
 }
 
 install_from_cargo() {

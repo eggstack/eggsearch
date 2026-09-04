@@ -14,6 +14,14 @@ pub async fn run_stdio(cfg: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_http(cfg: &AppConfig, options: ServeOptions) -> Result<()> {
+pub async fn run_http_with_pid(
+    cfg: &AppConfig,
+    options: ServeOptions,
+    pid_file: Option<std::path::PathBuf>,
+) -> Result<()> {
+    let _pid_guard = pid_file
+        .as_deref()
+        .map(eggsearch::startup::PidFileGuard::create)
+        .transpose()?;
     eggsearch::mcp::http::run(cfg, options).await
 }

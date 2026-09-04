@@ -1,6 +1,6 @@
 # CLI Commands Deep Dive
 
-**Location:** `src/commands/` (9 files)
+**Location:** `src/commands/` (9 files), `src/startup.rs`
 **Purpose:** CLI subcommands for direct user interaction. Entry point is `src/main.rs`.
 
 ---
@@ -36,6 +36,9 @@ Commands:
   update           Check for and install the latest stable release
   browser-login    Open a headed browser for manual login/verification
   browser-profiles Manage persistent browser profiles
+  croncheck       Start the persistent service only when health is definitely absent
+  restart         Restart the registered persistent service
+  startup         Manage persistent startup supervision
 ```
 
 ---
@@ -127,7 +130,19 @@ Without it, the updater prefers the exact GitHub Release asset for the current
 host, verifies its checksum and `--version` identity, and atomically replaces
 the current executable. Unsupported hosts and confirmed exact-asset 404s use
 an isolated exact-version Cargo build; other failures stop without compiling.
-The command does not load search configuration and does not restart services.
+The command does not load search configuration for version discovery. A normal
+update snapshots managed service state, replaces the verified executable, and
+restarts only a previously healthy registered persistent service.
+
+### Startup supervision (`src/startup.rs`)
+
+`startup instructions`, `install`, `status`, and `uninstall` manage exactly one
+of systemd, launchd, Windows SCM, or cron. `restart` delegates to that manager
+and verifies `/healthz`; it never searches for or kills arbitrary `eggsearch`
+processes. `croncheck` uses the same runtime specification, an exclusive
+startup lock, and a verified owned PID record. Service definitions are embedded
+in the binary and mirrored under `packaging/` so installed binaries do not need
+a repository checkout.
 
 ### `mcp stdio` (`mcp.rs`)
 

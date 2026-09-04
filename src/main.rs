@@ -6,6 +6,7 @@ mod config;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use eggsearch::mcp::{McpPath, ServeOptions};
+use eggsearch::startup::StartupMethod;
 use std::net::SocketAddr;
 
 #[derive(Parser, Debug)]
@@ -86,6 +87,18 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         check: bool,
     },
+    /// Check whether a persistent service is healthy and start it if absent.
+    Croncheck,
+    /// Restart the registered persistent service.
+    Restart,
+    /// Manage persistent startup supervision.
+    Startup {
+        #[command(subcommand)]
+        cmd: StartupCmd,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
+    WindowsService,
     /// Open a headed browser for manual login/verification.
     #[cfg(feature = "browser")]
     BrowserLogin {
@@ -115,6 +128,34 @@ enum McpCmd {
         /// MCP endpoint path.
         #[arg(long, default_value = "/mcp")]
         path: McpPath,
+        /// Internal manager-owned PID record for cron control.
+        #[arg(long, hide = true)]
+        pid_file: Option<std::path::PathBuf>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum StartupCmd {
+    /// Show the registered manager and health state.
+    Status {
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Install or update the selected startup manager.
+    Install {
+        #[arg(long, default_value = "auto")]
+        method: StartupMethod,
+    },
+    /// Render exact non-mutating setup instructions.
+    Instructions {
+        #[arg(long, default_value = "auto")]
+        method: StartupMethod,
+    },
+    /// Remove the selected startup manager registration.
+    Uninstall {
+        #[arg(long, default_value = "auto")]
+        method: StartupMethod,
     },
 }
 
@@ -124,7 +165,59 @@ async fn main() -> Result<()> {
     init_tracing(cli.verbose);
 
     match cli.command {
-        Commands::Update { check } => commands::update::run(check).await,
+        Commands::Update { check } => commands::update::run(check, cli.config.as_deref()).await,
+        Commands::Croncheck => {
+            println!(
+                "{}",
+                eggsearch::startup::croncheck(cli.config.as_deref()).await?
+            );
+            Ok(())
+        }
+        Commands::Restart => {
+            println!(
+                "{}",
+                eggsearch::startup::restart(cli.config.as_deref()).await?
+            );
+            Ok(())
+        }
+        Commands::Startup { cmd } => match cmd {
+            StartupCmd::Status { json } => {
+                let state = eggsearch::startup::startup_state(cli.config.as_deref()).await?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&state)?);
+                } else {
+                    println!("{}", state.detail);
+                    println!(
+                        "registered={} running={} healthy={} conflict={}",
+                        state.registered, state.running, state.healthy, state.conflict
+                    );
+                }
+                Ok(())
+            }
+            StartupCmd::Install { method } => {
+                println!(
+                    "{}",
+                    eggsearch::startup::install(cli.config.as_deref(), method).await?
+                );
+                Ok(())
+            }
+            StartupCmd::Instructions { method } => {
+                println!(
+                    "{}",
+                    eggsearch::startup::instructions(cli.config.as_deref(), method)?
+                );
+                Ok(())
+            }
+            StartupCmd::Uninstall { method } => {
+                println!(
+                    "{}",
+                    eggsearch::startup::uninstall(cli.config.as_deref(), method).await?
+                );
+                Ok(())
+            }
+        },
+        #[cfg(windows)]
+        Commands::WindowsService => eggsearch::startup::run_windows_service(cli.config.as_deref()),
         command => {
             let cfg = config::load(cli.config.as_deref())?;
             match command {
@@ -139,8 +232,17 @@ async fn main() -> Result<()> {
                 } => commands::search::run(&cfg, &query, max_results, json, &providers).await,
                 Commands::Mcp { cmd } => match cmd {
                     McpCmd::Stdio => commands::mcp::run_stdio(&cfg).await,
-                    McpCmd::Serve { bind, path } => {
-                        commands::mcp::run_http(&cfg, ServeOptions { bind, path }).await
+                    McpCmd::Serve {
+                        bind,
+                        path,
+                        pid_file,
+                    } => {
+                        commands::mcp::run_http_with_pid(
+                            &cfg,
+                            ServeOptions { bind, path },
+                            pid_file,
+                        )
+                        .await
                     }
                 },
                 Commands::Providers { json } => commands::providers::run(&cfg, json),
@@ -176,6 +278,13 @@ async fn main() -> Result<()> {
                 Commands::Update { .. } => {
                     unreachable!("update is handled before configuration loading")
                 }
+                Commands::Croncheck | Commands::Restart | Commands::Startup { .. } => {
+                    unreachable!("startup commands are handled before configuration loading")
+                }
+                #[cfg(windows)]
+                Commands::WindowsService => {
+                    unreachable!("Windows service is handled before configuration loading")
+                }
             }
         }
     }
@@ -202,7 +311,7 @@ mod tests {
     fn mcp_serve_defaults_are_stable() {
         let cli = Cli::try_parse_from(["eggsearch", "mcp", "serve"]).unwrap();
         let Commands::Mcp {
-            cmd: McpCmd::Serve { bind, path },
+            cmd: McpCmd::Serve { bind, path, .. },
         } = cli.command
         else {
             panic!("expected mcp serve");
@@ -224,7 +333,7 @@ mod tests {
         ])
         .unwrap();
         let Commands::Mcp {
-            cmd: McpCmd::Serve { bind, path },
+            cmd: McpCmd::Serve { bind, path, .. },
         } = cli.command
         else {
             panic!("expected mcp serve");

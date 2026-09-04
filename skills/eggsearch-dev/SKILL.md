@@ -76,6 +76,14 @@ For the persistent MCP transport:
 cargo test --locked --all-features --test mcp_http
 ```
 
+For startup supervision rendering and policy:
+
+```bash
+cargo test --locked --all-features startup::tests
+eggsearch startup instructions
+eggsearch startup status --json
+```
+
 ## Code Style
 
 - **No comments** unless explicitly requested
@@ -114,6 +122,8 @@ cargo test --locked --all-features --test mcp_http
 - **Skipping raw-cache re-derivation** — a fresh raw hit with a derived miss must run the shared extraction pipeline locally rather than issuing another network request
 - **Editing only one release target table** — keep `packaging/release-targets.txt`, the release workflow, installers, and installation docs synchronized; `make packaging-check` catches contract drift
 - **Broadening installer fallback** — Cargo is allowed only for unsupported targets or a confirmed binary HTTP 404; checksum, transport, identity, and version failures are hard stops
+- **Supervising stdio** — startup managers, `croncheck`, and restart apply only to persistent `mcp serve`; never kill or register a client-owned stdio process
+- **Creating duplicate managers** — inspect `startup status`; auto detection does not fall back to cron after a preferred manager permission failure
 
 ## Fuzz Targets
 

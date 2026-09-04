@@ -49,6 +49,10 @@ written, it prints the resolved elevated rerun command, for example:
 sudo /usr/local/bin/eggsearch update
 ```
 
-Phase 9 will add persistent-service registration and restart integration.
-`eggsearch mcp stdio` remains client-owned, and an update does not restart a
-running `mcp serve` process or stdio child.
+Before replacement, a normal update records whether exactly one registered
+persistent manager has a healthy service. After verified replacement it restarts
+that same manager and verifies `/healthz`; a stopped service remains stopped.
+If replacement succeeds but restart fails, the command returns a nonzero typed
+error that includes the installed version and exact restart command. An update
+of a stdio-only installation does not restart any process. See
+[Managed service](service.md).

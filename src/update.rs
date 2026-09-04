@@ -40,6 +40,12 @@ pub enum UpdateOutcome {
     UpdatedBinary { from: Version, to: Version },
     /// A verified exact-version Cargo build replaced the current executable.
     UpdatedFromCargo { from: Version, to: Version },
+    /// A verified update replaced the executable and restarted the managed service.
+    UpdatedAndRestarted {
+        from: Version,
+        to: Version,
+        method: crate::startup::StartupMethod,
+    },
 }
 
 impl fmt::Display for UpdateOutcome {
@@ -56,6 +62,7 @@ impl fmt::Display for UpdateOutcome {
             ),
             Self::UpdatedBinary { from, to } => write!(formatter, "updated eggsearch {from} -> {to} from the verified release binary"),
             Self::UpdatedFromCargo { from, to } => write!(formatter, "updated eggsearch {from} -> {to} from an exact Cargo build"),
+            Self::UpdatedAndRestarted { from, to, method } => write!(formatter, "updated eggsearch {from} -> {to} and restarted the {method} service"),
         }
     }
 }
@@ -113,6 +120,18 @@ pub enum UpdateError {
     /// A filesystem operation needed by the updater failed.
     #[error("update filesystem operation failed: {0}")]
     Filesystem(#[from] io::Error),
+    /// Managed-service state could not be queried or verified.
+    #[error("managed-service lifecycle operation failed: {0}")]
+    Lifecycle(String),
+    /// Replacement succeeded but the previously running service did not restart.
+    #[error("eggsearch {to} was installed, but the {method} service did not restart: {detail}\nrerun:\n  {command}")]
+    RestartFailed {
+        from: Box<Version>,
+        to: Box<Version>,
+        method: crate::startup::StartupMethod,
+        command: Box<String>,
+        detail: Box<String>,
+    },
 }
 
 struct UpdateEndpoints {
@@ -151,6 +170,26 @@ impl UpdateClient {
         check: bool,
         destination: Option<PathBuf>,
     ) -> Result<UpdateOutcome, UpdateError> {
+        self.execute_with_lifecycle(check, destination, None, false)
+            .await
+    }
+
+    async fn execute_with_lifecycle(
+        &self,
+        check: bool,
+        destination: Option<PathBuf>,
+        config: Option<&Path>,
+        manage_lifecycle: bool,
+    ) -> Result<UpdateOutcome, UpdateError> {
+        let lifecycle = if !check && manage_lifecycle {
+            Some(
+                crate::startup::startup_state(config)
+                    .await
+                    .map_err(|error| UpdateError::Lifecycle(error.to_string()))?,
+            )
+        } else {
+            None
+        };
         let latest = self.latest_stable_version().await?;
         match self.current.cmp(&latest) {
             std::cmp::Ordering::Equal => Ok(UpdateOutcome::AlreadyCurrent {
@@ -182,21 +221,67 @@ impl UpdateClient {
                             )
                             .await?;
                             replace_candidate(candidate.as_ref(), &destination)?;
-                            Ok(UpdateOutcome::UpdatedBinary {
-                                from: self.current.clone(),
-                                to: latest,
-                            })
+                            self.finish_lifecycle(
+                                UpdateOutcome::UpdatedBinary {
+                                    from: self.current.clone(),
+                                    to: latest,
+                                },
+                                lifecycle.as_ref(),
+                                config,
+                            )
+                            .await
                         }
                         Err(UpdateError::AssetUnavailable { .. }) => {
-                            self.update_from_cargo(&latest, &destination).await
+                            let outcome = self.update_from_cargo(&latest, &destination).await?;
+                            self.finish_lifecycle(outcome, lifecycle.as_ref(), config)
+                                .await
                         }
                         Err(error) => Err(error),
                     }
                 } else {
-                    self.update_from_cargo(&latest, &destination).await
+                    let outcome = self.update_from_cargo(&latest, &destination).await?;
+                    self.finish_lifecycle(outcome, lifecycle.as_ref(), config)
+                        .await
                 }
             }
         }
+    }
+
+    async fn finish_lifecycle(
+        &self,
+        outcome: UpdateOutcome,
+        lifecycle: Option<&crate::startup::StartupState>,
+        config: Option<&Path>,
+    ) -> Result<UpdateOutcome, UpdateError> {
+        let Some(state) = lifecycle else {
+            return Ok(outcome);
+        };
+        let Some(method) = state.method else {
+            return Ok(outcome);
+        };
+        let should_restart = state.registered
+            && state.healthy
+            && (state.running || method == crate::startup::StartupMethod::Cron);
+        if !should_restart {
+            return Ok(outcome);
+        }
+        let (from, to) = match &outcome {
+            UpdateOutcome::UpdatedBinary { from, to }
+            | UpdateOutcome::UpdatedFromCargo { from, to } => (from.clone(), to.clone()),
+            _ => return Ok(outcome),
+        };
+        let command = crate::startup::restart_command(config)
+            .map_err(|error| UpdateError::Lifecycle(error.to_string()))?;
+        if let Err(error) = crate::startup::restart(config).await {
+            return Err(UpdateError::RestartFailed {
+                from: Box::new(from),
+                to: Box::new(to),
+                method,
+                command: Box::new(command),
+                detail: Box::new(error.to_string()),
+            });
+        }
+        Ok(UpdateOutcome::UpdatedAndRestarted { from, to, method })
     }
 
     async fn latest_stable_version(&self) -> Result<Version, UpdateError> {
@@ -355,6 +440,16 @@ impl UpdateClient {
 /// Run `eggsearch update` or its non-mutating check mode.
 pub async fn run(check: bool) -> Result<UpdateOutcome, UpdateError> {
     UpdateClient::new()?.execute(check, None).await
+}
+
+/// Run an update while preserving the lifecycle state of a managed service.
+pub async fn run_with_config(
+    check: bool,
+    config: Option<&Path>,
+) -> Result<UpdateOutcome, UpdateError> {
+    UpdateClient::new()?
+        .execute_with_lifecycle(check, None, config, true)
+        .await
 }
 
 fn parse_stable_version(raw: &str) -> Result<Version, String> {

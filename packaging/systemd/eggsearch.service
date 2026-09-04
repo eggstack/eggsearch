@@ -1,0 +1,24 @@
+[Unit]
+Description=eggsearch persistent MCP service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{EXEC_START}}
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+DynamicUser=yes
+StateDirectory=eggsearch
+CacheDirectory=eggsearch
+WorkingDirectory=/var/lib/eggsearch
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

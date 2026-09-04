@@ -58,8 +58,10 @@ notarization or managed signing identity is part of this distribution path.
 The Unix installer uses `/usr/local/bin` when running as root and
 `$HOME/.local/bin` otherwise. PowerShell uses `%ProgramFiles%\Eggsearch` when
 running as Administrator and `%LOCALAPPDATA%\Eggsearch` otherwise. Neither
-installer invokes `sudo`, requests UAC elevation, or installs a service. Add
-the selected user-local directory to `PATH` when the installer advises it.
+installer invokes `sudo` or requests UAC elevation. Add `--service` (or
+PowerShell `-Service`) explicitly to delegate registration to the installed
+CLI; a failed registration leaves the verified binary installed and prints
+instructions for recovery. See [Managed service](service.md).
 
 ## Cargo fallback
 
@@ -73,10 +75,9 @@ checksum download failures, malformed or mismatched checksums, candidate
 execution failures, and candidate identity/version mismatches are hard
 failures. They never trigger a potentially long local Rust compilation.
 
-The install command only installs the executable. It does not start or
-register a service. To run the persistent local endpoint in the foreground,
-start it explicitly with `eggsearch mcp serve`; service registration and
-startup supervision remain separate deployment work.
+The default install command only installs the executable. To run the persistent
+local endpoint in the foreground, start it explicitly with `eggsearch mcp serve`.
+Explicit service mode registers only the persistent HTTP endpoint.
 
 ## Updating an installed binary
 

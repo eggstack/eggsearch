@@ -37,6 +37,7 @@ pub mod fetch;
 pub mod mcp;
 pub mod meta;
 pub mod platform;
+pub mod startup;
 pub mod update;
 
 #[cfg(feature = "mock")]

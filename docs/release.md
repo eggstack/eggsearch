@@ -65,17 +65,18 @@ checksums.
 
 Installers never elevate and only use Cargo for unsupported targets or a
 confirmed HTTP 404 for the exact binary. They fail closed on all other download,
-integrity, identity, or version errors. Service installation is not part of
-this phase; the smoke starts `mcp serve` in the foreground and requests its
-bounded graceful shutdown.
+integrity, identity, or version errors. The release smoke still starts `mcp
+serve` in the foreground and requests its bounded graceful shutdown; service
+registration is exercised separately through the CLI manager paths.
 
 The installed `eggsearch update` command consumes this same seven-target asset
 contract. crates.io `crate.max_stable_version` is its version authority; it then
 requests only the matching `vX.Y.Z` release asset and checksum, verifies the
 candidate, and replaces the currently running executable. Exact asset 404 or an
 unsupported host may use an isolated exact-version Cargo build. Other network or
-integrity failures never fall back to compilation. Update replacement does not
-restart services until phase 9.
+integrity failures never fall back to compilation. A normal update restarts
+only a previously healthy registered persistent service; stdio-only and
+stopped services remain untouched. See [Managed service](service.md).
 
 ## Routine verification
 

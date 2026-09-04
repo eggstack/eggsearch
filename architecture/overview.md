@@ -14,8 +14,8 @@ This document is the bird's-eye view: what each module is for, how they connect,
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CLI Entry Point                          │
 │                     src/main.rs + src/commands/                 │
-│  doctor | search | fetch | providers | update | mcp stdio/serve│
-│  browser-*                                                     │
+│  doctor | search | fetch | providers | update | startup/restart│
+│  croncheck | mcp stdio/serve | browser-*                     │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             ▼
@@ -80,7 +80,8 @@ fetch ↗
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
 | MCP server & tools | `src/mcp/` (6 files) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
-| CLI commands | `src/commands/` (9 files) | Subcommand wiring: doctor, search, fetch, providers, update, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
+| CLI commands | `src/commands/` (9 files) | Subcommand wiring: doctor, search, fetch, providers, update, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
+| Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
 | Testing infrastructure | `tests/` (50 test binaries), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
 | Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |

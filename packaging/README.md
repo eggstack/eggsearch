@@ -18,3 +18,10 @@ The installers never elevate. They install to `/usr/local/bin` or
 `%ProgramFiles%\\Eggsearch` when already privileged, and otherwise use
 `$HOME/.local/bin` or `%LOCALAPPDATA%\\Eggsearch`. Cargo compilation is only a
 fallback for unsupported targets or a confirmed 404 for the exact binary.
+
+Pass `--service` to `install.sh` or `-Service` to `install.ps1` only when a
+persistent service is wanted. The script delegates to the installed binary's
+`startup install` command. Manager templates are embedded in that binary and
+mirrored in `packaging/systemd/`, `packaging/launchd/`, and
+`packaging/windows/`; the scripts contain no service-manager logic and never
+invoke elevation.

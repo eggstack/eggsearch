@@ -60,7 +60,18 @@ The Unix and PowerShell installers:
 They invoke Cargo only for an unsupported target or a confirmed binary HTTP
 404. Transport, authorization, rate-limit, checksum, execution, and identity
 failures stop immediately. They never invoke `sudo` or request UAC elevation.
-Service registration is deliberately absent until a later deployment phase.
+With explicit `--service`, installers invoke the installed binary's
+`startup install` command. They do not render manager definitions, invoke
+elevation, or create a cron fallback when a preferred manager lacks privilege.
+
+## Persistent startup
+
+`src/startup.rs` owns the canonical `mcp serve --bind 127.0.0.1:11320 --path
+/mcp` runtime, absolute-path quoting, manager detection, installation,
+instructions, status, restart, uninstall, and cron watchdog. `/healthz` is the
+only readiness signal. Cron preserves unrelated crontab lines and can signal
+only a process whose executable and Linux `/proc` start token match its owned
+PID record. `mcp stdio` remains client-owned.
 
 ## Self-update
 
@@ -71,5 +82,5 @@ replaces `std::env::current_exe()` through the cross-platform `self-replace`
 primitive. Only an unsupported host or a confirmed exact-asset HTTP 404 may
 enter an exact-version Cargo build under a temporary `--root`; transient
 network, status, checksum, and identity failures are hard stops. No updater
-path invokes elevation or restarts processes. Persistent-service restart
-integration is reserved for phase 9.
+path invokes elevation. A normal update restarts only a previously healthy
+registered persistent service through its registered manager.

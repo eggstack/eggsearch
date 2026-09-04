@@ -48,13 +48,35 @@ HTTP 200 means the process has bound its listener and is ready to accept MCP
 initialization or discovery. Health does not call providers, search, fetch, or
 browser services and never exposes credentials or configuration paths.
 
+## Managed startup and restart
+
+Persistent services are managed explicitly and only for `mcp serve`:
+
+```bash
+eggsearch startup instructions
+eggsearch startup install
+eggsearch startup status --json
+eggsearch restart
+eggsearch startup uninstall
+```
+
+Auto selection uses launchd on macOS, a running systemd on Linux, Windows SCM
+on Windows, and cron on other Unix/Linux hosts. A detected but unusable
+preferred manager is an error; the CLI never silently installs a second cron
+registration. See [Managed service](service.md) for manager-specific paths,
+manual commands, permissions, logs, and cron identity controls.
+
+`eggsearch croncheck` starts a detached server only after an explicit local
+connection refusal, and rechecks under a startup lock before spawning.
+Ambiguous health failures do not create duplicates.
+
 ## Foreground operation and shutdown
 
-Persistent mode logs to stderr, making it suitable for capture by a future
-supervisor. Ctrl-C and Unix SIGTERM cancel active rmcp sessions and drain
-connections for at most ten seconds. The same cancellation seam is retained
-for the Windows service-control integration planned for phase 9.
+Persistent mode logs to stderr, making it suitable for capture by a supervisor.
+Ctrl-C and Unix SIGTERM cancel active rmcp sessions and drain connections for at
+most ten seconds. The same cancellation seam is used by service managers and
+the Windows service entry point.
 
-The ordinary installer only installs the binary. It does not start or register
-a service; systemd, launchd, Windows SCM, and cron integration are not part of
-this phase.
+The ordinary installer only installs the binary. Pass explicit `--service` to
+delegate registration to `eggsearch startup install`; installer scripts do not
+duplicate manager logic or elevate.

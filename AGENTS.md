@@ -51,7 +51,7 @@ make fuzz-smoke              # 60s runs of 3 key fuzz targets
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
-Binary releases are assembled by the tagged `.github/workflows/release-binaries.yml` workflow after the exact crate version is visible on crates.io. Run `make packaging-check` when changing target mappings or installer behavior; service installation is not part of phase 6.
+Binary releases are assembled by the tagged `.github/workflows/release-binaries.yml` workflow after the exact crate version is visible on crates.io. Run `make packaging-check` when changing target mappings, installer behavior, or service assets.
 
 ## Project Structure
 
@@ -67,6 +67,7 @@ src/
   meta/            # MetadataSearchAdapter + 36 vendored engines (+ local workspace backend) covering 37 registered provider IDs, forge adapter, planners, inventory cache
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), stdio/HTTP transports, tool definitions, state
+  startup.rs       # startup manager policy, service templates, croncheck, restart state
 packaging/          # release target contract, installers, artifact smoke helpers
 tests/             # integration, corpus, contract, property, adversarial, and browser_profiles tests
 fuzz/              # cargo-fuzz + libfuzzer targets (22 registered)
@@ -158,7 +159,8 @@ Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/ski
 - **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded HTTP bytes or bounded rendered browser DOM before extraction. A fresh raw hit can create a missing derived representation locally, including changed HTML extraction/link settings and PDF page selection. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params and preserves transport provenance. Agent-visible `FetchCachePolicy` (`default`/`bypass`/`refresh`) plus caller `max_cache_age_seconds` (tightens only) control reuse/revalidation; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy. HTTP 304 is a revalidation signal, not a redirect. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes. See `architecture/fetch.md`.
 - **Transport:** `mcp stdio` is the backward-compatible client-spawned transport. `mcp serve` is an explicit, persistent Streamable HTTP server restricted to loopback, with `/healthz` readiness and bounded request handling. Both use the same `EggsearchServer` factory. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`. See `architecture/mcp.md`.
 - **Windows source/runtime qualification:** Unix-specific hardening paths are conditionally unavailable on Windows; Windows release jobs still compile and smoke the default binary on native x86-64 and ARM64 runners, and failures remain explicit release blockers.
-- **Self-update:** `eggsearch update --check` only compares against crates.io `crate.max_stable_version`; `eggsearch update` consumes the exact matching GitHub tag asset, verifies SHA-256 and candidate identity before replacing `current_exe()`, and uses isolated exact-version Cargo only for unsupported hosts or confirmed asset HTTP 404. It never elevates or restarts services; phase 9 owns restart integration.
+- **Startup supervision:** `startup.rs` owns the canonical persistent command and health URL, manager detection/rendering, idempotent systemd/launchd/Windows SCM/cron registration, `croncheck`, and identity-safe restart. `mcp stdio` remains client-owned. See `architecture/commands.md` and `docs/service.md`.
+- **Self-update:** `eggsearch update --check` only compares against crates.io `crate.max_stable_version`; `eggsearch update` consumes the exact matching GitHub tag asset, verifies SHA-256 and candidate identity before replacing `current_exe()`, and uses isolated exact-version Cargo only for unsupported hosts or confirmed asset HTTP 404. A normal update restarts only a previously healthy registered persistent service; stopped and stdio-only processes remain untouched.
 
 ## MCP Tools (10 total)
 

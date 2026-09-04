@@ -17,6 +17,9 @@ include = [
     "benches/**/*.rs",
     "docs/**/*.md",
     "architecture/**/*.md",
+    "packaging/systemd/*",
+    "packaging/launchd/*",
+    "packaging/windows/*",
     "/README.md",
     "/LICENSE",
     "/CHANGELOG.md",
@@ -81,6 +84,9 @@ pretty_assertions = "1"
 httpmock = "0.7"
 criterion = { version = "0.5", default-features = false }
 proptest = { version = "1", default-features = false, features = ["std"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8.1"
 
 [[bench]]
 name = "perf"

@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [string]$Version
+    [string]$Version,
+    [switch]$Service
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,6 +69,12 @@ function Install-Candidate {
     $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     if (-not ($PathEntries -contains $InstallDirectory) -and -not (($UserPath -split ';') -contains $InstallDirectory)) {
         Write-Output "Add $InstallDirectory to your user PATH to invoke eggsearch directly"
+    }
+    if ($Service) {
+        & $Destination startup install
+        if ($LASTEXITCODE -ne 0) {
+            throw "Binary installed at $Destination, but startup registration failed. Run '$Destination startup instructions' for next steps."
+        }
     }
 }
 

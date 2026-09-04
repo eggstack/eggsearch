@@ -52,6 +52,27 @@ checksum and candidate version, and uses an isolated exact-version Cargo build
 only when the host is unsupported or the exact asset returns HTTP 404. It never
 downgrades or elevates itself. See [Update](docs/update.md) for the policy.
 
+For an explicitly managed persistent loopback service, request service mode in
+the installer or register the installed binary yourself:
+
+```bash
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | sudo bash -s -- --service
+eggsearch startup instructions
+eggsearch startup install
+eggsearch startup status
+eggsearch restart
+```
+
+PowerShell service mode downloads the script and invokes it with `-Service`
+from an elevated prompt:
+
+```powershell
+$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Service
+```
+
+The CLI owns manager detection and rendering; it never elevates automatically. See
+[Managed service](docs/service.md).
+
 For a source/manual installation, use Cargo:
 
 ```bash
@@ -74,8 +95,8 @@ eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp
 
 Persistent mode accepts loopback binds only, serves MCP at `/mcp`, and exposes
 `GET /healthz` for local readiness checks. The ordinary installer does not
-start or register a service. See [Deployment](docs/deployment.md) for the
-transport choice and safety boundaries.
+start or register a service unless explicit `--service` is supplied. See
+[Deployment](docs/deployment.md) for the transport choice and safety boundaries.
 
 ## MCP Tools
 
@@ -134,4 +155,5 @@ Runs formatting, clippy, feature compilation, and the deterministic test suite. 
 - [Release Process](docs/release.md) — preparation, verification, publication
 - [Installation](docs/installation.md) — binary targets, installers, checksums, and fallback rules
 - [Deployment](docs/deployment.md) — stdio versus persistent loopback Streamable HTTP
+- [Managed service](docs/service.md) — systemd, launchd, Windows SCM, cron, status, restart
 - [Update](docs/update.md) — binary-first self-update, verification, and fallback rules

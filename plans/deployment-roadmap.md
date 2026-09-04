@@ -1,6 +1,6 @@
 # Binary Distribution and Deployment Roadmap
 
-Status: active — phases 6–7 implemented; phases 8–10 planned
+Status: active — phases 6–9 implemented; phase 10 planned
 Updated: 2026-09-04
 Audited repository baseline: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Primary downstream consumer reviewed: `dbowm91/codegg` main at `b3faf5050a1813bdef9e58d760f758318cb3dfcd`
@@ -120,7 +120,7 @@ curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/instal
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | sudo bash -s -- --service
 ```
 
-This distinction is intentional: stdio users should not receive an unused background service. Once phase 9 exists, `--service` delegates startup policy to `eggsearch startup install` rather than duplicating service-manager logic in shell.
+This distinction is intentional: stdio users should not receive an unused background service. `--service` delegates startup policy to `eggsearch startup install` rather than duplicating service-manager logic in shell.
 
 ### 7. Persistent service is loopback-only in this workstream
 
@@ -180,7 +180,7 @@ The release-only GitHub Actions matrix, stable asset/checksum contract, Unix and
 
 ### Phase 7 — Binary-first self-update
 
-Shared target/version/download/replacement logic and `eggsearch update`/`update --check` are implemented. crates.io is authoritative; exact GitHub assets are preferred; exact-version Cargo compilation is fallback only for absent/unsupported assets. Phase 9 later adds restart-state integration.
+Shared target/version/download/replacement logic and `eggsearch update`/`update --check` are implemented. crates.io is authoritative; exact GitHub assets are preferred; exact-version Cargo compilation is fallback only for absent/unsupported assets. The updater now restarts only a previously healthy registered persistent service through phase 9 startup state.
 
 ### Phase 8 — Persistent Streamable HTTP MCP
 

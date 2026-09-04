@@ -1,6 +1,6 @@
 # Phase 9 — Startup Supervision, Croncheck, and Restart
 
-Status: planned
+Status: implemented
 Depends on: phase 8 persistent Streamable HTTP MCP; phase 7 update hooks for restart integration
 Baseline for planning: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Roadmap: `plans/deployment-roadmap.md`

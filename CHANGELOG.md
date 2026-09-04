@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   typed bind/path options, rmcp 3.2.0 transport support, bounded `/healthz`
   readiness, request hardening, graceful shutdown, shared stdio/HTTP service
   construction, and native release smoke coverage.
+- Persistent startup supervision via `startup install|instructions|status|uninstall`,
+  `croncheck`, and `restart`. Auto selection covers active systemd, macOS
+  launchd, Windows SCM, and cron fallback; manager definitions share one
+  canonical runtime command, cron uses an identity-safe PID control seam, and
+  updates restart only a previously healthy managed service.
 
 ## [0.3.8] - 2026-09-04
 

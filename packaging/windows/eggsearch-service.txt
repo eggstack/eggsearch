@@ -1,0 +1,11 @@
+Eggsearch Windows SCM definition
+
+Service name: Eggsearch
+Display name: eggsearch persistent MCP service
+Start type: automatic
+Binary command: "<absolute-eggsearch>" --config "<absolute-config>" mcp serve --bind 127.0.0.1:11320 --path /mcp
+Health check: http://127.0.0.1:11320/healthz
+
+The CLI uses the Windows Service Control Manager. It never requests UAC
+elevation; run the printed command from an elevated PowerShell prompt when
+Administrator rights are required.
