@@ -17,9 +17,9 @@ include = [
     "benches/**/*.rs",
     "docs/**/*.md",
     "architecture/**/*.md",
-    "README.md",
-    "LICENSE",
-    "CHANGELOG.md",
+    "/README.md",
+    "/LICENSE",
+    "/CHANGELOG.md",
 ]
 exclude = [
     ".opencode/",
