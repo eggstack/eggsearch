@@ -1,6 +1,6 @@
 # Planning Registry
 
-Updated: 2026-09-04
+Updated: 2026-09-05
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
@@ -24,7 +24,7 @@ The governing rationale and cross-phase invariants for this workstream are in `r
 | 7 | Binary-first self-update | implemented | phase 6 asset contract | `phase-7-binary-first-self-update.md` |
 | 8 | Persistent Streamable HTTP MCP | implemented | none; coordinated with phase 6 release smoke | `phase-8-persistent-streamable-http-mcp.md` |
 | 9 | Startup supervision, croncheck, and restart | implemented | phases 7-8 | `phase-9-startup-supervision-croncheck-and-restart.md` |
-| 10 | Agent/IDE integration and deployment closure | planned | phases 6, 8, 9 | `phase-10-agent-ide-integration-and-deployment-closure.md` |
+| 10 | Agent/IDE integration and deployment closure | implemented | phases 6, 8, 9 | `phase-10-agent-ide-integration-and-deployment-closure.md` |
 
 The governing rationale, target matrix, installer/update contract, lifecycle split, and cross-phase invariants are in `deployment-roadmap.md`.
 
@@ -57,6 +57,14 @@ Do not mark this workstream complete until:
 - CodeGG default stdio bootstrap and explicit remote MCP path both work against the closure binary;
 - README/docs distinguish ordinary binary-only install from fleet `--service` install;
 - `make check` and release/deployment-specific smoke gates pass on the exact closure candidate.
+
+Phase 10 closure evidence: `src/integrations/` provides seven client render
+adapters, native CLI or safe JSON apply modes, backup/atomic writes, and MCP
+stdio/HTTP verification; `docs/integrations.md` and
+`architecture/integrations.md` document the current client surfaces. Local
+verification is recorded by the closure commit and CI. Official MCP Registry
+metadata remains deferred because the current package schema does not yet
+truthfully express the complete multi-architecture release asset contract.
 
 ## Deferred by design
 

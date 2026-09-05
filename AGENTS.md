@@ -4,7 +4,7 @@
 
 eggsearch is a lightweight MCP search/fetch server for AI agents. It queries upstream search providers, deduplicates with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. MCP is available over client-owned stdio or explicit loopback-only Streamable HTTP. Single library + binary crate (not a workspace).
 
-Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, testing, build, packaging) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, installation, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
+Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, integrations, testing, build, packaging) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, installation, integrations, deployment, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
 
 | Topic | Deep dive |
 |-------|-----------|
@@ -15,6 +15,7 @@ Architecture deep dives live in `architecture/` — [overview.md](architecture/o
 | Fetch pipeline, SSRF, cache, browser | `architecture/fetch.md` |
 | MCP server and tool surface | `architecture/mcp.md` |
 | CLI subcommands | `architecture/commands.md` |
+| Agent/IDE adapters | `architecture/integrations.md` |
 | Test suites and fuzz targets | `architecture/testing.md`, `architecture/hardening.md` |
 | Build, CI, release gates | `architecture/build.md` |
 | Release target contract and installers | `architecture/packaging.md` |
@@ -60,7 +61,8 @@ src/
   main.rs          # binary entry point (clap, tokio main)
   lib.rs           # library root, re-exports core/fetch/mcp/meta
   config.rs        # CLI config loader
-  commands/        # subcommands: doctor, search, providers, mcp, fetch, update, browser_login, browser_profiles
+  commands/        # subcommands: doctor, search, providers, mcp, fetch, update, integrate, browser_login, browser_profiles
+  integrations/    # CodeGG and common agent/IDE MCP registration adapters
   platform.rs      # release target/asset contract and host mapping
   update.rs        # crates.io-authoritative binary-first self-update
   core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
@@ -158,6 +160,7 @@ Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/ski
 - **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP profile-scoped browser fetches launch a request-scoped browser against that exact directory and use its default browser context; anonymous browser fetches retain the warm ephemeral lifecycle. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default. Profile cache isolation uses opaque IDs internally; display names are used only in MCP response metadata. See `architecture/fetch.md`.
 - **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded HTTP bytes or bounded rendered browser DOM before extraction. A fresh raw hit can create a missing derived representation locally, including changed HTML extraction/link settings and PDF page selection. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params and preserves transport provenance. Agent-visible `FetchCachePolicy` (`default`/`bypass`/`refresh`) plus caller `max_cache_age_seconds` (tightens only) control reuse/revalidation; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy. HTTP 304 is a revalidation signal, not a redirect. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes. See `architecture/fetch.md`.
 - **Transport:** `mcp stdio` is the backward-compatible client-spawned transport. `mcp serve` is an explicit, persistent Streamable HTTP server restricted to loopback, with `/healthz` readiness and bounded request handling. Both use the same `EggsearchServer` factory. Server instructions are in `EGGSEARCH_INSTRUCTIONS` constant in `mcp/server.rs`. See `architecture/mcp.md`.
+- **Integrations:** `integrate` defaults to stdio, renders all seven supported clients, applies only through native CLI or strict atomic JSON paths, and verifies the required MCP tool set after apply. Zed and JSONC settings remain print-only when safe preservation is unavailable. See `architecture/integrations.md`.
 - **Windows source/runtime qualification:** Unix-specific hardening paths are conditionally unavailable on Windows; Windows release jobs still compile and smoke the default binary on native x86-64 and ARM64 runners, and failures remain explicit release blockers.
 - **Startup supervision:** `startup.rs` owns the canonical persistent command and health URL, manager detection/rendering, idempotent systemd/launchd/Windows SCM/cron registration, `croncheck`, and identity-safe restart. `mcp stdio` remains client-owned. See `architecture/commands.md` and `docs/service.md`.
 - **Self-update:** `eggsearch update --check` only compares against crates.io `crate.max_stable_version`; `eggsearch update` consumes the exact matching GitHub tag asset, verifies SHA-256 and candidate identity before replacing `current_exe()`, and uses isolated exact-version Cargo only for unsupported hosts or confirmed asset HTTP 404. A normal update restarts only a previously healthy registered persistent service; stopped and stdio-only processes remain untouched.
@@ -185,3 +188,5 @@ Tool registration and schemas live in `src/mcp/server.rs` (`#[tool]` attrs); imp
 - **Allowing native smoke skips to promote a release** — missing credentials, fixture refs, malformed evidence, or missing provider outputs must fail the manual release workflow
 - **Using display names as cache scope** — `CacheScope::Profile(id)` must use the opaque profile ID, never the display name; recreated profiles with the same name get distinct cache scopes
 - **Silently ignoring invalid explicit browser paths** — `discover_browser` returns `ExplicitPathInvalid` when a configured path is invalid; it does not fall back to auto-discovery
+- **Mutating client configuration without `--apply`** — integration commands print by default; direct edits are atomic, backed up, and limited to the named `eggsearch` entry
+- **Writing development paths into client config** — stdio apply requires an installed executable or explicit `--executable`; never register `target/debug` or test binaries

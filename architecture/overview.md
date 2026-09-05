@@ -14,8 +14,8 @@ This document is the bird's-eye view: what each module is for, how they connect,
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CLI Entry Point                          │
 │                     src/main.rs + src/commands/                 │
-│  doctor | search | fetch | providers | update | startup/restart│
-│  croncheck | mcp stdio/serve | browser-*                     │
+│  doctor | search | fetch | providers | update | integrate     │
+│  startup/restart | croncheck | mcp stdio/serve | browser-*    │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             ▼
@@ -80,7 +80,8 @@ fetch ↗
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
 | MCP server & tools | `src/mcp/` (6 files) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
-| CLI commands | `src/commands/` (9 files) | Subcommand wiring: doctor, search, fetch, providers, update, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
+| CLI commands | `src/commands/` (10 files) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
+| Agent/IDE integrations | `src/integrations/` (8 files) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
 | Testing infrastructure | `tests/` (50 test binaries), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
@@ -99,6 +100,7 @@ fetch ↗
 | Security subsystem | Advisory lookups (CVE/GHSA/OSV/RustSec/KEV), applicability assessment, severity filtering | [security.md](security.md) |
 | Local workspace | Filesystem search backend, inventory cache, git-aware fast path, `openat2` safe opening | [local-workspace.md](local-workspace.md) |
 | Hardening & fuzzing | Property-based testing, adversarial corpus, fuzz-target design | [hardening.md](hardening.md) |
+| Agent/IDE integration | Client registration, safe apply, executable paths, protocol verification | [integrations.md](integrations.md) |
 
 Operator-facing documentation lives in `docs/` (config reference, safety, threat model, tool matrix, agent workflows, provider setup). This directory is the contributor-facing deep-dive set.
 
@@ -322,4 +324,4 @@ cargo run -- doctor --probe   # diagnose providers
 
 ---
 
-[Core Types →](core.md) | [Metasearch Adapter →](meta.md) | [Search Engines →](engines.md) | [HTTP Fetch →](fetch.md) | [MCP Server →](mcp.md) | [CLI Commands →](commands.md) | [Testing →](testing.md) | [Build & CI →](build.md) | [Release packaging →](packaging.md)
+[Core Types →](core.md) | [Metasearch Adapter →](meta.md) | [Search Engines →](engines.md) | [HTTP Fetch →](fetch.md) | [MCP Server →](mcp.md) | [CLI Commands →](commands.md) | [Integrations →](integrations.md) | [Testing →](testing.md) | [Build & CI →](build.md) | [Release packaging →](packaging.md)

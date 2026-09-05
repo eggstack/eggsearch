@@ -93,3 +93,20 @@ The updater uses crates.io as its stable-version authority and then consumes the
 exact matching GitHub Release asset, with the same target names and checksum
 contract documented above. See [Self-update](update.md) for verification,
 Cargo fallback, permission, and lifecycle behavior.
+
+## Fleet one-liners
+
+Binary-only installation is the default. Add `--service` only when the host
+should run the persistent loopback endpoint:
+
+```bash
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | sudo bash -s -- --service
+```
+
+After installation, print or apply a client registration explicitly:
+
+```bash
+eggsearch integrate codegg --apply
+eggsearch integrate codex --apply
+```

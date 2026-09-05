@@ -84,6 +84,15 @@ eggsearch startup instructions
 eggsearch startup status --json
 ```
 
+For client integration rendering and protocol verification:
+
+```bash
+eggsearch integrate list --json
+eggsearch integrate codex --transport stdio
+eggsearch integrate vscode --transport http
+eggsearch integrate opencode --transport stdio --apply --executable /usr/local/bin/eggsearch
+```
+
 ## Code Style
 
 - **No comments** unless explicitly requested
@@ -124,6 +133,9 @@ eggsearch startup status --json
 - **Broadening installer fallback** — Cargo is allowed only for unsupported targets or a confirmed binary HTTP 404; checksum, transport, identity, and version failures are hard stops
 - **Supervising stdio** — startup managers, `croncheck`, and restart apply only to persistent `mcp serve`; never kill or register a client-owned stdio process
 - **Creating duplicate managers** — inspect `startup status`; auto detection does not fall back to cron after a preferred manager permission failure
+- **Applying integration output blindly** — inspect the default rendered configuration first; `--apply` is limited to supported client mutation paths and creates JSON backups before replacement
+- **Using a development binary for stdio registration** — pass an installed binary with `--executable` or install eggsearch before applying a client integration
+- **Assuming every client has a safe native editor** — Zed and existing OpenCode JSONC settings are intentionally print-only
 
 ## Fuzz Targets
 

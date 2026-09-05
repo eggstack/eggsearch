@@ -80,3 +80,23 @@ the Windows service entry point.
 The ordinary installer only installs the binary. Pass explicit `--service` to
 delegate registration to `eggsearch startup install`; installer scripts do not
 duplicate manager logic or elevate.
+
+## Client-spawned versus persistent topology
+
+Use client-spawned stdio for a workstation or CodeGG's default backend:
+
+```text
+MCP client ──starts──> eggsearch mcp stdio
+```
+
+Use persistent loopback HTTP when several local clients or a startup manager
+should share one process:
+
+```text
+systemd/launchd/SCM/cron ──starts──> eggsearch mcp serve
+MCP client ──HTTP──> 127.0.0.1:11320/mcp
+watchdog/status ──GET──> 127.0.0.1:11320/healthz
+```
+
+Register clients with `eggsearch integrate`. It prints configuration by
+default and applies only with `--apply`; see [MCP integrations](integrations.md).

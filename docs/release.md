@@ -78,6 +78,13 @@ integrity failures never fall back to compilation. A normal update restarts
 only a previously healthy registered persistent service; stdio-only and
 stopped services remain untouched. See [Managed service](service.md).
 
+The deployment closure also runs `eggsearch integrate list` and validates
+rendered stdio/HTTP forms for CodeGG, Zed, Codex, Claude Code, VS Code, Cursor,
+and OpenCode. Applied paths verify MCP initialize and `tools/list`; strict JSON
+edits are atomic and backup-preserving. Official MCP Registry metadata is
+deferred until its package schema can represent the complete multi-architecture
+release contract without implying unsupported remote authentication.
+
 ## Routine verification
 
 The daily developer command is:

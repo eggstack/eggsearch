@@ -25,3 +25,9 @@ persistent service is wanted. The script delegates to the installed binary's
 mirrored in `packaging/systemd/`, `packaging/launchd/`, and
 `packaging/windows/`; the scripts contain no service-manager logic and never
 invoke elevation.
+
+After binary installation, `eggsearch integrate list` reports the available
+client adapters. `eggsearch integrate <client>` renders a registration without
+mutation; `--apply` is required for native CLI or strict JSON changes. The
+integration layer uses the same stdio command and loopback HTTP endpoint as the
+release smoke and startup runtime.

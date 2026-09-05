@@ -15,6 +15,7 @@
 | `fetch.rs` | `eggsearch fetch` — fetch and extract a URL from CLI |
 | `providers.rs` | `eggsearch providers` — show provider configuration/status |
 | `update.rs` | `eggsearch update` — check and install the latest stable binary |
+| `integrate.rs` | `eggsearch integrate` — render or apply client-specific MCP registrations |
 | `mcp.rs` | `eggsearch mcp stdio` or `eggsearch mcp serve` — start MCP server |
 | `browser_login.rs` | `eggsearch browser-login` — headed browser login (feature-gated `browser`) |
 | `browser_profiles.rs` | `eggsearch browser-profiles` — manage persistent profiles (feature-gated `browser`) |
@@ -39,6 +40,7 @@ Commands:
   croncheck       Start the persistent service only when health is definitely absent
   restart         Restart the registered persistent service
   startup         Manage persistent startup supervision
+  integrate       Render or apply MCP client registrations
 ```
 
 ---

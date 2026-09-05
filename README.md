@@ -73,6 +73,23 @@ $installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/
 The CLI owns manager detection and rendering; it never elevates automatically. See
 [Managed service](docs/service.md).
 
+## Add to an MCP client
+
+Print a client-specific registration or apply it after reviewing the target:
+
+```bash
+eggsearch integrate list
+eggsearch integrate codegg --transport stdio --apply
+eggsearch integrate codex --transport stdio --apply
+eggsearch integrate claude --transport stdio --apply
+```
+
+The default is client-owned stdio. Use `--transport http` only after the
+loopback service is running. `--apply` is always opt-in; JSON edits are
+atomic and backed up, native clients are changed through their own CLI, and
+Zed/JSONC settings remain print-only when safe preservation is unavailable.
+See [MCP integrations](docs/integrations.md).
+
 For a source/manual installation, use Cargo:
 
 ```bash
@@ -155,5 +172,6 @@ Runs formatting, clippy, feature compilation, and the deterministic test suite. 
 - [Release Process](docs/release.md) — preparation, verification, publication
 - [Installation](docs/installation.md) — binary targets, installers, checksums, and fallback rules
 - [Deployment](docs/deployment.md) — stdio versus persistent loopback Streamable HTTP
+- [MCP integrations](docs/integrations.md) — CodeGG, Zed, Codex, Claude Code, VS Code, Cursor, and OpenCode
 - [Managed service](docs/service.md) — systemd, launchd, Windows SCM, cron, status, restart
 - [Update](docs/update.md) — binary-first self-update, verification, and fallback rules

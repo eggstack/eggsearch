@@ -15,6 +15,8 @@ Transport selection:
 
 The full stable machine-readable response contract for harness developers lives in `architecture/codegg-contract.md`.
 
+The `eggsearch integrate` command renders or applies client-specific MCP registration for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode. Rendering is read-only; apply mode uses native client commands where available or atomic JSON replacement with timestamped backups, then verifies the selected transport's required tools. Zed and OpenCode JSONC remain print-only when safe editing is unavailable. See `docs/integrations.md` and `architecture/integrations.md`.
+
 ## Tool Catalog (10 tools)
 
 | Tool | Category | Purpose |

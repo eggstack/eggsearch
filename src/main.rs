@@ -96,6 +96,17 @@ enum Commands {
         #[command(subcommand)]
         cmd: StartupCmd,
     },
+    /// Render or apply MCP client registrations.
+    Integrate {
+        #[command(subcommand)]
+        cmd: IntegrateCmd,
+        /// Emit machine-readable JSON.
+        #[arg(long, global = true)]
+        json: bool,
+        /// Installed eggsearch executable to register for stdio clients.
+        #[arg(long, global = true)]
+        executable: Option<std::path::PathBuf>,
+    },
     #[cfg(windows)]
     #[command(hide = true)]
     WindowsService,
@@ -159,6 +170,55 @@ enum StartupCmd {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum IntegrateCmd {
+    /// List supported clients and their registration modes.
+    List,
+    /// Configure one supported MCP client.
+    Codegg {
+        #[arg(long, value_enum, default_value_t = eggsearch::integrations::Transport::Stdio)]
+        transport: eggsearch::integrations::Transport,
+        #[arg(long)]
+        apply: bool,
+    },
+    Zed {
+        #[arg(long, value_enum, default_value_t = eggsearch::integrations::Transport::Stdio)]
+        transport: eggsearch::integrations::Transport,
+        #[arg(long)]
+        apply: bool,
+    },
+    Codex {
+        #[arg(long, value_enum, default_value_t = eggsearch::integrations::Transport::Stdio)]
+        transport: eggsearch::integrations::Transport,
+        #[arg(long)]
+        apply: bool,
+    },
+    Claude {
+        #[arg(long, value_enum, default_value_t = eggsearch::integrations::Transport::Stdio)]
+        transport: eggsearch::integrations::Transport,
+        #[arg(long)]
+        apply: bool,
+    },
+    Cursor {
+        #[arg(long, value_enum, default_value_t = eggsearch::integrations::Transport::Stdio)]
+        transport: eggsearch::integrations::Transport,
+        #[arg(long)]
+        apply: bool,
+    },
+    Vscode {
+        #[arg(long, value_enum, default_value_t = eggsearch::integrations::Transport::Stdio)]
+        transport: eggsearch::integrations::Transport,
+        #[arg(long)]
+        apply: bool,
+    },
+    Opencode {
+        #[arg(long, value_enum, default_value_t = eggsearch::integrations::Transport::Stdio)]
+        transport: eggsearch::integrations::Transport,
+        #[arg(long)]
+        apply: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -166,6 +226,65 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Update { check } => commands::update::run(check, cli.config.as_deref()).await,
+        Commands::Integrate {
+            cmd,
+            json,
+            executable,
+        } => {
+            let command = match cmd {
+                IntegrateCmd::List => commands::integrate::IntegrateCommand::List,
+                IntegrateCmd::Codegg { transport, apply } => {
+                    commands::integrate::IntegrateCommand::Client {
+                        client: eggsearch::integrations::Client::Codegg,
+                        transport,
+                        apply,
+                    }
+                }
+                IntegrateCmd::Zed { transport, apply } => {
+                    commands::integrate::IntegrateCommand::Client {
+                        client: eggsearch::integrations::Client::Zed,
+                        transport,
+                        apply,
+                    }
+                }
+                IntegrateCmd::Codex { transport, apply } => {
+                    commands::integrate::IntegrateCommand::Client {
+                        client: eggsearch::integrations::Client::Codex,
+                        transport,
+                        apply,
+                    }
+                }
+                IntegrateCmd::Claude { transport, apply } => {
+                    commands::integrate::IntegrateCommand::Client {
+                        client: eggsearch::integrations::Client::Claude,
+                        transport,
+                        apply,
+                    }
+                }
+                IntegrateCmd::Cursor { transport, apply } => {
+                    commands::integrate::IntegrateCommand::Client {
+                        client: eggsearch::integrations::Client::Cursor,
+                        transport,
+                        apply,
+                    }
+                }
+                IntegrateCmd::Vscode { transport, apply } => {
+                    commands::integrate::IntegrateCommand::Client {
+                        client: eggsearch::integrations::Client::Vscode,
+                        transport,
+                        apply,
+                    }
+                }
+                IntegrateCmd::Opencode { transport, apply } => {
+                    commands::integrate::IntegrateCommand::Client {
+                        client: eggsearch::integrations::Client::Opencode,
+                        transport,
+                        apply,
+                    }
+                }
+            };
+            commands::integrate::run(command, json, executable).await
+        }
         Commands::Croncheck => {
             println!(
                 "{}",
@@ -280,6 +399,9 @@ async fn main() -> Result<()> {
                 }
                 Commands::Croncheck | Commands::Restart | Commands::Startup { .. } => {
                     unreachable!("startup commands are handled before configuration loading")
+                }
+                Commands::Integrate { .. } => {
+                    unreachable!("integration is handled before configuration loading")
                 }
                 #[cfg(windows)]
                 Commands::WindowsService => {

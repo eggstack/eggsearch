@@ -1,6 +1,6 @@
 # Binary Distribution and Deployment Roadmap
 
-Status: active — phases 6–9 implemented; phase 10 planned
+Status: implemented — phases 6–10 implemented; registry metadata deferred
 Updated: 2026-09-04
 Audited repository baseline: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Primary downstream consumer reviewed: `dbowm91/codegg` main at `b3faf5050a1813bdef9e58d760f758318cb3dfcd`
@@ -192,7 +192,10 @@ Add startup manager detection/install/instructions/status/uninstall, embedded sy
 
 ### Phase 10 — Agent/IDE integration and deployment closure
 
-Add client registration render/apply support for CodeGG and the major MCP clients, update deployment/integration/release docs, add registry metadata if appropriate, and run a final matrix/installer/service/update/client compatibility audit.
+Client registration render/apply support for CodeGG and the major MCP clients,
+deployment/integration/release documentation, local CI/packaging verification,
+and the final client/transport contract are implemented. Registry metadata is
+deferred pending a schema that can represent all release assets accurately.
 
 ## Deferred by design
 

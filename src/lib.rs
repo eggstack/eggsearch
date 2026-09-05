@@ -34,6 +34,7 @@
 
 pub mod core;
 pub mod fetch;
+pub mod integrations;
 pub mod mcp;
 pub mod meta;
 pub mod platform;

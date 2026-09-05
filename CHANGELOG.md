@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   launchd, Windows SCM, and cron fallback; manager definitions share one
   canonical runtime command, cron uses an identity-safe PID control seam, and
   updates restart only a previously healthy managed service.
+- Agent/IDE integration via `eggsearch integrate` for CodeGG, Zed, Codex,
+  Claude Code, VS Code, Cursor, and OpenCode. Registrations render by default,
+  apply only with `--apply`, preserve unrelated settings, create backups for
+  direct JSON edits, and verify MCP initialize plus the required tool set.
 
 ## [0.3.8] - 2026-09-04
 

@@ -1,6 +1,6 @@
 # Phase 10 — Agent/IDE Integration and Deployment Closure
 
-Status: planned
+Status: implemented
 Depends on: phases 6 and 8; phase 9 required for persistent-service integration/closure
 Baseline for planning: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Roadmap: `plans/deployment-roadmap.md`
@@ -426,3 +426,14 @@ Phase 10/workstream closure is complete only when:
 16. no package-manager pipeline or remote-auth scope was added opportunistically;
 17. `make check` and the release/packaging smoke gates pass on the exact final candidate;
 18. `registry.md` records phases 6-10 as implemented or explicitly superseded/blocked with evidence and this phase records final closure state.
+
+## Closure record
+
+Implemented in the closure commit. `eggsearch integrate list` and all seven
+client render paths are available; apply is opt-in, native CLI or strict JSON
+only, and protocol verification checks the required MCP tools. CodeGG stdio
+remains the minimal backend-selector path and HTTP renders the explicit remote
+entry. Release, installer, updater, transport, startup, and client contracts
+are cross-linked in the operator and architecture documentation. MCP Registry
+metadata is explicitly deferred because the current schema cannot describe
+the complete multi-architecture asset set without overstating support.

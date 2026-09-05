@@ -57,7 +57,7 @@ schemars = "1"
 thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-rmcp = { version = "3.2.0", features = ["server", "transport-io", "transport-streamable-http-server", "macros"] }
+rmcp = { version = "3.2.0", features = ["server", "client", "transport-io", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "macros"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 url = { version = "2", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json"] }

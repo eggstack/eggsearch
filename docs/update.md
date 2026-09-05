@@ -56,3 +56,10 @@ If replacement succeeds but restart fails, the command returns a nonzero typed
 error that includes the installed version and exact restart command. An update
 of a stdio-only installation does not restart any process. See
 [Managed service](service.md).
+
+## Closure checks
+
+The release candidate must pass `make check`, `make packaging-check`, and the
+release smoke's stdio/HTTP initialize plus exact ten-tool inventory before it
+is published. Updates consume the same target and asset names as the
+installer; integration configuration never contains provider keys.

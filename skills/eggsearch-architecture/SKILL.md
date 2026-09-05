@@ -7,7 +7,7 @@ description: Use when working with eggsearch internals, understanding crate layo
 
 Use when working with eggsearch internals, understanding crate layout, provider model, adapter pattern, deterministic IDs, sanitization tiers, or config structure.
 
-Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, testing, build, and packaging, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
+Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, integrations, testing, build, and packaging, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
 
 ## Crate Layout
 
@@ -16,7 +16,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `main.rs` — binary entry point (clap, tokio main)
 - `lib.rs` — library root, re-exports `core`, `fetch`, `mcp`, `meta`
 - `config.rs` — CLI config loader
-- `commands/` — subcommands: doctor, search, providers, mcp, fetch, browser_login, browser_profiles
+- `commands/` — subcommands: doctor, search, providers, mcp, fetch, integrate, browser_login, browser_profiles
 - `platform.rs` — shared host, target, public asset, and exact release URL contract
 - `update.rs` — crates.io-authoritative self-update, candidate verification, and replacement orchestration
 - `startup.rs` — canonical persistent runtime, manager detection/rendering, croncheck, restart, and lifecycle state
@@ -24,6 +24,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `meta/` — MetadataSearchAdapter + 36 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), 10 tool definitions, server state, policy
+- `integrations/` — safe render/apply/verify adapters for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode
 
 ## Module Responsibilities
 
@@ -33,6 +34,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 | `meta` | `adapter.rs`, `forge_adapter.rs`, `local_backend.rs`, `local_inventory_cache.rs`, `local_inventory.rs`, `dispatch.rs`, `planner.rs` | Search orchestration, RRF aggregation, provider health, forge API client, local workspace |
 | `fetch` | `client.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, SSRF protection, content extraction, cache, and browser transport |
 | `mcp` | `server.rs`, `http.rs`, `state.rs`, `tools.rs`, `policy.rs` | MCP protocol, shared tool service, stdio/HTTP transports, health and shutdown |
+| `integrations` | `common.rs`, client adapters, `commands/integrate.rs` | Client-specific MCP configuration rendering, atomic apply, native CLI registration, and protocol verification |
 | `packaging` | `packaging/`, `.github/workflows/release-binaries.yml` | Release target contract, checksums, installers, artifact smoke, draft assembly |
 
 ## Adapter Pattern
@@ -115,6 +117,7 @@ not remove the underlying attempts.
 - Search excerpts are bounded source passages (max 3 per card, 500 chars each, 1,200 total) merged deterministically in RRF, sanitized through the trust pipeline, and never part of stable IDs; unrequested excerpts are stripped before aggregation
 - Focus selection is a deterministic lexical projection of extracted chunks (no traversal, no models), additive on the fetch response and never in cache keys
 - `mcp stdio` remains the client-owned transport; `mcp serve` is persistent Streamable HTTP on loopback only, with `/healthz`, bounded headers/bodies/timeouts, and graceful cancellation. Both use `mcp::build_server`.
+- `integrate` renders every supported client configuration without mutation by default; apply mode is client-specific, uses argv boundaries or atomic JSON replacement with timestamped backups, and verifies `web_search`/`web_fetch` over the selected transport.
 - Cache policy (`default`/`bypass`/`refresh`) and caller max-age tighten reuse only; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy
 - `NotApplicable` is reserved for operations that do not apply; provider incapability is `SkippedCapabilityUnavailable`
 - `RetrievalAttempt` carries an optional `operation_id` field; ledger uniqueness is `(provider_id, operation_id, role)`

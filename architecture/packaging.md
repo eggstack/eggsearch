@@ -84,3 +84,7 @@ enter an exact-version Cargo build under a temporary `--root`; transient
 network, status, checksum, and identity failures are hard stops. No updater
 path invokes elevation. A normal update restarts only a previously healthy
 registered persistent service through its registered manager.
+
+The same candidate is exercised by `eggsearch integrate`: client render paths
+keep stdio as the default, HTTP uses the loopback endpoint, and apply paths
+preserve unrelated settings. See [integrations](integrations.md).
