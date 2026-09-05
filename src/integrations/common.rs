@@ -128,8 +128,7 @@ pub async fn run(
     let rendered = render_internal(client, transport, executable.as_deref())?;
     if apply && rendered.apply_mode == "print-only" {
         bail!(
-            "{} apply is print-only because its settings format cannot be edited safely; review the rendered configuration and add it in the client",
-            client
+            "{client} apply is print-only because its settings format cannot be edited safely; review the rendered configuration and add it in the client"
         );
     }
     if apply
@@ -164,7 +163,7 @@ pub async fn run(
 
     if apply {
         if !rendered.available {
-            bail!("{} is not available on PATH", client);
+            bail!("{client} is not available on PATH");
         }
         apply_rendered(client, transport, &rendered).await?;
         verify(transport, &rendered.executable).await?;
