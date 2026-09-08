@@ -74,7 +74,7 @@ fetch ↗
 | Component | Location | One-line Responsibility | Deep Dive |
 |-----------|----------|-------------------------|-----------|
 | Core domain types | `src/core/` (35 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
-| Metasearch adapter | `src/meta/` (34 top-level files) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing | [meta.md](meta.md) |
+| Metasearch adapter | `src/meta/` (modular `adapter/` plus workflow substrate) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
 | Vendored search engines | `src/meta/engines/` (36 engines + 5 support modules) | One implementation per upstream provider: HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (10 top-level files) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |

@@ -1,15 +1,24 @@
 # Testing Infrastructure Deep Dive
 
-**Location:** `tests/` (51 test binaries), `fuzz/` (22 targets)
+**Location:** `tests/` (behavioral suites plus corpus/contract/property/adversarial), `fuzz/` (22 targets)
 **Purpose:** Comprehensive test suites for correctness, security, and performance.
 
 ---
 
 ## Test Categories
 
-### Integration Tests (`tests/integration.rs`)
+### Behavioral Integration Suites (`tests/mcp_tools.rs`, `web_search_integration.rs`, etc.)
 
-MCP tool input validation, provider failures, tool response shape.
+MCP tool input validation, provider failures, tool response shape, partitioned by behavioral contract (no historical mega-suite):
+
+- `mcp_tools.rs` — stable tool surface registration
+- `web_search_integration.rs` — web search validation, sanitization, intent reranking
+- `web_fetch_integration.rs` — fetch extraction, truncation, safety
+- `provider_routing.rs` — provider routing, code-host rewrites, diagnostics
+- `repo_workflow.rs` — repository evidence discovery
+- `research_workflow.rs` — multi-source research discovery
+- `security_workflow.rs` — advisory retrieval and safety
+- `evidence_contract.rs` — batch fetch and evidence packaging
 
 ### Streamable HTTP Tests (`tests/mcp_http.rs`)
 
@@ -155,8 +164,8 @@ cargo test --locked --all-features  # all tests
 ### Specific Suites
 
 ```bash
-# Integration only
-cargo test --locked --features mock --test integration
+# Behavioral suites
+cargo test --locked --features mock --test web_search_integration
 
 # Corpus regression
 cargo test --locked --features mock --test corpus_runner
@@ -189,7 +198,7 @@ cargo test --features live-smoke --test corpus_runner -- --ignored
 ### New File vs Extend Existing
 
 - **New file** when testing a distinct subsystem or targeting a specific bug class
-- **Extend `integration.rs`** for MCP tool input validation, provider failures, tool response shape
+- **Extend behavioral suites** (`mcp_tools`, `web_search/web_fetch` integration, `provider_routing`, `repo/research/security` workflow, `evidence_contract`) for MCP tool input validation, provider failures, tool response shape
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
 

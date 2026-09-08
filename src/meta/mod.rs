@@ -60,6 +60,8 @@ pub mod security_suggested_fetches;
 pub mod suggested_fetches;
 /// Version comparison utilities for package ecosystems.
 pub mod version_compare;
+/// Shared workflow substrate for repo, research, and security discovery.
+pub mod workflow;
 
 pub use adapter::{
     ErrorClass, MetadataSearchAdapter, NativeAdvisoryOperation, ProviderAdvisoryOutcome,

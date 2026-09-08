@@ -264,7 +264,7 @@ fn record_lookup_outcomes(
     operation: &RetrievalOperationIdentity,
     query_text: &str,
     vulnerabilities: &mut Vec<VulnerabilityMetadata>,
-    attempts: &mut Vec<RetrievalAttempt>,
+    attempts: &mut crate::meta::workflow::RetrievalAttemptSet,
 ) {
     let roles = vec![EvidenceRole::AuthoritativeSecurityAdvisory];
     for outcome in outcomes {
@@ -340,7 +340,7 @@ fn record_lookup_outcomes(
                 )
             }
         };
-        attempts.push(attempt);
+        attempts.record(attempt);
     }
 }
 
@@ -349,7 +349,7 @@ fn record_package_outcomes(
     operation: &RetrievalOperationIdentity,
     query_text: &str,
     vulnerabilities: &mut Vec<VulnerabilityMetadata>,
-    attempts: &mut Vec<RetrievalAttempt>,
+    attempts: &mut crate::meta::workflow::RetrievalAttemptSet,
 ) {
     let advisory_role = vec![EvidenceRole::AuthoritativeSecurityAdvisory];
     let dependency_role = vec![EvidenceRole::ManifestOrDependencyMetadata];
@@ -425,7 +425,7 @@ fn record_package_outcomes(
 
         let dependency_interrupted =
             advisory_attempt.outcome == RetrievalAttemptOutcome::InterruptedByDeadline;
-        attempts.push(advisory_attempt);
+        attempts.record(advisory_attempt);
 
         let dependency_attempt = native_advisory_attempt_with_duration(
             &outcome.provider_id,
@@ -448,7 +448,7 @@ fn record_package_outcomes(
         );
         let mut dependency_attempt = dependency_attempt;
         dependency_attempt.deadline_interrupted = dependency_interrupted;
-        attempts.push(dependency_attempt);
+        attempts.record(dependency_attempt);
     }
 }
 
@@ -543,7 +543,7 @@ pub async fn run_security_search_plan(
 
     // 4. Native advisory ID lookups for identified CVE/GHSA/RustSec/OSV IDs
     let mut vulnerabilities: Vec<VulnerabilityMetadata> = Vec::new();
-    let mut native_attempts: Vec<RetrievalAttempt> = Vec::new();
+    let mut native_attempts = crate::meta::workflow::RetrievalAttemptSet::new();
     let native_deadline = Instant::now() + adapter.effective_timeout(req.timeout_ms);
     let mut budget = NativeOperationBudget::new();
     let mut budget_summary = NativeAdvisoryBudgetSummary::default();
@@ -579,7 +579,7 @@ pub async fn run_security_search_plan(
         budget_summary.provider_operations_skipped_by_budget += reservation.skipped_by_budget.len();
 
         for skipped_pid in &reservation.skipped_by_budget {
-            native_attempts.push(native_advisory_attempt_with_duration(
+            native_attempts.record(native_advisory_attempt_with_duration(
                 skipped_pid,
                 subquery_id,
                 &operation,
@@ -593,7 +593,7 @@ pub async fn run_security_search_plan(
         }
 
         for incapable_pid in &incapable_lookup_providers {
-            native_attempts.push(native_advisory_attempt_with_duration(
+            native_attempts.record(native_advisory_attempt_with_duration(
                 incapable_pid,
                 subquery_id,
                 &operation,
@@ -653,7 +653,7 @@ pub async fn run_security_search_plan(
         budget_summary.provider_operations_skipped_by_budget += reservation.skipped_by_budget.len();
 
         for skipped_pid in &reservation.skipped_by_budget {
-            native_attempts.push(native_advisory_attempt_with_duration(
+            native_attempts.record(native_advisory_attempt_with_duration(
                 skipped_pid,
                 "advisory_by_package",
                 &package_operation,
@@ -664,7 +664,7 @@ pub async fn run_security_search_plan(
                 package,
                 0,
             ));
-            native_attempts.push(native_advisory_attempt_with_duration(
+            native_attempts.record(native_advisory_attempt_with_duration(
                 skipped_pid,
                 "advisory_by_package",
                 &package_operation,
@@ -678,7 +678,7 @@ pub async fn run_security_search_plan(
         }
 
         for incapable_pid in &incapable_package_providers {
-            native_attempts.push(native_advisory_attempt_with_duration(
+            native_attempts.record(native_advisory_attempt_with_duration(
                 incapable_pid,
                 "advisory_by_package",
                 &package_operation,
@@ -689,7 +689,7 @@ pub async fn run_security_search_plan(
                 package,
                 0,
             ));
-            native_attempts.push(native_advisory_attempt_with_duration(
+            native_attempts.record(native_advisory_attempt_with_duration(
                 incapable_pid,
                 "advisory_by_package",
                 &package_operation,
@@ -757,7 +757,7 @@ pub async fn run_security_search_plan(
         if cve_ids_for_kev.is_empty() {
             let kev_na_operation =
                 RetrievalOperationIdentity::from_search_subquery("kev-not-applicable");
-            native_attempts.push(native_advisory_attempt(
+            native_attempts.record(native_advisory_attempt(
                 "cisa_kev",
                 "kev_by_cve",
                 &kev_na_operation,
@@ -781,7 +781,7 @@ pub async fn run_security_search_plan(
                 let start = Instant::now();
                 match kev_client.lookup(cve_id).await {
                     Ok(Some(kev_meta)) => {
-                        native_attempts.push(native_advisory_attempt(
+                        native_attempts.record(native_advisory_attempt(
                             "cisa_kev",
                             "kev_by_cve",
                             &kev_operation,
@@ -800,7 +800,7 @@ pub async fn run_security_search_plan(
                         kev_found_ids.push(cve_id.clone());
                     }
                     Ok(None) => {
-                        native_attempts.push(native_advisory_attempt(
+                        native_attempts.record(native_advisory_attempt(
                             "cisa_kev",
                             "kev_by_cve",
                             &kev_operation,
@@ -814,7 +814,7 @@ pub async fn run_security_search_plan(
                     }
                     Err(e) => {
                         kev_lookup_failed = true;
-                        native_attempts.push(native_advisory_attempt(
+                        native_attempts.record(native_advisory_attempt(
                             "cisa_kev",
                             "kev_by_cve",
                             &kev_operation,
@@ -1412,7 +1412,7 @@ pub async fn run_security_search_plan(
         );
 
     let mut all_attempts = security_attempts;
-    all_attempts.extend(native_attempts);
+    all_attempts.extend(native_attempts.into_vec());
 
     let retrieval_failures = crate::meta::adapter::build_retrieval_failures(
         &providers_failed,
@@ -1749,7 +1749,7 @@ mod tests {
             ProviderAdvisoryStatus::CapabilityUnavailable,
         )];
         let mut vulns = Vec::new();
-        let mut attempts = Vec::new();
+        let mut attempts = crate::meta::workflow::RetrievalAttemptSet::new();
         let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
         record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
@@ -1779,7 +1779,7 @@ mod tests {
             ProviderAdvisoryStatus::Completed(Ok(vec![make_vuln("CVE-2024-0001")])),
         )];
         let mut vulns = Vec::new();
-        let mut attempts = Vec::new();
+        let mut attempts = crate::meta::workflow::RetrievalAttemptSet::new();
         let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
         record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
@@ -1803,7 +1803,7 @@ mod tests {
             ProviderAdvisoryStatus::Completed(Ok(vec![])),
         )];
         let mut vulns = Vec::new();
-        let mut attempts = Vec::new();
+        let mut attempts = crate::meta::workflow::RetrievalAttemptSet::new();
         let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
         record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
@@ -1828,7 +1828,7 @@ mod tests {
             })),
         )];
         let mut vulns = Vec::new();
-        let mut attempts = Vec::new();
+        let mut attempts = crate::meta::workflow::RetrievalAttemptSet::new();
         let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
         record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
@@ -1851,7 +1851,7 @@ mod tests {
             ProviderAdvisoryStatus::InterruptedByDeadline,
         )];
         let mut vulns = Vec::new();
-        let mut attempts = Vec::new();
+        let mut attempts = crate::meta::workflow::RetrievalAttemptSet::new();
         let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
         record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 2);
@@ -1881,7 +1881,7 @@ mod tests {
             ),
         ];
         let mut vulns = Vec::new();
-        let mut attempts = Vec::new();
+        let mut attempts = crate::meta::workflow::RetrievalAttemptSet::new();
         let op = RetrievalOperationIdentity::from_package("crates_io", "test-pkg", None);
         record_package_outcomes(outcomes, &op, "test-pkg", &mut vulns, &mut attempts);
         assert_eq!(attempts.len(), 4);

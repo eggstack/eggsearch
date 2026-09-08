@@ -6,8 +6,8 @@ use crate::core::research::{
 };
 use crate::core::source_card::SourceKind;
 use crate::meta::fetch_ranking::{
-    extract_domain, rank_and_select, DiversityConfig, FetchCandidate, FetchRankMode,
-    FetchRankReason, RankContext,
+    extract_domain, rank_and_select, DiversityConfig, FetchCandidate, FetchCandidateBuilder,
+    FetchRankMode, FetchRankReason, RankContext,
 };
 use crate::meta::research_evidence_analysis::classify_source_class;
 use crate::meta::research_grouping::classify_evidence_quality;
@@ -57,29 +57,28 @@ pub fn generate_research_suggested_fetches(
             .map(|ce| (ce.source_role, ce.evidence_confidence))
             .unwrap_or((None, None));
 
-        candidates.push(FetchCandidate {
-            url: card.url.clone(),
-            structured_repo_fetch: false,
-            group: serde_json::to_string(&group.kind)
-                .unwrap_or_default()
-                .trim_matches('"')
-                .to_string(),
-            expected_kind,
-            recommended_extract_mode,
-            original_order: candidates.len(),
-            source_kind: expected_kind,
-            source_role,
-            evidence_confidence,
-            is_pinned_permalink: false,
-            is_raw_url: false,
-            is_browser_url: crate::meta::engines::is_http_url(&card.url),
-            domain,
-            score: 0,
-            reasons: Vec::new(),
-            information_gain: 0.0,
-            stable: false,
-            source_card_stable_id: card.stable_id.clone(),
-        });
+        candidates.push(
+            FetchCandidateBuilder::from_card(card, card.url.clone())
+                .structured_repo_fetch(false)
+                .group(
+                    serde_json::to_string(&group.kind)
+                        .unwrap_or_default()
+                        .trim_matches('"')
+                        .to_string(),
+                )
+                .expected_kind(expected_kind)
+                .recommended_extract_mode(recommended_extract_mode)
+                .original_order(candidates.len())
+                .source_kind(expected_kind)
+                .source_role(source_role)
+                .evidence_confidence(evidence_confidence)
+                .is_pinned_permalink(false)
+                .is_raw_url(false)
+                .is_browser_url(crate::meta::engines::is_http_url(&card.url))
+                .domain(domain)
+                .source_card_stable_id(card.stable_id.clone())
+                .build(),
+        );
     }
 
     let ctx = RankContext {

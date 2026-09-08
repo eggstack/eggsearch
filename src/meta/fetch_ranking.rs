@@ -240,6 +240,217 @@ pub struct FetchCandidate {
     pub source_card_stable_id: Option<String>,
 }
 
+/// Typed builder for [`FetchCandidate`] shared by repo, research, and security
+/// suggested-fetch paths.
+///
+/// The builder produces the same bounded defaults as the previous struct
+/// literals (`score` 0, empty `reasons`, `information_gain` 0.0, `stable`
+/// false) while making group, structured locators, and extract modes explicit.
+/// Card-derived candidates use [`FetchCandidateBuilder::from_card`]. Synthetic
+/// security candidates for authoritative advisory URLs use
+/// [`FetchCandidateBuilder::new`] plus setters. All candidates continue through
+/// the same deterministic ranking path.
+#[derive(Clone, Debug)]
+pub struct FetchCandidateBuilder {
+    url: String,
+    structured_repo_fetch: bool,
+    group: String,
+    expected_kind: SourceKind,
+    recommended_extract_mode: Option<ExtractMode>,
+    original_order: usize,
+    source_kind: SourceKind,
+    source_role: Option<SourceRole>,
+    evidence_confidence: Option<EvidenceConfidence>,
+    is_pinned_permalink: bool,
+    is_raw_url: bool,
+    is_browser_url: bool,
+    domain: String,
+    source_card_stable_id: Option<String>,
+    reasons: Vec<FetchRankReason>,
+    information_gain: f32,
+}
+
+impl FetchCandidateBuilder {
+    /// Create a builder for a synthetic URL without card evidence.
+    pub fn new(url: String) -> Self {
+        let domain = extract_domain(&url);
+        let is_pinned_permalink = is_pinned_permalink(&url);
+        let is_raw_url = is_raw_url(&url);
+        let is_browser_url = crate::meta::engines::is_http_url(&url);
+        Self {
+            url,
+            structured_repo_fetch: false,
+            group: String::new(),
+            expected_kind: SourceKind::Unknown,
+            recommended_extract_mode: None,
+            original_order: 0,
+            source_kind: SourceKind::Unknown,
+            source_role: None,
+            evidence_confidence: None,
+            is_pinned_permalink,
+            is_raw_url,
+            is_browser_url,
+            domain,
+            source_card_stable_id: None,
+            reasons: Vec::new(),
+            information_gain: 0.0,
+        }
+    }
+
+    /// Create a builder from a source card and fetch URL.
+    ///
+    /// Derives domain, stability flags, source role, confidence, and card
+    /// linkage from the card and URL. Callers set group, kinds, order, and
+    /// structured locators explicitly to preserve domain ranking inputs.
+    pub fn from_card(card: &crate::core::source_card::SourceCard, url: String) -> Self {
+        let (source_role, evidence_confidence) = card
+            .metadata
+            .code_evidence
+            .as_ref()
+            .map(|ce| (ce.source_role, ce.evidence_confidence))
+            .unwrap_or((None, None));
+        let domain = extract_domain(&url);
+        let is_pinned_permalink = is_pinned_permalink(&url);
+        let is_raw_url = is_raw_url(&url);
+        let is_browser_url = crate::meta::engines::is_http_url(&url);
+        Self {
+            url,
+            structured_repo_fetch: false,
+            group: String::new(),
+            expected_kind: SourceKind::Unknown,
+            recommended_extract_mode: None,
+            original_order: 0,
+            source_kind: SourceKind::Unknown,
+            source_role,
+            evidence_confidence,
+            is_pinned_permalink,
+            is_raw_url,
+            is_browser_url,
+            domain,
+            source_card_stable_id: card.stable_id.clone(),
+            reasons: Vec::new(),
+            information_gain: 0.0,
+        }
+    }
+
+    /// Set the result group label.
+    pub fn group(mut self, group: String) -> Self {
+        self.group = group;
+        self
+    }
+
+    /// Set whether a structured `repo_fetch` locator exists.
+    pub fn structured_repo_fetch(mut self, value: bool) -> Self {
+        self.structured_repo_fetch = value;
+        self
+    }
+
+    /// Set the recommended extract mode.
+    pub fn recommended_extract_mode(mut self, value: Option<ExtractMode>) -> Self {
+        self.recommended_extract_mode = value;
+        self
+    }
+
+    /// Set the expected content kind.
+    pub fn expected_kind(mut self, value: SourceKind) -> Self {
+        self.expected_kind = value;
+        self
+    }
+
+    /// Set the source kind.
+    pub fn source_kind(mut self, value: SourceKind) -> Self {
+        self.source_kind = value;
+        self
+    }
+
+    /// Set the source role.
+    pub fn source_role(mut self, value: Option<SourceRole>) -> Self {
+        self.source_role = value;
+        self
+    }
+
+    /// Set evidence confidence.
+    pub fn evidence_confidence(mut self, value: Option<EvidenceConfidence>) -> Self {
+        self.evidence_confidence = value;
+        self
+    }
+
+    /// Set original order for deterministic tie-breaking.
+    pub fn original_order(mut self, value: usize) -> Self {
+        self.original_order = value;
+        self
+    }
+
+    /// Override pinned-permalink detection.
+    pub fn is_pinned_permalink(mut self, value: bool) -> Self {
+        self.is_pinned_permalink = value;
+        self
+    }
+
+    /// Override raw-URL detection.
+    pub fn is_raw_url(mut self, value: bool) -> Self {
+        self.is_raw_url = value;
+        self
+    }
+
+    /// Override browser-URL detection.
+    pub fn is_browser_url(mut self, value: bool) -> Self {
+        self.is_browser_url = value;
+        self
+    }
+
+    /// Override the domain.
+    pub fn domain(mut self, value: String) -> Self {
+        self.domain = value;
+        self
+    }
+
+    /// Override card linkage.
+    pub fn source_card_stable_id(mut self, value: Option<String>) -> Self {
+        self.source_card_stable_id = value;
+        self
+    }
+
+    /// Override pre-ranking reasons.
+    ///
+    /// Most candidates start empty and gain reasons during scoring. The
+    /// workspace dependency locator preserves its source-file signal.
+    pub fn reasons(mut self, value: Vec<FetchRankReason>) -> Self {
+        self.reasons = value;
+        self
+    }
+
+    /// Override pre-ranking information gain.
+    pub fn information_gain(mut self, value: f32) -> Self {
+        self.information_gain = value;
+        self
+    }
+
+    /// Build the candidate with ranking defaults.
+    pub fn build(self) -> FetchCandidate {
+        FetchCandidate {
+            url: self.url,
+            structured_repo_fetch: self.structured_repo_fetch,
+            group: self.group,
+            expected_kind: self.expected_kind,
+            recommended_extract_mode: self.recommended_extract_mode,
+            original_order: self.original_order,
+            source_kind: self.source_kind,
+            source_role: self.source_role,
+            evidence_confidence: self.evidence_confidence,
+            is_pinned_permalink: self.is_pinned_permalink,
+            is_raw_url: self.is_raw_url,
+            is_browser_url: self.is_browser_url,
+            domain: self.domain,
+            score: 0,
+            reasons: self.reasons,
+            information_gain: self.information_gain,
+            stable: false,
+            source_card_stable_id: self.source_card_stable_id,
+        }
+    }
+}
+
 /// Extract domain from a URL.
 pub fn extract_domain(url: &str) -> String {
     url.split("://")

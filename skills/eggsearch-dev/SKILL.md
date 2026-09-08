@@ -42,7 +42,7 @@ make bench-check        # compile-check benches without running
 | Location | Feature Gate | Purpose |
 |----------|-------------|---------|
 | `src/*/mod.rs` | Varies | Unit tests |
-| `tests/integration.rs` | `mock` | MCP tool contracts |
+| `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |
@@ -57,12 +57,13 @@ make bench-check        # compile-check benches without running
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 
-This table is representative, not exhaustive — 50 test binaries exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 58 test binaries exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
 ```bash
-cargo test --locked --features mock --test integration
+cargo test --locked --features mock --test web_search_integration
+cargo test --locked --features mock --test repo_workflow
 cargo test --locked --features mock --test corpus_runner
 cargo test --locked --all-features --test forge_adapter
 cargo test --locked --all-features --test dispatch_fault_injection

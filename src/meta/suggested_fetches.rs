@@ -12,7 +12,7 @@ use crate::core::source_card::SourceKind;
 
 use super::fetch_ranking::{
     extract_domain, is_pinned_permalink, is_raw_url, rank_and_select, DiversityConfig,
-    FetchCandidate, FetchRankMode, RankContext,
+    FetchCandidateBuilder, FetchRankMode, RankContext,
 };
 
 const MAX_COMPLEMENTARY_SUGGESTIONS: usize = 8;
@@ -164,26 +164,23 @@ pub fn generate_suggested_fetches_with_mode(
                 .entry(fetch_url.clone())
                 .or_insert_with(|| structured);
 
-            candidates.push(FetchCandidate {
-                url: fetch_url.clone(),
-                structured_repo_fetch: structured_fetch_map[&fetch_url].is_some(),
-                group: group_label.clone(),
-                expected_kind: expected_kind_for(source_kind),
-                recommended_extract_mode: recommended_extract_mode(source_kind, &group.kind),
-                original_order: idx,
-                source_kind,
-                source_role,
-                evidence_confidence,
-                is_pinned_permalink: is_pinned_permalink(&fetch_url),
-                is_raw_url: is_raw_url(&fetch_url),
-                is_browser_url: crate::meta::engines::is_http_url(&fetch_url),
-                domain: extract_domain(&fetch_url),
-                score: 0,
-                reasons: Vec::new(),
-                information_gain: 0.0,
-                stable: false,
-                source_card_stable_id: card.stable_id.clone(),
-            });
+            candidates.push(
+                FetchCandidateBuilder::from_card(card, fetch_url.clone())
+                    .structured_repo_fetch(structured_fetch_map[&fetch_url].is_some())
+                    .group(group_label.clone())
+                    .expected_kind(expected_kind_for(source_kind))
+                    .recommended_extract_mode(recommended_extract_mode(source_kind, &group.kind))
+                    .original_order(idx)
+                    .source_kind(source_kind)
+                    .source_role(source_role)
+                    .evidence_confidence(evidence_confidence)
+                    .is_pinned_permalink(is_pinned_permalink(&fetch_url))
+                    .is_raw_url(is_raw_url(&fetch_url))
+                    .is_browser_url(crate::meta::engines::is_http_url(&fetch_url))
+                    .domain(extract_domain(&fetch_url))
+                    .source_card_stable_id(card.stable_id.clone())
+                    .build(),
+            );
         }
     }
 

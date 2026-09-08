@@ -182,7 +182,7 @@ fn no_silent_if_let_ok_around_native_advisory() {
 
 #[test]
 fn native_advisory_outcomes_are_provider_scoped_and_error_visible() {
-    let source = read_source("src/meta/adapter.rs");
+    let source = read_source("src/meta/adapter/advisory.rs");
     let scoped_start = source
         .find("pub async fn lookup_advisory_scoped")
         .expect("scoped lookup exists");
@@ -229,15 +229,15 @@ fn no_fallback_mode_in_native_smoke() {
 
 #[test]
 fn postprocess_called_with_workflow_model_for_non_web_tools() {
-    // Check adapter.rs: repo_search and research_search must pass Some(model)
-    let adapter_source = read_source("src/meta/adapter.rs");
-    let adapter_non_test = strip_test_code(&adapter_source);
+    // Check adapter repo/research modules: repo_search and research_search must pass Some(model)
+    let repo_source = read_source("src/meta/adapter/repo.rs");
+    let repo_non_test = strip_test_code(&repo_source);
 
     // repo_search postprocess call
-    let repo_idx = adapter_non_test
+    let repo_idx = repo_non_test
         .find("fn repo_search(")
-        .expect("repo_search not found in adapter.rs");
-    let repo_section = &adapter_non_test[repo_idx..];
+        .expect("repo_search not found in adapter/repo.rs");
+    let repo_section = &repo_non_test[repo_idx..];
     let repo_postprocess_start = repo_section
         .find("evidence_postprocess::postprocess(")
         .expect("postprocess call not found in repo_search");
@@ -250,10 +250,12 @@ fn postprocess_called_with_workflow_model_for_non_web_tools() {
     );
 
     // research_search postprocess call
-    let research_idx = adapter_non_test
+    let research_source = read_source("src/meta/adapter/research.rs");
+    let research_non_test = strip_test_code(&research_source);
+    let research_idx = research_non_test
         .find("fn research_search(")
-        .expect("research_search not found in adapter.rs");
-    let research_section = &adapter_non_test[research_idx..];
+        .expect("research_search not found in adapter/research.rs");
+    let research_section = &research_non_test[research_idx..];
     let research_postprocess_start = research_section
         .find("evidence_postprocess::postprocess(")
         .expect("postprocess call not found in research_search");
@@ -489,6 +491,167 @@ fn response_summary_has_dimension_count_fields() {
         assert!(
             source.contains(field),
             "ResponseRetrievalSummary must have field: {field}"
+        );
+    }
+}
+
+#[test]
+fn stable_tool_registration_count_and_names() {
+    let source = read_source("src/mcp/server.rs");
+    let expected = [
+        "web_search",
+        "web_fetch",
+        "batch_fetch",
+        "provider_status",
+        "repo_search",
+        "repo_fetch",
+        "repo_map",
+        "security_search",
+        "research_search",
+        "build_evidence_bundle",
+    ];
+    for name in &expected {
+        assert!(
+            source.contains(&format!("name = \"{name}\"")),
+            "server.rs must register tool `{name}`"
+        );
+    }
+    assert_eq!(
+        source.matches("name = \"").count(),
+        expected.len(),
+        "server.rs must register exactly ten stable tools"
+    );
+    assert!(
+        !source.contains("local_search"),
+        "server.rs must never return legacy local_search"
+    );
+    assert!(
+        !source.contains("search_and_fetch"),
+        "server.rs must never return legacy search_and_fetch"
+    );
+}
+
+#[test]
+fn no_direct_domain_orchestration_in_transport_modules() {
+    for path in ["src/mcp/server.rs", "src/mcp/http.rs"] {
+        let source = read_source(path);
+        let non_test = strip_test_code(&source);
+        for forbidden in [
+            "build_repo_search_plan",
+            "build_research_search_plan",
+            "dispatch_subqueries",
+            "aggregate_rrf",
+            "convert_aggregated",
+            "analyze_research_evidence",
+        ] {
+            assert!(
+                !non_test.contains(forbidden),
+                "{path} must not contain domain orchestration `{forbidden}`; call tool seams instead"
+            );
+        }
+    }
+}
+
+#[test]
+fn modular_tool_and_adapter_layout() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    assert!(
+        !std::path::Path::new(&format!("{manifest}/src/mcp/tools.rs")).exists(),
+        "src/mcp/tools.rs must be replaced by src/mcp/tools/ directory"
+    );
+    assert!(
+        !std::path::Path::new(&format!("{manifest}/src/meta/adapter.rs")).exists(),
+        "src/meta/adapter.rs must be decomposed into src/meta/adapter/ modules"
+    );
+    assert!(
+        std::path::Path::new(&format!("{manifest}/src/mcp/tools/mod.rs")).exists(),
+        "src/mcp/tools/mod.rs must exist"
+    );
+    assert!(
+        std::path::Path::new(&format!("{manifest}/src/meta/adapter/mod.rs")).exists(),
+        "src/meta/adapter/mod.rs must exist"
+    );
+    assert!(
+        !std::path::Path::new(&format!("{manifest}/tests/integration.rs")).exists(),
+        "tests/integration.rs must be partitioned into behavioral suites"
+    );
+    for suite in [
+        "tests/mcp_tools.rs",
+        "tests/web_search_integration.rs",
+        "tests/web_fetch_integration.rs",
+        "tests/provider_routing.rs",
+        "tests/repo_workflow.rs",
+        "tests/research_workflow.rs",
+        "tests/security_workflow.rs",
+        "tests/evidence_contract.rs",
+    ] {
+        assert!(
+            std::path::Path::new(&format!("{manifest}/{suite}")).exists(),
+            "{suite} must exist"
+        );
+    }
+    let oversized: Vec<String> = [
+        "src/mcp/tools/common.rs",
+        "src/mcp/tools/web_search.rs",
+        "src/mcp/tools/repo_search.rs",
+        "src/mcp/tools/research_search.rs",
+        "src/mcp/tools/provider_status.rs",
+        "src/mcp/tools/web_fetch.rs",
+        "src/mcp/tools/repo_fetch.rs",
+        "src/mcp/tools/repo_map.rs",
+        "src/mcp/tools/batch_fetch.rs",
+        "src/mcp/tools/security_search.rs",
+        "src/mcp/tools/evidence_bundle.rs",
+        "src/meta/adapter/mod.rs",
+        "src/meta/adapter/error.rs",
+        "src/meta/adapter/advisory.rs",
+        "src/meta/adapter/status.rs",
+        "src/meta/adapter/web.rs",
+        "src/meta/adapter/repo.rs",
+        "src/meta/adapter/research.rs",
+        "src/meta/adapter/security.rs",
+        "src/meta/adapter/execution.rs",
+        "src/meta/adapter/normalization.rs",
+        "src/meta/adapter/builders.rs",
+        "src/meta/workflow.rs",
+        "src/meta/fetch_ranking.rs",
+    ]
+    .iter()
+    .filter_map(|rel| {
+        let content = read_source(rel);
+        let lines = content.lines().count();
+        (lines > 1600).then(|| format!("{rel} ({lines} lines)"))
+    })
+    .collect();
+    assert!(
+        oversized.is_empty(),
+        "src modules exceed warning size (1600 lines), split further: {oversized:?}"
+    );
+}
+
+#[test]
+fn workflows_consume_shared_primitives() {
+    for path in [
+        "src/meta/suggested_fetches.rs",
+        "src/meta/research_suggested_fetches.rs",
+        "src/meta/security_suggested_fetches.rs",
+    ] {
+        let source = read_source(path);
+        assert!(
+            source.contains("FetchCandidateBuilder"),
+            "{path} must construct candidates via shared FetchCandidateBuilder"
+        );
+    }
+    for path in [
+        "src/meta/adapter/repo.rs",
+        "src/meta/adapter/research.rs",
+        "src/meta/adapter/security.rs",
+        "src/meta/security_search.rs",
+    ] {
+        let source = read_source(path);
+        assert!(
+            source.contains("RetrievalAttemptSet"),
+            "{path} must record attempts via shared RetrievalAttemptSet"
         );
     }
 }

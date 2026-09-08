@@ -1,6 +1,6 @@
 # Metasearch Adapter Deep Dive
 
-**Location:** `src/meta/` (34 top-level files, plus `engines/` with 36 engine implementations and 5 support modules)
+**Location:** `src/meta/` (modular adapter directory plus engines and workflow substrate)
 **Purpose:** Central orchestrator for all search operations. Wraps vendored search engines, handles RRF aggregation, sanitization, provider health, and multi-subquery dispatch.
 
 ---
@@ -9,7 +9,8 @@
 
 | File | Responsibility |
 |------|---------------|
-| `adapter.rs` | `MetadataSearchAdapter` — central orchestrator: engine fan-out, RRF aggregation, sanitization, intent reranking, provider health, local domain enforcement, web capability telemetry |
+| `adapter/` | `MetadataSearchAdapter` coordination split by behavior: `mod` (constructors and accessors), `error` (ErrorClass and skip reasons), `advisory` (native advisory operations), `status` (provider health and status), `web`/`repo`/`research`/`security` (search execution), `execution` (dispatch, warnings, failures), `normalization` (RRF, conversion, reranking), `builders` (default engines); stable `adapter::X` paths preserved via re-exports |
+| `workflow.rs` | Shared repo/research/security mechanics: `PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `NormalizedLaneResults`, `EvidenceGroup`, `CoverageSummary`, `FetchCandidateSet`; domain policy stays typed in domain modules |
 | `dispatch.rs` | `dispatch_subqueries()` — bounded parallel executor with priority queue, global/per-provider concurrency limits, panic recovery; all jobs use `EngineSearchRequest` (including optional `RepoScope`) and return `EngineSearchBatch` retrieval metadata |
 | `planner.rs` | `build_search_plan()`, `SearchPlan` — transforms `WebSearchRequest` into provider-specific queries while preserving date/domain/language/region constraints for native parameters |
 | `response.rs` | `WebSearchResponse`, `ProviderFailure` |
@@ -20,15 +21,15 @@
 | `research_planner.rs` | `build_research_search_plan()`, `ResearchSearchPlan` — multi-depth research subquery generation |
 | `research_grouping.rs` | Research result grouping by evidence quality and source class |
 | `research_evidence_analysis.rs` | `analyze_research_evidence()` — evidence quality classification |
-| `research_suggested_fetches.rs` | Suggested fetch ranking for research workflows |
+| `research_suggested_fetches.rs` | Suggested fetch ranking for research workflows (via shared builder) |
 | `research_workflow.rs` | Research workflow scaffolding (architecture_decision, library_comparison, etc.) |
-| `security_search.rs` | Security search orchestration: advisory lookups, CVE/GHSA/RustSec/OSV |
+| `security_search.rs` | Security search orchestration: advisory lookups, CVE/GHSA/RustSec/OSV (records via shared `RetrievalAttemptSet`) |
 | `security_grouping.rs` | Security result grouping and tier classification |
-| `security_suggested_fetches.rs` | Suggested fetch ranking for security results |
+| `security_suggested_fetches.rs` | Suggested fetch ranking for security results (via shared builder, including synthetic advisory candidates) |
 | `error_planner.rs` | `build_error_plan()` — exact-error mode: parses compiler/runtime errors, generates targeted subqueries |
 | `evidence_bundle.rs` | `build_evidence_bundle()` — pure logic for constructing evidence bundles |
-| `fetch_ranking.rs` | Deterministic ranking pipeline for suggested fetch candidates |
-| `suggested_fetches.rs` | Generic suggested fetch generation |
+| `fetch_ranking.rs` | Deterministic ranking pipeline for suggested fetch candidates, plus shared `FetchCandidateBuilder` (`from_card`/`new` with `group`, `structured_repo_fetch`, `recommended_extract_mode`) used by repo, research, and security paths |
+| `suggested_fetches.rs` | Generic suggested fetch generation (via shared builder) |
 | `forge_adapter.rs` | Forge API client for Gitea/Forgejo (with `Policy::none()`, `read_bounded_body()`, `ForgeReadBudget`) |
 | `local_backend.rs` | `LocalWorkspaceBackend` — bounded file walking, scoring, SourceCard conversion |
 | `local_inventory.rs` | `discover_local_repos()`, `LocalRepoIdentity` — Git worktree discovery, remote URL normalization |
@@ -45,9 +46,9 @@
 
 ---
 
-## MetadataSearchAdapter (`adapter.rs`)
+## MetadataSearchAdapter (`adapter/`)
 
-The central orchestrator. Methods:
+The central orchestrator, split by behavior with stable paths. Methods:
 
 | Method | Purpose |
 |--------|---------|

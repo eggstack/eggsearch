@@ -1,6 +1,6 @@
 # MCP Server Deep Dive
 
-**Location:** `src/mcp/` (6 files)
+**Location:** `src/mcp/` (modular tools directory plus transports)
 **Purpose:** MCP (Model Context Protocol) server exposing 10 stable tools for AI agents over client-owned stdio or explicit loopback-only Streamable HTTP.
 
 ---
@@ -12,7 +12,7 @@
 | `mod.rs` | Module declarations, canonical server factory, and re-exports |
 | `server.rs` | `EggsearchServer` — rmcp `ServerHandler` impl, 10 `#[tool]` handlers, `EGGSEARCH_INSTRUCTIONS` |
 | `http.rs` | Streamable HTTP service, `/healthz`, typed endpoint options, request bounds, and graceful shutdown |
-| `tools.rs` | Tool implementations: validation, adapter calls, response formatting (~5600 lines) |
+| `tools/` | Tool implementations by behavior (`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `evidence_bundle`, shared `common`, plus `tests`); stable `tools::X` paths preserved via re-exports |
 | `state.rs` | `ServerState` — shared state: config, adapter, fetch client, cache, etc. |
 | `policy.rs` | `Policy` enum, `live_allowed()`, `fetch_allowed()`, policy denial messages |
 
@@ -215,9 +215,9 @@ fn fetch_allowed(policy: &Policy) -> bool;
 
 ---
 
-## Tool Implementation Pattern (`tools.rs`)
+## Tool Implementation Pattern (`tools/`)
 
-Each tool follows this pattern:
+Each tool lives in its own behavior module (`web_search.rs`, `repo_search.rs`, etc) and follows this pattern:
 
 1. **Parse args** — Validate input from JSON
 2. **Check policy** — Ensure operation is allowed
@@ -231,10 +231,7 @@ Each tool follows this pattern:
 ```rust
 enum ToolError {
     Validation(String),
-    Provider(String),
-    Fetch(String),
-    Internal(String),
-    PolicyDenied(String),
+    Internal { message: String, data: Option<serde_json::Value> },
 }
 ```
 

@@ -6,7 +6,9 @@ use crate::core::security::{
 };
 use crate::core::security_applicability::DependencyFinding;
 use crate::core::source_card::SourceKind;
-use crate::meta::fetch_ranking::{extract_domain, FetchCandidate, FetchRankMode, RankContext};
+use crate::meta::fetch_ranking::{
+    extract_domain, FetchCandidateBuilder, FetchRankMode, RankContext,
+};
 
 /// Generate suggested fetches for security groups.
 ///
@@ -40,158 +42,137 @@ pub fn generate_security_suggested_fetches(
     // ── Tier 1: Authoritative advisory URLs for identified CVE/GHSA/OSV ──
 
     for cve_id in &resolved_ids.cve_ids {
-        candidates.push(FetchCandidate {
-            url: format!("https://osv.dev/vulnerability/{cve_id}"),
-            structured_repo_fetch: false,
-            group: "AuthoritativeAdvisories".to_string(),
-            expected_kind: SourceKind::SecurityAdvisory,
-            recommended_extract_mode: None,
-            original_order: candidates.len(),
-            source_kind: SourceKind::SecurityAdvisory,
-            source_role: None,
-            evidence_confidence: None,
-            is_pinned_permalink: false,
-            is_raw_url: false,
-            is_browser_url: true,
-            domain: extract_domain("https://osv.dev"),
-            score: 0,
-            reasons: Vec::new(),
-            information_gain: 0.0,
-            stable: false,
-            source_card_stable_id: None,
-        });
-        candidates.push(FetchCandidate {
-            url: format!("https://nvd.nist.gov/vuln/detail/{cve_id}"),
-            structured_repo_fetch: false,
-            group: "AuthoritativeAdvisories".to_string(),
-            expected_kind: SourceKind::SecurityAdvisory,
-            recommended_extract_mode: None,
-            original_order: candidates.len(),
-            source_kind: SourceKind::SecurityAdvisory,
-            source_role: None,
-            evidence_confidence: None,
-            is_pinned_permalink: false,
-            is_raw_url: false,
-            is_browser_url: true,
-            domain: extract_domain("https://nvd.nist.gov"),
-            score: 0,
-            reasons: Vec::new(),
-            information_gain: 0.0,
-            stable: false,
-            source_card_stable_id: None,
-        });
+        candidates.push(
+            FetchCandidateBuilder::new(format!("https://osv.dev/vulnerability/{cve_id}"))
+                .structured_repo_fetch(false)
+                .group("AuthoritativeAdvisories".to_string())
+                .expected_kind(SourceKind::SecurityAdvisory)
+                .recommended_extract_mode(None)
+                .original_order(candidates.len())
+                .source_kind(SourceKind::SecurityAdvisory)
+                .source_role(None)
+                .evidence_confidence(None)
+                .is_pinned_permalink(false)
+                .is_raw_url(false)
+                .is_browser_url(true)
+                .domain(extract_domain("https://osv.dev"))
+                .source_card_stable_id(None)
+                .build(),
+        );
+        candidates.push(
+            FetchCandidateBuilder::new(format!("https://nvd.nist.gov/vuln/detail/{cve_id}"))
+                .structured_repo_fetch(false)
+                .group("AuthoritativeAdvisories".to_string())
+                .expected_kind(SourceKind::SecurityAdvisory)
+                .recommended_extract_mode(None)
+                .original_order(candidates.len())
+                .source_kind(SourceKind::SecurityAdvisory)
+                .source_role(None)
+                .evidence_confidence(None)
+                .is_pinned_permalink(false)
+                .is_raw_url(false)
+                .is_browser_url(true)
+                .domain(extract_domain("https://nvd.nist.gov"))
+                .source_card_stable_id(None)
+                .build(),
+        );
     }
     for ghsa_id in &resolved_ids.ghsa_ids {
-        candidates.push(FetchCandidate {
-            url: format!("https://github.com/advisories/{ghsa_id}"),
-            structured_repo_fetch: false,
-            group: "AuthoritativeAdvisories".to_string(),
-            expected_kind: SourceKind::SecurityAdvisory,
-            recommended_extract_mode: None,
-            original_order: candidates.len(),
-            source_kind: SourceKind::SecurityAdvisory,
-            source_role: None,
-            evidence_confidence: None,
-            is_pinned_permalink: false,
-            is_raw_url: false,
-            is_browser_url: true,
-            domain: extract_domain("https://github.com"),
-            score: 0,
-            reasons: Vec::new(),
-            information_gain: 0.0,
-            stable: false,
-            source_card_stable_id: None,
-        });
+        candidates.push(
+            FetchCandidateBuilder::new(format!("https://github.com/advisories/{ghsa_id}"))
+                .structured_repo_fetch(false)
+                .group("AuthoritativeAdvisories".to_string())
+                .expected_kind(SourceKind::SecurityAdvisory)
+                .recommended_extract_mode(None)
+                .original_order(candidates.len())
+                .source_kind(SourceKind::SecurityAdvisory)
+                .source_role(None)
+                .evidence_confidence(None)
+                .is_pinned_permalink(false)
+                .is_raw_url(false)
+                .is_browser_url(true)
+                .domain(extract_domain("https://github.com"))
+                .source_card_stable_id(None)
+                .build(),
+        );
     }
     for osv_id in &resolved_ids.osv_ids {
-        candidates.push(FetchCandidate {
-            url: format!("https://osv.dev/vulnerability/{osv_id}"),
-            structured_repo_fetch: false,
-            group: "AuthoritativeAdvisories".to_string(),
-            expected_kind: SourceKind::SecurityAdvisory,
-            recommended_extract_mode: None,
-            original_order: candidates.len(),
-            source_kind: SourceKind::SecurityAdvisory,
-            source_role: None,
-            evidence_confidence: None,
-            is_pinned_permalink: false,
-            is_raw_url: false,
-            is_browser_url: true,
-            domain: extract_domain("https://osv.dev"),
-            score: 0,
-            reasons: Vec::new(),
-            information_gain: 0.0,
-            stable: false,
-            source_card_stable_id: None,
-        });
+        candidates.push(
+            FetchCandidateBuilder::new(format!("https://osv.dev/vulnerability/{osv_id}"))
+                .structured_repo_fetch(false)
+                .group("AuthoritativeAdvisories".to_string())
+                .expected_kind(SourceKind::SecurityAdvisory)
+                .recommended_extract_mode(None)
+                .original_order(candidates.len())
+                .source_kind(SourceKind::SecurityAdvisory)
+                .source_role(None)
+                .evidence_confidence(None)
+                .is_pinned_permalink(false)
+                .is_raw_url(false)
+                .is_browser_url(true)
+                .domain(extract_domain("https://osv.dev"))
+                .source_card_stable_id(None)
+                .build(),
+        );
     }
     for rustsec_id in &resolved_ids.rustsec_ids {
-        candidates.push(FetchCandidate {
-            url: format!("https://rustsec.org/advisories/{rustsec_id}"),
-            structured_repo_fetch: false,
-            group: "AuthoritativeAdvisories".to_string(),
-            expected_kind: SourceKind::SecurityAdvisory,
-            recommended_extract_mode: None,
-            original_order: candidates.len(),
-            source_kind: SourceKind::SecurityAdvisory,
-            source_role: None,
-            evidence_confidence: None,
-            is_pinned_permalink: false,
-            is_raw_url: false,
-            is_browser_url: true,
-            domain: extract_domain("https://rustsec.org"),
-            score: 0,
-            reasons: Vec::new(),
-            information_gain: 0.0,
-            stable: false,
-            source_card_stable_id: None,
-        });
+        candidates.push(
+            FetchCandidateBuilder::new(format!("https://rustsec.org/advisories/{rustsec_id}"))
+                .structured_repo_fetch(false)
+                .group("AuthoritativeAdvisories".to_string())
+                .expected_kind(SourceKind::SecurityAdvisory)
+                .recommended_extract_mode(None)
+                .original_order(candidates.len())
+                .source_kind(SourceKind::SecurityAdvisory)
+                .source_role(None)
+                .evidence_confidence(None)
+                .is_pinned_permalink(false)
+                .is_raw_url(false)
+                .is_browser_url(true)
+                .domain(extract_domain("https://rustsec.org"))
+                .source_card_stable_id(None)
+                .build(),
+        );
     }
 
     // ── Tier 2: Ecosystem-specific package pages ──
 
     if let (Some(pkg), Some(eco)) = (package, ecosystem) {
         match eco {
-            "crates.io" => candidates.push(FetchCandidate {
-                url: format!("https://crates.io/crates/{pkg}"),
-                structured_repo_fetch: false,
-                group: "PackageAdvisories".to_string(),
-                expected_kind: SourceKind::PackageRegistry,
-                recommended_extract_mode: Some(ExtractMode::Markdown),
-                original_order: candidates.len(),
-                source_kind: SourceKind::PackageRegistry,
-                source_role: None,
-                evidence_confidence: None,
-                is_pinned_permalink: false,
-                is_raw_url: false,
-                is_browser_url: true,
-                domain: extract_domain("https://crates.io"),
-                score: 0,
-                reasons: Vec::new(),
-                information_gain: 0.0,
-                stable: false,
-                source_card_stable_id: None,
-            }),
-            "npm" => candidates.push(FetchCandidate {
-                url: format!("https://www.npmjs.com/package/{pkg}"),
-                structured_repo_fetch: false,
-                group: "PackageAdvisories".to_string(),
-                expected_kind: SourceKind::PackageRegistry,
-                recommended_extract_mode: Some(ExtractMode::Markdown),
-                original_order: candidates.len(),
-                source_kind: SourceKind::PackageRegistry,
-                source_role: None,
-                evidence_confidence: None,
-                is_pinned_permalink: false,
-                is_raw_url: false,
-                is_browser_url: true,
-                domain: extract_domain("https://www.npmjs.com"),
-                score: 0,
-                reasons: Vec::new(),
-                information_gain: 0.0,
-                stable: false,
-                source_card_stable_id: None,
-            }),
+            "crates.io" => candidates.push(
+                FetchCandidateBuilder::new(format!("https://crates.io/crates/{pkg}"))
+                    .structured_repo_fetch(false)
+                    .group("PackageAdvisories".to_string())
+                    .expected_kind(SourceKind::PackageRegistry)
+                    .recommended_extract_mode(Some(ExtractMode::Markdown))
+                    .original_order(candidates.len())
+                    .source_kind(SourceKind::PackageRegistry)
+                    .source_role(None)
+                    .evidence_confidence(None)
+                    .is_pinned_permalink(false)
+                    .is_raw_url(false)
+                    .is_browser_url(true)
+                    .domain(extract_domain("https://crates.io"))
+                    .source_card_stable_id(None)
+                    .build(),
+            ),
+            "npm" => candidates.push(
+                FetchCandidateBuilder::new(format!("https://www.npmjs.com/package/{pkg}"))
+                    .structured_repo_fetch(false)
+                    .group("PackageAdvisories".to_string())
+                    .expected_kind(SourceKind::PackageRegistry)
+                    .recommended_extract_mode(Some(ExtractMode::Markdown))
+                    .original_order(candidates.len())
+                    .source_kind(SourceKind::PackageRegistry)
+                    .source_role(None)
+                    .evidence_confidence(None)
+                    .is_pinned_permalink(false)
+                    .is_raw_url(false)
+                    .is_browser_url(true)
+                    .domain(extract_domain("https://www.npmjs.com"))
+                    .source_card_stable_id(None)
+                    .build(),
+            ),
             _ => {}
         }
     }
@@ -216,26 +197,23 @@ pub fn generate_security_suggested_fetches(
                 .map(|ce| (ce.source_role, ce.evidence_confidence))
                 .unwrap_or((None, None));
 
-            candidates.push(FetchCandidate {
-                url: card.url.clone(),
-                structured_repo_fetch: false,
-                group: group_label(group.kind),
-                expected_kind: source_kind,
-                recommended_extract_mode: recommended_extract_mode_for_group(group.kind),
-                original_order: candidates.len(),
-                source_kind,
-                source_role,
-                evidence_confidence,
-                is_pinned_permalink: false,
-                is_raw_url: false,
-                is_browser_url: crate::meta::engines::is_http_url(&card.url),
-                domain: extract_domain(&card.url),
-                score: 0,
-                reasons: Vec::new(),
-                information_gain: 0.0,
-                stable: false,
-                source_card_stable_id: card.stable_id.clone(),
-            });
+            candidates.push(
+                FetchCandidateBuilder::from_card(card, card.url.clone())
+                    .structured_repo_fetch(false)
+                    .group(group_label(group.kind))
+                    .expected_kind(source_kind)
+                    .recommended_extract_mode(recommended_extract_mode_for_group(group.kind))
+                    .original_order(candidates.len())
+                    .source_kind(source_kind)
+                    .source_role(source_role)
+                    .evidence_confidence(evidence_confidence)
+                    .is_pinned_permalink(false)
+                    .is_raw_url(false)
+                    .is_browser_url(crate::meta::engines::is_http_url(&card.url))
+                    .domain(extract_domain(&card.url))
+                    .source_card_stable_id(card.stable_id.clone())
+                    .build(),
+            );
         }
     }
 
@@ -256,36 +234,37 @@ pub fn generate_security_suggested_fetches(
                 source_file.to_string()
             };
 
-            candidates.push(FetchCandidate {
-                url,
-                structured_repo_fetch: true,
-                group: "PackageAdvisories".to_string(),
-                expected_kind: SourceKind::SourceFile,
-                recommended_extract_mode: Some(ExtractMode::Text),
-                original_order: candidates.len(),
-                source_kind: SourceKind::SourceFile,
-                source_role: None,
-                evidence_confidence: finding.confidence.map(|c| match c {
-                    crate::core::security_applicability::ApplicabilityConfidence::High => {
-                        crate::core::code_evidence::EvidenceConfidence::Exact
-                    }
-                    crate::core::security_applicability::ApplicabilityConfidence::Medium => {
-                        crate::core::code_evidence::EvidenceConfidence::Strong
-                    }
-                    crate::core::security_applicability::ApplicabilityConfidence::Low => {
-                        crate::core::code_evidence::EvidenceConfidence::Weak
-                    }
-                }),
-                is_pinned_permalink: false,
-                is_raw_url: false,
-                is_browser_url: false,
-                domain: "workspace".to_string(),
-                score: 0,
-                reasons: vec![crate::meta::fetch_ranking::FetchRankReason::KindSourceFile],
-                information_gain: 0.3,
-                stable: false,
-                source_card_stable_id: None,
-            });
+            candidates.push(
+                FetchCandidateBuilder::new(url)
+                    .structured_repo_fetch(true)
+                    .group("PackageAdvisories".to_string())
+                    .expected_kind(SourceKind::SourceFile)
+                    .recommended_extract_mode(Some(ExtractMode::Text))
+                    .original_order(candidates.len())
+                    .source_kind(SourceKind::SourceFile)
+                    .source_role(None)
+                    .evidence_confidence(finding.confidence.map(|c| match c {
+                        crate::core::security_applicability::ApplicabilityConfidence::High => {
+                            crate::core::code_evidence::EvidenceConfidence::Exact
+                        }
+                        crate::core::security_applicability::ApplicabilityConfidence::Medium => {
+                            crate::core::code_evidence::EvidenceConfidence::Strong
+                        }
+                        crate::core::security_applicability::ApplicabilityConfidence::Low => {
+                            crate::core::code_evidence::EvidenceConfidence::Weak
+                        }
+                    }))
+                    .is_pinned_permalink(false)
+                    .is_raw_url(false)
+                    .is_browser_url(false)
+                    .domain("workspace".to_string())
+                    .source_card_stable_id(None)
+                    .reasons(vec![
+                        crate::meta::fetch_ranking::FetchRankReason::KindSourceFile,
+                    ])
+                    .information_gain(0.3)
+                    .build(),
+            );
         }
     }
 
