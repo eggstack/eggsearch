@@ -1,6 +1,7 @@
 # Planning Registry
 
-Updated: 2026-09-05
+Updated: 2026-09-08
+Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
@@ -16,7 +17,7 @@ Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` 
 
 The governing rationale and cross-phase invariants for this workstream are in `roadmap.md`.
 
-## Active workstream — Binary distribution and deployment
+## Completed workstream — Binary distribution and deployment
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
@@ -28,54 +29,56 @@ The governing rationale and cross-phase invariants for this workstream are in `r
 
 The governing rationale, target matrix, installer/update contract, lifecycle split, and cross-phase invariants are in `deployment-roadmap.md`.
 
+## Active workstream — Maintenance and CodeGG retrieval quality
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 11 | Architecture and workflow consolidation | planned | none | `phase-11-architecture-and-workflow-consolidation.md` |
+| 12 | Provider probe and diagnostics closure | planned | phase 11 preferred | `phase-12-provider-probe-and-diagnostics-closure.md` |
+| 13 | Structured local code intelligence and repo-map enrichment | planned | phase 11 | `phase-13-structured-local-code-intelligence-and-repo-map.md` |
+| 14 | Retrieval ergonomics and focused batch evidence | planned | phase 11; phase 13 preferred | `phase-14-retrieval-ergonomics-and-focused-batch-evidence.md` |
+| 15 | Public API, docs, tests, and repository-hygiene closure | planned | phases 11-14 | `phase-15-api-docs-tests-and-repository-hygiene-closure.md` |
+
+The governing rationale, scope boundaries, cross-phase invariants, and stop conditions are in `maintenance-codegg-quality-roadmap.md`.
+
 ### Intended implementation order
 
-The default handoff order is:
-
 ```text
-phase 6 -> phase 7
-     \       \
-      -> phase 8 -> phase 9 -> phase 10
+phase 11 -> phase 12
+    |
+    +-----> phase 13 -> phase 14 -> phase 15
 ```
 
-Phase 8 can proceed in parallel with phases 6-7 once the CLI/release smoke interface is coordinated. Phase 9 must not start before a real persistent HTTP MCP transport exists. Phase 10 is the closure phase and must re-audit the exact current client configuration surfaces before implementing adapters.
+Phase 12 may proceed in parallel once phase 11's execution seams are stable. Phase 15 is the closure pass.
 
-### Deployment workstream stop conditions
+### Workstream stop conditions
 
 Do not mark this workstream complete until:
 
-- GitHub Release assets use one stable target/asset contract across workflow, Unix/PowerShell installers, updater, and docs;
-- Linux x86-64/AArch64, macOS Intel/Apple Silicon, and Windows x86-64 release binaries are verified; ARMv7 and Windows ARM64 are either verified as planned or retain explicit technical blockers that keep the relevant phase non-complete;
-- binary bootstrap verifies SHA-256 before candidate execution and only falls back to Cargo for unsupported/404 assets;
-- crates.io is the stable-version authority for `eggsearch update`, and updater downloads the exact corresponding GitHub tag asset;
-- existing `eggsearch mcp stdio` remains CodeGG-compatible;
-- persistent MCP uses current Streamable HTTP semantics and is loopback-only by default;
-- systemd/launchd/Windows/cron startup logic is idempotent, manager-exclusive, and never auto-elevates;
-- `croncheck` starts only on definite absence and cannot race into duplicate servers;
-- update restarts only a persistent service that was running before replacement;
-- client integration preserves unrelated third-party configuration and defaults to stdio unless HTTP is explicitly selected;
-- CodeGG default stdio bootstrap and explicit remote MCP path both work against the closure binary;
-- README/docs distinguish ordinary binary-only install from fleet `--service` install;
-- `make check` and release/deployment-specific smoke gates pass on the exact closure candidate.
-
-Phase 10 closure evidence: `src/integrations/` provides seven client render
-adapters, native CLI or safe JSON apply modes, backup/atomic writes, and MCP
-stdio/HTTP verification; `docs/integrations.md` and
-`architecture/integrations.md` document the current client surfaces. Local
-verification is recorded by the closure commit and CI. Official MCP Registry
-metadata remains deferred because the current package schema does not yet
-truthfully express the complete multi-architecture release asset contract.
+- the MCP and metasearch coordination layers are decomposed without replacing them with new monoliths;
+- common repo/research/security workflow mechanics are shared while domain policy remains typed;
+- the historical integration mega-suite is partitioned by behavioral contract;
+- MCP provider probing is real, bounded, and uses the same core service as CLI diagnostics;
+- provider capability documentation and descriptors agree;
+- local search has a bounded structured symbol backend with regex fallback;
+- `repo_map` exposes useful deterministic package/module/symbol/test/build structure;
+- `batch_fetch` supports per-item focused evidence with an aggregate response budget;
+- the accidental root `typescript` transcript and similar artifacts are removed and guarded against;
+- the intended Rust public API boundary is explicit;
+- CodeGG contracts and the routine verification gates pass on the exact closure candidate.
 
 ## Deferred by design
 
-The following capabilities were researched but are not implementation commitments in the current workstreams:
-
-### Search extensions
+### Search/research extensions
 
 - recursive crawling or autonomous browser interaction;
 - provider-generated answers, summaries, deep-research agents, or schema-generation layers;
 - a new general-purpose `site_map` MCP tool unless a future evidence-based plan promotes it;
-- Firecrawl Research Index passage/citation-graph operations unless separately planned.
+- Firecrawl Research Index passage/citation-graph operations unless separately planned;
+- new general web providers that duplicate existing evidence classes;
+- mandatory vector/embedding local indexing;
+- mandatory LSP/rust-analyzer local-search dependency;
+- full PDF layout/OCR work unless separately planned after the maintenance closure.
 
 ### Distribution/deployment extensions
 
