@@ -882,7 +882,7 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
     let symbol_names: HashMap<String, Vec<String>> =
         top_symbols.iter().fold(HashMap::new(), |mut acc, sym| {
             acc.entry(sym.path.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(sym.name.clone());
             acc
         });
