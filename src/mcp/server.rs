@@ -12,10 +12,11 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler
 
 use crate::mcp::state::ServerState;
 use crate::mcp::tools::{
-    run_batch_fetch, run_build_evidence_bundle, run_provider_status, run_repo_fetch, run_repo_map,
-    run_repo_search, run_research_search, run_security_search, run_web_fetch, run_web_search,
-    BatchFetchArgs, EvidenceBundleArgs, ProviderStatusArgs, RepoFetchArgs, RepoMapArgs,
-    RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, ToolError, WebFetchArgs, WebSearchArgs,
+    run_batch_fetch, run_build_evidence_bundle, run_provider_status_async, run_repo_fetch,
+    run_repo_map, run_repo_search, run_research_search, run_security_search, run_web_fetch,
+    run_web_search, BatchFetchArgs, EvidenceBundleArgs, ProviderStatusArgs, RepoFetchArgs,
+    RepoMapArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, ToolError, WebFetchArgs,
+    WebSearchArgs,
 };
 
 #[derive(Clone)]
@@ -78,15 +79,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<ProviderStatusArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        // Browser discovery probes candidate executables with blocking
-        // subprocesses; keep that work off the async runtime threads.
-        let res = match tokio::task::spawn_blocking(move || run_provider_status(state, args)).await
-        {
-            Ok(res) => res,
-            Err(e) => Err(ToolError::internal(format!(
-                "provider_status task failed: {e}"
-            ))),
-        };
+        let res = run_provider_status_async(state, args).await;
         match res {
             Ok(v) => Self::json_result(v),
             Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),

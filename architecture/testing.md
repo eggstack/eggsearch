@@ -72,6 +72,16 @@ Provider failures, timeouts, concurrency testing.
 - Concurrent request limits
 - Panic recovery
 
+### Provider Probe Conformance (`tests/provider_probe_conformance.rs`)
+
+Mock-backed deterministic coverage for the shared probe service:
+
+- configured/routable success, missing-key/config skips, unknown-provider skips
+- timeout, HTTP error (including 429 with `http_status`), parse, network, panic containment
+- cooldown interaction and explicit-request-after-degraded semantics
+- bounded/sanitized messages, credential non-leakage, narrow-request budget observance
+- descriptor source-of-truth for native (`exa`/`tavily`) versus local domain filtering
+
 ### Security Tests
 
 | File | Purpose |

@@ -47,6 +47,7 @@ make bench-check        # compile-check benches without running
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
+| `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
 | `tests/phase2_extract_fetch.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
 | `tests/docs_*.rs` | None | Documentation contract tests |

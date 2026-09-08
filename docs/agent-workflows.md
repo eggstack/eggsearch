@@ -2,7 +2,7 @@
 
 Recommended tool call sequences for common agent tasks.
 
-Use `provider_status` first when you need the current provider/capability picture. The `probe` field is reserved, and `recipe_detail` defaults to `summary`.
+Use `provider_status` first when you need the current provider/capability picture. Pass `probe: true` for a bounded live liveness check (same core service as `eggsearch doctor --probe`); `recipe_detail` defaults to `summary`.
 
 `web_fetch` also supports `extract_mode = "metadata_only"` when you only need page metadata and do not need the body text.
 

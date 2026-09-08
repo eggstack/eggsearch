@@ -34,7 +34,7 @@ The governing rationale, target matrix, installer/update contract, lifecycle spl
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
 | 11 | Architecture and workflow consolidation | planned | none | `phase-11-architecture-and-workflow-consolidation.md` |
-| 12 | Provider probe and diagnostics closure | planned | phase 11 preferred | `phase-12-provider-probe-and-diagnostics-closure.md` |
+| 12 | Provider probe and diagnostics closure | implemented | phase 11 preferred | `phase-12-provider-probe-and-diagnostics-closure.md` |
 | 13 | Structured local code intelligence and repo-map enrichment | planned | phase 11 | `phase-13-structured-local-code-intelligence-and-repo-map.md` |
 | 14 | Retrieval ergonomics and focused batch evidence | planned | phase 11; phase 13 preferred | `phase-14-retrieval-ergonomics-and-focused-batch-evidence.md` |
 | 15 | Public API, docs, tests, and repository-hygiene closure | planned | phases 11-14 | `phase-15-api-docs-tests-and-repository-hygiene-closure.md` |

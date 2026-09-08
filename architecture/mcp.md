@@ -102,7 +102,12 @@ impl EggsearchServer {
 ### 4. `provider_status`
 **Purpose:** Diagnostic report of configured providers and server capabilities.
 
-**Returns:** Provider health, capabilities, configuration.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `probe` | bool | Bounded live liveness check via the shared probe service (default false = cheap process-local only) |
+| `recipe_detail` | Option | `none`/`summary`/`full` workflow recipe verbosity |
+
+**Returns:** Provider descriptors (`routable`/`skip_code`), health snapshots/views, `code_hosts`, `server_capabilities` (generic/credentialed/local/browser/PDF/security/repo paths for CodeGG negotiation), `tool_capabilities`, and a typed `probe` section (`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`) when requested.
 
 ### 5. `repo_search`
 **Purpose:** Structured repository evidence discovery with grouped result bundles.

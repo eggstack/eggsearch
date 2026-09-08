@@ -62,10 +62,16 @@ The canonical output type for all search results. Contains:
 
 ### ProviderCapabilities (`provider.rs`)
 24 boolean capability flags per provider:
-- `web_search`, `code_search`, `issue_search`, `release_search`
-- `advisory_search`, `package_lookup`, `scholarly_search`
-- `local_search`, `repo_fetch`, `repo_map`
-- etc.
+- `safe_search`, `freshness`, `language`, `region`, `domain_filters`, `news`
+- `code_search`, `repo_filter`, `org_filter`, `path_filter`, `language_filter`, `symbol_hint`
+- `issue_search`, `release_search`, `result_timestamps`
+- `security_search`, `package_metadata`, `advisory_lookup_by_id`, `advisory_lookup_by_package`, `exploit_kev_status`
+- `scholarly_search`, `doi_lookup`, `repo_indexing`, `structured_changelog`
+
+Native versus approximate enforcement is tracked per request in
+`CapabilityEnforcementTelemetry` (`requested`/`enforced`/`approximated`/`not_enforced`).
+Domain filters are natively enforced only by `exa`/`tavily`; all other
+domain filtering is local approximation.
 
 ### Identity System (`identity.rs`)
 Deterministic FNV-1a 64-bit hashes for:

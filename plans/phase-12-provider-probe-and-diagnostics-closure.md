@@ -1,6 +1,6 @@
 # Phase 12 — Provider Probe and Diagnostics Closure
 
-Status: planned
+Status: implemented
 Depends on: phase 11 preferred; may proceed once shared execution seams are stable
 Baseline for planning: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Roadmap: `plans/maintenance-codegg-quality-roadmap.md`

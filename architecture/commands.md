@@ -56,12 +56,12 @@ eggsearch doctor [--probe]
 ```
 
 **Flags:**
-- `--probe` — Probe each provider with a live query
+- `--probe` — Probe each provider with a bounded live query via the shared probe service (same core as MCP `provider_status(probe=true)`)
 
 **Output:**
 - Config file location and status
 - Provider configuration summary
-- Provider health (with `--probe`)
+- Provider health (with `--probe`: `[OK]`/`[FAIL]`/`[SKIP]` per provider plus started/succeeded/failed/skipped summary)
 - Feature flag status
 
 ### `search` (`search.rs`)

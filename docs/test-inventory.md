@@ -6,7 +6,7 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5008 | 21 |
+| `--all-features` | 5028 | 22 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) — they run only via explicit opt-in targets.
 
@@ -36,6 +36,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
 | `dispatch_fault_injection` | `mock` | 32 | Provider failure, timeout, hang, health transitions, concurrency, panic |
+| `provider_probe_conformance` | `mock` | 20 | Shared probe service: success/skip/timeout/HTTP/parse/network/panic, cooldown, explicit-after-degraded, bounded messages, descriptor source-of-truth |
 | `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
 | `phase1_provider_contract` | `mock` | 12 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures |
 | `phase2_extract_fetch` | `mock` (1 test) | 13 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls |

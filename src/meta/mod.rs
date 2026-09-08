@@ -39,6 +39,9 @@ pub mod mock;
 /// npm, Go, Maven, NuGet, RubyGems, Packagist, OCI, and GitHub Actions.
 pub mod package_resolver;
 pub mod planner;
+/// Shared provider liveness probe service used by CLI diagnostics,
+/// MCP `provider_status(probe=true)`, and live-smoke tests.
+pub mod probe;
 /// Provider health tracking, routing decisions, and capability enforcement telemetry.
 pub mod provider_diagnostics;
 /// Built-in recipe catalog and capability-to-recipe gating.

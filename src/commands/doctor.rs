@@ -281,67 +281,44 @@ fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
 }
 
 async fn probe_providers(state: &ServerState) -> Result<()> {
-    use eggsearch::core::WebSearchRequest;
-
-    let probe_query = "test";
-    let timeout_per_provider = 3000;
-
-    let mut all_failed = true;
-    for provider_id in state.adapter.provider_ids() {
-        let req = WebSearchRequest {
-            query: probe_query.to_string(),
-            max_results: Some(1),
-            providers: vec![provider_id.clone()],
-            safe_search: None,
-            timeout_ms: Some(timeout_per_provider),
-            intent: eggsearch::core::query::SearchIntent::default(),
-            freshness: eggsearch::core::query::Freshness::default(),
-            date_range: None,
-            include_domains: Vec::new(),
-            exclude_domains: Vec::new(),
-            language: None,
-            region: None,
-            excerpt_count: None,
-        };
-
-        let start = std::time::Instant::now();
-        let resp = state
-            .adapter
-            .web_search(&req, 1, state.config.search.max_results_cap)
-            .await;
-        let elapsed = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-
-        if resp.providers_failed.is_empty() {
-            println!(
-                "  [OK]     {} ({}ms, {} result(s))",
-                provider_id,
-                elapsed,
-                resp.results.len()
-            );
-            all_failed = false;
+    let summary = eggsearch::meta::probe::probe_providers(
+        &state.adapter,
+        eggsearch::meta::probe::ProviderProbeRequest::default(),
+    )
+    .await;
+    for outcome in &summary.outcomes {
+        if !outcome.attempted {
+            let code = outcome
+                .skip_code
+                .as_ref()
+                .map(|c| c.as_str())
+                .unwrap_or("skipped");
+            let msg = outcome.message.as_deref().unwrap_or(code);
+            println!("  [SKIP]   {} - {msg}", outcome.provider_id);
+        } else if outcome.success {
+            let latency = outcome.latency_ms.unwrap_or(0);
+            let msg = outcome.message.as_deref().unwrap_or("ok");
+            println!("  [OK]     {} ({latency}ms, {msg})", outcome.provider_id);
         } else {
-            let msg = resp
-                .providers_failed
-                .first()
-                .map(|f| f.message.as_str())
-                .unwrap_or("unknown");
-            let class = resp
-                .providers_failed
-                .first()
-                .map(|f| f.error_class.as_str())
-                .unwrap_or("unknown");
-            println!("  [FAIL]   {provider_id} ({elapsed}ms) - {class}: {msg}");
-            if !resp.results.is_empty() {
-                println!(
-                    "           (returned {} result(s) despite failure)",
-                    resp.results.len()
-                );
-            }
+            let latency = outcome.latency_ms.unwrap_or(0);
+            let class = outcome.failure_class.as_deref().unwrap_or("unknown");
+            let msg = outcome.message.as_deref().unwrap_or("unknown");
+            println!(
+                "  [FAIL]   {} ({latency}ms) - {class}: {msg}",
+                outcome.provider_id
+            );
         }
     }
+    println!(
+        "probe summary: {} started, {} succeeded, {} failed, {} skipped",
+        summary.started, summary.succeeded, summary.failed, summary.skipped
+    );
 
-    if all_failed {
+    if summary.succeeded == 0 && summary.failed > 0 {
         anyhow::bail!("all providers failed");
+    }
+    if summary.succeeded == 0 && summary.started == 0 {
+        anyhow::bail!("no providers probed; all skipped");
     }
 
     Ok(())

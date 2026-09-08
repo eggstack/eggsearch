@@ -48,7 +48,7 @@ make bench-check             # compile-check benches without running
 make fuzz-smoke              # 60s runs of 3 key fuzz targets
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,008 tests pass with `--all-features` (21 ignored live-smoke); 4,766 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,028 tests pass with `--all-features` (22 ignored live-smoke); 4,786 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -66,12 +66,12 @@ src/
   platform.rs      # release target/asset contract and host mapping
   update.rs        # crates.io-authoritative binary-first self-update
   core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
-  meta/            # MetadataSearchAdapter (adapter/ modules) + 36 vendored engines (+ local workspace backend) covering 37 registered provider IDs, forge adapter, planners, inventory cache, workflow substrate
+  meta/            # MetadataSearchAdapter (adapter/ modules) + 36 vendored engines (+ local workspace backend) covering 37 registered provider IDs, forge adapter, planners, inventory cache, shared probe service (probe.rs), workflow substrate
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), stdio/HTTP transports, tool definitions, state (tools/ per-tool modules)
   startup.rs       # startup manager policy, service templates, croncheck, restart state
 packaging/          # release target contract, installers, artifact smoke helpers
-tests/             # behavioral suites (mcp_tools, web_search/web_fetch integration, provider_routing, repo/research/security workflow, evidence_contract), corpus, contract, property, adversarial, and browser_profiles tests
+tests/             # behavioral suites (mcp_tools, web_search/web_fetch integration, provider_routing, provider_probe_conformance, repo/research/security workflow, evidence_contract), corpus, contract, property, adversarial, and browser_profiles tests
 fuzz/              # cargo-fuzz + libfuzzer targets (22 registered)
 ```
 
@@ -115,7 +115,7 @@ cargo test --locked --features browser --test browser_transport    # browser tra
 ### Adding tests
 
 - **New file** when testing a distinct subsystem or targeting a specific bug class
-- **Extend behavioral suites** (`mcp_tools`, `web_search/web_fetch` integration, `provider_routing`, `repo/research/security` workflow, `evidence_contract`) for MCP tool input validation, provider failures, tool response shape
+- **Extend behavioral suites** (`mcp_tools`, `web_search/web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo/research/security` workflow, `evidence_contract`) for MCP tool input validation, provider failures, tool response shape
 - **Extend `corpus_runner.rs`** for multi-step workflows
 - **Unit tests** at bottom of source file for private functions
 - Always run `cargo clippy --locked --all-targets --all-features -- -D warnings` after adding
@@ -151,7 +151,7 @@ Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/ski
 
 ## Key Architecture
 
-- **Adapter pattern:** `MetadataSearchAdapter` wraps all search engines, handles RRF aggregation, sanitization, and provider health. Adapter coordination lives in `src/meta/adapter/` (invocation, advisory, status, web/repo/research/security execution, normalization, builders). Shared repo/research/security mechanics live in `src/meta/workflow.rs` (`PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet`) with `FetchCandidateBuilder` ranking in `fetch_ranking.rs`. MCP tools call the adapter, never engines directly. See `architecture/meta.md`.
+- **Adapter pattern:** `MetadataSearchAdapter` wraps all search engines, handles RRF aggregation, sanitization, and provider health. Adapter coordination lives in `src/meta/adapter/` (invocation, advisory, status, web/repo/research/security execution, normalization, builders). Shared provider liveness lives in `src/meta/probe.rs` (`ProviderProbeRequest`/`Outcome`/`Summary`, bounded concurrency/deadlines, sanitized messages) and is reused by `doctor --probe`, MCP `provider_status(probe=true)`, and live-smoke. Shared repo/research/security mechanics live in `src/meta/workflow.rs` (`PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet`) with `FetchCandidateBuilder` ranking in `fetch_ranking.rs`. MCP tools call the adapter, never engines directly. See `architecture/meta.md`.
 - **Provider request contract:** `EngineSearchRequest` (`src/meta/engines/request.rs`) is the single structured engine request (query, budgets, intent, safe-search, freshness/date-range, domains, language, region, bounded excerpt demand). Direct web fan-out and `dispatch_parallel` multiquery dispatch both use it.
 - **Extractive evidence:** `SourceExcerpt`/`ExcerptProvenance` (`src/core/source_card.rs`) carry at most 3 bounded source-derived excerpts per card (500 chars each, 1,200 total), merged deterministically during RRF and sanitized through the trust pipeline. Generic `published_at` timestamps feed freshness reranking. Excerpts/timestamps never enter stable IDs. Unrequested excerpts are stripped before aggregation. See `architecture/meta.md`.
 - **Focused fetch:** `select_focus_chunks()` (`src/core/focus.rs`) ranks already-extracted document chunks lexically (no traversal, no models); the `focus` selection on `WebFetchResponse` is additive and never enters cache keys.

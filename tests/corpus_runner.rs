@@ -2873,4 +2873,48 @@ mod live_smoke {
             "should resolve non-default branch, got ref_name={ref_name}"
         );
     }
+
+    #[tokio::test]
+    #[ignore = "requires live network and live-smoke feature"]
+    async fn smoke_provider_probe_shared_service() {
+        let v = eggsearch::mcp::tools::run_provider_status_async(
+            smoke_state(),
+            eggsearch::mcp::tools::ProviderStatusArgs {
+                probe: true,
+                recipe_detail: None,
+            },
+        )
+        .await
+        .expect("live provider_status probe");
+        let probe = v["probe"].as_object().expect("probe object");
+        assert_eq!(probe["requested"], serde_json::json!(true));
+        assert_eq!(probe["implemented"], serde_json::json!(true));
+        let outcomes = probe["outcomes"].as_array().expect("outcomes array");
+        assert!(!outcomes.is_empty(), "probe should return outcomes");
+        let started = probe["started"].as_u64().unwrap_or(0);
+        let skipped = probe["skipped"].as_u64().unwrap_or(0);
+        assert!(
+            started + skipped > 0,
+            "probe should start or skip providers"
+        );
+        for o in outcomes {
+            assert!(o["provider_id"].is_string());
+            assert!(o["attempted"].is_boolean());
+            if !o["attempted"].as_bool().unwrap_or(true) {
+                assert!(
+                    o["skip_code"].is_string(),
+                    "skipped probe must carry skip_code: {o}"
+                );
+            }
+            if let Some(msg) = o["message"].as_str() {
+                assert!(
+                    msg.chars().count() <= 300,
+                    "probe message should be bounded: {msg}"
+                );
+            }
+        }
+        let json = serde_json::to_string(&v).unwrap().to_lowercase();
+        assert!(!json.contains("ghp_"), "probe must not leak credentials");
+        assert!(!json.contains("glpat-"), "probe must not leak credentials");
+    }
 }

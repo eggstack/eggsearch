@@ -288,6 +288,7 @@ mod web;
 
 pub use advisory::{NativeAdvisoryOperation, ProviderAdvisoryOutcome, ProviderAdvisoryStatus};
 pub use builders::build_default_engines;
+pub(crate) use error::classify;
 pub use error::ErrorClass;
 pub(crate) use normalization::build_retrieval_failures;
 

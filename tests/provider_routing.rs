@@ -2158,9 +2158,21 @@ mod provider_status {
         );
     }
 
+    #[cfg(feature = "mock")]
     #[test]
     fn probe_field_is_present_when_requested_true() {
-        let state = state_with_default();
+        let state = state_with_engines(
+            AppConfig::default(),
+            vec![MockEngine::success(
+                "duckduckgo",
+                vec![MockResult::new(
+                    "Probe Hit",
+                    "https://example.com/probe",
+                    "duckduckgo",
+                )],
+            )],
+            Duration::from_secs(5),
+        );
         let v = run_provider_status(
             state,
             ProviderStatusArgs {
@@ -2173,13 +2185,43 @@ mod provider_status {
             .as_object()
             .expect("probe should be an object when requested=true");
         assert_eq!(probe["requested"], serde_json::json!(true));
-        assert_eq!(probe["implemented"], serde_json::json!(false));
-        let message = probe["message"]
-            .as_str()
-            .expect("probe.message should be a string when requested=true");
+        assert_eq!(probe["implemented"], serde_json::json!(true));
         assert!(
-            message.contains("reserved") || message.contains("future"),
-            "probe.message should mention reservation: got {message}"
+            probe["started"].is_number(),
+            "probe.started missing: {probe:?}"
+        );
+        assert!(
+            probe["succeeded"].is_number(),
+            "probe.succeeded missing: {probe:?}"
+        );
+        assert!(
+            probe["failed"].is_number(),
+            "probe.failed missing: {probe:?}"
+        );
+        assert!(
+            probe["skipped"].is_number(),
+            "probe.skipped missing: {probe:?}"
+        );
+        let outcomes = probe["outcomes"]
+            .as_array()
+            .expect("probe.outcomes should be an array");
+        assert!(!outcomes.is_empty(), "probe.outcomes should not be empty");
+        for o in outcomes {
+            assert!(o["provider_id"].is_string(), "missing provider_id: {o}");
+            assert!(o["attempted"].is_boolean(), "missing attempted: {o}");
+            assert!(o["routable"].is_boolean(), "missing routable: {o}");
+            assert!(o["success"].is_boolean(), "missing success: {o}");
+            if let Some(msg) = o["message"].as_str() {
+                assert!(
+                    msg.chars().count() <= 300,
+                    "probe message should be bounded: {msg}"
+                );
+            }
+        }
+        let json = serde_json::to_string(&v).unwrap().to_lowercase();
+        assert!(
+            !json.contains("ghp_") && !json.contains("glpat-"),
+            "probe output must not leak credentials"
         );
     }
 
@@ -2198,7 +2240,7 @@ mod provider_status {
             .as_object()
             .expect("probe should always be an object");
         assert_eq!(probe["requested"], serde_json::json!(false));
-        assert_eq!(probe["implemented"], serde_json::json!(false));
+        assert_eq!(probe["implemented"], serde_json::json!(true));
     }
 
     #[test]

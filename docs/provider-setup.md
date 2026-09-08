@@ -515,6 +515,16 @@ The `health_views` field in `provider_status` provides per-provider health views
 
 When resolving which providers to query, eggsearch checks `is_in_cooldown()` for each candidate. Cooled-down providers are skipped with `skip_code: cooldown_active`. If all profile providers are unavailable, routing falls back to `default_providers`. If defaults are also unavailable, a `profile_degraded` warning is emitted.
 
+### Live Probing
+
+One shared probe service (`src/meta/probe.rs`) backs all diagnostics:
+
+- `eggsearch doctor --probe` — prints `[OK]`/`[FAIL]`/`[SKIP]` per provider plus started/succeeded/failed/skipped summary
+- MCP `provider_status` with `{"probe": true}` — returns a typed `probe` section with the same outcomes
+- `make live-smoke` / `cargo test --features live-smoke --test corpus_runner -- --ignored` — explicit live verification
+
+Probe policy: narrowest `test`/1-result request, 5s per-provider deadline, 20s aggregate deadline, max 4 concurrent probes, 256-char bounded sanitized messages. Failures update advisory health state but never override explicit provider selection. Missing credentials/config yield skipped outcomes with stable `skip_code` (never a misleading network failure). Credentials and raw upstream bodies are never echoed. Routine `make check` stays network-free; live probes run only when explicitly requested.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix | Diagnostic |

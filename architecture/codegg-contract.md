@@ -663,9 +663,13 @@ machine-readable signal.
 
 `provider_status` returns provider descriptors, cached health snapshots,
 `code_hosts`, `server_capabilities`, `tool_capabilities`, and
-`workflow_recipes`. The `probe` request field is reserved and currently
-ignored; the tool reports configured state rather than performing live
-provider probes.
+`workflow_recipes`. When `probe: true`, the tool performs bounded live
+liveness probes through the shared probe service (same core used by
+`eggsearch doctor --probe`) and returns a typed `probe` section with
+`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`.
+When `probe` is omitted or `false`, the tool returns cheap process-local
+config/health only. Non-routable providers are reported as skipped with a
+stable `skip_code` rather than a network failure.
 
 Each provider descriptor includes `routable` (bool), `skip_reason`
 (optional human-readable string), and `skip_code` (optional machine-readable

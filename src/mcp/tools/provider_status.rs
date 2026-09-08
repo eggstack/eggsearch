@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderStatusArgs {
-    /// Accepted for forward compatibility. The `provider_status` tool
-    /// does not currently perform live network probes; when `true`, the
-    /// response includes a `probe` field that explicitly states the
-    /// probe is reserved for a future bounded implementation. Use
-    /// `eggsearch doctor --probe` or the `live-smoke` test target for
-    /// real network diagnostics in the meantime.
+    /// When `true`, perform bounded active liveness probes against
+    /// routable providers via the shared probe service. Probes are
+    /// concurrent, time-bounded, and update advisory health state.
+    /// Non-routable providers are reported as skipped with a stable
+    /// `skip_code` rather than a network failure. When `false` (default),
+    /// return cheap process-local config/health only.
     #[serde(default)]
     pub probe: bool,
     /// Controls recipe verbosity in the response.
@@ -24,14 +24,8 @@ pub struct ProviderStatusArgs {
     pub recipe_detail: Option<crate::core::workflow::RecipeDetail>,
 }
 
-/// Run the `provider_status` tool.
-pub fn run_provider_status(
-    state: Arc<ServerState>,
-    args: ProviderStatusArgs,
-) -> Result<serde_json::Value, ToolError> {
+fn patched_descriptors(state: &ServerState) -> Vec<ProviderDescriptor> {
     let mut descriptors: Vec<ProviderDescriptor> = state.adapter.provider_status();
-
-    // Update local_workspace descriptor to reflect actual backend state
     if let Some(desc) = descriptors.iter_mut().find(|d| d.id == "local_workspace") {
         let backend_enabled = state.local_backend.is_some();
         desc.enabled = backend_enabled;
@@ -42,21 +36,22 @@ pub fn run_provider_status(
             desc.skip_code = None;
         }
     }
+    descriptors
+}
 
+fn build_payload_without_probe(
+    state: &ServerState,
+    descriptors: &[ProviderDescriptor],
+    recipe_detail: Option<crate::core::workflow::RecipeDetail>,
+) -> serde_json::Value {
     let local_enabled = state.local_backend.is_some();
-
-    // Build code_hosts summary from provider descriptors
-    let code_hosts = build_code_hosts_summary(&descriptors);
-
-    // Build health snapshots from the adapter's health registry
+    let code_hosts = build_code_hosts_summary(descriptors);
     let health_snapshots = state.adapter.health().all_snapshots(
         state.adapter.provider_ids(),
         state.adapter.searxng_configured(),
         state.adapter.api_configured(),
         state.local_backend.is_some(),
     );
-
-    // Build per-provider health views for direct embedding
     let health_registry = state.adapter.health();
     let health_views: std::collections::BTreeMap<String, _> = descriptors
         .iter()
@@ -136,18 +131,6 @@ pub fn run_provider_status(
         "code_hosts": code_hosts,
         "health": health_snapshots,
         "health_views": health_views,
-        "probe": if args.probe {
-            serde_json::json!({
-                "requested": true,
-                "implemented": false,
-                "message": "provider_status.probe is reserved for a future bounded live probe; use `eggsearch doctor --probe` or the `live-smoke` test target for real network diagnostics in the meantime",
-            })
-        } else {
-            serde_json::json!({
-                "requested": false,
-                "implemented": false,
-            })
-        },
         "mode": mode_str(state.config.search.mode),
         "server_capabilities": {
             "generic_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
@@ -257,31 +240,106 @@ pub fn run_provider_status(
                 "max_total_chars": crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP,
             },
         },
-        "workflow_recipes": match args.recipe_detail.unwrap_or_default() {
+        "workflow_recipes": match recipe_detail.unwrap_or_default() {
             crate::core::workflow::RecipeDetail::None => serde_json::json!([]),
             crate::core::workflow::RecipeDetail::Summary => {
-                let recipes = crate::meta::recipe_catalog::build_recipe_catalog(&descriptors, local_enabled);
+                let recipes = crate::meta::recipe_catalog::build_recipe_catalog(descriptors, local_enabled);
                 serde_json::json!(recipes.iter().map(|r| r.summarize()).collect::<Vec<_>>())
             }
             crate::core::workflow::RecipeDetail::Full => {
-                serde_json::json!(crate::meta::recipe_catalog::build_recipe_catalog(&descriptors, local_enabled))
+                serde_json::json!(crate::meta::recipe_catalog::build_recipe_catalog(descriptors, local_enabled))
             }
         },
     });
     if let serde_json::Value::Object(map) = &mut payload {
         if matches!(
-            args.recipe_detail.unwrap_or_default(),
+            recipe_detail.unwrap_or_default(),
             crate::core::workflow::RecipeDetail::None
         ) {
             map.remove("workflow_recipes");
         }
     }
+    payload
+}
+
+fn insert_probe(payload: &mut serde_json::Value, probe: serde_json::Value) {
+    if let serde_json::Value::Object(map) = payload {
+        map.insert("probe".to_string(), probe);
+    }
+}
+
+/// Run the `provider_status` tool without live probes.
+/// When `probe=true`, performs bounded active probes by blocking on a
+/// fresh current-thread runtime. Fails when called from within an async
+/// runtime; async callers must use [`run_provider_status_async`].
+pub fn run_provider_status(
+    state: Arc<ServerState>,
+    args: ProviderStatusArgs,
+) -> Result<serde_json::Value, ToolError> {
+    let descriptors = patched_descriptors(&state);
+    let mut payload = build_payload_without_probe(&state, &descriptors, args.recipe_detail);
+    if !args.probe {
+        insert_probe(
+            &mut payload,
+            serde_json::json!({
+                "requested": false,
+                "implemented": true,
+            }),
+        );
+        return Ok(payload);
+    }
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return Err(ToolError::internal(
+            "provider_status probe requires async context; use run_provider_status_async",
+        ));
+    }
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| ToolError::internal(format!("probe runtime failed: {e}")))?;
+    let summary = rt.block_on(crate::meta::probe::probe_providers(
+        &state.adapter,
+        crate::meta::probe::ProviderProbeRequest::default(),
+    ));
+    insert_probe(
+        &mut payload,
+        serde_json::to_value(&summary).map_err(|e| ToolError::internal(e.to_string()))?,
+    );
     Ok(payload)
 }
 
-/// Build a `code_hosts` summary grouping providers by host kind.
-///
-/// Each host kind gets an entry with aggregated capability flags.
+/// Run the `provider_status` tool with optional live probes.
+/// When `probe=true`, performs bounded active probes through the shared
+/// probe service and returns a typed `probe` section. Existing descriptor
+/// and health fields are preserved; this is additive.
+pub async fn run_provider_status_async(
+    state: Arc<ServerState>,
+    args: ProviderStatusArgs,
+) -> Result<serde_json::Value, ToolError> {
+    let descriptors = patched_descriptors(&state);
+    let mut payload = build_payload_without_probe(&state, &descriptors, args.recipe_detail);
+    if !args.probe {
+        insert_probe(
+            &mut payload,
+            serde_json::json!({
+                "requested": false,
+                "implemented": true,
+            }),
+        );
+        return Ok(payload);
+    }
+    let summary = crate::meta::probe::probe_providers(
+        &state.adapter,
+        crate::meta::probe::ProviderProbeRequest::default(),
+    )
+    .await;
+    insert_probe(
+        &mut payload,
+        serde_json::to_value(&summary).map_err(|e| ToolError::internal(e.to_string()))?,
+    );
+    Ok(payload)
+}
+
 fn build_code_hosts_summary(descriptors: &[ProviderDescriptor]) -> Vec<serde_json::Value> {
     struct HostSummary {
         kind: String,

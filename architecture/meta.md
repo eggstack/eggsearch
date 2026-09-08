@@ -41,6 +41,7 @@
 | `advisory_range.rs` | Advisory affected/fixed range extraction |
 | `version_compare.rs` | Version comparison utilities for package ecosystems |
 | `provider_diagnostics.rs` | `ProviderHealthRegistry`, `ProviderHealthSnapshot`, `ProviderRoutingDecision`, `CapabilityEnforcementTelemetry` |
+| `probe.rs` | Shared provider liveness probe service (`ProviderProbeRequest`/`Outcome`/`Summary`, bounded concurrency/deadlines, sanitized messages); used by CLI `doctor --probe`, MCP `provider_status(probe=true)`, and live-smoke |
 | `recipe_catalog.rs` | Built-in recipe catalog and capability-to-recipe gating |
 | `mock.rs` | Test-only mock engine harness (feature-gated `mock`) |
 
@@ -60,6 +61,7 @@ The central orchestrator, split by behavior with stable paths. Methods:
 | `research_search()` | Research-oriented multi-source evidence discovery |
 | `lookup_advisory()` | Single advisory lookup (CVE, GHSA, OSV, RustSec, KEV) |
 | `provider_status()` | Diagnostic report of configured providers |
+| `probe_providers()` (`probe.rs`) | Bounded active liveness probes with typed outcomes; updates advisory health, never overrides explicit selection |
 
 ### Internal Flow
 
@@ -140,7 +142,7 @@ Reciprocal Rank Fusion for result deduplication:
 
 ---
 
-## Provider Health (`provider_diagnostics.rs`)
+## Provider Health (`provider_diagnostics.rs` + `probe.rs`)
 
 Tracks provider health in real-time:
 
@@ -148,6 +150,7 @@ Tracks provider health in real-time:
 - `ProviderHealthSnapshot` — success rate, latency, error counts
 - `ProviderRoutingDecision` — whether to use/skip a provider
 - `CapabilityEnforcementTelemetry` — tracks capability-based routing
+- `probe.rs` — shared liveness service with per-provider (5s) and aggregate (20s) deadlines, max 4 concurrent probes, narrowest `test`/1-result requests, typed `attempted`/`routable`/`success`/`failure_class`/`http_status`/`skip_code`/bounded-message outcomes; failures update health, skips use stable codes, credentials never echoed
 
 ---
 
