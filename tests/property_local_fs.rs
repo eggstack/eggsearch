@@ -160,6 +160,7 @@ fn safe_open_config() -> LocalConfig {
         include_hidden: false,
         respect_gitignore: false,
         follow_symlinks: false,
+        ..Default::default()
     }
 }
 

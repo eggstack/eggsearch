@@ -506,7 +506,6 @@ additional identity and state metadata.
 ### 8.4 File Classification Flags
 
 Source cards from local workspace results include file classification metadata:
-
 ```json
 {
   "file_classification": {
@@ -542,6 +541,25 @@ local checkout across calls. Use this to:
 
 The workspace ID is deterministic and derived from the workspace root path.
 It does not change between calls unless the workspace configuration changes.
+
+### 8.6 Symbol Provenance
+
+Local `repo_search` matches carry additive `symbol_provenance`
+(`structured` or `regex_fallback`), `enclosing_symbol`, and
+`is_exact_definition`. Structured definitions use `Exact` confidence with
+`ProviderSymbolMatch`; regex fallback uses `Strong` with
+`ProviderTextMatch`. Ranking order: exact structured definition >
+structured symbol match > lexical regex match > ordinary text match.
+Treat unknown provenance values as opaque.
+
+### 8.7 Repo-Map Structural Enrichment
+
+Local `repo_map` responses additively include `packages`,
+`language_distribution`, `modules`, `entrypoints`, `top_symbols`,
+`test_relationships` (heuristic `syntax`/`path`/`name_reference`/`package`
+confidence, never coverage claims), `build_configs`, and
+`structure_truncated`. All structural fields are bounded by `[local]`
+budgets and may be empty on budget breach or scan failure.
 
 ### 9. Retrieval Dimension State
 

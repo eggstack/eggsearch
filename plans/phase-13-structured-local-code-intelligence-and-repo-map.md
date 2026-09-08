@@ -1,6 +1,6 @@
 # Phase 13 — Structured Local Code Intelligence and Repo-Map Enrichment
 
-Status: planned
+Status: implemented
 Depends on: phase 11
 Baseline for planning: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Roadmap: `plans/maintenance-codegg-quality-roadmap.md`

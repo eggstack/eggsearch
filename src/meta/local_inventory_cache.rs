@@ -1221,6 +1221,7 @@ mod tests {
             include_hidden: false,
             respect_gitignore: true,
             follow_symlinks: false,
+            ..Default::default()
         }
     }
 
@@ -1274,6 +1275,7 @@ mod tests {
             include_hidden: false,
             respect_gitignore: false,
             follow_symlinks: false,
+            ..Default::default()
         };
         let roots = vec![(0, root.to_path_buf())];
         let inventory = build_inventory(&config, &roots);
@@ -1403,6 +1405,7 @@ mod tests {
             include_hidden: false,
             respect_gitignore: false,
             follow_symlinks: false,
+            ..Default::default()
         };
         let roots = vec![(0, root.to_path_buf())];
         let inv = build_inventory(&config_no_hidden, &roots);
@@ -1434,6 +1437,7 @@ mod tests {
             include_hidden: false,
             respect_gitignore: false,
             follow_symlinks: false,
+            ..Default::default()
         };
         let roots = vec![(0, root.to_path_buf())];
         let inv = build_inventory(&config, &roots);
@@ -1464,6 +1468,7 @@ mod tests {
             include_hidden: false,
             respect_gitignore: false,
             follow_symlinks: false,
+            ..Default::default()
         };
         let roots = vec![(0, root.to_path_buf())];
         let inv = build_inventory(&config, &roots);

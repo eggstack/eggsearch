@@ -39,6 +39,26 @@ pub struct LocalConfig {
     /// Whether to follow symlinks. Default: `false`.
     #[serde(default)]
     pub follow_symlinks: bool,
+    /// Whether deterministic structured symbol parsing is enabled.
+    /// Default: `true`. When disabled, only the regex fallback is used.
+    #[serde(default = "default_true")]
+    pub structured_symbols: bool,
+    /// Maximum file bytes accepted by the structured parser.
+    /// Default: 262144.
+    #[serde(default = "default_max_parse_bytes")]
+    pub max_parse_bytes: usize,
+    /// Maximum symbols retained per file. Default: 256.
+    #[serde(default = "default_max_symbols_per_file")]
+    pub max_symbols_per_file: usize,
+    /// Maximum files parsed with structure per request. Default: 200.
+    #[serde(default = "default_max_structured_files")]
+    pub max_structured_files: usize,
+    /// Maximum total symbols retained per request. Default: 5000.
+    #[serde(default = "default_max_total_symbols")]
+    pub max_total_symbols: usize,
+    /// Cap for total repo-map structural entries. Default: 500.
+    #[serde(default = "default_repo_map_structure_cap")]
+    pub repo_map_structure_cap: usize,
 }
 
 impl Default for LocalConfig {
@@ -51,12 +71,33 @@ impl Default for LocalConfig {
             include_hidden: false,
             respect_gitignore: default_true(),
             follow_symlinks: false,
+            structured_symbols: true,
+            max_parse_bytes: default_max_parse_bytes(),
+            max_symbols_per_file: default_max_symbols_per_file(),
+            max_structured_files: default_max_structured_files(),
+            max_total_symbols: default_max_total_symbols(),
+            repo_map_structure_cap: default_repo_map_structure_cap(),
         }
     }
 }
 
 fn default_max_file_bytes() -> usize {
     1_048_576
+}
+fn default_max_parse_bytes() -> usize {
+    262_144
+}
+fn default_max_symbols_per_file() -> usize {
+    256
+}
+fn default_max_structured_files() -> usize {
+    200
+}
+fn default_max_total_symbols() -> usize {
+    5_000
+}
+fn default_repo_map_structure_cap() -> usize {
+    500
 }
 fn default_max_indexed_files() -> usize {
     50_000
@@ -123,6 +164,15 @@ pub struct LocalMatch {
     /// Kind of the matched symbol.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol_kind: Option<SymbolKind>,
+    /// Where the symbol match came from (`structured` or `regex_fallback`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_provenance: Option<String>,
+    /// Enclosing module/impl/class for the match, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enclosing_symbol: Option<String>,
+    /// Whether the symbol hint matched a definition exactly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_exact_definition: Option<bool>,
 }
 
 /// Inventory build telemetry for a local search.
@@ -158,6 +208,21 @@ pub struct InventoryTelemetry {
     /// Confidence that the inventory reflects current filesystem state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub freshness_confidence: Option<FreshnessConfidence>,
+    /// Files parsed with the structured symbol parser.
+    #[serde(default)]
+    pub structured_files_parsed: usize,
+    /// Structured symbols retained.
+    #[serde(default)]
+    pub structured_symbols_found: usize,
+    /// Files that fell back to regex symbol matching.
+    #[serde(default)]
+    pub regex_fallback_files: usize,
+    /// Symbol cache hits.
+    #[serde(default)]
+    pub symbol_cache_hits: usize,
+    /// Parser budget breaches (degraded to partial/regex evidence).
+    #[serde(default)]
+    pub symbol_budget_breaches: usize,
 }
 
 /// How confident the system is that the inventory is fresh.

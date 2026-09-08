@@ -19,6 +19,7 @@ mod tests {
             include_hidden: false,
             respect_gitignore: false,
             follow_symlinks: false,
+            ..Default::default()
         }
     }
 

@@ -3,19 +3,32 @@
 //! Provides deterministic classification of repository structure
 //! entries and suggested-fetch generation for the `repo_map` MCP tool.
 
-use std::path::Path;
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 
+use crate::core::code_evidence::{infer_source_role, SourceRole};
 use crate::core::code_metadata::CodeHost;
+use crate::core::local::{is_binary_extension, language_from_extension, LocalConfig, SKIP_DIRS};
 use crate::core::repo_fetch::RepoFetchRequest;
 use crate::core::repo_map::{
     classify_important_directory, classify_important_file, ImportantDirKind, ImportantFileKind,
-    RepoImportantDirectory, RepoImportantFile, RepoMapEntry, RepoMapEntryKind, RepoMapMode,
-    RepoMapRequest, RepoMapResponse, RepoMapSuggestedFetch, RepoPathSummary,
+    RepoEntrypoint, RepoImportantDirectory, RepoImportantFile, RepoLanguageDistribution,
+    RepoMapEntry, RepoMapEntryKind, RepoMapMode, RepoMapRequest, RepoMapResponse,
+    RepoMapSuggestedFetch, RepoModuleSummary, RepoPackageSummary, RepoPathSummary,
+    RepoTestRelationship, RepoTopSymbol,
 };
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
+use crate::meta::local_symbols::{self, TestHintConfidence};
 
 const MAX_SUGGESTED_FETCHES: usize = 8;
+const STRUCTURE_SCAN_FILE_CAP: usize = 2_000;
+const STRUCTURE_SCAN_DEPTH: usize = 4;
+const STRUCTURE_MANIFEST_READ_CAP: usize = 65_536;
+const STRUCTURE_SYMBOLS_PER_FILE: usize = 32;
+const STRUCTURE_TEST_FILE_CAP: usize = 100;
+const STRUCTURE_SOURCE_FILE_CAP: usize = 100;
+const STRUCTURE_RELATIONSHIP_CAP: usize = 100;
 
 /// Build a raw-content URL for the given host, owner, repo, ref, and path.
 pub fn build_raw_url(
@@ -429,6 +442,498 @@ pub fn populate_from_local_checkout(
         .push("local_workspace".to_string());
 }
 
+/// Bounded structural enrichment for a local checkout.
+///
+/// Scans at most [`STRUCTURE_SCAN_FILE_CAP`] files to depth
+/// [`STRUCTURE_SCAN_DEPTH`], parses at most `config.max_structured_files`
+/// files with the deterministic structured parser, and caps total retained
+/// structural entries at `config.repo_map_structure_cap`. Budget breaches
+/// set `structure_truncated` rather than failing the request. Never executes
+/// workspace code.
+pub fn populate_structure_from_local_checkout(
+    response: &mut RepoMapResponse,
+    root: &Path,
+    config: &LocalConfig,
+) {
+    let structure = build_local_structure(root, config);
+    response.packages = structure.packages;
+    response.language_distribution = structure.language_distribution;
+    response.modules = structure.modules;
+    response.entrypoints = structure.entrypoints;
+    response.top_symbols = structure.top_symbols;
+    response.test_relationships = structure.test_relationships;
+    response.build_configs = structure.build_configs;
+    response.structure_truncated = structure.truncated;
+}
+
+/// Structural enrichment result for a local checkout scan.
+pub struct LocalStructure {
+    /// Workspace package boundaries.
+    pub packages: Vec<RepoPackageSummary>,
+    /// Language distribution.
+    pub language_distribution: Vec<RepoLanguageDistribution>,
+    /// Major modules.
+    pub modules: Vec<RepoModuleSummary>,
+    /// Entrypoint candidates.
+    pub entrypoints: Vec<RepoEntrypoint>,
+    /// Top structured symbols.
+    pub top_symbols: Vec<RepoTopSymbol>,
+    /// Source-to-test hints.
+    pub test_relationships: Vec<RepoTestRelationship>,
+    /// Build/CI configs.
+    pub build_configs: Vec<RepoImportantFile>,
+    /// Whether any explicit cap truncated the scan.
+    pub truncated: bool,
+}
+
+struct ScannedFile {
+    relative: String,
+    size: u64,
+    language: Option<String>,
+}
+
+fn manifest_ecosystem(file_name: &str) -> Option<(&'static str, &'static str)> {
+    let lower = file_name.to_lowercase();
+    match lower.as_str() {
+        "cargo.toml" => Some(("rust", "rust")),
+        "package.json" => Some(("npm", "npm")),
+        "pyproject.toml" | "setup.py" | "setup.cfg" | "requirements.txt" | "pipfile" => {
+            Some(("python", "python"))
+        }
+        "go.mod" => Some(("go", "go")),
+        "pom.xml" | "build.gradle" | "build.gradle.kts" => Some(("jvm", "jvm")),
+        "gemfile" => Some(("ruby", "ruby")),
+        "composer.json" => Some(("php", "php")),
+        "mix.exs" => Some(("elixir", "elixir")),
+        _ if lower.ends_with(".gemspec") => Some(("ruby", "ruby")),
+        _ => None,
+    }
+}
+
+fn parse_package_name(root: &Path, relative: &str, ecosystem: &str) -> Option<String> {
+    let bytes = std::fs::read(root.join(relative)).ok()?;
+    if bytes.len() > STRUCTURE_MANIFEST_READ_CAP {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    match ecosystem {
+        "rust" => {
+            let mut in_package = false;
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('[') {
+                    in_package = trimmed == "[package]";
+                } else if in_package && trimmed.starts_with("name") {
+                    return trimmed
+                        .split('=')
+                        .nth(1)
+                        .map(|v| v.trim().trim_matches(['"', '\'']).to_string())
+                        .filter(|v| !v.is_empty());
+                }
+            }
+            None
+        }
+        "npm" => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(str::to_string)),
+        "python" if relative.to_lowercase().ends_with("pyproject.toml") => {
+            let mut in_project = false;
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('[') {
+                    in_project = trimmed == "[project]";
+                } else if in_project && trimmed.starts_with("name") {
+                    return trimmed
+                        .split('=')
+                        .nth(1)
+                        .map(|v| v.trim().trim_matches(['"', '\'']).to_string())
+                        .filter(|v| !v.is_empty());
+                }
+            }
+            None
+        }
+        "go" => text
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with("module "))
+            .and_then(|line| line.split_whitespace().nth(1).map(str::to_string)),
+        _ => None,
+    }
+}
+
+fn entrypoint_reason(relative: &str) -> Option<&'static str> {
+    match relative {
+        "src/main.rs" | "main.rs" => Some("rust_main"),
+        "src/lib.rs" | "lib.rs" => Some("rust_lib"),
+        "src/main.py" | "main.py" | "__main__.py" => Some("python_main"),
+        "app.py" | "src/app.py" => Some("python_app"),
+        "index.js" | "src/index.js" => Some("node_entry"),
+        "index.ts" | "src/index.ts" | "src/main.ts" => Some("node_entry"),
+        "cmd/main.go" | "main.go" => Some("go_main"),
+        _ => None,
+    }
+}
+
+fn is_structured_language(language: Option<&str>) -> bool {
+    matches!(
+        language,
+        Some("rust" | "python" | "javascript" | "typescript" | "go")
+    )
+}
+
+fn confidence_label(confidence: TestHintConfidence) -> String {
+    match confidence {
+        TestHintConfidence::Syntax => "syntax".to_string(),
+        TestHintConfidence::Path => "path".to_string(),
+        TestHintConfidence::NameReference => "name_reference".to_string(),
+        TestHintConfidence::Package => "package".to_string(),
+    }
+}
+
+/// Build bounded structural summaries for a local checkout directory.
+pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructure {
+    let mut files: Vec<ScannedFile> = Vec::new();
+    let mut truncated = false;
+    let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+
+    while let Some((dir, depth)) = stack.pop() {
+        if files.len() >= STRUCTURE_SCAN_FILE_CAP.min(config.max_indexed_files) {
+            truncated = true;
+            break;
+        }
+        let read_dir = match std::fs::read_dir(&dir) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let mut entries: Vec<_> = read_dir.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
+            if files.len() >= STRUCTURE_SCAN_FILE_CAP.min(config.max_indexed_files) {
+                truncated = true;
+                break;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !config.include_hidden && name.starts_with('.') {
+                continue;
+            }
+            if SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            let path = entry.path();
+            if !config.follow_symlinks {
+                if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                    if meta.file_type().is_symlink() {
+                        continue;
+                    }
+                }
+            }
+            if path.is_dir() {
+                if depth < STRUCTURE_SCAN_DEPTH {
+                    stack.push((path, depth + 1));
+                } else {
+                    truncated = true;
+                }
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+            let relative = match path.strip_prefix(root) {
+                Ok(rel) => rel.to_string_lossy().to_string(),
+                Err(_) => continue,
+            };
+            if is_binary_extension(&name) {
+                continue;
+            }
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            if size > config.max_file_bytes as u64 {
+                continue;
+            }
+            let language = language_from_extension(&relative).map(str::to_string);
+            files.push(ScannedFile {
+                relative,
+                size,
+                language,
+            });
+        }
+    }
+    files.sort_by(|a, b| a.relative.cmp(&b.relative));
+
+    let mut packages = Vec::new();
+    let mut lang_counts: BTreeMap<String, (usize, u64)> = BTreeMap::new();
+    let mut module_files: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let mut build_configs = Vec::new();
+
+    for file in &files {
+        if let Some(lang) = file.language.as_deref() {
+            let entry = lang_counts.entry(lang.to_string()).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 += file.size;
+        }
+        let top_dir = file.relative.split('/').next().unwrap_or("").to_string();
+        if !top_dir.is_empty() && !top_dir.contains('.') {
+            module_files.entry(top_dir).or_default().push(0);
+        }
+        let file_name = file.relative.rsplit('/').next().unwrap_or(&file.relative);
+        if manifest_ecosystem(file_name).is_some() {
+            let (ecosystem, _) = manifest_ecosystem(file_name).unwrap_or(("other", "other"));
+            let name = parse_package_name(root, &file.relative, ecosystem);
+            packages.push(RepoPackageSummary {
+                path: file.relative.clone(),
+                ecosystem: ecosystem.to_string(),
+                name,
+            });
+        }
+        let (kind, reasons) = classify_important_file(&file.relative);
+        if matches!(
+            kind,
+            ImportantFileKind::CiConfig
+                | ImportantFileKind::BuildScript
+                | ImportantFileKind::Dockerfile
+        ) {
+            build_configs.push(RepoImportantFile {
+                path: file.relative.clone(),
+                kind,
+                reasons,
+                size: Some(file.size),
+            });
+        }
+    }
+    packages.sort_by(|a, b| a.path.cmp(&b.path));
+    packages.truncate(32);
+    build_configs.sort_by(|a, b| a.path.cmp(&b.path));
+    build_configs.truncate(32);
+
+    let mut language_distribution: Vec<RepoLanguageDistribution> = lang_counts
+        .into_iter()
+        .map(|(language, (count, bytes))| RepoLanguageDistribution {
+            language,
+            files: count,
+            bytes: Some(bytes),
+        })
+        .collect();
+    language_distribution.sort_by(|a, b| {
+        b.files
+            .cmp(&a.files)
+            .then_with(|| a.language.cmp(&b.language))
+    });
+    language_distribution.truncate(16);
+
+    let file_set: std::collections::HashSet<&str> =
+        files.iter().map(|f| f.relative.as_str()).collect();
+    let mut entrypoints: Vec<RepoEntrypoint> = Vec::new();
+    for file in &files {
+        if let Some(reason) = entrypoint_reason(&file.relative) {
+            entrypoints.push(RepoEntrypoint {
+                path: file.relative.clone(),
+                reason: reason.to_string(),
+            });
+        }
+    }
+    if file_set.contains("Cargo.toml") && !entrypoints.iter().any(|e| e.reason.starts_with("rust"))
+    {
+        if let Some(f) = files.iter().find(|f| f.relative.ends_with("main.rs")) {
+            entrypoints.push(RepoEntrypoint {
+                path: f.relative.clone(),
+                reason: "rust_main".to_string(),
+            });
+        }
+    }
+    entrypoints.sort_by(|a, b| a.path.cmp(&b.path));
+    entrypoints.truncate(16);
+
+    let parse_cap = config.max_structured_files.min(files.len());
+    let per_file_cap = STRUCTURE_SYMBOLS_PER_FILE.min(config.max_symbols_per_file);
+    let total_cap = config.repo_map_structure_cap.max(1);
+    let mut top_symbols: Vec<RepoTopSymbol> = Vec::new();
+    let mut module_symbol_counts: HashMap<String, usize> = HashMap::new();
+    let mut parsed = 0usize;
+    for file in &files {
+        if top_symbols.len() >= total_cap {
+            truncated = true;
+            break;
+        }
+        if parsed >= parse_cap {
+            truncated = parsed
+                < files
+                    .iter()
+                    .filter(|f| is_structured_language(f.language.as_deref()))
+                    .count();
+            break;
+        }
+        if !is_structured_language(file.language.as_deref()) {
+            continue;
+        }
+        parsed += 1;
+        let bytes = match std::fs::read(root.join(&file.relative)) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        if bytes.len() > config.max_parse_bytes {
+            truncated = true;
+            continue;
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let (symbols, provenance, file_truncated) = local_symbols::symbols_in_file(
+            &file.relative,
+            file.language.as_deref(),
+            &text,
+            config.max_parse_bytes,
+            per_file_cap,
+        );
+        if file_truncated {
+            truncated = true;
+        }
+        if provenance != local_symbols::SymbolProvenance::Structured {
+            continue;
+        }
+        let top_dir = file.relative.split('/').next().unwrap_or("").to_string();
+        for symbol in symbols {
+            if top_symbols.len() >= total_cap {
+                truncated = true;
+                break;
+            }
+            if symbol.relationship.as_deref() == Some("import") {
+                continue;
+            }
+            if symbol.kind == crate::core::code_evidence::SymbolKind::Module
+                && symbol.relationship.as_deref() == Some("import")
+            {
+                continue;
+            }
+            *module_symbol_counts.entry(top_dir.clone()).or_insert(0) += 1;
+            top_symbols.push(RepoTopSymbol {
+                path: file.relative.clone(),
+                language: file.language.clone(),
+                name: symbol.name,
+                kind: symbol.kind,
+                line: symbol.line_start,
+                container: symbol.container,
+            });
+        }
+    }
+    top_symbols.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.line.cmp(&b.line)));
+    if top_symbols.len() > total_cap {
+        top_symbols.truncate(total_cap);
+        truncated = true;
+    }
+
+    let mut modules: Vec<RepoModuleSummary> = Vec::new();
+    for (dir, indices) in &module_files {
+        let dir_prefix = format!("{dir}/");
+        let mut lang_tally: HashMap<String, usize> = HashMap::new();
+        let mut count = 0usize;
+        for file in files
+            .iter()
+            .filter(|f| f.relative.starts_with(&dir_prefix) || f.relative == *dir)
+        {
+            if file.language.is_some() {
+                count += 1;
+                if let Some(lang) = file.language.as_deref() {
+                    *lang_tally.entry(lang.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+        let _ = indices;
+        if count == 0 {
+            continue;
+        }
+        let dominant = lang_tally
+            .into_iter()
+            .max_by_key(|(_, c)| *c)
+            .map(|(l, _)| l);
+        modules.push(RepoModuleSummary {
+            path: dir.clone(),
+            language: dominant,
+            file_count: Some(count),
+            symbol_count: module_symbol_counts.get(dir).copied(),
+        });
+    }
+    modules.sort_by(|a, b| {
+        b.file_count
+            .unwrap_or(0)
+            .cmp(&a.file_count.unwrap_or(0))
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    modules.truncate(32);
+
+    let test_files: Vec<String> = files
+        .iter()
+        .filter(|f| infer_source_role(&f.relative) == SourceRole::Test)
+        .take(STRUCTURE_TEST_FILE_CAP)
+        .map(|f| f.relative.clone())
+        .collect();
+    let source_files: Vec<&ScannedFile> = files
+        .iter()
+        .filter(|f| infer_source_role(&f.relative) == SourceRole::Implementation)
+        .take(STRUCTURE_SOURCE_FILE_CAP)
+        .collect();
+    let mut test_texts: HashMap<String, String> = HashMap::new();
+    for test_path in &test_files {
+        if let Ok(bytes) = std::fs::read(root.join(test_path)) {
+            if bytes.len() <= STRUCTURE_MANIFEST_READ_CAP {
+                test_texts.insert(
+                    test_path.clone(),
+                    String::from_utf8_lossy(&bytes).to_string(),
+                );
+            }
+        }
+    }
+    let symbol_names: HashMap<String, Vec<String>> =
+        top_symbols.iter().fold(HashMap::new(), |mut acc, sym| {
+            acc.entry(sym.path.clone())
+                .or_insert_with(Vec::new)
+                .push(sym.name.clone());
+            acc
+        });
+    let mut test_relationships: Vec<RepoTestRelationship> = Vec::new();
+    for source in source_files {
+        if test_relationships.len() >= STRUCTURE_RELATIONSHIP_CAP {
+            truncated = true;
+            break;
+        }
+        let names = symbol_names
+            .get(&source.relative)
+            .cloned()
+            .unwrap_or_default();
+        let hints =
+            local_symbols::related_test_hints(&source.relative, &names, &test_files, &test_texts);
+        for hint in hints.into_iter().take(4) {
+            if test_relationships.len() >= STRUCTURE_RELATIONSHIP_CAP {
+                truncated = true;
+                break;
+            }
+            test_relationships.push(RepoTestRelationship {
+                source_path: hint.source_path,
+                test_path: hint.test_path,
+                confidence: confidence_label(hint.confidence),
+                reasons: hint.reasons,
+            });
+        }
+    }
+    test_relationships.sort_by(|a, b| {
+        a.source_path
+            .cmp(&b.source_path)
+            .then_with(|| a.test_path.cmp(&b.test_path))
+    });
+
+    if packages.len() > total_cap {
+        truncated = true;
+        packages.truncate(total_cap);
+    }
+
+    LocalStructure {
+        packages,
+        language_distribution,
+        modules,
+        entrypoints,
+        top_symbols,
+        test_relationships,
+        build_configs,
+        truncated,
+    }
+}
+
 /// Create a `RepoMapResponse` with fallback search mode when no native
 /// tree provider is available.
 pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
@@ -469,6 +974,7 @@ pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
         local_checkout: None,
         telemetry: None,
         freshness_confidence: None,
+        ..Default::default()
     }
 }
 

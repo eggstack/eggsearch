@@ -33,6 +33,8 @@ pub(crate) mod local_ignore;
 pub mod local_inventory;
 /// Local workspace file inventory cache for fast search.
 pub mod local_inventory_cache;
+/// Deterministic structured code intelligence for local workspace files.
+pub mod local_symbols;
 #[cfg(feature = "mock")]
 pub mod mock;
 /// Package registry resolver: bounded HTTP lookups for CratesIo, PyPI,

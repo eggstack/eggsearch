@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::code_evidence::SymbolKind;
 use crate::core::code_metadata::CodeHost;
 use crate::core::repo_fetch::RepoFetchRequest;
 use crate::core::result::SearchWarning;
@@ -194,6 +195,88 @@ pub struct RepoMapSuggestedFetch {
     pub structured_repo_fetch: Option<RepoFetchRequest>,
 }
 
+/// A detected workspace package boundary with its manifest.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoPackageSummary {
+    /// Manifest path relative to the repository root.
+    pub path: String,
+    /// Ecosystem label (`rust`, `npm`, `python`, `go`, etc.).
+    pub ecosystem: String,
+    /// Package name when parsed from the manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// Language distribution entry for a local checkout scan.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoLanguageDistribution {
+    /// Language label from extension detection.
+    pub language: String,
+    /// Number of files observed.
+    pub files: usize,
+    /// Total bytes observed (bounded by scan caps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+}
+
+/// A major module or directory with structural weight.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoModuleSummary {
+    /// Directory path relative to the repository root.
+    pub path: String,
+    /// Dominant language in the module, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Number of source files observed in the module.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_count: Option<usize>,
+    /// Number of structured symbols retained for the module.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_count: Option<usize>,
+}
+
+/// An entrypoint candidate for agent navigation.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoEntrypoint {
+    /// File path relative to the repository root.
+    pub path: String,
+    /// Deterministic reason (`rust_main`, `rust_lib`, `python_main`, etc.).
+    pub reason: String,
+}
+
+/// An important top-level symbol retained for navigation.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoTopSymbol {
+    /// File path relative to the repository root.
+    pub path: String,
+    /// Language of the containing file, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Symbol name.
+    pub name: String,
+    /// Symbol kind.
+    pub kind: SymbolKind,
+    /// Definition start line (1-indexed).
+    pub line: u32,
+    /// Enclosing module/impl/class, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<String>,
+}
+
+/// A deterministic source-to-test relationship hint.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RepoTestRelationship {
+    /// Source file path relative to the repository root.
+    pub source_path: String,
+    /// Candidate test file path relative to the repository root.
+    pub test_path: String,
+    /// Confidence (`syntax`, `path`, `name_reference`, `package`).
+    pub confidence: String,
+    /// Human-readable reasons for the hint.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
+}
+
 /// Request type for the `repo_map` tool.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoMapRequest {
@@ -331,6 +414,30 @@ pub struct RepoMapResponse {
     /// Detected package manifest files (Cargo.toml, package.json, etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub manifests: Vec<RepoImportantFile>,
+    /// Workspace package boundaries parsed from manifests (additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<RepoPackageSummary>,
+    /// Language distribution from the bounded local scan (additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub language_distribution: Vec<RepoLanguageDistribution>,
+    /// Major modules/directories with structural weight (additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<RepoModuleSummary>,
+    /// Entrypoint candidates for agent navigation (additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entrypoints: Vec<RepoEntrypoint>,
+    /// Important top-level symbols retained for navigation (additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub top_symbols: Vec<RepoTopSymbol>,
+    /// Source-to-test relationship hints with heuristic confidence (additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_relationships: Vec<RepoTestRelationship>,
+    /// Build/CI configuration files detected in the scan (additive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub build_configs: Vec<RepoImportantFile>,
+    /// Whether structural enrichment hit an explicit cap.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub structure_truncated: bool,
     /// Suggested fetch URLs for further exploration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suggested_fetches: Vec<RepoMapSuggestedFetch>,
@@ -1219,6 +1326,7 @@ mod tests {
             local_checkout: None,
             telemetry: None,
             freshness_confidence: None,
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&resp).unwrap();

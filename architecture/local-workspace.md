@@ -1,7 +1,7 @@
 # Local Workspace Deep Dive
 
-**Path:** `src/core/local.rs`, `src/meta/local_backend.rs`, `src/meta/local_inventory.rs`, `src/meta/local_inventory_cache.rs`, `src/meta/local_ignore.rs`, `src/meta/safe_open.rs`
-**Purpose:** Filesystem-based workspace search with cached inventory, git-aware fast path, race-resistant file opening, and ignore-rule support.
+**Path:** `src/core/local.rs`, `src/meta/local_backend.rs`, `src/meta/local_symbols.rs`, `src/meta/local_inventory.rs`, `src/meta/local_inventory_cache.rs`, `src/meta/local_ignore.rs`, `src/meta/safe_open.rs`, `src/meta/repo_mapper.rs`
+**Purpose:** Filesystem-based workspace search with cached inventory, git-aware fast path, race-resistant file opening, deterministic structured code intelligence, and bounded repo-map enrichment.
 
 ---
 
@@ -22,6 +22,12 @@ max_indexed_files = 10000
 include_hidden = false
 respect_gitignore = true
 follow_symlinks = false
+structured_symbols = true     # deterministic structured parsing
+max_parse_bytes = 262144      # per-file parser input cap
+max_symbols_per_file = 256
+max_structured_files = 200    # structured files per request
+max_total_symbols = 5000
+repo_map_structure_cap = 500  # total repo-map structural entries
 ```
 
 ### Path Policy
@@ -129,10 +135,79 @@ WorkspaceInventory
 
 ### Symbol Backend
 
-`SymbolBackend` trait with `RegexSymbolBackend` implementation:
-- Compiles symbol patterns for Rust, Python, JavaScript, Go
-- Matches against file content with line-level precision
-- Bounded scan lines per file
+`SymbolBackend` trait (`src/meta/local_backend.rs`) with capability flags:
+
+```text
+find_symbols(text, hint)            # required, regex-compatible
+capabilities()                      # structured capability flags
+find_definition(path, lang, text, hint)  # structured definition + provenance
+find_references(text, symbol, max)  # bounded lexical references
+find_enclosing(symbols, line)       # innermost containing symbol
+find_implementors(symbols, name)    # impl relationships where supported
+```
+
+`RegexSymbolBackend` preserves the original compiled-pattern behavior.
+`StructuredSymbolBackend` (default when `structured_symbols = true`) runs the
+dependency-free deterministic parser in `src/meta/local_symbols.rs` first and
+degrades to regex on disabled language, parse failure, or budget breach.
+
+### Structured Parser (`src/meta/local_symbols.rs`)
+
+Dependency audit decision: tree-sitter was evaluated and rejected for this
+phase — its native grammars and binary impact conflict with the
+dependency-light fallback goal. The shipped parser is hand-rolled,
+line-oriented, model-free Rust covering Rust, Python, JavaScript/TypeScript,
+and Go. It extracts functions/methods, structs/classes/types, traits/
+interfaces, impl relationships, modules/namespaces, imports, and test items
+by syntax, with bounded brace/indent span estimates. Parser failures are
+data-quality outcomes, never fatal search failures. No workspace code is
+executed and no native plugins are loaded.
+
+Budgets (all bounded, breach degrades to partial/regex evidence with
+telemetry): `max_parse_bytes` (256KB), `max_symbols_per_file` (256),
+`max_structured_files` per request (200), `max_total_symbols` per request
+(5000), repo-map per-file symbols (32) and total structural entries
+(`repo_map_structure_cap`, 500), scan cap (2000 files) and depth (4).
+
+### Symbol Inventory Cache
+
+`SymbolInventoryCache` stores parser-derived symbols keyed by
+path + xxh3 content hash. Entries invalidate on hash mismatch, so stale
+offsets are never trusted. Telemetry reports `structured_files_parsed`,
+`structured_symbols_found`, `regex_fallback_files`, and
+`symbol_budget_breaches`.
+
+### Search Scoring
+
+Structured boosts preserve lexical fallback ordering:
+
+```text
+exact structured definition (+80) > structured symbol match (+50)
+  > lexical regex match (+30) > ordinary text match
+```
+
+Matches carry `symbol_provenance` (`structured`/`regex_fallback`),
+`enclosing_symbol`, and `is_exact_definition`. Source cards map structured
+definitions to `Exact` confidence + `ProviderSymbolMatch`, regex matches to
+`Strong` + `ProviderTextMatch`, so CodeGG can reason about confidence.
+
+### Source-to-Test Hints
+
+`related_test_hints()` emits deterministic heuristic hints in confidence
+order `syntax > path > name_reference > package`, with explicit reasons and
+no coverage claims.
+
+### Repo-Map Enrichment
+
+`populate_structure_from_local_checkout()` (`src/meta/repo_mapper.rs`,
+`build_local_structure()`) adds bounded additive fields to `repo_map`:
+`packages` (manifest boundaries + parsed names), `language_distribution`,
+`modules` (top-level dirs with dominant language/counts), `entrypoints`
+(`src/main.rs`, `src/lib.rs`, `main.py`, `index.ts`, `main.go`, etc.),
+`top_symbols` (capped structured definitions with container/line),
+`test_relationships` (heuristic hints with confidence), `build_configs`
+(CI/Dockerfile/Makefile), and `structure_truncated`. Caps come from
+`[local]` budgets; breaches truncate with a flag, never fail.
 
 ### File Classification
 

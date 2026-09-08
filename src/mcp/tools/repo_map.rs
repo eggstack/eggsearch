@@ -278,6 +278,11 @@ pub async fn run_repo_map(
     // Populate repo-map structure from the local checkout when available.
     if let Some(root) = local_checkout_root.as_deref() {
         crate::meta::repo_mapper::populate_from_local_checkout(&mut response, &req, root);
+        crate::meta::repo_mapper::populate_structure_from_local_checkout(
+            &mut response,
+            root,
+            &state.config.local,
+        );
     }
 
     // Fallback subqueries are intentionally not generated because no

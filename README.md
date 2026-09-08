@@ -125,7 +125,7 @@ start or register a service unless explicit `--service` is supplied. See
 | `provider_status` | Diagnostic provider/capability report with workflow recipes and optional bounded live probe |
 | `repo_search` | Structured repository evidence discovery with grouped bundles |
 | `repo_fetch` | Fetch a specific repo file span or symbol |
-| `repo_map` | Bounded repository structure discovery |
+| `repo_map` | Bounded repository structure discovery (packages, modules, symbols, tests, build) |
 | `security_search` | Vulnerability and advisory retrieval |
 | `research_search` | Multi-source evidence discovery |
 | `build_evidence_bundle` | Deterministic, non-summarizing evidence packaging |

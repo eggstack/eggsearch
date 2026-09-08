@@ -43,6 +43,7 @@ make bench-check        # compile-check benches without running
 |----------|-------------|---------|
 | `src/*/mod.rs` | Varies | Unit tests |
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
+| `tests/phase13_structured_code.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |

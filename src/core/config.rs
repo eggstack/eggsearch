@@ -1207,6 +1207,31 @@ impl AppConfig {
                     "[local].max_indexed_files must be > 0".to_string(),
                 ));
             }
+            if self.local.max_parse_bytes == 0 {
+                return Err(CoreError::Config(
+                    "[local].max_parse_bytes must be > 0".to_string(),
+                ));
+            }
+            if self.local.max_symbols_per_file == 0 {
+                return Err(CoreError::Config(
+                    "[local].max_symbols_per_file must be > 0".to_string(),
+                ));
+            }
+            if self.local.max_structured_files == 0 {
+                return Err(CoreError::Config(
+                    "[local].max_structured_files must be > 0".to_string(),
+                ));
+            }
+            if self.local.max_total_symbols == 0 {
+                return Err(CoreError::Config(
+                    "[local].max_total_symbols must be > 0".to_string(),
+                ));
+            }
+            if self.local.repo_map_structure_cap == 0 {
+                return Err(CoreError::Config(
+                    "[local].repo_map_structure_cap must be > 0".to_string(),
+                ));
+            }
         }
 
         if self.search.mode == Mode::Live {

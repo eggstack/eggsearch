@@ -2428,6 +2428,7 @@ pub fn build_response(
             }),
         }),
         freshness_confidence: None,
+        ..Default::default()
     };
 
     response.suggested_fetches = build_repo_map_suggested_fetches(&response);

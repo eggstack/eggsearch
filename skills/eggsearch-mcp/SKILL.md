@@ -25,9 +25,9 @@ The `eggsearch integrate` command renders or applies client-specific MCP registr
 | `web_fetch` | Fetch | Bounded extraction of one HTTP(S) URL |
 | `batch_fetch` | Fetch | Bounded batch fetch over URLs or repo locators |
 | `provider_status` | Utility | Diagnostic provider config, health, capabilities, recipes; `probe: true` runs bounded live liveness check |
-| `repo_search` | Search | Structured repository evidence discovery |
+| `repo_search` | Search | Structured repository evidence discovery (local matches carry `symbol_provenance`/`is_exact_definition`; structured definitions outrank lexical matches) |
 | `repo_fetch` | Fetch | Repository file fetch by locator with line ranges/symbols |
-| `repo_map` | Fetch | Repository structure discovery |
+| `repo_map` | Fetch | Repository structure discovery (bounded `packages`, `modules`, `top_symbols`, `test_relationships`, `build_configs`) |
 | `security_search` | Search | Security vulnerability and advisory search |
 | `research_search` | Search | Research-oriented multi-source evidence discovery |
 | `build_evidence_bundle` | Utility | Package evidence into a portable container |

@@ -314,9 +314,17 @@ max_indexed_files = 50000
 include_hidden = false
 respect_gitignore = true
 follow_symlinks = false
+structured_symbols = true
+max_parse_bytes = 262144
+max_symbols_per_file = 256
+max_structured_files = 200
+max_total_symbols = 5000
+repo_map_structure_cap = 500
 ```
 
 When enabled, the local workspace inventory is built automatically on first search (auto-build on cache miss). The git fast path uses `git ls-files -z --cached --others --exclude-standard` with a bounded command runner (5s timeout, 16MB stdout / 64KB stderr caps, concurrent pipe drainage, cap breaches trigger immediate process termination). A `git status --porcelain=v2` hash is stored alongside the inventory for change detection between builds. Native directory walking is the fallback for non-git directories.
+
+Structured code intelligence is dependency-free and deterministic (Rust, Python, JavaScript/TypeScript, Go): functions/methods, structs/classes/types, traits/interfaces, impl relationships, modules, imports, and syntax-level test items. The regex backend remains the fallback when parsing is disabled, unsupported, fails, or exceeds budget. Budgets breach to partial/regex evidence with telemetry (`structured_files_parsed`, `structured_symbols_found`, `regex_fallback_files`, `symbol_budget_breaches`), never to failure. `repo_map` gains bounded additive `packages`, `language_distribution`, `modules`, `entrypoints`, `top_symbols`, `test_relationships`, `build_configs`, and `structure_truncated` from the same local scan. No workspace code is executed.
 
 ### SearXNG
 
@@ -424,6 +432,12 @@ Local workspace search is disabled by default.
 | `include_hidden` | `false` |
 | `respect_gitignore` | `true` |
 | `follow_symlinks` | `false` |
+| `structured_symbols` | `true` |
+| `max_parse_bytes` | `262_144` |
+| `max_symbols_per_file` | `256` |
+| `max_structured_files` | `200` |
+| `max_total_symbols` | `5_000` |
+| `repo_map_structure_cap` | `500` |
 
 When enabled, local results use `local_trusted` trust labels and can be surfaced through `repo_search`, `repo_fetch`, and `repo_map`. They remain provenance-trusted, not instruction-trusted.
 

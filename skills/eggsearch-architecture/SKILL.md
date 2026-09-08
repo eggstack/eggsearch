@@ -21,7 +21,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `update.rs` — crates.io-authoritative self-update, candidate verification, and replacement orchestration
 - `startup.rs` — canonical persistent runtime, manager detection/rendering, croncheck, restart, and lifecycle state
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
-- `meta/` — MetadataSearchAdapter (`adapter/` modules) + 36 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache, shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
+- `meta/` — MetadataSearchAdapter (`adapter/` modules) + 36 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache, structured symbol parser (`local_symbols.rs`), shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), 10 tool definitions (`tools/` per-tool modules), server state, policy
 - `integrations/` — safe render/apply/verify adapters for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode
@@ -31,7 +31,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 | Module | Key Files | Purpose |
 |--------|-----------|---------|
 | `core` | `identity.rs`, `sanitize.rs`, `warning.rs`, `evidence_role.rs`, `workflow_coverage.rs`, `conflict.rs`, `retrieval_status.rs`, `evidence_postprocess.rs`, `local.rs` | Canonical data model with zero external dependencies beyond serialization |
-| `meta` | `adapter/` (invocation, advisory, status, web/repo/research/security execution, normalization, builders), `probe.rs` (shared liveness service), `workflow.rs`, `fetch_ranking.rs` (plus `FetchCandidateBuilder`), `forge_adapter.rs`, `local_backend.rs`, `dispatch.rs`, `planner.rs` | Search orchestration, shared workflow mechanics without domain policy flattening, RRF aggregation, provider health and liveness probing, forge API client, local workspace |
+| `meta` | `adapter/` (invocation, advisory, status, web/repo/research/security execution, normalization, builders), `probe.rs` (shared liveness service), `workflow.rs`, `fetch_ranking.rs` (plus `FetchCandidateBuilder`), `forge_adapter.rs`, `local_backend.rs`, `local_symbols.rs` (deterministic structured Rust/Python/JS-TS/Go parsing with regex fallback, budgets, symbol cache, test hints), `dispatch.rs`, `planner.rs` | Search orchestration, shared workflow mechanics without domain policy flattening, RRF aggregation, provider health and liveness probing, forge API client, local workspace |
 | `fetch` | `client.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, SSRF protection, content extraction, cache, and browser transport |
 | `mcp` | `server.rs`, `http.rs`, `state.rs`, `tools/` (per-tool modules plus shared `common`), `policy.rs` | MCP protocol, shared tool service, stdio/HTTP transports, health and shutdown |
 | `integrations` | `common.rs`, client adapters, `commands/integrate.rs` | Client-specific MCP configuration rendering, atomic apply, native CLI registration, and protocol verification |
@@ -85,7 +85,7 @@ Production defaults `sanitize_output = true`.
 `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with:
 - `SearchSection` — mode, defaults, profiles, provider map, API config
 - `FetchSection` — enabled, timeout, byte/char caps, redirect limit, network policy
-- `LocalConfig` — enabled, roots, file size/index limits, gitignore/symlink policy
+- `LocalConfig` — enabled, roots, file size/index limits, gitignore/symlink policy, structured symbol budgets (`structured_symbols`, `max_parse_bytes`, `max_symbols_per_file`, `max_structured_files`, `max_total_symbols`, `repo_map_structure_cap`)
 
 ## Evidence Postprocessing
 

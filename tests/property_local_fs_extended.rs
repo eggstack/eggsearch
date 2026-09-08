@@ -13,6 +13,7 @@ fn default_cfg() -> LocalConfig {
         include_hidden: false,
         respect_gitignore: true,
         follow_symlinks: false,
+        ..Default::default()
     }
 }
 
