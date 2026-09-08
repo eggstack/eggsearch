@@ -6,7 +6,8 @@ The active planning control surface is:
 
 - `registry.md` — current workstreams, phase status, dependency order, and closure state.
 - `roadmap.md` — completed search-capability workstream rationale, research evidence, invariants, and phases 1-5.
-- `deployment-roadmap.md` — binary distribution, install/update, persistent MCP deployment, startup supervision, and agent/IDE integration rationale for phases 6-10.
+- `deployment-roadmap.md` — completed binary distribution, install/update, persistent MCP deployment, startup supervision, and agent/IDE integration rationale for phases 6-10.
+- `maintenance-codegg-quality-roadmap.md` — active architecture consolidation, provider diagnostics, CodeGG retrieval quality, public API, and maintenance rationale for phases 11-15.
 - `phase-*.md` — bounded implementation plans that should be independently executable and verifiable.
 
 ## Status vocabulary
@@ -22,3 +23,5 @@ Routine verification follows `AGENTS.md`: `make check` is the broad local gate; 
 When a phase lands, update `registry.md` and the phase status in the same closure commit. If implementation evidence invalidates a later phase, revise the governing roadmap before starting that phase rather than silently expanding scope.
 
 For phases 6-10, preserve the public release target/asset contract across GitHub Actions, bootstrap installers, Rust updater logic, service deployment docs, and integration examples. Any intentional contract change must update all consumers atomically or be introduced through an explicit compatibility plan.
+
+For phases 11-15, preserve the ten stable MCP tools and existing trust/safety/identity semantics while consolidating internal workflow machinery. Do not add new general-purpose providers during this workstream unless they introduce a materially new evidence class. CodeGG-facing improvements should use the existing MCP contract rather than inventing a second downstream-specific protocol.
