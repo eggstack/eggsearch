@@ -1671,7 +1671,6 @@ mod intent_neutral_generic_search {
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "mock")]
-#[cfg(feature = "mock")]
 mod intent_reranking_regression {
     use super::*;
     use eggsearch::meta::engines::error::EngineError;
