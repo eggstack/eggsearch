@@ -121,7 +121,7 @@ start or register a service unless explicit `--service` is supplied. See
 |------|---------|
 | `web_search` | Live metasearch over configured providers (opt-in bounded excerpts, result timestamps) |
 | `web_fetch` | Bounded fetch of one explicit HTTP(S) URL (deterministic focus reads, cache controls) |
-| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators (per-item cache controls) |
+| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators (per-item focus, cache controls, aggregate budget + telemetry) |
 | `provider_status` | Diagnostic provider/capability report with workflow recipes and optional bounded live probe |
 | `repo_search` | Structured repository evidence discovery with grouped bundles |
 | `repo_fetch` | Fetch a specific repo file span or symbol |

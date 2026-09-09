@@ -6,7 +6,7 @@ Use `provider_status` first when you need the current provider/capability pictur
 
 `web_fetch` also supports `extract_mode = "metadata_only"` when you only need page metadata and do not need the body text.
 
-`web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, natively enforced by Exa/Tavily when selected and locally enforced otherwise), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API and Tavily when representable). Pass `excerpt_count` (1-3) when short source passages help triage, and `web_fetch` with `focus` to read only the query-relevant chunks of the selected page.
+`web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, natively enforced by Exa/Tavily when selected and locally enforced otherwise), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API and Tavily when representable). Pass `excerpt_count` (1-3) when short source passages help triage, and `web_fetch` with `focus` (or one focused `batch_fetch` for several candidates) to read only the query-relevant chunks of the selected pages.
 
 ## 1. Repo Map → Repo Search → Repo Fetch (Repository Exploration)
 
@@ -361,7 +361,7 @@ Search responses include an `evidence_role_summary` field with per-role counts a
 4. **Check provider_status first** — discover available tools before attempting specialized searches
 5. **Use suggested_fetches** — they are ranked by deterministic scoring, not random
 6. **Respect trust markers** — all external content is `external_untrusted`
-7. **One URL per web_fetch** — never batch-fetch without using batch_fetch tool
+7. **One URL per web_fetch** — never batch-fetch without using batch_fetch tool; prefer one focused `batch_fetch` over serial `web_fetch` calls when candidates share safety prerequisites
 8. **Use evidence bundles for handoff** — don't summarize, bundle the raw evidence
 
 See [threat-model.md](threat-model.md) for the full threat model, including safe/unsafe usage patterns and configuration escape-hatch risks.

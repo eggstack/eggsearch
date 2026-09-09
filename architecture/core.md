@@ -18,8 +18,10 @@
 | `query.rs` | `WebSearchRequest` (query plus validated `date_range`, `include_domains`/`exclude_domains`, `language`, `region`), `SearchDateRange`, `Freshness`, `SafeSearch`, `SearchIntent`, `MaxResultsResolution`, domain/language helpers |
 | `sanitize.rs` | `strip_control_chars`, `bound_text`, `frame`, `scan_injection_markers` (3-tier sanitization) |
 | `fetch.rs` | `WebFetchRequest`/`WebFetchResponse`, `ExtractMode`, `FetchTransform`, `FetchTrust`, `FetchCachePolicy`, `FocusedFetchSelection`, focus/cache-age bounds |
-| `focus.rs` | `select_focus_chunks()` — deterministic lexical chunk ranking over extracted documents |
-| `batch_fetch.rs` | `BatchFetchItem`, `BatchFetchResponse`, `BatchFetchResult` (web items carry per-item cache controls; focus deferred) |
+| `focus.rs` | `select_focus_chunks()`, `select_focus_for_text()`/`synthetic_document_for_text()` — deterministic lexical ranking over documents or bounded repo text |
+| `batch_fetch.rs` | `BatchFetchItem` (per-item focus), `BatchFetchResponse`/`BatchFetchResult`, `BatchFetchTelemetry` (items, focus, budget, cache) |
+| `fetch_policy.rs` | Shared timeout/clamp/cache/focus validation and `apply_focus_to_document()` for web + batch |
+| `fetch_locator.rs` | Shared `FetchLocator` (`WebUrl`/`Repo`/`Local`), URL/path/host validation, suggested-fetch to batch conversions |
 | `document.rs` | `FetchDocument`, `DocumentChunk`, `RenderFormat`, `RenderedBlock` |
 | `result.rs` | `SearchWarning`, `TrustLevel` |
 | `warning.rs` | `AgentWarning`, `WarningCode`, `WarningSeverity`, `WarningAccumulator` |
@@ -31,7 +33,7 @@
 | `retrieval_status.rs` | `RetrievalAttempt`, `RetrievalAttemptOutcome`, `TruncationEvidence`, `classify_absence()` |
 | `security.rs` | `SecuritySearchRequest`/`Response`, `VulnerabilityMetadata`, `SecurityIdentifier`, `SeverityLevel`, `DefensiveGuidance` |
 | `security_applicability.rs` | `ApplicabilityAssessment`, `DependencyFinding`, `AdvisoryRange` |
-| `repo_search.rs` | `RepoSearchRequest`/`Response`, `RepoResultGroup`, `SearchProfile`, `RepoSuggestedFetch` |
+| `repo_search.rs` | `RepoSearchRequest`/`Response`, `RepoResultGroup`, `SearchProfile`, `RepoSuggestedFetch` (+`recommended_focus_query`/`batch_item` handoff) |
 | `repo_fetch.rs` | `RepoFetchRequest`/`Response`, `RepoLocator`, `RepoFetchedLine`, GitHub/GitLab URL builders |
 | `repo_map.rs` | `RepoMapRequest`/`Response`, `RepoMapEntry`, `ImportantFileKind`, `ImportantDirKind` |
 | `repo_query.rs` | `RepoQueryHints` — structured repo search hints (owner, repo, path, language, symbol) |

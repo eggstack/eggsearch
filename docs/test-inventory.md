@@ -41,6 +41,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
 | `phase1_provider_contract` | `mock` | 12 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures |
 | `phase2_extract_fetch` | `mock` (1 test) | 13 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls |
+| `phase14_batch_focus` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
 
 ## Forge Adapter Tests (`tests/forge_adapter.rs`)
 

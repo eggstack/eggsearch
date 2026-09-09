@@ -98,6 +98,30 @@ pub fn build_recipe_catalog(
     recipes
 }
 
+/// Build a bounded batch-focused next action for multi-source evidence.
+///
+/// Recommends one `batch_fetch` call with per-item focus instead of many
+/// serial `web_fetch` calls. Callers should only use this when candidates
+/// share safety/config prerequisites (all web URLs); mixed
+/// remote/workspace locators must use separate fetches.
+pub fn focused_batch_next_action(
+    source_ids: &[String],
+    reason_code: &str,
+    priority: u8,
+) -> AgentNextAction {
+    AgentNextAction::new(
+        "batch_fetch",
+        reason_code,
+        priority,
+        serde_json::json!({"items": [{"type": "web", "url": "<selected_url>", "focus": "<query>", "focus_max_chunks": 3}]}),
+        source_ids.to_vec(),
+        None,
+    )
+    .with_rationale(
+        "Fetch several high-value candidates in one bounded batch with per-item focus; use only for candidates with the same safety prerequisites",
+    )
+}
+
 /// Build next-action hints for a `web_search` response.
 pub fn web_search_next_actions(
     source_ids: &[String],
@@ -115,6 +139,11 @@ pub fn web_search_next_actions(
         ));
     }
     if source_ids.len() > 1 {
+        actions.push(focused_batch_next_action(
+            source_ids,
+            "fetch_multiple_focused",
+            2,
+        ));
         actions.push(AgentNextAction::new(
             "build_evidence_bundle",
             "bundle_evidence",
@@ -144,14 +173,19 @@ pub fn repo_search_next_actions(
         ));
     }
     if source_ids.len() > 1 {
-        actions.push(AgentNextAction::new(
-            "batch_fetch",
-            "fetch_multiple",
-            2,
-            serde_json::json!({"items": "<selected_urls_or_locators>"}),
-            source_ids.to_vec(),
-            None,
-        ));
+        actions.push(
+            AgentNextAction::new(
+                "batch_fetch",
+                "fetch_multiple_focused",
+                2,
+                serde_json::json!({"items": [{"type": "repo", "owner": "<owner>", "repo": "<repo>", "path": "<path>", "focus": "<symbol_or_query>"}, {"type": "web", "url": "<selected_url>", "focus": "<query>"}]}),
+                source_ids.to_vec(),
+                None,
+            )
+            .with_rationale(
+                "Fetch several repo/web candidates in one bounded batch with per-item focus; split remote and workspace locators when safety prerequisites differ",
+            ),
+        );
     }
     actions.push(AgentNextAction::new(
         "build_evidence_bundle",
@@ -191,6 +225,11 @@ pub fn security_search_next_actions(
         ));
     }
     if source_ids.len() > 1 {
+        actions.push(focused_batch_next_action(
+            source_ids,
+            "fetch_multiple_focused",
+            3,
+        ));
         actions.push(AgentNextAction::new(
             "build_evidence_bundle",
             "bundle_evidence",
@@ -227,6 +266,13 @@ pub fn research_search_next_actions(
             serde_json::json!({"url": "<counterpoint_url>"}),
             vec![],
             None,
+        ));
+    }
+    if source_ids.len() > 1 {
+        actions.push(focused_batch_next_action(
+            source_ids,
+            "fetch_multiple_focused",
+            3,
         ));
     }
     actions.push(AgentNextAction::new(

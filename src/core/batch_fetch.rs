@@ -13,10 +13,6 @@ use crate::core::fetch::ExtractMode;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BatchFetchItem {
     /// Fetch an explicit HTTP(S) URL.
-    ///
-    /// Query-focused `focus` selection is intentionally not supported
-    /// per batch item in this phase; use `web_fetch` for focused
-    /// reads. Retrieval-affecting cache controls are supported.
     Web {
         /// The URL to fetch. Must be a valid HTTP(S) URL.
         url: String,
@@ -36,6 +32,18 @@ pub enum BatchFetchItem {
         /// item. Only tightens origin freshness.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_cache_age_seconds: Option<u64>,
+        /// Optional focus query for deterministic query-focused chunk
+        /// selection over the extracted document. Same validation as
+        /// `web_fetch` focus. No extra URL traversal.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus: Option<String>,
+        /// Maximum focused chunks to return (1-5, default 5).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus_max_chunks: Option<usize>,
+        /// Maximum focused characters to return. Defaults to the
+        /// effective per-item `max_chars` budget.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus_max_chars: Option<usize>,
     },
     /// Fetch a repository file by structured locator.
     Repo {
@@ -70,6 +78,18 @@ pub enum BatchFetchItem {
         /// Maximum characters to return.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_chars: Option<usize>,
+        /// Optional focus query applied as a deterministic projection
+        /// after the underlying repo fetch returns a bounded
+        /// document/span. Same validation as `web_fetch` focus.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus: Option<String>,
+        /// Maximum focused chunks to return (1-5, default 5).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus_max_chunks: Option<usize>,
+        /// Maximum focused characters to return. Defaults to the
+        /// effective per-item `max_chars` budget.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus_max_chars: Option<usize>,
     },
 }
 
@@ -96,6 +116,38 @@ impl BatchFetchItem {
         match self {
             BatchFetchItem::Web { max_chars, .. } => *max_chars,
             BatchFetchItem::Repo { max_chars, .. } => *max_chars,
+        }
+    }
+
+    /// Returns the focus query for this item, if set.
+    pub fn focus_query(&self) -> Option<&str> {
+        match self {
+            BatchFetchItem::Web { focus, .. } => focus.as_deref(),
+            BatchFetchItem::Repo { focus, .. } => focus.as_deref(),
+        }
+    }
+
+    /// Returns the focus chunk cap for this item, if set.
+    pub fn focus_max_chunks(&self) -> Option<usize> {
+        match self {
+            BatchFetchItem::Web {
+                focus_max_chunks, ..
+            } => *focus_max_chunks,
+            BatchFetchItem::Repo {
+                focus_max_chunks, ..
+            } => *focus_max_chunks,
+        }
+    }
+
+    /// Returns the focus character cap for this item, if set.
+    pub fn focus_max_chars(&self) -> Option<usize> {
+        match self {
+            BatchFetchItem::Web {
+                focus_max_chars, ..
+            } => *focus_max_chars,
+            BatchFetchItem::Repo {
+                focus_max_chars, ..
+            } => *focus_max_chars,
         }
     }
 }
@@ -138,6 +190,56 @@ pub struct BatchFetchResult {
     pub truncated: bool,
 }
 
+/// Aggregate telemetry for a `batch_fetch` response.
+///
+/// All counters are deterministic derivations of the request and the
+/// per-item outcomes. Focus projection never changes stable item IDs;
+/// `focused_*` counters describe the additive focus projection only.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+pub struct BatchFetchTelemetry {
+    /// Items requested after `max_items` clamping.
+    pub items_requested: usize,
+    /// Items with `ok = true`.
+    pub items_completed: usize,
+    /// Items with `ok = false`.
+    pub items_failed: usize,
+    /// Items with `truncated = true`.
+    pub items_truncated: usize,
+    /// Total characters returned across all items.
+    pub total_chars_returned: usize,
+    /// Items where a focus query was requested.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub focused_items: usize,
+    /// Focused chunks selected across all items.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub focused_chunks_selected: usize,
+    /// Focused characters returned across all items.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub focused_chars_returned: usize,
+    /// Whether the aggregate `max_total_chars` budget was exhausted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub aggregate_budget_exhausted: bool,
+    /// Web items served from cache without revalidation.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_hits: usize,
+    /// Web items served after conditional revalidation (HTTP 304).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_revalidated: usize,
+    /// Web items fetched fresh from the network.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_misses: usize,
+    /// Web items that bypassed cache reads.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_bypassed: usize,
+    /// Web items that could not be cached.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_not_cacheable: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 /// Response type for the `batch_fetch` tool.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct BatchFetchResponse {
@@ -157,6 +259,9 @@ pub struct BatchFetchResponse {
     /// Structured warnings with stable codes and severity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
+    /// Aggregate telemetry for items, budgets, focus, and cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<BatchFetchTelemetry>,
 }
 
 #[cfg(test)]
@@ -172,6 +277,9 @@ mod tests {
             max_chars: None,
             cache_policy: None,
             max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         };
         let v = serde_json::to_value(&web).unwrap();
         assert_eq!(v["type"], "web");
@@ -189,6 +297,9 @@ mod tests {
             context_before: None,
             context_after: None,
             max_chars: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         };
         let v = serde_json::to_value(&repo).unwrap();
         assert_eq!(v["type"], "repo");
@@ -204,6 +315,9 @@ mod tests {
             max_chars: None,
             cache_policy: None,
             max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         };
         assert_eq!(web.label(), "https://example.com");
 
@@ -219,6 +333,9 @@ mod tests {
             context_before: None,
             context_after: None,
             max_chars: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         };
         assert_eq!(repo.label(), "github:tokio-rs/axum/src/lib.rs");
     }

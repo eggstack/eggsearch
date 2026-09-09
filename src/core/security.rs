@@ -1439,6 +1439,32 @@ pub struct SecuritySuggestedFetch {
     /// Version this suggested fetch relates to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Recommended extract mode for the fetch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_extract_mode: Option<crate::core::fetch::ExtractMode>,
+    /// Recommended focus query for bounded batch retrieval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_focus_query: Option<String>,
+    /// Direct batch-fetch handoff for this suggestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_item: Option<crate::core::batch_fetch::BatchFetchItem>,
+}
+
+impl SecuritySuggestedFetch {
+    /// Build a direct batch-fetch handoff item for this suggestion.
+    pub fn to_batch_item(&self) -> crate::core::batch_fetch::BatchFetchItem {
+        if let Some(item) = self.batch_item.clone() {
+            return item;
+        }
+        let mut item = crate::core::fetch_locator::url_to_batch_web_item(
+            &self.url,
+            self.recommended_extract_mode,
+        );
+        if let crate::core::batch_fetch::BatchFetchItem::Web { ref mut focus, .. } = item {
+            *focus = self.recommended_focus_query.clone();
+        }
+        item
+    }
 }
 
 /// Input shape for the MCP `security_search` tool.

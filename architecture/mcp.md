@@ -90,14 +90,18 @@ impl EggsearchServer {
 **Returns:** Extracted content with metadata.
 
 ### 3. `batch_fetch`
-**Purpose:** Bounded batch fetch over explicit URLs or structured repo locators.
+**Purpose:** Bounded batch fetch over explicit URLs or structured repo locators with per-item focus.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `items` | Vec<BatchFetchItem> | URLs or repo locators to fetch |
+| `items` | Vec<BatchFetchItem> | URLs or repo locators to fetch (web + repo items accept `focus`/`focus_max_chunks`/`focus_max_chars`) |
 | `max_chars_per_item` | Option<usize> | Per-item char limit |
+| `max_total_chars` | Option<usize> | Aggregate budget across all items (request-order/fair-share, explicit truncation) |
+| `max_items` | Option<usize> | Item count cap |
+| `timeout_ms` | Option<u64> | Per-item timeout override |
+| `continue_on_error` | Option<bool> | Continue after item failure (default true) |
 
-**Returns:** Array of fetch results.
+**Returns:** Per-item results plus `telemetry` (items requested/completed/failed/truncated, focused items/chunks/chars, aggregate budget exhausted, cache hit/revalidated/miss/bypassed/not_cacheable). Focus is a deterministic projection of already-extracted content; stable IDs exclude focus. Suggested fetches carry `batch_item` for direct handoff. Next actions may recommend one focused `batch_fetch` instead of serial `web_fetch` calls.
 
 ### 4. `provider_status`
 **Purpose:** Diagnostic report of configured providers and server capabilities.

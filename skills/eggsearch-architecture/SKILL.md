@@ -115,7 +115,7 @@ not remove the underlying attempts.
 - Startup supervision targets only `mcp serve`, selects active systemd/launchd/Windows SCM/cron by platform policy, and uses `/healthz` for readiness; `mcp stdio` remains client-owned
 - Raw cache entries distinguish original HTTP bytes from rendered browser DOM; a fresh raw hit may be re-derived locally without another network request
 - Search excerpts are bounded source passages (max 3 per card, 500 chars each, 1,200 total) merged deterministically in RRF, sanitized through the trust pipeline, and never part of stable IDs; unrequested excerpts are stripped before aggregation
-- Focus selection is a deterministic lexical projection of extracted chunks (no traversal, no models), additive on the fetch response and never in cache keys
+- Focus selection is a deterministic lexical projection of extracted chunks (no traversal, no models), additive on `web_fetch` and per-item `batch_fetch` responses and never in cache keys; shared policy in `core/fetch_policy.rs`, shared locators in `core/fetch_locator.rs`, batch telemetry in `BatchFetchTelemetry`
 - `mcp stdio` remains the client-owned transport; `mcp serve` is persistent Streamable HTTP on loopback only, with `/healthz`, bounded headers/bodies/timeouts, and graceful cancellation. Both use `mcp::build_server`.
 - `integrate` renders every supported client configuration without mutation by default; apply mode is client-specific, uses argv boundaries or atomic JSON replacement with timestamped backups, and verifies `web_search`/`web_fetch` over the selected transport.
 - Cache policy (`default`/`bypass`/`refresh`) and caller max-age tighten reuse only; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy

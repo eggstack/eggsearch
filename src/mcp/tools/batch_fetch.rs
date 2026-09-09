@@ -4,7 +4,6 @@ use crate::fetch::FetchClient;
 use crate::mcp::policy::{fetch_allowed, web_fetch_denied_message, Policy};
 use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -27,6 +26,120 @@ pub struct BatchFetchArgs {
     /// Defaults to `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continue_on_error: Option<bool>,
+}
+
+/// Inject deterministic web focus projection into a batch payload.
+pub(crate) fn inject_web_focus_into_payload(
+    mut payload: serde_json::Value,
+    focus_query: Option<&str>,
+    focus_max_chunks: Option<usize>,
+    focus_max_chars: Option<usize>,
+    effective_max_chars: usize,
+    max_chars_cap: usize,
+) -> serde_json::Value {
+    let Some(query) = focus_query else {
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("focus".to_string(), serde_json::Value::Null);
+        }
+        return payload;
+    };
+    let document: Option<crate::core::document::FetchDocument> = payload
+        .get("document")
+        .and_then(|d| serde_json::from_value(d.clone()).ok());
+    let fetched = payload
+        .get("fetched")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let selection = crate::core::fetch_policy::apply_focus_to_document(
+        document.as_ref(),
+        fetched,
+        Some(query),
+        focus_max_chunks,
+        focus_max_chars,
+        effective_max_chars,
+        max_chars_cap,
+    );
+    if let Some(obj) = payload.as_object_mut() {
+        match selection {
+            Some(sel) => {
+                obj.insert(
+                    "focus".to_string(),
+                    serde_json::to_value(&sel).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            None => {
+                obj.insert("focus".to_string(), serde_json::Value::Null);
+            }
+        }
+    }
+    payload
+}
+
+/// Inject deterministic repo focus projection into a batch payload.
+pub(crate) fn inject_repo_focus_into_payload(
+    mut payload: serde_json::Value,
+    focus_query: Option<&str>,
+    focus_max_chunks: Option<usize>,
+    focus_max_chars: Option<usize>,
+    effective_max_chars: usize,
+    max_chars_cap: usize,
+    label: &str,
+) -> serde_json::Value {
+    let Some(query) = focus_query else {
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("focus".to_string(), serde_json::Value::Null);
+        }
+        return payload;
+    };
+    let document: Option<crate::core::document::FetchDocument> =
+        payload.get("document").and_then(|d| {
+            if d.is_null() {
+                None
+            } else {
+                serde_json::from_value(d.clone()).ok()
+            }
+        });
+    let selection = if let Some(doc) = document.as_ref() {
+        crate::core::fetch_policy::apply_focus_to_document(
+            Some(doc),
+            true,
+            Some(query),
+            focus_max_chunks,
+            focus_max_chars,
+            effective_max_chars,
+            max_chars_cap,
+        )
+    } else {
+        let text = payload.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        if text.trim().is_empty() {
+            None
+        } else {
+            let max_chunks =
+                crate::core::fetch_policy::focus_max_chunks_or_default(focus_max_chunks);
+            let max_chars = crate::core::fetch_policy::focus_max_chars_or_default(
+                focus_max_chars,
+                effective_max_chars,
+                max_chars_cap,
+            );
+            Some(crate::core::focus::select_focus_for_text(
+                text, label, query, max_chunks, max_chars,
+            ))
+        }
+    };
+    if let Some(obj) = payload.as_object_mut() {
+        match selection {
+            Some(sel) => {
+                obj.insert(
+                    "focus".to_string(),
+                    serde_json::to_value(&sel).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            None => {
+                obj.insert("focus".to_string(), serde_json::Value::Null);
+            }
+        }
+    }
+    payload
 }
 
 /// Run the `batch_fetch` tool.
@@ -106,23 +219,32 @@ pub async fn run_batch_fetch(
         ));
     }
 
-    // Pre-validate all items before launching any fetches
+    // Pre-validate all items before launching any fetches.
+    // Locator checks use the shared fetch-locator helpers so batch,
+    // repo_fetch, and suggested-fetch conversions share host/ref/path
+    // semantics. Focus checks reuse the exact web_fetch validation.
     for (i, item) in effective_items.iter().enumerate() {
+        let focus_q = item.focus_query();
+        let focus_chunks = item.focus_max_chunks();
+        let focus_chars = item.focus_max_chars();
+        if let Err(e) = crate::core::fetch_policy::validate_focus_query(focus_q) {
+            return Err(ToolError::Validation(format!("item {i}: {e}")));
+        }
+        if let Err(e) = crate::core::fetch_policy::validate_focus_max_chunks(focus_chunks) {
+            return Err(ToolError::Validation(format!("item {i}: {e}")));
+        }
+        if let Err(e) = crate::core::fetch_policy::validate_focus_max_chars(focus_chars) {
+            return Err(ToolError::Validation(format!("item {i}: {e}")));
+        }
         match item {
-            BatchFetchItem::Web { url, max_chars, .. } => {
-                if url.trim().is_empty() {
-                    return Err(ToolError::Validation(format!(
-                        "item {i}: url must not be empty"
-                    )));
-                }
-                // Validate URL scheme early (http/https only, case-insensitive)
-                let trimmed = url.trim();
-                let lower = trimmed.to_ascii_lowercase();
-                if !lower.starts_with("http://") && !lower.starts_with("https://") {
-                    return Err(ToolError::Validation(format!(
-                        "item {i}: url scheme must be http or https, got: {}",
-                        trimmed.chars().take(20).collect::<String>()
-                    )));
+            BatchFetchItem::Web {
+                url,
+                max_chars,
+                extract_mode,
+                ..
+            } => {
+                if let Err(e) = crate::core::fetch_locator::validate_web_url(url) {
+                    return Err(ToolError::Validation(format!("item {i}: {e}")));
                 }
                 if let Some(mc) = max_chars {
                     if *mc == 0 {
@@ -130,6 +252,12 @@ pub async fn run_batch_fetch(
                             "item {i}: max_chars must be > 0"
                         )));
                     }
+                }
+                let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
+                if let Err(e) =
+                    crate::core::fetch_policy::validate_focus_for_extract_mode(focus_q, mode)
+                {
+                    return Err(ToolError::Validation(format!("item {i}: {e}")));
                 }
             }
             BatchFetchItem::Repo {
@@ -150,42 +278,11 @@ pub async fn run_batch_fetch(
                         "item {i}: repo must not be empty"
                     )));
                 }
-                if path.trim().is_empty() {
-                    return Err(ToolError::Validation(format!(
-                        "item {i}: path must not be empty"
-                    )));
+                if let Err(e) = crate::core::fetch_locator::validate_repo_path(path) {
+                    return Err(ToolError::Validation(format!("item {i}: {e}")));
                 }
-                let path_obj = Path::new(path);
-                if path_obj
-                    .components()
-                    .any(|c| matches!(c, std::path::Component::ParentDir))
-                {
-                    return Err(ToolError::Validation(format!(
-                        "item {i}: path must not contain '..'"
-                    )));
-                }
-                if path_obj.is_absolute()
-                    || path_obj.components().any(|c| {
-                        matches!(
-                            c,
-                            std::path::Component::RootDir | std::path::Component::Prefix(_)
-                        )
-                    })
-                {
-                    return Err(ToolError::Validation(format!(
-                        "item {i}: path must not be absolute (starts with '/')"
-                    )));
-                }
-                if let Some(h) = host {
-                    let normalized_host = h.trim().to_ascii_lowercase();
-                    if normalized_host != "workspace"
-                        && crate::core::code_metadata::CodeHost::parse_alias(h).is_none()
-                    {
-                        return Err(ToolError::Validation(format!(
-                            "item {i}: unknown host '{normalized_host}'; accepted: {}, workspace",
-                            crate::core::code_metadata::CodeHost::accepted_aliases()
-                        )));
-                    }
+                if let Err(e) = crate::core::fetch_locator::parse_batch_repo_host(host.as_deref()) {
+                    return Err(ToolError::Validation(format!("item {i}: {e}")));
                 }
                 if let Some(mc) = max_chars {
                     if *mc == 0 {
@@ -399,6 +496,66 @@ pub async fn run_batch_fetch(
     let fetched = results.iter().filter(|r| r.ok).count();
     let failed = results.iter().filter(|r| !r.ok).count();
     let truncated = results.iter().any(|r| r.truncated);
+    let items_truncated = results.iter().filter(|r| r.truncated).count();
+    let mut focused_items = 0usize;
+    let mut focused_chunks_selected = 0usize;
+    let mut focused_chars_returned = 0usize;
+    let mut cache_hits = 0usize;
+    let mut cache_revalidated = 0usize;
+    let mut cache_misses = 0usize;
+    let mut cache_bypassed = 0usize;
+    let mut cache_not_cacheable = 0usize;
+    for (result, item) in results.iter().zip(effective_items.iter()) {
+        if item.focus_query().is_some() && result.ok {
+            if let Some(payload) = result.response.as_ref() {
+                if let Some(focus) = payload.get("focus") {
+                    if !focus.is_null() {
+                        focused_items += 1;
+                        if let Some(chunks) = focus.get("chunks").and_then(|c| c.as_array()) {
+                            focused_chunks_selected += chunks.len();
+                        }
+                        if let Some(total) = focus.get("total_chars").and_then(|c| c.as_u64()) {
+                            focused_chars_returned += total as usize;
+                        }
+                    }
+                }
+            }
+        }
+        if result.ok && matches!(item, crate::core::batch_fetch::BatchFetchItem::Web { .. }) {
+            if let Some(payload) = result.response.as_ref() {
+                match payload
+                    .get("cache_status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("miss")
+                {
+                    "hit" => cache_hits += 1,
+                    "revalidated" => cache_revalidated += 1,
+                    "bypassed" => cache_bypassed += 1,
+                    "not_cacheable" => cache_not_cacheable += 1,
+                    _ => cache_misses += 1,
+                }
+            } else {
+                cache_misses += 1;
+            }
+        }
+    }
+
+    let telemetry = crate::core::batch_fetch::BatchFetchTelemetry {
+        items_requested: effective_items.len(),
+        items_completed: fetched,
+        items_failed: failed,
+        items_truncated,
+        total_chars_returned: total_chars,
+        focused_items,
+        focused_chunks_selected,
+        focused_chars_returned,
+        aggregate_budget_exhausted: budget_exhausted,
+        cache_hits,
+        cache_revalidated,
+        cache_misses,
+        cache_bypassed,
+        cache_not_cacheable,
+    };
 
     let response = BatchFetchResponse {
         fetched,
@@ -408,6 +565,7 @@ pub async fn run_batch_fetch(
         results,
         structured_warnings: crate::core::warning::convert_fetch_warnings(&warnings),
         warnings,
+        telemetry: Some(telemetry),
     };
 
     let value = serde_json::to_value(&response)
@@ -592,6 +750,9 @@ fn make_batch_fetch_future(
             max_chars,
             cache_policy,
             max_cache_age_seconds,
+            focus,
+            focus_max_chunks,
+            focus_max_chars,
         } => {
             let stable_id = batch_fetch_id(&label, i);
             let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
@@ -599,8 +760,12 @@ fn make_batch_fetch_future(
             let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
             let il = include_links.unwrap_or(include_links_default);
             let item_cache_policy =
-                (*cache_policy).unwrap_or(crate::core::fetch::FetchCachePolicy::Default);
+                crate::core::fetch_policy::cache_policy_or_default(*cache_policy);
             let item_max_age = *max_cache_age_seconds;
+            let focus_query = focus.clone();
+            let focus_chunks = *focus_max_chunks;
+            let focus_chars = *focus_max_chars;
+            let max_chars_cap = state.config.fetch.max_chars_cap;
             if let Some(age) = item_max_age {
                 if age > crate::core::fetch::MAX_CACHE_AGE_SECONDS {
                     return Box::pin(async move {
@@ -694,7 +859,7 @@ fn make_batch_fetch_future(
                                     state.config.fetch.sanitize_output,
                                 );
                                 if let Some(derived) = cache.get_derived(&derived_key).await {
-                                    let payload = serde_json::json!({
+                                    let raw_payload = serde_json::json!({
                                         "url": url,
                                         "final_url": raw_entry.final_url,
                                         "title": derived.response.title,
@@ -724,6 +889,14 @@ fn make_batch_fetch_future(
                                         "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
                                         "browser_escalated": raw_entry.browser_escalated,
                                     });
+                                    let payload = inject_web_focus_into_payload(
+                                        raw_payload,
+                                        focus_query.as_deref(),
+                                        focus_chunks,
+                                        focus_chars,
+                                        em,
+                                        max_chars_cap,
+                                    );
                                     let body_chars = derived
                                         .response
                                         .document
@@ -814,7 +987,7 @@ fn make_batch_fetch_future(
                                                         };
                                                     cache.insert_raw(raw_key, updated_entry).await;
 
-                                                    let payload = serde_json::json!({
+                                                    let raw_payload = serde_json::json!({
                                                         "url": url,
                                                         "final_url": raw_entry.final_url,
                                                         "title": derived.response.title,
@@ -844,6 +1017,14 @@ fn make_batch_fetch_future(
                                                         "transport": if raw_entry.representation == crate::fetch::cache::RawRepresentation::BrowserDom { "browser" } else { "http" },
                                                         "browser_escalated": raw_entry.browser_escalated,
                                                     });
+                                                    let payload = inject_web_focus_into_payload(
+                                                        raw_payload,
+                                                        focus_query.as_deref(),
+                                                        focus_chunks,
+                                                        focus_chars,
+                                                        em,
+                                                        max_chars_cap,
+                                                    );
                                                     let body_chars = derived
                                                         .response
                                                         .document
@@ -1112,7 +1293,7 @@ fn make_batch_fetch_future(
                         let truncated = resp.truncated;
                         let structured =
                             crate::core::warning::convert_fetch_warnings(&resp.warnings);
-                        let payload = serde_json::json!({
+                        let raw_payload = serde_json::json!({
                             "url": resp.url,
                             "final_url": resp.final_url,
                             "stable_id": resp.stable_id,
@@ -1144,6 +1325,14 @@ fn make_batch_fetch_future(
                             "transport": resp.transport.as_deref().unwrap_or("http"),
                             "browser_escalated": resp.browser_escalated,
                         });
+                        let payload = inject_web_focus_into_payload(
+                            raw_payload,
+                            focus_query.as_deref(),
+                            focus_chunks,
+                            focus_chars,
+                            em,
+                            max_chars_cap,
+                        );
                         let body_chars = resp
                             .document
                             .as_ref()
@@ -1207,9 +1396,17 @@ fn make_batch_fetch_future(
             context_before,
             context_after,
             max_chars,
+            focus,
+            focus_max_chunks,
+            focus_max_chars,
         } => {
             let stable_id = batch_fetch_id(&label, i);
             let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
+            let repo_focus_query = focus.clone();
+            let repo_focus_chunks = *focus_max_chunks;
+            let repo_focus_chars = *focus_max_chars;
+            let repo_max_cap = state.config.fetch.max_chars_cap;
+            let repo_label = label.clone();
             let repo_args = RepoFetchArgs {
                 host: host.clone(),
                 owner: owner.clone(),
@@ -1238,7 +1435,16 @@ fn make_batch_fetch_future(
                     .await
                     .map_err(|e| ToolError::internal(format!("semaphore closed: {e}")))?;
                 match run_repo_fetch(state, repo_args).await {
-                    Ok(payload) => {
+                    Ok(raw_payload) => {
+                        let payload = inject_repo_focus_into_payload(
+                            raw_payload,
+                            repo_focus_query.as_deref(),
+                            repo_focus_chunks,
+                            repo_focus_chars,
+                            effective_max.max(1),
+                            repo_max_cap,
+                            &repo_label,
+                        );
                         let text_len = batch_payload_chars(&payload);
                         let truncated = payload
                             .get("truncated")

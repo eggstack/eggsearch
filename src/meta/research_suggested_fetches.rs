@@ -113,6 +113,10 @@ pub fn generate_research_suggested_fetches(
 
             let reason_code = Some(resolve_reason_code(&candidate.reasons, group_kind));
 
+            let batch_item = Some(crate::core::fetch_locator::url_to_batch_web_item(
+                &candidate.url,
+                candidate.recommended_extract_mode,
+            ));
             ResearchSuggestedFetch {
                 url: candidate.url,
                 group: group_kind,
@@ -132,6 +136,8 @@ pub fn generate_research_suggested_fetches(
                 source_id: candidate.source_card_stable_id,
                 source_class,
                 reason_code,
+                recommended_focus_query: None,
+                batch_item,
             }
         })
         .collect()

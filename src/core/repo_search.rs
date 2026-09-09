@@ -627,6 +627,32 @@ pub struct RepoSuggestedFetch {
     /// Recommended tool for this fetch (e.g. "repo_fetch", "web_fetch").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_tool: Option<String>,
+    /// Recommended focus query for bounded batch retrieval. Additive;
+    /// derived deterministically from symbol/path hints when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_focus_query: Option<String>,
+    /// Direct batch-fetch handoff for this suggestion. When present,
+    /// callers can pass it as an item to `batch_fetch` without
+    /// reconstructing locators from URLs or prose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_item: Option<super::batch_fetch::BatchFetchItem>,
+}
+
+impl RepoSuggestedFetch {
+    /// Build a direct batch-fetch handoff item for this suggestion.
+    pub fn to_batch_item(&self) -> super::batch_fetch::BatchFetchItem {
+        if let Some(item) = self.batch_item.clone() {
+            return item;
+        }
+        if let Some(ref req) = self.structured_repo_fetch {
+            let mut item = crate::core::fetch_locator::structured_repo_fetch_to_batch_item(req);
+            if let crate::core::batch_fetch::BatchFetchItem::Repo { ref mut focus, .. } = item {
+                *focus = self.recommended_focus_query.clone();
+            }
+            return item;
+        }
+        crate::core::fetch_locator::url_to_batch_web_item(&self.url, self.recommended_extract_mode)
+    }
 }
 
 /// Response from repo_search.

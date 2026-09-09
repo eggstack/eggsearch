@@ -140,6 +140,9 @@ async fn batch_fetch_returns_results_with_same_length_as_input() {
             max_chars: None,
             cache_policy: None,
             max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         })
         .collect();
 
@@ -216,6 +219,9 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 max_chars: None,
                 cache_policy: None,
                 max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -241,6 +247,9 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 max_chars: None,
                 cache_policy: None,
                 max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -279,6 +288,9 @@ async fn batch_fetch_with_single_empty_url_returns_validation_error() {
                 max_chars: None,
                 cache_policy: None,
                 max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -347,6 +359,9 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
                 max_chars: Some(12000),
                 cache_policy: None,
                 max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -406,6 +421,9 @@ async fn batch_fetch_respects_per_origin_concurrency() {
                 max_chars: Some(12000),
                 cache_policy: None,
                 max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
             }
         })
         .collect();

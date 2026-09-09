@@ -105,9 +105,11 @@ Agent-visible controls on `web_fetch` (and per web item on `batch_fetch`):
 
 Responses with `Vary: *` or any request header other than `Accept-Encoding` are not cached because the cache does not retain those request-header variants. This conservative rule also applies when supported and unsupported `Vary` tokens are mixed.
 
-## Focused Fetch (`core/focus.rs`)
+## Focused Fetch (`core/focus.rs` + `core/fetch_policy.rs`)
 
-`select_focus_chunks()` ranks the already-extracted `FetchDocument` chunks against a caller `focus` query with dependency-free lexical scoring (normalized token overlap, exact-phrase boost, heading-path overlap, case-sensitive code-symbol boost; stable tie-break by document order), expands picks to scoring neighbors within the chunk cap, and enforces chunk/character budgets in document order. No embeddings, no model calls, no extra URL traversal. The `FocusedFetchSelection` (`chunks`, `truncated`, `total_chars`) is additive on `WebFetchResponse`; focus projection never enters the raw or derived cache keys.
+`select_focus_chunks()` ranks the already-extracted `FetchDocument` chunks against a caller `focus` query with dependency-free lexical scoring (normalized token overlap, exact-phrase boost, heading-path overlap, case-sensitive code-symbol boost; stable tie-break by document order), expands picks to scoring neighbors within the chunk cap, and enforces chunk/character budgets in document order. No embeddings, no model calls, no extra URL traversal. The `FocusedFetchSelection` (`chunks`, `truncated`, `total_chars`) is additive on `WebFetchResponse` and per-item `batch_fetch` payloads; focus projection never enters the raw or derived cache keys.
+
+`web_fetch` and `batch_fetch` share validation/projection via `core/fetch_policy.rs` (`validate_focus_*`, `apply_focus_to_document()`). Batch web items project over the fetched document; batch repo items project over the document when present and otherwise over deterministic line-window text via `select_focus_for_text()`. UTF-8 boundaries use character counts. `focus` with `metadata_only` is rejected.
 
 ---
 

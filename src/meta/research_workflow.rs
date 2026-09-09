@@ -1465,6 +1465,8 @@ mod tests {
                 source_id: None,
                 source_class: None,
                 reason_code: None,
+                recommended_focus_query: None,
+                batch_item: None,
             },
             crate::core::research::ResearchSuggestedFetch {
                 url: "https://benchmarks.example.com".to_string(),
@@ -1481,6 +1483,8 @@ mod tests {
                 source_id: None,
                 source_class: None,
                 reason_code: None,
+                recommended_focus_query: None,
+                batch_item: None,
             },
         ];
         let ctx = build_workflow_context(&req, &groups, &fetches, &["duckduckgo".to_string()]);

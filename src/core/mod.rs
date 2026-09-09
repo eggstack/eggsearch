@@ -21,6 +21,10 @@ pub mod evidence_postprocess;
 /// Unified evidence role taxonomy mapping across source kinds, roles, classes, and tiers.
 pub mod evidence_role;
 pub mod fetch;
+/// Shared locator resolution for web, repo, and local fetches.
+pub mod fetch_locator;
+/// Shared fetch execution policy for web and batch fetches.
+pub mod fetch_policy;
 /// Deterministic query-focused chunk selection over extracted documents.
 pub mod focus;
 /// Deterministic cross-tool identity model for stable source/fetch/suggested IDs.
@@ -56,7 +60,9 @@ pub mod workflow;
 pub mod workflow_coverage;
 
 pub use crate::fetch::span::SelectedSpan;
-pub use batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult};
+pub use batch_fetch::{
+    BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult, BatchFetchTelemetry,
+};
 pub use code_context::{
     detect_language, detect_language_str, extract_code_context, extract_imports,
     find_enclosing_symbol, CodeContext, ExtractionLanguage,
@@ -98,6 +104,11 @@ pub use fetch::{
     ExtractMode, ExtractedLink, FetchTransform, FetchTransformKind, FetchTrust,
     FocusedFetchSelection, WebFetchRequest, WebFetchResponse, MAX_CACHE_AGE_SECONDS,
     MAX_FOCUS_CHUNKS, MAX_FOCUS_QUERY_CHARS,
+};
+pub use fetch_locator::{
+    batch_repo_item_to_locator, parse_batch_repo_host, structured_repo_fetch_to_batch_item,
+    url_to_batch_web_item, validate_repo_path, validate_web_url, BatchRepoHost, FetchLocator,
+    LocalLocator,
 };
 pub use focus::select_focus_chunks;
 pub use identity::{

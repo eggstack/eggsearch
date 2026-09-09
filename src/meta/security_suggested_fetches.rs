@@ -334,6 +334,10 @@ pub fn generate_security_suggested_fetches(
                 }
             }
 
+            let batch_item = Some(crate::core::fetch_locator::url_to_batch_web_item(
+                &candidate.url,
+                candidate.recommended_extract_mode,
+            ));
             SecuritySuggestedFetch {
                 url: candidate.url,
                 reason,
@@ -352,6 +356,9 @@ pub fn generate_security_suggested_fetches(
                 advisory_ids,
                 package: package.map(String::from),
                 version: None,
+                recommended_extract_mode: candidate.recommended_extract_mode,
+                recommended_focus_query: None,
+                batch_item,
             }
         })
         .collect()

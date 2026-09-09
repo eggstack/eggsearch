@@ -166,6 +166,93 @@ pub fn select_focus_chunks(
     }
 }
 
+/// Build a synthetic document from plain bounded text so repo fetches
+/// without a structured `FetchDocument` can still receive a
+/// deterministic focus projection.
+///
+/// Text is split on line boundaries into ~1000-character chunks;
+/// chunk IDs derive deterministically from `id_prefix` and chunk
+/// index. Empty or whitespace-only text yields a document with no
+/// chunks, whose focus selection is empty.
+pub fn synthetic_document_for_text(text: &str, id_prefix: &str) -> FetchDocument {
+    use crate::core::document::{DocumentKind, RenderFormat};
+    use crate::core::identity::chunk_id;
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    let mut current_chars = 0usize;
+    let mut index = 0usize;
+    for line in text.lines() {
+        let line_chars = line.chars().count() + 1;
+        if current_chars + line_chars > 1000 && !current.is_empty() {
+            chunks.push(crate::core::document::DocumentChunk {
+                chunk_id: chunk_id(id_prefix, index, ""),
+                text: current.clone(),
+                heading_path: Vec::new(),
+                block_start: index,
+                block_end: index,
+                page_start: None,
+                page_end: None,
+            });
+            index += 1;
+            current.clear();
+            current_chars = 0;
+        }
+        if !current.is_empty() {
+            current.push('\n');
+        }
+        current.push_str(line);
+        current_chars += line_chars;
+    }
+    if !current.trim().is_empty() {
+        chunks.push(crate::core::document::DocumentChunk {
+            chunk_id: chunk_id(id_prefix, index, ""),
+            text: current,
+            heading_path: Vec::new(),
+            block_start: index,
+            block_end: index,
+            page_start: None,
+            page_end: None,
+        });
+    }
+    FetchDocument {
+        kind: DocumentKind::Html,
+        render_format: RenderFormat::AgentBlocksV1,
+        text_format: "plain".to_string(),
+        text_chars_returned: text.chars().count(),
+        text_truncated: false,
+        block_truncated: false,
+        link_truncated: false,
+        metadata: None,
+        outline: Vec::new(),
+        blocks: Vec::new(),
+        chunks,
+    }
+}
+
+/// Select focused chunks from plain bounded text.
+///
+/// Used to normalize repo focus projection after the underlying repo
+/// fetch returns a bounded document/span without a structured
+/// `FetchDocument` (e.g. workspace reads). When `document` is
+/// available, callers should prefer [`select_focus_chunks`] directly.
+pub fn select_focus_for_text(
+    text: &str,
+    id_prefix: &str,
+    query: &str,
+    max_chunks: usize,
+    max_chars: usize,
+) -> FocusedFetchSelection {
+    if text.trim().is_empty() {
+        return FocusedFetchSelection {
+            chunks: Vec::new(),
+            truncated: false,
+            total_chars: 0,
+        };
+    }
+    let doc = synthetic_document_for_text(text, id_prefix);
+    select_focus_chunks(&doc, query, max_chunks, max_chars)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

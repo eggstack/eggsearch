@@ -116,52 +116,26 @@ pub async fn run_web_fetch(
         .include_links
         .unwrap_or(state.config.fetch.include_links_default);
 
-    let cache_policy = args.cache_policy.unwrap_or_default();
+    let cache_policy = crate::core::fetch_policy::cache_policy_or_default(args.cache_policy);
 
-    if let Some(age) = args.max_cache_age_seconds {
-        if age > crate::core::fetch::MAX_CACHE_AGE_SECONDS {
-            return Err(ToolError::Validation(format!(
-                "max_cache_age_seconds must be <= {}",
-                crate::core::fetch::MAX_CACHE_AGE_SECONDS
-            )));
-        }
+    if let Err(e) = crate::core::fetch_policy::validate_cache_age(args.max_cache_age_seconds) {
+        return Err(ToolError::Validation(e));
     }
-    let focus_query = match args.focus.as_deref() {
-        None => None,
-        Some(q) if q.trim().is_empty() => {
-            return Err(ToolError::Validation("focus must not be empty".to_string()));
-        }
-        Some(q) if q.chars().count() > crate::core::fetch::MAX_FOCUS_QUERY_CHARS => {
-            return Err(ToolError::Validation(format!(
-                "focus must be <= {} characters",
-                crate::core::fetch::MAX_FOCUS_QUERY_CHARS
-            )));
-        }
-        Some(q) => Some(q.trim().to_string()),
+    let focus_query = match crate::core::fetch_policy::validate_focus_query(args.focus.as_deref()) {
+        Ok(q) => q,
+        Err(e) => return Err(ToolError::Validation(e)),
     };
-    if let Some(0) = args.focus_max_chunks {
-        return Err(ToolError::Validation(
-            "focus_max_chunks must be > 0".to_string(),
-        ));
+    if let Err(e) = crate::core::fetch_policy::validate_focus_max_chunks(args.focus_max_chunks) {
+        return Err(ToolError::Validation(e));
     }
-    if let Some(n) = args.focus_max_chunks {
-        if n > crate::core::fetch::MAX_FOCUS_CHUNKS {
-            return Err(ToolError::Validation(format!(
-                "focus_max_chunks must be <= {}",
-                crate::core::fetch::MAX_FOCUS_CHUNKS
-            )));
-        }
+    if let Err(e) = crate::core::fetch_policy::validate_focus_max_chars(args.focus_max_chars) {
+        return Err(ToolError::Validation(e));
     }
-    if let Some(0) = args.focus_max_chars {
-        return Err(ToolError::Validation(
-            "focus_max_chars must be > 0".to_string(),
-        ));
-    }
-    if focus_query.is_some() && extract_mode == ExtractMode::MetadataOnly {
-        return Err(ToolError::Validation(
-            "focus requires extracted content; it is not valid with extract_mode = \"metadata_only\""
-                .to_string(),
-        ));
+    if let Err(e) = crate::core::fetch_policy::validate_focus_for_extract_mode(
+        focus_query.as_deref(),
+        extract_mode,
+    ) {
+        return Err(ToolError::Validation(e));
     }
 
     #[cfg(feature = "browser")]
@@ -896,23 +870,15 @@ pub async fn run_web_fetch(
             "link list was truncated; not all links are included".to_string(),
         ));
     }
-    let focus_selection = match (&focus_query, &resp.document) {
-        (Some(query), Some(document)) if resp.fetched => {
-            let max_chunks = args
-                .focus_max_chunks
-                .unwrap_or(crate::core::fetch::MAX_FOCUS_CHUNKS)
-                .clamp(1, crate::core::fetch::MAX_FOCUS_CHUNKS);
-            let max_chars = args
-                .focus_max_chars
-                .unwrap_or(requested_max_chars)
-                .min(state.config.fetch.max_chars_cap)
-                .max(1);
-            Some(crate::core::focus::select_focus_chunks(
-                document, query, max_chunks, max_chars,
-            ))
-        }
-        _ => None,
-    };
+    let focus_selection = crate::core::fetch_policy::apply_focus_to_document(
+        resp.document.as_ref(),
+        resp.fetched,
+        focus_query.as_deref(),
+        args.focus_max_chunks,
+        args.focus_max_chars,
+        requested_max_chars,
+        state.config.fetch.max_chars_cap,
+    );
     let payload = serde_json::json!({
         "url": resp.url,
         "final_url": resp.final_url,

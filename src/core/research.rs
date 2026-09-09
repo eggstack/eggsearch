@@ -544,6 +544,29 @@ pub struct ResearchSuggestedFetch {
     /// Machine-readable reason code for this suggestion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason_code: Option<String>,
+    /// Recommended focus query for bounded batch retrieval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_focus_query: Option<String>,
+    /// Direct batch-fetch handoff for this suggestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_item: Option<super::batch_fetch::BatchFetchItem>,
+}
+
+impl ResearchSuggestedFetch {
+    /// Build a direct batch-fetch handoff item for this suggestion.
+    pub fn to_batch_item(&self) -> super::batch_fetch::BatchFetchItem {
+        if let Some(item) = self.batch_item.clone() {
+            return item;
+        }
+        let mut item = crate::core::fetch_locator::url_to_batch_web_item(
+            &self.url,
+            self.recommended_extract_mode,
+        );
+        if let crate::core::batch_fetch::BatchFetchItem::Web { ref mut focus, .. } = item {
+            *focus = self.recommended_focus_query.clone();
+        }
+        item
+    }
 }
 
 /// Type of claim extracted from research evidence.

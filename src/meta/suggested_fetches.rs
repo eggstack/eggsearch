@@ -219,6 +219,30 @@ pub fn generate_suggested_fetches_with_mode(
                 Some("web_fetch".to_string())
             };
 
+            let recommended_focus_query = structured_repo_fetch
+                .as_ref()
+                .and_then(|r| r.symbol.clone());
+            let batch_item = {
+                use crate::core::batch_fetch::BatchFetchItem;
+                if let Some(ref req) = structured_repo_fetch {
+                    let mut item =
+                        crate::core::fetch_locator::structured_repo_fetch_to_batch_item(req);
+                    if let BatchFetchItem::Repo { ref mut focus, .. } = item {
+                        *focus = recommended_focus_query.clone();
+                    }
+                    Some(item)
+                } else {
+                    let mut item = crate::core::fetch_locator::url_to_batch_web_item(
+                        &candidate.url,
+                        candidate.recommended_extract_mode,
+                    );
+                    if let BatchFetchItem::Web { ref mut focus, .. } = item {
+                        *focus = None;
+                    }
+                    Some(item)
+                }
+            };
+
             RepoSuggestedFetch {
                 url: candidate.url,
                 reason,
@@ -235,6 +259,8 @@ pub fn generate_suggested_fetches_with_mode(
                 stable_id: None,
                 source_id: candidate.source_card_stable_id,
                 preferred_tool,
+                recommended_focus_query,
+                batch_item,
             }
         })
         .collect();
@@ -291,6 +317,9 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                     // Suggest test file (heuristic: sibling tests/ directory)
                     if let Some(test_path) = infer_test_path(path) {
                         let url = build_raw_url(host, owner, repo, ref_name, &test_path);
+                        let batch_item = Some(crate::core::fetch_locator::url_to_batch_web_item(
+                            &url, None,
+                        ));
                         suggestions.push(RepoSuggestedFetch {
                             url,
                             reason: "nearby_test_candidate".to_string(),
@@ -307,12 +336,17 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable_id: None,
                             source_id: card.stable_id.clone(),
                             preferred_tool: Some("repo_fetch".to_string()),
+                            recommended_focus_query: None,
+                            batch_item,
                         });
                     }
 
                     // Suggest example file
                     if let Some(example_path) = infer_example_path(path) {
                         let url = build_raw_url(host, owner, repo, ref_name, &example_path);
+                        let batch_item = Some(crate::core::fetch_locator::url_to_batch_web_item(
+                            &url, None,
+                        ));
                         suggestions.push(RepoSuggestedFetch {
                             url,
                             reason: "example_candidate".to_string(),
@@ -329,6 +363,8 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable_id: None,
                             source_id: card.stable_id.clone(),
                             preferred_tool: Some("repo_fetch".to_string()),
+                            recommended_focus_query: None,
+                            batch_item,
                         });
                     }
                 }
@@ -336,6 +372,9 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                     // Suggest the corresponding implementation file
                     if let Some(impl_path) = infer_implementation_path(path) {
                         let url = build_raw_url(host, owner, repo, ref_name, &impl_path);
+                        let batch_item = Some(crate::core::fetch_locator::url_to_batch_web_item(
+                            &url, None,
+                        ));
                         suggestions.push(RepoSuggestedFetch {
                             url,
                             reason: "implementation_candidate".to_string(),
@@ -352,6 +391,8 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable_id: None,
                             source_id: card.stable_id.clone(),
                             preferred_tool: Some("repo_fetch".to_string()),
+                            recommended_focus_query: None,
+                            batch_item,
                         });
                     }
                 }
@@ -366,6 +407,9 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                 for manifest in &["Cargo.toml", "package.json", "pyproject.toml", "go.mod"] {
                     if let Some(manifest_path) = find_manifest_in_repo(path, manifest) {
                         let url = build_raw_url(host, owner, repo, ref_name, &manifest_path);
+                        let batch_item = Some(crate::core::fetch_locator::url_to_batch_web_item(
+                            &url, None,
+                        ));
                         suggestions.push(RepoSuggestedFetch {
                             url,
                             reason: "manifest_context".to_string(),
@@ -382,6 +426,8 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable_id: None,
                             source_id: card.stable_id.clone(),
                             preferred_tool: Some("repo_fetch".to_string()),
+                            recommended_focus_query: None,
+                            batch_item,
                         });
                         break; // only suggest one manifest
                     }
@@ -391,6 +437,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
             // Suggest changelog for release/changelog role
             if matches!(source_role, SourceRole::Changelog | SourceRole::Migration) {
                 let url = card.url.clone();
+                let batch_url = url.clone();
                 suggestions.push(RepoSuggestedFetch {
                     url,
                     reason: "changelog_source".to_string(),
@@ -407,6 +454,11 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                     stable_id: None,
                     source_id: card.stable_id.clone(),
                     preferred_tool: Some("web_fetch".to_string()),
+                    recommended_focus_query: None,
+                    batch_item: Some(crate::core::fetch_locator::url_to_batch_web_item(
+                        &batch_url,
+                        Some(ExtractMode::Markdown),
+                    )),
                 });
             }
         }

@@ -170,7 +170,7 @@ Registration lives in `src/mcp/server.rs` (`#[tool]` attrs); implementations in 
 |------|---------|----------------|
 | `web_search` | Live metasearch over configured providers | `query`, `max_results`, `providers`, `freshness` |
 | `web_fetch` | Bounded extraction of one HTTP(S) URL | `url`, `max_chars`, `extract_mode` |
-| `batch_fetch` | Batch fetch over URLs or repo locators | `items`, `max_chars_per_item` |
+| `batch_fetch` | Batch fetch over URLs or repo locators with per-item focus | `items` (per-item focus), `max_chars_per_item`, `max_total_chars`, telemetry |
 | `provider_status` | Diagnostic provider configuration report with optional bounded live probe | (none; `probe`, `recipe_detail`) |
 | `repo_search` | Structured repository evidence discovery | `query`, `max_results`, `profile` |
 | `repo_fetch` | Repository file fetch by locator | `locator`, `line_start`, `line_end`, `symbol` |

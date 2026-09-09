@@ -412,6 +412,9 @@ fn suggested_fetch_has_stable_id_and_source_id() {
         advisory_ids: vec!["CVE-2024-9999".to_string()],
         package: Some("test-pkg".to_string()),
         version: None,
+        recommended_extract_mode: None,
+        recommended_focus_query: None,
+        batch_item: None,
     };
 
     let stable_id = fetch.stable_id.as_ref().expect("stable_id must be present");
@@ -448,6 +451,9 @@ fn suggested_fetch_without_source_id_has_none() {
         advisory_ids: Vec::new(),
         package: None,
         version: None,
+        recommended_extract_mode: None,
+        recommended_focus_query: None,
+        batch_item: None,
     };
 
     assert!(

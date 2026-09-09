@@ -1,6 +1,6 @@
 # Phase 14 — Retrieval Ergonomics and Focused Batch Evidence
 
-Status: planned
+Status: completed
 Depends on: phase 11; phase 13 preferred for structured locator reuse
 Baseline for planning: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Roadmap: `plans/maintenance-codegg-quality-roadmap.md`

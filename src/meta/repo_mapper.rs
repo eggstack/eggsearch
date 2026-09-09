@@ -119,7 +119,10 @@ pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoM
                 url,
                 reason: format!("README documentation for {owner}/{repo}"),
                 priority: Some(suggestions.len() + 1),
-                structured_repo_fetch: structured,
+                structured_repo_fetch: structured.clone(),
+                batch_item: structured
+                    .as_ref()
+                    .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
             });
         }
     }
@@ -136,7 +139,10 @@ pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoM
                 url,
                 reason: format!("Package manifest for {owner}/{repo}"),
                 priority: Some(suggestions.len() + 1),
-                structured_repo_fetch: structured,
+                structured_repo_fetch: structured.clone(),
+                batch_item: structured
+                    .as_ref()
+                    .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
             });
         }
     }
@@ -152,7 +158,10 @@ pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoM
             url,
             reason: format!("Source root directory: {}", dir.path),
             priority: Some(suggestions.len() + 1),
-            structured_repo_fetch: structured,
+            structured_repo_fetch: structured.clone(),
+            batch_item: structured
+                .as_ref()
+                .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
         });
     }
 
@@ -167,7 +176,10 @@ pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoM
             url,
             reason: format!("Examples directory: {}", dir.path),
             priority: Some(suggestions.len() + 1),
-            structured_repo_fetch: structured,
+            structured_repo_fetch: structured.clone(),
+            batch_item: structured
+                .as_ref()
+                .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
         });
     }
 
@@ -183,7 +195,10 @@ pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoM
                 url,
                 reason: format!("Changelog for {owner}/{repo}"),
                 priority: Some(suggestions.len() + 1),
-                structured_repo_fetch: structured,
+                structured_repo_fetch: structured.clone(),
+                batch_item: structured
+                    .as_ref()
+                    .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
             });
         }
     }
@@ -197,7 +212,10 @@ pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoM
                 url,
                 reason: format!("Security policy for {owner}/{repo}"),
                 priority: Some(suggestions.len() + 1),
-                structured_repo_fetch: structured,
+                structured_repo_fetch: structured.clone(),
+                batch_item: structured
+                    .as_ref()
+                    .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
             });
         }
     }
@@ -213,7 +231,10 @@ pub fn build_repo_map_suggested_fetches(response: &RepoMapResponse) -> Vec<RepoM
             url,
             reason: format!("Test directory: {}", dir.path),
             priority: Some(suggestions.len() + 1),
-            structured_repo_fetch: structured,
+            structured_repo_fetch: structured.clone(),
+            batch_item: structured
+                .as_ref()
+                .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
         });
     }
 
@@ -417,7 +438,10 @@ pub fn populate_from_local_checkout(
             url,
             reason,
             priority: Some(suggested_fetches.len() + 1),
-            structured_repo_fetch: structured,
+            structured_repo_fetch: structured.clone(),
+            batch_item: structured
+                .as_ref()
+                .map(crate::core::fetch_locator::structured_repo_fetch_to_batch_item),
         });
     }
 

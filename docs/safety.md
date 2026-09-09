@@ -116,7 +116,7 @@ Use `metadata_only` when you need page metadata but do not need the body content
 
 ## Focused Fetch and Cache Controls
 
-`web_fetch` accepts an optional `focus` query for deterministic query-focused chunk selection. Focus ranking is lexical and local (token overlap, exact-phrase, heading, and code-symbol boosts); it performs no extra URL traversal and calls no model. Focused chunk texts are projections of the already-fetched document, never generated summaries.
+`web_fetch` and per-item `batch_fetch` accept an optional `focus` query for deterministic query-focused chunk selection. Focus ranking is lexical and local (token overlap, exact-phrase, heading, and code-symbol boosts); it performs no extra URL traversal and calls no model. Focused chunk texts are projections of the already-fetched document (batch repo items without a document use line-window text projection), never generated summaries. Focus never changes stable IDs and never enters cache keys.
 
 `cache_policy` (`default`/`bypass`/`refresh`) and `max_cache_age_seconds` affect cache reuse and revalidation only. They never bypass target validation, redirect checks, origin concurrency/circuit breakers, browser-profile isolation, content limits, or sanitization. `bypass` still stores the fresh response unless the origin forbids caching; `refresh` revalidates with `ETag`/`Last-Modified` when validators exist.
 

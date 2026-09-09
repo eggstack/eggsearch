@@ -117,6 +117,8 @@ Each step includes: order, tool, purpose, input_hints, inspect_fields, next_acti
 
 `AgentNextAction` (max 5 per response): tool, reason_code, priority (1-5), input_template, source_ids.
 
+Multi-source responses may recommend one focused `batch_fetch` (`fetch_multiple_focused` with per-item `focus`) instead of serial `web_fetch` calls when candidates share safety prerequisites; mixed remote/workspace locators must use separate fetches. Suggested fetches carry `batch_item` for direct batch handoff.
+
 ---
 
 ## Workflow Coverage (`src/core/workflow_coverage.rs`)

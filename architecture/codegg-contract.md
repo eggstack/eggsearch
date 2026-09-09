@@ -816,14 +816,16 @@ opaque and skip them, never crash.
 
 ### 10.7 Focused Fetch and Cache Controls (Additive)
 
-`web_fetch` may return a `focus` selection (`chunks` in document
+`web_fetch` and per-item `batch_fetch` may return a `focus` selection (`chunks` in document
 order with stable chunk IDs, `truncated`, `total_chars`) alongside
 unchanged `text`/`document` fields. `focus` is null when the caller
-did not request it. `cache_status` distinguishes `hit`,
+did not request it. Batch repo items without a structured document use deterministic line-window text projection. `cache_status` distinguishes `hit`,
 `revalidated`, `miss`, `bypassed`, and `not_cacheable`; a `miss`
 after `refresh` is a normal fresh fetch. Harnesses must not infer
 transport internals from cache status beyond these documented
 values.
+
+`batch_fetch` responses include `telemetry` (items requested/completed/failed/truncated, focused items/chunks/chars, `aggregate_budget_exhausted`, cache hit/revalidated/miss/bypassed/not_cacheable). The aggregate `max_total_chars` budget uses deterministic request-order/fair-share allocation with explicit per-item truncation. Suggested fetches (repo/research/security/repo-map) carry `batch_item` plus `recommended_focus_query`/`recommended_extract_mode` for direct batch handoff without URL/prose reconstruction; use `to_batch_item()` semantics. Next actions may recommend one focused `batch_fetch` (`fetch_multiple_focused`) for multi-source evidence with shared safety prerequisites.
 
 ---
 

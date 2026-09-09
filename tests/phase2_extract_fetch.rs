@@ -404,6 +404,9 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
             max_chars: None,
             cache_policy: policy,
             max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
         }
     };
     let run = |items: Vec<eggsearch::core::batch_fetch::BatchFetchItem>| {
@@ -438,6 +441,9 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
         max_chars: None,
         cache_policy: None,
         max_cache_age_seconds: Some(9_999_999),
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
     };
     let v = run(vec![bad]).await.expect("batch runs with item error");
     assert_eq!(v["results"][0]["ok"], false);

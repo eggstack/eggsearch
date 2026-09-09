@@ -193,6 +193,27 @@ pub struct RepoMapSuggestedFetch {
     /// Structured locator for `repo_fetch`, when applicable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structured_repo_fetch: Option<RepoFetchRequest>,
+    /// Direct batch-fetch handoff for this suggestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_item: Option<super::batch_fetch::BatchFetchItem>,
+}
+
+impl RepoMapSuggestedFetch {
+    /// Build a direct batch-fetch handoff item for this suggestion.
+    pub fn to_batch_item(&self) -> Option<super::batch_fetch::BatchFetchItem> {
+        if let Some(item) = self.batch_item.clone() {
+            return Some(item);
+        }
+        if let Some(ref req) = self.structured_repo_fetch {
+            return Some(crate::core::fetch_locator::structured_repo_fetch_to_batch_item(req));
+        }
+        if self.url.trim().is_empty() {
+            return None;
+        }
+        Some(crate::core::fetch_locator::url_to_batch_web_item(
+            &self.url, None,
+        ))
+    }
 }
 
 /// A detected workspace package boundary with its manifest.
@@ -1317,6 +1338,7 @@ mod tests {
                 reason: "test".to_string(),
                 priority: Some(1),
                 structured_repo_fetch: None,
+                batch_item: None,
             }],
             providers_queried: vec!["github".to_string()],
             providers_failed: vec![],

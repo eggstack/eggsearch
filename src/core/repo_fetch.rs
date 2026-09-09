@@ -8,7 +8,6 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 use crate::core::code_evidence::{SourceRole, SymbolKind};
 use crate::core::code_metadata::CodeHost;
@@ -332,30 +331,14 @@ impl RepoFetchRequest {
         if self.repo.trim().is_empty() {
             return Err("repo must not be empty".to_string());
         }
-        if self.path.trim().is_empty() {
-            return Err("path must not be empty".to_string());
-        }
-
-        // Path must be relative, not absolute.
-        let path = Path::new(&self.path);
-        if path.is_absolute()
-            || path.components().any(|c| {
-                matches!(
-                    c,
-                    std::path::Component::RootDir | std::path::Component::Prefix(_)
-                )
-            })
-        {
-            return Err("path must be relative, not absolute (do not start with '/')".to_string());
-        }
-
-        // Reject path traversal.
-        if path
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
-            return Err("path must not contain '..' (path traversal)".to_string());
-        }
+        // Shared path safety with batch_fetch and locator conversions.
+        crate::core::fetch_locator::validate_repo_path(&self.path).map_err(|e| {
+            if e.contains("..") {
+                "path must not contain '..' (path traversal)".to_string()
+            } else {
+                e
+            }
+        })?;
 
         // Validate host if provided.
         if let Some(host) = self.host {
