@@ -1,7 +1,20 @@
 //! eggsearch: a lightweight MCP (Model Context Protocol) metasearch
 //! server for AI agents.
 //!
-//! This crate is a single binary. Its submodules are:
+//! This crate is application-first. The stable contract is the MCP tool
+//! surface and the CLI; the Rust module tree is an implementation detail
+//! for the binary, integration tests, and fuzz harnesses. It carries no
+//! semver stability guarantee as a general-purpose library.
+//!
+//! Intentionally reusable domain types live in [`core`] (request, response,
+//! config, and identity types such as [`core::WebSearchRequest`]). The
+//! remaining top-level modules (`fetch`, `integrations`, `mcp`, `meta`,
+//! `platform`, `startup`, `update`) are internal implementation details
+//! that remain `pub` only so the binary, integration tests, and fuzz
+//! targets can link against them. They may change without a major version
+//! bump. Downstream Rust consumers should depend only on `core` types and
+//! the MCP/CLI contract, not on engines, adapters, tool internals, or
+//! deployment/update machinery.
 //!
 //! - [`core`]:    source card model, config, error, query types.
 //! - [`meta`]:    metasearch adapter with vendored search engines.
@@ -42,4 +55,5 @@ pub mod startup;
 pub mod update;
 
 #[cfg(feature = "mock")]
+#[doc(hidden)]
 pub use meta::local_inventory_cache::test_harness as bounded_command_test;

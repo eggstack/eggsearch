@@ -13,7 +13,6 @@ keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
 categories = ["command-line-utilities", "web-programming"]
 include = [
     "src/**/*.rs",
-    "tests/**/*.rs",
     "benches/**/*.rs",
     "docs/**/*.md",
     "architecture/**/*.md",

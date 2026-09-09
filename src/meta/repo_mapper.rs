@@ -468,8 +468,8 @@ pub fn populate_from_local_checkout(
 
 /// Bounded structural enrichment for a local checkout.
 ///
-/// Scans at most [`STRUCTURE_SCAN_FILE_CAP`] files to depth
-/// [`STRUCTURE_SCAN_DEPTH`], parses at most `config.max_structured_files`
+/// Scans at most `STRUCTURE_SCAN_FILE_CAP` files to depth
+/// `STRUCTURE_SCAN_DEPTH`, parses at most `config.max_structured_files`
 /// files with the deterministic structured parser, and caps total retained
 /// structural entries at `config.repo_map_structure_cap`. Budget breaches
 /// set `structure_truncated` rather than failing the request. Never executes

@@ -1,18 +1,5 @@
 use std::fs;
 
-const KNOWN_TOOLS: &[&str] = &[
-    "web_search",
-    "web_fetch",
-    "batch_fetch",
-    "provider_status",
-    "repo_search",
-    "repo_fetch",
-    "repo_map",
-    "security_search",
-    "research_search",
-    "build_evidence_bundle",
-];
-
 const FILES: &[&str] = &[
     "README.md",
     "docs/config.md",
@@ -21,6 +8,22 @@ const FILES: &[&str] = &[
     "docs/agent-workflows.md",
     "AGENTS.md",
 ];
+
+fn tool_names_from_server() -> Vec<String> {
+    let source = fs::read_to_string("src/mcp/server.rs").expect("read server.rs");
+    let mut names = Vec::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("name = \"") {
+            if let Some(end) = rest.find('"') {
+                names.push(rest[..end].to_string());
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
 
 fn read_all_docs() -> String {
     let mut combined = String::new();
@@ -35,12 +38,18 @@ fn read_all_docs() -> String {
 
 #[test]
 fn tool_names_in_docs() {
+    let tools = tool_names_from_server();
+    assert_eq!(
+        tools.len(),
+        10,
+        "server.rs must register exactly ten stable tools, got: {tools:?}"
+    );
     let text = read_all_docs();
     let mut missing = Vec::new();
 
-    for &tool in KNOWN_TOOLS {
-        if !text.contains(tool) {
-            missing.push(tool);
+    for tool in &tools {
+        if !text.contains(tool.as_str()) {
+            missing.push(tool.clone());
         }
     }
 

@@ -1,8 +1,8 @@
 //! Deterministic structured code intelligence for the local workspace backend.
 //!
 //! Provides a dependency-free structured symbol parser for Rust, Python,
-//! JavaScript/TypeScript, and Go behind the established [`SymbolBackend`]
-//! abstraction. The regex backend remains the fallback when parsing is
+//! JavaScript/TypeScript, and Go behind the established `SymbolBackend`
+//! abstraction (see `crate::meta::local_backend`). The regex backend remains the fallback when parsing is
 //! disabled, unsupported, fails, or exceeds budget. No repository code is
 //! executed and no native plugins are loaded.
 

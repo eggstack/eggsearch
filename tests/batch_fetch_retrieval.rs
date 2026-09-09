@@ -1,4 +1,6 @@
-//! Phase 14 retrieval ergonomics: focused batch evidence.
+//! Focused batch evidence retrieval contract.
+//!
+//! Regression provenance: phase-14 retrieval-ergonomics workstream.
 //!
 //! Deterministic, network-free tests (local `httpmock` servers and
 //! temp workspace checkouts only) for:

@@ -1,3 +1,6 @@
+//! Provider request contract: `EngineSearchRequest` fidelity.
+//!
+//! Regression provenance: phase-1 provider-request workstream.
 #![cfg(feature = "mock")]
 
 use std::sync::{Arc, Mutex};

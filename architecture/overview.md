@@ -73,17 +73,17 @@ fetch ↗
 
 | Component | Location | One-line Responsibility | Deep Dive |
 |-----------|----------|-------------------------|-----------|
-| Core domain types | `src/core/` (35 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
+| Core domain types | `src/core/` (38 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
 | Metasearch adapter | `src/meta/` (modular `adapter/` plus workflow substrate) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
-| Vendored search engines | `src/meta/engines/` (36 engines + 5 support modules) | One implementation per upstream provider: HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
+| Vendored search engines | `src/meta/engines/` (37 engines + 5 support modules) | One implementation per upstream provider: HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (10 top-level files) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
-| MCP server & tools | `src/mcp/` (6 files) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
+| MCP server & tools | `src/mcp/` (5 top-level files + `tools/` with 13 modules) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
 | CLI commands | `src/commands/` (10 files) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
-| Agent/IDE integrations | `src/integrations/` (8 files) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
+| Agent/IDE integrations | `src/integrations/` (9 files) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
-| Testing infrastructure | `tests/` (50 test binaries), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
+| Testing infrastructure | `tests/` (67 test suites), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
 | Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |
 
@@ -101,6 +101,7 @@ fetch ↗
 | Local workspace | Filesystem search backend, inventory cache, git-aware fast path, `openat2` safe opening, structured symbols, repo-map enrichment | [local-workspace.md](local-workspace.md) |
 | Hardening & fuzzing | Property-based testing, adversarial corpus, fuzz-target design | [hardening.md](hardening.md) |
 | Agent/IDE integration | Client registration, safe apply, executable paths, protocol verification | [integrations.md](integrations.md) |
+| Maintenance & extension | Ownership boundaries, extension rules, Rust API policy, hygiene, behavioral test naming | [maintenance.md](maintenance.md) |
 
 Operator-facing documentation lives in `docs/` (config reference, safety, threat model, tool matrix, agent workflows, provider setup). This directory is the contributor-facing deep-dive set.
 
@@ -131,7 +132,7 @@ Wraps all search behind `MetadataSearchAdapter`; callers never touch engines dir
 
 ### engines — vendored providers ([engines.md](engines.md))
 
-36 engine structs plus the local workspace backend cover 37 registered provider IDs:
+37 engine structs plus the local workspace backend cover 37 registered provider IDs:
 
 - Generic web: DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, SearXNG, Brave Search API, Exa Semantic Search, Tavily Search
 - Developer index: Firecrawl Developer (keyless-optional, issues/PRs/READMEs/docs with passages)
@@ -164,7 +165,7 @@ Thin wrappers over the same library pieces; `mcp stdio` is the client-owned agen
 
 ## The 10 MCP Tools
 
-Registration lives in `src/mcp/server.rs` (`#[tool]` attrs); implementations in `src/mcp/tools.rs`.
+Registration lives in `src/mcp/server.rs` (`#[tool]` attrs); implementations in `src/mcp/tools/`.
 
 | Tool | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -264,6 +265,17 @@ No config file and no credential env vars must yield a healthy, useful server. M
 
 Response schemas grow only via new optional fields; removal breaks corpus regression tests and downstream agents.
 
+### Application-first Rust surface
+
+The crate is application-first (Policy A): the stable contract is MCP tools
+plus CLI. The Rust module tree is an implementation detail for the binary,
+integration tests, and fuzz harnesses and carries no semver guarantee as a
+general-purpose library. Intentionally reusable domain types live in
+`src/core/`; engines, adapters, tool internals, and deployment/update
+machinery remain `pub` only for in-tree linking and may change without a
+major bump. See [maintenance.md](maintenance.md) for ownership and
+extension rules.
+
 ---
 
 ## Feature Flags
@@ -310,10 +322,10 @@ See [core.md](core.md) for the full type model and `docs/config.md` for operator
 ## Quick Reference
 
 ```bash
-make check                    # fmt + clippy + no-default compile + all-features tests (= CI)
+make check                    # fmt + clippy + no-default compile + all-features tests + hygiene (= CI)
 make release-check            # routine + docs + release build + publish dry-run
-cargo test --locked --all-features          # ~4,800 tests, <2 min
-cargo test --locked --features mock --test integration   # integration only
+cargo test --locked --all-features          # ~5,090 tests, <2 min (see docs/test-inventory.md)
+cargo test --locked --features mock --test web_search_integration   # behavioral suite only
 
 cargo run -- mcp stdio        # start MCP server over stdio
 cargo run -- mcp serve        # start persistent loopback Streamable HTTP

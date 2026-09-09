@@ -1,4 +1,6 @@
-//! Phase 8 tests for security applicability assessment and defensive output.
+//! Security applicability assessment and defensive output contract.
+//!
+//! Regression provenance: phase-8 security applicability workstream.
 //!
 //! Covers:
 //! - Affected/not-affected/unknown/insufficient-evidence status
@@ -11,7 +13,7 @@
 //!
 //! Run via:
 //! ```bash
-//! cargo test --test security_applicability_phase8
+//! cargo test --test security_applicability_contract
 //! ```
 
 use eggsearch::core::code_evidence::EvidenceConfidence;

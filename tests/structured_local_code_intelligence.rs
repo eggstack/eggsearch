@@ -1,3 +1,6 @@
+//! Structured local code intelligence contract: parsing, ranking, budgets, repo-map enrichment.
+//!
+//! Regression provenance: phase-13 structured-code workstream.
 #![cfg(feature = "mock")]
 
 use std::collections::HashMap;

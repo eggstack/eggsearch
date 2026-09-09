@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5090 | 22 |
-| `--features mock` | 4848 | 0 |
+| `--all-features` | 5117 | 22 |
+| `--features mock` | 4875 | 0 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) — they run only via explicit opt-in targets.
 
@@ -39,9 +39,11 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `dispatch_fault_injection` | `mock` | 32 | Provider failure, timeout, hang, health transitions, concurrency, panic |
 | `provider_probe_conformance` | `mock` | 20 | Shared probe service: success/skip/timeout/HTTP/parse/network/panic, cooldown, explicit-after-degraded, bounded messages, descriptor source-of-truth |
 | `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
-| `phase1_provider_contract` | `mock` | 12 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures |
-| `phase2_extract_fetch` | `mock` (1 test) | 13 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls |
-| `phase14_batch_focus` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
+| `provider_request_contract` | `mock` | 12 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures |
+| `extract_fetch_contract` | `mock` (1 test) | 13 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls |
+| `batch_fetch_retrieval` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
+| `provider_capability_contract` | None | 8 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl), HTML-scraper none, domain-filter exclusivity, AGENTS.md prose agreement |
+| `provider_workstream_regression` | `mock` | 7 | Provider inventory (37 IDs), capability descriptors, constraint enforcement matrix, URL dedup with stable IDs, Tavily sanitization, CodeGG backward-compatible deserialization |
 
 ## Forge Adapter Tests (`tests/forge_adapter.rs`)
 
@@ -113,14 +115,14 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `workflow_resolution` | Workflow resolution |
 | `research_role_mapping` | Research role mapping |
 
-## Schema/Contract Tests (12 suites)
+## Schema/Contract Tests (13 suites)
 
 | Suite | Focus |
 |-------|-------|
 | `schema_identity_registry` | Identity function stability |
 | `fetch_safety` | Fetch safety bounds |
 | `security_applicability_corpus` | Security applicability pipeline |
-| `security_applicability_phase8` | Security applicability phase 8 regression |
+| `security_applicability_contract` | Security applicability assessment contract (formerly phase-8 suite) |
 | `mcp_http` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `security_applicability_regression` | Security applicability regression |
 | `research_evidence_corpus` | Research evidence regression |
@@ -128,17 +130,28 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `recipes_next_actions` | Workflow hint generation |
 | `evidence_bundle_handoff` | Evidence bundle packaging |
 | `evidence_integration` | Evidence integration pipeline |
-| `phase13_structured_code` | Structured local code intelligence (4-language fixtures, ranking, fallback, budgets, repo-map enrichment) |
+| `structured_local_code_intelligence` | Structured local code intelligence (4-language fixtures, ranking, fallback, budgets, repo-map enrichment) |
+| `provider_capability_contract` | Provider native-capability enforcement contract |
 
 ## Documentation Contract Tests (5 suites)
 
 | Suite | Focus |
 |-------|-------|
 | `docs_config_snippets` | TOML snippet validation |
-| `docs_provider_inventory` | Provider ID validation |
-| `docs_tool_names` | Tool name validation |
+| `docs_provider_inventory` | Provider ID validation (code-derived from `KNOWN_PROVIDER_IDS`) |
+| `docs_tool_names` | Tool name validation (code-derived from `src/mcp/server.rs`) |
 | `docs_safety_vocabulary` | Safety vocabulary validation |
 | `docs_keyless_contract` | Keyless-core runtime contract |
+
+## Repository Hygiene
+
+Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygiene`):
+
+- forbidden transcript/log artifacts (`typescript`, `*.script`, coverage/profraw);
+- ANSI escapes in unexpected root text artifacts;
+- tracked build outputs (`target/`, `node_modules/`, etc.);
+- oversized unexpected root blobs over 100 KiB (allowlist: `Cargo.lock`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `LICENSE`);
+- tracked editor/temp files (`*.swp`, `*.bak`, `.DS_Store`).
 
 ## CI Jobs
 

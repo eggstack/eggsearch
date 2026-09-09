@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-eggsearch is a lightweight MCP search/fetch server for AI agents. It queries upstream search providers, deduplicates with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. MCP is available over client-owned stdio or explicit loopback-only Streamable HTTP. Single library + binary crate (not a workspace).
+eggsearch is a lightweight MCP search/fetch server for AI agents. It queries upstream search providers, deduplicates with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. MCP is available over client-owned stdio or explicit loopback-only Streamable HTTP. Single library + binary crate (not a workspace). The crate is application-first: the stable contract is MCP tools plus CLI; the Rust module tree is an implementation detail for the binary/tests and carries no semver library guarantee (see `src/lib.rs` and `architecture/maintenance.md`).
 
-Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, integrations, testing, build, packaging) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, installation, integrations, deployment, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
+Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, integrations, testing, build, packaging, maintenance) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, installation, integrations, deployment, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
 
 | Topic | Deep dive |
 |-------|-----------|
@@ -25,6 +25,7 @@ Architecture deep dives live in `architecture/` — [overview.md](architecture/o
 | Research subsystem | `architecture/research.md` |
 | Security subsystem | `architecture/security.md` |
 | Local workspace backend | `architecture/local-workspace.md` |
+| Ownership, extension rules, hygiene | `architecture/maintenance.md` |
 
 ## Build & Verification
 
@@ -46,9 +47,10 @@ cargo build --release        # release build
 cargo publish --dry-run --locked  # pre-publish check
 make bench-check             # compile-check benches without running
 make fuzz-smoke              # 60s runs of 3 key fuzz targets
+make hygiene                 # deterministic repository-hygiene checks (also in `make check`)
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,090 tests pass with `--all-features` (22 ignored live-smoke); 4,848 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,117 tests pass with `--all-features` (22 ignored live-smoke); 4,875 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -66,7 +68,7 @@ src/
   platform.rs      # release target/asset contract and host mapping
   update.rs        # crates.io-authoritative binary-first self-update
   core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
-  meta/            # MetadataSearchAdapter (adapter/ modules) + 36 vendored engines (+ local workspace backend with structured symbols) covering 37 registered provider IDs, forge adapter, planners, inventory cache, structured parser (local_symbols.rs), shared probe service (probe.rs), workflow substrate
+  meta/            # MetadataSearchAdapter (adapter/ modules) + 37 vendored engines (+ local workspace backend with structured symbols) covering 37 registered provider IDs, forge adapter, planners, inventory cache, structured parser (local_symbols.rs), shared probe service (probe.rs), workflow substrate
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), stdio/HTTP transports, tool definitions, state (tools/ per-tool modules)
   startup.rs       # startup manager policy, service templates, croncheck, restart state
@@ -104,7 +106,7 @@ Tests MUST NOT require network access. Run live smoke tests via: `cargo test --f
 cargo test --locked --features mock --test web_search_integration  # web search integration
 cargo test --locked --features mock --test repo_workflow            # repo workflow
 cargo test --locked --features mock --test corpus_runner            # corpus regression
-cargo test --locked --all-features --test security_applicability_regression --test security_applicability_phase8  # standalone
+cargo test --locked --all-features --test security_applicability_regression --test security_applicability_contract  # standalone
 cargo test --locked --all-features --test dispatch_fault_injection  # dispatch fault injection (requires mock)
 cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation
 cargo test --locked --all-features --test keyless_core  # keyless-core runtime contract tests

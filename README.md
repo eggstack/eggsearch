@@ -136,7 +136,7 @@ Search tools return machine-readable `next_actions` hints. See [tool-matrix.md](
 
 - Web and remote results are `external_untrusted`
 - `sanitize_output` defaults to `true`
-- Fetch is bounded and explicit — no crawling, no JavaScript execution, one URL per call
+- Fetch is bounded and explicit — no crawling, no autonomous browser execution by default, one URL per `web_fetch` call (use `batch_fetch` for explicit multi-target fan-out; optional `browser` feature renders JavaScript-heavy pages through bounded headless Chrome)
 - Fetch targets validated against blocked address ranges (private networks, loopback, link-local, multicast, reserved, documentation)
 - Provider errors are bounded before exposure
 

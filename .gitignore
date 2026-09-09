@@ -21,5 +21,17 @@ Thumbs.db
 # repo root. It is not a project fixture; do not re-introduce it.
 /test_struct
 
+# Accidental terminal transcripts and generated logs.
+# `typescript` is the default `script(1)` output file; prior test runs
+# accidentally left one at the repo root. Test/corpus fixtures under
+# tests/ and docs/ are legitimate source files and are not matched here.
+/typescript
+/typescript.*
+*.script
+script.log
+coverage/
+*.profraw
+*.profdata
+
 # opencode
 .opencode/

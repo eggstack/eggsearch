@@ -1,6 +1,6 @@
 # Maintenance and CodeGG Quality Roadmap
 
-Status: planned
+Status: implemented (phases 11-15 closed; see `registry.md`)
 Baseline audited: `4a713ff82cec701534e285bbe3d330ae121f352c` (`main`, 2026-09-05)
 Primary downstream consumer: `dbowm91/codegg`
 

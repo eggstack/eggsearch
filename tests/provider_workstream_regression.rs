@@ -1,3 +1,6 @@
+//! Provider workstream regression: inventory, capability matrix, closure invariants.
+//!
+//! Regression provenance: phase-5 Tavily-provider closure workstream.
 use std::sync::Arc;
 use std::time::Duration;
 

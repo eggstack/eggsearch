@@ -43,13 +43,13 @@ make bench-check        # compile-check benches without running
 |----------|-------------|---------|
 | `src/*/mod.rs` | Varies | Unit tests |
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
-| `tests/phase13_structured_code.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
+| `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
 | `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
-| `tests/phase2_extract_fetch.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
+| `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
 | `tests/docs_*.rs` | None | Documentation contract tests |
 | `tests/schema_identity_registry.rs` | None | Schema + deterministic ID fixtures |
@@ -59,7 +59,7 @@ make bench-check        # compile-check benches without running
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 
-This table is representative, not exhaustive — 58 test binaries exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 67 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -106,7 +106,7 @@ eggsearch integrate opencode --transport stdio --apply --executable /usr/local/b
 ## Adding Tests
 
 - New file for distinct subsystems or specific bug classes
-- Extend `integration.rs` for MCP tool input validation, provider failures, tool response shape
+- Extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`) for MCP tool input validation, provider failures, tool response shape
 - Extend `corpus_runner.rs` for multi-step workflows
 - Unit tests at bottom of source file for private functions
 - Property tests in `tests/property_*.rs` using `proptest`

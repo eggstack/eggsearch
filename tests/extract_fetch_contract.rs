@@ -1,6 +1,7 @@
-//! Phase 2 focused tests: extractive excerpts and fetch/cache controls.
+//! Extractive excerpts and fetch/cache controls contract.
 //!
-//! Covers the phase-2 acceptance surface with deterministic,
+//! Regression provenance: phase-2 extractive-evidence workstream.
+//! Covers the extractive-evidence acceptance surface with deterministic,
 //! network-free tests (local `httpmock` servers only):
 //!
 //! - focused fetch projection causes no additional URL traversal;

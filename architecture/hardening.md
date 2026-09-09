@@ -316,7 +316,7 @@ When fuzzing (local or CI) finds a minimizing input that triggers a panic, hang,
 4. **Promote.** Add the minimized input as a deterministic regression test:
    - For pure-function crashes: add to the appropriate `tests/property_*.rs` file with an explicit `#[test]` that asserts the expected behavior.
    - For adversarial corpus cases: add a new entry to the appropriate `tests/corpus/adversarial/*.json` file.
-   - For integration-level crashes: add to `tests/integration.rs` or `tests/corpus_runner.rs`.
+   - For integration-level crashes: add to the relevant behavioral suite (`tests/mcp_tools.rs`, `web_search_integration.rs`, etc.) or `tests/corpus_runner.rs`.
 5. **Verify.** Run `make check` to confirm the regression test passes and no existing tests break.
 6. **Never re-fuzz blindly.** After promotion, add the minimized input to the fuzz target's seed corpus (if applicable) to prevent regression.
 

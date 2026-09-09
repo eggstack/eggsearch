@@ -7,11 +7,11 @@ description: Use when working with eggsearch internals, understanding crate layo
 
 Use when working with eggsearch internals, understanding crate layout, provider model, adapter pattern, deterministic IDs, sanitization tiers, or config structure.
 
-Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, integrations, testing, build, and packaging, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
+Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, integrations, testing, build, packaging, and maintenance, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
 
 ## Crate Layout
 
-Single library + binary crate (not a workspace). All source under `src/`:
+Single library + binary crate (not a workspace). All source under `src/`. The crate is application-first: the stable contract is MCP tools plus CLI; the Rust module tree is an implementation detail for the binary/tests and carries no semver library guarantee (see `src/lib.rs` and `architecture/maintenance.md`).
 
 - `main.rs` — binary entry point (clap, tokio main)
 - `lib.rs` — library root, re-exports `core`, `fetch`, `mcp`, `meta`
@@ -21,7 +21,7 @@ Single library + binary crate (not a workspace). All source under `src/`:
 - `update.rs` — crates.io-authoritative self-update, candidate verification, and replacement orchestration
 - `startup.rs` — canonical persistent runtime, manager detection/rendering, croncheck, restart, and lifecycle state
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
-- `meta/` — MetadataSearchAdapter (`adapter/` modules) + 36 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache, structured symbol parser (`local_symbols.rs`), shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
+- `meta/` — MetadataSearchAdapter (`adapter/` modules) + 37 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache, structured symbol parser (`local_symbols.rs`), shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), 10 tool definitions (`tools/` per-tool modules), server state, policy
 - `integrations/` — safe render/apply/verify adapters for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode

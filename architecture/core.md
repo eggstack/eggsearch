@@ -1,6 +1,6 @@
 # Core Types Deep Dive
 
-**Location:** `src/core/` (35 files)
+**Location:** `src/core/` (38 files)
 **Purpose:** Pure types, configuration, error types, and source card model. Intentionally independent of any MCP, HTTP, or search-engine implementation.
 
 ---

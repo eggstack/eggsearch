@@ -1,6 +1,6 @@
 # Phase 15 — Public API, Documentation, Tests, and Repository-Hygiene Closure
 
-Status: planned
+Status: implemented
 Depends on: phases 11-14
 Baseline for planning: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Roadmap: `plans/maintenance-codegg-quality-roadmap.md`

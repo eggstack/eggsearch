@@ -50,7 +50,7 @@ tests/corpus/
 
 ### Property Tests (`tests/property_*.rs`)
 
-Pure function testing with `proptest` (14 files).
+Pure function testing with `proptest` (16 files).
 
 **Coverage:**
 - Identity functions (FNV-1a hashing)
@@ -87,7 +87,7 @@ Mock-backed deterministic coverage for the shared probe service:
 | File | Purpose |
 |------|---------|
 | `security_applicability_regression.rs` | Security applicability assessment regression |
-| `security_applicability_phase8.rs` | Phase 8 security features |
+| `security_applicability_contract.rs` | Security applicability assessment contract (formerly phase-8 suite) |
 | `fetch_safety.rs` | URL validation, SSRF prevention |
 
 ### Evidence Tests
@@ -119,9 +119,20 @@ Mock-backed deterministic coverage for the shared probe service:
 |------|---------|
 | `keyless_core.rs` | Keyless-core invariant |
 | `docs_keyless_contract.rs` | Keyless contract documentation |
-| `docs_provider_inventory.rs` | Provider inventory documentation |
-| `docs_tool_names.rs` | Tool name documentation |
+| `docs_provider_inventory.rs` | Provider inventory documentation (code-derived from `KNOWN_PROVIDER_IDS`) |
+| `docs_tool_names.rs` | Tool name documentation (code-derived from `src/mcp/server.rs`) |
 | `docs_safety_vocabulary.rs` | Safety vocabulary documentation |
+| `provider_capability_contract.rs` | Provider native-capability enforcement contract (brave_api/exa/tavily/firecrawl, domain-filter exclusivity) |
+
+### Behavioral Regression Contracts (historical phase suites, renamed)
+
+| File | Purpose |
+|------|---------|
+| `provider_request_contract.rs` | `EngineSearchRequest` fidelity (formerly `phase1_provider_contract`) |
+| `extract_fetch_contract.rs` | Excerpt bounds/merge/sanitization and fetch cache/focus controls (formerly `phase2_extract_fetch`) |
+| `provider_workstream_regression.rs` | Provider inventory, capability matrix, closure invariants (formerly `phase5_closure`) |
+| `structured_local_code_intelligence.rs` | Structured parsing, ranking, fallback, budgets, repo-map enrichment (formerly `phase13_structured_code`) |
+| `batch_fetch_retrieval.rs` | Mixed focused/unfocused batch, truncation, isolation, round-trip (formerly `phase14_batch_focus`) |
 
 ### Other Targeted Tests
 
@@ -182,7 +193,7 @@ cargo test --locked --features mock --test corpus_runner
 
 # Standalone tests
 cargo test --locked --all-features --test security_applicability_regression
-cargo test --locked --all-features --test security_applicability_phase8
+cargo test --locked --all-features --test security_applicability_contract
 
 # Dispatch fault injection
 cargo test --locked --all-features --test dispatch_fault_injection
