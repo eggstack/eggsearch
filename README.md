@@ -132,6 +132,8 @@ start or register a service unless explicit `--service` is supplied. See
 
 Search tools return machine-readable `next_actions` hints. See [tool-matrix.md](docs/tool-matrix.md) for full tool reference.
 
+Start with the task-appropriate search primitive (`web_search` for general research, `repo_search` for codebases, `security_search` for advisories, `research_search` for complex comparisons). `provider_status` is diagnostic for hosts and troubleshooting, not a normal first research step. Specialist tools (`security_search`, `research_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed. The canonical disclosure model lives in `src/mcp/tool_contract.rs`.
+
 ## Safety
 
 - Web and remote results are `external_untrusted`

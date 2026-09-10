@@ -194,7 +194,7 @@ Fetches multiple URLs in bounded parallel.
 
 ### Discovering Capabilities
 
-Call `provider_status` to see which providers and tools are available:
+Hosts may inspect `provider_status` during bootstrap; agents call it only when provider availability itself is relevant or troubleshooting is required. It is diagnostic, not a normal first research step:
 
 ```
 provider_status({})

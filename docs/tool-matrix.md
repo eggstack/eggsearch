@@ -7,7 +7,7 @@ Compact reference for the ten stable MCP tools.
 | `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `date_range` (`YYYY-MM-DD` start/end, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (lowercase hostnames, max 32; natively enforced by `exa`/`tavily`, otherwise local enforcement), `language`/`region` (best-effort unless enforced; native on Brave API and Tavily when representable), `excerpt_count` (0-3, default 0), `max_results`, `providers` | `Vec<SourceCard>` plus `next_actions` and `capability_enforcement` telemetry (`requested`/`enforced`/`approximated`/`not_enforced`). Cards carry `excerpts` (bounded source passages, only when requested) and `metadata.published_at` (RFC 3339, when a provider returned parseable timestamp evidence) | `external_untrusted` | General web research and source discovery. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
 | `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars`, `include_links`, `pdf` (page selection, OCR policy), `focus` (query-focused chunk selection, max 512 chars), `focus_max_chunks` (1-5), `focus_max_chars`, `cache_policy` (`default`/`bypass`/`refresh`), `max_cache_age_seconds` (0-2592000, tightens only) | `WebFetchResponse` with optional `FetchDocument` and additive `focus` selection (`chunks`, `truncated`, `total_chars`) | `external_untrusted` | Inspect a selected page or document |
 | `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators | `items`, optional `max_items`, `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error`. Web and repo items accept per-item `focus`/`focus_max_chunks` (1-5)/`focus_max_chars` (same validation as `web_fetch`; rejected with `metadata_only`); web items accept per-item `cache_policy`/`max_cache_age_seconds` | `BatchFetchResponse` with per-item results, aggregate `max_total_chars` budget (request-order/fair-share, explicit truncation), and `telemetry` (items, focused chunks/chars, budget exhausted, cache hit/revalidated/miss/bypassed/not_cacheable) | `external_untrusted` or `local_trusted` | Fetch several known targets in one call with per-item focus |
-| `provider_status` | Diagnostic report of provider config, health, capabilities, and workflow recipes | none required; optional `recipe_detail` (`none`, `summary`, `full`), `probe` (bool, bounded live liveness check) | Provider list with `routable`, `skip_reason`, and `skip_code` fields, `health_views` (per-provider health), `code_hosts`, `health` (snapshots), `probe` (`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`), `server_capabilities`, `tool_capabilities`, `quality_metadata`, `workflow_recipes` | `local_trusted` | Discover what is actually available before choosing a path |
+| `provider_status` | Diagnostic report of provider config, health, capabilities, and workflow recipes | none required; optional `recipe_detail` (`none`, `summary`, `full`), `probe` (bool, bounded live liveness check) | Provider list with `routable`, `skip_reason`, and `skip_code` fields, `health_views` (per-provider health), `code_hosts`, `health` (snapshots), `probe` (`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`), `server_capabilities`, `tool_capabilities`, `quality_metadata`, `workflow_recipes` | `local_trusted` | Diagnostics and troubleshooting only; not a normal research step. Hosts may inspect during bootstrap; agents call only when provider availability itself is relevant |
 | `repo_search` | Structured repository evidence discovery with grouped bundles | optional repo locator fields, `query`, `profile`, `mode` | `RepoSearchResponse` with grouped `SourceCard` bundles and `next_actions` | `external_untrusted` or `local_trusted` | Find code, issues, releases, docs, and repo metadata. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. Local matches carry `symbol_provenance` (`structured`/`regex_fallback`), `enclosing_symbol`, and `is_exact_definition`; structured definitions score above lexical matches with `Exact` confidence. |
 | `repo_fetch` | Structured repository file fetch by locator | `host`, `owner`, `repo`, `path`, optional `ref_name`, `commit_sha`, `line_start`, `line_end`, `symbol` | `RepoFetchResponse` with content and trust markers | `external_untrusted` or `local_trusted` | Fetch a specific file or code span |
 | `repo_map` | Bounded repository-structure discovery | `host`, `owner`, `repo`, optional `ref_name`, `max_entries`, `max_depth` | `RepoMapResponse` with important files and directories plus additive `packages`, `language_distribution`, `modules`, `entrypoints`, `top_symbols`, `test_relationships`, `build_configs`, `structure_truncated` | `external_untrusted` or `local_trusted` | Understand repo layout before detailed search |
@@ -17,10 +17,21 @@ Compact reference for the ten stable MCP tools.
 
 ## Recommended Workflow
 
-1. `provider_status` to check available providers and capabilities
-2. `web_search`, `repo_search`, `security_search`, or `research_search` to gather evidence
-3. `web_fetch`, `repo_fetch`, `repo_map`, or `batch_fetch` to inspect selected targets
-4. `build_evidence_bundle` to package the evidence for reuse or handoff
+1. Start with the task-appropriate search primitive: `web_search`, `repo_search`, `security_search`, or `research_search`
+2. `web_fetch`, `repo_fetch`, `repo_map`, or `batch_fetch` to inspect selected targets
+3. `build_evidence_bundle` to package the evidence for reuse or handoff
+
+Call `provider_status` only when provider availability itself is relevant or troubleshooting is required. Hosts may inspect it during bootstrap; it is diagnostic, not a normal first research step.
+
+## Tool Disclosure Hints
+
+The canonical disclosure model lives in `src/mcp/tool_contract.rs`:
+
+- Core primitives, normally visible first: `web_search`, `web_fetch`, `repo_search`
+- Deferred specialists, used only when their domain semantics are needed: `batch_fetch`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
+- Diagnostic, host/operator use: `provider_status`
+
+Disclosure hints are advisory for hosts and never gate execution. Every capability remains callable regardless of its hint.
 
 ## Keyless Baseline
 

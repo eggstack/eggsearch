@@ -306,7 +306,7 @@ For integration with codegg and similar coding-agent harnesses, the following ho
 | Surface `structured_warnings` to the planning layer | Machine-readable warnings enable automated policy enforcement |
 | Require approval before fetching localhost/private-network URLs | Even with escape hatches enabled, operator consent reduces risk |
 | Require approval before using fetched code snippets as patches | Fetched code is evidence, not vetted source |
-| Prefer `provider_status` checks before specialized tool calls | Avoids failed tool calls and enables graceful degradation |
+| Start with the task-appropriate search primitive; call `provider_status` only when provider availability itself is relevant or troubleshooting is required | Avoids an unnecessary diagnostic round trip while preserving graceful degradation |
 | Fail closed on unknown trust states | When trust cannot be determined, treat content as `external_untrusted` |
 
 ---

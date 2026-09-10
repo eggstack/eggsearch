@@ -31,10 +31,11 @@ eggsearch version: see `Cargo.toml` for the live release number.
 # 1. Start the MCP server (stdio transport)
 eggsearch mcp stdio
 
-# 2. Discover capabilities
+# 2. Optionally inspect capabilities during bootstrap (diagnostic only)
 # Call: provider_status({})
 # Response includes: providers, code_hosts, health, server_capabilities,
 # tool_capabilities, and workflow_recipes
+# Agents skip this in the normal flow and start with the search primitive.
 
 # 3. Search for code in a repo
 # Call: repo_search({"query": "middleware", "host": "github", "owner": "tokio-rs", "repo": "axum", "profile": "coding"})
@@ -417,39 +418,41 @@ base_url = "https://gitlab.com"     # or self-hosted instance
 
 ### 1. Understand a Repo/API/Project
 
-This is the primary codegg flow for repository investigation.
+This is the primary codegg flow for repository investigation. Hosts may
+inspect `provider_status(recipe_detail = "summary")` once during bootstrap
+or when provider availability itself is in question; it is diagnostic, not a
+normal first research step. Agents start with the task-appropriate primitive
+below.
 
 ```
-Step 1: provider_status(recipe_detail = "summary")
-  -> discover available tools, recipes, providers
-  -> check "repository_investigation" recipe support status
-
-Step 2: repo_map({ host, owner, repo })
+Step 1: repo_map({ host, owner, repo })
   -> root layout, important files, important directories
   -> local_checkout field if matching local git repo exists
 
-Step 3: repo_search({ query, host, owner, repo, profile = "coding" })
+Step 2: repo_search({ query, host, owner, repo, profile = "coding" })
   -> grouped source cards (SourceFiles, Issues, Releases, etc.)
   -> next_actions with priority-1 fetch suggestions
   -> suggested_fetches with ranked URLs
 
-Step 4: repo_fetch({ host, owner, repo, path, symbol, expand_to_block })
+Step 3: repo_fetch({ host, owner, repo, path, symbol, expand_to_block })
   -> source content with code context (imports, enclosing symbol)
   -> code_span with deterministic span_id for cross-referencing
 
-Step 5: batch_fetch({ items: [selected suggested locators] })
+Step 4: batch_fetch({ items: [selected suggested locators] })
   -> bounded parallel fetch of selected evidence
   -> per-item trust markers
 
-Step 6: build_evidence_bundle({ goal, sources, fetches })
+Step 5: build_evidence_bundle({ goal, sources, fetches })
   -> deterministic bundle_id, source_links, trust_summary, gaps
 ```
 
 **Example transcript:**
 
 ```jsonc
-// Step 1: Discover capabilities
-// -> provider_status
+// Step 1: Understand structure
+// -> repo_map
+// (Hosts may have inspected provider_status once during bootstrap;
+// it is diagnostic, not part of the normal agent flow.)
 // Response (abbreviated):
 {
   "providers": [

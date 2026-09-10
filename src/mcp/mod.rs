@@ -23,6 +23,7 @@ pub mod http;
 pub mod policy;
 pub mod server;
 pub mod state;
+pub mod tool_contract;
 pub mod tools;
 
 pub use http::{McpPath, ServeOptions};
