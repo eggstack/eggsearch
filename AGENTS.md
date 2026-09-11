@@ -70,7 +70,7 @@ src/
   core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
   meta/            # MetadataSearchAdapter (adapter/ modules) + 37 vendored engines (+ local workspace backend with structured symbols) covering 37 registered provider IDs, forge adapter, planners, inventory cache, structured parser (local_symbols.rs), shared probe service (probe.rs), workflow substrate, dispatch/ + dependency_parse/ submodules, local/ subsystem facade
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
-  mcp/             # MCP server (rmcp), stdio/HTTP transports, canonical tool contract (tool_contract.rs), tool definitions, state (tools/ per-tool modules)
+  mcp/             # MCP server (rmcp), stdio/HTTP transports, canonical tool contract (tool_contract.rs), compact output schemas (output_schema.rs), deterministic result projection (projection.rs), tool definitions, state (tools/ per-tool modules)
   startup.rs       # startup manager policy, service templates, croncheck, restart state
 packaging/          # release target contract, installers, artifact smoke helpers
 tests/             # behavioral suites (mcp_tools, web_search/web_fetch integration, provider_routing, provider_probe_conformance, repo/research/security workflow, evidence_contract), tool-surface evaluation corpus (`fixtures/tool_surface/` + `tool_surface_evaluation` + opt-in `tool_surface_live`), corpus, contract, property, adversarial, and browser_profiles tests

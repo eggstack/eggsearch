@@ -79,7 +79,7 @@ fetch ↗
 | HTTP fetch pipeline | `src/fetch/` (10 top-level files) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
-| MCP server & tools | `src/mcp/` (5 top-level files + `tools/` with 13 modules) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
+| MCP server & tools | `src/mcp/` (8 top-level files + `tools/` with 10 tool modules plus shared `common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
 | CLI commands | `src/commands/` (10 files) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
 | Agent/IDE integrations | `src/integrations/` (9 files) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
@@ -165,20 +165,22 @@ Thin wrappers over the same library pieces; `mcp stdio` is the client-owned agen
 
 ## The 10 MCP Tools
 
-Registration lives in `src/mcp/server.rs` (`#[tool]` attrs); implementations in `src/mcp/tools/`.
+Registration lives in `src/mcp/server.rs` (`#[tool]` attrs with contract-aligned short descriptions and `read_only_hint`/`open_world_hint` annotations); implementations in `src/mcp/tools/` (per-tool modules with shared `common.rs` and `canonical.rs` translators). The canonical semantic contract lives in `src/mcp/tool_contract.rs` (purpose, use-when/not-for, domain, disclosure, keywords, aliases, related/next, `discovery_text()`, `is_known_tool()`); `tools/list` is name-sorted with an FNV-1a content fingerprint for caching.
+
+Ordinary agent schemas are slimmed: canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) with `sources`/`include` selectors; advanced `providers`/`timeout_ms`/`profile`/`mode`/`workflow`/`include_*` remain accepted via `canonical.rs` but are hidden from `tools/list`. All search/fetch tools except diagnostic-only `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`); `build_evidence_bundle` is identity-preserving across modes.
 
 | Tool | Purpose | Key Parameters |
 |------|---------|----------------|
-| `web_search` | Live metasearch over configured providers | `query`, `max_results`, `providers`, `freshness` |
+| `web_search` | Live metasearch over configured providers | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `excerpt_count` |
 | `web_fetch` | Bounded extraction of one HTTP(S) URL | `url`, `max_chars`, `extract_mode` |
 | `batch_fetch` | Batch fetch over URLs or repo locators with per-item focus | `items` (per-item focus), `max_chars_per_item`, `max_total_chars`, telemetry |
 | `provider_status` | Diagnostic provider configuration report with optional bounded live probe | (none; `probe`, `recipe_detail`) |
-| `repo_search` | Structured repository evidence discovery | `query`, `max_results`, `profile` |
+| `repo_search` | Structured repository evidence discovery | `query`, `goal`, `sources`, repo locator/package fields, `include_local` |
 | `repo_fetch` | Repository file fetch by locator | `locator`, `line_start`, `line_end`, `symbol` |
 | `repo_map` | Repository structure discovery | `owner`, `repo`, `ref`, `path` |
-| `security_search` | Security-oriented vulnerability retrieval | `query`, `identifiers`, `package`, `ecosystem` |
-| `research_search` | Research-oriented evidence discovery | `query`, `depth`, `domain` |
-| `build_evidence_bundle` | Package selected evidence into portable container | `sources`, `fetched` |
+| `security_search` | Security-oriented vulnerability retrieval | `query`, `identifiers`, `package`, `ecosystem`, `goal`, `include` |
+| `research_search` | Research-oriented evidence discovery | `query`, `depth`, `domain`, `goal`, `include` |
+| `build_evidence_bundle` | Package selected evidence into portable container | `goal`, `sources`, `fetches` |
 
 ---
 

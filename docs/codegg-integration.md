@@ -965,8 +965,16 @@ and `warnings` (legacy string array) for backward compatibility.
 
 ### Error Handling
 
-MCP tools return `Result<serde_json::Value, String>`. Errors are
-mapped to MCP error responses. The harness should:
+MCP tools return `Result<serde_json::Value, ToolError>` via the single
+`map_tool_result()` seam in `src/mcp/tools/common.rs`. Success uses native
+`structuredContent` with a text fallback. Repairable semantic failures are
+MCP tool errors (`isError: true`) with a stable `code`
+(`invalid_semantic_value`, `conflicting_arguments`,
+`capability_unavailable`, `provider_unavailable`, `policy_denied`,
+`budget_invalid`, `locator_invalid`, `manual_interaction_required`,
+`upstream_failed`) and a bounded `repair { field, accepted[],
+suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC
+`invalid_params`; server faults are `internal_error`. The harness should:
 
 1. Display the error message to the user.
 2. Check if partial results are still available (e.g. `repo_search`
@@ -1367,11 +1375,11 @@ percent-encoding before hashing.
 |-----------|---------|-----------|
 | `generic_web_lookup` | General web search and fetch | `web_search`, `web_fetch` |
 | `documentation_api_lookup` | Authoritative docs and API references | `web_search(intent="docs")`, `web_fetch` |
-| `repository_investigation` | Code, issues, releases in a repo | `repo_map`, `repo_search(profile="coding")`, `repo_fetch`, `batch_fetch` |
-| `exact_error_investigation` | Debug compiler/runtime errors | `repo_search(mode="exact_error")`, `web_fetch` |
+| `repository_investigation` | Code, issues, releases in a repo | `repo_map`, `repo_search(goal="understand")`, `repo_fetch`, `batch_fetch` |
+| `exact_error_investigation` | Debug compiler/runtime errors | `repo_search(goal="debug")`, `web_fetch` |
 | `security_package_triage` | Vulnerability lookup and applicability | `security_search`, `web_fetch` |
 | `dependency_upgrade_research` | Changelogs, migration guides, breaking changes | `repo_search`, `research_search` |
-| `architecture_deep_research` | Multi-source comparison and decisions | `research_search(workflow=...)`, `web_fetch` |
+| `architecture_deep_research` | Multi-source comparison and decisions | `research_search(goal="compare")`, `web_fetch` |
 | `local_workspace_investigation` | Local source file investigation | `repo_search(include_local=true)`, `repo_fetch(prefer_local=true)` |
 
 Each recipe's `support` status (`available`, `partial`, `unavailable`)
