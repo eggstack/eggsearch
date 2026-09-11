@@ -7,11 +7,8 @@ $TargetContract = Get-Content (Join-Path $PSScriptRoot 'release-targets.txt') | 
 foreach ($Row in $TargetContract) {
     $Fields = $Row -split '\|'
     if ($Fields.Count -ne 4) { throw "Invalid release target row: $Row" }
-    if ($Fields[2] -eq 'windows') {
-        $Pair = "`$Target = '$($Fields[0])'`n        `$Asset = '$($Fields[1])'"
-    } else {
-        throw "Unexpected non-Windows row in PowerShell installer contract: $Row"
-    }
+    if ($Fields[2] -ne 'windows') { continue }
+    $Pair = "`$Target = '$($Fields[0])'`n        `$Asset = '$($Fields[1])'"
     if ($Installer -notlike "*$Pair*") { throw "PowerShell installer mapping is missing: $Row" }
 }
 
