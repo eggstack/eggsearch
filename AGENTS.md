@@ -1,198 +1,50 @@
 # AGENTS.md
 
-## Project Overview
+eggsearch is a lightweight MCP search/fetch server for AI agents (live metasearch with RRF dedup, bounded fetch, deterministic evidence bundles). Transports: client-owned `mcp stdio` or explicit loopback-only `mcp serve`.
 
-eggsearch is a lightweight MCP search/fetch server for AI agents. It queries upstream search providers, deduplicates with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. MCP is available over client-owned stdio or explicit loopback-only Streamable HTTP. Single library + binary crate (not a workspace). The crate is application-first: the stable contract is MCP tools plus CLI; the Rust module tree is an implementation detail for the binary/tests and carries no semver library guarantee (see `src/lib.rs` and `architecture/maintenance.md`).
+Single library + binary crate, not a workspace. Stable contract is MCP tools (10) plus CLI; the Rust module tree is an implementation detail with no semver library guarantee (see `src/lib.rs`). Dependency flow: `core <- meta <- mcp <- commands`; `fetch` is independent of `meta`. Start with `src/lib.rs` (module map) and `architecture/overview.md` (component index); operator docs live in `docs/`.
 
-Architecture deep dives live in `architecture/` — [overview.md](architecture/overview.md) is the component index into per-component files (core, meta, engines, fetch, mcp, commands, integrations, testing, build, packaging, maintenance) and cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening). Operator-facing docs live in `docs/` (config, installation, integrations, deployment, safety, threat model, tool matrix, agent workflows, provider setup, features, release).
+## Build & verification
 
-| Topic | Deep dive |
-|-------|-----------|
-| Entry point / component map | `architecture/overview.md` |
-| Domain types, identity, sanitization | `architecture/core.md` |
-| Adapter, dispatch, planners, RRF grouping | `architecture/meta.md` |
-| Vendored engines per provider | `architecture/engines.md` |
-| Fetch pipeline, SSRF, cache, browser | `architecture/fetch.md` |
-| MCP server and tool surface | `architecture/mcp.md` |
-| CLI subcommands | `architecture/commands.md` |
-| Agent/IDE adapters | `architecture/integrations.md` |
-| Test suites and fuzz targets | `architecture/testing.md`, `architecture/hardening.md` |
-| Build, CI, release gates | `architecture/build.md` |
-| Release target contract and installers | `architecture/packaging.md` |
-| Stable response contract for harnesses | `architecture/codegg-contract.md` |
-| Config type model | `architecture/config.md` |
-| Evidence roles, bundles, workflow coverage | `architecture/evidence-workflow.md` |
-| Research subsystem | `architecture/research.md` |
-| Security subsystem | `architecture/security.md` |
-| Local workspace backend | `architecture/local-workspace.md` |
-| Ownership, extension rules, hygiene | `architecture/maintenance.md` |
-
-## Build & Verification
-
-All commands from project root. CI pins **Rust 1.88** (`rust-version = "1.88"` in Cargo.toml). Edition 2021. **Run `make check` to replicate the full CI suite locally.**
+From project root. CI pins Rust 1.88 (`rust-version` in `Cargo.toml`); edition 2021.
 
 ```bash
-# Routine gate (fmt + clippy + no-default compile check + all-features tests)
-make check
+make check  # canonical gate: fmt + clippy + no-default check + all-features tests + hygiene + packaging-check
+make release-check  # check + docs + release build + publish dry-run
 
-# Release gate (routine + docs + release-build + publish-dry-run)
-make release-check
-
-# Individual targets
-cargo fmt --check            # format check (CI fails on this)
 cargo clippy --locked --all-targets --all-features -- -D warnings  # zero warnings required
-cargo check --locked --no-default-features  # no-default compilation check
-cargo test --locked --all-features    # all tests
-cargo build --release        # release build
-cargo publish --dry-run --locked  # pre-publish check
-make bench-check             # compile-check benches without running
-make fuzz-smoke              # 60s runs of 3 key fuzz targets
-make hygiene                 # deterministic repository-hygiene checks (also in `make check`)
+cargo check --locked --no-default-features
+cargo test --locked --all-features
+make hygiene packaging-check bench-check  # hygiene/contract/bench-compile; fuzz: make fuzz-smoke
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,212 tests pass with `--all-features` (23 ignored: 22 live-smoke + 1 live-model comparison); 4,970 with `--features mock` alone (1 ignored live-model comparison). Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
-
-Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
-
-Binary releases are assembled by the tagged `.github/workflows/release-binaries.yml` workflow after the exact crate version is visible on crates.io. Run `make packaging-check` when changing target mappings, installer behavior, or service assets.
-
-## Project Structure
-
-```
-src/
-  main.rs          # binary entry point (clap, tokio main)
-  lib.rs           # library root, re-exports core/fetch/mcp/meta
-  config.rs        # CLI config loader
-  commands/        # subcommands: doctor, search, providers, mcp, fetch, update, integrate, browser_login, browser_profiles
-  integrations/    # CodeGG and common agent/IDE MCP registration adapters
-  platform.rs      # release target/asset contract and host mapping
-  update.rs        # crates.io-authoritative binary-first self-update
-  core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
-  meta/            # MetadataSearchAdapter (adapter/ modules) + 36 vendored engines (+ local workspace backend with structured symbols) covering 37 registered provider IDs, forge adapter, planners, inventory cache, structured parser (local_symbols.rs), shared probe service (probe.rs), workflow substrate, dispatch/ + dependency_parse/ submodules, local/ subsystem facade
-  fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
-  mcp/             # MCP server (rmcp), stdio/HTTP transports, canonical tool contract (tool_contract.rs), compact output schemas (output_schema.rs), deterministic result projection (projection.rs), tool definitions, state (tools/ per-tool modules)
-  startup.rs       # startup manager policy, service templates, croncheck, restart state
-packaging/          # release target contract, installers, artifact smoke helpers
-tests/             # behavioral suites (mcp_tools, web_search/web_fetch integration, provider_routing, provider_probe_conformance, repo/research/security workflow, evidence_contract), tool-surface evaluation corpus (`fixtures/tool_surface/` + `tool_surface_evaluation` + opt-in `tool_surface_live`), corpus, contract, property, adversarial, and browser_profiles tests
-fuzz/              # cargo-fuzz + libfuzzer targets (22 registered)
-```
-
-Read `src/lib.rs` for the module map, then explore submodules as needed.
-
-## CI Pipeline
-
-| Job | What it runs |
-|-----|-------------|
-| **ci** | `make ci` — alias for `make check`: fmt, clippy, no-default-features compile check, all-features tests |
-
-CI clears all credential env vars (`GITHUB_TOKEN`, `BRAVE_API_KEY`, etc.) to empty strings — tests must pass keyless.
-
-## Feature Flags
-
-| Flag | Purpose |
-|------|---------|
-| `mock` | Test-only mock engine harness (`src/meta/mock.rs`) — **required for integration/corpus tests** |
-| `pdf` | PDF text extraction via `lopdf` |
-| `browser` | Optional headless Chrome/Chromium rendering via `chromiumoxide` |
-| `live-smoke` | Live network smoke tests (implies `mock`); ignored by default |
-
-Tests MUST NOT require network access. Run live smoke tests via: `cargo test --features live-smoke --test corpus_runner -- --ignored`.
-
-## Testing
-
-### Running specific suites
+Feature flags: `mock` (test-only engine harness — **required for integration/corpus tests**; plain `cargo test` misses most of them), `pdf`, `browser`, `live-smoke` (implies `mock`, ignored by default, network). Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
 
 ```bash
-cargo test --locked --features mock --test web_search_integration  # web search integration
-cargo test --locked --features mock --test repo_workflow            # repo workflow
-cargo test --locked --features mock --test corpus_runner            # corpus regression
-cargo test --locked --all-features --test security_applicability_regression --test security_applicability_contract  # standalone
-cargo test --locked --all-features --test dispatch_fault_injection  # dispatch fault injection (requires mock)
-cargo test --locked --all-features --test adversarial_corpus  # adversarial corpus validation
-cargo test --locked --all-features --test keyless_core  # keyless-core runtime contract tests
-cargo test --locked --features browser --test browser_profiles     # browser profile management
-cargo test --locked --features browser --test browser_transport    # browser transport orchestration
-make eval-tool-surface  # deterministic 43-fixture tool-selection corpus with byte budgets (also in `cargo test --all-features`)
-cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-in live-model comparison (needs EGGSEARCH_EVAL_MODEL)
+cargo test --locked --features mock --test web_search_integration  # single suite
+cargo test --locked --all-features --test dispatch_fault_injection
+cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-in, needs EGGSEARCH_EVAL_MODEL
 ```
 
-### Adding tests
+## Conventions
 
-- **New file** when testing a distinct subsystem or targeting a specific bug class
-- **Extend behavioral suites** (`mcp_tools`, `web_search/web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo/research/security` workflow, `evidence_contract`) for MCP tool input validation, provider failures, tool response shape
-- **Extend `corpus_runner.rs`** for multi-step workflows
-- **Unit tests** at bottom of source file for private functions
-- Always run `cargo clippy --locked --all-targets --all-features -- -D warnings` after adding
-- **Property tests** in `tests/property_*.rs` for pure functions using `proptest`
-- **Adversarial corpus** in `tests/corpus/adversarial/` for malformed/edge-case inputs
-- **Fault injection** in `tests/dispatch_fault_injection.rs` for provider failures, timeouts, concurrency
-- **Fuzz harness** in `fuzz/` using `cargo-fuzz` + `libfuzzer`
+- **No comments** unless explicitly requested. `cargo fmt` required (CI fails on `cargo fmt --check`).
+- **Stable IDs are content-derived FNV-1a** (`src/core/identity.rs`). Never random UUIDs; never change ID semantics (breaks corpus regression + cross-tool dedup).
+- **Sanitize all untrusted text** through `src/core/sanitize.rs` / `sanitize_field()`.
+- **Bound all untrusted I/O**: forge responses only via `read_bounded_body()` (never bare `.text()`/`.bytes()`); bounded git execution via `run_bounded_command()` (process-group kill on timeout/cap breach).
+- `commit_sha` comes from `resolved_ref`, not the entry object SHA.
+- `CacheScope::Profile` uses the opaque profile ID, never the display name. Invalid explicit browser path is `ExplicitPathInvalid` — do not fall back to auto-discovery.
+- `integrate` prints by default; mutate only with `--apply` (atomic, backed up, `eggsearch` entry only). Never register `target/debug` binaries — require an installed executable or explicit `--executable`.
 
-## Code Conventions
+## Where things go (enforced by `tests/static_guards.rs`)
 
-- **No comments** unless explicitly requested
-- **Formatter:** `cargo fmt` (standard rustfmt). CI checks `cargo fmt --check`.
-- **Linter:** `cargo clippy --locked --all-targets --all-features -- -D warnings` — zero warnings.
-- **Error handling:** `core` defines `CoreError`/`CoreResult<T>` via `thiserror`. Adapter returns `WebSearchResponse` (never errors; partial failures are soft). MCP tools return `Result<serde_json::Value, ToolError>`; `map_tool_result()` in `mcp/tools/common.rs` is the single MCP seam (structured success, repairable `isError` with stable codes/repair hints, `invalid_params` only for uninterpretable shapes, `internal_error` for server faults).
-- **Deterministic IDs:** SourceCard IDs, suggested fetches, and grouping use content-derived FNV-1a hashes (`src/core/identity.rs`). Never use random IDs for stable output types.
-- **Sanitization:** All untrusted text flows through `src/core/sanitize.rs` (3 tiers: control-char strip, framing, injection scan). Production defaults `sanitize_output = true`; tests default to `false`.
-- **Forge safety:** Forge API client uses `Policy::none()` (redirects rejected). All forge response bodies are read through `read_bounded_body()` with a hard byte cap. `ForgeReadBudget` tracks aggregate bytes across all requests within a single tool invocation; pagination stops on budget exhaustion.
-- **Bounded git execution:** `run_bounded_command()` drains stdout/stderr concurrently with independent capped reads, creates a process group via `setsid()`, and kills on timeout. Cap breaches trigger immediate process group termination.
-- **Keyless core invariant:** No config and no credential environment variables must produce a healthy, useful server. Missing optional credentials are provider-scoped skips, never global failures.
+- MCP tools call the `MetadataSearchAdapter`, never engines directly. New tools: dedicated module under `src/mcp/tools/` (shared validation in `common.rs`, goal/workflow resolution in `canonical.rs`), register in `src/mcp/server.rs` — exactly 10 tools unless tool-matrix, docs contract tests, and CodeGG docs move in the same change.
+- New engines implement `SearchEngine::search(&EngineSearchRequest)`; unsupported capabilities stay explicit (dispatch emits capability-skip attempts, never silent omissions). New providers also declare 24-flag `ProviderCapabilities`, add the ID to `KNOWN_PROVIDER_IDS`, document native-vs-local enforcement in `docs/provider-setup.md`, extend `tests/provider_capability_contract.rs`.
+- Domain workflows (`repo`/`research`/`security`) share `WorkflowExecution`/`RetrievalAttemptSet`/`FetchCandidateBuilder` primitives but keep typed planners/grouping/builders — do not flatten into one generic workflow.
+- Ordinary files must stay under 1,600 lines / 80 KB (named exceptions in `architecture/maintenance.md` only).
+- New tests extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`); multi-step regressions go in `corpus_runner.rs`; pure functions get `proptest` files; provider failures go in `dispatch_fault_injection.rs`. Never add `phase<N>_*` suite names.
+- Keep in sync or guards fail: `packaging/release-targets.txt` + release workflow + installers + install docs (`make packaging-check`); `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding/renaming suites. `CHANGELOG.md` entries are append-only history.
 
 ## Skills
 
-Skills provide specialized instructions and workflows for specific tasks.
-
-| Skill | Location | Use When |
-|-------|----------|----------|
-| `eggsearch-architecture` | `.opencode/skills/eggsearch-architecture/` | Working with internals, crate layout, provider model, adapter pattern |
-| `eggsearch-dev` | `.opencode/skills/eggsearch-dev/` | Building, testing, contributing to eggsearch |
-| `eggsearch-mcp` | `.opencode/skills/eggsearch-mcp/` | Integrating with MCP tools, tool selection, workflows, evidence bundles |
-| `eggsearch-release` | `.opencode/skills/eggsearch-release/` | Preparing or cutting releases |
-
-Canonical source: `skills/`. Symlinked into `.opencode/skills/` and `.agents/skills/`.
-
-## Key Architecture
-
-- **Adapter pattern:** `MetadataSearchAdapter` wraps all search engines, handles RRF aggregation, sanitization, and provider health. Adapter coordination lives in `src/meta/adapter/` (invocation, advisory, status, web/repo/research/security execution, normalization, builders). Bounded dispatch lives in `src/meta/dispatch/` (`types` for job/config/output types + capability partition, `execution` for the concurrent executor). Dependency parsing lives in `src/meta/dependency_parse/` (normalized dispatch in `mod`, one ecosystem per submodule). Shared provider liveness lives in `src/meta/probe.rs` (`ProviderProbeRequest`/`Outcome`/`Summary`, bounded concurrency/deadlines, sanitized messages) and is reused by `doctor --probe`, MCP `provider_status(probe=true)`, and live-smoke. Shared repo/research/security mechanics live in `src/meta/workflow.rs` (`PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet`) with `FetchCandidateBuilder` ranking in `fetch_ranking.rs`. The local subsystem map lives in `src/meta/local/`. MCP tools call the adapter, never engines directly. See `architecture/meta.md` and `architecture/maintenance.md` (007 responsibility map + size ratchet).
-- **Provider request contract:** `EngineSearchRequest` (`src/meta/engines/request.rs`) is the single structured engine request (query, budgets, intent, safe-search, freshness/date-range, domains, language, region, bounded excerpt demand). Direct web fan-out and `dispatch_parallel` multiquery dispatch both use it.
-- **Extractive evidence:** `SourceExcerpt`/`ExcerptProvenance` (`src/core/source_card.rs`) carry at most 3 bounded source-derived excerpts per card (500 chars each, 1,200 total), merged deterministically during RRF and sanitized through the trust pipeline. Generic `published_at` timestamps feed freshness reranking. Excerpts/timestamps never enter stable IDs. Unrequested excerpts are stripped before aggregation. See `architecture/meta.md`.
-- **Focused fetch:** `select_focus_chunks()` (`src/core/focus.rs`) ranks already-extracted document chunks lexically (no traversal, no models); the `focus` selection on `WebFetchResponse` and per-item `batch_fetch` payloads is additive and never enters cache keys. Shared validation/projection lives in `src/core/fetch_policy.rs`; shared locator resolution lives in `src/core/fetch_locator.rs`. Suggested fetches carry `batch_item` for direct batch handoff; `batch_fetch` reports focused/cache/budget `telemetry`.
-- **Provider model:** `ProviderKind` enum (`HtmlScrape`, `JsonApi`, `ApiKey`, `Local`). 24 boolean capability flags per provider. HTML scrapers report `ProviderCapabilities::none()`. `brave_api` natively enforces safe-search, freshness/date-range, language, region, news, and result timestamps (plus `extra_snippets` on excerpt demand). `exa` natively enforces freshness/date-range, domain filters, and result timestamps (plus `highlights` as `ProviderHighlight` excerpts on excerpt demand; no safe-search/language/region/news claim). `tavily` natively enforces safe-search, freshness/date-range, language, region, domain filters, and news (plus source chunks as `ProviderSnippet` excerpts on excerpt demand; no result timestamps). `firecrawl_developer` is a keyless-optional `JsonApi` specialist (issue search + repo filter, matched passages as `ProviderPassage` excerpts, `repos` scope with indexed/unindexed echo). Domain filters are natively enforced only by providers advertising `supports_domain_filters` (currently `exa`, `tavily`); all other domain filtering is local approximation. See `architecture/core.md`.
-- **Profiles:** `SearchProfile` (`generic`, `coding`, `security`, `research`) influence provider selection. Profiles are advisory; unavailable providers are skipped with warnings, not errors. Defined in `src/core/repo_search.rs`. The ordinary agent schema prefers canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) with `sources`/`include` selectors; legacy `profile`/`mode`/`workflow`/`include_*`/`providers`/`timeout_ms` remain accepted via `src/mcp/tools/canonical.rs` translators but are hidden from `tools/list` schemas.
- - **Config:** `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with `SearchSection`, `FetchSection`, and `LocalConfig`. See `docs/config.md`.
- - **Local code intelligence:** `src/meta/local_symbols.rs` provides deterministic dependency-free structured parsing (Rust, Python, JS/TS, Go) behind the `SymbolBackend` seam; regex remains the fallback. Budgets (`max_parse_bytes`, `max_symbols_per_file`, `max_structured_files`, `max_total_symbols`, `repo_map_structure_cap`) breach to partial/regex evidence, never failure. Local matches carry `symbol_provenance`/`enclosing_symbol`/`is_exact_definition`; structured definitions score above lexical matches. `repo_map` enrichment (`packages`, `language_distribution`, `modules`, `entrypoints`, `top_symbols`, `test_relationships`, `build_configs`, `structure_truncated`) is bounded and additive. No workspace code execution. See `architecture/local-workspace.md`.
-- **Browser profiles:** Named, origin-scoped persistent browser profiles are created through CLI-only headed login (`browser-login`). Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml`. Chrome data is in a sibling `chrome-data/` directory. MCP profile-scoped browser fetches launch a request-scoped browser against that exact directory and use its default browser context; anonymous browser fetches retain the warm ephemeral lifecycle. MCP callers select profiles by name; opaque IDs partition the cache. Profiles are disabled by default. Profile cache isolation uses opaque IDs internally; display names are used only in MCP response metadata. See `architecture/fetch.md`.
-- **Cache:** Two-tier in-memory LRU cache (`src/fetch/cache.rs`). Raw tier stores original bounded HTTP bytes or bounded rendered browser DOM before extraction. A fresh raw hit can create a missing derived representation locally, including changed HTML extraction/link settings and PDF page selection. Derived tier stores extracted/sanitized content keyed by scope + raw hash + extraction params and preserves transport provenance. Agent-visible `FetchCachePolicy` (`default`/`bypass`/`refresh`) plus caller `max_cache_age_seconds` (tightens only) control reuse/revalidation; they never bypass SSRF, redirect, origin, profile, content, or sanitization policy. HTTP 304 is a revalidation signal, not a redirect. Profile scope uses opaque IDs, not display names. `invalidate_scope` removes both raw and derived entries. Process-local only; CLI profile removal cannot invalidate the MCP server's cache across processes. See `architecture/fetch.md`.
- - **Transport:** `mcp stdio` is the backward-compatible client-spawned transport. `mcp serve` is an explicit, persistent Streamable HTTP server restricted to loopback, with `/healthz` readiness and bounded request handling. Both use the same `EggsearchServer` factory. Server instructions are global rules only in `EGGSEARCH_INSTRUCTIONS` (`mcp/server.rs`); per-tool selection guidance lives in the canonical `mcp/tool_contract.rs` registry and surfaces via `tools/list`. Success uses native `structuredContent` with text fallback; per-tool `outputSchema` uses compact stable envelopes (each <=1200 bytes); `tools/list` is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 covers MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize paths. Response projection (`mcp/projection.rs`, `ResponseDetail` compact/standard/diagnostic, default diagnostic) trims excerpts/documents/links/telemetry at the MCP boundary after canonical capture; `provider_status` stays diagnostic-only and `build_evidence_bundle` is identity-preserving. See `architecture/mcp.md`.
-- **Integrations:** `integrate` defaults to stdio, renders all seven supported clients, applies only through native CLI or strict atomic JSON paths, and verifies the required MCP tool set after apply. Zed and JSONC settings remain print-only when safe preservation is unavailable. See `architecture/integrations.md`.
-- **Windows source/runtime qualification:** Unix-specific hardening paths are conditionally unavailable on Windows; Windows release jobs still compile and smoke the default binary on native x86-64 and ARM64 runners, and failures remain explicit release blockers.
-- **Startup supervision:** `startup.rs` owns the canonical persistent command and health URL, manager detection/rendering, idempotent systemd/launchd/Windows SCM/cron registration, `croncheck`, and identity-safe restart. `mcp stdio` remains client-owned. See `architecture/commands.md` and `docs/service.md`.
-- **Self-update:** `eggsearch update --check` only compares against crates.io `crate.max_stable_version`; `eggsearch update` consumes the exact matching GitHub tag asset, verifies SHA-256 and candidate identity before replacing `current_exe()`, and uses isolated exact-version Cargo only for unsupported hosts or confirmed asset HTTP 404. A normal update restarts only a previously healthy registered persistent service; stopped and stdio-only processes remain untouched.
-
-## MCP Tools (10 total)
-
-`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`.
-
-Tool registration and schemas live in `src/mcp/server.rs` (`#[tool]` attrs with contract-aligned short descriptions and `read_only_hint`/`open_world_hint` annotations); implementations are in `src/mcp/tools/` (per-tool modules with shared `common.rs` and `canonical.rs` translators). The canonical semantic contract (purpose, use-when/not-for, domain, disclosure hint, keywords, aliases, related/next tools, `discovery_text()`, `is_known_tool()`) lives in `src/mcp/tool_contract.rs` and is enforced by `apply_contract_metadata()` for both `tools/list` and `tool_definitions()`. Disclosure: `Core` (`web_search`, `web_fetch`, `repo_search`), `Deferred` (`batch_fetch`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`), `Diagnostic` (`provider_status`). Start with the task-appropriate search primitive; `provider_status` is diagnostic only, not a normal first step. Progressive disclosure: small immediate palette, compact discovery without full schemas, run-bounded hydration (3–5 LRU), sanitized `next_actions` (`sanitize_next_actions()`, max 5, unknown names ignored) hydrated without another search round trip, cache by content fingerprint plus server version. The MCP server uses the `rmcp` crate with `tool_router` proc macros. Ordinary schemas are slimmed (hidden `providers`/`timeout_ms`/`profile`/`mode`/`workflow`/`include_*` remain accepted); `tests/mcp_schema_slimming.rs` enforces the size budget. Result projection (`response_detail` compact/standard/diagnostic, default diagnostic) is enforced by `tests/mcp_projection.rs` (failure-vs-absence, trust, conflicts, truncation, bundle identity, byte-reduction thresholds). Progressive-disclosure contract coverage lives in `tests/mcp_tool_contract.rs` (aliases, discovery text, sanitization, fingerprint determinism).
-
-## Pitfalls
-
-- **Forgetting `--features mock`** — integration/corpus tests won't compile without it
-- **Adding random UUIDs** to stable output types — use FNV-1a hashes via `src/core/identity.rs`
-- **Bypassing sanitization** — all untrusted text must flow through `sanitize.rs` or `sanitize_field()`
-- **Hardcoding provider lists** — use `resolve_providers()` which validates enabled/known status
-- **Changing deterministic IDs** — breaks regression corpus tests and cross-tool deduplication
-- **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`
-- **Bypassing forge response bounds** — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
-- **Changing commit_sha semantics** — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA
-- **Using opaque rq_* labels as the sole source of role inference** — research planner now provides typed intended roles via `intended_roles`; do not infer roles from `rq_*` subquery IDs
-- **Using .first() on intended_roles for failure conversion** — must expand across all roles when converting retrieval failures
-- **Silently discarding native advisory lookup errors** — all lookups (CVE, GHSA, OSV, RustSec, KEV) produce `RetrievalAttempt` records in the retrieval ledger
-- **Treating limit saturation as proof of truncation** — use `TruncationEvidence`; `LimitReachedUnknown` does not set `truncated` or `has_truncation`
-- **Allowing native smoke skips to promote a release** — missing credentials, fixture refs, malformed evidence, or missing provider outputs must fail the manual release workflow
-- **Using display names as cache scope** — `CacheScope::Profile(id)` must use the opaque profile ID, never the display name; recreated profiles with the same name get distinct cache scopes
-- **Silently ignoring invalid explicit browser paths** — `discover_browser` returns `ExplicitPathInvalid` when a configured path is invalid; it does not fall back to auto-discovery
-- **Mutating client configuration without `--apply`** — integration commands print by default; direct edits are atomic, backed up, and limited to the named `eggsearch` entry
-- **Writing development paths into client config** — stdio apply requires an installed executable or explicit `--executable`; never register `target/debug` or test binaries
+Canonical sources in `skills/` (symlinked to `.opencode/skills/`): `eggsearch-architecture` (crate layout, provider model, adapter), `eggsearch-dev` (commands, suites, pitfalls), `eggsearch-mcp` (tool selection, workflows, evidence), `eggsearch-release` (release process with `docs/release.md`).
