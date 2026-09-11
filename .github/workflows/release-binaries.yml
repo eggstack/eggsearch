@@ -217,8 +217,8 @@ jobs:
           cp target/armv7-unknown-linux-gnueabihf/release/eggsearch "dist/$asset"
           chmod 0755 "dist/$asset"
           file "dist/$asset" | grep -E 'ELF 32-bit.*ARM' >/dev/null
-          docker run --rm --platform linux/arm/v7 -v "$PWD/dist:/dist:ro" arm32v7/ubuntu:20.04 "/dist/$asset" --version | grep -F "${{ needs.preflight.outputs.version }}"
-          docker run --rm --platform linux/arm/v7 -v "$PWD/dist:/dist:ro" arm32v7/ubuntu:20.04 "/dist/$asset" --help >/dev/null
+          docker run --rm --platform linux/arm/v7 -v "$PWD/dist:/dist:ro" arm32v7/ubuntu:20.04 /lib/ld-linux-armhf.so.3 --library-path /lib/arm-linux-gnueabihf:/lib:/usr/lib "/dist/$asset" --version | grep -F "${{ needs.preflight.outputs.version }}"
+          docker run --rm --platform linux/arm/v7 -v "$PWD/dist:/dist:ro" arm32v7/ubuntu:20.04 /lib/ld-linux-armhf.so.3 --library-path /lib/arm-linux-gnueabihf:/lib:/usr/lib "/dist/$asset" --help >/dev/null
           ./packaging/release-smoke.sh "dist/$asset" "${{ needs.preflight.outputs.version }}" --skip-mcp
           sha256sum "dist/$asset" | sed "s#  .*#  $asset#" > "dist/$asset.sha256"
           (cd dist && sha256sum -c "$asset.sha256")

@@ -336,7 +336,9 @@ async fn main() -> Result<()> {
             }
         },
         #[cfg(windows)]
-        Commands::WindowsService => eggsearch::startup::run_windows_service(cli.config.as_deref()),
+        Commands::WindowsService => Ok(eggsearch::startup::run_windows_service(
+            cli.config.as_deref(),
+        )?),
         command => {
             let cfg = config::load(cli.config.as_deref())?;
             match command {
