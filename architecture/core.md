@@ -56,7 +56,7 @@
 The canonical output type for all search results. Contains:
 - `id` — deterministic FNV-1a hash
 - `url`, `title`, `snippet` — basic metadata
-- `kind` — URL classification (21 variants: `OfficialDocs`, `PackageRegistry`, `SourceRepository`, `IssueThread`, `PullRequest`, `ReleaseNotes`, `SecurityAdvisory`, etc.)
+- `kind` — URL classification (17 variants: `OfficialDocs`, `PackageRegistry`, `SourceRepository`, `IssueThread`, `PullRequest`, `ReleaseNotes`, `SecurityAdvisory`, etc.)
 - `score`, `rank_reason` — quality/ranking metadata
 - `freshness`, `trust_level` — temporal and trust signals
 - `excerpts` — bounded source-derived passages (`SourceExcerpt` with `ExcerptProvenance`: at most 3 per card, 500 chars each, 1,200 total; opt-in, never part of stable IDs)

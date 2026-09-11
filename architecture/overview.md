@@ -13,9 +13,9 @@ This document is the bird's-eye view: what each module is for, how they connect,
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CLI Entry Point                          │
-│                     src/main.rs + src/commands/                 │
-│  doctor | search | fetch | providers | update | integrate     │
-│  startup/restart | croncheck | mcp stdio/serve | browser-*    │
+│                src/main.rs + src/commands/ (binary-only)        │
+│  doctor | search | fetch | providers | update | integrate       │
+│  startup/restart | croncheck | mcp stdio/serve | browser-*      │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             ▼
@@ -56,7 +56,7 @@ This document is the bird's-eye view: what each module is for, how they connect,
 ## Module Dependency Flow
 
 ```
-core ← meta ← mcp ← commands
+core ← meta ← mcp ← commands (binary)
       ↗
 fetch ↗
 ```
@@ -65,7 +65,8 @@ fetch ↗
 2. **meta** builds on `core` — engines use `reqwest`, adapter orchestrates everything
 3. **fetch** is independent of `meta` — HTTP client, extraction, caching, browser rendering
 4. **mcp** wires `core` + `meta` + `fetch` into 10 tool endpoints
-5. **commands** wires everything for CLI subcommands
+5. **commands** (binary-only `src/commands/`) wires everything for CLI subcommands
+6. **startup / update / platform / integrations** are ops and deployment seams around the core path
 
 ---
 
@@ -74,15 +75,16 @@ fetch ↗
 | Component | Location | One-line Responsibility | Deep Dive |
 |-----------|----------|-------------------------|-----------|
 | Core domain types | `src/core/` (38 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
-| Metasearch adapter | `src/meta/` (modular `adapter/` plus workflow substrate) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
-| Vendored search engines | `src/meta/engines/` (37 engines + 5 support modules) | One implementation per upstream provider: HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
+| Metasearch adapter | `src/meta/` (34 top-level files plus `adapter/`, `dispatch/`, `dependency_parse/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
+| Vendored search engines | `src/meta/engines/` (42 files: 37 per-provider files + 5 support modules) | 36 engine structs covering 36 of 37 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (10 top-level files) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
-| MCP server & tools | `src/mcp/` (8 top-level files + `tools/` with 10 tool modules plus shared `common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
-| CLI commands | `src/commands/` (10 files) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
-| Agent/IDE integrations | `src/integrations/` (9 files) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
+| MCP server & tools | `src/mcp/` (8 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
+| CLI commands | `src/commands/` (binary-only, 10 files) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
+| Agent/IDE integrations | `src/integrations/` (9 files, 7 clients) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
+| Self-update & platform | `src/update.rs`, `src/platform.rs` | Binary-first self-update with checksum verification; 7 release targets and host resolution | [packaging.md](packaging.md) |
 | Testing infrastructure | `tests/` (74 test suites), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
 | Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |
@@ -113,7 +115,7 @@ Operator-facing documentation lives in `docs/` (config reference, safety, threat
 
 Everything else speaks in these types. Zero external dependencies beyond serialization (`serde`, `schemars`, `thiserror`).
 
-- `source_card.rs` — `SourceCard`, the canonical output type; `SourceKind` classifies URLs into 21 kinds
+- `source_card.rs` — `SourceCard`, the canonical output type; `SourceKind` classifies URLs into 17 kinds
 - `identity.rs` — deterministic FNV-1a content hashes for every stable ID (never random UUIDs)
 - `sanitize.rs` — 3-tier sanitization all untrusted text flows through
 - `provider.rs` — `ProviderKind`, 24-flag `ProviderCapabilities`, `KNOWN_PROVIDER_IDS` (37)
@@ -125,14 +127,15 @@ Everything else speaks in these types. Zero external dependencies beyond seriali
 Wraps all search behind `MetadataSearchAdapter`; callers never touch engines directly.
 
 - Planners turn each tool's request into subqueries (generic, repo, security, research, exact-error)
-- `dispatch/` (`types` + `execution`) fans out subqueries with bounded parallelism, priority queue, panic recovery
-- `grouping.rs` deduplicates via reciprocal rank fusion (RRF)
+- `dispatch/` (bounded parallel executor) fans out subqueries with priority queue, per-provider caps, panic recovery
+- `adapter/` (`web`/`repo`/`research`/`security`/`advisory` paths plus `execution`, `normalization`, `builders`, `status`) builds dispatch jobs and converts results to `SourceCard`
+- `grouping.rs` plus domain groupers deduplicate via reciprocal rank fusion (RRF)
 - Evidence postprocessing assigns roles, computes coverage, detects conflicts, records retrieval attempts
 - Forge adapter (Gitea/Forgejo APIs), package resolver, local workspace backend + inventory cache
 
 ### engines — vendored providers ([engines.md](engines.md))
 
-36 engine structs plus the local workspace backend cover 37 registered provider IDs:
+36 engine structs plus the local workspace backend cover 37 registered provider IDs. Per-provider implementation files number 37; shared support modules are `mod`/`models`/`normalizer`/`request`/`error`:
 
 - Generic web: DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, SearXNG, Brave Search API, Exa Semantic Search, Tavily Search
 - Developer index: Firecrawl Developer (keyless-optional, issues/PRs/READMEs/docs with passages)
@@ -159,7 +162,15 @@ Independent of the search path; used by `web_fetch`/`batch_fetch`/`repo_fetch` a
 
 ### commands — CLI surface ([commands.md](commands.md))
 
-Thin wrappers over the same library pieces; `mcp stdio` is the client-owned agent transport and `mcp serve` is the persistent loopback transport. `doctor --probe` and MCP `provider_status(probe=true)` share one core probe service for provider liveness.
+Binary-only thin wrappers over the same library pieces; `mcp stdio` is the client-owned agent transport and `mcp serve` is the persistent loopback transport. `doctor --probe` and MCP `provider_status(probe=true)` share one core probe service for provider liveness.
+
+### integrations — client registration ([integrations.md](integrations.md))
+
+7 supported clients (CodeGG, Zed, Codex, Claude, Cursor, VS Code, OpenCode) across stdio and loopback HTTP transports. Print-first with opt-in `--apply`; JSON edits are atomic and backed up.
+
+### startup / update / platform ([startup.md](startup.md), [packaging.md](packaging.md))
+
+`src/startup.rs` owns persistent supervision (systemd, launchd, Windows SCM, cron, `croncheck`, identity-safe `restart`). `src/update.rs` owns binary-first self-update via crates.io discovery with SHA-256 verification. `src/platform.rs` defines the 7 release targets and host resolution.
 
 ---
 
@@ -184,6 +195,21 @@ Ordinary agent schemas are slimmed: canonical `goal` (`understand`, `architectur
 
 ---
 
+## Capability Summary
+
+| Capability | Where It Lives | Notes |
+|------------|----------------|-------|
+| Live metasearch with RRF dedup | `src/meta/` (`planner` → `dispatch/` → `grouping` → `SourceCard`) | Partial failures are soft; 4 search profiles gate provider sets |
+| Bounded fetch with SSRF protection | `src/fetch/` (`limits` → `client` → `cache` → `extract`/`render`) | No crawling; one URL per `web_fetch`, explicit fan-out via `batch_fetch` |
+| Repo evidence (search/fetch/map) | `src/meta/repo_*` + `src/meta/forge_adapter.rs` + `src/meta/local_*` | Grouped bundles; forge API walks are budget-bounded |
+| Security evidence | `src/meta/security_search.rs` + advisory engines | CVE/GHSA/OSV/RustSec/KEV with applicability assessment |
+| Research evidence | `src/meta/research_*` + `src/core/research.rs` | Claims/gaps/conflicts, depth control, semantic roles |
+| Deterministic evidence bundles | `src/meta/evidence_bundle.rs` + `src/core/evidence_bundle.rs` | Non-summarizing, portable multi-agent handoff |
+| Diagnostics | `src/meta/probe.rs` + `src/meta/provider_diagnostics.rs` + `src/meta/recipe_catalog.rs` | Shared by CLI `doctor --probe` and `provider_status(probe=true)` |
+| Optional PDF / browser | `src/fetch/pdf.rs`, `src/fetch/browser/` | Feature-gated (`pdf`, `browser`); profiles are origin-scoped |
+
+---
+
 ## Data Flows
 
 ### Search flow
@@ -192,7 +218,7 @@ Ordinary agent schemas are slimmed: canonical `goal` (`understand`, `architectur
 MCP tool call
   → mcp::tools::run_* validates structured request
   → MetadataSearchAdapter builds a plan (planner / repo_planner / research_planner / error_planner)
-  → dispatch_subqueries() fans out to engines (bounded parallel, per-provider limits)
+  → dispatch fans out to engines (bounded parallel, per-provider limits)
   → engines[].search() returns SearchResult lists
   → group_results() RRF aggregation + deduplication
   → SourceCard conversion (deterministic FNV-1a IDs, sanitization)
@@ -326,7 +352,7 @@ See [core.md](core.md) for the full type model and `docs/config.md` for operator
 ```bash
 make check                    # fmt + clippy + no-default compile + all-features tests + hygiene (= CI)
 make release-check            # routine + docs + release build + publish dry-run
-cargo test --locked --all-features          # ~5,207 tests, <2 min (see docs/test-inventory.md)
+cargo test --locked --all-features          # full suite (see docs/test-inventory.md)
 cargo test --locked --features mock --test web_search_integration   # behavioral suite only
 
 cargo run -- mcp stdio        # start MCP server over stdio
@@ -338,4 +364,4 @@ cargo run -- doctor --probe   # diagnose providers
 
 ---
 
-[Core Types →](core.md) | [Metasearch Adapter →](meta.md) | [Search Engines →](engines.md) | [HTTP Fetch →](fetch.md) | [MCP Server →](mcp.md) | [CLI Commands →](commands.md) | [Integrations →](integrations.md) | [Testing →](testing.md) | [Build & CI →](build.md) | [Release packaging →](packaging.md)
+[Core Types →](core.md) | [Metasearch Adapter →](meta.md) | [Search Engines →](engines.md) | [HTTP Fetch →](fetch.md) | [MCP Server →](mcp.md) | [CLI Commands →](commands.md) | [Integrations →](integrations.md) | [Startup →](startup.md) | [Testing →](testing.md) | [Build & CI →](build.md) | [Release packaging →](packaging.md)
