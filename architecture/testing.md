@@ -87,6 +87,7 @@ Mock-backed deterministic coverage for the shared probe service:
 | File | Purpose |
 |------|---------|
 | `security_applicability_regression.rs` | Security applicability assessment regression |
+| `security_applicability_corpus.rs` | Security applicability assessment corpus (version/range, dependency relations) |
 | `security_applicability_contract.rs` | Security applicability assessment contract (formerly phase-8 suite) |
 | `fetch_safety.rs` | URL validation, SSRF prevention |
 
@@ -178,6 +179,14 @@ comparison entry point (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`).
 | `research_evidence_corpus.rs` | Research evidence corpus |
 | `research_semantic_roles.rs` | Research semantic roles |
 
+### Provider-Specific Tests
+
+| File | Purpose |
+|------|---------|
+| `exa.rs` | Exa semantic search adapter |
+| `tavily.rs` | Tavily search adapter |
+| `firecrawl_developer.rs` | Firecrawl developer adapter |
+
 ---
 
 ## Fuzz Targets (`fuzz/fuzz_targets/`)
@@ -195,7 +204,7 @@ comparison entry point (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`).
 | `classify_absence` | Absence classification |
 | `workflow_kind_parse` | Workflow kind parsing |
 | `research_role_mapping` | Research role mapping |
-| ... | ... |
+| ... | (9 shown; full list of 22 in `docs/test-inventory.md`) |
 
 ---
 

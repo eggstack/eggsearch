@@ -36,3 +36,7 @@ Applied registrations run an MCP initialize and `tools/list` check. Stdio
 verification launches `eggsearch mcp stdio`; HTTP verification checks the
 loopback `/healthz` identity before using Streamable HTTP. `web_search` and
 `web_fetch` are required; other tools are recommended coverage.
+
+Global flags on `eggsearch integrate`: `--json` (machine-readable report) and
+`--executable PATH` (installed binary to register for stdio clients; `target/debug`
+binaries are never registered).

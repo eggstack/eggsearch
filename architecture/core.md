@@ -10,7 +10,7 @@
 | File | Responsibility |
 |------|---------------|
 | `mod.rs` | Module declarations + ~300 re-exports |
-| `config.rs` | `AppConfig`, `SearchSection`, `FetchSection`, `Mode`, `ProviderConfig`, validation, provider resolution |
+| `config.rs` | `AppConfig`, `SearchSection`, `FetchSection`, `Mode`, `ApiProviderConfig`, validation, provider resolution |
 | `error.rs` | `CoreError`/`CoreResult<T>` via `thiserror` |
 | `source_card.rs` | `SourceCard` (canonical output), `SourceKind`, `SourceMetadata`, `RankReason`, `IssueMetadata`, `ReleaseMetadata`, `SourceExcerpt`/`ExcerptProvenance` (bounded extractive excerpts), excerpt/timestamp helpers |
 | `identity.rs` | Deterministic FNV-1a ID system: `source_id`, `fetch_id`, `suggested_fetch_id`, `batch_fetch_id`, `locator_id`, `doc_id`, `chunk_id`, `code_span_id` |
@@ -71,7 +71,8 @@ The canonical output type for all search results. Contains:
 - `scholarly_search`, `doi_lookup`, `repo_indexing`, `structured_changelog`
 
 Native versus approximate enforcement is tracked per request in
-`CapabilityEnforcementTelemetry` (`requested`/`enforced`/`approximated`/`not_enforced`).
+`CapabilityEnforcementTelemetry` (`requested`/`enforced`/`approximated`/`not_enforced`,
+`src/meta/provider_diagnostics.rs`).
 Domain filters are natively enforced only by `exa`/`tavily`; all other
 domain filtering is local approximation.
 

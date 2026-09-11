@@ -23,7 +23,7 @@
 
 ## Canonical service factory (`mod.rs`)
 
-`build_server(AppConfig)` constructs `ServerState` and one `EggsearchServer`
+`build_server(AppConfig) -> anyhow::Result<EggsearchServer>` constructs `ServerState` and one `EggsearchServer`
 implementation. Both transports use this factory; tool registration, metadata,
 schemas, provider construction, and policy behavior are not duplicated.
 
@@ -35,7 +35,8 @@ Implements `rmcp::ServerHandler`:
 
 ```rust
 struct EggsearchServer {
-    state: ServerState,
+    state: Arc<ServerState>,
+    tool_router: ToolRouter<Self>,
 }
 ```
 
@@ -53,7 +54,7 @@ Tool-specific selection guidance lives in `tools/list` descriptions and schemas,
 
 ### Tool Contract Registry (`tool_contract.rs`)
 
-One `ToolContract` per stable tool: concise description (max `MAX_TOOL_DESCRIPTION_LEN` bytes), purpose, use-when/not-for, domain, disclosure hint (`Core` for `web_search`/`web_fetch`/`repo_search`, `Deferred` for specialists, `Diagnostic` for `provider_status`), read-only/open-world hints, discovery keywords plus discovery-only `aliases`, and related/next-tool graphs. `discovery_text()` concatenates domain, purpose, guidance, keywords, aliases, and graphs for host BM25/keyword catalogs; `is_known_tool()` is the harness filter for `next_actions` targets. `server.rs` applies contract descriptions and annotations at runtime so `tools/list`, `tool_definitions()`, and `#[tool]` macro literals cannot drift. Annotations are static hints only; `provider_status` reports `open_world_hint=false` even though `probe=true` performs bounded live checks.
+One `ToolContract` per stable tool: concise description (max `MAX_TOOL_DESCRIPTION_LEN` bytes), purpose, use-when/not-for, domain, disclosure hint (`Core` for `web_search`/`web_fetch`/`repo_search`, `Deferred` for specialists, `Diagnostic` for `provider_status`), read-only/open-world hints, discovery keywords plus discovery-only `aliases`, and related/next-tool graphs. `discovery_text()` concatenates name, domain, disclosure, purpose, guidance, keywords, aliases, and graphs for host BM25/keyword catalogs; `is_known_tool()` is the harness filter for `next_actions` targets. `server.rs` applies contract descriptions and annotations at runtime so `tools/list`, `tool_definitions()`, and `#[tool]` macro literals cannot drift. Annotations are static hints only; `provider_status` reports `open_world_hint=false` even though `probe=true` performs bounded live checks.
 
 Progressive disclosure: hosts keep a small immediate palette (ordinary coding: `web_search`, `repo_search`, optionally `web_fetch`; research: `research_search`, `repo_search`, plus selected fetch/evidence; security: `security_search` plus required fetch/evidence), return compact discovery (3–5 matches, `total_matches`, no full schemas), hydrate 1–few definitions per run (LRU cap 3–5, monotonic policy, raw `mcp__eggsearch__*` stay hidden), and follow sanitized `next_actions` (`sanitize_next_actions()` in `core/workflow.rs`, max 5, unknown names ignored) without another discovery round trip. `tool_fingerprint()` covers names, descriptions, annotations, input/output schemas, and canonical discovery metadata; cache by fingerprint plus server version, never by count.
 
@@ -89,7 +90,7 @@ Measured during implementation: generating full `$defs`-expanded schemas from th
 `src/mcp/tools/common.rs` owns the taxonomy. `map_tool_result()` is the single conversion seam; handlers delegate to it instead of repeating `match` blocks.
 
 - `InvalidRequest` — malformed invocation shape; maps to JSON-RPC `invalid_params`.
-- `Validation` (legacy) and `Execution { code, message, data, repair }` — recoverable semantic failures; map to MCP tool errors (`isError: true`) with stable `code` and bounded `repair` hint.
+- `Validation` (legacy) and `Execution(Box<ToolErrorExecution> { code, message, data, repair })` — recoverable semantic failures; map to MCP tool errors (`isError: true`) with stable `code` and bounded `repair` hint.
 - `Internal` — server-side failure; maps to JSON-RPC `internal_error` without stack traces.
 
 Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`, plus `invalid_request`/`internal`. Browser manual-interaction and capability errors reuse this vocabulary while preserving their existing `data` payloads. Canonical goal/workflow/source translators emit `InvalidSemanticValue`/`ConflictingArguments` with `RepairHint { field, accepted[<=20], suggested_value }`. Legacy `Validation` messages are code-inferred so old call sites remain repairable without a flag day.
@@ -254,38 +255,43 @@ Shared state across all tool handlers:
 
 ```rust
 struct ServerState {
-    config: AppConfig,
-    adapter: MetadataSearchAdapter,
-    fetch_client: FetchClient,
-    origin_controller: OriginController,
-    fetch_cache: FetchCache,
-    kev_client: Option<KevClient>,
-    local_backend: Option<LocalWorkspaceBackend>,
-    profile_manager: Option<ProfileManager>,
-    browser_lifecycle: Option<BrowserLifecycle>,
+    config: Arc<AppConfig>,
+    adapter: Arc<MetadataSearchAdapter>,
+    fetch_client: Option<Arc<FetchClient>>,         // None when [fetch].enabled = false
+    origin_controller: Option<Arc<OriginController>>,
+    fetch_cache: Option<Arc<FetchCache>>,
+    kev_client: Arc<KevClient>,
+    local_backend: Option<Arc<LocalWorkspaceBackend>>,
+    local_inventory_cache: Arc<Mutex<Option<LocalInventoryCache>>>,
+    profile_manager: Option<Arc<ProfileManager>>,   // browser feature only
+    browser_lifecycle: Option<Arc<BrowserLifecycle>>, // browser feature only
+    browser_discovery_state: BrowserDiscoveryState,  // browser feature only
 }
 ```
+
+All shared fields are `Arc`-wrapped; `ServerState` itself is cheap to clone. Fetch/cache/origin fields are `Option` so the disabled state is representable.
 
 ---
 
 ## Policy (`policy.rs`)
 
-Controls what operations are allowed:
+Gates tool execution on configured mode. `Policy` is a two-variant allow/deny switch; the multi-state concept lives one level up in `core::config::Mode` (`Live`/`Off`):
 
 ```rust
 enum Policy {
-    Live,      // All operations allowed
-    DryRun,    // No network requests
-    Offline,   // Only cached/local data
+    Allow,
+    Deny,
 }
 ```
 
 ### Policy Checks
 
 ```rust
-fn live_allowed(policy: &Policy) -> bool;
-fn fetch_allowed(policy: &Policy) -> bool;
+fn live_allowed(mode: Mode) -> Policy;
+fn fetch_allowed(fetch_enabled: bool) -> Policy;
 ```
+
+Denial messages name the tool and the config knob to flip (`policy_message()` / `live_search_denied_message()` / `web_search_denied_message()` / `web_fetch_denied_message()`).
 
 ---
 
@@ -306,7 +312,7 @@ Each tool lives in its own behavior module (`web_search.rs`, `repo_search.rs`, e
 enum ToolError {
     Validation(String), // legacy semantic failure -> isError tool result
     InvalidRequest(String), // protocol shape failure -> invalid_params
-    Execution { code: ToolErrorCode, message: String, data: Option<Value>, repair: Option<RepairHint> },
+    Execution(Box<ToolErrorExecution>), // { code, message, data, repair } -> isError tool result
     Internal { message: String, data: Option<Value> }, // -> internal_error
 }
 ```
@@ -333,8 +339,8 @@ MCP Server
 ## Security Considerations
 
 - **Input validation** — All tool inputs validated against schema
-- **URL validation** — Only HTTPS allowed for `web_fetch`
-- **Policy enforcement** — Dry-run/offline modes block network
+- **URL validation** — `web_fetch` allows `http`/`https` only, with SSRF range blocking
+- **Policy enforcement** — `[search].mode = "off"` blocks live search, `[fetch].enabled = false` blocks fetch
 - **Bounded responses** — All responses have size limits
 - **No secrets in logs** — Sensitive data redacted
 

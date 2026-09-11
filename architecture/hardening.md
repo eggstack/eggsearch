@@ -221,6 +221,27 @@ Tests for `TrustMarkers` and `DocumentOutlineEntry`:
 - Document chunk IDs are deterministic
 - Chunk IDs are unique within document
 
+### Forge URLs (`tests/property_forge_url.rs`)
+
+Tests for `core/repo_fetch.rs` forge URL builders (GitHub/GitLab/Gitea/Codeberg browser, raw, and permalink forms):
+- Generated URLs parse and round-trip owner/repo/ref/path
+- Refs with slashes and 40-hex SHAs are encoded correctly
+- Browser vs raw forms stay on their expected hosts/paths
+
+### Conflict Detection (`tests/property_conflict.rs`)
+
+Tests for `core/conflict.rs` detectors plus `detect_structured_conflicts()`:
+- Version-range, date, benchmark, mutable-vs-pinned, and provider-metadata conflicts fire only on directly comparable values
+- Entity keys prevent unrelated sources from being compared
+- Detector output is deterministic under input permutation
+
+### Retrieval Ledger (`tests/property_retrieval.rs`)
+
+Tests for `core/retrieval_status.rs` and `core/workflow_coverage.rs`:
+- Attempt-ledger validation accepts well-formed ledgers and rejects violations
+- Absence classification distinguishes no-evidence from retrieval-failure
+- Coverage computation maps found roles/failures to `CoverageStatus` deterministically
+
 ## Adversarial Corpus
 
 JSON corpus files in `tests/corpus/adversarial/`:

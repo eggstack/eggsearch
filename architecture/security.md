@@ -17,19 +17,17 @@ The security subsystem combines web search with native advisory lookups (CVE, GH
 
 ```
 VulnerabilityMetadata
-  ├── cve_ids: Vec<String>
-  ├── ghsa_ids: Vec<String>
-  ├── osv_ids: Vec<String>
-  ├── rustsec_ids: Vec<String>
-  ├── ecosystem: Option<String>
-  ├── package: Option<String>
-  ├── affected_ranges: Vec<String>
-  ├── patched_versions: Vec<String>
+  ├── cve_ids / ghsa_ids / osv_ids / rustsec_ids: Vec<String>
+  ├── ecosystem / package: Option<String>
+  ├── affected_ranges / patched_ranges: Vec<String>
+  ├── vulnerable_versions / patched_versions: Vec<String>
   ├── severity: Option<SeverityLevel>
-  ├── cvss: Option<f64>
-  ├── epss: Option<f64>
+  ├── cvss_score: Option<f64>
+  ├── cvss_vector: Option<String>
+  ├── epss_score: Option<f64>
   ├── kev: Option<KevMetadata>
-  ├── references: Vec<String>
+  ├── published_at / modified_at / withdrawn_at: Option<String>
+  ├── references: Vec<VulnerabilityReference>
   └── source: VulnerabilitySource
 ```
 
@@ -42,6 +40,7 @@ VulnerabilityMetadata
 `SecurityIdentifiers` provides regex-based parsing for:
 - CVE identifiers (`CVE-YYYY-NNNNN`)
 - GHSA identifiers (`GHSA-xxxx-xxxx-xxxx`)
+- OSV identifiers
 - RustSec identifiers (`RUSTSEC-YYYY-NNNN`)
 - CWE identifiers (`CWE-NNN`)
 - Package:ecosystem:version hints
@@ -61,14 +60,14 @@ VulnerabilityMetadata
 ### Source Tiers
 
 `classify_source_tier()` → `SecuritySourceTier` (9 tiers):
-1. `PrimaryAdvisory` — OSV, NVD, GitHub Advisory, RustSec
-2. `VendorAdvisory` — vendor-provided security bulletin
-3. `CisaKev` — CISA Known Exploited Vulnerabilities
-4. `IndependentCorroboration` — security researcher analysis
-5. `PackageRegistry` — ecosystem registry security page
-6. `IssueDiscussion` — issue tracker discussion
-7. `BlogOrAnalysis` — security blog post
-8. `CommunityDiscussion` — forum/discussion
+1. `PrimaryAdvisory` — primary advisory databases (NVD, OSV, RustSec)
+2. `VendorAdvisory` — vendor or project security pages
+3. `PackageRegistryAdvisory` — package registry advisory data (GitHub Advisories)
+4. `MaintainerDiscussion` — maintainer discussion (issues, PRs)
+5. `ReleaseNotes` — release notes and changelogs
+6. `SecurityResearch` — security research and analysis
+7. `NewsOrBlog` — news articles or blog posts
+8. `CommunityDiscussion` — forums, Stack Overflow
 9. `Unknown`
 
 ### Remediation
@@ -161,18 +160,22 @@ Budget exhaustion produces `native_advisory_identifier_cap_reached` or `native_a
 
 ## Result Grouping (`src/meta/security_grouping.rs`)
 
-Groups results into `SecurityResultGroupKind`:
+Groups results into `SecurityResultGroupKind` (9 variants):
 
 | Group | Content |
 |-------|---------|
 | `AuthoritativeAdvisories` | Primary advisory sources (OSV, NVD, GHSA, RustSec) |
 | `VendorAdvisories` | Vendor-provided security bulletins |
+| `PackageAdvisories` | Package registry advisory records |
 | `KevEntries` | CISA KEV catalog entries |
 | `PatchCommitsOrReleases` | Fix commits, patched releases |
 | `ExploitDiscussion` | Exploit analysis, PoC discussions |
 | `DefensiveGuidance` | Mitigation, hardening guidance |
 | `GeneralContext` | General security context |
 | `Other` | Unclassified results |
+
+Native advisory capability split (`advisory_capabilities()`): id+package
+(OSV, GitHub Advisory); id only (NVD, RustSec, CISA KEV).
 
 ---
 
@@ -194,7 +197,7 @@ Uses `fetch_ranking` pipeline in `FetchRankMode::Security` mode.
 
 All native advisory lookups produce `RetrievalAttempt` records:
 - `provider_id`: executing provider
-- `outcome`: success, failure, timeout, rate-limited, skipped, interrupted
+- `outcome`: `RetrievalAttemptOutcome` (`SuccessWithResults`, `SuccessZeroResults`, `Failed`, `TimedOut`, `RateLimited`, `SkippedCapabilityUnavailable`, `SkippedByPolicy`, `InterruptedByDeadline`, `NotApplicable`, …)
 - `result_count`: findings from this operation
 - `error_class`: classified failure reason
 

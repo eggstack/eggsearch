@@ -11,6 +11,7 @@
 
 | Role | Meaning |
 |------|---------|
+| `UnknownOrWeakContext` | Default for unclassified or weak-context sources |
 | `PrimaryImplementation` | Core implementation code |
 | `InterfaceOrApiDefinition` | API surface, public interface |
 | `UsageExample` | Example code, usage patterns |
@@ -30,7 +31,7 @@
 | `CounterpointOrConflictingEvidence` | Contradicting evidence |
 | `CommunityDiscussion` | Forum, discussion |
 
-Conversion methods map from `SourceKind`, `SourceRole`, `ResearchSourceType`, `SecuritySourceTier`.
+Conversion methods map from `SourceKind`, `SourceRole`, `ResearchSourceType`, `ResearchSourceClass`, `SecuritySourceTier`.
 
 ---
 
@@ -41,18 +42,19 @@ Deterministic non-summarizing container for multi-agent handoff:
 ```
 EvidenceBundle
   ├── bundle_id: String (FNV-1a, prefix: "bundle_")
-  ├── goal: String
+  ├── goal: Option<String>
   ├── created_at: String
   ├── sources: Vec<EvidenceBundleSource>
   ├── fetched_items: Vec<EvidenceBundleFetchedItem>
   ├── source_links: Vec<EvidenceBundleLink>
   ├── trust_summary: EvidenceTrustSummary
-  ├── provider_summary: Vec<EvidenceProviderSummary>
+  ├── provider_summary: EvidenceProviderSummary
   ├── gaps: Vec<EvidenceGap>
-  ├── warnings: Vec<String>
-  ├── research_claims: Vec<ResearchClaim>
-  ├── research_conflicts: Vec<ResearchConflict>
-  └── limits: EvidenceBundleLimits
+  ├── warnings: Vec<SearchWarning>
+  ├── structured_warnings: Vec<AgentWarning>
+  ├── limits: EvidenceBundleLimits
+  ├── research_claims: Option<Vec<ResearchClaim>>
+  └── research_conflicts: Option<Vec<ResearchConflict>>
 ```
 
 ### Caps
@@ -104,12 +106,13 @@ AgentWorkflowRecipe
   ├── id: String
   ├── title: String
   ├── goal: String
-  ├── suitable_when / avoid_when: String
+  ├── suitable_when / avoid_when: Vec<String>
   ├── required_capabilities: Vec<String>
   ├── optional_capabilities: Vec<String>
   ├── steps: Vec<AgentWorkflowStep>
   ├── fallbacks: Vec<AgentWorkflowFallback>
   ├── expected_outputs: Vec<String>
+  ├── trust_notes: Vec<String>
   └── support: RecipeSupport
 ```
 
@@ -127,16 +130,16 @@ Multi-source responses may recommend one focused `batch_fetch` (`fetch_multiple_
 
 | Model | Required Roles | Recommended Roles |
 |-------|---------------|-------------------|
-| `ApiComprehension` | Interface/ApiDefinition, OfficialDocumentation | UsageExample, PrimaryImplementation |
-| `RepositoryArchitecture` | PrimaryImplementation, ArchitectureOrDesignDocument | ConfigurationOrFeatureGate, ManifestOrDependencyMetadata |
-| `ErrorInvestigation` | OfficialDocumentation, IssueOrIncidentDiscussion | PrimaryImplementation, CommunityDiscussion |
-| `VersionMigration` | MigrationGuidance, ReleaseNoteOrChangelog | PrimaryImplementation, OfficialDocumentation |
-| `SecurityReview` | AuthoritativeSecurityAdvisory, PrimaryImplementation | OfficialDocumentation, IndependentCorroboration |
-| `DependencyEvaluation` | ManifestOrDependencyMetadata, AuthoritativeSecurityAdvisory | OfficialDocumentation, ReleaseNoteOrChangelog |
-| `PerformanceInvestigation` | BenchmarkOrPerformanceEvidence, PrimaryImplementation | OfficialDocumentation, IndependentCorroboration |
-| `ComparativeResearch` | CounterpointOrConflictingEvidence, PrimaryImplementation | OfficialDocumentation, BenchmarkOrPerformanceEvidence |
+| `ApiComprehension` | InterfaceOrApiDefinition, PrimaryImplementation | OfficialDocumentation, UsageExample, TestOrBehavioralSpecification |
+| `RepositoryArchitecture` | PrimaryImplementation, ArchitectureOrDesignDocument | OfficialDocumentation, ConfigurationOrFeatureGate, ManifestOrDependencyMetadata |
+| `ErrorInvestigation` | IssueOrIncidentDiscussion, PrimaryImplementation | OfficialDocumentation, TestOrBehavioralSpecification |
+| `VersionMigration` | ReleaseNoteOrChangelog, MigrationGuidance | OfficialDocumentation, IssueOrIncidentDiscussion |
+| `SecurityReview` | AuthoritativeSecurityAdvisory, VendorSecurityGuidance | PrimaryImplementation, ConfigurationOrFeatureGate, ManifestOrDependencyMetadata |
+| `DependencyEvaluation` | ManifestOrDependencyMetadata | OfficialDocumentation, ReleaseNoteOrChangelog, AuthoritativeSecurityAdvisory |
+| `PerformanceInvestigation` | BenchmarkOrPerformanceEvidence | PrimaryImplementation, OfficialDocumentation, IndependentCorroboration |
+| `ComparativeResearch` | OfficialDocumentation, PrimaryImplementation | BenchmarkOrPerformanceEvidence, IndependentCorroboration, CounterpointOrConflictingEvidence |
 | `PreChangeEvidence` | PrimaryImplementation, TestOrBehavioralSpecification | OfficialDocumentation, ConfigurationOrFeatureGate |
-| `PostChangeReview` | TestOrBehavioralSpecification, PrimaryImplementation | OfficialDocumentation, BenchmarkOrPerformanceEvidence |
+| `PostChangeReview` | TestOrBehavioralSpecification | PrimaryImplementation, OfficialDocumentation, ConfigurationOrFeatureGate |
 
 ### Coverage Status
 
@@ -161,6 +164,7 @@ Multi-source responses may recommend one focused `batch_fetch` (`fetch_multiple_
 | `DocumentationImplementationMismatch` | Docs don't match code |
 | `MutableVsCommitPinnedContent` | Mutable URL vs permalink |
 | `DifferentProviderMetadata` | Provider disagreement on metadata |
+| `Unknown` | Default for unclassified conflicts |
 
 ### Severity & Resolution
 
@@ -183,6 +187,7 @@ Multi-source responses may recommend one focused `batch_fetch` (`fetch_multiple_
 - `intended_roles` (typed, from planner)
 - `outcome`: 10 variants (SuccessWithResults, SuccessZeroResults, Failed, TimedOut, RateLimited, SkippedByPolicy, SkippedCapabilityUnavailable, NotApplicable, InterruptedByDeadline, TruncatedAfterPartialSuccess)
 - `result_count`, `error_class`, `truncated`, `truncation_evidence`
+- `deadline_interrupted`, `query_fingerprint`, `duration_ms`
 
 ### Dimension State
 
@@ -198,10 +203,13 @@ Multi-source responses may recommend one focused `batch_fetch` (`fetch_multiple_
 
 ### Debug Validation
 
-`debug_validate_attempt_ledger()` panics in debug/test builds on:
+`debug_validate_attempt_ledger()` panics in debug/test builds on ledger violations:
 - Empty provider IDs
 - Duplicate (provider, operation) tuples
 - Mismatched result counts
+- Duplicate roles within an attempt, zero-result success mismatches
+- Deadline flags without interruption, truncation flags without success
+- Capability skips with empty role sets (see `AttemptLedgerViolation` for the full set)
 
 ---
 

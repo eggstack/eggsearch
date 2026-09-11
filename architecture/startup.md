@@ -20,6 +20,8 @@ SCM, macOS launchd, active Linux systemd, then cron for other Unix/Linux
 hosts. Linux systemd detection runs `systemctl is-system-running` and accepts
 only usable `running` or `degraded` states; the presence of a systemctl binary
 alone is insufficient. Explicit manager selection is platform-gated.
+`--method` accepts `auto` (default), `systemd`, `launchd`, `cron`, `windows`
+(`StartupMethod`: `Auto`, `Systemd`, `Launchd`, `Cron`, `Windows`).
 
 Systemd owns `/etc/systemd/system/eggsearch.service` and uses a dynamic service
 identity, bounded failure restart, and filesystem/network hardening. macOS owns

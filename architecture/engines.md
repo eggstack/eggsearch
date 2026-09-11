@@ -105,9 +105,9 @@ The forge tree/structure APIs used by `repo_map` live separately in `src/meta/fo
 |-------------|--------|------------|----------------------|
 | `osv` | `OsvEngine` | keyless | id + package |
 | `github_advisory` | `GithubAdvisoryEngine` | via `api_providers` | id + package |
-| `nvd` | `NvdEngine` | optional `NVD_API_KEY` env | id (+ package per capabilities) |
+| `nvd` | `NvdEngine` | optional `NVD_API_KEY` env | id only |
 | `cisa_kev` | `CisaKevEngine` | keyless; uses shared `KevClient` catalog cache | id |
-| `rustsec` | `RustSecEngine` | keyless | package |
+| `rustsec` | `RustSecEngine` | keyless | id only |
 
 ### Package registries (all keyless)
 
@@ -140,7 +140,7 @@ Registry metadata lookups beyond plain search are also reachable through `packag
 
 ---
 
-## Construction (`build_default_engines` in `adapter.rs`)
+## Construction (`build_default_engines` in `adapter/builders.rs`)
 
 ```
 build_default_engines(

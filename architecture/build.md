@@ -69,8 +69,12 @@ license = "MIT"
 | `chrono` | 0.4 | Date/time handling |
 | `xxhash-rust` | 0.8 (xxh3) | Fast hashing |
 | `libc` | 0.2 | Unix APIs |
-| `lru` | 0.12 | LRU cache |
+| `lru` | 0.18 | LRU cache |
 | `futures` | 0.3 | Async utilities |
+| `semver` | 1 | Version comparison |
+| `self-replace` | 1 | Atomic binary self-replacement (update) |
+| `sha2` | 0.10 | SHA-256 checksum verification |
+| `tempfile` | 3 | Temporary files |
 
 #### Optional Dependencies
 
@@ -84,10 +88,11 @@ license = "MIT"
 | Dependency | Version | Purpose |
 |------------|---------|---------|
 | `pretty_assertions` | 1 | Improved assertion diffs |
-| `tempfile` | 3 | Temporary files |
 | `httpmock` | 0.7 | HTTP mock server |
 | `criterion` | 0.5 | Benchmarks |
 | `proptest` | 1 | Property-based testing |
+
+Windows-only: `windows-service` 0.8.1 (SCM integration, `cfg(windows)`).
 
 ### Build Profile
 
@@ -106,7 +111,7 @@ strip = true
 
 | Target | Command | Purpose |
 |--------|---------|---------|
-| `check` | `fmt + clippy + feature-check + test` | Local CI gate |
+| `check` | `fmt + clippy + feature-check + test + hygiene + packaging-check` | Local CI gate |
 | `ci` | `check` | Alias for `check` |
 | `fmt` | `cargo fmt --check` | Format check |
 | `clippy` | `cargo clippy --locked --all-targets --all-features -- -D warnings` | Lint check |
@@ -141,6 +146,7 @@ crates.io or GitHub and never replace the test runner.
 | `fuzz-smoke` | Quick fuzz runs for 3 targets | Fuzz smoke test |
 | `live-smoke` | `cargo test --features live-smoke --test corpus_runner -- --ignored` | Live network tests |
 | `native-forge-smoke-*` | Live forge API smoke tests per host | Forge API tests |
+| `bench-check` | `cargo bench --locked --all-features --bench perf --no-run` | Benchmark compile check |
 
 ---
 
@@ -166,6 +172,8 @@ jobs:
 2. **Clippy lint** — `cargo clippy --locked --all-targets --all-features -- -D warnings`
 3. **No-default compile** — `cargo check --locked --no-default-features`
 4. **All tests** — `cargo test --locked --all-features`
+5. **Hygiene** — `./packaging/check-repo-hygiene.sh`
+6. **Packaging contract** — `./packaging/check-contract.sh`
 
 ---
 
@@ -194,14 +202,18 @@ cargo publish --locked
 
 ## Platform Support
 
-### Supported
+7 release targets (`packaging/release-targets.txt`, `src/platform.rs`):
 
-- Linux (x86_64, aarch64)
-- macOS (x86_64, aarch64)
+### Supported release targets
 
-### Unsupported
+- Linux: x86_64, aarch64, armv7 (glibc 2.17 floor via Zig/cargo-zigbuild)
+- macOS: x86_64 (Intel), aarch64 (Apple Silicon)
+- Windows: x86_64, aarch64 (native runners, `.exe` assets, SCM service support)
 
-- Windows (uses Unix-specific APIs: `openat2`, `setsid`, process groups)
+### Platform limitations
+
+- Unix-only process controls (`openat2`, `setsid`, process groups) mean some supervision primitives degrade on Windows; the Windows service path uses SCM instead.
+- See [packaging.md](packaging.md) for the full target/installer/update contract.
 
 ---
 

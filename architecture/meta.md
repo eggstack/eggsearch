@@ -37,7 +37,7 @@
 | `local_inventory_cache.rs` | Fast in-memory file inventory cache for local workspace search |
 | `local_ignore.rs` | Minimal `.gitignore` matcher |
 | `safe_open.rs` | Race-resistant file opening via component-wise path walking |
-| `package_resolver.rs` | Bounded HTTP lookups for package registries (crates.io, PyPI, npm, Go, Maven, NuGet, RubyGems, Packagist) |
+| `package_resolver.rs` | Bounded HTTP lookups for package registries (crates.io, PyPI, npm, Go, Maven, NuGet, RubyGems, Packagist, plus OCI and GitHub Actions coordinates) |
 | `dependency_parse/` | Dependency/lock file parsing split by ecosystem: `mod` owns the normalized `parse_dependency_file` dispatch + shared XML helpers; `cargo`/`npm`/`go`/`python`/`ruby`/`composer`/`maven`/`dotnet`/`containers`/`github_actions` each own one ecosystem and emit the shared `DependencyFinding` record |
 | `advisory_range.rs` | Advisory affected/fixed range extraction |
 | `version_compare.rs` | Version comparison utilities for package ecosystems |
@@ -56,12 +56,9 @@ The central orchestrator, split by behavior with stable paths. Methods:
 |--------|---------|
 | `web_search()` | Live metasearch over configured providers |
 | `repo_search()` | Structured repository evidence discovery |
-| `repo_fetch()` | Structured repository file fetch |
-| `repo_map()` | Repository structure discovery |
-| `security_search()` | Security-oriented retrieval with normalized vulnerability metadata |
+| `security_search_subqueries()` (`security.rs`) | Security-oriented retrieval subquery planning |
 | `research_search()` | Research-oriented multi-source evidence discovery |
 | `lookup_advisory()` | Single advisory lookup (CVE, GHSA, OSV, RustSec, KEV) |
-| `provider_status()` | Diagnostic report of configured providers |
 | `probe_providers()` (`probe.rs`) | Bounded active liveness probes with typed outcomes; updates advisory health, never overrides explicit selection |
 
 ### Internal Flow

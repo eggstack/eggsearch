@@ -25,7 +25,7 @@
 | Dir | Files | Responsibility |
 |-----|-------|---------------|
 | `fetch/browser/` | 8 files | Headless Chrome/Chromium rendering via CDP |
-| `fetch/render/` | 7 files | HTML structural rendering (blocks, text, markdown) |
+| `fetch/render/` | 8 files | HTML structural rendering (blocks, text, markdown, code, CSV, notebooks) |
 
 ---
 
@@ -42,7 +42,14 @@ The HTTP fetch client. Handles:
 
 ```rust
 impl FetchClient {
-    async fn fetch(&self, request: WebFetchRequest) -> Result<WebFetchResponse>;
+    async fn fetch(
+        &self,
+        url_str: &str,
+        max_chars: Option<usize>,
+        extract_mode: ExtractMode,
+        include_links: bool,
+        pdf_options: Option<&PdfFetchOptions>,
+    ) -> Result<WebFetchResponse, FetchError>;
 }
 ```
 
@@ -54,7 +61,7 @@ HTML→text/markdown extraction pipeline:
 
 1. **Parse HTML** — `scraper` crate with CSS selectors
 2. **Extract readable content** — remove scripts, styles, nav
-3. **Convert to text/markdown** — `pulldown-cmark` for markdown
+3. **Convert to text/markdown** — block pipeline in `render/` (`text.rs`/`markdown.rs`); `pulldown-cmark` is used only for `.md` source files (`render/markdown_source.rs`)
 4. **Extract metadata** — title, description, links
 5. **Bound output** — `FetchLimits` enforces max chars
 
@@ -101,7 +108,7 @@ Agent-visible controls on `web_fetch` (and per web item on `batch_fetch`):
 
 ### Cache Freshness
 
-`CacheFreshness::is_fresh()` consults `no_store`/`no_cache`, `max-age` vs `fetched_at`, and `Expires`. Entries without origin freshness headers get the configured default TTL. Batch fetch stores set `fetched_at` like single fetch stores do, so batch entries are equally eligible for hits.
+`CacheFreshness::is_fresh()` consults `no_store`/`no_cache`, `max-age` vs `fetched_at`, and `Expires`. Entries without origin freshness headers are treated as stale (no default TTL). Batch fetch stores set `fetched_at` like single fetch stores do, so batch entries are equally eligible for hits.
 
 Responses with `Vary: *` or any request header other than `Accept-Encoding` are not cached because the cache does not retain those request-header variants. This conservative rule also applies when supported and unsupported `Vary` tokens are mixed.
 
@@ -130,9 +137,13 @@ struct OriginController {
 }
 
 struct OriginPolicy {
-    max_concurrency: usize,
-    circuit_breaker_threshold: u32,
-    retry_backoff: Duration,
+    http_concurrency: usize,       // default 2
+    browser_concurrency: usize,    // default 1
+    retry_max_attempts: usize,     // default 2
+    retry_base_delay_ms: u64,      // default 250
+    retry_max_delay_ms: u64,       // default 4000
+    circuit_failure_threshold: u8, // default 3
+    circuit_duration_ms: u64,      // default 60_000
 }
 ```
 
@@ -144,10 +155,16 @@ URL and content validation:
 
 | Limit | Default | Purpose |
 |-------|---------|---------|
-| `max_chars` | 50,000 | Max extracted content length |
-| `timeout_ms` | 30,000 | Request timeout |
-| `max_redirects` | 10 | Max redirect hops |
-| `allowed_schemes` | [https] | Only HTTPS by default |
+| `max_url_len` | 8,192 | Max URL byte length |
+| `max_bytes` | 2,000,000 | Max response body size |
+| `max_chars_default` | 12,000 | Default extraction length |
+| `max_chars_cap` | 50,000 | Hard extraction upper bound |
+| `timeout_ms` | 8,000 | Request timeout (DNS gets half, floor 1,500) |
+| `redirect_limit` | 5 | Max redirect hops (every hop re-validated for SSRF) |
+| `allow_private_network` / `allow_localhost` | `false` / `false` | SSRF policy gates |
+| `pdf_enabled` (+ `pdf_max_pages` 25, per-page/total char caps) | `false` | PDF extraction gate (requires `pdf` feature) |
+
+Allowed schemes are hardcoded to `http`/`https` in `validate_url()`; there is no `allowed_schemes` field on `FetchLimits`.
 
 ### URL Validation
 
@@ -156,10 +173,11 @@ fn validate_fetch_target(url: &str, limits: &FetchLimits) -> Result<()>;
 ```
 
 Checks:
-- Valid URL format
-- Allowed scheme (https)
-- No localhost/private IPs
-- No SSRF vectors
+- Valid URL format, max 8,192 bytes
+- Scheme is `http`/`https` (hardcoded)
+- No embedded credentials, no localhost literals
+- No localhost/private IPs after DNS resolution (unless policy-gated)
+- Redirect targets re-validated on every hop
 
 ---
 
@@ -188,11 +206,11 @@ Headless Chrome/Chromium via Chrome DevTools Protocol (feature-gated `browser`).
 ### Key Constants
 
 ```rust
-DEFAULT_NAVIGATION_TIMEOUT_MS: 30_000
-DEFAULT_POST_LOAD_WAIT_MS: 2_000
-DEFAULT_STARTUP_TIMEOUT_MS: 15_000
-MAX_GLOBAL_CONCURRENCY: 8
-MAX_PER_ORIGIN_CONCURRENCY: 3
+DEFAULT_STARTUP_TIMEOUT_MS: 10_000
+DEFAULT_NAVIGATION_TIMEOUT_MS: 20_000
+DEFAULT_POST_LOAD_WAIT_MS: 1_500
+MAX_GLOBAL_CONCURRENCY: 4
+MAX_PER_ORIGIN_CONCURRENCY: 4
 ```
 
 ---
@@ -247,18 +265,16 @@ Symbol/span-aware block expansion for `repo_fetch`:
 
 ## Error Handling
 
-```rust
-enum FetchError {
-    Timeout,
-    NetworkError(String),
-    HttpError { status: u16 },
-    ContentTooLarge,
-    UnsupportedContentType,
-    ExtractionFailed,
-    BrowserError(String),
-    PdfExtractionFailed,
-}
-```
+`FetchError` (`types.rs`, 30 variants) covers the full failure space:
+
+- URL/SSRF: `InvalidUrl`, `UnsupportedScheme`, `PrivateNetworkBlocked`, `UrlTooLong`, `EmbeddedCredentialsBlocked`
+- Redirects: `RedirectLimitExceeded`, `RedirectTargetBlocked`, `InvalidRedirectLocation`
+- Transport: `Timeout(u64)`, `HttpStatus(u16, String)`, `NetworkError(String)`, `ContentTooLarge`, `UnsupportedContentType`, `ExtractError(String)`
+- PDF: `PdfNotCompiledIn`, `PdfDisabled`, `PdfParseError`, `PdfEncrypted`, `PdfNoExtractableText`, `PdfPageSpecInvalid`, `PdfPageOutOfRange`, `PdfPageCapExceeded`, `PdfOcrUnavailable`
+- Browser: `BrowserNotCompiledIn`, `BrowserDisabled`, `BrowserNotFound`, `BrowserLaunchFailed`, `BrowserNavigationFailed`, `BrowserPolicyViolation`, `BrowserInteractiveChallenge`, `BrowserDomTooLarge`
+- Fallback: `Unknown(String)`
+
+`FetchErrorKind` mirrors the same taxonomy (copyable, no payloads) for MCP error mapping.
 
 ---
 

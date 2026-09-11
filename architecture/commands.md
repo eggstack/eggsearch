@@ -1,6 +1,6 @@
 # CLI Commands Deep Dive
 
-**Location:** `src/commands/` (9 files), `src/startup.rs`
+**Location:** `src/commands/` (binary-only, 10 files), `src/startup.rs`
 **Purpose:** CLI subcommands for direct user interaction. Entry point is `src/main.rs`.
 
 ---

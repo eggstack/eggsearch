@@ -22,19 +22,19 @@ The research subsystem provides structured evidence gathering for comparative an
 ### Research Source Types
 
 `ResearchSourceType` (13 variants) maps to specific evidence roles:
-- `PrimarySources` — official documentation, specifications
-- `OfficialDocs` — vendor documentation
-- `Specifications` — standards, RFCs
-- `Benchmarks` — performance data
-- `Counterpoints` — contradicting evidence
-- `CaseStudies` — real-world usage
-- `Tutorials` — how-to guides
-- `MigrationGuides` — version upgrade paths
-- `CommunityDiscussion` — forum/issue discussions
-- `AcademicPapers` — peer-reviewed research
-- `SecurityAnalysis` — vulnerability assessments
-- `EcosystemSurveys` — landscape analysis
-- `ArchitectureDecisions` — ADRs, design documents
+- `PrimarySources` — peer-reviewed papers, standards-track documents, formal specs
+- `OfficialDocs` — official documentation sites, READMEs
+- `Specifications` — specifications and protocol definitions
+- `ReferenceImplementations` — canonical codebases
+- `DesignDiscussions` — RFCs, ADRs, design discussions
+- `Benchmarks` — performance data and measurements
+- `SecurityConsiderations` — advisories, CVEs, hardening guides
+- `IssueThreads` — issue threads and bug reports
+- `ReleaseNotes` — release notes, changelogs, migration guides
+- `AcademicOrFormalSources` — theses, formal verification results
+- `RecentNews` — news articles and press releases
+- `CommunityDiscussion` — forum threads, Stack Overflow
+- `Counterpoints` — criticism and alternative viewpoints
 
 ### Research Workflows
 
@@ -44,10 +44,10 @@ The research subsystem provides structured evidence gathering for comparative an
 
 ### Research Depth
 
-`ResearchDepth` controls subquery count and breadth:
-- `Quick` — 3-4 subqueries, focused
-- `Standard` — 5-6 subqueries, balanced
-- `Deep` — 7-8 subqueries, comprehensive
+`ResearchDepth` controls subquery count and breadth (`max_subqueries_for_depth()`):
+- `Quick` — 4 subqueries, focused
+- `Standard` — 8 subqueries, balanced
+- `Deep` — 12 subqueries, comprehensive
 
 ### Request/Response
 
@@ -69,7 +69,7 @@ ResearchSearchResponse
   ├── workflow_context: Option<ResearchWorkflowContext>
   ├── claims: Vec<ResearchClaim>
   ├── conflicts: Vec<ResearchConflict>
-  ├── source_quality: ResearchSourceQuality
+  ├── source_quality: Vec<ResearchSourceQuality>
   ├── evidence_gaps: Vec<ResearchEvidenceGap>
   ├── workflow_coverage: Option<WorkflowCoverageResult>
   ├── retrieval_summary: ResponseRetrievalSummary
@@ -88,9 +88,9 @@ ResearchSearchResponse
 4. Generic fallback subquery if no source types specified
 
 Example mapping:
-- `PrimarySources` → `"{query} official documentation specification"`
-- `Benchmarks` → `"{query} benchmark performance comparison"`
-- `Counterpoints` → `"{query} limitations drawbacks alternative"`
+- `PrimarySources` → `"{query} official docs source repository maintainer"`
+- `Benchmarks` → `"{query} benchmark performance latency throughput comparison"`
+- `Counterpoints` → `"{query} drawbacks limitations tradeoffs criticism alternatives"`
 
 ---
 
@@ -98,10 +98,16 @@ Example mapping:
 
 ### Dimension Generation
 
-`build_workflow_dimensions()` creates deterministic `ResearchDimension` sets per workflow:
+`build_workflow_dimensions()` creates deterministic `ResearchDimension` sets per workflow.
+Dimensions are generated per workflow from source (see `research_workflow.rs`);
+examples include "Official API Documentation", "Examples & Tutorials",
+"Source Implementation", "Issues & Known Pitfalls", "Version & Release Notes",
+and "Security & Compatibility" for API-evaluation-style workflows. The table
+below summarizes intent, not literal dimension names — read the source for exact
+strings:
 
-| Workflow | Required Dimensions |
-|----------|-------------------|
+| Workflow | Focus |
+|----------|-------|
 | `ApiEvaluation` | API design, documentation quality, community adoption |
 | `LibraryComparison` | Feature parity, performance, maintenance status |
 | `ArchitectureDecision` | Trade-offs, constraints, precedent |
@@ -113,7 +119,10 @@ Example mapping:
 
 ### Coverage Computation
 
-`compute_coverage()` evaluates found vs. required dimensions:
+`compute_coverage()` evaluates grouped results into a `ResearchCoverage` struct
+with count fields; workflow-level sufficiency (`Sufficient` / `UsableWithGaps` /
+`Insufficient` / `IndeterminateDueToFailures`) is the `WorkflowCoverageResult`
+vocabulary shared with `core/workflow_coverage.rs`:
 - `Sufficient` — all required roles satisfied
 - `UsableWithGaps` — some recommended roles missing
 - `Insufficient` — required roles not satisfied
@@ -121,18 +130,23 @@ Example mapping:
 
 ### Gap Detection
 
-`detect_gaps()` identifies `ResearchGapKind`:
-- `NoPrimarySources`, `NoCounterpoints`, `NoBenchmarks`
-- `NoSecurityAnalysis`, `NoRecentSource`, `OnlySecondarySources`
-- `ConflictingEvidenceUnresolved`, `VersionContextMissing`
-- `NoMigrationChangelog`
+Two gap vocabularies — do not mix them:
+
+- Workflow gaps (`detect_gaps()` → `ResearchGapKind`, 8 variants):
+  `NoPrimarySources`, `NoRecentSources`, `NoCounterpoints`,
+  `NoImplementationEvidence`, `NoBenchmarks`, `NoSecurityDiscussion`,
+  `NoMigrationDocs`, `ProviderCoverageLimited`
+- Evidence gaps (`detect_evidence_gaps()` → `ResearchEvidenceGapKind`, 8 variants):
+  `NoPrimarySource`, `NoRecentSource`, `NoBenchmarkSource`, `NoSecuritySource`,
+  `NoMigrationChangelog`, `OnlySecondarySources`,
+  `ConflictingEvidenceUnresolved`, `VersionContextMissing`
 
 ### Diversity Caps
 
 `apply_diversity_caps()` prevents over-representation:
-- Max 2 results per domain
-- Max 3 results per source type
+- Max 2 results per domain (`DiversityConfig { max_per_domain: 2, total_cap: 8 }`)
 - Balanced coverage across dimensions
+- (There is no per-source-type cap of 3.)
 
 ---
 
@@ -149,36 +163,44 @@ Example mapping:
 
 ### Conflict Detection
 
-`detect_conflicts()` finds:
+`detect_conflicts()` finds two conflict shapes (bounded by `MAX_CONFLICTS`):
 - Counterpoint groups (sources with opposing positions)
-- Quality disagreements (different assessments of same topic)
-- Version-specific conflicts (different behavior across versions)
+- Quality disagreements (mixed high/low quality tiers within one group)
 
 ### Quality Classification
 
-`classify_source_class()` and `classify_quality_signals()`:
-- `PrimarySource`, `SecondarySource`, `AnecdotalSource`, `MarketingSource`
-- Quality signals: `maintained_current`, `version_specific`, `commit_pinned`, `reproducible_benchmark`, `peer_reviewed`
+`classify_source_class()` returns `ResearchSourceClass` (14 variants:
+`OfficialDocs`, `ReferenceDocs`, `RepositorySource`, `MaintainerIssue`,
+`ReleaseNotes`, `Benchmark`, `Paper`, `StandardSpec`, `SecurityAdvisory`,
+`VendorBlog`, `EngineeringBlog`, `ForumThread`, `NewsArticle`, `Unknown`).
+`classify_quality_signals()` returns `Vec<ResearchQualitySignal>` (12 variants):
+`PrimarySource`, `MaintainedCurrent`, `VersionSpecific`, `CommitPinned`,
+`ReproducibleBenchmark`, `PeerReviewed`, `StandardSpecSource`,
+`MaintainerAuthored`, `StaleSource`, `SecondarySource`, `AnecdotalSource`,
+`MarketingSource`.
 
 ---
 
 ## Result Grouping (`src/meta/research_grouping.rs`)
 
-Groups results into `ResearchResultGroupKind`:
+Groups results into `ResearchResultGroupKind` (14 variants + `Unknown` default):
 
 | Group | Content |
 |-------|---------|
-| `OfficialDocumentation` | Vendor docs, specifications |
-| `BenchmarksAndPerformance` | Performance data, benchmarks |
-| `SecurityAnalysis` | Security research, advisories |
-| `CommunityDiscussion` | Forum posts, issue discussions |
-| `AcademicResearch` | Papers, studies |
-| `CaseStudies` | Real-world implementations |
-| `MigrationGuidance` | Upgrade paths, changelogs |
+| `PrimarySources` | Peer-reviewed papers, standards-track documents |
+| `OfficialDocs` | Vendor docs, READMEs |
+| `Specifications` | Standards, protocol definitions |
+| `ReferenceImplementations` | Canonical codebases |
+| `DesignDiscussions` | RFCs, ADRs, design threads |
+| `Benchmarks` | Performance data, measurements |
+| `SecurityConsiderations` | Advisories, CVEs, hardening guides |
+| `IssueThreads` | Issue threads, bug reports |
+| `ReleaseNotes` | Release notes, changelogs, migration guides |
+| `AcademicOrFormalSources` | Papers, theses, formal results |
+| `RecentNews` | News articles, press releases |
+| `CommunityDiscussion` | Forum posts, Stack Overflow |
 | `Counterpoints` | Contradicting evidence |
-| `TutorialsAndGuides` | How-to content |
-| `EcosystemLandscape` | Package surveys, comparisons |
-| `Other` | Unclassified results |
+| `Unknown` | Unclassified results |
 
 Each group carries `EvidenceQuality` classification.
 
