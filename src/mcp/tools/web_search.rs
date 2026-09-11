@@ -7,58 +7,42 @@ use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebSearchArgs {
-    /// Search query string. Must be non-empty.
+    /// Search query.
     pub query: String,
-    /// Maximum number of SourceCards to return. If the request exceeds
-    /// the server's configured cap, the response includes a warning
-    /// and the count is clamped.
+    /// Max results.
     #[serde(default)]
     pub max_results: Option<usize>,
-    /// Specific provider IDs to query; empty means "use the server's
-    /// configured defaults".
     #[serde(default)]
+    #[schemars(skip)]
     pub providers: Vec<String>,
-    /// Optional safe-search mode. Enforced natively by capable
-    /// providers (e.g. Brave Search API); otherwise the server emits
-    /// an advisory warning.
+    /// Safe-search mode.
     #[serde(default)]
     pub safe_search: Option<crate::core::SafeSearch>,
-    /// Optional per-request timeout override in milliseconds.
     #[serde(default)]
+    #[schemars(skip)]
     pub timeout_ms: Option<u64>,
-    /// Search intent hint: `web`, `docs`, `code`, `issues`,
-    /// `releases`, `security`, or `news`. Optional; defaults to
-    /// `web`. Used as a retrieval and ranking hint only.
+    /// Intent hint: web, docs, code, issues, releases, security, news.
     #[serde(default)]
     pub intent: Option<crate::core::query::SearchIntent>,
-    /// Freshness hint: `any`, `day`, `week`, `month`, or `year`.
-    /// Optional; defaults to `any`. Best-effort; not all providers
-    /// support date filtering.
+    /// Freshness: any, day, week, month, year.
     #[serde(default)]
     pub freshness: Option<crate::core::query::Freshness>,
-    /// Exact calendar date range (`YYYY-MM-DD` start/end). Mutually
-    /// exclusive with a non-`any` `freshness`.
+    /// Exact date range (YYYY-MM-DD start/end). Exclusive with non-any freshness.
     #[serde(default)]
     pub date_range: Option<crate::core::query::SearchDateRange>,
-    /// Include-only domain filters (lowercase hostnames, max 32).
-    /// Enforced locally; reported as approximated telemetry.
+    /// Include-only domains (hostnames, max 32).
     #[serde(default)]
     pub include_domains: Vec<String>,
-    /// Exclude domain filters (lowercase hostnames, max 32).
-    /// Enforced locally.
+    /// Exclude domains (hostnames, max 32).
     #[serde(default)]
     pub exclude_domains: Vec<String>,
-    /// Language hint (e.g. `en`, `en-US`). Best-effort unless
-    /// capability-enforced.
+    /// Language hint (e.g. en).
     #[serde(default)]
     pub language: Option<String>,
-    /// Region hint (e.g. `US`, `GB`). Best-effort unless
-    /// capability-enforced.
+    /// Region hint (e.g. US).
     #[serde(default)]
     pub region: Option<String>,
-    /// Optional excerpt demand (0-3). When set, each `SourceCard` may
-    /// carry up to that many bounded source-derived excerpts. Defaults
-    /// to zero (compact discovery-only cards).
+    /// Excerpt demand (0-3). Defaults to 0.
     #[serde(default)]
     pub excerpt_count: Option<usize>,
 }

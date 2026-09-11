@@ -38,7 +38,8 @@ eggsearch mcp stdio
 # Agents skip this in the normal flow and start with the search primitive.
 
 # 3. Search for code in a repo
-# Call: repo_search({"query": "middleware", "host": "github", "owner": "tokio-rs", "repo": "axum", "profile": "coding"})
+# Call: repo_search({"query": "middleware", "host": "github", "owner": "tokio-rs", "repo": "axum", "goal": "understand"})
+# Legacy profile/mode/workflow/include_* /providers/timeout_ms remain accepted but are hidden from the ordinary schema; see docs/tool-matrix.md.
 
 # 4. Fetch a specific file
 # Call: repo_fetch({"host": "github", "owner": "tokio-rs", "repo": "axum", "path": "src/routing/mod.rs", "symbol": "Router::layer", "expand_to_block": true})

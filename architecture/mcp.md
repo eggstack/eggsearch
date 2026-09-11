@@ -13,7 +13,7 @@
 | `server.rs` | `EggsearchServer` — rmcp `ServerHandler` impl, 10 `#[tool]` handlers with contract-derived descriptions/annotations, `EGGSEARCH_INSTRUCTIONS` (global rules only) |
 | `tool_contract.rs` | Canonical `ToolContract` registry: purpose, use-when/not-for, domain, disclosure hint, annotations, keywords, related/next tools |
 | `http.rs` | Streamable HTTP service, `/healthz`, typed endpoint options, request bounds, and graceful shutdown |
-| `tools/` | Tool implementations by behavior (`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `evidence_bundle`, shared `common`, plus `tests`); stable `tools::X` paths preserved via re-exports |
+| `tools/` | Tool implementations by behavior (`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `evidence_bundle`, shared `common` and `canonical` translators, plus `tests`); stable `tools::X` paths preserved via re-exports |
 | `state.rs` | `ServerState` — shared state: config, adapter, fetch client, cache, etc. |
 | `policy.rs` | `Policy` enum, `live_allowed()`, `fetch_allowed()`, policy denial messages |
 
@@ -79,13 +79,14 @@ Descriptions are short and selection-oriented; the canonical strings live in `to
 |-----------|------|-------------|
 | `query` | String | Search query (1-512 chars) |
 | `max_results` | Option<usize> | Max results (1-50, default 10) |
-| `providers` | Option<Vec<String>> | Specific provider IDs |
 | `freshness` | Option<String> | Time filter: day, week, month, year |
 | `safe_search` | Option<String> | Safe search: off, moderate, strict (native on Brave API and Tavily; Tavily collapses Moderate/Strict to `true`) |
 | `date_range` | Option<SearchDateRange> | Exact `YYYY-MM-DD` start/end, exclusive with `freshness` |
 | `include_domains`/`exclude_domains` | Vec<String> | Hostname filters; natively enforced by providers advertising `supports_domain_filters` (currently `exa`, `tavily`), otherwise locally enforced with telemetry `approximated` |
 | `language`/`region` | Option<String> | Conservative hints, native on Brave API and Tavily when representable (Tavily region maps ISO codes to country names, general topic only) |
 | `intent` | Option<String> | `news` routes Brave API to `/res/v1/news/search` and Tavily to `topic=news` |
+
+Ordinary schema hides advanced `providers`/`timeout_ms`; the runtime still accepts them for backward compatibility.
 
 **Returns:** Array of `SourceCard` objects plus additive `capability_enforcement` telemetry.
 
@@ -130,8 +131,11 @@ Descriptions are short and selection-oriented; the canonical strings live in `to
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `query` | String | Search query |
+| `goal` | Option<String> | Task goal: understand, architecture, debug, migration, security, dependency, performance, compare, pre_change, post_change |
+| `sources` | Vec<String> | Source set override; omit for goal defaults |
 | `max_results` | Option<usize> | Max results |
-| `profile` | Option<String> | Search profile: generic, coding, security, research |
+
+Ordinary schema hides legacy `profile`/`mode`/`workflow`/`include_*`/`providers`/`timeout_ms`; `src/mcp/tools/canonical.rs` translates canonical and legacy forms with repairable conflict errors. `goal = "debug"` enables exact-error behavior.
 
 **Returns:** Grouped results by category (docs, code, issues, releases).
 
@@ -168,6 +172,10 @@ Descriptions are short and selection-oriented; the canonical strings live in `to
 | `identifiers` | Option<Vec<String>> | CVE, GHSA, OSV IDs |
 | `package` | Option<String> | Package name |
 | `ecosystem` | Option<String> | Package ecosystem |
+| `goal` | Option<String> | Task goal (usually omit; defaults to security_review) |
+| `include` | Vec<String> | kev, exploit_context, defensive_guidance, vendor_advisories |
+
+Ordinary schema hides legacy `workflow`/`include_*`/`providers`/`timeout_ms`; canonical translators preserve backward compatibility.
 
 **Returns:** Vulnerability metadata with severity, affected versions, fixes.
 
@@ -179,6 +187,10 @@ Descriptions are short and selection-oriented; the canonical strings live in `to
 | `query` | String | Research query |
 | `depth` | Option<String> | Search depth: quick, standard, deep |
 | `domain` | Option<String> | Research domain |
+| `goal` | Option<String> | Task goal using the same vocabulary as `repo_search` |
+| `include` | Vec<String> | counterpoints, primary_sources, recent_discussion, security_considerations |
+
+Ordinary schema hides legacy `workflow`/`include_*`/`providers`/`timeout_ms`; canonical translators preserve backward compatibility.
 
 **Returns:** Evidence sources grouped by quality and class.
 

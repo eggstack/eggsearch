@@ -16,13 +16,13 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
 {"host": "github", "owner": "tokio-rs", "repo": "axum"}
 
 // Step 2: Find specific code or issues
-// repo_search with coding profile and symbol hint
+// repo_search with canonical goal
 {
   "query": "Router::layer middleware",
   "host": "github",
   "owner": "tokio-rs",
   "repo": "axum",
-  "profile": "coding"
+  "goal": "understand"
 }
 
 // Step 3: Fetch the specific file
@@ -40,14 +40,13 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
 ## 2. Exact Error Search (Debugging)
 
 ```jsonc
-// Use exact_error mode to search for a specific error message
+// Use goal "debug" to search for a specific error message
 {
   "query": "error[E0308]: mismatched types - expected `String`, found `i32`",
   "host": "github",
   "owner": "tokio-rs",
   "repo": "axum",
-  "mode": "exact_error",
-  "profile": "coding"
+  "goal": "debug"
 }
 ```
 
@@ -67,11 +66,8 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
   "query": "retry backoff never runs on 429",
   "owner": "firecrawl",
   "repo": "firecrawl",
-  "include_docs": true,
-  "include_issues": true,
-  "include_pull_requests": true,
-  "profile": "coding",
-  "providers": ["firecrawl_developer", "github_issues"]
+  "goal": "debug",
+  "sources": ["docs", "issues", "pull_requests"]
 }
 
 // Follow up with web_fetch on the issue/PR URL from suggested_fetches
@@ -84,7 +80,9 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
 // Enable once in config:
 // [search.api.exa] enabled = true, api_key_env = "EXA_API_KEY"
 
-// web_search with explicit Exa selection for semantic/neural discovery
+// web_search with Exa for semantic/neural discovery (advanced: providers
+// is hidden from the ordinary schema but remains accepted).
+// Exact date_range and include/exclude domains are enforced natively by Exa;
 // that complements the HTML/SERP sources. Exact date_range and
 // include/exclude domains are enforced natively by Exa; other
 // constraints fall back to local enforcement with telemetry.
@@ -108,7 +106,8 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
 // Enable once in config:
 // [search.api.tavily] enabled = true, api_key_env = "TAVILY_API_KEY"
 
-// web_search with explicit Tavily selection for general discovery with
+// web_search with Tavily for general discovery (advanced: providers is
+// hidden from the ordinary schema but remains accepted). Provider-neutral
 // provider-neutral constraints. Safe-search, freshness/date-range,
 // language, region, domain filters, and news intent are enforced
 // natively by Tavily when representable; other constraints fall back
@@ -137,8 +136,7 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
   "ecosystem": "crates.io",
   "package": "axum",
   "version": "0.7.0",
-  "include_kev": true,
-  "include_defensive_guidance": true,
+  "include": ["kev", "defensive_guidance"],
   "assess_applicability": true,
   "dependency_files": ["Cargo.lock"]
 }
@@ -150,15 +148,14 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
 ## 4. Research Architecture Decision
 
 ```jsonc
-// Use research_search with workflow scaffolding
+// Use research_search with goal scaffolding
 {
   "query": "axum vs actix-web for high-performance REST API",
   "research_domain": "software_architecture",
-  "workflow": "library_comparison",
+  "goal": "compare",
   "depth": "standard",
   "compare_targets": ["axum", "actix-web"],
-  "include_counterpoints": true,
-  "include_primary_sources": true,
+  "include": ["counterpoints", "primary_sources"],
   "desired_source_types": ["benchmarks"]
 }
 ```
@@ -172,7 +169,7 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
   "host": "github",
   "owner": "tokio-rs",
   "repo": "axum",
-  "profile": "coding"
+  "goal": "understand"
 }
 
 // Step 2: Fetch key files
@@ -345,7 +342,7 @@ Search responses include an `evidence_role_summary` field with per-role counts a
 // Step 2: Follow a recipe's steps
 // For repository_investigation:
 // 1. repo_map → understand structure
-// 2. repo_search(profile="coding") → find code/issues
+// 2. repo_search(goal="understand") → find code/issues
 // 3. repo_fetch → fetch specific spans
 // 4. build_evidence_bundle → package for handoff
 

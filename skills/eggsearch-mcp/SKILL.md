@@ -40,13 +40,13 @@ The `eggsearch integrate` command renders or applies client-specific MCP registr
 | Focused page read | `web_fetch` with `focus` | Deterministic query-relevant chunk selection, no extra traversal; `focus_max_chunks`/`focus_max_chars` bound output |
 | Focused batch read | `batch_fetch` with per-item `focus` | Same validation as `web_fetch`; repo items project over document or line-window text; aggregate `max_total_chars` + `telemetry` bound output |
 | Fresh/stale control | `web_fetch`/`batch_fetch` cache fields | `cache_policy` (`default`/`bypass`/`refresh`) and per-item `max_cache_age_seconds` (tightens only); never bypass safety policy |
-| Repository exploration | `repo_map` → `repo_search` → `repo_fetch` | Follow the chain |
-| Issue/PR behind a behavior | `repo_search` with `firecrawl_developer` + explicit repo scope | Opt-in Developer Index returns bounded ProviderPassage excerpts (search evidence, not fetched); unindexed scopes emit scope_unindexed warnings |
-| Semantic search with constraints | `web_search` with `providers: ["exa"]` | Opt-in Exa returns bounded ProviderHighlight excerpts plus native date/domain enforcement; summaries, full text, subpages, and live crawl are never requested |
-| General search with safe-search/news constraints | `web_search` with `providers: ["tavily"]` | Opt-in Tavily returns bounded ProviderSnippet excerpts plus native safe-search/freshness/language/region/domain/news enforcement; answers, raw content, images, and auto-parameters are never requested |
-| Debugging errors | `repo_search` with `mode: "exact_error"` | Include the error text |
-| Security triage | `security_search` | Set `assess_applicability: true` for package/version checks |
-| Research comparison | `research_search` | Use `workflow` parameter for structured evidence |
+| Repository exploration | `repo_map` → `repo_search` → `repo_fetch` | Follow the chain; `repo_search` uses canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) with `sources` override; legacy `profile`/`mode`/`workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but hidden |
+| Issue/PR behind a behavior | `repo_search` with `firecrawl_developer` + explicit repo scope | Opt-in Developer Index returns bounded ProviderPassage excerpts (search evidence, not fetched); unindexed scopes emit scope_unindexed warnings; advanced `providers` remains accepted but hidden |
+| Semantic search with constraints | `web_search` with `providers: ["exa"]` | Advanced hidden field; opt-in Exa returns bounded ProviderHighlight excerpts plus native date/domain enforcement; summaries, full text, subpages, and live crawl are never requested |
+| General search with safe-search/news constraints | `web_search` with `providers: ["tavily"]` | Advanced hidden field; opt-in Tavily returns bounded ProviderSnippet excerpts plus native safe-search/freshness/language/region/domain/news enforcement; answers, raw content, images, and auto-parameters are never requested |
+| Debugging errors | `repo_search` with `goal: "debug"` | Include the error text; legacy `mode: "exact_error"` remains accepted |
+| Security triage | `security_search` | Set `assess_applicability: true` for package/version checks; `include` selects kev/exploit_context/defensive_guidance/vendor_advisories |
+| Research comparison | `research_search` | Use `goal` parameter for structured evidence; legacy `workflow` remains accepted |
 | Evidence handoff | `build_evidence_bundle` | Package sources + fetches from prior steps |
 | Page metadata only | `web_fetch` with `extract_mode: "metadata_only"` | No body text returned |
 | Batch URL fetch | `batch_fetch` | Bounded parallel fetch with per-item focus and aggregate budget/telemetry; suggested fetches carry `batch_item` for direct handoff |

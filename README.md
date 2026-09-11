@@ -134,6 +134,8 @@ Search tools return machine-readable `next_actions` hints. See [tool-matrix.md](
 
 Start with the task-appropriate search primitive (`web_search` for general research, `repo_search` for codebases, `security_search` for advisories, `research_search` for complex comparisons). `provider_status` is diagnostic for hosts and troubleshooting, not a normal first research step. Specialist tools (`security_search`, `research_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed. The canonical disclosure model lives in `src/mcp/tool_contract.rs`.
 
+Ordinary agent schemas use canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) with `sources`/`include` selectors; advanced `providers`/`timeout_ms`/`profile`/`mode`/`workflow`/`include_*` fields remain accepted for backward compatibility but are hidden from `tools/list`.
+
 ## Safety
 
 - Web and remote results are `external_untrusted`

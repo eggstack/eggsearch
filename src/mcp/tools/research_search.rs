@@ -6,71 +6,68 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ResearchSearchArgs {
-    /// Free-text research query. Must be non-empty.
+    /// Research query.
     pub query: String,
-    /// Optional. Research domain hint.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Research domain hint.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "domain")]
     pub research_domain: Option<String>,
-    /// Optional. Source types to include.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Source types to include.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        alias = "sources",
+        alias = "source_types"
+    )]
     pub desired_source_types: Vec<String>,
-    /// Optional. Include counterpoints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_counterpoints: Option<bool>,
-    /// Optional. Prioritize primary sources.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_primary_sources: Option<bool>,
-    /// Optional. Include recent discussion and news.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_recent_discussion: Option<bool>,
-    /// Optional. Include security considerations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_security_considerations: Option<bool>,
-    /// Optional. Maximum total results.
+    /// Compact include set: counterpoints, primary_sources, recent_discussion, security_considerations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<String>,
+    /// Max total results.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_results: Option<usize>,
-    /// Optional. Maximum result groups.
+    /// Max result groups.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_groups: Option<usize>,
-    /// Optional. Maximum results per group.
+    /// Max results per group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_per_group: Option<usize>,
-    /// Optional. Freshness hint.
+    /// Freshness hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub freshness: Option<String>,
-    /// Optional. Per-request timeout override.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub timeout_ms: Option<u64>,
-    /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)]
     pub providers: Vec<String>,
-    /// Research workflow type for structured scaffolding. "general":
-    /// default broad research. "architecture_decision": evaluates options
-    /// for a design choice. "api_evaluation": assesses an API for
-    /// adoption. "library_comparison": compares libraries side-by-side
-    /// (use with compare_targets). "migration_planning": plans version
-    /// or framework migrations. "security_review": security-focused
-    /// evidence gathering. "performance_investigation": performance
-    /// benchmarking and profiling context. "ecosystem_survey": maps a
-    /// technology ecosystem. Workflow sets deterministic source-type
-    /// and domain dimensions — the agent decides which suggested
-    /// fetches to act on.
+    /// Task goal: understand, architecture, debug, migration, security, dependency, performance, compare, pre_change, post_change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub workflow: Option<String>,
-    /// Research depth controlling subquery count. "quick": ~4 subqueries
-    /// for fast reconnaissance. "standard": ~8 subqueries for balanced
-    /// coverage. "deep": ~12 subqueries for thorough multi-source
-    /// discovery. Default "standard" when omitted. Deeper settings
-    /// produce more source diversity but take longer.
+    /// Depth: quick, standard, deep.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<String>,
-    /// Optional. Compare targets for library comparison workflows.
+    /// Compare targets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub compare_targets: Vec<String>,
-    /// Optional. Constraints or requirements for the research.
+    /// Constraints.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub constraints: Vec<String>,
-    /// Optional. Known context the caller already has.
+    /// Known context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub known_context: Option<String>,
 }
@@ -108,21 +105,9 @@ pub async fn run_research_search(
         ],
     )?;
 
-    let workflow = parse_strict_enum_arg(
-        "workflow",
+    let workflow = super::canonical::resolve_research_workflow(
+        args.goal.as_deref(),
         args.workflow.as_deref(),
-        crate::core::research::ResearchWorkflow::parse,
-        &[
-            "general",
-            "api_evaluation",
-            "library_comparison",
-            "migration_planning",
-            "security_review",
-            "performance_investigation",
-            "ecosystem_survey",
-            "architecture_decision",
-            "(aliases: api, comparison, migration, security, performance, architecture)",
-        ],
     )?;
 
     let depth = parse_strict_enum_arg(
@@ -130,6 +115,14 @@ pub async fn run_research_search(
         args.depth.as_deref(),
         ResearchDepth::parse,
         &["quick", "standard", "deep"],
+    )?;
+
+    let resolved_includes = super::canonical::resolve_research_includes(
+        &args.include,
+        args.include_counterpoints,
+        args.include_primary_sources,
+        args.include_recent_discussion,
+        args.include_security_considerations,
     )?;
 
     let mut desired_source_types: Vec<ResearchSourceType> = Vec::new();
@@ -153,10 +146,10 @@ pub async fn run_research_search(
         query: args.query,
         research_domain,
         desired_source_types,
-        include_counterpoints: args.include_counterpoints,
-        include_primary_sources: args.include_primary_sources,
-        include_recent_discussion: args.include_recent_discussion,
-        include_security_considerations: args.include_security_considerations,
+        include_counterpoints: resolved_includes.include_counterpoints,
+        include_primary_sources: resolved_includes.include_primary_sources,
+        include_recent_discussion: resolved_includes.include_recent_discussion,
+        include_security_considerations: resolved_includes.include_security_considerations,
         max_results: args.max_results,
         max_groups: args.max_groups,
         max_per_group: args.max_per_group,

@@ -5,6 +5,7 @@
 //! The stable `crate::mcp::tools::X` paths are preserved via re-exports.
 
 mod batch_fetch;
+pub mod canonical;
 mod common;
 mod evidence_bundle;
 mod provider_status;
