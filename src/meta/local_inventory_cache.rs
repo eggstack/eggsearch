@@ -56,8 +56,15 @@ impl ProcessTerminationController {
         {
             self.trigger.store(trigger, Ordering::Relaxed);
             if self.child_pgid > 1 {
+                #[cfg(unix)]
                 unsafe {
                     libc::kill(-self.child_pgid, libc::SIGKILL);
+                }
+                #[cfg(windows)]
+                {
+                    let _ = Command::new("taskkill")
+                        .args(["/PID", &self.child_pgid.to_string(), "/T", "/F"])
+                        .status();
                 }
             }
             true
