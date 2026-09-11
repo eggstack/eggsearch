@@ -342,6 +342,11 @@ jobs:
         run: |
           set -euo pipefail
           cp packaging/install.sh packaging/install.ps1 dist/
+          while IFS='|' read -r target asset os_name arch; do
+            if [[ "$os_name" != windows ]]; then
+              chmod 0755 "dist/$asset"
+            fi
+          done < packaging/release-targets.txt
           ./packaging/release-validate.sh assets dist "${{ needs.preflight.outputs.mode }}" "${{ needs.preflight.outputs.commit }}" "${{ needs.preflight.outputs.tag }}" "${{ needs.preflight.outputs.version }}"
       - name: Upload qualification-only artifact
         if: ${{ needs.preflight.outputs.mode == 'qualify' }}
