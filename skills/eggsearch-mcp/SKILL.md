@@ -38,9 +38,7 @@ The `eggsearch integrate` command renders or applies client-specific MCP registr
 |------|---------|-------|
 | General web search | `web_search` | Use `provider_status` first to check capabilities; supports `date_range`, `include_domains`/`exclude_domains` (native on Exa/Tavily, otherwise local), `language`/`region` (native on Brave API/Tavily when representable) with `capability_enforcement` telemetry; `excerpt_count` (1-3) adds bounded source passages for triage |
 | Focused page read | `web_fetch` with `focus` | Deterministic query-relevant chunk selection, no extra traversal; `focus_max_chunks`/`focus_max_chars` bound output |
-| Focused batch read | `batch_fetch` with per-item `focus` | Same validation as `web_fetch`; repo items project over document or line-window text; aggregate `max_total_chars` + `telemetry` bound output |
-| Focused batch read | `batch_fetch` with per-item `focus` | Same validation as `web_fetch`; repo items project over document or line-window text; aggregate `max_total_chars` + `telemetry` bound output |
-| Focused batch read | `batch_fetch` with per-item `focus` | Same validation as `web_fetch`; repo items project over document or line-window text; aggregate `max_total_chars` + `telemetry` bound output |
+| Focused batch read | `batch_fetch` with per-item `focus` | Same validation as `web_fetch`; repo items project over document or line-window text; aggregate `max_total_chars` + `telemetry` bound output; suggested fetches carry `batch_item` for direct handoff |
 | Fresh/stale control | `web_fetch`/`batch_fetch` cache fields | `cache_policy` (`default`/`bypass`/`refresh`) and per-item `max_cache_age_seconds` (tightens only); never bypass safety policy |
 | Repository exploration | `repo_map` → `repo_search` → `repo_fetch` | Follow the chain |
 | Issue/PR behind a behavior | `repo_search` with `firecrawl_developer` + explicit repo scope | Opt-in Developer Index returns bounded ProviderPassage excerpts (search evidence, not fetched); unindexed scopes emit scope_unindexed warnings |
@@ -51,7 +49,12 @@ The `eggsearch integrate` command renders or applies client-specific MCP registr
 | Research comparison | `research_search` | Use `workflow` parameter for structured evidence |
 | Evidence handoff | `build_evidence_bundle` | Package sources + fetches from prior steps |
 | Page metadata only | `web_fetch` with `extract_mode: "metadata_only"` | No body text returned |
-| Batch URL fetch | `batch_fetch` | Bounded parallel fetch with per-item focus and aggregate budget/telemetry; suggested fetches carry `batch_item` for direct handoff |
+
+Tool selection is regression-tested by the deterministic 43-fixture
+corpus in `tests/fixtures/tool_surface/` (`make eval-tool-surface`):
+prefer the primary tool above, fall back to documented alternatives, and
+never route ordinary research through `provider_status` or reuse
+`build_evidence_bundle` for new retrieval.
 
 ## Trust Model
 
@@ -139,5 +142,5 @@ Each recipe has a `support` status: `available`, `partial`, or `unavailable` bas
 3. Prefer structured tools (`repo_search`/`repo_fetch`) over generic (`web_search`/`web_fetch`) for repo tasks
 4. Check `provider_status` before specialized searches (pass `probe: true` for bounded live availability; same core as `eggsearch doctor --probe`)
 5. Use `suggested_fetches` (deterministic ranking)
-6. One URL per `web_fetch`; use `batch_fetch` for multiple (prefer one focused `batch_fetch` over serial `web_fetch` calls when safety prerequisites match) (prefer one focused `batch_fetch` over serial `web_fetch` calls when safety prerequisites match) (prefer one focused `batch_fetch` over serial `web_fetch` calls when safety prerequisites match)
+6. One URL per `web_fetch`; use `batch_fetch` for multiple (prefer one focused `batch_fetch` over serial `web_fetch` calls when safety prerequisites match)
 7. Use evidence bundles for handoff — don't summarize

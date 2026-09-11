@@ -44,6 +44,10 @@ Constant containing server instructions for AI agents:
 - Trust model
 - Evidence bundle guidance
 
+Byte budget: instructions are capped by the tool-surface evaluation gate
+(current 5275 bytes, max 6000). See `tests/fixtures/tool_surface/README.md`
+for the definition-byte baseline and fingerprint.
+
 ### Tool Registration
 
 Uses `rmcp` proc macros:

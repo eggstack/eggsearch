@@ -158,6 +158,12 @@ make check
 
 Runs formatting, clippy, feature compilation, and the deterministic test suite. Native forge smoke tests exercise the adapter path directly with configured API tokens — these are **maintainer-only** diagnostics, not user-facing. See [release.md](docs/release.md) for the full release process.
 
+```bash
+make eval-tool-surface
+```
+
+Runs the deterministic 43-fixture tool-selection corpus with context byte budgets and per-category accuracy. See [corpus README](tests/fixtures/tool_surface/README.md).
+
 ## Documentation
 
 - [Configuration](docs/config.md) — config file reference, profiles, defaults

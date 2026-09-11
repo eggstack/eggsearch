@@ -50,7 +50,7 @@ make fuzz-smoke              # 60s runs of 3 key fuzz targets
 make hygiene                 # deterministic repository-hygiene checks (also in `make check`)
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,117 tests pass with `--all-features` (22 ignored live-smoke); 4,875 with `--features mock` alone. Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,122 tests pass with `--all-features` (23 ignored: 22 live-smoke + 1 live-model comparison); 4,880 with `--features mock` alone (1 ignored live-model comparison). Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -73,7 +73,7 @@ src/
   mcp/             # MCP server (rmcp), stdio/HTTP transports, tool definitions, state (tools/ per-tool modules)
   startup.rs       # startup manager policy, service templates, croncheck, restart state
 packaging/          # release target contract, installers, artifact smoke helpers
-tests/             # behavioral suites (mcp_tools, web_search/web_fetch integration, provider_routing, provider_probe_conformance, repo/research/security workflow, evidence_contract), corpus, contract, property, adversarial, and browser_profiles tests
+tests/             # behavioral suites (mcp_tools, web_search/web_fetch integration, provider_routing, provider_probe_conformance, repo/research/security workflow, evidence_contract), tool-surface evaluation corpus (`fixtures/tool_surface/` + `tool_surface_evaluation` + opt-in `tool_surface_live`), corpus, contract, property, adversarial, and browser_profiles tests
 fuzz/              # cargo-fuzz + libfuzzer targets (22 registered)
 ```
 
@@ -112,6 +112,8 @@ cargo test --locked --all-features --test adversarial_corpus  # adversarial corp
 cargo test --locked --all-features --test keyless_core  # keyless-core runtime contract tests
 cargo test --locked --features browser --test browser_profiles     # browser profile management
 cargo test --locked --features browser --test browser_transport    # browser transport orchestration
+make eval-tool-surface  # deterministic 43-fixture tool-selection corpus with byte budgets (also in `cargo test --all-features`)
+cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-in live-model comparison (needs EGGSEARCH_EVAL_MODEL)
 ```
 
 ### Adding tests

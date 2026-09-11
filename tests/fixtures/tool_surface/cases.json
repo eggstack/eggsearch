@@ -1,0 +1,432 @@
+[
+  {
+    "id": "web-01",
+    "category": "generic_web",
+    "query": "What is the latest release version of serde on crates.io?",
+    "expected_primary": "web_search",
+    "acceptable": ["web_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["provider_status", "repo_fetch", "build_evidence_bundle"],
+    "why": "Current package release lookup with no repo scope; generic web discovery is sufficient."
+  },
+  {
+    "id": "web-02",
+    "category": "generic_web",
+    "query": "Where are the official docs for tokio TcpListener?",
+    "expected_primary": "web_search",
+    "acceptable": ["web_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["provider_status", "repo_fetch", "build_evidence_bundle"],
+    "why": "Documentation lookup without a repo locator; generic discovery first, then fetch one URL."
+  },
+  {
+    "id": "web-03",
+    "category": "generic_web",
+    "query": "Latest news this week on the Rust 1.88 release",
+    "expected_primary": "web_search",
+    "acceptable": ["web_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["provider_status", "repo_fetch", "build_evidence_bundle"],
+    "why": "News/freshness query; web_search natively supports freshness and news intent."
+  },
+  {
+    "id": "web-04",
+    "category": "generic_web",
+    "query": "Find Axum middleware documentation restricted to docs.rs",
+    "expected_primary": "web_search",
+    "acceptable": ["web_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["provider_status", "repo_fetch", "build_evidence_bundle"],
+    "why": "Domain-restricted discovery; web_search supports include_domains with enforcement telemetry."
+  },
+  {
+    "id": "web-05",
+    "category": "generic_web",
+    "query": "How do I write secure Rust code to avoid SQL injection?",
+    "expected_primary": "web_search",
+    "acceptable": ["web_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["security_search", "provider_status", "build_evidence_bundle"],
+    "why": "Generic secure-coding how-to with no CVE, package, version, or lockfile; web_search(intent=security) is sufficient and package applicability machinery would be overkill."
+  },
+  {
+    "id": "repo-01",
+    "category": "repo",
+    "query": "Where is Router::layer defined in tokio-rs/axum?",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch"],
+    "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
+    "why": "Symbol definition lookup scoped to owner/repo; structured repo discovery outranks generic web."
+  },
+  {
+    "id": "repo-02",
+    "category": "repo",
+    "query": "Explain the repository architecture of tokio-rs/axum",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search", "repo_map"],
+    "expected_followups": ["repo_map", "repo_fetch"],
+    "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
+    "why": "Codebase architecture question with explicit repo scope; repo_search groups implementation, docs, and examples while repo_map is an acceptable first step."
+  },
+  {
+    "id": "repo-03",
+    "category": "repo",
+    "query": "Find the implementation and tests for rate limiting middleware in tokio-rs/axum",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch"],
+    "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
+    "why": "Feature implementation plus behavioral spec; repo_search groups source files and tests together."
+  },
+  {
+    "id": "repo-04",
+    "category": "repo",
+    "query": "Investigate tokio-rs/axum issue 123 about routing panics and the 0.7 release changes",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch", "web_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Known GitHub issue plus release change in one repo scope; repo_search covers issues and releases groups."
+  },
+  {
+    "id": "repo-05",
+    "category": "repo",
+    "query": "How do I migrate tokio-rs/axum from 0.6 to 0.7? Show migration notes and changelog",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch", "web_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "In-repo package migration; changelog and release groups in repo_search carry the authoritative evidence."
+  },
+  {
+    "id": "repo-06",
+    "category": "repo",
+    "query": "What is the repository structure and layout of tokio-rs/axum? List important files and directories",
+    "expected_primary": "repo_map",
+    "acceptable": ["repo_map", "repo_search"],
+    "expected_followups": ["repo_search", "repo_fetch"],
+    "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
+    "why": "Structure discovery without file contents is exactly repo_map; repo_search is acceptable when content-bearing groups are also wanted."
+  },
+  {
+    "id": "fetch-01",
+    "category": "fetch",
+    "query": "Fetch https://docs.rs/axum/latest/axum/ and read the Router API section",
+    "expected_primary": "web_fetch",
+    "acceptable": ["web_fetch"],
+    "expected_followups": ["build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "repo_search", "provider_status", "research_search"],
+    "why": "Explicit single URL already supplied; fetching beats re-searching."
+  },
+  {
+    "id": "fetch-02",
+    "category": "fetch",
+    "query": "Fetch file src/routing/mod.rs from tokio-rs/axum on the main branch",
+    "expected_primary": "repo_fetch",
+    "acceptable": ["repo_fetch"],
+    "expected_followups": ["build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "repo_search", "web_fetch", "provider_status"],
+    "why": "Explicit repository file/path supplied; structured repo_fetch preserves line numbers and span metadata."
+  },
+  {
+    "id": "fetch-03",
+    "category": "fetch",
+    "query": "Fetch symbol Router::layer in src/routing/mod.rs lines 100-180 of tokio-rs/axum",
+    "expected_primary": "repo_fetch",
+    "acceptable": ["repo_fetch"],
+    "expected_followups": ["build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "repo_search", "web_fetch", "provider_status"],
+    "why": "Known file plus symbol/range; repo_fetch symbol and line expansion is the precise tool."
+  },
+  {
+    "id": "fetch-04",
+    "category": "fetch",
+    "query": "Fetch these three URLs: https://example.com/a, https://example.com/b, https://example.com/c",
+    "expected_primary": "batch_fetch",
+    "acceptable": ["batch_fetch"],
+    "expected_followups": ["build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "web_fetch", "repo_search", "provider_status"],
+    "why": "Several known URLs supplied; one bounded batch_fetch replaces serial web_fetch calls."
+  },
+  {
+    "id": "fetch-05",
+    "category": "fetch",
+    "query": "Fetch the sources you found for the axum routing question",
+    "expected_primary": "batch_fetch",
+    "acceptable": ["batch_fetch", "web_fetch", "repo_fetch"],
+    "expected_followups": ["build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "repo_search", "provider_status", "research_search"],
+    "why": "Plural previously-found sources imply fan-out; batch_fetch is preferred while single-target fetch tools remain acceptable."
+  },
+  {
+    "id": "err-01",
+    "category": "exact_error",
+    "query": "error[E0308]: mismatched types expected String, found i32 in axum handler",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch", "web_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Literal Rust compiler error; canonical exact_error repo/debug path with redaction and error context."
+  },
+  {
+    "id": "err-02",
+    "category": "exact_error",
+    "query": "Traceback ValueError: invalid literal for int() with base 10 in app.py line 42",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search", "web_search"],
+    "expected_followups": ["repo_fetch", "web_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Literal Python exception; exact_error path first, generic web acceptable as fallback when no repo scope exists."
+  },
+  {
+    "id": "err-03",
+    "category": "exact_error",
+    "query": "error TS2322: Type string is not assignable to type number in app.ts",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch", "web_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Literal TypeScript compiler error with quoted message; exact_error translation applies across languages."
+  },
+  {
+    "id": "err-04",
+    "category": "exact_error",
+    "query": "cargo build fails with exact message failed to resolve patches for the manifest",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Toolchain/build error with an exact quoted message; exact_error mode preserves the literal text."
+  },
+  {
+    "id": "sec-01",
+    "category": "security",
+    "query": "Look up CVE-2024-12345 details and severity",
+    "expected_primary": "security_search",
+    "acceptable": ["security_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Structured CVE identifier; native advisory lookup with retrieval ledger beats generic web."
+  },
+  {
+    "id": "sec-02",
+    "category": "security",
+    "query": "What is GHSA-abcd-1234-efgh about? Which versions are affected?",
+    "expected_primary": "security_search",
+    "acceptable": ["security_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "GHSA identifier plus affected-range question; advisory + applicability path."
+  },
+  {
+    "id": "sec-03",
+    "category": "security",
+    "query": "Is tokio 1.42.0 affected by CVE-2024-12345? Assess applicability for crates.io package tokio version 1.42.0",
+    "expected_primary": "security_search",
+    "acceptable": ["security_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
+    "why": "Package/version applicability with ecosystem and version; metadata comparison path in security_search."
+  },
+  {
+    "id": "sec-04",
+    "category": "security",
+    "query": "Assess dependencies in my Cargo.lock for known vulnerabilities",
+    "expected_primary": "security_search",
+    "acceptable": ["security_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
+    "why": "Lockfile dependency assessment; dependency_files parsing belongs to security_search."
+  },
+  {
+    "id": "sec-05",
+    "category": "security",
+    "query": "How do I avoid path traversal vulnerabilities when writing Rust file handling code?",
+    "expected_primary": "web_search",
+    "acceptable": ["web_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["security_search", "provider_status", "build_evidence_bundle"],
+    "why": "Generic secure-coding how-to with no identifier, package, version, or lockfile; must not invoke package applicability machinery."
+  },
+  {
+    "id": "res-01",
+    "category": "research",
+    "query": "Compare axum vs actix-web for a high-performance REST API",
+    "expected_primary": "research_search",
+    "acceptable": ["research_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "repo_fetch", "build_evidence_bundle"],
+    "why": "Library comparison across several sources; library_comparison workflow with subquery transparency."
+  },
+  {
+    "id": "res-02",
+    "category": "research",
+    "query": "Should we choose microservices or modular monolith for our Rust backend? Architecture decision with tradeoffs",
+    "expected_primary": "research_search",
+    "acceptable": ["research_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "repo_fetch", "build_evidence_bundle"],
+    "why": "Architecture decision needing multiple evidence classes; architecture_decision workflow scaffolding."
+  },
+  {
+    "id": "res-03",
+    "category": "research",
+    "query": "Survey the Rust async runtime ecosystem: tokio, async-std, smol",
+    "expected_primary": "research_search",
+    "acceptable": ["research_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "repo_fetch", "build_evidence_bundle"],
+    "why": "Ecosystem survey across many sources; ecosystem_survey workflow."
+  },
+  {
+    "id": "res-04",
+    "category": "research",
+    "query": "Investigate tokio scheduling performance with benchmarks and profiling evidence",
+    "expected_primary": "research_search",
+    "acceptable": ["research_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Performance investigation requiring benchmarks plus implementation evidence; performance_investigation workflow."
+  },
+  {
+    "id": "res-05",
+    "category": "research",
+    "query": "Plan migration from Express to Axum across API routes, middleware, and tests",
+    "expected_primary": "research_search",
+    "acceptable": ["research_search", "repo_search"],
+    "expected_followups": ["repo_search", "repo_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Migration planning across several sources; migration_planning workflow while repo_search remains acceptable for repo-scoped steps."
+  },
+  {
+    "id": "ev-01",
+    "category": "evidence",
+    "query": "Package the selected search results and fetches about axum routing for handoff to a subagent",
+    "expected_primary": "build_evidence_bundle",
+    "acceptable": ["build_evidence_bundle"],
+    "expected_followups": [],
+    "forbidden_primary": ["web_search", "repo_search", "security_search", "research_search", "web_fetch", "provider_status"],
+    "why": "Evidence already selected; deterministic non-summarizing bundling with no new retrieval."
+  },
+  {
+    "id": "ev-02",
+    "category": "evidence",
+    "query": "Build a deterministic evidence bundle from these source cards and fetch responses without new retrieval",
+    "expected_primary": "build_evidence_bundle",
+    "acceptable": ["build_evidence_bundle"],
+    "expected_followups": [],
+    "forbidden_primary": ["web_search", "repo_search", "security_search", "research_search", "web_fetch", "batch_fetch", "provider_status"],
+    "why": "Explicit bundle request over supplied evidence; searching or fetching again would be wrong."
+  },
+  {
+    "id": "diag-01",
+    "category": "diagnostics",
+    "query": "Why is brave_api unavailable? Provider outage troubleshooting and configuration check",
+    "expected_primary": "provider_status",
+    "acceptable": ["provider_status"],
+    "expected_followups": [],
+    "forbidden_primary": ["web_search", "repo_search", "security_search", "research_search", "build_evidence_bundle"],
+    "why": "Provider outage and configuration troubleshooting; diagnostic provider report with optional live probe."
+  },
+  {
+    "id": "diag-02",
+    "category": "diagnostics",
+    "query": "I selected exa but it reports missing API key, why is it unavailable and what is its health status?",
+    "expected_primary": "provider_status",
+    "acceptable": ["provider_status"],
+    "expected_followups": [],
+    "forbidden_primary": ["web_search", "repo_search", "security_search", "research_search", "build_evidence_bundle"],
+    "why": "Explicitly selected provider unavailable; health and skip-code diagnosis."
+  },
+  {
+    "id": "diag-neg-01",
+    "category": "diagnostics",
+    "query": "How do I use axum Router::layer middleware in tokio-rs/axum?",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Negative fixture: ordinary repo usage question must not route to diagnostics."
+  },
+  {
+    "id": "diag-neg-02",
+    "category": "diagnostics",
+    "query": "Compare axum vs actix-web performance and throughput",
+    "expected_primary": "research_search",
+    "acceptable": ["research_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Negative fixture: ordinary comparison must not route to diagnostics."
+  },
+  {
+    "id": "amb-01",
+    "category": "ambiguity",
+    "query": "Research security changes in crate tokio 1.x",
+    "expected_primary": "security_search",
+    "acceptable": ["security_search", "research_search"],
+    "expected_followups": ["web_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Ambiguous research/security wording, but crate plus version line prefers structured advisory and applicability over open-ended survey."
+  },
+  {
+    "id": "amb-02",
+    "category": "ambiguity",
+    "query": "Find CVE details for tokio",
+    "expected_primary": "security_search",
+    "acceptable": ["security_search"],
+    "expected_followups": ["web_fetch"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "CVE details with a package name; identifier-shaped advisory lookup beats generic web even though the CVE number is missing."
+  },
+  {
+    "id": "amb-03",
+    "category": "ambiguity",
+    "query": "Compare versions 0.6 and 0.7 of axum in tokio-rs/axum",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search", "research_search"],
+    "expected_followups": ["repo_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Repo-scoped version compare prefers changelog and release groups; research_search acceptable when cross-source migration planning dominates."
+  },
+  {
+    "id": "amb-04",
+    "category": "ambiguity",
+    "query": "Investigate performance regression in tokio-rs/axum",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search", "research_search"],
+    "expected_followups": ["repo_fetch", "build_evidence_bundle"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Explicit repo scope prefers repo evidence (issues, commits, benchmarks in repo); research_search acceptable for the multi-source performance workflow."
+  },
+  {
+    "id": "amb-05",
+    "category": "ambiguity",
+    "query": "Find release notes for tokio-rs/axum",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search"],
+    "expected_followups": ["repo_fetch", "web_fetch"],
+    "forbidden_primary": ["provider_status", "research_search", "build_evidence_bundle"],
+    "why": "Release notes map directly to the releases group in repo_search; a full research workflow would be overkill."
+  },
+  {
+    "id": "amb-06",
+    "category": "ambiguity",
+    "query": "Fetch the sources you found",
+    "expected_primary": "batch_fetch",
+    "acceptable": ["batch_fetch", "web_fetch", "repo_fetch"],
+    "expected_followups": ["build_evidence_bundle"],
+    "forbidden_primary": ["web_search", "repo_search", "security_search", "research_search", "provider_status"],
+    "why": "Terse plural follow-up after search; batch fan-out preferred while single-target fetches stay acceptable."
+  },
+  {
+    "id": "amb-07",
+    "category": "ambiguity",
+    "query": "What changed in this repository tokio-rs/axum?",
+    "expected_primary": "repo_search",
+    "acceptable": ["repo_search", "repo_map"],
+    "expected_followups": ["repo_fetch"],
+    "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
+    "why": "Change history needs commits, releases, and changelog groups; repo_map is acceptable for orientation but does not answer what changed."
+  }
+]

@@ -83,7 +83,7 @@ fetch ↗
 | CLI commands | `src/commands/` (10 files) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
 | Agent/IDE integrations | `src/integrations/` (9 files) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
-| Testing infrastructure | `tests/` (67 test suites), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
+| Testing infrastructure | `tests/` (70 test suites), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
 | Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |
 
