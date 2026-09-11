@@ -185,3 +185,7 @@ Runs the deterministic 43-fixture tool-selection corpus with context byte budget
 - [MCP integrations](docs/integrations.md) — CodeGG, Zed, Codex, Claude Code, VS Code, Cursor, and OpenCode
 - [Managed service](docs/service.md) — systemd, launchd, Windows SCM, cron, status, restart
 - [Update](docs/update.md) — binary-first self-update, verification, and fallback rules
+
+## License
+
+MIT — see [LICENSE](LICENSE).
