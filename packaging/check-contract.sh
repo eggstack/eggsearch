@@ -88,7 +88,7 @@ bash -n "$unix_installer" "$root/packaging/release-smoke.sh" "$root/packaging/re
 "$root/packaging/test-install.sh"
 
 if command -v pwsh >/dev/null 2>&1; then
-    pwsh -NoProfile -Command '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$null, [ref]$errors) | Out-Null; if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }' "$windows_installer"
+    EGGSEARCH_INSTALLER="$windows_installer" pwsh -NoProfile -Command '$tokens = $null; $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile($env:EGGSEARCH_INSTALLER, [ref]$tokens, [ref]$errors) | Out-Null; if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }'
     pwsh -NoProfile -File "$root/packaging/test-install.ps1"
 fi
 
