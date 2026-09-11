@@ -132,7 +132,7 @@ Wraps all search behind `MetadataSearchAdapter`; callers never touch engines dir
 
 ### engines — vendored providers ([engines.md](engines.md))
 
-37 engine structs plus the local workspace backend cover 37 registered provider IDs:
+36 engine structs plus the local workspace backend cover 37 registered provider IDs:
 
 - Generic web: DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, SearXNG, Brave Search API, Exa Semantic Search, Tavily Search
 - Developer index: Firecrawl Developer (keyless-optional, issues/PRs/READMEs/docs with passages)

@@ -1,4 +1,6 @@
+#[cfg(feature = "browser")]
 use crate::mcp::state::ServerState;
+#[cfg(feature = "browser")]
 use std::sync::Arc;
 
 /// Stable machine-readable tool error code.

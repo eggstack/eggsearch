@@ -1942,6 +1942,12 @@ fn validate_base_url_common(
                 if policy.require_https {
                     return Err("base URL must use HTTPS per policy".into());
                 }
+                if let Some(ip) = parse_literal_ip(host) {
+                    classify_and_reject_address(ip, policy)?;
+                } else {
+                    let port = parsed.port().unwrap_or(80);
+                    return Ok(Some(format!("{host}:{port}")));
+                }
             }
         } else {
             if is_loopback && !policy.allow_loopback {

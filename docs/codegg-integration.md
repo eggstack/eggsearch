@@ -425,7 +425,7 @@ discovery -> hydrate 1–few definitions -> call -> follow next_actions`.
 
 ### Compact discovery
 
-- `tool_search` results must carry compact selection metadata only
+- Tool-discovery results must carry compact selection metadata only
   (`purpose`, `use_when`, `not_for`, `domain`, `disclosure`, `keywords`,
   `aliases`, `related`/`next`), never full `parameters` schemas by default.
   Source the eggsearch wrapper fields from `src/mcp/tool_contract.rs`
@@ -460,19 +460,19 @@ discovery -> hydrate 1–few definitions -> call -> follow next_actions`.
   filter.
 - After a successful call, mark high-priority `next_actions` targets as
   eligible for immediate hydration on the next model request without another
-  `tool_search` round trip:
+  discovery round trip:
   `web_search` → `web_fetch`, `batch_fetch`;
   `repo_search` → `repo_fetch`, `repo_map`, `batch_fetch`;
   `research_search` → `web_fetch`, `repo_fetch`, `batch_fetch`,
   `build_evidence_bundle`;
   `security_search` → `web_fetch`, `batch_fetch`, `build_evidence_bundle`.
 - Treat next actions as hints, not forced execution. Filter every target
-  through the same policy as `tool_search`; ignore malicious or unknown
+  through the same policy as tool discovery; ignore malicious or unknown
   names.
 
 ### Role-specific palettes
 
-- Ordinary coding: `web_search`, `repo_search`, `tool_search`, optionally
+- Ordinary coding: `web_search`, `repo_search`, optionally
   `web_fetch` depending on measured frequency/context cost.
 - Research role: `research_search`, `repo_search`, plus selected
   fetch/evidence tools.

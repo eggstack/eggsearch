@@ -1,9 +1,9 @@
 # Vendored Search Engines Deep Dive
 
-**Location:** `src/meta/engines/` (42 files: 37 engine implementations plus support modules)
+**Location:** `src/meta/engines/` (42 files: 36 engine implementations plus support modules)
 **Purpose:** One self-contained implementation per upstream provider. Internal to the metasearch adapter — engine types never leak past `MetadataSearchAdapter`; callers receive `crate::core::SourceCard` values.
 
-Engines are paired 1:1 with the 37 registered provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`), except that `local_workspace` is served by the local workspace backend (`src/meta/local_backend.rs`), not an engine file.
+The 36 engines plus the local workspace backend cover the 37 registered provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`); `local_workspace` is served by the local workspace backend (`src/meta/local_backend.rs`), not an engine file.
 
 ---
 

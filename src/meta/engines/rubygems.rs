@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::Client;
@@ -6,10 +5,6 @@ use reqwest::Client;
 use super::error::EngineError;
 use super::models::{ResultMetadata, SearchResult};
 use crate::core::package::{PackageCoordinate, PackageEcosystem};
-
-pub struct RubygemsRegistryEngine {
-    pub client: Arc<Client>,
-}
 
 pub async fn search(
     client: &Client,

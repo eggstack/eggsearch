@@ -255,18 +255,25 @@ async fn request_timeout(request: Request, next: Next) -> Response {
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("SIGTERM handler can be installed");
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = sigterm.recv() => {}
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sigterm) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = sigterm.recv() => {}
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "SIGTERM handler unavailable; waiting for Ctrl-C only");
+                let _ = tokio::signal::ctrl_c().await;
+            }
         }
     }
     #[cfg(not(unix))]
     {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Ctrl-C handler can be installed");
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::warn!(%error, "Ctrl-C handler unavailable; shutdown signal will not fire");
+            std::future::pending::<()>().await;
+        }
     }
 }
 

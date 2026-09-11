@@ -640,12 +640,16 @@ where
         if read == 0 {
             break;
         }
-        if output.len() < MAX_CANDIDATE_OUTPUT_BYTES {
-            let remaining = MAX_CANDIDATE_OUTPUT_BYTES - output.len();
-            output.extend_from_slice(&buffer[..read.min(remaining)]);
-        }
-        if output.len() >= MAX_CANDIDATE_OUTPUT_BYTES || read > MAX_CANDIDATE_OUTPUT_BYTES {
+        if output.len() >= MAX_CANDIDATE_OUTPUT_BYTES {
             overflow = true;
+        } else {
+            let remaining = MAX_CANDIDATE_OUTPUT_BYTES - output.len();
+            if read > remaining {
+                output.extend_from_slice(&buffer[..remaining]);
+                overflow = true;
+            } else {
+                output.extend_from_slice(&buffer[..read]);
+            }
         }
     }
     if overflow {
@@ -833,6 +837,21 @@ mod tests {
         );
         assert!(parse_stable_version("1.2.3-rc.1").is_err());
         assert!(parse_stable_version("not-semver").is_err());
+    }
+
+    #[tokio::test]
+    async fn read_bounded_accepts_exact_cap_size() {
+        let exact = vec![b'x'; MAX_CANDIDATE_OUTPUT_BYTES];
+        let out = read_bounded(&exact[..])
+            .await
+            .expect("exact-size output is clean");
+        assert_eq!(out.len(), MAX_CANDIDATE_OUTPUT_BYTES);
+    }
+
+    #[tokio::test]
+    async fn read_bounded_rejects_output_beyond_cap() {
+        let over = vec![b'x'; MAX_CANDIDATE_OUTPUT_BYTES + 1];
+        assert!(read_bounded(&over[..]).await.is_err());
     }
 
     #[tokio::test]

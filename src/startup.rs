@@ -362,7 +362,7 @@ pub async fn probe_health(spec: &RuntimeSpec) -> HealthState {
         Ok(client) => client,
         Err(error) => return HealthState::Error(error.to_string()),
     };
-    let response = match client.get(spec.health_url()).send().await {
+    let mut response = match client.get(spec.health_url()).send().await {
         Ok(response) => response,
         Err(error) if error.is_timeout() => return HealthState::Timeout,
         Err(error) => return HealthState::Error(error.to_string()),
@@ -370,11 +370,24 @@ pub async fn probe_health(spec: &RuntimeSpec) -> HealthState {
     if !response.status().is_success() {
         return HealthState::NonReady;
     }
-    let body = match response.bytes().await {
-        Ok(body) if body.len() <= 256 => body,
-        Ok(_) => return HealthState::Malformed,
-        Err(_) => return HealthState::Malformed,
-    };
+    if let Some(len) = response.content_length() {
+        if len > 256 {
+            return HealthState::Malformed;
+        }
+    }
+    let mut body = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                if body.len() + chunk.len() > 256 {
+                    return HealthState::Malformed;
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(_) => return HealthState::Malformed,
+        }
+    }
     let health: HealthPayload = match serde_json::from_slice(&body) {
         Ok(health) => health,
         Err(_) => return HealthState::Malformed,

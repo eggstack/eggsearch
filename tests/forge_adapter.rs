@@ -1264,6 +1264,36 @@ fn validate_base_url_http_10_private_rejected() {
 }
 
 #[test]
+fn validate_base_url_http_private_rejected_without_require_https() {
+    let policy = ForgeEndpointPolicy {
+        allow_loopback: false,
+        allow_private_network: false,
+        require_https: false,
+    };
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://192.168.1.1/api/v1",
+        None,
+        &policy
+    )
+    .is_err());
+}
+
+#[test]
+fn validate_base_url_http_private_allowed_when_private_allowed() {
+    let policy = ForgeEndpointPolicy {
+        allow_loopback: false,
+        allow_private_network: true,
+        require_https: false,
+    };
+    assert!(eggsearch::meta::forge_adapter::validate_base_url(
+        "http://192.168.1.1/api/v1",
+        None,
+        &policy
+    )
+    .is_ok());
+}
+
+#[test]
 fn validate_base_url_credential_bearing_http_rejected() {
     assert!(eggsearch::meta::forge_adapter::validate_base_url(
         "http://example.com/api/v1",

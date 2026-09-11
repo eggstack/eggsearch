@@ -7,6 +7,8 @@ const FILES: &[&str] = &[
     "docs/tool-matrix.md",
     "docs/agent-workflows.md",
     "AGENTS.md",
+    "architecture/mcp.md",
+    "architecture/codegg-contract.md",
 ];
 
 fn tool_names_from_server() -> Vec<String> {
@@ -56,4 +58,38 @@ fn tool_names_in_docs() {
     if !missing.is_empty() {
         panic!("the following MCP tools are not mentioned in any scanned docs: {missing:?}");
     }
+}
+
+#[test]
+fn no_phantom_tool_names_in_docs() {
+    let tools = tool_names_from_server();
+    let text = read_all_docs();
+    assert!(
+        !text.contains("tool_search"),
+        "`tool_search` is a CodeGG-native concept, not an eggsearch MCP tool"
+    );
+    let mut phantom = Vec::new();
+    for token in text.split('`') {
+        let token = token.trim();
+        if token.is_empty() || !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            continue;
+        }
+        let is_tool_like = token.ends_with("_search")
+            || token.ends_with("_fetch")
+            || token == "repo_map"
+            || token == "provider_status"
+            || token == "build_evidence_bundle";
+        if is_tool_like
+            && !tools.iter().any(|t| t == token)
+            && !matches!(token, "generic_search" | "safe_search")
+        {
+            phantom.push(token.to_string());
+        }
+    }
+    phantom.sort();
+    phantom.dedup();
+    assert!(
+        phantom.is_empty(),
+        "phantom tool-like names in docs (not registered MCP tools): {phantom:?}"
+    );
 }

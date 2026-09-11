@@ -43,7 +43,7 @@ related/next) for host BM25/keyword catalogs; discovery results must not dump
 full schemas. `next_actions` are sanitized (known tools only, max 5) and safe
 to hydrate without another search round trip; unknown names are ignored and
 never widen authority. Role guidance: ordinary coding
-(`web_search`, `repo_search`, `tool_search`, optionally `web_fetch`);
+(`web_search`, `repo_search`, optionally `web_fetch`);
 research (`research_search`, `repo_search`, plus selected fetch/evidence);
 security (`security_search` plus required fetch/evidence). Cache `tools/list`
 by content fingerprint plus server version, never by count.

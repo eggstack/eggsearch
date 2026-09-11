@@ -50,7 +50,7 @@ make fuzz-smoke              # 60s runs of 3 key fuzz targets
 make hygiene                 # deterministic repository-hygiene checks (also in `make check`)
 ```
 
-**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,207 tests pass with `--all-features` (23 ignored: 22 live-smoke + 1 live-model comparison); 4,958 with `--features mock` alone (1 ignored live-model comparison). Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
+**Critical: Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most integration tests. `--all-features` includes `mock`, `pdf`, and `browser`. Scale: 5,212 tests pass with `--all-features` (23 ignored: 22 live-smoke + 1 live-model comparison); 4,970 with `--features mock` alone (1 ignored live-model comparison). Full suite takes under 2 minutes. Per-suite inventory lives in `docs/test-inventory.md`.
 
 Release: `cargo publish --locked` (manual, maintainer-controlled). Pre-publish: `make release-check` passes, version bumped in Cargo.toml, CHANGELOG.md updated. The authoritative release process is in `docs/release.md`.
 
@@ -68,7 +68,7 @@ src/
   platform.rs      # release target/asset contract and host mapping
   update.rs        # crates.io-authoritative binary-first self-update
   core/            # types, config, error, sanitize, identity, warning, evidence roles, workflow coverage, security applicability, conflict, source cards
-  meta/            # MetadataSearchAdapter (adapter/ modules) + 37 vendored engines (+ local workspace backend with structured symbols) covering 37 registered provider IDs, forge adapter, planners, inventory cache, structured parser (local_symbols.rs), shared probe service (probe.rs), workflow substrate, dispatch/ + dependency_parse/ submodules, local/ subsystem facade
+  meta/            # MetadataSearchAdapter (adapter/ modules) + 36 vendored engines (+ local workspace backend with structured symbols) covering 37 registered provider IDs, forge adapter, planners, inventory cache, structured parser (local_symbols.rs), shared probe service (probe.rs), workflow substrate, dispatch/ + dependency_parse/ submodules, local/ subsystem facade
   fetch/           # HTTP fetch client, HTML rendering, extraction, span selection, browser rendering + profiles
   mcp/             # MCP server (rmcp), stdio/HTTP transports, canonical tool contract (tool_contract.rs), compact output schemas (output_schema.rs), deterministic result projection (projection.rs), tool definitions, state (tools/ per-tool modules)
   startup.rs       # startup manager policy, service templates, croncheck, restart state
