@@ -20,6 +20,7 @@
 #![allow(missing_docs)]
 
 pub mod http;
+pub mod output_schema;
 pub mod policy;
 pub mod server;
 pub mod state;

@@ -1,17 +1,112 @@
 use crate::mcp::state::ServerState;
 use std::sync::Arc;
 
-/// Error from a tool call, tagged by whether it reflects bad client
-/// input (`Validation`) or a server-side/runtime issue (`Internal`).
+/// Stable machine-readable tool error code.
 ///
-/// `Internal` errors optionally carry structured JSON data for
-/// machine-readable error codes (e.g. browser/manual-interaction outcomes).
-/// The `data` field is passed through the MCP error response's `data`
-/// member when present.
+/// Codes are part of the repairable error contract. Agents may match on
+/// `code` to decide whether a retry with repaired arguments is worthwhile.
+/// Codes are stable; new codes are additive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolErrorCode {
+    InvalidSemanticValue,
+    ConflictingArguments,
+    CapabilityUnavailable,
+    ProviderUnavailable,
+    PolicyDenied,
+    BudgetInvalid,
+    LocatorInvalid,
+    ManualInteractionRequired,
+    UpstreamFailed,
+    InvalidRequest,
+    Internal,
+}
+
+impl ToolErrorCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidSemanticValue => "invalid_semantic_value",
+            Self::ConflictingArguments => "conflicting_arguments",
+            Self::CapabilityUnavailable => "capability_unavailable",
+            Self::ProviderUnavailable => "provider_unavailable",
+            Self::PolicyDenied => "policy_denied",
+            Self::BudgetInvalid => "budget_invalid",
+            Self::LocatorInvalid => "locator_invalid",
+            Self::ManualInteractionRequired => "manual_interaction_required",
+            Self::UpstreamFailed => "upstream_failed",
+            Self::InvalidRequest => "invalid_request",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+/// Bounded machine-readable repair hint for repairable tool errors.
+///
+/// `accepted` is capped at 20 entries; each string field is length-bounded
+/// by the constructor. Hints never carry hidden reasoning.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RepairHint {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    #[serde(default)]
+    pub accepted: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_value: Option<String>,
+}
+
+impl RepairHint {
+    fn bound_str(s: &str, cap: usize) -> String {
+        let mut out: String = s.chars().take(cap).collect();
+        out.truncate(cap);
+        out
+    }
+
+    pub fn new(field: Option<&str>, accepted: &[&str], suggested_value: Option<&str>) -> Self {
+        Self {
+            field: field
+                .map(|f| Self::bound_str(f.trim(), 128))
+                .filter(|f| !f.is_empty()),
+            accepted: accepted
+                .iter()
+                .take(20)
+                .map(|a| Self::bound_str(a.trim(), 128))
+                .filter(|a| !a.is_empty())
+                .collect(),
+            suggested_value: suggested_value
+                .map(|s| Self::bound_str(s.trim(), 256))
+                .filter(|s| !s.is_empty()),
+        }
+    }
+}
+
+/// Recoverable semantic failure detail. Boxed inside `ToolError::Execution`
+/// to keep `Result<_, ToolError>` below Clippy's large-error threshold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolErrorExecution {
+    pub code: ToolErrorCode,
+    pub message: String,
+    pub data: Option<serde_json::Value>,
+    pub repair: Option<RepairHint>,
+}
+
+/// Error from a tool call.
+///
+/// - `Validation` is the legacy semantic-failure variant. It is preserved
+///   for compatibility and maps to a repairable `isError` tool result, not
+///   to JSON-RPC `invalid_params`. New code should use `Execution`.
+/// - `InvalidRequest` is a true protocol/input-shape failure that prevents
+///   interpreting the invocation. It maps to JSON-RPC `invalid_params`.
+/// - `Execution` is a recoverable semantic failure the caller can repair
+///   and retry. It maps to an MCP tool error (`isError: true`) with a
+///   stable `code` and bounded `repair` hint.
+/// - `Internal` is a server-side/runtime failure. It maps to JSON-RPC
+///   `internal_error` and never leaks stack traces.
 #[derive(Debug)]
 #[must_use = "tool errors must be returned to the MCP caller"]
 pub enum ToolError {
     Validation(String),
+    InvalidRequest(String),
+    Execution(Box<ToolErrorExecution>),
     Internal {
         message: String,
         data: Option<serde_json::Value>,
@@ -32,14 +127,217 @@ impl ToolError {
             data: Some(data),
         }
     }
+
+    pub fn invalid_request(message: impl Into<String>) -> Self {
+        Self::InvalidRequest(message.into())
+    }
+
+    pub fn execution(code: ToolErrorCode, message: impl Into<String>) -> Self {
+        Self::Execution(Box::new(ToolErrorExecution {
+            code,
+            message: message.into(),
+            data: None,
+            repair: None,
+        }))
+    }
+
+    pub fn execution_with_repair(
+        code: ToolErrorCode,
+        message: impl Into<String>,
+        repair: RepairHint,
+    ) -> Self {
+        Self::Execution(Box::new(ToolErrorExecution {
+            code,
+            message: message.into(),
+            data: None,
+            repair: Some(repair),
+        }))
+    }
+
+    pub fn execution_with_data(
+        code: ToolErrorCode,
+        message: impl Into<String>,
+        data: serde_json::Value,
+    ) -> Self {
+        Self::Execution(Box::new(ToolErrorExecution {
+            code,
+            message: message.into(),
+            data: Some(data),
+            repair: None,
+        }))
+    }
+
+    pub fn invalid_semantic_value(field: &str, raw: &str, accepted: &[&str]) -> Self {
+        let message = format!(
+            "invalid {field} '{raw}'; accepted values: {}",
+            accepted.join(", ")
+        );
+        Self::execution_with_repair(
+            ToolErrorCode::InvalidSemanticValue,
+            message,
+            RepairHint::new(Some(field), accepted, None),
+        )
+    }
+
+    pub fn conflicting_arguments(message: impl Into<String>, field: Option<&str>) -> Self {
+        Self::execution_with_repair(
+            ToolErrorCode::ConflictingArguments,
+            message,
+            RepairHint::new(field, &[], None),
+        )
+    }
+
+    pub fn capability_unavailable(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::CapabilityUnavailable, message)
+    }
+
+    pub fn provider_unavailable(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::ProviderUnavailable, message)
+    }
+
+    pub fn policy_denied(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::PolicyDenied, message)
+    }
+
+    pub fn budget_invalid(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::BudgetInvalid, message)
+    }
+
+    pub fn locator_invalid(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::LocatorInvalid, message)
+    }
+
+    pub fn upstream_failed(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::UpstreamFailed, message)
+    }
+
+    pub fn code(&self) -> ToolErrorCode {
+        match self {
+            Self::Validation(_) => ToolErrorCode::InvalidSemanticValue,
+            Self::InvalidRequest(_) => ToolErrorCode::InvalidRequest,
+            Self::Execution(inner) => inner.code,
+            Self::Internal { .. } => ToolErrorCode::Internal,
+        }
+    }
+
+    fn inferred_code_for_legacy(message: &str) -> ToolErrorCode {
+        let lower = message.to_ascii_lowercase();
+        if lower.contains("conflicting") {
+            ToolErrorCode::ConflictingArguments
+        } else if lower.contains("budget")
+            || lower.contains("must be > 0")
+            || lower.contains("must not exceed")
+            || lower.contains("max_")
+        {
+            ToolErrorCode::BudgetInvalid
+        } else if lower.contains("unknown host")
+            || lower.contains("unknown provider")
+            || lower.contains("unsupported provider")
+            || lower.contains("provider")
+        {
+            ToolErrorCode::ProviderUnavailable
+        } else if lower.contains("not enabled")
+            || lower.contains("disabled")
+            || lower.contains("unavailable")
+            || lower.contains("not compiled")
+        {
+            ToolErrorCode::CapabilityUnavailable
+        } else if lower.contains("denied") || lower.contains("not allowed") {
+            ToolErrorCode::PolicyDenied
+        } else if lower.contains("locator")
+            || lower.contains("url scheme")
+            || lower.contains("url must")
+            || lower.contains("path")
+            || lower.contains("ref ")
+            || lower.contains("commit")
+        {
+            ToolErrorCode::LocatorInvalid
+        } else if lower.contains("manual_interaction") || lower.contains("browser") {
+            ToolErrorCode::ManualInteractionRequired
+        } else if lower.contains("all providers failed") || lower.contains("upstream") {
+            ToolErrorCode::UpstreamFailed
+        } else {
+            ToolErrorCode::InvalidSemanticValue
+        }
+    }
+
+    pub fn error_payload(&self) -> serde_json::Value {
+        match self {
+            Self::Validation(message) => {
+                let code = Self::inferred_code_for_legacy(message);
+                serde_json::json!({
+                    "code": code.as_str(),
+                    "message": message,
+                })
+            }
+            Self::InvalidRequest(message) => serde_json::json!({
+                "code": ToolErrorCode::InvalidRequest.as_str(),
+                "message": message,
+            }),
+            Self::Execution(inner) => {
+                let mut payload = serde_json::json!({
+                    "code": inner.code.as_str(),
+                    "message": inner.message,
+                });
+                if let Some(data) = &inner.data {
+                    payload["data"] = data.clone();
+                }
+                if let Some(repair) = &inner.repair {
+                    payload["repair"] =
+                        serde_json::to_value(repair).unwrap_or(serde_json::Value::Null);
+                }
+                payload
+            }
+            Self::Internal { message, data } => {
+                let mut payload = serde_json::json!({
+                    "code": ToolErrorCode::Internal.as_str(),
+                    "message": message,
+                });
+                if let Some(data) = data {
+                    payload["data"] = data.clone();
+                }
+                payload
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for ToolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Validation(msg) | Self::Internal { message: msg, .. } => {
+            Self::Validation(msg) | Self::InvalidRequest(msg) => {
                 write!(f, "{msg}")
             }
+            Self::Execution(inner) => write!(f, "{}", inner.message),
+            Self::Internal { message: msg, .. } => {
+                write!(f, "{msg}")
+            }
+        }
+    }
+}
+
+/// Central MCP error/result conversion seam.
+///
+/// - `Ok(value)` becomes a native structured success (`structuredContent`
+///   plus a text fallback for older clients).
+/// - `InvalidRequest` becomes JSON-RPC `invalid_params` (the invocation
+///   shape cannot be interpreted).
+/// - `Validation` and `Execution` become repairable MCP tool errors
+///   (`isError: true`) with a stable `code` and bounded `repair` hint.
+/// - `Internal` becomes JSON-RPC `internal_error` without stack traces.
+pub fn map_tool_result(
+    result: Result<serde_json::Value, ToolError>,
+) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+    match result {
+        Ok(value) => Ok(rmcp::model::CallToolResult::structured(value)),
+        Err(ToolError::InvalidRequest(message)) => {
+            Err(rmcp::ErrorData::invalid_params(message, None))
+        }
+        Err(e @ ToolError::Validation(_)) | Err(e @ ToolError::Execution(_)) => Ok(
+            rmcp::model::CallToolResult::structured_error(e.error_payload()),
+        ),
+        Err(ToolError::Internal { message, data }) => {
+            Err(rmcp::ErrorData::internal_error(message, data))
         }
     }
 }
@@ -64,7 +362,7 @@ pub(crate) fn browser_manual_interaction_error(
         data["next_action"] = serde_json::Value::String(action.to_string());
     }
     let error_msg = format!("manual_interaction_required: {origin}: {message}");
-    ToolError::internal_with_data(error_msg, data)
+    ToolError::execution_with_data(ToolErrorCode::ManualInteractionRequired, error_msg, data)
 }
 
 #[cfg(feature = "browser")]
@@ -85,7 +383,7 @@ pub(crate) fn browser_profile_requires_attention_error(
         "browser_profile_requires_attention: profile '{profile_name}' requires manual login for {origin}; \
          reopen with: {next_action}"
     );
-    ToolError::internal_with_data(error_msg, data)
+    ToolError::execution_with_data(ToolErrorCode::ManualInteractionRequired, error_msg, data)
 }
 
 #[cfg(feature = "browser")]
@@ -95,7 +393,11 @@ pub(crate) fn browser_unavailable_error(reason: &str) -> ToolError {
         "message": reason,
         "manual_interaction_required": false,
     });
-    ToolError::internal_with_data(reason.to_string(), data)
+    ToolError::execution_with_data(
+        ToolErrorCode::CapabilityUnavailable,
+        reason.to_string(),
+        data,
+    )
 }
 
 #[cfg(feature = "browser")]
@@ -105,7 +407,8 @@ pub(crate) fn browser_deadline_exceeded_error() -> ToolError {
         "message": "insufficient time remaining for browser rendering",
         "manual_interaction_required": false,
     });
-    ToolError::internal_with_data(
+    ToolError::execution_with_data(
+        ToolErrorCode::BudgetInvalid,
         "insufficient time remaining for browser rendering".to_string(),
         data,
     )

@@ -107,7 +107,7 @@ not remove the underlying attempts.
 - Deterministic IDs for all stable output types
 - All untrusted text through sanitization
 - Partial failures are soft (adapter returns `WebSearchResponse`, never errors)
-- MCP tools return `Result<serde_json::Value, ToolError>`
+- MCP tools return `Result<serde_json::Value, ToolError>`; `map_tool_result()` is the single MCP seam (structured success, repairable `isError` with stable codes/repair hints, `invalid_params` only for uninterpretable shapes)
 - Additive schema evolution (new optional fields, never removal)
 - Anonymous browser rendering uses the warm ephemeral lifecycle; profile-scoped rendering uses the resolved opaque profile's Eggsearch-owned `chrome-data` directory and default browser context for one request
 - `eggsearch update --check` is registry-only and never mutates; normal update uses the exact matching `vX.Y.Z` asset, verifies checksum and candidate identity, and only falls back to isolated exact-version Cargo for unsupported hosts or confirmed asset 404

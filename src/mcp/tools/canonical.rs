@@ -1,4 +1,4 @@
-use super::common::ToolError;
+use super::common::{RepairHint, ToolError, ToolErrorCode};
 use crate::core::repo_search::{RepoSearchMode, SearchProfile};
 use crate::core::research::ResearchWorkflow;
 use crate::core::workflow_coverage::WorkflowKind;
@@ -86,17 +86,35 @@ pub fn parse_security_goal(s: &str) -> Option<WorkflowKind> {
 }
 
 fn goal_error(tool: &str, field: &str, raw: &str) -> ToolError {
-    ToolError::Validation(format!(
+    let message = format!(
         "invalid {field} '{raw}' for {tool}; accepted values: {}. Repair: omit {field} or use one of the listed values.",
         REPO_GOAL_VALUES.join(", ")
-    ))
+    );
+    ToolError::execution_with_repair(
+        super::common::ToolErrorCode::InvalidSemanticValue,
+        message,
+        super::common::RepairHint::new(Some(field), REPO_GOAL_VALUES, None),
+    )
 }
 
 fn source_error(raw: &str) -> ToolError {
-    ToolError::Validation(format!(
+    let message = format!(
         "invalid sources entry '{raw}'; accepted values: {}. Repair: omit sources or use only the listed tokens.",
         REPO_SOURCE_VALUES.join(", ")
-    ))
+    );
+    ToolError::execution_with_repair(
+        super::common::ToolErrorCode::InvalidSemanticValue,
+        message,
+        super::common::RepairHint::new(Some("sources"), REPO_SOURCE_VALUES, None),
+    )
+}
+
+fn conflict_error(message: String, field: Option<&str>) -> ToolError {
+    ToolError::execution_with_repair(
+        ToolErrorCode::ConflictingArguments,
+        message,
+        RepairHint::new(field, &[], None),
+    )
 }
 
 #[derive(Debug, Clone, Default)]
@@ -132,10 +150,15 @@ pub fn resolve_repo_semantics(
             } else {
                 Some(crate::core::workflow_coverage::WorkflowKind::parse(trimmed).ok_or_else(
                     || {
-                        ToolError::Validation(format!(
+                        let message = format!(
                             "invalid workflow '{w}'; accepted values: api_comprehension, repository_architecture, error_investigation, version_migration, security_review, dependency_evaluation, performance_investigation, comparative_research, pre_change_evidence, post_change_review. Repair: use goal instead ({}), or omit workflow.",
                             REPO_GOAL_VALUES.join(", ")
-                        ))
+                        );
+                        ToolError::execution_with_repair(
+                            ToolErrorCode::InvalidSemanticValue,
+                            message,
+                            RepairHint::new(Some("workflow"), REPO_GOAL_VALUES, None),
+                        )
                     },
                 )?)
             }
@@ -145,13 +168,13 @@ pub fn resolve_repo_semantics(
 
     if let (Some(g), Some(w)) = (goal_kind, legacy_workflow) {
         if g != w {
-            return Err(ToolError::Validation(format!(
+            return Err(conflict_error(format!(
                 "conflicting goal '{}' ({}) and workflow '{}' ({}); they must agree. Repair: omit workflow and keep goal, or omit goal and keep workflow.",
                 goal_raw.unwrap_or(""),
                 g.as_str(),
                 workflow_raw.unwrap_or(""),
                 w.as_str()
-            )));
+            ), Some("workflow")));
         }
     }
 
@@ -164,17 +187,26 @@ pub fn resolve_repo_semantics(
                 None
             } else {
                 let parsed = SearchProfile::parse(trimmed).ok_or_else(|| {
-                    ToolError::Validation(format!(
+                    let message = format!(
                         "invalid profile '{p}'; accepted values: generic, coding, security, research. Repair: omit profile and use goal instead ({}).",
                         REPO_GOAL_VALUES.join(", ")
-                    ))
+                    );
+                    ToolError::execution_with_repair(
+                        ToolErrorCode::InvalidSemanticValue,
+                        message,
+                        RepairHint::new(
+                            Some("profile"),
+                            &["generic", "coding", "security", "research"],
+                            None,
+                        ),
+                    )
                 })?;
                 if let Some(g) = goal_kind {
                     if parsed == SearchProfile::Security && g != WorkflowKind::SecurityReview {
-                        return Err(ToolError::Validation(format!(
+                        return Err(conflict_error(format!(
                             "conflicting goal '{}' and profile 'security'; profile 'security' implies goal 'security'. Repair: use goal 'security' with profile 'security', or omit profile.",
                             goal_raw.unwrap_or("")
-                        )));
+                        ), Some("profile")));
                     }
                 }
                 Some(parsed)
@@ -190,23 +222,25 @@ pub fn resolve_repo_semantics(
                 None
             } else {
                 let parsed = RepoSearchMode::parse(trimmed).ok_or_else(|| {
-                    ToolError::Validation(
+                    ToolError::execution_with_repair(
+                        ToolErrorCode::InvalidSemanticValue,
                         "invalid mode 'invalid'; accepted values: default, exact_error. Repair: omit mode and use goal 'debug' for error investigation.".to_string().replace("invalid", m),
+                        RepairHint::new(Some("mode"), &["default", "exact_error"], Some("exact_error")),
                     )
                 })?;
                 if let Some(g) = goal_kind {
                     let expects_exact = g == WorkflowKind::ErrorInvestigation;
                     let is_exact = parsed == RepoSearchMode::ExactError;
                     if expects_exact && !is_exact {
-                        return Err(ToolError::Validation(format!(
+                        return Err(conflict_error(format!(
                             "conflicting goal 'debug' and mode '{m}'; goal 'debug' requires exact-error behavior. Repair: omit mode or use mode 'exact_error'."
-                        )));
+                        ), Some("mode")));
                     }
                     if !expects_exact && is_exact {
-                        return Err(ToolError::Validation(format!(
+                        return Err(conflict_error(format!(
                             "conflicting goal '{}' and mode 'exact_error'; exact-error mode implies goal 'debug'. Repair: use goal 'debug' or omit mode.",
                             goal_raw.unwrap_or("")
-                        )));
+                        ), Some("mode")));
                     }
                 }
                 Some(parsed)

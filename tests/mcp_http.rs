@@ -261,6 +261,165 @@ async fn current_http_protocol_uses_request_metadata_without_a_session() {
     server.stop().await;
 }
 
+async fn modern_call(server: &TestServer, id: u64, name: &str, arguments: Value) -> Value {
+    let metadata = json!({
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientInfo":{"name":"eggsearch-current-test","version":"1"},
+        "io.modelcontextprotocol/clientCapabilities":{}
+    });
+    let response = server
+        .client
+        .post(server.url())
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("MCP-Protocol-Version", "2026-07-28")
+        .header("Mcp-Method", "tools/call")
+        .header("Mcp-Name", name)
+        .body(
+            json!({
+                "jsonrpc":"2.0",
+                "id":id,
+                "method":"tools/call",
+                "params":{"name":name,"arguments":arguments,"_meta":metadata}
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    sse_payload(response).await
+}
+
+async fn modern_list(server: &TestServer, id: u64) -> Value {
+    let metadata = json!({
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientInfo":{"name":"eggsearch-current-test","version":"1"},
+        "io.modelcontextprotocol/clientCapabilities":{}
+    });
+    let response = server
+        .client
+        .post(server.url())
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("MCP-Protocol-Version", "2026-07-28")
+        .header("Mcp-Method", "tools/list")
+        .body(
+            json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":{"_meta":metadata}})
+                .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    sse_payload(response).await
+}
+
+#[tokio::test]
+async fn modern_call_returns_structured_success() {
+    let server = TestServer::start().await;
+    let result = modern_call(&server, 10, "provider_status", json!({})).await;
+    assert_eq!(result["result"]["isError"], false);
+    assert!(
+        result["result"]["structuredContent"].is_object(),
+        "modern success must carry native structuredContent: {result}"
+    );
+    assert!(
+        result["result"]["structuredContent"]["providers"].is_array(),
+        "provider_status structuredContent must include providers"
+    );
+    assert!(
+        !result["result"]["content"].as_array().unwrap().is_empty(),
+        "text fallback must be present for older clients"
+    );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn modern_call_returns_repairable_tool_error_not_invalid_params() {
+    let server = TestServer::start().await;
+    let result = modern_call(
+        &server,
+        11,
+        "repo_search",
+        json!({
+            "query": "test",
+            "goal": "debug",
+            "workflow": "security_review",
+        }),
+    )
+    .await;
+    assert_eq!(
+        result["result"]["isError"], true,
+        "semantic conflict must be a repairable tool error: {result}"
+    );
+    assert_eq!(
+        result["result"]["structuredContent"]["code"],
+        "conflicting_arguments"
+    );
+    assert!(
+        result["result"]["structuredContent"]["repair"].is_object(),
+        "repairable error must carry bounded repair hint: {result}"
+    );
+    assert!(
+        result.get("error").is_none(),
+        "repairable failure must not become JSON-RPC invalid_params: {result}"
+    );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn modern_call_wrong_shape_is_tool_error_with_repair_guidance() {
+    let server = TestServer::start().await;
+    let result = modern_call(
+        &server,
+        12,
+        "provider_status",
+        json!({"probe": "not-a-bool"}),
+    )
+    .await;
+    assert_eq!(
+        result["result"]["isError"], true,
+        "rmcp surfaces input-schema decode failures as tool errors: {result}"
+    );
+    let text = result["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("failed to deserialize") || text.contains("invalid type"),
+        "decode failure must explain the shape problem: {result}"
+    );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn modern_tools_list_is_deterministic_and_carries_output_schemas() {
+    let server = TestServer::start().await;
+    let first = modern_list(&server, 20).await;
+    let second = modern_list(&server, 21).await;
+    let first_tools = first["result"]["tools"].as_array().unwrap();
+    let second_tools = second["result"]["tools"].as_array().unwrap();
+    assert_eq!(first_tools.len(), 10);
+    assert_eq!(first_tools, second_tools);
+    let names: Vec<&str> = first_tools
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        names, sorted,
+        "tools/list must be deterministically ordered"
+    );
+    for tool in first_tools {
+        assert!(
+            tool["outputSchema"].is_object(),
+            "tool {} must advertise outputSchema",
+            tool["name"]
+        );
+        assert_eq!(tool["outputSchema"]["type"], "object");
+    }
+    server.stop().await;
+}
+
 #[tokio::test]
 async fn invalid_host_origin_content_type_session_and_body_are_rejected() {
     let server = TestServer::start().await;

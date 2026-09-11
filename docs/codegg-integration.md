@@ -1294,3 +1294,9 @@ percent-encoding before hashing.
 Each recipe's `support` status (`available`, `partial`, `unavailable`)
 is evaluated against the current provider configuration at runtime.
 Call `provider_status(recipe_detail = "summary")` to check.
+
+---
+
+## MCP 2026-07-28 handoff
+
+Negotiate 2026-07-28 when supported (`server/discover`, stateless request metadata); keep the legacy initialize fallback for older servers. Prefer `structuredContent` over parsing JSON from text blocks, validate `outputSchema` when practical, distinguish tool-level `isError` (repairable `code` + bounded `repair`) from transport/protocol failure, and cache deterministic tool definitions by content fingerprint rather than count.

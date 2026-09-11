@@ -15,6 +15,8 @@ Transport selection:
 
 The full stable machine-readable response contract for harness developers lives in `architecture/codegg-contract.md`.
 
+Results use native MCP `structuredContent` with a text fallback; prefer `structuredContent` and validate `outputSchema` when practical. `tools/list` is name-sorted with a content fingerprint for caching; cache by fingerprint, not by count. Repairable semantic failures arrive as `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`) and bounded `repair { field, accepted[], suggested_value }`; only uninterpretable shapes are JSON-RPC `invalid_params`.
+
 The `eggsearch integrate` command renders or applies client-specific MCP registration for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode. Rendering is read-only; apply mode uses native client commands where available or atomic JSON replacement with timestamped backups, then verifies the selected transport's required tools. Zed and OpenCode JSONC remain print-only when safe editing is unavailable. See `docs/integrations.md` and `architecture/integrations.md`.
 
 ## Tool Catalog (10 tools)

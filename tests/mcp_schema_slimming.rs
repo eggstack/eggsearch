@@ -66,8 +66,8 @@ fn search_four_schema_bytes_stay_slim() {
         })
         .sum();
     assert!(
-        total <= 70_000,
-        "all tool definitions total {total} bytes exceeds 70000 budget (pre-slim baseline 74694)"
+        total <= 72_000,
+        "all tool definitions total {total} bytes exceeds 72000 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes)"
     );
 }
 

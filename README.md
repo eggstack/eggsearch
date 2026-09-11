@@ -130,7 +130,7 @@ start or register a service unless explicit `--service` is supplied. See
 | `research_search` | Multi-source evidence discovery |
 | `build_evidence_bundle` | Deterministic, non-summarizing evidence packaging |
 
-Search tools return machine-readable `next_actions` hints. See [tool-matrix.md](docs/tool-matrix.md) for full tool reference.
+Search tools return machine-readable `next_actions` hints. Success uses native MCP `structuredContent` with a text fallback; per-tool `outputSchema` (compact stable envelopes) is advertised and `tools/list` is deterministically ordered with a content fingerprint for caching. Semantic failures are repairable `isError` tool errors with stable codes and bounded repair hints; only uninterpretable shapes become `invalid_params`. See [tool-matrix.md](docs/tool-matrix.md) for full tool reference.
 
 Start with the task-appropriate search primitive (`web_search` for general research, `repo_search` for codebases, `security_search` for advisories, `research_search` for complex comparisons). `provider_status` is diagnostic for hosts and troubleshooting, not a normal first research step. Specialist tools (`security_search`, `research_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed. The canonical disclosure model lives in `src/mcp/tool_contract.rs`.
 

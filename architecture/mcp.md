@@ -10,8 +10,9 @@
 | File | Responsibility |
 |------|---------------|
 | `mod.rs` | Module declarations, canonical server factory, and re-exports |
-| `server.rs` | `EggsearchServer` — rmcp `ServerHandler` impl, 10 `#[tool]` handlers with contract-derived descriptions/annotations, `EGGSEARCH_INSTRUCTIONS` (global rules only) |
+| `server.rs` | `EggsearchServer` — rmcp `ServerHandler` impl, 10 `#[tool]` handlers with contract-derived descriptions/annotations/output-schemas, centralized `map_tool_result` error/result seam, deterministic `tools/list` + content fingerprint, `EGGSEARCH_INSTRUCTIONS` (global rules only) |
 | `tool_contract.rs` | Canonical `ToolContract` registry: purpose, use-when/not-for, domain, disclosure hint, annotations, keywords, related/next tools |
+| `output_schema.rs` | Per-tool `outputSchema`: generated from typed response types where the tool returns one, permissive stable-envelope schemas where the payload is ad-hoc with open-ended metadata |
 | `http.rs` | Streamable HTTP service, `/healthz`, typed endpoint options, request bounds, and graceful shutdown |
 | `tools/` | Tool implementations by behavior (`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `evidence_bundle`, shared `common` and `canonical` translators, plus `tests`); stable `tools::X` paths preserved via re-exports |
 | `state.rs` | `ServerState` — shared state: config, adapter, fetch client, cache, etc. |
@@ -66,7 +67,27 @@ impl EggsearchServer {
 }
 ```
 
-Descriptions are short and selection-oriented; the canonical strings live in `tool_contract.rs` and are enforced by `apply_contract_metadata()` for both `tools/list` and `tool_definitions()`.
+Descriptions are short and selection-oriented; the canonical strings live in `tool_contract.rs` and are enforced by `apply_contract_metadata()` for both `tools/list` and `tool_definitions()`. Output schemas are attached in the same seam from `output_schema.rs`. `tools/list` is sorted by name and fingerprinted via FNV-1a over names, descriptions, annotations, and serialized input/output schemas, so clients can cache by content.
+
+### Structured results and output schemas
+
+Successful calls return `CallToolResult::structured(value)`: native `structuredContent` plus a text JSON fallback for older clients. CodeGG and modern clients should prefer `structuredContent` and validate `outputSchema` where practical.
+
+Every tool advertises a compact stable-envelope `outputSchema` (each <=1200 bytes, ~4k total). Stable top-level keys are listed as properties with minimal required sets; open-ended metadata remains `additionalProperties: true`.
+
+Measured during implementation: generating full `$defs`-expanded schemas from the typed response types costs ~285k bytes across the four search definitions alone, which would erase the Plan 002 input-slimming win on the wire. Compact envelopes preserve the 003 contract (native `structuredContent` + advertised `outputSchema` + representative-payload conformance in `tests/mcp_2026_protocol.rs`) without regressing context budgets. Full typed validation remains a documented non-goal for this pass.
+
+### Repairable error contract
+
+`src/mcp/tools/common.rs` owns the taxonomy. `map_tool_result()` is the single conversion seam; handlers delegate to it instead of repeating `match` blocks.
+
+- `InvalidRequest` — malformed invocation shape; maps to JSON-RPC `invalid_params`.
+- `Validation` (legacy) and `Execution { code, message, data, repair }` — recoverable semantic failures; map to MCP tool errors (`isError: true`) with stable `code` and bounded `repair` hint.
+- `Internal` — server-side failure; maps to JSON-RPC `internal_error` without stack traces.
+
+Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`, plus `invalid_request`/`internal`. Browser manual-interaction and capability errors reuse this vocabulary while preserving their existing `data` payloads. Canonical goal/workflow/source translators emit `InvalidSemanticValue`/`ConflictingArguments` with `RepairHint { field, accepted[<=20], suggested_value }`. Legacy `Validation` messages are code-inferred so old call sites remain repairable without a flag day.
+
+rmcp input-schema decode failures surface as `isError` tool errors in the pinned release; only true protocol failures (malformed JSON-RPC, missing negotiation headers) remain JSON-RPC errors on the wire.
 
 ---
 
@@ -258,14 +279,18 @@ Each tool lives in its own behavior module (`web_search.rs`, `repo_search.rs`, e
 5. **Format response** — Convert to `serde_json::Value`
 6. **Return** — `Result<Value, ToolError>`
 
-### ToolError Enum
+### ToolError taxonomy
 
 ```rust
 enum ToolError {
-    Validation(String),
-    Internal { message: String, data: Option<serde_json::Value> },
+    Validation(String), // legacy semantic failure -> isError tool result
+    InvalidRequest(String), // protocol shape failure -> invalid_params
+    Execution { code: ToolErrorCode, message: String, data: Option<Value>, repair: Option<RepairHint> },
+    Internal { message: String, data: Option<Value> }, // -> internal_error
 }
 ```
+
+`map_tool_result()` centralizes the mapping. Successful values become native structured results; semantic failures become `structured_error` payloads with stable codes.
 
 ---
 
@@ -295,9 +320,12 @@ MCP Server
 ## Streamable HTTP transport (`http.rs`)
 
 `eggsearch mcp serve` uses rmcp 3.2.0's `StreamableHttpService` behind an Axum
-HTTP/1 listener. The selected rmcp release supports Rust 1.88 and the current
-MCP Streamable HTTP revisions, including legacy initialize sessions and the
-2026-07-28 stateless discovery/request metadata flow.
+HTTP/1 listener. The pinned rmcp supports MCP 2026-07-28 (`server/discover`,
+stateless request metadata, `resultType`, JSON Schema 2020-12 tool schemas)
+alongside legacy initialize sessions. No upgrade is required for the 003
+scope; dual-era behavior is covered by `tests/mcp_http.rs` (legacy
+initialize/tools-list/call plus modern discover/list/call, structured
+success, repairable error, decode-failure, and deterministic list fixtures).
 
 The default endpoint is `127.0.0.1:11320/mcp`. Only loopback socket addresses
 are accepted. rmcp validates Host and the configured local browser origins;

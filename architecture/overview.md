@@ -155,7 +155,7 @@ Independent of the search path; used by `web_fetch`/`batch_fetch`/`repo_fetch` a
 
 ### mcp — protocol surface ([mcp.md](mcp.md))
 
-`EggsearchServer` implements rmcp's `ServerHandler`; `ServerState` holds config, adapter, fetch client, cache, browser lifecycle. Every tool follows the same pattern: validate input → check policy → call adapter/fetch → sanitize → return JSON or `ToolError`.
+`EggsearchServer` implements rmcp's `ServerHandler`; `ServerState` holds config, adapter, fetch client, cache, browser lifecycle. Every tool follows the same pattern: validate input → check policy → call adapter/fetch → sanitize → return JSON via the centralized `map_tool_result` seam (structured success, repairable isError, invalid_params only for uninterpretable shapes).
 
 ### commands — CLI surface ([commands.md](commands.md))
 
@@ -251,7 +251,7 @@ Production defaults `sanitize_output = true`; tests default to `false`.
 
 ### Soft failure semantics
 
-The adapter always returns a `WebSearchResponse`; provider failures become `ProviderFailure` entries and warnings. MCP tools return `Result<serde_json::Value, ToolError>` where errors mean invalid input or internal faults — not "a provider was down".
+The adapter always returns a `WebSearchResponse`; provider failures become `ProviderFailure` entries and warnings. MCP tools return `Result<serde_json::Value, ToolError>` mapped by `map_tool_result`: structured success, repairable isError with stable codes, invalid_params only for uninterpretable shapes, internal_error for server faults — not "a provider was down".
 
 ### Bounded everything
 

@@ -11,6 +11,28 @@ implement to correctly consume, deduplicate, triage, and route eggsearch
 MCP output. All types, codes, and semantics here are **stable** — breaking
 changes follow the semver-compatible schema migration rules in AGENTS.md.
 
+## 0. MCP 2026-07-28 protocol and error contract
+
+Successful calls return native `structuredContent` plus a text JSON fallback.
+Prefer `structuredContent`; validate `outputSchema` when practical. Every
+tool advertises `outputSchema` (generated from the typed envelope where one
+exists; permissive stable-envelope schemas for `web_search`, `web_fetch`,
+and `provider_status` where open-ended metadata is intentional).
+`tools/list` is name-sorted; cache it by the FNV-1a content fingerprint of
+names, descriptions, annotations, and serialized input/output schemas, not
+by tool count. Negotiate 2026-07-28 (`server/discover`, stateless metadata)
+when supported and fall back to legacy initialize sessions otherwise; tool
+names and semantics are stable across eras.
+
+Distinguish tool-level `isError` from transport/protocol failure. Recoverable
+semantic failures are `isError: true` results with stable `code` and bounded
+`repair { field, accepted[<=20], suggested_value }`. Stable codes:
+`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`,
+`provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`,
+`manual_interaction_required`, `upstream_failed`. Only uninterpretable
+invocation shapes are JSON-RPC `invalid_params`; server faults are
+`internal_error` without stack traces.
+
 ---
 
 ## 1. Deterministic Identity System

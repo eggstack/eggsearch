@@ -33,6 +33,12 @@ The canonical disclosure model lives in `src/mcp/tool_contract.rs`:
 
 Disclosure hints are advisory for hosts and never gate execution. Every capability remains callable regardless of its hint.
 
+## MCP result and error contract
+
+Success returns native `structuredContent` with a text JSON fallback; every tool advertises `outputSchema` (typed envelopes for seven tools, permissive stable envelopes for `web_search`/`web_fetch`/`provider_status`). `tools/list` is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize sessions; tool names are stable across eras.
+
+Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
+
 ## Keyless Baseline
 
 All tools work without API keys. The keyless baseline provides:

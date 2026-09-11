@@ -5,18 +5,18 @@ use std::sync::Arc;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, InitializeResult, ListToolsResult,
-    PaginatedRequestParams, ServerCapabilities, ServerInfo,
+    CallToolResult, Implementation, InitializeResult, ListToolsResult, PaginatedRequestParams,
+    ServerCapabilities, ServerInfo,
 };
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
 
 use crate::mcp::state::ServerState;
 use crate::mcp::tools::{
-    run_batch_fetch, run_build_evidence_bundle, run_provider_status_async, run_repo_fetch,
-    run_repo_map, run_repo_search, run_research_search, run_security_search, run_web_fetch,
-    run_web_search, BatchFetchArgs, EvidenceBundleArgs, ProviderStatusArgs, RepoFetchArgs,
-    RepoMapArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, ToolError, WebFetchArgs,
-    WebSearchArgs,
+    map_tool_result, run_batch_fetch, run_build_evidence_bundle, run_provider_status_async,
+    run_repo_fetch, run_repo_map, run_repo_search, run_research_search, run_security_search,
+    run_web_fetch, run_web_search, BatchFetchArgs, EvidenceBundleArgs, ProviderStatusArgs,
+    RepoFetchArgs, RepoMapArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs,
+    WebFetchArgs, WebSearchArgs,
 };
 
 #[derive(Clone)]
@@ -43,11 +43,13 @@ impl EggsearchServer {
         apply_contract_metadata(self.tool_router.list_all())
     }
 
-    fn json_result(v: serde_json::Value) -> Result<CallToolResult, McpError> {
-        Ok(CallToolResult::success(vec![ContentBlock::json(v)
-            .map_err(|e| {
-                McpError::internal_error(format!("serialization failed: {e}"), None)
-            })?]))
+    /// Deterministic content fingerprint of the public tool contract.
+    ///
+    /// Covers canonical names, descriptions, annotations, and advertised
+    /// input/output schemas. Suitable for client-side caching of
+    /// `tools/list` by content rather than by count.
+    pub fn tool_fingerprint(&self) -> String {
+        contract_fingerprint(&self.tool_definitions())
     }
 }
 
@@ -63,12 +65,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<WebSearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_web_search(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_web_search(state, args).await)
     }
 
     #[tool(
@@ -81,12 +78,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<ProviderStatusArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_provider_status_async(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_provider_status_async(state, args).await)
     }
 
     #[tool(
@@ -99,12 +91,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<RepoSearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_repo_search(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_repo_search(state, args).await)
     }
 
     #[tool(
@@ -117,12 +104,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<WebFetchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_web_fetch(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_web_fetch(state, args).await)
     }
 
     #[tool(
@@ -135,12 +117,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<RepoFetchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_repo_fetch(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_repo_fetch(state, args).await)
     }
 
     #[tool(
@@ -153,12 +130,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<SecuritySearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_security_search(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_security_search(state, args).await)
     }
 
     #[tool(
@@ -171,12 +143,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<ResearchSearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_research_search(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_research_search(state, args).await)
     }
 
     #[tool(
@@ -189,12 +156,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<BatchFetchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_batch_fetch(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_batch_fetch(state, args).await)
     }
 
     #[tool(
@@ -207,12 +169,7 @@ impl EggsearchServer {
         Parameters(args): Parameters<RepoMapArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        let res = run_repo_map(state, args).await;
-        match res {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_repo_map(state, args).await)
     }
 
     #[tool(
@@ -224,11 +181,7 @@ impl EggsearchServer {
         &self,
         Parameters(args): Parameters<EvidenceBundleArgs>,
     ) -> Result<CallToolResult, McpError> {
-        match run_build_evidence_bundle(args) {
-            Ok(v) => Self::json_result(v),
-            Err(ToolError::Validation(e)) => Err(McpError::invalid_params(e, None)),
-            Err(ToolError::Internal { message: e, data }) => Err(McpError::internal_error(e, data)),
-        }
+        map_tool_result(run_build_evidence_bundle(args))
     }
 }
 
@@ -261,17 +214,88 @@ impl ServerHandler for EggsearchServer {
 /// reports `open_world_hint=false` even though `probe=true` performs bounded
 /// live liveness checks; annotations never vary by arguments and are not
 /// permission controls.
+///
+/// Output schemas are attached from generated response types where the tool
+/// returns a typed envelope, or from a permissive stable-envelope schema
+/// where the runtime payload is an ad-hoc `json!` envelope with open-ended
+/// metadata. Tools are sorted by name so `tools/list` is deterministic and
+/// cacheable across transports and protocol eras.
 fn apply_contract_metadata(tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::Tool> {
-    tools
+    let mut tools: Vec<rmcp::model::Tool> = tools
         .into_iter()
         .map(|mut tool| {
             if let Some(contract) = crate::mcp::tool_contract::lookup(tool.name.as_ref()) {
                 tool.description = Some(contract.description.into());
                 tool.annotations = Some(contract.annotations());
             }
+            if let Some(schema) = crate::mcp::output_schema::output_schema_for(tool.name.as_ref()) {
+                tool.output_schema = Some(schema);
+            }
             tool
         })
-        .collect()
+        .collect();
+    tools.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
+    tools
+}
+
+/// Deterministic content fingerprint of advertised tool contracts.
+///
+/// Hashes canonical names, descriptions, annotations, and serialized
+/// input/output schemas with FNV-1a. Changes only when the public
+/// contract changes. Exposed for client-side `tools/list` caching and
+/// regression tests.
+fn contract_fingerprint(tools: &[rmcp::model::Tool]) -> String {
+    use std::hash::Hasher;
+    let mut hasher = fnv1a64();
+    for tool in tools {
+        hash_str(&mut hasher, tool.name.as_ref());
+        hash_str(&mut hasher, tool.description.as_deref().unwrap_or_default());
+        if let Some(annotations) = &tool.annotations {
+            hash_str(
+                &mut hasher,
+                &serde_json::to_string(annotations).unwrap_or_default(),
+            );
+        }
+        hash_str(
+            &mut hasher,
+            &serde_json::to_string(&tool.input_schema).unwrap_or_default(),
+        );
+        hash_str(
+            &mut hasher,
+            &serde_json::to_string(&tool.output_schema).unwrap_or_default(),
+        );
+    }
+    format!("{:016x}", hasher.finish())
+}
+
+fn fnv1a64() -> impl std::hash::Hasher {
+    struct Fnv1a(u64);
+    impl std::hash::Hasher for Fnv1a {
+        fn write(&mut self, bytes: &[u8]) {
+            const OFFSET: u64 = 0xcbf29ce484222325;
+            const PRIME: u64 = 0x100000001b3;
+            if self.0 == 0 {
+                self.0 = OFFSET;
+            }
+            for b in bytes {
+                self.0 ^= u64::from(*b);
+                self.0 = self.0.wrapping_mul(PRIME);
+            }
+        }
+        fn finish(&self) -> u64 {
+            if self.0 == 0 {
+                0xcbf29ce484222325
+            } else {
+                self.0
+            }
+        }
+    }
+    Fnv1a(0)
+}
+
+fn hash_str(hasher: &mut impl std::hash::Hasher, s: &str) {
+    hasher.write(s.as_bytes());
+    hasher.write_u8(0xff);
 }
 
 /// Server instructions surfaced during the MCP `initialize` handshake.
