@@ -134,6 +134,23 @@ Mock-backed deterministic coverage for the shared probe service:
 | `structured_local_code_intelligence.rs` | Structured parsing, ranking, fallback, budgets, repo-map enrichment (formerly `phase13_structured_code`) |
 | `batch_fetch_retrieval.rs` | Mixed focused/unfocused batch, truncation, isolation, round-trip (formerly `phase14_batch_focus`) |
 
+### Tool-Surface Evaluation (`tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs`)
+
+Deterministic agentic tool-surface regression gate over the labeled
+corpus in `tests/fixtures/tool_surface/cases.json` (43 fixtures across
+generic web, repo, fetch, exact-error, security, research, evidence,
+diagnostics, and ambiguity categories; every stable tool is an expected
+primary at least once). The runner scores each query against the live
+tool definitions, then asserts description/total/instructions/compact
+byte budgets, top-1/recall@3/MRR thresholds, forbidden-primary
+exclusion, known-tool/next-action reference validity, and synthetic
+Layer 2 hydration mechanics (next actions stay within the ten stable
+tools and compact discovery stays below full definitions). Baseline
+fingerprint and per-category accuracy print with `-- --nocapture` or
+`make eval-tool-surface`. `tool_surface_live.rs` keeps the Layer 3
+report contract in CI and holds one `#[ignore]`d manual multi-model
+comparison entry point (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`).
+
 ### Other Targeted Tests
 
 | File | Purpose |

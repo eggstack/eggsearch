@@ -6,10 +6,10 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5117 | 22 |
-| `--features mock` | 4875 | 0 |
+| `--all-features` | 5122 | 23 |
+| `--features mock` | 4880 | 1 |
 
-Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) — they run only via explicit opt-in targets.
+Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
 ## Property Tests (16 suites)
 
@@ -132,6 +132,17 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `evidence_integration` | Evidence integration pipeline |
 | `structured_local_code_intelligence` | Structured local code intelligence (4-language fixtures, ranking, fallback, budgets, repo-map enrichment) |
 | `provider_capability_contract` | Provider native-capability enforcement contract |
+
+## Tool-Surface Evaluation (2 suites)
+
+| Suite | Feature Gate | Tests | Focus |
+|-------|-------------|-------|-------|
+| `tool_surface_evaluation` | None | 4 | Labeled 43-fixture discovery corpus (top-1/recall@3/MRR), description/total/instructions/compact byte budgets, fingerprint determinism, forbidden-primary exclusion, synthetic next-action hydration mechanics |
+| `tool_surface_live` | None (comparison `#[ignore]`d) | 1 (+1 ignored) | Layer 3 report contract (fingerprint, config, deltas); opt-in manual multi-model comparison via `EGGSEARCH_EVAL_MODEL` |
+
+Corpus: `tests/fixtures/tool_surface/cases.json` with `README.md` baseline
+(77952 definition bytes, 5275 instruction bytes, 43/43 top-1). Re-run with
+`make eval-tool-surface`.
 
 ## Documentation Contract Tests (5 suites)
 

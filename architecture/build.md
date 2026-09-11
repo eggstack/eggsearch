@@ -130,6 +130,10 @@ crates.io or GitHub and never replace the test runner.
 
 | `packaging-check` | `./packaging/check-contract.sh` | Cross-check target/asset declarations and installer guards |
 
+### Evaluation target
+
+| `eval-tool-surface` | `cargo test --locked --all-features --test tool_surface_evaluation -- --nocapture` | Deterministic tool-selection corpus with byte budgets and per-category accuracy (also runs inside `make check`) |
+
 ### Smoke Targets
 
 | Target | Command | Purpose |

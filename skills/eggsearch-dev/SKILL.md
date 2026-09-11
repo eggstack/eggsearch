@@ -50,6 +50,8 @@ make bench-check        # compile-check benches without running
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
 | `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
 | `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
+| `tests/tool_surface_evaluation.rs` | None | 43-fixture tool-selection corpus: top-1/recall@3/MRR, byte budgets, fingerprint (`make eval-tool-surface`) |
+| `tests/tool_surface_live.rs` | None (comparison `#[ignore]`d) | Layer 3 report contract + opt-in manual multi-model comparison (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`) |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
 | `tests/docs_*.rs` | None | Documentation contract tests |
 | `tests/schema_identity_registry.rs` | None | Schema + deterministic ID fixtures |
@@ -59,7 +61,7 @@ make bench-check        # compile-check benches without running
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 
-This table is representative, not exhaustive — 67 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 70 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -68,6 +70,8 @@ cargo test --locked --features mock --test web_search_integration
 cargo test --locked --features mock --test repo_workflow
 cargo test --locked --features mock --test corpus_runner
 cargo test --locked --all-features --test forge_adapter
+cargo test --locked --all-features --test tool_surface_evaluation
+cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-in only
 cargo test --locked --all-features --test dispatch_fault_injection
 cargo test --locked --all-features --test adversarial_corpus
 cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test static_guards
