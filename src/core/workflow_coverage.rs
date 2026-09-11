@@ -571,7 +571,7 @@ pub fn generate_gap_driven_next_actions(
         actions.push(action);
     }
 
-    actions
+    crate::core::workflow::sanitize_next_actions(actions)
 }
 
 /// Compute full coverage result from a model definition, found evidence, and failures.
@@ -700,6 +700,8 @@ pub fn compute_coverage(
             );
         }
     }
+
+    let next_actions = crate::core::workflow::sanitize_next_actions(next_actions);
 
     WorkflowCoverageResult {
         workflow_id: model.workflow_id.clone(),

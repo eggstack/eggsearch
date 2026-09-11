@@ -240,10 +240,13 @@ fn apply_contract_metadata(tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::To
 
 /// Deterministic content fingerprint of advertised tool contracts.
 ///
-/// Hashes canonical names, descriptions, annotations, and serialized
-/// input/output schemas with FNV-1a. Changes only when the public
-/// contract changes. Exposed for client-side `tools/list` caching and
-/// regression tests.
+/// Hashes canonical names, descriptions, annotations, serialized
+/// input/output schemas, and canonical discovery metadata (domain,
+/// disclosure, purpose/use-when/not-for, keywords, aliases, related/next)
+/// with FNV-1a. Changes only when the public contract changes. Exposed for
+/// client-side `tools/list` caching and regression tests. Cache by this
+/// fingerprint plus the server version, never by tool count; apply
+/// hydration state after retrieving a cached base surface.
 fn contract_fingerprint(tools: &[rmcp::model::Tool]) -> String {
     use std::hash::Hasher;
     let mut hasher = fnv1a64();
@@ -264,6 +267,25 @@ fn contract_fingerprint(tools: &[rmcp::model::Tool]) -> String {
             &mut hasher,
             &serde_json::to_string(&tool.output_schema).unwrap_or_default(),
         );
+        if let Some(contract) = crate::mcp::tool_contract::lookup(tool.name.as_ref()) {
+            hash_str(&mut hasher, contract.domain.as_str());
+            hash_str(&mut hasher, contract.disclosure.as_str());
+            hash_str(&mut hasher, contract.purpose);
+            hash_str(&mut hasher, contract.use_when);
+            hash_str(&mut hasher, contract.not_for);
+            for keyword in contract.keywords {
+                hash_str(&mut hasher, keyword);
+            }
+            for alias in contract.aliases {
+                hash_str(&mut hasher, alias);
+            }
+            for related in contract.related_tools {
+                hash_str(&mut hasher, related);
+            }
+            for next in contract.next_tools {
+                hash_str(&mut hasher, next);
+            }
+        }
     }
     format!("{:016x}", hasher.finish())
 }

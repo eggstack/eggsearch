@@ -57,6 +57,40 @@ model-visible context. Compact output must never be interpreted as evidence
 absence when `retrieval_status.has_failures` or non-empty `providers_failed`
 is present.
 
+## 0.2 Progressive disclosure integration
+
+Eggsearch owns the contract; CodeGG owns catalog, hydration, and policy.
+The runtime shape is `small immediate palette -> compact discovery ->
+hydrate 1–few definitions -> call -> follow next_actions`.
+
+- Discovery source: `src/mcp/tool_contract.rs` (`purpose`, `use_when`,
+  `not_for`, `domain`, `disclosure`, `keywords`, `aliases`,
+  `related_tools`, `next_tools`, `discovery_text()`). Discovery results must
+  carry compact selection metadata only, 3–5 matches by default with
+  `total_matches`, and never full `parameters` schemas. Prefer BM25 for
+  minimal-with-discovery profiles.
+- Hydration: add the complete `ToolDefinition` for selected deferred tools
+  via the existing deferred store; persist for the current run bounded by an
+  LRU/relevance cap of 3–5 beyond the core palette; evict only between
+  provider requests. Hydration is monotonic and never bypasses denied tools,
+  plan mode, missing backends, parent ceilings, or hidden disclosure. Raw
+  `mcp__eggsearch__*` tools stay hidden.
+- Next actions: `sanitize_next_actions()` drops unknown tools, empty reasons,
+  and over-limit entries (max 5, priority 1–5). Harnesses must apply the same
+  filter, hydrate high-priority targets without another `tool_search` round
+  trip (`web_search` → `web_fetch`/`batch_fetch`; `repo_search` →
+  `repo_fetch`/`repo_map`/`batch_fetch`; `research_search` → `web_fetch`/
+  `repo_fetch`/`batch_fetch`/`build_evidence_bundle`; `security_search` →
+  `web_fetch`/`batch_fetch`/`build_evidence_bundle`), and treat hints as
+  optional. Unknown or malicious names are ignored.
+- Role palettes: ordinary coding (`web_search`, `repo_search`, `tool_search`,
+  optionally `web_fetch`); research (`research_search`, `repo_search`, plus
+  selected fetch/evidence tools); security review (`security_search` plus
+  required fetch/evidence tools). Disclosure hints are advisory only.
+- Cache: key `tools/list` by `tool_fingerprint()` (names, descriptions,
+  annotations, input/output schemas, plus canonical discovery metadata) and
+  the server version, never by count. Apply hydration after cache retrieval.
+
 ---
 
 ## 1. Deterministic Identity System

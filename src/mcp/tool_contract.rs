@@ -85,6 +85,8 @@ pub struct ToolContract {
     pub next_tools: &'static [&'static str],
     /// Discovery keywords for deferred/specialist tools.
     pub keywords: &'static [&'static str],
+    /// Discovery-only aliases (never wire names) for host catalog indexing.
+    pub aliases: &'static [&'static str],
 }
 
 impl ToolContract {
@@ -98,6 +100,35 @@ impl ToolContract {
             Some(self.open_world),
         )
     }
+
+    /// Compact discovery text for host catalog indexing (BM25/keyword).
+    ///
+    /// Concatenates domain, purpose, use-when/not-for, keywords, aliases,
+    /// and related/next graphs. Hosts should index this text without
+    /// returning full input schemas in ordinary discovery results.
+    pub fn discovery_text(self) -> String {
+        let mut parts = vec![
+            self.name,
+            self.domain.as_str(),
+            self.disclosure.as_str(),
+            self.purpose,
+            self.use_when,
+            self.not_for,
+        ];
+        parts.extend(self.keywords.iter().copied());
+        parts.extend(self.aliases.iter().copied());
+        parts.extend(self.related_tools.iter().copied());
+        parts.extend(self.next_tools.iter().copied());
+        parts.join(" ")
+    }
+}
+
+/// Whether a name is one of the ten stable canonical tool names.
+///
+/// Harnesses must ignore `next_actions` entries whose `tool` fails this
+/// check; unknown or malicious names never widen execution authority.
+pub fn is_known_tool(name: &str) -> bool {
+    ALL_CONTRACTS.iter().any(|c| c.name == name)
 }
 
 /// Canonical contracts in deterministic alphabetical name order.
@@ -114,7 +145,17 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         related_tools: &["repo_fetch", "repo_search", "web_fetch", "web_search"],
         next_tools: &["build_evidence_bundle"],
-        keywords: &["batch", "fan-out", "multi-fetch", "suggested fetches"],
+        keywords: &[
+            "batch",
+            "fan-out",
+            "multi-fetch",
+            "suggested fetches",
+            "several",
+            "multiple",
+            "urls",
+            "files",
+        ],
+        aliases: &["batch", "multi_fetch", "fan_out"],
     },
     ToolContract {
         name: "build_evidence_bundle",
@@ -137,6 +178,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         ],
         next_tools: &[],
         keywords: &["bundle", "handoff", "evidence", "package"],
+        aliases: &["bundle", "evidence", "handoff"],
     },
     ToolContract {
         name: "provider_status",
@@ -151,6 +193,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         related_tools: &[],
         next_tools: &[],
         keywords: &["providers", "capabilities", "diagnostic", "health", "recipes"],
+        aliases: &["providers", "health", "diagnostics"],
     },
     ToolContract {
         name: "repo_fetch",
@@ -164,7 +207,11 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         related_tools: &["batch_fetch", "repo_map", "repo_search", "web_fetch"],
         next_tools: &["build_evidence_bundle"],
-        keywords: &["file", "span", "symbol", "locator", "source"],
+        keywords: &[
+            "file", "span", "symbol", "locator", "source", "read", "inspect", "known",
+            "line", "range",
+        ],
+        aliases: &["read_file", "code_fetch", "repo_read"],
     },
     ToolContract {
         name: "repo_map",
@@ -178,7 +225,16 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         related_tools: &["repo_fetch", "repo_search"],
         next_tools: &["repo_search"],
-        keywords: &["structure", "layout", "tree", "modules", "packages"],
+        keywords: &[
+            "structure",
+            "layout",
+            "tree",
+            "modules",
+            "packages",
+            "map",
+            "orient",
+        ],
+        aliases: &["map", "structure", "layout"],
     },
     ToolContract {
         name: "repo_search",
@@ -192,7 +248,17 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         related_tools: &["repo_fetch", "repo_map", "web_search"],
         next_tools: &["batch_fetch", "repo_fetch", "repo_map"],
-        keywords: &["code", "repository", "issues", "releases", "docs"],
+        keywords: &[
+            "code",
+            "repository",
+            "issues",
+            "releases",
+            "docs",
+            "find",
+            "definition",
+            "symbol",
+        ],
+        aliases: &["code_search", "repo", "codebase"],
     },
     ToolContract {
         name: "research_search",
@@ -205,8 +271,17 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         read_only: true,
         open_world: true,
         related_tools: &["batch_fetch", "repo_search", "web_fetch", "web_search"],
-        next_tools: &["batch_fetch", "build_evidence_bundle", "web_fetch"],
-        keywords: &["architecture", "comparison", "multi-source", "workflow", "depth"],
+        next_tools: &["batch_fetch", "build_evidence_bundle", "repo_fetch", "web_fetch"],
+        keywords: &[
+            "architecture",
+            "comparison",
+            "multi-source",
+            "workflow",
+            "depth",
+            "decision",
+            "survey",
+        ],
+        aliases: &["deep_research", "compare", "research"],
     },
     ToolContract {
         name: "security_search",
@@ -220,7 +295,18 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         related_tools: &["batch_fetch", "web_fetch", "web_search"],
         next_tools: &["batch_fetch", "build_evidence_bundle", "web_fetch"],
-        keywords: &["cve", "ghsa", "advisory", "vulnerability", "applicability"],
+        keywords: &[
+            "cve",
+            "ghsa",
+            "advisory",
+            "vulnerability",
+            "applicability",
+            "package",
+            "version",
+            "kev",
+            "osv",
+        ],
+        aliases: &["cve", "vuln", "advisory", "security"],
     },
     ToolContract {
         name: "web_fetch",
@@ -234,7 +320,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         related_tools: &["batch_fetch", "web_search"],
         next_tools: &["build_evidence_bundle"],
-        keywords: &["fetch", "url", "page", "extract"],
+        keywords: &["fetch", "url", "page", "extract", "read", "inspect"],
+        aliases: &["webfetch", "fetch", "page"],
     },
     ToolContract {
         name: "web_search",
@@ -254,7 +341,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
             "web_fetch",
         ],
         next_tools: &["batch_fetch", "web_fetch"],
-        keywords: &["search", "web", "discovery", "sources"],
+        keywords: &["search", "web", "discovery", "sources", "lookup", "general"],
+        aliases: &["websearch", "search", "lookup"],
     },
 ];
 

@@ -166,6 +166,10 @@ web_search({
 ```
 
 Returns a list of source cards with `next_actions` and `suggested_fetches`.
+Follow sanitized `next_actions` without another discovery round trip; ignore
+unknown tool names. Keep the immediate palette small (`web_search`,
+`repo_search`, optionally `web_fetch`) and hydrate specialists on demand — see
+[codegg-integration.md](codegg-integration.md#progressive-disclosure-integration).
 
 ### 2. Fetch
 

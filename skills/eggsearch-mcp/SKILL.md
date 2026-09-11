@@ -63,6 +63,10 @@ Canonical source: `src/mcp/tool_contract.rs` (advisory only, never policy-enforc
 - Deferred specialists, used only when their domain semantics are needed: `batch_fetch`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
 - Diagnostic, host/operator use: `provider_status` (call only when provider availability itself is relevant or troubleshooting is required; not a normal first research step)
 
+## Progressive disclosure
+
+Keep the immediate palette small; hydrate specialists on demand. The contract exposes discovery-only `aliases` and `discovery_text()` for host BM25/keyword catalogs — discovery results must carry compact metadata (3–5 matches, `total_matches`) without full schemas. Hydrate 1–few definitions per run (LRU cap 3–5, monotonic policy, raw `mcp__eggsearch__*` stay hidden). Follow sanitized `next_actions` without another discovery round trip (`repo_search` → `repo_fetch`/`repo_map`/`batch_fetch`; `research_search` → `web_fetch`/`repo_fetch`/`batch_fetch`/`build_evidence_bundle`); unknown names are ignored and never widen authority. Role palettes: ordinary coding (`web_search`, `repo_search`, `tool_search`, optionally `web_fetch`); research (`research_search`, `repo_search`, plus selected fetch/evidence); security (`security_search` plus required fetch/evidence). Cache `tools/list` by content fingerprint plus server version.
+
 ## Trust Model
 
 | Level | Source | Harness Action |

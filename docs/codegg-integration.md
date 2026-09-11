@@ -13,7 +13,8 @@ eggsearch version: see `Cargo.toml` for the live release number.
 2. [MCP Server Startup and Configuration](#mcp-server-startup-and-configuration)
 3. [Configuration Examples](#configuration-examples)
 4. [Tool Selection Policy](#tool-selection-policy)
-5. [Required Task Workflows](#required-task-workflows)
+5. [Progressive disclosure integration](#progressive-disclosure-integration)
+6. [Required Task Workflows](#required-task-workflows)
 6. [Trust Boundary Rules](#trust-boundary-rules)
 7. [Warning and Error Handling](#warning-and-error-handling)
 8. [Evidence Bundle Handoff](#evidence-bundle-handoff)
@@ -415,6 +416,87 @@ base_url = "https://gitlab.com"     # or self-hosted instance
 
 ---
 
+## Progressive disclosure integration
+
+Eggsearch is the contract owner; CodeGG owns catalog, hydration, and policy
+enforcement. Keep every capability registered and callable while shrinking
+ordinary model-visible context to `small immediate palette -> compact
+discovery -> hydrate 1–few definitions -> call -> follow next_actions`.
+
+### Compact discovery
+
+- `tool_search` results must carry compact selection metadata only
+  (`purpose`, `use_when`, `not_for`, `domain`, `disclosure`, `keywords`,
+  `aliases`, `related`/`next`), never full `parameters` schemas by default.
+  Source the eggsearch wrapper fields from `src/mcp/tool_contract.rs`
+  (`purpose`, `use_when`, `not_for`, `domain`, `disclosure`, `keywords`,
+  `aliases`, `related_tools`, `next_tools`, `discovery_text()`).
+- Return the best 3–5 matches by default with `total_matches` for
+  transparency; keep a bounded larger maximum for explicit diagnostics.
+- Prefer BM25 for minimal-with-discovery profiles; lexical ranking is cheap,
+  deterministic, and sufficient for the catalog size. Do not add embeddings
+  until BM25 fails measured cases.
+
+### Definition hydration
+
+- Hydrate the complete `ToolDefinition` for the selected deferred tool(s)
+  through the existing `deferred_tool_definitions` store and immutable
+  per-turn surface model. Do not serialize full schemas into prose results.
+- Preferred default: persist a hydrated tool for the current run, bounded by
+  an LRU/relevance cap of 3–5 beyond the core palette. Evict only between
+  provider requests, never while a tool call is in flight.
+- Hydration is monotonic: it can only expose a tool already in the
+  policy-allowed discoverable set. It must never bypass denied tools,
+  model-disabled tools, plan mode, missing backend state, parent capability
+  ceilings, or hidden disclosure. Raw `mcp__eggsearch__*` tools stay hidden
+  behind stable native wrappers.
+
+### Next actions as guided disclosure
+
+- Parse canonical `next_actions` (`tool`, `reason_code`, `priority` 1–5,
+  `input_template`, `source_ids`) and retain target names plus argument
+  templates in structured results. `sanitize_next_actions()` drops unknown
+  tools, empty reasons, and over-limit entries; harnesses must apply the same
+  filter.
+- After a successful call, mark high-priority `next_actions` targets as
+  eligible for immediate hydration on the next model request without another
+  `tool_search` round trip:
+  `web_search` → `web_fetch`, `batch_fetch`;
+  `repo_search` → `repo_fetch`, `repo_map`, `batch_fetch`;
+  `research_search` → `web_fetch`, `repo_fetch`, `batch_fetch`,
+  `build_evidence_bundle`;
+  `security_search` → `web_fetch`, `batch_fetch`, `build_evidence_bundle`.
+- Treat next actions as hints, not forced execution. Filter every target
+  through the same policy as `tool_search`; ignore malicious or unknown
+  names.
+
+### Role-specific palettes
+
+- Ordinary coding: `web_search`, `repo_search`, `tool_search`, optionally
+  `web_fetch` depending on measured frequency/context cost.
+- Research role: `research_search`, `repo_search`, plus selected
+  fetch/evidence tools.
+- Security-review role: `security_search` plus only the fetch/evidence tools
+  required by the workflow.
+- Do not auto-expose every research/evidence wrapper to specialist roles when
+  evaluation shows hydration from next actions is cheaper.
+
+### Structured results and cache
+
+- Prefer native `structuredContent`; keep the legacy text fallback for older
+  servers. Validate `outputSchema` when practical, distinguish MCP
+  tool-level `isError=true` (repairable `code` + bounded `repair`) from
+  transport/protocol failure, and retain stable structured data before
+  display clamping.
+- Cache `tools/list` by the FNV-1a content fingerprint (`tool_fingerprint()`
+  covers names, descriptions, annotations, input/output schemas, and
+  canonical discovery metadata) plus the server version — never by tool
+  count. Apply hydration state after retrieving a cached base surface.
+  See `architecture/codegg-contract.md` sections 0–0.1 and 4 for the stable
+  shapes.
+
+---
+
 ## Required Task Workflows
 
 ### 1. Understand a Repo/API/Project
@@ -430,7 +512,7 @@ Step 1: repo_map({ host, owner, repo })
   -> root layout, important files, important directories
   -> local_checkout field if matching local git repo exists
 
-Step 2: repo_search({ query, host, owner, repo, profile = "coding" })
+Step 2: repo_search({ query, host, owner, repo, goal = "understand" })
   -> grouped source cards (SourceFiles, Issues, Releases, etc.)
   -> next_actions with priority-1 fetch suggestions
   -> suggested_fetches with ranked URLs
@@ -450,10 +532,9 @@ Step 5: build_evidence_bundle({ goal, sources, fetches })
 **Example transcript:**
 
 ```jsonc
-// Step 1: Understand structure
-// -> repo_map
-// (Hosts may have inspected provider_status once during bootstrap;
-// it is diagnostic, not part of the normal agent flow.)
+// Bootstrap (host-only, diagnostic): provider_status({}) once to check
+// providers, server_capabilities, and workflow_recipes. Agents skip this in
+// the normal flow and start with repo_map below.
 // Response (abbreviated):
 {
   "providers": [
@@ -481,7 +562,7 @@ Step 5: build_evidence_bundle({ goal, sources, fetches })
 ```
 
 ```jsonc
-// Step 2: Map the repo
+// Step 1: Map the repo
 // -> repo_map({ "host": "github", "owner": "tokio-rs", "repo": "axum" })
 // Response (abbreviated):
 {
@@ -511,13 +592,14 @@ Step 5: build_evidence_bundle({ goal, sources, fetches })
 ```
 
 ```jsonc
-// Step 3: Search for code
+// Step 2: Search for code (canonical goal; legacy profile/mode/workflow/include_*
+// remain accepted but hidden)
 // -> repo_search({
 //     "query": "Router::layer middleware",
 //     "host": "github",
 //     "owner": "tokio-rs",
 //     "repo": "axum",
-//     "profile": "coding"
+//     "goal": "understand"
 //   })
 // Response (abbreviated):
 {
@@ -642,14 +724,13 @@ Step 5: build_evidence_bundle({ goal, sources, fetches })
 ### 2. Debug Exact Error
 
 ```jsonc
-// Step 1: Search with exact error mode
+// Step 1: Search with canonical debug goal (legacy mode/profile remain accepted)
 // -> repo_search({
 //     "query": "error[E0308]: mismatched types - expected `String`, found `i32`",
 //     "host": "github",
 //     "owner": "tokio-rs",
 //     "repo": "axum",
-//     "mode": "exact_error",
-//     "profile": "coding"
+//     "goal": "debug"
 //   })
 //
 // The planner generates error-aware subqueries preserving the exact
@@ -672,14 +753,14 @@ Step 5: build_evidence_bundle({ goal, sources, fetches })
 ### 3. Security Triage
 
 ```jsonc
-// Step 1: Security search with applicability
+// Step 1: Security search with applicability (canonical include set; legacy
+// include_* booleans remain accepted)
 // -> security_search({
 //     "query": "axum",
 //     "ecosystem": "crates.io",
 //     "package": "axum",
 //     "version": "0.7.0",
-//     "include_kev": true,
-//     "include_defensive_guidance": true,
+//     "include": ["kev", "defensive_guidance"],
 //     "assess_applicability": true,
 //     "dependency_files": ["Cargo.lock"]
 //   })
@@ -710,15 +791,15 @@ Step 5: build_evidence_bundle({ goal, sources, fetches })
 ### 4. Architecture / Deep Research
 
 ```jsonc
-// Step 1: Research with workflow scaffolding
+// Step 1: Research with goal scaffolding (canonical goal/include; legacy
+// workflow/include_* remain accepted)
 // -> research_search({
 //     "query": "axum vs actix-web for high-performance REST API",
 //     "research_domain": "software_architecture",
-//     "workflow": "library_comparison",
+//     "goal": "compare",
 //     "depth": "standard",
 //     "compare_targets": ["axum", "actix-web"],
-//     "include_counterpoints": true,
-//     "include_primary_sources": true,
+//     "include": ["counterpoints", "primary_sources"],
 //     "desired_source_types": ["benchmarks", "official_docs"]
 //   })
 

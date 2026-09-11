@@ -23,7 +23,7 @@ Single library + binary crate (not a workspace). All source under `src/`. The cr
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
 - `meta/` — MetadataSearchAdapter (`adapter/` modules) + 37 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache, structured symbol parser (`local_symbols.rs`), shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
-- `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), canonical tool contract (`tool_contract.rs`), 10 tool definitions (`tools/` per-tool modules), deterministic result projection (`projection.rs`, `ResponseDetail` compact/standard/diagnostic), server state, policy
+- `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), canonical tool contract (`tool_contract.rs` with purpose/use-when/not-for, domain/disclosure, keywords/aliases, related/next, `discovery_text()`, `is_known_tool()`), 10 tool definitions (`tools/` per-tool modules), deterministic result projection (`projection.rs`, `ResponseDetail` compact/standard/diagnostic), server state, policy
 - `integrations/` — safe render/apply/verify adapters for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode
 
 ## Module Responsibilities

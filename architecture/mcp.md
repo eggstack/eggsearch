@@ -11,7 +11,7 @@
 |------|---------------|
 | `mod.rs` | Module declarations, canonical server factory, and re-exports |
 | `server.rs` | `EggsearchServer` — rmcp `ServerHandler` impl, 10 `#[tool]` handlers with contract-derived descriptions/annotations/output-schemas, centralized `map_tool_result` error/result seam, deterministic `tools/list` + content fingerprint, `EGGSEARCH_INSTRUCTIONS` (global rules only) |
-| `tool_contract.rs` | Canonical `ToolContract` registry: purpose, use-when/not-for, domain, disclosure hint, annotations, keywords, related/next tools |
+| `tool_contract.rs` | Canonical `ToolContract` registry: purpose, use-when/not-for, domain, disclosure hint, annotations, keywords, aliases, related/next tools, `discovery_text()`, `is_known_tool()` |
 | `projection.rs` | Deterministic `ResponseDetail` (`compact`/`standard`/`diagnostic`) result projection: central `project()` boundary, per-tool compact/standard reducers, context-budget trimming (excerpts, documents, links, telemetry) with explicit truncation markers |
 | `output_schema.rs` | Per-tool `outputSchema`: generated from typed response types where the tool returns one, permissive stable-envelope schemas where the payload is ad-hoc with open-ended metadata |
 | `http.rs` | Streamable HTTP service, `/healthz`, typed endpoint options, request bounds, and graceful shutdown |
@@ -53,7 +53,9 @@ Tool-specific selection guidance lives in `tools/list` descriptions and schemas,
 
 ### Tool Contract Registry (`tool_contract.rs`)
 
-One `ToolContract` per stable tool: concise description (max `MAX_TOOL_DESCRIPTION_LEN` bytes), purpose, use-when/not-for, domain, disclosure hint (`Core` for `web_search`/`web_fetch`/`repo_search`, `Deferred` for specialists, `Diagnostic` for `provider_status`), read-only/open-world hints, discovery keywords, and related/next-tool graphs. `server.rs` applies contract descriptions and annotations at runtime so `tools/list`, `tool_definitions()`, and `#[tool]` macro literals cannot drift. Annotations are static hints only; `provider_status` reports `open_world_hint=false` even though `probe=true` performs bounded live checks.
+One `ToolContract` per stable tool: concise description (max `MAX_TOOL_DESCRIPTION_LEN` bytes), purpose, use-when/not-for, domain, disclosure hint (`Core` for `web_search`/`web_fetch`/`repo_search`, `Deferred` for specialists, `Diagnostic` for `provider_status`), read-only/open-world hints, discovery keywords plus discovery-only `aliases`, and related/next-tool graphs. `discovery_text()` concatenates domain, purpose, guidance, keywords, aliases, and graphs for host BM25/keyword catalogs; `is_known_tool()` is the harness filter for `next_actions` targets. `server.rs` applies contract descriptions and annotations at runtime so `tools/list`, `tool_definitions()`, and `#[tool]` macro literals cannot drift. Annotations are static hints only; `provider_status` reports `open_world_hint=false` even though `probe=true` performs bounded live checks.
+
+Progressive disclosure: hosts keep a small immediate palette (ordinary coding: `web_search`, `repo_search`, `tool_search`, optionally `web_fetch`; research: `research_search`, `repo_search`, plus selected fetch/evidence; security: `security_search` plus required fetch/evidence), return compact discovery (3–5 matches, `total_matches`, no full schemas), hydrate 1–few definitions per run (LRU cap 3–5, monotonic policy, raw `mcp__eggsearch__*` stay hidden), and follow sanitized `next_actions` (`sanitize_next_actions()` in `core/workflow.rs`, max 5, unknown names ignored) without another discovery round trip. `tool_fingerprint()` covers names, descriptions, annotations, input/output schemas, and canonical discovery metadata; cache by fingerprint plus server version, never by count.
 
 ### Tool Registration
 

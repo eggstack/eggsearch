@@ -257,3 +257,196 @@ fn server_instructions_are_global_rules_only() {
         instructions.len()
     );
 }
+
+#[test]
+fn contracts_carry_progressive_disclosure_metadata() {
+    for contract in tool_contract::ALL_CONTRACTS {
+        assert!(
+            !contract.aliases.is_empty(),
+            "{} must carry discovery aliases",
+            contract.name
+        );
+        assert!(
+            !contract.keywords.is_empty(),
+            "{} must carry discovery keywords",
+            contract.name
+        );
+        let discovery = contract.discovery_text().to_lowercase();
+        assert!(
+            discovery.contains(contract.domain.as_str()),
+            "{} discovery text must contain domain",
+            contract.name
+        );
+        for alias in contract.aliases {
+            assert!(
+                !alias.trim().is_empty(),
+                "{} has empty alias",
+                contract.name
+            );
+            assert_ne!(
+                *alias, contract.name,
+                "{} alias must not duplicate canonical name",
+                contract.name
+            );
+        }
+        for keyword in contract.keywords {
+            assert!(
+                !keyword.trim().is_empty(),
+                "{} has empty keyword",
+                contract.name
+            );
+        }
+    }
+    let alias_sets: Vec<Vec<&&str>> = tool_contract::ALL_CONTRACTS
+        .iter()
+        .map(|c| c.aliases.iter().collect())
+        .collect();
+    for (i, a) in tool_contract::ALL_CONTRACTS.iter().enumerate() {
+        for alias in a.aliases {
+            assert!(
+                tool_contract::lookup(alias).is_none(),
+                "alias {alias} of {} must not collide with a canonical tool name",
+                a.name
+            );
+            let _ = &alias_sets[i];
+        }
+    }
+}
+
+#[test]
+fn discovery_text_supports_representative_tool_queries() {
+    let text_for = |name: &str| {
+        tool_contract::lookup(name)
+            .expect("contract exists")
+            .discovery_text()
+            .to_lowercase()
+    };
+    let security = text_for("security_search");
+    assert!(
+        security.contains("cve") && security.contains("vulnerability"),
+        "security_search discovery must match vulnerability/CVE queries: {security}"
+    );
+    let repo_fetch = text_for("repo_fetch");
+    assert!(
+        repo_fetch.contains("read") && repo_fetch.contains("file") && repo_fetch.contains("span"),
+        "repo_fetch discovery must match read-known-file/span queries: {repo_fetch}"
+    );
+    let batch = text_for("batch_fetch");
+    assert!(
+        batch.contains("several") && batch.contains("urls") && batch.contains("files"),
+        "batch_fetch discovery must match several-URLs/files queries: {batch}"
+    );
+}
+
+#[test]
+fn known_tool_check_rejects_unknown_names() {
+    assert!(tool_contract::is_known_tool("web_search"));
+    assert!(tool_contract::is_known_tool("repo_fetch"));
+    assert!(tool_contract::is_known_tool("build_evidence_bundle"));
+    assert!(!tool_contract::is_known_tool("no_such_tool"));
+    assert!(!tool_contract::is_known_tool(""));
+    assert!(!tool_contract::is_known_tool("mcp__eggsearch__web_search"));
+    assert!(!tool_contract::is_known_tool("websearch"));
+}
+
+#[test]
+fn next_action_sanitization_ignores_unknown_tools() {
+    use eggsearch::core::{sanitize_next_actions, AgentNextAction, MAX_NEXT_ACTIONS};
+    let actions = vec![
+        AgentNextAction::new(
+            "web_fetch",
+            "inspect_top_source",
+            1,
+            serde_json::json!({"url": "<u>"}),
+            vec![],
+            None,
+        ),
+        AgentNextAction::new("evil_tool", "pwn", 1, serde_json::json!({}), vec![], None),
+        AgentNextAction::new("repo_fetch", "", 1, serde_json::json!({}), vec![], None),
+    ];
+    let sanitized = sanitize_next_actions(actions);
+    assert_eq!(sanitized.len(), 1);
+    assert_eq!(sanitized[0].tool, "web_fetch");
+    let many: Vec<AgentNextAction> = (0..20)
+        .map(|i| {
+            AgentNextAction::new(
+                "web_fetch",
+                format!("reason_{i}"),
+                1,
+                serde_json::json!({}),
+                vec![],
+                None,
+            )
+        })
+        .collect();
+    let truncated = sanitize_next_actions(many);
+    assert_eq!(truncated.len(), MAX_NEXT_ACTIONS);
+}
+
+#[test]
+fn runtime_next_actions_reference_known_tools_only() {
+    let source_ids = vec!["src_1".to_string(), "src_2".to_string()];
+    let web = eggsearch::meta::web_search_next_actions(&source_ids, true);
+    let repo = eggsearch::meta::repo_search_next_actions(&source_ids, true);
+    let security = eggsearch::meta::security_search_next_actions(&source_ids, true);
+    let research = eggsearch::meta::research_search_next_actions(&source_ids, true);
+    for action in web
+        .iter()
+        .chain(repo.iter())
+        .chain(security.iter())
+        .chain(research.iter())
+    {
+        assert!(
+            tool_contract::is_known_tool(action.tool.as_str()),
+            "next action references unknown tool {}",
+            action.tool
+        );
+        assert!(
+            (1..=5).contains(&action.priority),
+            "priority out of range for {}",
+            action.tool
+        );
+    }
+    assert!(
+        repo.iter().any(|a| a.tool == "repo_fetch"),
+        "repo_search must suggest repo_fetch"
+    );
+    assert!(
+        repo.iter().any(|a| a.tool == "repo_map"),
+        "repo_search must suggest repo_map for layout orientation"
+    );
+    assert!(
+        research.iter().any(|a| a.tool == "repo_fetch"),
+        "research_search must suggest repo_fetch for repo-backed claims"
+    );
+    assert!(
+        web.iter().any(|a| a.tool == "web_fetch"),
+        "web_search must suggest web_fetch"
+    );
+}
+
+#[test]
+fn fingerprint_is_content_based_not_count_based() {
+    let state =
+        Arc::new(eggsearch::mcp::ServerState::build(AppConfig::default()).expect("default state"));
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let first = server.tool_fingerprint();
+    assert_eq!(first.len(), 16, "fingerprint must be 16 hex chars");
+    let state2 =
+        Arc::new(eggsearch::mcp::ServerState::build(AppConfig::default()).expect("default state"));
+    let server2 = eggsearch::mcp::EggsearchServer::new(state2);
+    assert_eq!(
+        first,
+        server2.tool_fingerprint(),
+        "fingerprint must be deterministic across instances"
+    );
+    let tools = server.tool_definitions();
+    assert_eq!(tools.len(), 10);
+    let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(
+        names, sorted,
+        "tools/list must stay name-sorted for caching"
+    );
+}

@@ -132,6 +132,51 @@ pub struct AgentNextAction {
 /// Maximum number of next-action hints per response.
 pub const MAX_NEXT_ACTIONS: usize = 5;
 
+/// Canonical stable MCP tool names.
+///
+/// Single owner for harness-side `next_actions` filtering. Unknown or
+/// malicious target names must be ignored and never widen authority.
+pub const STABLE_TOOL_NAMES: &[&str] = &[
+    "batch_fetch",
+    "build_evidence_bundle",
+    "provider_status",
+    "repo_fetch",
+    "repo_map",
+    "repo_search",
+    "research_search",
+    "security_search",
+    "web_fetch",
+    "web_search",
+];
+
+/// Whether a `next_actions` target names a stable callable tool.
+pub fn is_stable_tool(name: &str) -> bool {
+    STABLE_TOOL_NAMES.contains(&name)
+}
+
+/// Sanitize a candidate `next_actions` list for progressive disclosure.
+///
+/// Drops entries with unknown tool names, empty reason codes, or invalid
+/// priorities, then truncates to [`MAX_NEXT_ACTIONS`] preserving order.
+/// Harnesses must apply the same filter before hydrating follow-up tools.
+pub fn sanitize_next_actions(actions: Vec<AgentNextAction>) -> Vec<AgentNextAction> {
+    let mut out = Vec::new();
+    for mut action in actions {
+        if !is_stable_tool(action.tool.as_str()) {
+            continue;
+        }
+        if action.reason_code.trim().is_empty() {
+            continue;
+        }
+        action.priority = action.priority.clamp(1, 5);
+        out.push(action);
+        if out.len() >= MAX_NEXT_ACTIONS {
+            break;
+        }
+    }
+    out
+}
+
 impl AgentWorkflowRecipe {
     /// Return a compact summary suitable for `recipe_detail = "summary"`.
     pub fn summarize(&self) -> serde_json::Value {

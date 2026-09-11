@@ -33,6 +33,21 @@ The canonical disclosure model lives in `src/mcp/tool_contract.rs`:
 
 Disclosure hints are advisory for hosts and never gate execution. Every capability remains callable regardless of its hint.
 
+## Progressive disclosure
+
+Keep the immediate palette small and hydrate specialists on demand:
+`small palette -> compact discovery -> hydrate 1–few definitions -> call ->
+follow next_actions`. The contract also exposes discovery-only `aliases` and
+`discovery_text()` (domain, purpose, use-when/not-for, keywords, aliases,
+related/next) for host BM25/keyword catalogs; discovery results must not dump
+full schemas. `next_actions` are sanitized (known tools only, max 5) and safe
+to hydrate without another search round trip; unknown names are ignored and
+never widen authority. Role guidance: ordinary coding
+(`web_search`, `repo_search`, `tool_search`, optionally `web_fetch`);
+research (`research_search`, `repo_search`, plus selected fetch/evidence);
+security (`security_search` plus required fetch/evidence). Cache `tools/list`
+by content fingerprint plus server version, never by count.
+
 ## MCP result and error contract
 
 Success returns native `structuredContent` with a text JSON fallback; every tool advertises `outputSchema` (typed envelopes for seven tools, permissive stable envelopes for `web_search`/`web_fetch`/`provider_status`). `tools/list` is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize sessions; tool names are stable across eras.
