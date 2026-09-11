@@ -7,16 +7,16 @@ description: Use when working with eggsearch internals, understanding crate layo
 
 Use when working with eggsearch internals, understanding crate layout, provider model, adapter pattern, deterministic IDs, sanitization tiers, or config structure.
 
-Deep dives live in `architecture/` (root): [overview.md](../../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, integrations, testing, build, packaging, and maintenance, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
+Deep dives live in `architecture/` (root): [overview.md](../../architecture/overview.md) is the component index; per-component files cover core, meta, engines, fetch, mcp, commands, integrations, testing, build, packaging, and maintenance, plus cross-cutting dives (codegg-contract, config, evidence-workflow, research, security, local-workspace, hardening).
 
 ## Crate Layout
 
 Single library + binary crate (not a workspace). All source under `src/`. The crate is application-first: the stable contract is MCP tools plus CLI; the Rust module tree is an implementation detail for the binary/tests and carries no semver library guarantee (see `src/lib.rs` and `architecture/maintenance.md`).
 
 - `main.rs` — binary entry point (clap, tokio main)
-- `lib.rs` — library root, re-exports `core`, `fetch`, `mcp`, `meta`
+- `lib.rs` — library root, re-exports `core`, `fetch`, `integrations`, `mcp`, `meta`, `platform`, `startup`, `update`
 - `config.rs` — CLI config loader
-- `commands/` — subcommands: doctor, search, providers, mcp, fetch, integrate, browser_login, browser_profiles
+- `commands/` — subcommands: doctor, search, mcp, providers, fetch, update, croncheck, restart, startup, integrate, browser_login, browser_profiles
 - `platform.rs` — shared host, target, public asset, and exact release URL contract
 - `update.rs` — crates.io-authoritative self-update, candidate verification, and replacement orchestration
 - `startup.rs` — canonical persistent runtime, manager detection/rendering, croncheck, restart, and lifecycle state
@@ -64,7 +64,7 @@ Profiles are advisory; unavailable providers are skipped with warnings.
 
 ## Deterministic Identity System
 
-All stable output types use FNV-1a 64-bit content-derived hashes (`src/core/identity.rs`), never random UUIDs. Key prefixes: `src_`, `suggested_`, `fetch_`, `span_`, `bundle_`, `loc_`, `doc_`, `chunk_`.
+All stable output types use FNV-1a 64-bit content-derived hashes (`src/core/identity.rs`), never random UUIDs. Key prefixes: `src_`, `fetch_`, `suggested_`, `batch_`, `bundle_`, `loc_`, `doc_`, `chunk_`, `span_`.
 
 URLs are canonicalized before hashing (lowercase scheme/host, strip `www.`, default ports, fragments, normalize percent-encoding). Versioned input prefix: `eggsearch-id-v1\0`.
 

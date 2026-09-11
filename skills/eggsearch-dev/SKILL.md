@@ -13,11 +13,11 @@ Use when building, testing, or contributing to eggsearch. Covers cargo commands,
 # Routine verification gate
 make check
 make packaging-check
-rtk cargo test --locked --all-features update::tests
+cargo test --locked --all-features update::tests
 
 # Individual targets
 cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo check --locked --no-default-features
 cargo test --locked --all-features
 cargo build --release

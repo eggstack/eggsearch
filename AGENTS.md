@@ -35,16 +35,41 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-
 - `commit_sha` comes from `resolved_ref`, not the entry object SHA.
 - `CacheScope::Profile` uses the opaque profile ID, never the display name. Invalid explicit browser path is `ExplicitPathInvalid` — do not fall back to auto-discovery.
 - `integrate` prints by default; mutate only with `--apply` (atomic, backed up, `eggsearch` entry only). Never register `target/debug` binaries — require an installed executable or explicit `--executable`.
+- Tool/probe inventories are code-derived (`tests/docs_tool_names.rs` from `src/mcp/server.rs`, `tests/docs_provider_inventory.rs` from `KNOWN_PROVIDER_IDS`): never invent tool-like or provider names in docs; keep prose in agreement with the code.
 
-## Where things go (enforced by `tests/static_guards.rs`)
+## Where things go
+
+Guard-enforced by `tests/static_guards.rs` (fail-closed; see `architecture/maintenance.md` for the ownership table):
 
 - MCP tools call the `MetadataSearchAdapter`, never engines directly. New tools: dedicated module under `src/mcp/tools/` (shared validation in `common.rs`, goal/workflow resolution in `canonical.rs`), register in `src/mcp/server.rs` — exactly 10 tools unless tool-matrix, docs contract tests, and CodeGG docs move in the same change.
 - New engines implement `SearchEngine::search(&EngineSearchRequest)`; unsupported capabilities stay explicit (dispatch emits capability-skip attempts, never silent omissions). New providers also declare 24-flag `ProviderCapabilities`, add the ID to `KNOWN_PROVIDER_IDS`, document native-vs-local enforcement in `docs/provider-setup.md`, extend `tests/provider_capability_contract.rs`.
 - Domain workflows (`repo`/`research`/`security`) share `WorkflowExecution`/`RetrievalAttemptSet`/`FetchCandidateBuilder` primitives but keep typed planners/grouping/builders — do not flatten into one generic workflow.
-- Ordinary files must stay under 1,600 lines / 80 KB (named exceptions in `architecture/maintenance.md` only).
-- New tests extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`); multi-step regressions go in `corpus_runner.rs`; pure functions get `proptest` files; provider failures go in `dispatch_fault_injection.rs`. Never add `phase<N>_*` suite names.
-- Keep in sync or guards fail: `packaging/release-targets.txt` + release workflow + installers + install docs (`make packaging-check`); `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding/renaming suites. `CHANGELOG.md` entries are append-only history.
+- Ordinary files must stay under 1,600 lines / 80 KB; larger modules carry explicit ratchet ceilings and next-slice notes in `architecture/maintenance.md`.
+
+Conventions (kept in sync by discipline, not guards; see `architecture/maintenance.md`):
+
+- Keep in sync: `packaging/release-targets.txt` + release workflow + installers + install docs (`make packaging-check`); `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding/renaming suites. `CHANGELOG.md` entries are append-only history.
+- New tests extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`); multi-step regressions go in `corpus_runner.rs`; pure functions get `proptest` files; provider failures go in `dispatch_fault_injection.rs`. Historical phase-suite names are retired; use behavioral suite names.
+
+## Architecture index
+
+Contributor deep dives live in `architecture/`; start at `overview.md`, then jump by task:
+
+| Task | Read first |
+|------|-----------|
+| Add/change an MCP tool or response shape | `mcp.md`, `codegg-contract.md`, `evidence-workflow.md` |
+| Add/change a provider or engine | `engines.md`, `meta.md`, `config.md` |
+| Touch search orchestration, dispatch, RRF, grouping | `meta.md`, `evidence-workflow.md`, `research.md`, `security.md` |
+| Touch fetch, cache, browser, or safety bounds | `fetch.md`, `hardening.md` |
+| Touch config, CLI, integrations, service, update | `config.md`, `commands.md`, `integrations.md`, `startup.md`, `packaging.md` |
+| Touch local workspace or repo map | `local-workspace.md`, `core.md` |
+| Touch tests, fuzz, or benchmarks | `testing.md`, `hardening.md`, `build.md` |
+| Extension rules, ownership, hygiene | `maintenance.md` |
 
 ## Skills
 
-Canonical sources in `skills/` (symlinked to `.opencode/skills/`): `eggsearch-architecture` (crate layout, provider model, adapter), `eggsearch-dev` (commands, suites, pitfalls), `eggsearch-mcp` (tool selection, workflows, evidence), `eggsearch-release` (release process with `docs/release.md`).
+Canonical sources in `skills/` (mirrored via `.opencode/skills/` and `.agents/skills/`): `eggsearch-architecture` (crate layout, provider model, adapter), `eggsearch-dev` (commands, suites, pitfalls), `eggsearch-mcp` (tool selection, workflows, evidence), `eggsearch-release` (release process with `docs/release.md`). Edit `skills/` only; never edit the mirror symlinks directly.
+
+## Plans
+
+`plans/` is a closed historical record: all 15 phases are implemented (see `plans/registry.md`). Do not open new work there; plan new work from the architecture docs above and the extension rules in `architecture/maintenance.md`.

@@ -29,7 +29,7 @@ The governing rationale and cross-phase invariants for this workstream are in `r
 
 The governing rationale, target matrix, installer/update contract, lifecycle split, and cross-phase invariants are in `deployment-roadmap.md`.
 
-## Active workstream — Maintenance and CodeGG retrieval quality
+## Completed workstream — Maintenance and CodeGG retrieval quality
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|

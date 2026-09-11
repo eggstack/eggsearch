@@ -96,16 +96,29 @@ Deterministic FNV-1a 64-bit hashes for:
 Root configuration type:
 ```toml
 [search]
-providers = ["duckduckgo", "brave"]
-profile = "generic"  # generic | coding | security | research
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage", "yahoo"]
+sanitize_output = true
 
 [fetch]
-max_chars = 50000
-timeout_ms = 30000
+enabled = true
+timeout_ms = 8000
+max_bytes = 2000000
+max_chars_default = 12000
+max_chars_cap = 50000
+redirect_limit = 5
+sanitize_output = true
 
 [local]
 enabled = false
+roots = []
 ```
+
+Full operator reference lives in `docs/config.md`; field-level defaults live in `src/core/config.rs`.
 
 ---
 

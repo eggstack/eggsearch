@@ -208,6 +208,7 @@ This returns provider health, server capabilities, tool capabilities, and workfl
 
 ## Next Steps
 
+- [MCP Integration Guide](codegg-integration.md) -- harness-developer reference (progressive disclosure, trust boundary, workflows); this quickstart is the end-user path into that guide
 - [Configuration](config.md) -- full config reference with all options and defaults
 - [Provider Setup](provider-setup.md) -- how to enable and configure individual providers
 - [Tool Matrix](tool-matrix.md) -- compact reference for all 10 MCP tools

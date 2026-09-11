@@ -326,21 +326,32 @@ Tests never require network access. Live smoke: `cargo test --features live-smok
 ```toml
 [search]
 mode = "live"                    # live | offline
-default_profile = "generic"      # generic | coding | security | research
-providers = ["duckduckgo", "brave"]
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo", "startpage", "yahoo"]
 sanitize_output = true
+
+[search.providers]
+duckduckgo = true
+startpage = true
+yahoo = true
 
 [fetch]
 enabled = true
-max_chars = 50000
-timeout_ms = 30000
-max_redirects = 10
-allowed_schemes = ["https"]
+timeout_ms = 8000
+max_bytes = 2000000
+max_chars_default = 12000
+max_chars_cap = 50000
+redirect_limit = 5
+allow_private_network = false
+allow_localhost = false
+sanitize_output = true
 
 [local]
 enabled = false
 roots = []
-max_file_size_bytes = 1048576
 ```
 
 See [core.md](core.md) for the full type model and `docs/config.md` for operator reference.

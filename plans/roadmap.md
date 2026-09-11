@@ -1,6 +1,6 @@
 # Search Capability Expansion Roadmap
 
-Status: planned
+Status: implemented — phases 1-5 complete; historical record, see `registry.md`
 Updated: 2026-09-03
 Audited repository baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 Primary downstream consumer reviewed: `dbowm91/codegg` main
