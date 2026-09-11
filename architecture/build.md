@@ -12,7 +12,7 @@
 ```toml
 [package]
 name = "eggsearch"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 rust-version = "1.88"
 authors = ["eggstack"]
@@ -122,7 +122,7 @@ strip = true
 
 | Target | Command | Purpose |
 |--------|---------|---------|
-| `release-check` | `check + docs-check + release-build + publish-check` | Pre-release gate |
+| `release-check` | `check + release-candidate-check + docs-check + release-build + publish-check` | Pre-release gate |
 | `docs-check` | `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps` | Docs check |
 | `release-build` | `cargo build --locked --release` | Release build |
 | `publish-check` | `cargo publish --dry-run --locked` | Pre-publish check |
@@ -133,7 +133,8 @@ crates.io or GitHub and never replace the test runner.
 
 ### Packaging target
 
-| `packaging-check` | `./packaging/check-contract.sh` | Cross-check target/asset declarations and installer guards |
+| `release-candidate-check` | `./packaging/release-validate.sh candidate` | Required release tree, version, and local packaging syntax gate |
+| `packaging-check` | `./packaging/check-contract.sh` | Exact target/asset declarations and installer guards |
 
 ### Evaluation target
 

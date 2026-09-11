@@ -1,11 +1,18 @@
 # Installation
 
-## Binary-first bootstrap
+## Guaranteed installation before the first binary release
 
-Supported hosts should use the reviewed installer attached to the matching
-GitHub Release. It downloads a default-feature executable, verifies the
-adjacent SHA-256 file, checks `eggsearch --version`, and then installs it
-atomically.
+The currently published `v0.3.8` release predates binary assets. Until the
+first binary-enabled release is published, use the guaranteed Cargo path:
+
+```bash
+cargo install eggsearch --locked
+```
+
+The reviewed binary installers below are qualified before publication of that
+release. They become the supported bootstrap path once its assets are
+available. Each installer downloads a default-feature executable, verifies the
+adjacent SHA-256 file, checks `eggsearch --version`, and installs atomically.
 
 Unix:
 
@@ -19,18 +26,19 @@ PowerShell:
 irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
 ```
 
-Pin a published version when reproducibility matters:
+Pin a published binary version when reproducibility matters:
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.8
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.9
 ```
 
 ```powershell
-$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Version 0.3.8
+$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Version 0.3.9
 ```
 
-The pinned Unix installer requests assets from the exact `vX.Y.Z` release.
-The unpinned form uses `releases/latest/download` for convenience.
+The pinned Unix installer requests assets from the exact `vX.Y.Z` release. The
+unpinned form uses `releases/latest/download` for convenience after the first
+binary-enabled release exists.
 
 ## Release targets
 
@@ -96,12 +104,12 @@ Cargo fallback, permission, and lifecycle behavior.
 
 ## Fleet one-liners
 
-Binary-only installation is the default. Add `--service` only when the host
-should run the persistent loopback endpoint:
+Binary-only installation is the default after the first binary-enabled release.
+Add `--service` only when the host should run the persistent loopback endpoint:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | sudo bash -s -- --service
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --service
 ```
 
 After installation, print or apply a client registration explicitly:

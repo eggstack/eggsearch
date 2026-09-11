@@ -23,6 +23,7 @@ cargo test --locked --all-features
 cargo build --release
 cargo publish --dry-run --locked
 ./packaging/check-contract.sh
+./packaging/release-validate.sh candidate
 make bench-check        # compile-check benches without running
 ```
 
@@ -137,7 +138,7 @@ eggsearch integrate opencode --transport stdio --apply --executable /usr/local/b
 - **Broadening updater Cargo fallback** — only unsupported hosts or confirmed exact-asset HTTP 404 may compile; network, status, checksum, and candidate identity failures are hard stops
 - **Replacing before verification** — checksum and exact `eggsearch --version` identity must pass before any candidate replacement
 - **Skipping raw-cache re-derivation** — a fresh raw hit with a derived miss must run the shared extraction pipeline locally rather than issuing another network request
-- **Editing only one release target table** — keep `packaging/release-targets.txt`, the release workflow, installers, and installation docs synchronized; `make packaging-check` catches contract drift
+- **Editing only one release target table** — keep `packaging/release-targets.txt`, `packaging/release-inputs.txt`, the release workflow, installers, updater, and installation docs synchronized; `make packaging-check` catches exact contract drift
 - **Broadening installer fallback** — Cargo is allowed only for unsupported targets or a confirmed binary HTTP 404; checksum, transport, identity, and version failures are hard stops
 - **Supervising stdio** — startup managers, `croncheck`, and restart apply only to persistent `mcp serve`; never kill or register a client-owned stdio process
 - **Creating duplicate managers** — inspect `startup status`; auto detection does not fall back to cron after a preferred manager permission failure

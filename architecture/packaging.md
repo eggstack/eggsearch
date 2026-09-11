@@ -26,13 +26,25 @@ features are not separate binary products.
 
 ## Release workflow
 
-The release-only workflow runs for `v*` tag pushes or an explicit
-`workflow_dispatch` tag. Preflight checks:
+The workflow runs for `v*` tag pushes or `workflow_dispatch`. Dispatch accepts
+`mode=qualify|release`, with an exact branch/SHA `ref` for qualification or an
+exact `vX.Y.Z` `tag` for release. Qualification resolves and prints one
+immutable `QUALIFIED_SHA`, runs before crates.io publication, and uploads only a
+qualification-labelled artifact. It never creates or edits a GitHub Release.
+
+Release-mode preflight checks:
 
 - the tag is SemVer-shaped and exactly matches the root package version;
 - the checkout is the commit named by the tag and is clean;
 - `Cargo.lock` exists;
 - the exact crate version is visible on crates.io.
+
+Both modes also require the exact checkout to be clean and to contain every
+path in `packaging/release-inputs.txt` before matrix work starts. Every build
+job checks out the resolved preflight commit, not a moving branch. The final
+job uses `packaging/release-validate.sh` to print expected and observed assets,
+missing/unexpected names, commit, mode, tag, and package version, then proves
+exact set equality for seven binaries, seven checksums, and two installers.
 
 Linux x86-64 and ARM64 use cargo-zigbuild; ARMv7 is built and checked under
 QEMU before it can be attached. macOS uses native Intel and Apple Silicon
@@ -44,8 +56,8 @@ its protocol path is intentionally not treated as reliable release evidence.
 
 The assembler verifies all seven binaries and checksums from the same workflow
 run, attaches the reviewed installer bytes, and creates or updates a draft
-release. A published release is never overwritten. No GitHub job publishes the
-crate or silently publishes a partial matrix.
+release only in release mode. A published release is never overwritten. No
+GitHub job publishes the crate or silently publishes a partial matrix.
 
 ## Bootstrap policy
 

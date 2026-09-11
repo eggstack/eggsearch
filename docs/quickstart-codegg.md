@@ -10,8 +10,11 @@ This guide walks through installing eggsearch, configuring it, and using it from
 ## Installation
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
+cargo install eggsearch --locked
 ```
+
+The release installer becomes available as the supported bootstrap path after
+the first binary-enabled GitHub Release is published.
 
 Or build from source:
 

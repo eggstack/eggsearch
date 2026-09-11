@@ -35,7 +35,7 @@ cargo publish --dry-run --locked
 cargo publish --locked
 ```
 
-Once crates.io accepts a version, that version cannot be overwritten. Any correction requires a new version bump and another changelog entry.
+Once crates.io accepts a version, that version cannot be overwritten. Any correction requires a new version bump and another changelog entry. The exact commit qualified before publication must be the commit tagged for that version.
 
 ## Post-publication
 
@@ -52,23 +52,31 @@ all target jobs and checksums pass; publish that draft manually after review.
 | Job | What it runs |
 |-----|-------------|
 | `ci` | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
-| `Release binaries` | Tagged/manual workflow — preflight, seven-target binary qualification, checksums, draft assembly |
+| `Release binaries` | Qualification or tagged release workflow — preflight, seven-target build/smoke/checksum, exact assembly |
 
 ## Binary release workflow
 
-After `cargo publish --locked` succeeds and the exact version is visible on
-crates.io, tag and push `vX.Y.Z`. `.github/workflows/release-binaries.yml`
-validates the tag, package version, tagged commit, clean checkout, lockfile,
-and registry visibility before building. It produces default-feature assets
+Run `make release-check`, push the exact candidate commit, and dispatch
+`.github/workflows/release-binaries.yml` with `mode=qualify` and
+`ref=<exact SHA>` before publishing. Qualification runs the complete matrix
+without requiring crates.io or touching a GitHub Release and prints
+`QUALIFIED_SHA=<sha>`.
+
+After qualification passes, publish with `cargo publish --locked`, confirm the
+exact version is visible on crates.io, tag that same `QUALIFIED_SHA`, and push
+`vX.Y.Z`. Tagged release mode validates the tag, package version, tagged
+commit, clean checkout, lockfile, release-tree inputs, and registry visibility
+before building. It produces default-feature assets
 using the contract in `packaging/release-targets.txt`, runs native CLI/MCP
 stdio and loopback Streamable HTTP smoke where possible, qualifies ARMv7 under QEMU, and assembles a draft
 release with checksums and the reviewed installers. It refuses to overwrite a
 published release and never publishes the crate.
 
 Run `make packaging-check` locally when changing release target mappings,
-installer behavior, or embedded service assets. The routine `make check` remains network-free; release
-workflow jobs are the only place that require GitHub/crates.io and hosted
-cross-platform runners.
+installer behavior, or embedded service assets. `make release-check` also runs
+the release-candidate tree/version/syntax gate and publish dry-run. The routine
+`make check` remains network-free; release workflow jobs are the only place
+that require GitHub/crates.io and hosted cross-platform runners.
 
 The installed `eggsearch update` command consumes the same release target and
 asset contract. It uses crates.io `crate.max_stable_version`, requests the exact
@@ -144,7 +152,8 @@ make native-forge-smoke-all
 |--------|---------|---------|
 | `check` | `fmt + clippy + feature-check + test` | Local CI gate |
 | `ci` | `check` | Alias for `check` |
-| `release-check` | `check + docs-check + release-build + publish-check` | Pre-release gate |
+| `release-check` | `check + release-candidate-check + docs-check + release-build + publish-check` | Pre-release gate |
+| `release-candidate-check` | `./packaging/release-validate.sh candidate` | Release tree/version/syntax gate |
 | `docs-check` | `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps` | Docs check |
 | `release-build` | `cargo build --locked --release` | Release build |
 | `publish-check` | `cargo publish --dry-run --locked` | Pre-publish check |

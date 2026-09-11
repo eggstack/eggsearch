@@ -205,7 +205,9 @@ command -v curl >/dev/null 2>&1 || {
     exit 1
 }
 
-if [[ -n "$VERSION" ]]; then
+if [[ "${EGGSEARCH_INSTALL_TEST_MODE:-0}" == "1" ]]; then
+    BASE_URL="${EGGSEARCH_INSTALL_TEST_BASE_URL:?EGGSEARCH_INSTALL_TEST_BASE_URL is required in test mode}"
+elif [[ -n "$VERSION" ]]; then
     BASE_URL="https://github.com/$REPOSITORY/releases/download/v$VERSION"
 else
     BASE_URL="https://github.com/$REPOSITORY/releases/latest/download"

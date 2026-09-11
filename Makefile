@@ -1,4 +1,4 @@
-.PHONY: check ci fmt clippy feature-check test hygiene packaging-check release-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
+.PHONY: check ci fmt clippy feature-check test hygiene packaging-check release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
 
 check: fmt clippy feature-check test hygiene packaging-check
 
@@ -22,7 +22,10 @@ hygiene:
 packaging-check:
 	./packaging/check-contract.sh
 
-release-check: check docs-check release-build publish-check
+release-check: check release-candidate-check docs-check release-build publish-check
+
+release-candidate-check:
+	./packaging/release-validate.sh candidate
 
 docs-check:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps

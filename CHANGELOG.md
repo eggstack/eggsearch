@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- First binary-enabled release hardening: non-publishing seven-target
+  qualification, exact release asset validation, installer contract tests, and
+  release-tree preflight diagnostics.
+
+## [0.3.9] - 2026-09-11
+
+### Added
+
+- Hardened the first binary-enabled release pipeline with qualification mode,
+  exact target and asset contract checks, and deterministic installer tests.
+
 - Binary-first release artifacts, checksums, and bootstrap installers for supported desktop and SBC targets.
 - Binary-first `eggsearch update` and `update --check` commands. Updates use
   crates.io stable metadata, exact GitHub release assets, bounded SHA-256 and

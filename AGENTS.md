@@ -48,8 +48,8 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed; see `architecture/maint
 
 Conventions (kept in sync by discipline, not guards; see `architecture/maintenance.md`):
 
-- Keep in sync: `packaging/release-targets.txt` + release workflow + installers + install docs (`make packaging-check`); `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding/renaming suites. `CHANGELOG.md` entries are append-only history.
-- New tests extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`); multi-step regressions go in `corpus_runner.rs`; pure functions get `proptest` files; provider failures go in `dispatch_fault_injection.rs`. Historical phase-suite names are retired; use behavioral suite names.
+- Keep in sync: `packaging/release-targets.txt` + `packaging/release-inputs.txt` + release workflow + installers + updater + install docs (`make packaging-check`); `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding/renaming suites. `CHANGELOG.md` entries are append-only history.
+- New tests extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`); packaging behavior belongs under `packaging/test-install.sh` and `packaging/test-install.ps1`; multi-step regressions go in `corpus_runner.rs`; pure functions get `proptest` files; provider failures go in `dispatch_fault_injection.rs`. Historical phase-suite names are retired; use behavioral suite names.
 
 ## Architecture index
 

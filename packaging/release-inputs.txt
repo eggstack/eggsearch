@@ -1,0 +1,11 @@
+Cargo.toml
+Cargo.lock
+packaging/release-targets.txt
+packaging/release-smoke.sh
+packaging/release-smoke.ps1
+packaging/install.sh
+packaging/install.ps1
+packaging/release-validate.sh
+packaging/check-contract.sh
+packaging/test-install.sh
+packaging/test-install.ps1

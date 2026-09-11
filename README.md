@@ -11,18 +11,26 @@ Lightweight MCP (Model Context Protocol) search and fetch server for AI agents. 
 
 ## Install
 
-On supported desktop and SBC targets, the installer downloads the matching
-GitHub Release binary, verifies its SHA-256 checksum, and checks its version
-before installation:
+Until the first binary-enabled GitHub Release is published, Cargo is the
+guaranteed installation path:
+
+```bash
+cargo install eggsearch --locked
+```
+
+The reviewed release installers below are being qualified for the first
+binary-enabled release. Use them after that release is published; they download
+the matching GitHub Release binary, verify its SHA-256 checksum, and check its
+version before installation:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
 ```
 
-Pin an exact published version with `--version`:
+Pin an exact published version with `--version` after the binary release exists:
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.8
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.9
 ```
 
 On Windows PowerShell:
@@ -52,11 +60,10 @@ checksum and candidate version, and uses an isolated exact-version Cargo build
 only when the host is unsupported or the exact asset returns HTTP 404. It never
 downgrades or elevates itself. See [Update](docs/update.md) for the policy.
 
-For an explicitly managed persistent loopback service, request service mode in
-the installer or register the installed binary yourself:
+For an explicitly managed persistent loopback service, register the installed
+binary yourself:
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | sudo bash -s -- --service
 eggsearch startup instructions
 eggsearch startup install
 eggsearch startup status
@@ -89,12 +96,6 @@ loopback service is running. `--apply` is always opt-in; JSON edits are
 atomic and backed up, native clients are changed through their own CLI, and
 Zed/JSONC settings remain print-only when safe preservation is unavailable.
 See [MCP integrations](docs/integrations.md).
-
-For a source/manual installation, use Cargo:
-
-```bash
-cargo install eggsearch --locked
-```
 
 ## Run
 

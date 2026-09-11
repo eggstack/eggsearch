@@ -108,7 +108,12 @@ try {
         exit 0
     }
 
-    $BaseUrl = if ($Version) {
+    $BaseUrl = if ($env:EGGSEARCH_INSTALL_TEST_MODE -eq '1') {
+        if (-not $env:EGGSEARCH_INSTALL_TEST_BASE_URL) {
+            throw 'EGGSEARCH_INSTALL_TEST_BASE_URL is required in test mode'
+        }
+        $env:EGGSEARCH_INSTALL_TEST_BASE_URL.TrimEnd('/')
+    } elseif ($Version) {
         "https://github.com/$Repository/releases/download/v$Version"
     } else {
         "https://github.com/$Repository/releases/latest/download"
