@@ -104,7 +104,7 @@ credentials are absent.
 
 Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`, and `research`. eggsearch skips unavailable providers and reports warnings instead of failing the request.
 
-`repo_search` also supports `mode = "exact_error"` for literal compiler/runtime/toolchain error text.
+`repo_search` canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) selects workflow coverage; `goal = "debug"` enables exact-error behavior. Legacy `mode = "exact_error"`, `profile`, `workflow`, and `include_*` booleans remain accepted for backward compatibility.
 
 ## Provider Profiles
 
@@ -491,4 +491,4 @@ Each provider descriptor includes:
 
 Skip codes are stable snake_case strings: `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, `unknown`.
 
-Use `provider_status` to decide whether to call specialized tools or fall back to generic search.
+`provider_status` is diagnostic: hosts may inspect it during bootstrap and agents call it only when provider availability itself is relevant or troubleshooting is required. It is not a normal first research step.

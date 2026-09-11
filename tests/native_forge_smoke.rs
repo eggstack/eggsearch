@@ -95,6 +95,7 @@ async fn native_github_public_repo() {
             include_security: None,
             timeout_ms: None,
             providers: vec![],
+            response_detail: None,
         },
     )
     .await
@@ -173,6 +174,7 @@ async fn native_github_slash_ref() {
             include_security: None,
             timeout_ms: None,
             providers: vec![],
+            response_detail: None,
         },
     )
     .await
@@ -252,6 +254,7 @@ async fn native_gitlab_public_repo() {
             include_security: None,
             timeout_ms: None,
             providers: vec![],
+            response_detail: None,
         },
     )
     .await
@@ -322,6 +325,7 @@ async fn native_codeberg_public_repo() {
             include_security: None,
             timeout_ms: None,
             providers: vec![],
+            response_detail: None,
         },
     )
     .await
@@ -394,6 +398,7 @@ async fn native_gitea_public_repo() {
             include_security: None,
             timeout_ms: None,
             providers: vec![],
+            response_detail: None,
         },
     )
     .await

@@ -312,6 +312,7 @@ async fn server_state_web_search_with_new_fields() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = eggsearch::mcp::tools::run_web_search(state, args)
         .await

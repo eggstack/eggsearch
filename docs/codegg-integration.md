@@ -13,7 +13,8 @@ eggsearch version: see `Cargo.toml` for the live release number.
 2. [MCP Server Startup and Configuration](#mcp-server-startup-and-configuration)
 3. [Configuration Examples](#configuration-examples)
 4. [Tool Selection Policy](#tool-selection-policy)
-5. [Required Task Workflows](#required-task-workflows)
+5. [Progressive disclosure integration](#progressive-disclosure-integration)
+6. [Required Task Workflows](#required-task-workflows)
 6. [Trust Boundary Rules](#trust-boundary-rules)
 7. [Warning and Error Handling](#warning-and-error-handling)
 8. [Evidence Bundle Handoff](#evidence-bundle-handoff)
@@ -31,13 +32,15 @@ eggsearch version: see `Cargo.toml` for the live release number.
 # 1. Start the MCP server (stdio transport)
 eggsearch mcp stdio
 
-# 2. Discover capabilities
+# 2. Optionally inspect capabilities during bootstrap (diagnostic only)
 # Call: provider_status({})
 # Response includes: providers, code_hosts, health, server_capabilities,
 # tool_capabilities, and workflow_recipes
+# Agents skip this in the normal flow and start with the search primitive.
 
 # 3. Search for code in a repo
-# Call: repo_search({"query": "middleware", "host": "github", "owner": "tokio-rs", "repo": "axum", "profile": "coding"})
+# Call: repo_search({"query": "middleware", "host": "github", "owner": "tokio-rs", "repo": "axum", "goal": "understand"})
+# Legacy profile/mode/workflow/include_* /providers/timeout_ms remain accepted but are hidden from the ordinary schema; see docs/tool-matrix.md.
 
 # 4. Fetch a specific file
 # Call: repo_fetch({"host": "github", "owner": "tokio-rs", "repo": "axum", "path": "src/routing/mod.rs", "symbol": "Router::layer", "expand_to_block": true})
@@ -413,43 +416,125 @@ base_url = "https://gitlab.com"     # or self-hosted instance
 
 ---
 
+## Progressive disclosure integration
+
+Eggsearch is the contract owner; CodeGG owns catalog, hydration, and policy
+enforcement. Keep every capability registered and callable while shrinking
+ordinary model-visible context to `small immediate palette -> compact
+discovery -> hydrate 1–few definitions -> call -> follow next_actions`.
+
+### Compact discovery
+
+- `tool_search` results must carry compact selection metadata only
+  (`purpose`, `use_when`, `not_for`, `domain`, `disclosure`, `keywords`,
+  `aliases`, `related`/`next`), never full `parameters` schemas by default.
+  Source the eggsearch wrapper fields from `src/mcp/tool_contract.rs`
+  (`purpose`, `use_when`, `not_for`, `domain`, `disclosure`, `keywords`,
+  `aliases`, `related_tools`, `next_tools`, `discovery_text()`).
+- Return the best 3–5 matches by default with `total_matches` for
+  transparency; keep a bounded larger maximum for explicit diagnostics.
+- Prefer BM25 for minimal-with-discovery profiles; lexical ranking is cheap,
+  deterministic, and sufficient for the catalog size. Do not add embeddings
+  until BM25 fails measured cases.
+
+### Definition hydration
+
+- Hydrate the complete `ToolDefinition` for the selected deferred tool(s)
+  through the existing `deferred_tool_definitions` store and immutable
+  per-turn surface model. Do not serialize full schemas into prose results.
+- Preferred default: persist a hydrated tool for the current run, bounded by
+  an LRU/relevance cap of 3–5 beyond the core palette. Evict only between
+  provider requests, never while a tool call is in flight.
+- Hydration is monotonic: it can only expose a tool already in the
+  policy-allowed discoverable set. It must never bypass denied tools,
+  model-disabled tools, plan mode, missing backend state, parent capability
+  ceilings, or hidden disclosure. Raw `mcp__eggsearch__*` tools stay hidden
+  behind stable native wrappers.
+
+### Next actions as guided disclosure
+
+- Parse canonical `next_actions` (`tool`, `reason_code`, `priority` 1–5,
+  `input_template`, `source_ids`) and retain target names plus argument
+  templates in structured results. `sanitize_next_actions()` drops unknown
+  tools, empty reasons, and over-limit entries; harnesses must apply the same
+  filter.
+- After a successful call, mark high-priority `next_actions` targets as
+  eligible for immediate hydration on the next model request without another
+  `tool_search` round trip:
+  `web_search` → `web_fetch`, `batch_fetch`;
+  `repo_search` → `repo_fetch`, `repo_map`, `batch_fetch`;
+  `research_search` → `web_fetch`, `repo_fetch`, `batch_fetch`,
+  `build_evidence_bundle`;
+  `security_search` → `web_fetch`, `batch_fetch`, `build_evidence_bundle`.
+- Treat next actions as hints, not forced execution. Filter every target
+  through the same policy as `tool_search`; ignore malicious or unknown
+  names.
+
+### Role-specific palettes
+
+- Ordinary coding: `web_search`, `repo_search`, `tool_search`, optionally
+  `web_fetch` depending on measured frequency/context cost.
+- Research role: `research_search`, `repo_search`, plus selected
+  fetch/evidence tools.
+- Security-review role: `security_search` plus only the fetch/evidence tools
+  required by the workflow.
+- Do not auto-expose every research/evidence wrapper to specialist roles when
+  evaluation shows hydration from next actions is cheaper.
+
+### Structured results and cache
+
+- Prefer native `structuredContent`; keep the legacy text fallback for older
+  servers. Validate `outputSchema` when practical, distinguish MCP
+  tool-level `isError=true` (repairable `code` + bounded `repair`) from
+  transport/protocol failure, and retain stable structured data before
+  display clamping.
+- Cache `tools/list` by the FNV-1a content fingerprint (`tool_fingerprint()`
+  covers names, descriptions, annotations, input/output schemas, and
+  canonical discovery metadata) plus the server version — never by tool
+  count. Apply hydration state after retrieving a cached base surface.
+  See `architecture/codegg-contract.md` sections 0–0.1 and 4 for the stable
+  shapes.
+
+---
+
 ## Required Task Workflows
 
 ### 1. Understand a Repo/API/Project
 
-This is the primary codegg flow for repository investigation.
+This is the primary codegg flow for repository investigation. Hosts may
+inspect `provider_status(recipe_detail = "summary")` once during bootstrap
+or when provider availability itself is in question; it is diagnostic, not a
+normal first research step. Agents start with the task-appropriate primitive
+below.
 
 ```
-Step 1: provider_status(recipe_detail = "summary")
-  -> discover available tools, recipes, providers
-  -> check "repository_investigation" recipe support status
-
-Step 2: repo_map({ host, owner, repo })
+Step 1: repo_map({ host, owner, repo })
   -> root layout, important files, important directories
   -> local_checkout field if matching local git repo exists
 
-Step 3: repo_search({ query, host, owner, repo, profile = "coding" })
+Step 2: repo_search({ query, host, owner, repo, goal = "understand" })
   -> grouped source cards (SourceFiles, Issues, Releases, etc.)
   -> next_actions with priority-1 fetch suggestions
   -> suggested_fetches with ranked URLs
 
-Step 4: repo_fetch({ host, owner, repo, path, symbol, expand_to_block })
+Step 3: repo_fetch({ host, owner, repo, path, symbol, expand_to_block })
   -> source content with code context (imports, enclosing symbol)
   -> code_span with deterministic span_id for cross-referencing
 
-Step 5: batch_fetch({ items: [selected suggested locators] })
+Step 4: batch_fetch({ items: [selected suggested locators] })
   -> bounded parallel fetch of selected evidence
   -> per-item trust markers
 
-Step 6: build_evidence_bundle({ goal, sources, fetches })
+Step 5: build_evidence_bundle({ goal, sources, fetches })
   -> deterministic bundle_id, source_links, trust_summary, gaps
 ```
 
 **Example transcript:**
 
 ```jsonc
-// Step 1: Discover capabilities
-// -> provider_status
+// Bootstrap (host-only, diagnostic): provider_status({}) once to check
+// providers, server_capabilities, and workflow_recipes. Agents skip this in
+// the normal flow and start with repo_map below.
 // Response (abbreviated):
 {
   "providers": [
@@ -477,7 +562,7 @@ Step 6: build_evidence_bundle({ goal, sources, fetches })
 ```
 
 ```jsonc
-// Step 2: Map the repo
+// Step 1: Map the repo
 // -> repo_map({ "host": "github", "owner": "tokio-rs", "repo": "axum" })
 // Response (abbreviated):
 {
@@ -507,13 +592,14 @@ Step 6: build_evidence_bundle({ goal, sources, fetches })
 ```
 
 ```jsonc
-// Step 3: Search for code
+// Step 2: Search for code (canonical goal; legacy profile/mode/workflow/include_*
+// remain accepted but hidden)
 // -> repo_search({
 //     "query": "Router::layer middleware",
 //     "host": "github",
 //     "owner": "tokio-rs",
 //     "repo": "axum",
-//     "profile": "coding"
+//     "goal": "understand"
 //   })
 // Response (abbreviated):
 {
@@ -638,14 +724,13 @@ Step 6: build_evidence_bundle({ goal, sources, fetches })
 ### 2. Debug Exact Error
 
 ```jsonc
-// Step 1: Search with exact error mode
+// Step 1: Search with canonical debug goal (legacy mode/profile remain accepted)
 // -> repo_search({
 //     "query": "error[E0308]: mismatched types - expected `String`, found `i32`",
 //     "host": "github",
 //     "owner": "tokio-rs",
 //     "repo": "axum",
-//     "mode": "exact_error",
-//     "profile": "coding"
+//     "goal": "debug"
 //   })
 //
 // The planner generates error-aware subqueries preserving the exact
@@ -668,14 +753,14 @@ Step 6: build_evidence_bundle({ goal, sources, fetches })
 ### 3. Security Triage
 
 ```jsonc
-// Step 1: Security search with applicability
+// Step 1: Security search with applicability (canonical include set; legacy
+// include_* booleans remain accepted)
 // -> security_search({
 //     "query": "axum",
 //     "ecosystem": "crates.io",
 //     "package": "axum",
 //     "version": "0.7.0",
-//     "include_kev": true,
-//     "include_defensive_guidance": true,
+//     "include": ["kev", "defensive_guidance"],
 //     "assess_applicability": true,
 //     "dependency_files": ["Cargo.lock"]
 //   })
@@ -706,15 +791,15 @@ Step 6: build_evidence_bundle({ goal, sources, fetches })
 ### 4. Architecture / Deep Research
 
 ```jsonc
-// Step 1: Research with workflow scaffolding
+// Step 1: Research with goal scaffolding (canonical goal/include; legacy
+// workflow/include_* remain accepted)
 // -> research_search({
 //     "query": "axum vs actix-web for high-performance REST API",
 //     "research_domain": "software_architecture",
-//     "workflow": "library_comparison",
+//     "goal": "compare",
 //     "depth": "standard",
 //     "compare_targets": ["axum", "actix-web"],
-//     "include_counterpoints": true,
-//     "include_primary_sources": true,
+//     "include": ["counterpoints", "primary_sources"],
 //     "desired_source_types": ["benchmarks", "official_docs"]
 //   })
 
@@ -1038,6 +1123,8 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 - Set `max_results` on search calls to limit result count.
 - Use `include_links = false` (default) on fetch to skip link extraction.
 - Use `metadata_only` extract mode on `web_fetch` to get metadata without body content.
+- Pass `response_detail: "compact"` on search/fetch tools for ordinary operation (cards, stable IDs, trust, failure/absence state, and `next_actions` preserved; routing/telemetry/document detail omitted; ~37% web / ~49% fetch savings in representative fixtures). Use `"standard"` for specialist research/security work and `"diagnostic"` (default) for troubleshooting. `provider_status` stays diagnostic-only; `build_evidence_bundle` is identical in all modes.
+- Store full `structuredContent` internally and inject only the selected projection into model-visible context; never discard stable IDs, trust markers, warnings, or retrieval status when compacting display.
 
 ---
 
@@ -1290,3 +1377,9 @@ percent-encoding before hashing.
 Each recipe's `support` status (`available`, `partial`, `unavailable`)
 is evaluated against the current provider configuration at runtime.
 Call `provider_status(recipe_detail = "summary")` to check.
+
+---
+
+## MCP 2026-07-28 handoff
+
+Negotiate 2026-07-28 when supported (`server/discover`, stateless request metadata); keep the legacy initialize fallback for older servers. Prefer `structuredContent` over parsing JSON from text blocks, validate `outputSchema` when practical, distinguish tool-level `isError` (repairable `code` + bounded `repair`) from transport/protocol failure, and cache deterministic tool definitions by content fingerprint rather than count.

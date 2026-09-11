@@ -5,6 +5,7 @@
 //! The stable `crate::mcp::tools::X` paths are preserved via re-exports.
 
 mod batch_fetch;
+pub mod canonical;
 mod common;
 mod evidence_bundle;
 mod provider_status;
@@ -17,7 +18,7 @@ mod web_fetch;
 mod web_search;
 
 pub use batch_fetch::{run_batch_fetch, BatchFetchArgs};
-pub use common::ToolError;
+pub use common::{map_tool_result, RepairHint, ToolError, ToolErrorCode, ToolErrorExecution};
 pub use evidence_bundle::{run_build_evidence_bundle, EvidenceBundleArgs};
 pub use provider_status::{run_provider_status, run_provider_status_async, ProviderStatusArgs};
 pub use repo_fetch::{run_repo_fetch, RepoFetchArgs};

@@ -77,6 +77,7 @@ fn web_args(query: &str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -301,6 +302,7 @@ async fn corpus_repo_map_returns_structure() {
         include_security: None,
         timeout_ms: None,
         providers: vec!["mock_a".into()],
+        response_detail: None,
     };
     let v = run_repo_map(state, args)
         .await
@@ -343,6 +345,7 @@ async fn corpus_repo_map_missing_owner_repo_returns_error() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
     let res = run_repo_map(state, args).await;
     assert!(res.is_err(), "missing owner/repo should fail");
@@ -1220,6 +1223,7 @@ async fn corpus_web_search_deduplicates_by_url() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -1269,6 +1273,7 @@ async fn corpus_web_search_provider_failure_partial_results() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -1310,6 +1315,7 @@ async fn corpus_web_search_with_intent_returns_metadata() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
 
@@ -1419,6 +1425,7 @@ async fn corpus_workspace_fetch_reads_local_file() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
     let v = run_repo_fetch(state, args)
         .await
@@ -1481,6 +1488,7 @@ async fn corpus_workspace_fetch_rejects_path_traversal() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
     let result = run_repo_fetch(state, args).await;
     assert!(result.is_err(), "path traversal should fail");
@@ -1513,6 +1521,7 @@ async fn corpus_workspace_fetch_rejects_unknown_root() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
     let result = run_repo_fetch(state, args).await;
     assert!(result.is_err(), "unknown root should fail");
@@ -1782,6 +1791,7 @@ async fn corpus_prefer_local_redirects_to_workspace() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: Some(true),
+        response_detail: None,
     };
     let v = run_repo_fetch(state, args)
         .await
@@ -1857,6 +1867,7 @@ async fn corpus_prefer_local_rejects_path_traversal() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: Some(true),
+        response_detail: None,
     };
     let result = run_repo_fetch(state, args).await;
     assert!(
@@ -1914,6 +1925,7 @@ async fn corpus_repo_fetch_github_browser_url_transforms() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
     let v = run_repo_fetch(state, args)
         .await
@@ -1976,6 +1988,7 @@ async fn corpus_repo_fetch_line_range_bounds_correctly() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
     let v = run_repo_fetch(state, args)
         .await
@@ -2054,6 +2067,7 @@ async fn corpus_batch_fetch_returns_structured_results() {
         max_total_chars: None,
         timeout_ms: None,
         continue_on_error: None,
+        response_detail: None,
     };
     let v = run_batch_fetch(state, args)
         .await
@@ -2128,6 +2142,7 @@ async fn corpus_batch_fetch_handles_mixed_success_failure() {
         max_total_chars: None,
         timeout_ms: None,
         continue_on_error: Some(true),
+        response_detail: None,
     };
     let v = run_batch_fetch(state, args)
         .await
@@ -2613,6 +2628,7 @@ mod live_smoke {
                 include_security: None,
                 timeout_ms: None,
                 providers: vec![],
+                response_detail: None,
             },
         )
         .await
@@ -2669,6 +2685,7 @@ mod live_smoke {
                 language: None,
                 region: None,
                 excerpt_count: None,
+                response_detail: None,
             },
         )
         .await
@@ -2706,6 +2723,7 @@ mod live_smoke {
                 expand_to_block: None,
                 max_block_lines: None,
                 prefer_local: None,
+                response_detail: None,
             },
         )
         .await
@@ -2763,6 +2781,7 @@ mod live_smoke {
                 include_security: None,
                 timeout_ms: None,
                 providers: vec![],
+                response_detail: None,
             },
         )
         .await
@@ -2796,6 +2815,7 @@ mod live_smoke {
                 include_security: None,
                 timeout_ms: None,
                 providers: vec![],
+                response_detail: None,
             },
         )
         .await
@@ -2829,6 +2849,7 @@ mod live_smoke {
                 include_security: None,
                 timeout_ms: None,
                 providers: vec![],
+                response_detail: None,
             },
         )
         .await
@@ -2866,6 +2887,7 @@ mod live_smoke {
                 include_security: None,
                 timeout_ms: None,
                 providers: vec![],
+                response_detail: None,
             },
         )
         .await

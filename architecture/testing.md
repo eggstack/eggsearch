@@ -134,6 +134,15 @@ Mock-backed deterministic coverage for the shared probe service:
 | `structured_local_code_intelligence.rs` | Structured parsing, ranking, fallback, budgets, repo-map enrichment (formerly `phase13_structured_code`) |
 | `batch_fetch_retrieval.rs` | Mixed focused/unfocused batch, truncation, isolation, round-trip (formerly `phase14_batch_focus`) |
 
+### Tool Consolidation Contracts (Plans 001-005)
+
+| File | Purpose |
+|------|---------|
+| `mcp_tool_contract.rs` | Canonical registry parity (aliases, discovery text, sanitization, fingerprint determinism) |
+| `mcp_schema_slimming.rs` | Slimmed ordinary schema size budget with legacy-field acceptance |
+| `mcp_2026_protocol.rs` | Structured results, output schemas, repairable error contract |
+| `mcp_projection.rs` | Response-detail projection (failure-vs-absence, trust, conflicts, truncation, bundle identity, byte reduction) |
+
 ### Tool-Surface Evaluation (`tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs`)
 
 Deterministic agentic tool-surface regression gate over the labeled

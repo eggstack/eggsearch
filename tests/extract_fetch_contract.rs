@@ -43,6 +43,7 @@ fn fetch_args(url: String) -> WebFetchArgs {
         focus_max_chars: None,
         render: None,
         browser_profile: None,
+        response_detail: None,
     }
 }
 
@@ -420,6 +421,7 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
                 max_total_chars: None,
                 timeout_ms: None,
                 continue_on_error: None,
+                response_detail: None,
             },
         )
     };
@@ -475,6 +477,7 @@ async fn web_search_rejects_oversized_excerpt_count() {
         language: None,
         region: None,
         excerpt_count: Some(99),
+        response_detail: None,
     };
     let err = run_web_search(state, args)
         .await
@@ -521,6 +524,7 @@ async fn web_search_excerpt_demand_is_additive() {
             language: None,
             region: None,
             excerpt_count,
+            response_detail: None,
         };
         run_web_search(state, args)
     };

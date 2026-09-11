@@ -109,6 +109,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -131,6 +132,7 @@ async fn web_search_empty_query_returns_validation_error() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;
@@ -158,6 +160,7 @@ async fn web_search_oversized_query_returns_validation_error() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;
@@ -185,6 +188,7 @@ async fn web_search_zero_max_results_returns_validation_error() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;
@@ -214,6 +218,7 @@ async fn web_search_zero_timeout_ms_returns_validation_error() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;
@@ -250,6 +255,7 @@ async fn web_search_oversized_max_results_clamps_and_warns() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await
@@ -281,6 +287,7 @@ async fn web_search_blocked_when_mode_off() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;
@@ -307,6 +314,7 @@ async fn web_search_unknown_provider_returns_error() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;

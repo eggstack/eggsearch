@@ -10,8 +10,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use eggsearch::core::config::AppConfig;
-use eggsearch::core::workflow::MAX_NEXT_ACTIONS;
+use eggsearch::core::workflow::{sanitize_next_actions, AgentNextAction, MAX_NEXT_ACTIONS};
 use eggsearch::mcp::state::ServerState;
+use eggsearch::mcp::tool_contract::{self, MAX_TOOL_DESCRIPTION_LEN};
 use eggsearch::meta::recipe_catalog::{
     repo_search_next_actions, research_search_next_actions, security_search_next_actions,
     web_search_next_actions,
@@ -34,9 +35,8 @@ const KNOWN_TOOLS: &[&str] = &[
     "build_evidence_bundle",
 ];
 
-const MAX_DESCRIPTION_CHARS: usize = 1000;
-const MAX_TOTAL_DEFINITION_BYTES: usize = 86000;
-const MAX_INSTRUCTIONS_BYTES: usize = 6000;
+const MAX_TOTAL_DEFINITION_BYTES: usize = 80000;
+const MAX_INSTRUCTIONS_BYTES: usize = 2000;
 const MAX_COMPACT_DISCOVERY_BYTES: usize = 512;
 const MIN_TOP1_ACCURACY: f64 = 0.90;
 const MIN_RECALL_AT_3: f64 = 0.95;
@@ -59,19 +59,9 @@ fn load_cases() -> Vec<Case> {
 }
 
 fn compact_purpose(tool: &str) -> &'static str {
-    match tool {
-        "web_search" => "Discover candidate public web sources as source cards",
-        "web_fetch" => "Fetch one explicit HTTP(S) URL as bounded text",
-        "batch_fetch" => "Fetch several explicit URLs or repo files in one call",
-        "provider_status" => "Diagnose provider configuration, health, and recipes",
-        "repo_search" => "Discover grouped repository evidence for a codebase",
-        "repo_fetch" => "Fetch a known repo file span or symbol by locator",
-        "repo_map" => "Show repository structure without file contents",
-        "security_search" => "Look up advisories and assess package applicability",
-        "research_search" => "Gather multi-source evidence for complex questions",
-        "build_evidence_bundle" => "Package already-selected evidence for handoff",
-        _ => "unknown tool",
-    }
+    tool_contract::lookup(tool)
+        .map(|contract| contract.purpose)
+        .unwrap_or("unknown tool")
 }
 
 const KEYWORDS: &[(&str, &str, i32)] = &[
@@ -377,6 +367,22 @@ fn tool_surface_corpus_is_well_formed() {
     let cases = load_cases();
     assert!(!cases.is_empty(), "tool-surface corpus must not be empty");
     let known: HashSet<&str> = KNOWN_TOOLS.iter().copied().collect();
+    assert_eq!(
+        known.len(),
+        KNOWN_TOOLS.len(),
+        "local tool list must not contain duplicates"
+    );
+    for tool in KNOWN_TOOLS {
+        assert!(
+            tool_contract::is_known_tool(tool),
+            "local tool {tool} must agree with the canonical contract registry"
+        );
+    }
+    assert_eq!(
+        tool_contract::tool_names().len(),
+        KNOWN_TOOLS.len(),
+        "canonical registry must cover exactly the evaluated tools"
+    );
     let mut ids = HashSet::new();
     let mut primary_coverage: HashSet<&str> = HashSet::new();
     for case in &cases {
@@ -454,8 +460,8 @@ fn tool_surface_byte_budgets() {
             tool.name
         );
         assert!(
-            desc.len() <= MAX_DESCRIPTION_CHARS,
-            "tool {} description is {} chars, max is {MAX_DESCRIPTION_CHARS}",
+            desc.len() <= MAX_TOOL_DESCRIPTION_LEN,
+            "tool {} description is {} chars, max is {MAX_TOOL_DESCRIPTION_LEN}",
             tool.name,
             desc.len()
         );
@@ -638,6 +644,38 @@ fn tool_surface_layer2_synthetic_mechanics() {
     assert!(
         hydrated.contains("build_evidence_bundle"),
         "synthetic follow-up hydration must reach evidence handoff: {hydrated:?}"
+    );
+    let mut poisoned = bundles[0].clone();
+    poisoned.push(AgentNextAction::new(
+        "no_such_tool",
+        "inspect_top_source",
+        1,
+        serde_json::json!({}),
+        Vec::new(),
+        None,
+    ));
+    poisoned.push(AgentNextAction::new(
+        "web_fetch",
+        "",
+        9,
+        serde_json::json!({}),
+        Vec::new(),
+        None,
+    ));
+    let cleaned = sanitize_next_actions(poisoned);
+    assert!(
+        cleaned
+            .iter()
+            .all(|action| tool_contract::is_known_tool(&action.tool)),
+        "sanitized hydration must reference known tools only"
+    );
+    assert!(
+        !cleaned.iter().any(|action| action.tool == "no_such_tool"),
+        "unknown next-action targets must be ignored, never hydrated"
+    );
+    assert!(
+        !cleaned.iter().any(|action| action.reason_code.is_empty()),
+        "reason-less next actions must be dropped"
     );
     let server = live_server();
     let tools = server.tool_definitions();

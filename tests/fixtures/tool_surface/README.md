@@ -50,20 +50,32 @@ discovery bytes, and serialized definition bytes with estimated tokens
 - every `acceptable`/`expected_followups`/`forbidden_primary` reference
   and every `next_actions` hydration target is a known stable tool.
 
-## Baseline (v0.3.8)
+## Baseline
+
+Pre-consolidation surface (v0.3.8, before Plans 001-005):
 
 - total definition bytes: 77952 (~19488 estimated tokens);
-- largest single tool: `build_evidence_bundle` (39683 bytes of schema);
+- largest single tool: `build_evidence_bundle` (~39.7 KB of schema);
 - longest description: `repo_fetch` (825 chars);
 - server instructions: 5275 bytes;
-- compact top-3 discovery: at most 273 bytes;
+- compact top-3 discovery: at most 273 bytes.
+
+Post-consolidation surface (Plans 001-005 landed):
+
+- total definition bytes: 73037 (~18260 estimated tokens);
+- longest description: `repo_search` (186 chars, contract cap 300);
+- server instructions: 1614 bytes;
+- compact top-3 discovery: at most 260 bytes (contract `purpose` lines);
 - deterministic discovery: 43/43 top-1, recall@3 1.0, MRR 1.0;
 - fingerprint:
-  `eggsearch-0.3.8|tools=batch_fetch:433,build_evidence_bundle:445,provider_status:94,repo_fetch:825,repo_map:559,repo_search:667,research_search:753,security_search:543,web_fetch:572,web_search:501|bytes=77952`.
+  `eggsearch-0.3.8|tools=batch_fetch:150,build_evidence_bundle:144,provider_status:148,repo_fetch:150,repo_map:146,repo_search:186,research_search:160,security_search:159,web_fetch:159,web_search:160|bytes=73037`.
 
-Re-run after disclosure or schema changes and record the new fingerprint
-with the delta; context reduction must be measured end to end, so bytes
-moving from definitions into discovery output do not count as success.
+The description/instruction cuts account for nearly all of the
+improvement; total bytes moved less because structured output schemas
+(Plan 003) are model-visible by design. Re-run after disclosure or
+schema changes and record the new fingerprint with the delta; context
+reduction must be measured end to end, so bytes moving from definitions
+into discovery output do not count as success.
 
 ## Live comparison (manual only)
 

@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SecuritySearchArgs {
-    /// Free-text query. May contain CVE/GHSA/RustSec identifiers.
+    /// Query. May contain CVE/GHSA/RustSec identifiers.
     pub query: Option<String>,
-    /// Package ecosystem (e.g. "crates.io", "npm", "pypi").
+    /// Package ecosystem.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ecosystem: Option<String>,
     /// Package name.
@@ -18,75 +18,66 @@ pub struct SecuritySearchArgs {
     /// Version string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// Explicit CVE ID (e.g. "CVE-2024-12345").
+    /// CVE ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cve_id: Option<String>,
-    /// Explicit GHSA ID (e.g. "GHSA-abcd-1234-efgh").
+    /// GHSA ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ghsa_id: Option<String>,
-    /// Explicit OSV ID.
+    /// OSV ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub osv_id: Option<String>,
-    /// Explicit RustSec ID (e.g. "RUSTSEC-2024-0001").
+    /// RustSec ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rustsec_id: Option<String>,
-    /// Minimum severity level.
+    /// Minimum severity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub severity_min: Option<String>,
-    /// Include KEV (Known Exploited Vulnerabilities) data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_kev: Option<bool>,
-    /// Include exploit context in results.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_exploit_context: Option<bool>,
-    /// Include defensive/mitigation guidance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_defensive_guidance: Option<bool>,
-    /// Include vendor advisory links.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_vendor_advisories: Option<bool>,
-    /// Maximum total results to return.
+    /// Compact include set: kev, exploit_context, defensive_guidance, vendor_advisories.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<String>,
+    /// Max total results.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_results: Option<usize>,
-    /// Maximum results per group.
+    /// Max results per group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_per_group: Option<usize>,
     /// Freshness hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub freshness: Option<String>,
-    /// Per-request timeout override in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub timeout_ms: Option<u64>,
-    /// Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)]
     pub providers: Vec<String>,
-    /// When true, compare advisory affected/fixed version ranges against
-    /// the provided version (or versions parsed from dependency_files)
-    /// and return per-package applicability assessments. This is
-    /// metadata comparison only — it does NOT determine runtime
-    /// exploitability or reachability. Assessments have status
-    /// (affected/not_affected/unknown) and confidence (high/medium/
-    /// low). Always treat results as advisory metadata, not safety
-    /// guarantees.
+    /// Assess applicability (metadata comparison only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assess_applicability: Option<bool>,
-    /// Local dependency file paths to parse for applicability assessment.
-    /// Supported: Cargo.lock, Cargo.toml, package-lock.json,
-    /// npm-shrinkwrap.json, go.mod, requirements.txt, requirements.in,
-    /// Gemfile.lock, composer.lock, pom.xml, .csproj (PackageReference),
-    /// .github/workflows/*.yml (uses: entries), Dockerfile,
-    /// docker-compose.yml (FROM/image:). Parsed entries feed into
-    /// version-range comparison when assess_applicability is true.
+    /// Dependency file paths for applicability.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_files: Vec<String>,
-    /// Workflow type for coverage model selection. Overrides the
-    /// default security_review model when set. Accepted values:
-    /// api_comprehension, repository_architecture, error_investigation,
-    /// version_migration, security_review, dependency_evaluation,
-    /// performance_investigation, comparative_research,
-    /// pre_change_evidence, post_change_review.
+    /// Task goal (usually omit; defaults to security_review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub workflow: Option<String>,
+    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
 /// Run the `security_search` tool.
@@ -142,23 +133,17 @@ pub async fn run_security_search(
 
     let freshness = parse_strict_freshness(args.freshness.as_deref())?.unwrap_or_default();
 
-    let workflow = parse_strict_enum_arg(
-        "workflow",
+    let workflow = super::canonical::resolve_security_workflow(
+        args.goal.as_deref(),
         args.workflow.as_deref(),
-        crate::core::workflow_coverage::WorkflowKind::parse,
-        &[
-            "api_comprehension",
-            "repository_architecture",
-            "error_investigation",
-            "version_migration",
-            "security_review",
-            "dependency_evaluation",
-            "performance_investigation",
-            "comparative_research",
-            "pre_change_evidence",
-            "post_change_review",
-            "(aliases: api, architecture, error, migration, security, dependency, performance, research/comparative, pre_change, post_change)",
-        ],
+    )?;
+
+    let resolved_includes = super::canonical::resolve_security_includes(
+        &args.include,
+        args.include_kev,
+        args.include_exploit_context,
+        args.include_defensive_guidance,
+        args.include_vendor_advisories,
     )?;
 
     let req = SecuritySearchRequest {
@@ -171,10 +156,10 @@ pub async fn run_security_search(
         osv_id: args.osv_id.clone(),
         rustsec_id: args.rustsec_id.clone(),
         severity_min,
-        include_kev: args.include_kev,
-        include_exploit_context: args.include_exploit_context,
-        include_defensive_guidance: args.include_defensive_guidance,
-        include_vendor_advisories: args.include_vendor_advisories,
+        include_kev: resolved_includes.include_kev,
+        include_exploit_context: resolved_includes.include_exploit_context,
+        include_defensive_guidance: resolved_includes.include_defensive_guidance,
+        include_vendor_advisories: resolved_includes.include_vendor_advisories,
         max_results: args.max_results,
         max_per_group: args.max_per_group,
         freshness,
@@ -309,5 +294,10 @@ pub async fn run_security_search(
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 
-    Ok(value)
+    let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+    Ok(crate::mcp::projection::project(
+        "security_search",
+        value,
+        detail,
+    ))
 }

@@ -109,6 +109,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -155,6 +156,7 @@ async fn batch_fetch_returns_results_with_same_length_as_input() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -182,6 +184,7 @@ async fn batch_fetch_empty_items_returns_validation_not_empty_array() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -228,6 +231,7 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -256,6 +260,7 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -297,6 +302,7 @@ async fn batch_fetch_with_single_empty_url_returns_validation_error() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -343,6 +349,7 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -368,6 +375,7 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
             max_total_chars: Some(50000),
             continue_on_error: Some(true),
             timeout_ms: None,
+            response_detail: None,
         },
     )
     .await
@@ -437,6 +445,7 @@ async fn batch_fetch_respects_per_origin_concurrency() {
             max_total_chars: Some(120000),
             continue_on_error: Some(true),
             timeout_ms: None,
+            response_detail: None,
         },
     )
     .await
@@ -477,6 +486,7 @@ fn build_evidence_bundle_returns_expected_structure() {
         max_sources: None,
         max_fetched_items: None,
         max_total_chars: None,
+        response_detail: None,
     };
 
     let v = run_build_evidence_bundle(args).expect("bundle should succeed");
@@ -541,6 +551,7 @@ fn build_evidence_bundle_empty_sources_and_fetches_errors() {
         max_sources: None,
         max_fetched_items: None,
         max_total_chars: None,
+        response_detail: None,
     };
 
     let err = run_build_evidence_bundle(args).expect_err("empty bundle should error");
@@ -604,6 +615,7 @@ async fn build_evidence_bundle_with_sources_and_fetches() {
         max_sources: None,
         max_fetched_items: None,
         max_total_chars: None,
+        response_detail: None,
     };
 
     let v = run_build_evidence_bundle(args).expect("bundle should succeed");
@@ -659,6 +671,7 @@ fn build_evidence_bundle_deterministic_bundle_id() {
         max_sources: None,
         max_fetched_items: None,
         max_total_chars: None,
+        response_detail: None,
     };
 
     let v1 = run_build_evidence_bundle(make_args()).expect("ok");
@@ -705,6 +718,7 @@ fn build_evidence_bundle_with_fetches_populates_limits() {
         max_sources: None,
         max_fetched_items: None,
         max_total_chars: None,
+        response_detail: None,
     };
 
     let v = run_build_evidence_bundle(args).expect("ok");

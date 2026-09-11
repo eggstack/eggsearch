@@ -6,131 +6,114 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoSearchArgs {
-    /// Free-text query. May contain repo hints (repo:owner/name, etc.).
+    /// Query. May contain repo hints (repo:owner/name).
     #[serde(default)]
     pub query: String,
-    /// Optional. Code host to target (github, gitlab, codeberg, gitea, forgejo).
+    /// Code host (github, gitlab, codeberg, gitea, forgejo).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
-    /// Optional. Repository owner.
+    /// Repository owner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
-    /// Optional. Repository name.
+    /// Repository name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
-    /// Optional. Organization filter.
+    /// Organization filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org: Option<String>,
-    /// Optional. Path hint.
+    /// Path hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// Optional. File hint.
+    /// File hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
-    /// Optional. Language filter.
+    /// Language filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
-    /// Optional. Symbol hint.
+    /// Symbol hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
-    /// Optional. Include official docs results (default true).
+    /// Task goal: understand, architecture, debug, migration, security, dependency, performance, compare, pre_change, post_change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    /// Source set override. Omit for goal defaults.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_docs: Option<bool>,
-    /// Optional. Include package registry results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_registry: Option<bool>,
-    /// Optional. Include issue results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_issues: Option<bool>,
-    /// Optional. Include release results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_releases: Option<bool>,
-    /// Optional. Include example results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_examples: Option<bool>,
-    /// Optional. Include pull request results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_pull_requests: Option<bool>,
-    /// Optional. Maximum total results.
+    /// Max total results.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_results: Option<usize>,
-    /// Optional. Maximum results per group.
+    /// Max results per group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_per_group: Option<usize>,
-    /// Optional. Freshness hint.
+    /// Freshness hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub freshness: Option<String>,
-    /// Optional. Per-request timeout override.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub timeout_ms: Option<u64>,
-    /// Optional. Explicit provider ID list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)]
     pub providers: Vec<String>,
-    /// Search profile for provider selection. "generic" (default): uses
-    /// configured default providers. "coding": prefers native code/issues/
-    /// releases providers (GitHub, GitLab, Gitea), falls back to generic
-    /// web if unavailable. "security": prefers OSV and security-capable
-    /// providers. "research": prefers diverse source discovery and broad
-    /// web/API providers. Profiles are advisory — unavailable providers
-    /// are skipped with warnings rather than failing. Use "coding" for
-    /// codebase-specific queries, "security" for vulnerability lookups,
-    /// "research" for multi-source evidence gathering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub profile: Option<String>,
-    /// Optional. Package ecosystem ("crates.io", "pypi", "npm", "go",
-    /// "maven", "nuget", "rubygems", "packagist", "oci",
-    /// "github_actions").
+    /// Package ecosystem.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ecosystem: Option<String>,
-    /// Optional. Package name for package-aware search.
+    /// Package name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
-    /// Optional. Specific package version.
+    /// Package version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// Optional. Version requirement for range queries.
+    /// Version requirement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version_requirement: Option<String>,
-    /// Optional. Package namespace (e.g. Maven group_id, OCI registry namespace).
+    /// Package namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_namespace: Option<String>,
-    /// Optional. Compare version for migration/changelog context.
+    /// Compare version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compare_version: Option<String>,
-    /// Optional. Include security advisory context (default false).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_security_context: Option<bool>,
-    /// Optional. Include changelog results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_changelog: Option<bool>,
-    /// Optional. Include migration guide results (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub include_migration_guides: Option<bool>,
-    /// Include local workspace results when available. When true and
-    /// the server operator has configured `local` roots, the search
-    /// includes source files from local Git checkouts matching the
-    /// requested repo. Local results carry trust=local_trusted and
-    /// may have symbol-enriched metadata. Default true when local
-    /// backend is enabled. Set to false to exclude local files.
+    /// Include local workspace results.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_local: Option<bool>,
-    /// Search mode. "default" (or omitted) uses standard repo-search
-    /// subqueries for general codebase discovery. "exact_error" optimizes
-    /// for compiler/runtime/toolchain error messages: it preserves exact
-    /// error phrases, extracts error codes (Rust E0xxx, TSxxxx, Python
-    /// exceptions), targets docs/issues/changelogs, and redacts sensitive
-    /// tokens (local paths, API keys, UUIDs, memory addresses). Use
-    /// "exact_error" when the query is a literal error message you want
-    /// diagnosed; use "default" for everything else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub mode: Option<String>,
-    /// Workflow type for coverage model selection. Overrides profile-based
-    /// and mode-based defaults when set. Accepted values: api_comprehension,
-    /// repository_architecture, error_investigation, version_migration,
-    /// security_review, dependency_evaluation, performance_investigation,
-    /// comparative_research, pre_change_evidence, post_change_review.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub workflow: Option<String>,
+    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
 /// Run the `repo_search` tool.
@@ -158,43 +141,27 @@ pub async fn run_repo_search(
 
     let freshness = parse_strict_freshness(args.freshness.as_deref())?.unwrap_or_default();
 
-    let profile = parse_strict_enum_arg(
-        "profile",
+    let semantics = super::canonical::resolve_repo_semantics(
+        args.goal.as_deref(),
         args.profile.as_deref(),
-        crate::core::repo_search::SearchProfile::parse,
-        &[
-            "generic",
-            "coding",
-            "security",
-            "research",
-            "(aliases: default/web, code/repo, vuln/advisory, deep/thorough)",
-        ],
-    )?;
-
-    let mode = parse_strict_enum_arg(
-        "mode",
         args.mode.as_deref(),
-        crate::core::repo_search::RepoSearchMode::parse,
-        &["normal", "exact_error", "(aliases: default, error)"],
-    )?;
-
-    let workflow = parse_strict_enum_arg(
-        "workflow",
         args.workflow.as_deref(),
-        crate::core::workflow_coverage::WorkflowKind::parse,
-        &[
-            "api_comprehension",
-            "repository_architecture",
-            "error_investigation",
-            "version_migration",
-            "security_review",
-            "dependency_evaluation",
-            "performance_investigation",
-            "comparative_research",
-            "pre_change_evidence",
-            "post_change_review",
-            "(aliases: api, architecture, error, migration, security, dependency, performance, research/comparative, pre_change, post_change)",
-        ],
+    )?;
+    let profile = semantics.profile;
+    let mode = semantics.mode;
+    let workflow = semantics.workflow;
+
+    let resolved_sources = super::canonical::resolve_repo_sources(
+        &args.sources,
+        args.include_docs,
+        args.include_registry,
+        args.include_issues,
+        args.include_releases,
+        args.include_examples,
+        args.include_pull_requests,
+        args.include_changelog,
+        args.include_migration_guides,
+        args.include_security_context,
     )?;
 
     let (owner, repo) = if let Some(r) = &args.repo {
@@ -226,12 +193,12 @@ pub async fn run_repo_search(
         file: args.file,
         language: args.language,
         symbol: args.symbol,
-        include_docs: args.include_docs,
-        include_registry: args.include_registry,
-        include_issues: args.include_issues,
-        include_releases: args.include_releases,
-        include_examples: args.include_examples,
-        include_pull_requests: args.include_pull_requests,
+        include_docs: resolved_sources.include_docs,
+        include_registry: resolved_sources.include_registry,
+        include_issues: resolved_sources.include_issues,
+        include_releases: resolved_sources.include_releases,
+        include_examples: resolved_sources.include_examples,
+        include_pull_requests: resolved_sources.include_pull_requests,
         max_results: args.max_results,
         max_per_group: args.max_per_group,
         freshness,
@@ -265,9 +232,9 @@ pub async fn run_repo_search(
         version_requirement: args.version_requirement.clone(),
         package_namespace: args.package_namespace.clone(),
         compare_version: args.compare_version.clone(),
-        include_security_context: args.include_security_context,
-        include_changelog: args.include_changelog,
-        include_migration_guides: args.include_migration_guides,
+        include_security_context: resolved_sources.include_security_context,
+        include_changelog: resolved_sources.include_changelog,
+        include_migration_guides: resolved_sources.include_migration_guides,
         include_local: args.include_local,
         mode,
         workflow,
@@ -472,5 +439,10 @@ pub async fn run_repo_search(
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 
-    Ok(value)
+    let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+    Ok(crate::mcp::projection::project(
+        "repo_search",
+        value,
+        detail,
+    ))
 }

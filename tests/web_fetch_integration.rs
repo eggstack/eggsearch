@@ -109,6 +109,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -131,6 +132,7 @@ async fn web_fetch_disabled_by_policy_returns_error() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -179,6 +181,7 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -216,6 +219,7 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -262,6 +266,7 @@ async fn web_fetch_respects_include_links_default() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -313,6 +318,7 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -357,6 +363,7 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -411,6 +418,7 @@ async fn web_fetch_sanitize_emits_marker_warning() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -463,6 +471,7 @@ async fn web_fetch_empty_url_returns_validation_error() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -492,6 +501,7 @@ async fn web_fetch_unsupported_scheme_returns_error() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -521,6 +531,7 @@ async fn web_fetch_embedded_credentials_returns_error() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -548,6 +559,7 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                response_detail: None,
             },
         )
         .await;
@@ -592,6 +604,7 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -646,6 +659,7 @@ async fn web_fetch_mcp_level_full_response_shape() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -792,6 +806,7 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -857,6 +872,7 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -932,6 +948,7 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -980,6 +997,7 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1033,6 +1051,7 @@ async fn web_fetch_document_metadata_only_no_body_text() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1090,6 +1109,7 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1154,6 +1174,7 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1216,6 +1237,7 @@ async fn web_fetch_document_has_blocks_and_chunks() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1290,6 +1312,7 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1375,6 +1398,7 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1440,6 +1464,7 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1506,6 +1531,7 @@ async fn web_fetch_document_outline_populated_from_title() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1572,6 +1598,7 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1635,6 +1662,7 @@ async fn web_fetch_document_rust_source_has_code_kind() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1696,6 +1724,7 @@ async fn web_fetch_document_json_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1746,6 +1775,7 @@ async fn web_fetch_document_markdown_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1819,6 +1849,7 @@ async fn web_fetch_document_toml_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1871,6 +1902,7 @@ async fn web_fetch_document_yaml_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1920,6 +1952,7 @@ async fn web_fetch_document_diff_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1972,6 +2005,7 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2033,6 +2067,7 @@ async fn web_fetch_document_code_preserves_line_ranges() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2096,6 +2131,7 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2150,6 +2186,7 @@ async fn web_fetch_document_truncation_at_line_boundary() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2216,6 +2253,7 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2267,6 +2305,7 @@ async fn web_fetch_document_application_json_no_extension() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2327,6 +2366,7 @@ async fn web_fetch_links_classification() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2403,6 +2443,7 @@ async fn web_fetch_links_seen_metadata() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2456,6 +2497,7 @@ async fn web_fetch_links_empty_when_not_requested() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2512,6 +2554,7 @@ async fn web_fetch_links_same_domain_detection() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2586,6 +2629,7 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2653,6 +2697,7 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2717,6 +2762,7 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2785,6 +2831,7 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2858,6 +2905,7 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -2986,6 +3034,7 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3080,6 +3129,7 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3167,6 +3217,7 @@ async fn web_fetch_empty_main_falls_back_to_body() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3220,6 +3271,7 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3278,6 +3330,7 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3329,6 +3382,7 @@ async fn web_fetch_body_only_page_still_works() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3393,6 +3447,7 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3473,6 +3528,7 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3545,6 +3601,7 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3631,6 +3688,7 @@ async fn web_fetch_retries_on_network_error_then_succeeds() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3694,6 +3752,7 @@ async fn web_fetch_respects_deadline_during_retry() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -3746,6 +3805,7 @@ async fn web_fetch_concurrent_same_origin_respects_semaphore() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    response_detail: None,
                 },
             )
             .await
@@ -3798,6 +3858,7 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3821,6 +3882,7 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3864,6 +3926,7 @@ async fn web_fetch_cache_refresh_policy_refetches() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3895,6 +3958,7 @@ async fn web_fetch_cache_refresh_policy_refetches() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3939,6 +4003,7 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -3969,6 +4034,7 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -4013,6 +4079,7 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -4035,6 +4102,7 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -4079,6 +4147,7 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -4101,6 +4170,7 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -4138,6 +4208,7 @@ async fn web_fetch_render_http_only_never_uses_browser() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -4171,6 +4242,7 @@ async fn web_fetch_render_auto_returns_useful_http_content() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -4204,6 +4276,7 @@ async fn web_fetch_render_auto_no_escalate_401() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "401 should return an error");
@@ -4236,6 +4309,7 @@ async fn web_fetch_render_auto_no_escalate_429() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "429 should return an error, not escalate");
@@ -4268,6 +4342,7 @@ async fn web_fetch_render_auto_no_escalate_404() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "404 should return an error, not escalate");
@@ -4300,6 +4375,7 @@ async fn web_fetch_render_auto_no_escalate_403() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "403 should return an error, not escalate");
@@ -4323,6 +4399,7 @@ async fn web_fetch_render_invalid_returns_validation_error() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(
@@ -4355,6 +4432,7 @@ async fn web_fetch_profile_with_http_only_rejected() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -4390,6 +4468,7 @@ async fn web_fetch_response_has_transport_field() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert!(result.get("transport").is_some());
@@ -4445,6 +4524,7 @@ async fn web_fetch_profile_lock_acquired_and_released() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(
@@ -4502,6 +4582,7 @@ async fn web_fetch_profile_origin_mismatch_rejected() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -4546,6 +4627,7 @@ async fn web_fetch_auto_preserves_http_when_browser_unavailable() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -4584,6 +4666,7 @@ async fn web_fetch_explicit_browser_unavailable_returns_failure() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -4634,6 +4717,7 @@ async fn web_fetch_profile_lock_contention_rejected() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());

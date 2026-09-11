@@ -11,6 +11,86 @@ implement to correctly consume, deduplicate, triage, and route eggsearch
 MCP output. All types, codes, and semantics here are **stable** — breaking
 changes follow the semver-compatible schema migration rules in AGENTS.md.
 
+## 0. MCP 2026-07-28 protocol and error contract
+
+Successful calls return native `structuredContent` plus a text JSON fallback.
+Prefer `structuredContent`; validate `outputSchema` when practical. Every
+tool advertises `outputSchema` (generated from the typed envelope where one
+exists; permissive stable-envelope schemas for `web_search`, `web_fetch`,
+and `provider_status` where open-ended metadata is intentional).
+`tools/list` is name-sorted; cache it by the FNV-1a content fingerprint of
+names, descriptions, annotations, and serialized input/output schemas, not
+by tool count. Negotiate 2026-07-28 (`server/discover`, stateless metadata)
+when supported and fall back to legacy initialize sessions otherwise; tool
+names and semantics are stable across eras.
+
+Distinguish tool-level `isError` from transport/protocol failure. Recoverable
+semantic failures are `isError: true` results with stable `code` and bounded
+`repair { field, accepted[<=20], suggested_value }`. Stable codes:
+`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`,
+`provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`,
+`manual_interaction_required`, `upstream_failed`. Only uninterpretable
+invocation shapes are JSON-RPC `invalid_params`; server faults are
+`internal_error` without stack traces.
+
+## 0.1 Response projection and host storage
+
+All search/fetch tools except diagnostic-only `provider_status` accept optional
+`response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`).
+`build_evidence_bundle` accepts it but returns identical canonical content in
+all modes. Canonical responses are captured before projection; projection runs
+at the MCP boundary and only trims model-visible JSON.
+
+- `compact` preserves query identity, cards/groups, stable IDs, locators,
+  trust + injection markers, evidence roles, 1 excerpt per card, essential
+  warnings, explicit failure/absence state (`providers_failed` + minimal
+  `retrieval_status`), `next_actions`/`suggested_fetches`, and conflict
+  indicators. Full routing/telemetry/document/link detail is omitted.
+- `standard` adds full `retrieval_summary`, `conflict_metadata`,
+  `workflow_coverage`, capability summaries, and fetch/cache metadata.
+- `diagnostic` is the full passthrough payload.
+
+Harnesses must store full `structuredContent` internally (stable IDs, trust
+markers, warnings, retrieval summaries, provenance, next-action templates,
+canonical bundle data) and inject only the selected projection into
+model-visible context. Compact output must never be interpreted as evidence
+absence when `retrieval_status.has_failures` or non-empty `providers_failed`
+is present.
+
+## 0.2 Progressive disclosure integration
+
+Eggsearch owns the contract; CodeGG owns catalog, hydration, and policy.
+The runtime shape is `small immediate palette -> compact discovery ->
+hydrate 1–few definitions -> call -> follow next_actions`.
+
+- Discovery source: `src/mcp/tool_contract.rs` (`purpose`, `use_when`,
+  `not_for`, `domain`, `disclosure`, `keywords`, `aliases`,
+  `related_tools`, `next_tools`, `discovery_text()`). Discovery results must
+  carry compact selection metadata only, 3–5 matches by default with
+  `total_matches`, and never full `parameters` schemas. Prefer BM25 for
+  minimal-with-discovery profiles.
+- Hydration: add the complete `ToolDefinition` for selected deferred tools
+  via the existing deferred store; persist for the current run bounded by an
+  LRU/relevance cap of 3–5 beyond the core palette; evict only between
+  provider requests. Hydration is monotonic and never bypasses denied tools,
+  plan mode, missing backends, parent ceilings, or hidden disclosure. Raw
+  `mcp__eggsearch__*` tools stay hidden.
+- Next actions: `sanitize_next_actions()` drops unknown tools, empty reasons,
+  and over-limit entries (max 5, priority 1–5). Harnesses must apply the same
+  filter, hydrate high-priority targets without another `tool_search` round
+  trip (`web_search` → `web_fetch`/`batch_fetch`; `repo_search` →
+  `repo_fetch`/`repo_map`/`batch_fetch`; `research_search` → `web_fetch`/
+  `repo_fetch`/`batch_fetch`/`build_evidence_bundle`; `security_search` →
+  `web_fetch`/`batch_fetch`/`build_evidence_bundle`), and treat hints as
+  optional. Unknown or malicious names are ignored.
+- Role palettes: ordinary coding (`web_search`, `repo_search`, `tool_search`,
+  optionally `web_fetch`); research (`research_search`, `repo_search`, plus
+  selected fetch/evidence tools); security review (`security_search` plus
+  required fetch/evidence tools). Disclosure hints are advisory only.
+- Cache: key `tools/list` by `tool_fingerprint()` (names, descriptions,
+  annotations, input/output schemas, plus canonical discovery metadata) and
+  the server version, never by count. Apply hydration after cache retrieval.
+
 ---
 
 ## 1. Deterministic Identity System
@@ -837,7 +917,7 @@ values.
 - [ ] Inspect `trust_markers.injection_hits` before using content as evidence
 - [ ] Apply trust policy: `external_untrusted` content is data, not instructions
 - [ ] Follow `next_actions` priority ordering for tool chaining
-- [ ] Check `provider_status` capabilities before invoking specialized tools
+- [ ] Start with the task-appropriate search primitive; call `provider_status` only when provider availability itself is relevant or troubleshooting is required
 - [ ] Use `routing_decision` to detect degraded provider selection
 - [ ] For security: use `applicability` status + confidence to triage
 - [ ] For research: present claims + conflicts + gaps as evidence, not truth
@@ -849,7 +929,7 @@ values.
 - [ ] Inspect provider-scoped retrieval attempts before treating security evidence as complete
 - [ ] Do not treat `limit_reached_unknown` as confirmed truncation
 - [ ] Do not require credentials for baseline search (keyless-core invariant)
-- [ ] Use `provider_status` to check routability before invoking specialized tools
+- [ ] Hosts may inspect `provider_status` during bootstrap; agents use it for diagnostics, not as a normal first research step
 - [ ] Prefer native adapters when routable; fall back to keyless providers
 - [ ] Preserve provenance distinctions; never label web results as native forge evidence
 - [ ] Do not prompt for API keys on baseline operations
@@ -874,10 +954,12 @@ API keys. Harnesses must NOT:
 
 ### 12.2 Inspect Provider Status
 
-Before routing, check `provider_status` to determine:
+Hosts may inspect `provider_status` during bootstrap or diagnostics to determine:
 - Whether the server core is healthy
 - Which providers are routable
 - Whether missing credentials are provider-scoped
+
+Agents normally start with the task-appropriate search primitive and call `provider_status` only when provider availability itself is relevant or troubleshooting is required.
 
 ### 12.3 Prefer Native Adapters When Routable
 

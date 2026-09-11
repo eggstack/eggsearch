@@ -197,8 +197,9 @@ pub use warning::{
     convert_warnings, AgentWarning, WarningAccumulator, WarningCode, WarningSeverity,
 };
 pub use workflow::{
-    AgentNextAction, AgentWorkflowFallback, AgentWorkflowRecipe, AgentWorkflowStep, RecipeDetail,
-    RecipeSupport, MAX_NEXT_ACTIONS,
+    is_stable_tool, sanitize_next_actions, AgentNextAction, AgentWorkflowFallback,
+    AgentWorkflowRecipe, AgentWorkflowStep, RecipeDetail, RecipeSupport, MAX_NEXT_ACTIONS,
+    STABLE_TOOL_NAMES,
 };
 pub use workflow_coverage::{
     CoverageStatus, ResolutionSource, RetrievalFailure, RetrievalFailureKind,

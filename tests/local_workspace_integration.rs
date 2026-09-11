@@ -145,6 +145,7 @@ async fn local_repo_map_returns_entries() {
             include_security: None,
             timeout_ms: None,
             providers: vec![],
+            response_detail: None,
         },
     )
     .await
@@ -191,6 +192,7 @@ async fn local_repo_fetch_reads_source_file() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -325,6 +327,7 @@ async fn symlink_final_component_rejected() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -413,6 +416,7 @@ async fn large_file_content_capped() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await

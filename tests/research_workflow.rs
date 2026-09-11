@@ -108,6 +108,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -737,6 +738,7 @@ async fn repo_fetch_validation_error_empty_owner() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -774,6 +776,7 @@ async fn repo_fetch_validation_error_empty_path() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -811,6 +814,7 @@ async fn repo_fetch_validation_error_path_traversal() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -848,6 +852,7 @@ async fn repo_fetch_validation_error_absolute_path() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -885,6 +890,7 @@ async fn repo_fetch_validation_error_inverted_line_range() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -922,6 +928,7 @@ async fn repo_fetch_validation_error_zero_line_start() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -959,6 +966,7 @@ async fn repo_fetch_validation_error_zero_line_end() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -996,6 +1004,7 @@ async fn repo_fetch_validation_error_excessive_context() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1033,6 +1042,7 @@ async fn repo_fetch_validation_error_max_chars_above_cap() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1070,6 +1080,7 @@ async fn repo_fetch_validation_error_max_chars_zero() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1107,6 +1118,7 @@ async fn repo_fetch_validation_error_zero_timeout_ms() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1143,6 +1155,7 @@ async fn repo_fetch_validation_error_unsupported_host_unknown() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1181,6 +1194,7 @@ async fn repo_fetch_validation_error_unknown_host_cli_string() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1234,6 +1248,7 @@ async fn repo_fetch_via_web_fetch_full_file() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1280,6 +1295,7 @@ async fn repo_fetch_via_web_fetch_404() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1328,6 +1344,7 @@ async fn repo_fetch_via_web_fetch_429() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -1375,6 +1392,7 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1431,6 +1449,7 @@ async fn repo_fetch_via_web_fetch_truncation() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await
@@ -1492,6 +1511,7 @@ async fn repo_fetch_line_range_via_mock() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1590,6 +1610,7 @@ async fn repo_fetch_line_range_with_context_via_mock() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1653,6 +1674,7 @@ async fn repo_fetch_line_start_beyond_eof_marks_truncated_via_mock() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1719,6 +1741,7 @@ async fn repo_fetch_line_end_beyond_eof_marks_truncated_via_mock() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1784,6 +1807,7 @@ async fn repo_fetch_remote_capped_by_max_chars_cap_marks_truncated_via_mock() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1856,6 +1880,7 @@ async fn repo_fetch_code_context_present_for_rust_file() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1919,6 +1944,7 @@ async fn repo_fetch_line_range_with_sanitize_output_true_returns_unframed_source
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -2001,6 +2027,7 @@ async fn repo_fetch_returns_target_line_past_default_text_cap() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -2059,6 +2086,7 @@ async fn repo_fetch_429_via_run_repo_fetch() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -2099,6 +2127,7 @@ async fn repo_fetch_fetch_disabled_by_policy() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -2354,6 +2383,7 @@ async fn workspace_fetch_reads_local_file() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -2427,6 +2457,7 @@ async fn workspace_fetch_uses_path_when_repo_differs() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -2496,6 +2527,7 @@ async fn workspace_fetch_rejects_unknown_root() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -2555,6 +2587,7 @@ async fn workspace_fetch_rejects_path_traversal() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -2612,6 +2645,7 @@ async fn workspace_fetch_rejects_missing_file() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -2670,6 +2704,7 @@ async fn workspace_fetch_rejects_directory() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -2729,6 +2764,7 @@ async fn workspace_fetch_path_with_spaces() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -2790,6 +2826,7 @@ async fn workspace_fetch_double_slash_normalized() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -2850,6 +2887,7 @@ async fn workspace_fetch_hidden_file_rejected() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -2909,6 +2947,7 @@ async fn workspace_fetch_skipped_directory_rejected() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -3394,6 +3433,7 @@ async fn repo_fetch_github_locator_serializes_as_remote() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3457,6 +3497,7 @@ async fn repo_fetch_gitlab_locator_serializes_as_remote() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3524,6 +3565,7 @@ async fn repo_fetch_workspace_locator_serializes_as_workspace() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3609,6 +3651,7 @@ async fn workspace_fetch_enforces_max_chars() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3684,6 +3727,7 @@ async fn workspace_fetch_max_chars_lines_text_consistency() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3760,6 +3804,7 @@ async fn workspace_fetch_returned_line_bounds_after_clamp() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3842,6 +3887,7 @@ async fn workspace_fetch_populates_stable_id() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3868,6 +3914,7 @@ async fn workspace_fetch_populates_stable_id() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -3936,6 +3983,7 @@ async fn workspace_fetch_with_context_and_line_range() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -4012,6 +4060,7 @@ async fn workspace_fetch_scans_injection_markers() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -4088,6 +4137,7 @@ async fn workspace_fetch_trust_markers_populated() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -4161,6 +4211,7 @@ async fn workspace_fetch_source_not_framed() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -4339,6 +4390,7 @@ async fn repo_fetch_commit_sha_populates_both_permalink_fields() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -5020,6 +5072,7 @@ async fn repo_fetch_remote_max_chars_enforced() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -5080,6 +5133,7 @@ async fn repo_fetch_gitlab_commit_sha_populates_permalink_fields() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -5163,6 +5217,7 @@ async fn repo_fetch_gitlab_nested_namespace_locator() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -5234,6 +5289,7 @@ async fn repo_fetch_remote_populates_stable_id() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -5260,6 +5316,7 @@ async fn repo_fetch_remote_populates_stable_id() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -5323,6 +5380,7 @@ async fn repo_fetch_remote_returned_line_bounds_after_clamp() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -5540,6 +5598,7 @@ async fn batch_fetch_empty_items_returns_validation_error() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -5572,6 +5631,7 @@ async fn batch_fetch_disabled_by_policy_returns_error() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -5604,6 +5664,7 @@ async fn batch_fetch_over_item_cap_returns_validation_error() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -5655,6 +5716,7 @@ async fn batch_fetch_single_web_item_succeeds() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -5717,6 +5779,7 @@ async fn batch_fetch_multiple_web_items_return_in_order() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -5788,6 +5851,7 @@ async fn batch_fetch_web_item_failure_with_continue_on_error() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: Some(true),
+            response_detail: None,
         },
     )
     .await
@@ -5860,6 +5924,7 @@ async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: Some(false),
+            response_detail: None,
         },
     )
     .await
@@ -5916,6 +5981,7 @@ async fn batch_fetch_per_item_max_chars_enforced() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -5974,6 +6040,7 @@ async fn batch_fetch_total_budget_enforced() {
             max_total_chars: Some(60),
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -6056,6 +6123,7 @@ async fn batch_fetch_continue_on_error_across_waves() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: Some(true),
+            response_detail: None,
         },
     )
     .await
@@ -6117,6 +6185,7 @@ async fn batch_fetch_concurrent_total_budget_not_exceeded() {
             max_total_chars: Some(1),
             timeout_ms: None,
             continue_on_error: Some(true),
+            response_detail: None,
         },
     )
     .await
@@ -6178,6 +6247,7 @@ async fn batch_fetch_metadata_overhead_cannot_exceed_total_budget() {
             max_total_chars: Some(10),
             timeout_ms: None,
             continue_on_error: Some(true),
+            response_detail: None,
         },
     )
     .await
@@ -6245,6 +6315,7 @@ async fn batch_fetch_empty_web_url_returns_error_in_result() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6282,6 +6353,7 @@ async fn batch_fetch_invalid_repo_host_returns_error() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6332,6 +6404,7 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -6442,6 +6515,7 @@ async fn batch_fetch_mixed_web_and_repo_items_return_separate_responses() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -6539,6 +6613,7 @@ async fn batch_fetch_workspace_item_retains_local_trusted_and_marker_scan() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -6608,6 +6683,7 @@ async fn batch_fetch_rejects_malformed_url() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6643,6 +6719,7 @@ async fn batch_fetch_rejects_unsupported_scheme() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6683,6 +6760,7 @@ async fn batch_fetch_rejects_absolute_repo_path() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6723,6 +6801,7 @@ async fn batch_fetch_rejects_path_traversal() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6758,6 +6837,7 @@ async fn batch_fetch_rejects_zero_max_chars_web() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6798,6 +6878,7 @@ async fn batch_fetch_rejects_zero_max_chars_repo() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6833,6 +6914,7 @@ async fn batch_fetch_rejects_zero_max_items() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6868,6 +6950,7 @@ async fn batch_fetch_rejects_zero_max_chars_per_item() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6903,6 +6986,7 @@ async fn batch_fetch_rejects_zero_max_total_chars() {
             max_total_chars: Some(0),
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -6954,6 +7038,7 @@ async fn batch_fetch_budget_exhaustion_returns_warning() {
             max_total_chars: Some(50),
             timeout_ms: None,
             continue_on_error: Some(true),
+            response_detail: None,
         },
     )
     .await
@@ -7012,6 +7097,7 @@ async fn batch_fetch_budget_clamps_to_cap() {
             max_total_chars: Some(999_999_999),
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -7064,6 +7150,7 @@ async fn batch_fetch_result_order_preserved() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -7121,6 +7208,7 @@ async fn batch_fetch_preserves_order_and_indices_under_concurrency() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -7208,6 +7296,7 @@ async fn batch_fetch_preserves_result_payloads_when_wave_completes_out_of_order(
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -7296,6 +7385,7 @@ async fn batch_fetch_concurrent_wave_budget_does_not_exceed_total_cap() {
             max_total_chars: Some(800),
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -7345,6 +7435,7 @@ async fn batch_fetch_url_scheme_error_message_is_spaced_correctly() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -7385,6 +7476,7 @@ async fn batch_fetch_rejects_zero_timeout_ms() {
             max_total_chars: None,
             timeout_ms: Some(0),
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await;
@@ -7433,6 +7525,7 @@ async fn batch_fetch_uppercase_scheme_is_accepted() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await

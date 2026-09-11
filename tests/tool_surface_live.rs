@@ -10,10 +10,10 @@ use std::sync::Arc;
 use eggsearch::core::config::AppConfig;
 use eggsearch::mcp::state::ServerState;
 
-const BASELINE_TOTAL_BYTES: i64 = 77952;
-const BASELINE_EST_TOKENS: i64 = 19488;
-const BASELINE_MAX_DESC: i64 = 825;
-const BASELINE_INSTRUCTIONS_BYTES: i64 = 5275;
+const BASELINE_TOTAL_BYTES: i64 = 73037;
+const BASELINE_EST_TOKENS: i64 = 18260;
+const BASELINE_MAX_DESC: i64 = 186;
+const BASELINE_INSTRUCTIONS_BYTES: i64 = 1614;
 
 fn fingerprint_and_bytes() -> (String, usize) {
     let state = Arc::new(ServerState::build(AppConfig::default()).expect("default state builds"));

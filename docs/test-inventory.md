@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5122 | 23 |
-| `--features mock` | 4880 | 1 |
+| `--all-features` | 5200 | 23 |
+| `--features mock` | 4958 | 1 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -132,6 +132,15 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `evidence_integration` | Evidence integration pipeline |
 | `structured_local_code_intelligence` | Structured local code intelligence (4-language fixtures, ranking, fallback, budgets, repo-map enrichment) |
 | `provider_capability_contract` | Provider native-capability enforcement contract |
+
+## Tool Consolidation Contracts (4 suites)
+
+| Suite | Tests | Focus |
+|-------|-------|-------|
+| `mcp_tool_contract` | 14 | Canonical registry parity: aliases, discovery text, sanitization, fingerprint determinism |
+| `mcp_schema_slimming` | 16 | Slimmed ordinary schema size budget with legacy-field acceptance |
+| `mcp_2026_protocol` | 13 | Structured results, output schemas, repairable error contract |
+| `mcp_projection` | 14 | Response-detail projection: failure-vs-absence, trust, conflicts, truncation, bundle identity, byte reduction |
 
 ## Tool-Surface Evaluation (2 suites)
 

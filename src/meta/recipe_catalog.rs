@@ -127,6 +127,7 @@ pub fn web_search_next_actions(
     source_ids: &[String],
     has_suggestions: bool,
 ) -> Vec<AgentNextAction> {
+    use crate::core::workflow::sanitize_next_actions;
     let mut actions = Vec::new();
     if has_suggestions && !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
@@ -153,7 +154,7 @@ pub fn web_search_next_actions(
             None,
         ));
     }
-    actions
+    sanitize_next_actions(actions)
 }
 
 /// Build next-action hints for a `repo_search` response.
@@ -161,6 +162,7 @@ pub fn repo_search_next_actions(
     source_ids: &[String],
     has_suggested_fetches: bool,
 ) -> Vec<AgentNextAction> {
+    use crate::core::workflow::sanitize_next_actions;
     let mut actions = Vec::new();
     if has_suggested_fetches && !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
@@ -187,6 +189,21 @@ pub fn repo_search_next_actions(
             ),
         );
     }
+    if !source_ids.is_empty() {
+        actions.push(
+            AgentNextAction::new(
+                "repo_map",
+                "orient_to_layout",
+                3,
+                serde_json::json!({"owner": "<owner>", "repo": "<repo>"}),
+                Vec::new(),
+                None,
+            )
+            .with_rationale(
+                "Orient to repository layout when results suggest unknown structure; prefer graph-guided hydration over another discovery round trip",
+            ),
+        );
+    }
     actions.push(AgentNextAction::new(
         "build_evidence_bundle",
         "bundle_evidence",
@@ -195,7 +212,7 @@ pub fn repo_search_next_actions(
         source_ids.to_vec(),
         None,
     ));
-    actions
+    sanitize_next_actions(actions)
 }
 
 /// Build next-action hints for a `security_search` response.
@@ -203,6 +220,7 @@ pub fn security_search_next_actions(
     source_ids: &[String],
     has_applicability: bool,
 ) -> Vec<AgentNextAction> {
+    use crate::core::workflow::sanitize_next_actions;
     let mut actions = Vec::new();
     if !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
@@ -239,7 +257,7 @@ pub fn security_search_next_actions(
             None,
         ));
     }
-    actions
+    sanitize_next_actions(actions)
 }
 
 /// Build next-action hints for a `research_search` response.
@@ -247,6 +265,7 @@ pub fn research_search_next_actions(
     source_ids: &[String],
     has_counterpoints: bool,
 ) -> Vec<AgentNextAction> {
+    use crate::core::workflow::sanitize_next_actions;
     let mut actions = Vec::new();
     if !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
@@ -257,6 +276,19 @@ pub fn research_search_next_actions(
             source_ids.iter().take(1).cloned().collect(),
             None,
         ));
+        actions.push(
+            AgentNextAction::new(
+                "repo_fetch",
+                "inspect_repo_source",
+                2,
+                serde_json::json!({"owner": "<owner>", "repo": "<repo>", "path": "<path>"}),
+                source_ids.iter().take(1).cloned().collect(),
+                None,
+            )
+            .with_rationale(
+                "Inspect a concrete repository file behind a research claim without another discovery round trip",
+            ),
+        );
     }
     if has_counterpoints {
         actions.push(AgentNextAction::new(
@@ -283,7 +315,7 @@ pub fn research_search_next_actions(
         source_ids.to_vec(),
         None,
     ));
-    actions
+    sanitize_next_actions(actions)
 }
 
 // ---------------------------------------------------------------------------

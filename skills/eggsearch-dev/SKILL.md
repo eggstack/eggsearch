@@ -52,6 +52,7 @@ make bench-check        # compile-check benches without running
 | `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
 | `tests/tool_surface_evaluation.rs` | None | 43-fixture tool-selection corpus: top-1/recall@3/MRR, byte budgets, fingerprint (`make eval-tool-surface`) |
 | `tests/tool_surface_live.rs` | None (comparison `#[ignore]`d) | Layer 3 report contract + opt-in manual multi-model comparison (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`) |
+| `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | None | Tool consolidation contracts: registry parity, schema budgets, structured errors, response projection |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
 | `tests/docs_*.rs` | None | Documentation contract tests |
 | `tests/schema_identity_registry.rs` | None | Schema + deterministic ID fixtures |
@@ -61,7 +62,7 @@ make bench-check        # compile-check benches without running
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 
-This table is representative, not exhaustive — 70 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 74 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
