@@ -11,7 +11,7 @@
 |------|---------------|
 | `adapter/` | `MetadataSearchAdapter` coordination split by behavior: `mod` (constructors and accessors), `error` (ErrorClass and skip reasons), `advisory` (native advisory operations), `status` (provider health and status), `web`/`repo`/`research`/`security` (search execution), `execution` (dispatch, warnings, failures), `normalization` (RRF, conversion, reranking), `builders` (default engines); stable `adapter::X` paths preserved via re-exports |
 | `workflow.rs` | Shared repo/research/security mechanics: `PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `NormalizedLaneResults`, `EvidenceGroup`, `CoverageSummary`, `FetchCandidateSet`; domain policy stays typed in domain modules |
-| `dispatch.rs` | `dispatch_subqueries()` — bounded parallel executor with priority queue, global/per-provider concurrency limits, panic recovery; all jobs use `EngineSearchRequest` (including optional `RepoScope`) and return `EngineSearchBatch` retrieval metadata |
+| `dispatch/` | Bounded parallel executor split by responsibility: `mod` (seam + re-exports, stable `dispatch::X` paths), `types` (job/config/output types + `partition_roles_for_engine` capability partition), `execution` (`dispatch_parallel` with priority queue, global/per-provider limits, panic recovery; all jobs use `EngineSearchRequest` and return `EngineSearchBatch` metadata) |
 | `planner.rs` | `build_search_plan()`, `SearchPlan` — transforms `WebSearchRequest` into provider-specific queries while preserving date/domain/language/region constraints for native parameters |
 | `response.rs` | `WebSearchResponse`, `ProviderFailure` |
 | `grouping.rs` | RRF aggregation, deduplication, `AggregatedResult` merging |
@@ -31,13 +31,14 @@
 | `fetch_ranking.rs` | Deterministic ranking pipeline for suggested fetch candidates, plus shared `FetchCandidateBuilder` (`from_card`/`new` with `group`, `structured_repo_fetch`, `recommended_extract_mode`) used by repo, research, and security paths |
 | `suggested_fetches.rs` | Generic suggested fetch generation (via shared builder) |
 | `forge_adapter.rs` | Forge API client for Gitea/Forgejo (with `Policy::none()`, `read_bounded_body()`, `ForgeReadBudget`) |
+| `local/` | Local subsystem facade (`mod`): ownership map for the `local_*` modules; future implementation moves land here with stable paths via re-exports |
 | `local_backend.rs` | `LocalWorkspaceBackend` — bounded file walking, scoring, SourceCard conversion |
 | `local_inventory.rs` | `discover_local_repos()`, `LocalRepoIdentity` — Git worktree discovery, remote URL normalization |
 | `local_inventory_cache.rs` | Fast in-memory file inventory cache for local workspace search |
 | `local_ignore.rs` | Minimal `.gitignore` matcher |
 | `safe_open.rs` | Race-resistant file opening via component-wise path walking |
 | `package_resolver.rs` | Bounded HTTP lookups for package registries (crates.io, PyPI, npm, Go, Maven, NuGet, RubyGems, Packagist) |
-| `dependency_parse.rs` | Dependency/lock file parser for extracting package coordinates |
+| `dependency_parse/` | Dependency/lock file parsing split by ecosystem: `mod` owns the normalized `parse_dependency_file` dispatch + shared XML helpers; `cargo`/`npm`/`go`/`python`/`ruby`/`composer`/`maven`/`dotnet`/`containers`/`github_actions` each own one ecosystem and emit the shared `DependencyFinding` record |
 | `advisory_range.rs` | Advisory affected/fixed range extraction |
 | `version_compare.rs` | Version comparison utilities for package ecosystems |
 | `provider_diagnostics.rs` | `ProviderHealthRegistry`, `ProviderHealthSnapshot`, `ProviderRoutingDecision`, `CapabilityEnforcementTelemetry` |
@@ -118,9 +119,11 @@ trait SearchEngine {
 
 ---
 
-## Dispatch System (`dispatch.rs`)
+## Dispatch System (`dispatch/`)
 
-Bounded parallel executor for (subquery, provider) jobs:
+Bounded parallel executor for (subquery, provider) jobs (`types` owns
+job/config/output types and capability partitioning; `execution` owns
+the bounded concurrent mechanics):
 
 - **Priority queue** — high-priority subqueries first
 - **Global concurrency limit** — prevents overwhelming the system

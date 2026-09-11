@@ -23,6 +23,9 @@ pub mod evidence_bundle;
 pub mod fetch_ranking;
 pub mod forge_adapter;
 mod grouping;
+/// Local workspace subsystem facade: ownership map for the `local_*`
+/// backend/inventory/cache/symbol modules (007-D).
+pub mod local;
 /// Local workspace search backend: bounded file walking, scoring, and
 /// SourceCard conversion.
 pub mod local_backend;

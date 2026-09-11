@@ -125,7 +125,7 @@ Everything else speaks in these types. Zero external dependencies beyond seriali
 Wraps all search behind `MetadataSearchAdapter`; callers never touch engines directly.
 
 - Planners turn each tool's request into subqueries (generic, repo, security, research, exact-error)
-- `dispatch.rs` fans out subqueries with bounded parallelism, priority queue, panic recovery
+- `dispatch/` (`types` + `execution`) fans out subqueries with bounded parallelism, priority queue, panic recovery
 - `grouping.rs` deduplicates via reciprocal rank fusion (RRF)
 - Evidence postprocessing assigns roles, computes coverage, detects conflicts, records retrieval attempts
 - Forge adapter (Gitea/Forgejo APIs), package resolver, local workspace backend + inventory cache
@@ -324,7 +324,7 @@ See [core.md](core.md) for the full type model and `docs/config.md` for operator
 ```bash
 make check                    # fmt + clippy + no-default compile + all-features tests + hygiene (= CI)
 make release-check            # routine + docs + release build + publish dry-run
-cargo test --locked --all-features          # ~5,090 tests, <2 min (see docs/test-inventory.md)
+cargo test --locked --all-features          # ~5,207 tests, <2 min (see docs/test-inventory.md)
 cargo test --locked --features mock --test web_search_integration   # behavioral suite only
 
 cargo run -- mcp stdio        # start MCP server over stdio
