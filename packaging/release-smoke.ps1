@@ -154,17 +154,20 @@ try {
     if ((Compare-Object $ExpectedTools $ActualTools).Length -gt 0) { throw "Unexpected HTTP MCP tool set: $($ActualTools -join ', ')" }
 } finally {
     $HttpClient.Dispose()
+    $WasTerminated = $false
     if (-not $HttpProcess.HasExited) {
         if (-not $HttpProcess.CloseMainWindow()) {
             $HttpProcess.Kill()
+            $WasTerminated = $true
         }
         if (-not $HttpProcess.WaitForExit(10000)) {
             $HttpProcess.Kill()
+            $WasTerminated = $true
             $HttpProcess.WaitForExit(5000)
             throw 'HTTP MCP server did not stop cleanly'
         }
     }
-    if ($HttpProcess.ExitCode -ne 0) {
+    if (-not $WasTerminated -and $HttpProcess.ExitCode -ne 0) {
         throw "HTTP MCP server exited with code $($HttpProcess.ExitCode)"
     }
     $HttpProcess.Dispose()
