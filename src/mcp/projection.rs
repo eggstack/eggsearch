@@ -228,11 +228,9 @@ fn project_web_search(mut value: serde_json::Value, compact: bool) -> serde_json
                     obj.insert("capability_summary".to_string(), capability_summary(&c));
                 }
             }
-        } else {
-            if let Some(r) = routing {
-                obj.insert("routing_summary".to_string(), routing_summary(&r));
-                obj.remove("routing_decision");
-            }
+        } else if let Some(r) = routing {
+            obj.insert("routing_summary".to_string(), routing_summary(&r));
+            obj.remove("routing_decision");
         }
     }
     let mode = if compact { "compact" } else { "standard" };
@@ -395,11 +393,9 @@ fn project_security_search(mut value: serde_json::Value, compact: bool) -> serde
                     obj.insert("capability_summary".to_string(), capability_summary(&c));
                 }
             }
-        } else {
-            if let Some(r) = routing {
-                obj.insert("routing_summary".to_string(), routing_summary(&r));
-                obj.remove("routing_decision");
-            }
+        } else if let Some(r) = routing {
+            obj.insert("routing_summary".to_string(), routing_summary(&r));
+            obj.remove("routing_decision");
         }
     }
     let mode = if compact { "compact" } else { "standard" };
