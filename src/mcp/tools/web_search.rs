@@ -45,6 +45,9 @@ pub struct WebSearchArgs {
     /// Excerpt demand (0-3). Defaults to 0.
     #[serde(default)]
     pub excerpt_count: Option<usize>,
+    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    #[serde(default)]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
 /// Run the `web_search` tool against the shared adapter. The response
@@ -272,5 +275,10 @@ pub async fn run_web_search(
         "capability_enforcement": resp.capability_enforcement.as_ref().map(|t| serde_json::to_value(t).unwrap_or(serde_json::json!({}))).unwrap_or(serde_json::json!({})),
     });
 
-    Ok(payload)
+    let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+    Ok(crate::mcp::projection::project(
+        "web_search",
+        payload,
+        detail,
+    ))
 }

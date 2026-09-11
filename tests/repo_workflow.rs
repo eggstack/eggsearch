@@ -109,6 +109,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -387,6 +388,7 @@ async fn prefer_local_rejects_path_traversal() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: Some(true),
+        response_detail: None,
     };
 
     let result = run_repo_fetch(state, args).await;
@@ -1084,6 +1086,7 @@ async fn repo_map_with_local_checkout() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1198,6 +1201,7 @@ async fn repo_map_fallback_mode_warns_no_native_provider() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1236,6 +1240,7 @@ async fn repo_map_suggested_fetches_are_bounded() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1308,6 +1313,7 @@ async fn repo_map_include_files_false_suppresses_file_entries() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1341,6 +1347,7 @@ async fn repo_map_include_directories_false_suppresses_dir_entries() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1375,6 +1382,7 @@ async fn repo_map_include_ci_false_suppresses_ci_entries() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1406,6 +1414,7 @@ async fn repo_map_include_security_false_suppresses_security_entries() {
         include_security: Some(false),
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1489,6 +1498,7 @@ async fn repo_map_local_checkout_includes_manifests_and_dirty_state() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
 
     let v = run_repo_map(state, args)
@@ -1597,6 +1607,7 @@ async fn repo_map_off_mode_with_matching_local_checkout_returns_structure() {
         include_security: None,
         timeout_ms: None,
         providers: Vec::new(),
+        response_detail: None,
     };
     let v = run_repo_map(state, args)
         .await
@@ -1655,6 +1666,7 @@ async fn repo_map_off_mode_without_local_backend_is_denied() {
         include_security: None,
         timeout_ms: None,
         providers: Vec::new(),
+        response_detail: None,
     };
     let err = run_repo_map(state, args)
         .await
@@ -1722,6 +1734,7 @@ async fn repo_fetch_symbol_definition_via_mock() {
             expand_to_block: Some(true),
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1809,6 +1822,7 @@ async fn repo_fetch_symbol_fn_via_mock() {
             expand_to_block: Some(true),
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1882,6 +1896,7 @@ async fn repo_fetch_match_text_via_mock() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1938,6 +1953,7 @@ async fn repo_fetch_explicit_range_no_expand() {
             expand_to_block: None,
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -1996,6 +2012,7 @@ async fn repo_fetch_symbol_not_found_warns() {
             expand_to_block: Some(true),
             max_block_lines: None,
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await
@@ -2084,6 +2101,7 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: Some(true),
+        response_detail: None,
     };
 
     let v = run_repo_fetch(state, args)
@@ -2126,6 +2144,7 @@ async fn repo_fetch_validation_error_zero_max_block_lines() {
             expand_to_block: None,
             max_block_lines: Some(0),
             prefer_local: None,
+            response_detail: None,
         },
     )
     .await;
@@ -2201,6 +2220,7 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: Some(true),
+        response_detail: None,
     };
 
     let err = run_repo_fetch(state, args)

@@ -84,6 +84,7 @@ fn batch_args(items: Vec<BatchFetchItem>) -> BatchFetchArgs {
         max_total_chars: None,
         timeout_ms: None,
         continue_on_error: None,
+        response_detail: None,
     }
 }
 
@@ -226,6 +227,7 @@ async fn batch_aggregate_truncation_is_explicit() {
             max_total_chars: Some(1000),
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await

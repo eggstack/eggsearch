@@ -58,6 +58,9 @@ pub struct WebFetchArgs {
     /// Requires the `browser` feature.
     #[serde(default)]
     pub browser_profile: Option<String>,
+    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    #[serde(default)]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
 /// Run the `web_fetch` tool.
@@ -912,5 +915,10 @@ pub async fn run_web_fetch(
         "transport": resp.transport.as_deref().unwrap_or("http"),
         "browser_escalated": resp.browser_escalated,
     });
-    Ok(payload)
+    let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+    Ok(crate::mcp::projection::project(
+        "web_fetch",
+        payload,
+        detail,
+    ))
 }

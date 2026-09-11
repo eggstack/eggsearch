@@ -83,6 +83,9 @@ pub struct RepoFetchArgs {
     /// from the local workspace instead of fetching remotely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefer_local: Option<bool>,
+    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
 /// Run the `repo_fetch` tool.
@@ -103,7 +106,9 @@ pub async fn run_repo_fetch(
     // --- workspace:// local file fetch (bypasses fetch policy) ---
     if let Some(ref h) = args.host {
         if h.to_lowercase() == "workspace" {
-            return run_workspace_fetch(state, args).await;
+            let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+            let value = run_workspace_fetch(state, args).await?;
+            return Ok(crate::mcp::projection::project("repo_fetch", value, detail));
         }
     }
 
@@ -121,6 +126,8 @@ pub async fn run_repo_fetch(
                 );
                 if let Some(rid) = matched {
                     // Redirect to workspace fetch using the matched root
+                    let detail =
+                        crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
                     let ws_args = RepoFetchArgs {
                         host: Some("workspace".to_string()),
                         owner: rid.root_name.clone(),
@@ -141,8 +148,10 @@ pub async fn run_repo_fetch(
                         expand_to_block: args.expand_to_block,
                         max_block_lines: args.max_block_lines,
                         prefer_local: None,
+                        response_detail: None,
                     };
-                    return run_workspace_fetch(state, ws_args).await;
+                    let value = run_workspace_fetch(state, ws_args).await?;
+                    return Ok(crate::mcp::projection::project("repo_fetch", value, detail));
                 }
             }
         }
@@ -574,7 +583,8 @@ pub async fn run_repo_fetch(
 
             let value = serde_json::to_value(&fetch_response)
                 .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
-            Ok(value)
+            let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+            Ok(crate::mcp::projection::project("repo_fetch", value, detail))
         }
         Err(e) => Err(ToolError::internal(format!("{}: {}", e.error_code(), e))),
     }

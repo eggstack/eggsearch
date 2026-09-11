@@ -39,6 +39,16 @@ Success returns native `structuredContent` with a text JSON fallback; every tool
 
 Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
 
+## Response projection and context budgets
+
+All search/fetch tools except diagnostic-only `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic` for backward compatibility). `build_evidence_bundle` accepts it but returns identical canonical content in all modes.
+
+- `compact`: source cards/groups, stable IDs, trust + injection markers, bounded excerpts (1 per card), essential warnings, failure/absence state, `next_actions`, conflict indicators. Omits full routing/telemetry/document/link detail.
+- `standard`: compact plus full `retrieval_summary`, `conflict_metadata`, `workflow_coverage`, capability summaries, and fetch/cache metadata.
+- `diagnostic`: full current payload, passthrough.
+
+Representative fixture savings: web ~37%, fetch ~49% in compact mode. Compact never turns retrieval failure into apparent negative evidence; `providers_failed` plus minimal `retrieval_status { has_failures, has_absences, has_truncation }` preserves the distinction. Hosts should store full `structuredContent` and show only the selected projection to the model.
+
 ## Keyless Baseline
 
 All tools work without API keys. The keyless baseline provides:

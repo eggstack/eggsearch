@@ -109,6 +109,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -640,6 +641,7 @@ mod security_context_safety {
                 expand_to_block: None,
                 max_block_lines: None,
                 prefer_local: None,
+                response_detail: None,
             },
         )
         .await;
@@ -695,6 +697,7 @@ mod security_context_safety {
                 max_total_chars: None,
                 timeout_ms: Some(1000),
                 continue_on_error: None,
+                response_detail: None,
             },
         )
         .await
@@ -757,6 +760,7 @@ mod security_context_safety {
                 max_total_chars: Some(20),
                 timeout_ms: Some(1000),
                 continue_on_error: None,
+                response_detail: None,
             },
         )
         .await

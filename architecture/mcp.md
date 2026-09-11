@@ -12,6 +12,7 @@
 | `mod.rs` | Module declarations, canonical server factory, and re-exports |
 | `server.rs` | `EggsearchServer` — rmcp `ServerHandler` impl, 10 `#[tool]` handlers with contract-derived descriptions/annotations/output-schemas, centralized `map_tool_result` error/result seam, deterministic `tools/list` + content fingerprint, `EGGSEARCH_INSTRUCTIONS` (global rules only) |
 | `tool_contract.rs` | Canonical `ToolContract` registry: purpose, use-when/not-for, domain, disclosure hint, annotations, keywords, related/next tools |
+| `projection.rs` | Deterministic `ResponseDetail` (`compact`/`standard`/`diagnostic`) result projection: central `project()` boundary, per-tool compact/standard reducers, context-budget trimming (excerpts, documents, links, telemetry) with explicit truncation markers |
 | `output_schema.rs` | Per-tool `outputSchema`: generated from typed response types where the tool returns one, permissive stable-envelope schemas where the payload is ad-hoc with open-ended metadata |
 | `http.rs` | Streamable HTTP service, `/healthz`, typed endpoint options, request bounds, and graceful shutdown |
 | `tools/` | Tool implementations by behavior (`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `evidence_bundle`, shared `common` and `canonical` translators, plus `tests`); stable `tools::X` paths preserved via re-exports |
@@ -89,9 +90,23 @@ Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_una
 
 rmcp input-schema decode failures surface as `isError` tool errors in the pinned release; only true protocol failures (malformed JSON-RPC, missing negotiation headers) remain JSON-RPC errors on the wire.
 
+### Response projection and context budgets
+
+`src/mcp/projection.rs` owns the deterministic `ResponseDetail` policy (`compact`/`standard`/`diagnostic`, default `diagnostic`). Every search/fetch tool except diagnostic-only `provider_status` accepts optional `response_detail`; omitting it preserves the current full payload byte-for-byte. Canonical typed responses are built first, then projected to JSON at the MCP boundary — structured canonical values are never truncated before host capture.
+
+- `compact`: ordinary agent operation. Keeps query identity, source cards/groups, stable IDs, locators, trust + injection markers, evidence roles, bounded excerpts (trimmed to 1 per card), essential warnings, explicit failure/absence state (`providers_failed` + minimal `retrieval_status`), `next_actions`/`suggested_fetches`, and conflict indicators. Removes full `routing_decision` (replaced by `routing_summary`), full `retrieval_summary`/`conflict_metadata`/`workflow_coverage`/`telemetry`/`document`/`links`, and caps `repo_map` entries at 50 with `projection_entries_truncated` markers.
+- `standard`: specialist research/security default surface. Keeps compact fields plus full `retrieval_summary`, `conflict_metadata`, `workflow_coverage`, `evidence_role_summary`, `capability_enforcement`, and fetch/cache metadata; summarizes only `routing_decision`/`telemetry.routing_decision`.
+- `diagnostic`: full current observability, passthrough with no added keys.
+
+`build_evidence_bundle` accepts `response_detail` but returns the canonical bundle unchanged across all modes so handoff identity never diverges. Hosts (e.g. CodeGG) should store full `structuredContent` internally and inject only the selected projection into model-visible context.
+
+Representative savings from `tests/mcp_projection.rs` fixtures: web search diagnostic ~2.8k → compact ~1.8k (~37% saved via routing/telemetry/excerpt trimming); fetch diagnostic ~10.4k → compact ~5.3k (~49% saved via document/link removal). Exact savings scale with telemetry density and excerpt demand; the suite asserts `compact < standard < diagnostic` and that compact never erases failure-vs-absence, trust, conflict, applicability, truncation, or stable-ID semantics.
+
 ---
 
 ## The 10 MCP Tools
+
+All search/fetch tools except `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`). `build_evidence_bundle` accepts it but returns identical canonical content in all modes.
 
 ### 1. `web_search`
 **Purpose:** Live metasearch over configured upstream providers.

@@ -8,6 +8,8 @@ Start with the task-appropriate search primitive. Call `provider_status` only wh
 
 `web_search` supports exact constraints: `date_range` (`{"start": "2024-01-01", "end": "2024-01-31"}`, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (e.g. `["docs.rs"]`, natively enforced by Exa/Tavily when selected and locally enforced otherwise), and `language`/`region` (e.g. `"en"`, `"US"`, natively enforced by Brave API and Tavily when representable). Pass `excerpt_count` (1-3) when short source passages help triage, and `web_fetch` with `focus` (or one focused `batch_fetch` for several candidates) to read only the query-relevant chunks of the selected pages.
 
+All search/fetch tools except `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`). Use `compact` for ordinary turns (cards, stable IDs, trust, failure/absence state, and `next_actions` preserved); `standard` for specialist research/security work; `diagnostic` for troubleshooting. `build_evidence_bundle` is identical in all modes.
+
 ## 1. Repo Map → Repo Search → Repo Fetch (Repository Exploration)
 
 ```jsonc

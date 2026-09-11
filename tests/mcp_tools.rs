@@ -109,6 +109,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 

@@ -33,6 +33,30 @@ semantic failures are `isError: true` results with stable `code` and bounded
 invocation shapes are JSON-RPC `invalid_params`; server faults are
 `internal_error` without stack traces.
 
+## 0.1 Response projection and host storage
+
+All search/fetch tools except diagnostic-only `provider_status` accept optional
+`response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`).
+`build_evidence_bundle` accepts it but returns identical canonical content in
+all modes. Canonical responses are captured before projection; projection runs
+at the MCP boundary and only trims model-visible JSON.
+
+- `compact` preserves query identity, cards/groups, stable IDs, locators,
+  trust + injection markers, evidence roles, 1 excerpt per card, essential
+  warnings, explicit failure/absence state (`providers_failed` + minimal
+  `retrieval_status`), `next_actions`/`suggested_fetches`, and conflict
+  indicators. Full routing/telemetry/document/link detail is omitted.
+- `standard` adds full `retrieval_summary`, `conflict_metadata`,
+  `workflow_coverage`, capability summaries, and fetch/cache metadata.
+- `diagnostic` is the full passthrough payload.
+
+Harnesses must store full `structuredContent` internally (stable IDs, trust
+markers, warnings, retrieval summaries, provenance, next-action templates,
+canonical bundle data) and inject only the selected projection into
+model-visible context. Compact output must never be interpreted as evidence
+absence when `retrieval_status.has_failures` or non-empty `providers_failed`
+is present.
+
 ---
 
 ## 1. Deterministic Identity System

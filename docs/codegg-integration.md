@@ -1042,6 +1042,8 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 - Set `max_results` on search calls to limit result count.
 - Use `include_links = false` (default) on fetch to skip link extraction.
 - Use `metadata_only` extract mode on `web_fetch` to get metadata without body content.
+- Pass `response_detail: "compact"` on search/fetch tools for ordinary operation (cards, stable IDs, trust, failure/absence state, and `next_actions` preserved; routing/telemetry/document detail omitted; ~37% web / ~49% fetch savings in representative fixtures). Use `"standard"` for specialist research/security work and `"diagnostic"` (default) for troubleshooting. `provider_status` stays diagnostic-only; `build_evidence_bundle` is identical in all modes.
+- Store full `structuredContent` internally and inject only the selected projection into model-visible context; never discard stable IDs, trust markers, warnings, or retrieval status when compacting display.
 
 ---
 

@@ -22,6 +22,7 @@
 pub mod http;
 pub mod output_schema;
 pub mod policy;
+pub mod projection;
 pub mod server;
 pub mod state;
 pub mod tool_contract;

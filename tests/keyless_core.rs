@@ -235,6 +235,7 @@ async fn e13_keyless_web_search_dispatches_through_mock_engines() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;
@@ -364,6 +365,7 @@ async fn e21_keyless_web_fetch_succeeds_without_credentials() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            response_detail: None,
         },
     )
     .await;
@@ -405,6 +407,7 @@ async fn e22_mixed_providers_keyless_result_survives_credentialed_skip() {
             language: None,
             region: None,
             excerpt_count: None,
+            response_detail: None,
         },
     )
     .await;

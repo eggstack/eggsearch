@@ -70,6 +70,9 @@ pub struct ResearchSearchArgs {
     /// Known context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub known_context: Option<String>,
+    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
 /// Run the `research_search` tool.
@@ -220,5 +223,10 @@ pub async fn run_research_search(
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 
-    Ok(value)
+    let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+    Ok(crate::mcp::projection::project(
+        "research_search",
+        value,
+        detail,
+    ))
 }

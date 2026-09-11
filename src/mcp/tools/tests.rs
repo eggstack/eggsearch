@@ -17,6 +17,7 @@ fn evidence_bundle_limits_reject_values_above_caps() {
         max_sources: Some(crate::core::evidence_bundle::MAX_SOURCES_CAP + 1),
         max_fetched_items: None,
         max_total_chars: None,
+        response_detail: None,
     })
     .expect_err("oversized max_sources should be rejected");
     assert!(error.to_string().contains("max_sources"));
@@ -29,6 +30,7 @@ fn evidence_bundle_limits_reject_values_above_caps() {
         max_sources: None,
         max_fetched_items: None,
         max_total_chars: Some(crate::core::evidence_bundle::MAX_TOTAL_CHARS_CAP + 1),
+        response_detail: None,
     })
     .expect_err("oversized max_total_chars should be rejected");
     assert!(error.to_string().contains("max_total_chars"));
@@ -55,6 +57,7 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
             focus_max_chars: None,
             render: None,
             browser_profile: None,
+            response_detail: None,
         },
     )
     .await
@@ -82,6 +85,7 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
+            response_detail: None,
         },
     )
     .await
@@ -137,6 +141,7 @@ fn workspace_fetch_path_is_trimmed_before_use() {
         expand_to_block: None,
         max_block_lines: None,
         prefer_local: None,
+        response_detail: None,
     };
 
     assert_eq!(workspace_relative_path_arg(&args).unwrap(), "file.rs");
@@ -161,6 +166,7 @@ async fn safe_search_warning_emitted_when_requested() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
 
     let result = run_web_search(state, args).await;
@@ -191,6 +197,7 @@ async fn web_search_payload_includes_top_level_trust_markers() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
 
     let result = run_web_search(state, args).await;
@@ -335,6 +342,7 @@ async fn web_search_structured_warnings_safe_search_unenforced() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
 
     let value = run_web_search(state, args).await.unwrap();
@@ -367,6 +375,7 @@ async fn web_search_structured_warnings_present_alongside_legacy() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
 
     let value = run_web_search(state, args).await.unwrap();
@@ -400,6 +409,7 @@ async fn web_search_structured_warnings_empty_for_clean_search() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
 
     let value = run_web_search(state, args).await.unwrap();
@@ -449,6 +459,7 @@ async fn web_fetch_structured_warnings_present() {
         focus_max_chars: None,
         render: None,
         browser_profile: None,
+        response_detail: None,
     };
     let value = run_web_fetch(state, args).await.unwrap();
     // structured_warnings must always be in the payload (even if empty).
@@ -476,6 +487,7 @@ async fn web_fetch_rejects_zero_timeout() {
         focus_max_chars: None,
         render: None,
         browser_profile: None,
+        response_detail: None,
     };
 
     let err = run_web_fetch(state, args)
@@ -505,6 +517,7 @@ async fn repo_map_structured_warnings_present() {
         include_security: None,
         timeout_ms: None,
         providers: vec![],
+        response_detail: None,
     };
     let value = run_repo_map(state, args).await.unwrap();
     // structured_warnings must always be in the payload (even if empty).

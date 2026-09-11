@@ -109,6 +109,7 @@ fn args_for(providers: &[&'static str], query: &'static str) -> WebSearchArgs {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     }
 }
 
@@ -432,6 +433,7 @@ async fn github_code_adapter_dispatches_provider_specific_query() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -503,6 +505,7 @@ async fn github_code_result_card_has_source_file_metadata() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -571,6 +574,7 @@ async fn github_code_respects_max_results() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -621,6 +625,7 @@ async fn github_code_empty_results_returned() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let v = run_web_search(state, args).await.expect("ok");
     let results = v["results"].as_array().expect("results array");
@@ -669,6 +674,7 @@ async fn github_code_auth_error_returns_failure() {
         language: None,
         region: None,
         excerpt_count: None,
+        response_detail: None,
     };
     let result = run_web_search(state, args).await;
     assert!(
@@ -762,6 +768,7 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        response_detail: None,
     };
 
     // We can't easily test the actual GitHub raw URL rewrite through

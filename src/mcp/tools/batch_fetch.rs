@@ -26,6 +26,9 @@ pub struct BatchFetchArgs {
     /// Defaults to `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continue_on_error: Option<bool>,
+    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
 /// Inject deterministic web focus projection into a batch payload.
@@ -570,7 +573,12 @@ pub async fn run_batch_fetch(
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
-    Ok(value)
+    let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+    Ok(crate::mcp::projection::project(
+        "batch_fetch",
+        value,
+        detail,
+    ))
 }
 
 /// Trim a `BatchFetchResult`'s embedded `response` payload so that
@@ -1427,6 +1435,7 @@ fn make_batch_fetch_future(
                 expand_to_block: None,
                 max_block_lines: None,
                 prefer_local: None,
+                response_detail: None,
             };
             Box::pin(async move {
                 let ok_label = label.clone();
