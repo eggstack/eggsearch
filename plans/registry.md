@@ -1,8 +1,9 @@
 # Planning Registry
 
-Updated: 2026-09-08
+Updated: 2026-09-11
 Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
+Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -66,6 +67,32 @@ Do not mark this workstream complete until:
 - the accidental root `typescript` transcript and similar artifacts are removed and guarded against;
 - the intended Rust public API boundary is explicit;
 - CodeGG contracts and the routine verification gates pass on the exact closure candidate.
+
+## Active corrective workstream — First binary-enabled release hardening
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 16 | First binary release hardening and cutover | planned | implemented phases 6-10 | `phase-16-first-binary-release-hardening-and-cutover.md` |
+
+Phase 16 exists because the binary-distribution implementation landed after the currently published `v0.3.8` tag/release. No compatible release tag has yet exercised the seven-target matrix or attached the installers/assets that the current documentation expects.
+
+Do not backfill or move `v0.3.8`. The corrective path is to qualify the exact next release candidate before crates.io publication, then tag and release that same SHA as the first binary-enabled release.
+
+### Phase 16 stop conditions
+
+Do not mark phase 16 implemented until:
+
+- the complete seven-target matrix can run in a non-publishing qualification mode before crates.io publication;
+- qualification and tagged release share the same build, smoke, checksum, and assembly logic rather than parallel implementations;
+- release preflight proves the exact checkout contains all required packaging inputs;
+- workflow, installers, updater, docs, and assembly agree on one machine-checked target/asset contract;
+- assembly validates exact asset-set equality;
+- installer fallback/fail-closed behavior is covered by deterministic tests independent of a live GitHub Release;
+- documentation does not advertise a dead latest-release installer URL before the first binary-enabled release exists;
+- the exact SHA qualified before publication is the SHA eventually tagged;
+- the new GitHub Release contains seven executables, seven checksums, `install.sh`, and `install.ps1`;
+- external Unix and Windows bootstrap smoke proves the published installer downloads a release binary rather than silently taking the Cargo fallback path;
+- `eggsearch update --check` resolves the same released version/asset contract.
 
 ## Deferred by design
 
