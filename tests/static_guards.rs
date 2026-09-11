@@ -149,13 +149,18 @@ fn no_first_only_intended_roles_conversion() {
 
 #[test]
 fn no_rq_label_role_derivation_in_dispatch() {
-    let source = read_source("src/meta/dispatch.rs");
-    let non_test = strip_test_code(&source);
-    assert!(
-        !non_test.contains("rq_"),
-        "dispatch.rs must not derive roles from rq_ labels; \
-         roles must come from PlannedSubquery.intended_roles"
-    );
+    for path in [
+        "src/meta/dispatch/types.rs",
+        "src/meta/dispatch/execution.rs",
+    ] {
+        let source = read_source(path);
+        let non_test = strip_test_code(&source);
+        assert!(
+            !non_test.contains("rq_"),
+            "{path} must not derive roles from rq_ labels; \
+             roles must come from PlannedSubquery.intended_roles"
+        );
+    }
 }
 
 #[test]
@@ -205,12 +210,14 @@ fn native_advisory_outcomes_are_provider_scoped_and_error_visible() {
 
 #[test]
 fn capability_dispatch_preserves_partial_roles() {
-    let source = read_source("src/meta/dispatch.rs");
-    assert!(source.contains("CapabilityDisposition::PartiallySupported"));
-    assert!(source.contains("CapabilityDisposition::Unsupported"));
-    assert!(source.contains("SkippedCapabilityUnavailable"));
-    assert!(!source.contains("any(|role| !engine.supports_role(role))"));
-    assert!(!source.contains("any(|r| !engine.supports_role(r))"));
+    let types = read_source("src/meta/dispatch/types.rs");
+    let execution = read_source("src/meta/dispatch/execution.rs");
+    let combined = format!("{types}\n{execution}");
+    assert!(combined.contains("CapabilityDisposition::PartiallySupported"));
+    assert!(combined.contains("CapabilityDisposition::Unsupported"));
+    assert!(combined.contains("SkippedCapabilityUnavailable"));
+    assert!(!combined.contains("any(|role| !engine.supports_role(role))"));
+    assert!(!combined.contains("any(|r| !engine.supports_role(r))"));
 }
 
 #[test]
@@ -654,4 +661,288 @@ fn workflows_consume_shared_primitives() {
             "{path} must record attempts via shared RetrievalAttemptSet"
         );
     }
+}
+
+#[test]
+fn orchestration_module_size_ratchet() {
+    let ceilings: &[(&str, usize, usize)] = &[
+        ("src/meta/dispatch/mod.rs", 100, 81_920),
+        ("src/meta/dispatch/types.rs", 400, 81_920),
+        ("src/meta/dispatch/execution.rs", 2300, 100_000),
+        ("src/meta/forge_adapter.rs", 3050, 101_000),
+        ("src/meta/local_backend.rs", 2700, 100_000),
+        ("src/meta/evidence_bundle.rs", 2150, 81_920),
+        ("src/meta/dependency_parse/mod.rs", 800, 81_920),
+        ("src/meta/dependency_parse/cargo.rs", 400, 81_920),
+        ("src/meta/dependency_parse/npm.rs", 400, 81_920),
+        ("src/meta/dependency_parse/go.rs", 400, 81_920),
+        ("src/meta/dependency_parse/python.rs", 400, 81_920),
+        ("src/meta/dependency_parse/ruby.rs", 400, 81_920),
+        ("src/meta/dependency_parse/composer.rs", 400, 81_920),
+        ("src/meta/dependency_parse/maven.rs", 400, 81_920),
+        ("src/meta/dependency_parse/dotnet.rs", 400, 81_920),
+        ("src/meta/dependency_parse/containers.rs", 400, 81_920),
+        ("src/meta/dependency_parse/github_actions.rs", 400, 81_920),
+        ("src/meta/local_inventory_cache.rs", 2000, 81_920),
+        ("src/meta/fetch_ranking.rs", 1600, 81_920),
+        ("src/meta/local_inventory.rs", 1600, 81_920),
+        ("src/meta/local_symbols.rs", 1600, 81_920),
+        ("src/meta/security_search.rs", 2300, 88_000),
+        ("src/meta/suggested_fetches.rs", 1600, 81_920),
+        ("src/meta/provider_diagnostics.rs", 2200, 81_920),
+    ];
+    for (path, max_lines, max_bytes) in ceilings {
+        let content = read_source(path);
+        let lines = content.lines().count();
+        let bytes = content.len();
+        assert!(
+            lines <= *max_lines,
+            "{path} has {lines} lines, exceeding ratchet ceiling {max_lines}; split further rather than growing the module (007)"
+        );
+        assert!(
+            bytes <= *max_bytes,
+            "{path} has {bytes} bytes, exceeding ratchet ceiling {max_bytes}; split further rather than growing the module (007)"
+        );
+    }
+}
+
+#[test]
+fn decomposed_dispatch_layout() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    assert!(
+        !std::path::Path::new(&format!("{manifest}/src/meta/dispatch.rs")).exists(),
+        "src/meta/dispatch.rs must stay decomposed into src/meta/dispatch/ modules (007-B)"
+    );
+    for module in [
+        "src/meta/dispatch/mod.rs",
+        "src/meta/dispatch/types.rs",
+        "src/meta/dispatch/execution.rs",
+    ] {
+        assert!(
+            std::path::Path::new(&format!("{manifest}/{module}")).exists(),
+            "{module} must exist (007-B)"
+        );
+    }
+    let types = read_source("src/meta/dispatch/types.rs");
+    assert!(
+        types.contains("struct DispatchJob")
+            && types.contains("struct DispatchConfig")
+            && types.contains("struct DispatchOutput"),
+        "dispatch/types.rs must own orchestration types (007-B)"
+    );
+    assert!(
+        !strip_test_code(&types).contains("fn dispatch_parallel("),
+        "dispatch/types.rs must not own execution mechanics (007-B)"
+    );
+    let execution = read_source("src/meta/dispatch/execution.rs");
+    assert!(
+        execution.contains("fn dispatch_parallel("),
+        "dispatch/execution.rs must own bounded concurrent dispatch mechanics (007-B)"
+    );
+}
+
+#[test]
+fn decomposed_dependency_layout() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    assert!(
+        !std::path::Path::new(&format!("{manifest}/src/meta/dependency_parse.rs")).exists(),
+        "src/meta/dependency_parse.rs must stay decomposed into src/meta/dependency_parse/ modules (007-E)"
+    );
+    for module in [
+        "src/meta/dependency_parse/mod.rs",
+        "src/meta/dependency_parse/cargo.rs",
+        "src/meta/dependency_parse/npm.rs",
+        "src/meta/dependency_parse/go.rs",
+        "src/meta/dependency_parse/python.rs",
+        "src/meta/dependency_parse/ruby.rs",
+        "src/meta/dependency_parse/composer.rs",
+        "src/meta/dependency_parse/maven.rs",
+        "src/meta/dependency_parse/dotnet.rs",
+        "src/meta/dependency_parse/containers.rs",
+        "src/meta/dependency_parse/github_actions.rs",
+    ] {
+        assert!(
+            std::path::Path::new(&format!("{manifest}/{module}")).exists(),
+            "{module} must exist (007-E)"
+        );
+    }
+    let dispatch = read_source("src/meta/dependency_parse/mod.rs");
+    assert!(
+        dispatch.contains("pub fn parse_dependency_file("),
+        "dependency_parse/mod.rs must own the normalized dispatch contract (007-E)"
+    );
+    for forbidden in [
+        "fn parse_cargo_lock(",
+        "fn parse_go_mod(",
+        "fn parse_pom_xml(",
+    ] {
+        assert!(
+            !strip_test_code(&dispatch).contains(forbidden),
+            "dependency_parse/mod.rs must not own ecosystem parsing `{forbidden}`; each ecosystem lives in its own submodule (007-E)"
+        );
+    }
+}
+
+#[test]
+fn evidence_bundle_owns_packaging_not_ranking() {
+    let bundle = read_source("src/meta/evidence_bundle.rs");
+    let bundle_non_test = strip_test_code(&bundle);
+    assert!(
+        bundle_non_test.contains("fn build_evidence_bundle("),
+        "evidence_bundle.rs must own deterministic handoff packaging"
+    );
+    for forbidden in [
+        "FetchCandidateBuilder",
+        "fn rank_and_select(",
+        "fn score_candidate(",
+        "FetchRankReason",
+    ] {
+        assert!(
+            !bundle_non_test.contains(forbidden),
+            "evidence_bundle.rs must not own ranking mechanics `{forbidden}`; ranking lives in fetch_ranking.rs (007-F)"
+        );
+    }
+    let ranking = read_source("src/meta/fetch_ranking.rs");
+    let ranking_non_test = strip_test_code(&ranking);
+    assert!(
+        ranking_non_test.contains("struct FetchCandidateBuilder")
+            || ranking_non_test.contains("FetchCandidateBuilder"),
+        "fetch_ranking.rs must own FetchCandidateBuilder"
+    );
+    assert!(
+        ranking_non_test.contains("fn rank_and_select("),
+        "fetch_ranking.rs must own rank_and_select"
+    );
+    for forbidden in [
+        "build_evidence_bundle(",
+        "EvidenceBundle",
+        "fn compute_gaps(",
+    ] {
+        assert!(
+            !ranking_non_test.contains(forbidden),
+            "fetch_ranking.rs must not own domain packaging `{forbidden}`; packaging lives in evidence_bundle.rs (007-F)"
+        );
+    }
+}
+
+#[test]
+fn canonical_helpers_have_single_owner() {
+    let canonical = read_source("src/mcp/tools/canonical.rs");
+    for required in [
+        "pub fn parse_repo_goal(",
+        "pub fn parse_research_goal(",
+        "pub fn parse_security_goal(",
+        "pub fn resolve_repo_semantics(",
+        "pub fn resolve_research_workflow(",
+        "pub fn resolve_security_workflow(",
+    ] {
+        assert!(
+            canonical.contains(required),
+            "canonical.rs must own shared helper `{required}` (007-G)"
+        );
+    }
+    for (path, forbidden) in [
+        ("src/mcp/tools/repo_search.rs", "fn parse_repo_goal("),
+        (
+            "src/mcp/tools/research_search.rs",
+            "fn parse_research_goal(",
+        ),
+        (
+            "src/mcp/tools/security_search.rs",
+            "fn parse_security_goal(",
+        ),
+    ] {
+        let source = read_source(path);
+        let non_test = strip_test_code(&source);
+        assert!(
+            !non_test.contains(forbidden),
+            "{path} must not duplicate shared helper `{forbidden}`; use canonical.rs instead (007-G)"
+        );
+    }
+    for path in [
+        "src/mcp/tools/repo_search.rs",
+        "src/mcp/tools/research_search.rs",
+        "src/mcp/tools/security_search.rs",
+    ] {
+        let source = read_source(path);
+        assert!(
+            source.contains("canonical::"),
+            "{path} must resolve workflow semantics via canonical helpers (007-G)"
+        );
+    }
+}
+
+#[test]
+fn suggested_fetch_group_helpers_stay_typed() {
+    let research = read_source("src/meta/research_suggested_fetches.rs");
+    let security = read_source("src/meta/security_suggested_fetches.rs");
+    assert!(
+        research.contains("fn recommended_extract_mode_for_group(")
+            && research.contains("ResearchResultGroupKind"),
+        "research suggested fetches must keep typed group helper (007-G: intentional domain-specific, not over-deduplicated)"
+    );
+    assert!(
+        security.contains("fn recommended_extract_mode_for_group(")
+            && security.contains("SecurityResultGroupKind"),
+        "security suggested fetches must keep typed group helper (007-G: intentional domain-specific, not over-deduplicated)"
+    );
+}
+
+#[test]
+fn compatibility_dead_code_inventory() {
+    let allowed_files = [
+        "src/core/retrieval_status.rs",
+        "src/meta/dispatch/types.rs",
+        "src/meta/dispatch/execution.rs",
+        "src/meta/engines/crossref.rs",
+        "src/meta/engines/gitea_code.rs",
+        "src/meta/engines/gitea_issues.rs",
+        "src/meta/engines/github_code.rs",
+        "src/meta/engines/gitlab_code.rs",
+        "src/meta/engines/kev.rs",
+        "src/meta/engines/openalex.rs",
+        "src/meta/engines/osv.rs",
+        "src/meta/engines/semantic_scholar.rs",
+        "src/meta/engines/sourcegraph.rs",
+        "src/meta/local_backend.rs",
+        "src/meta/local_ignore.rs",
+        "src/meta/local_inventory_cache.rs",
+        "src/startup.rs",
+    ];
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut total = 0usize;
+    let mut unexpected = Vec::new();
+    let mut walker = vec![std::path::PathBuf::from(format!("{manifest}/src"))];
+    while let Some(dir) = walker.pop() {
+        let entries = std::fs::read_dir(&dir).expect("src dir readable");
+        for entry in entries {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                walker.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let content = std::fs::read_to_string(&path).expect("readable");
+                let count = content.matches("#[allow(dead_code)]").count();
+                if count > 0 {
+                    total += count;
+                    let rel = path
+                        .strip_prefix(manifest)
+                        .expect("under manifest")
+                        .to_string_lossy()
+                        .trim_start_matches('/')
+                        .to_string();
+                    if !allowed_files.contains(&rel.as_str()) {
+                        unexpected.push(format!("{rel} ({count})"));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        unexpected.is_empty(),
+        "new #[allow(dead_code)] outside documented inventory (007-H); document exit condition or remove: {unexpected:?}"
+    );
+    assert!(
+        total <= 45,
+        "dead_code annotation count grew to {total}, ceiling is 45; classify into required-compatibility/test-only/feature-gated/removable or remove (007-H)"
+    );
 }
