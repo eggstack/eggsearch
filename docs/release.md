@@ -5,6 +5,13 @@ publish eggsearch or publish a GitHub Release automatically. The crate is
 published directly to crates.io with `cargo publish`; the binary workflow then
 assembles a draft GitHub Release after all target artifacts qualify.
 
+The first binary-enabled release, `v0.3.9`, completed this sequence on the
+qualified commit `0cbbeee79a34b7f6d2d226cef535096adc58b4c3`. Qualification run
+`34653366561` and tagged release run `34655458760` passed all seven targets;
+the published release contains the exact 16-asset contract. Unix installer and
+updater checks passed locally, and native Windows PowerShell latest/pinned
+installer plus `update --check` smoke passed in run `34660182644`.
+
 ## Preparation
 
 1. Ensure intended changes are on `main`.
@@ -64,7 +71,7 @@ published release. Rerunning the workflow for the same tag is safe because all
 jobs check out the tag and the assembler uploads only the newly verified
 artifact set with matching names.
 
-The intended first binary-enabled release sequence is:
+The subsequent release sequence is:
 
 ```text
 make release-check

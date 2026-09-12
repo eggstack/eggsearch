@@ -11,23 +11,15 @@ Lightweight MCP (Model Context Protocol) search and fetch server for AI agents. 
 
 ## Install
 
-Until the first binary-enabled GitHub Release is published, Cargo is the
-guaranteed installation path:
-
-```bash
-cargo install eggsearch --locked
-```
-
-The reviewed release installers below are being qualified for the first
-binary-enabled release. Use them after that release is published; they download
-the matching GitHub Release binary, verify its SHA-256 checksum, and check its
-version before installation:
+Install the published binary from the GitHub Release:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
 ```
 
-Pin an exact published version with `--version` after the binary release exists:
+The reviewed installer downloads the host-matched executable, verifies its
+SHA-256 checksum, and checks its version before installation. Pin an exact
+published version with `--version`:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.9
@@ -37,6 +29,12 @@ On Windows PowerShell:
 
 ```powershell
 irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
+```
+
+For a source installation, or when the host has no published binary target:
+
+```bash
+cargo install eggsearch --locked
 ```
 
 The installer never elevates. It uses `/usr/local/bin` or

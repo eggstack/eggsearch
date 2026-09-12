@@ -1,6 +1,6 @@
 # Planning Registry
 
-Updated: 2026-09-11
+Updated: 2026-09-12
 Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
@@ -72,15 +72,26 @@ Do not mark this workstream complete until:
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 16 | First binary release hardening and cutover | planned | implemented phases 6-10 | `phase-16-first-binary-release-hardening-and-cutover.md` |
+| 16 | First binary release hardening and cutover | implemented | implemented phases 6-10 | `phase-16-first-binary-release-hardening-and-cutover.md` |
 
-Phase 16 exists because the binary-distribution implementation landed after the currently published `v0.3.8` tag/release. No compatible release tag has yet exercised the seven-target matrix or attached the installers/assets that the current documentation expects.
+Phase 16 addressed the binary-distribution implementation landing after the
+`v0.3.8` tag/release. The first binary-enabled release is now published as
+`v0.3.9`.
 
 Do not backfill or move `v0.3.8`. The corrective path is to qualify the exact next release candidate before crates.io publication, then tag and release that same SHA as the first binary-enabled release.
 
-### Phase 16 stop conditions
+### Phase 16 closure evidence
 
-Do not mark phase 16 implemented until:
+Closure evidence: qualified commit `0cbbeee79a34b7f6d2d226cef535096adc58b4c3`
+was published as crate `0.3.9`, tagged as `v0.3.9`, and released at
+<https://github.com/eggstack/eggsearch/releases/tag/v0.3.9>. Qualification run
+`34653366561` and tagged release run `34655458760` passed the complete
+seven-target matrix and exact 16-asset assembly. The published asset set and
+all seven checksums were independently verified. Unix latest and pinned
+installer plus updater smoke passed locally; native Windows latest and pinned
+PowerShell installer plus `update --check` smoke passed in run `34660182644`.
+
+The closure criteria were:
 
 - the complete seven-target matrix can run in a non-publishing qualification mode before crates.io publication;
 - qualification and tagged release share the same build, smoke, checksum, and assembly logic rather than parallel implementations;

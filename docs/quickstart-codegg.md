@@ -4,17 +4,26 @@ This guide walks through installing eggsearch, configuring it, and using it from
 
 ## Prerequisites
 
-- Rust 1.88 or later installed
+- Rust 1.88 or later installed when building from source
 - An MCP-compatible client (CodeGG, Claude Code, or any client supporting MCP over stdio or Streamable HTTP)
 
 ## Installation
 
 ```bash
-cargo install eggsearch --locked
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
 ```
 
-The release installer becomes available as the supported bootstrap path after
-the first binary-enabled GitHub Release is published.
+On Windows PowerShell:
+
+```powershell
+irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
+```
+
+For a source installation:
+
+```bash
+cargo install eggsearch --locked
+```
 
 Or build from source:
 

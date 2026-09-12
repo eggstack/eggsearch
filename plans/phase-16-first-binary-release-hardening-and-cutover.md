@@ -1,6 +1,6 @@
 # Phase 16 — First Binary Release Hardening and Cutover
 
-Status: planned
+Status: implemented
 Depends on: implemented phases 6-10
 Baseline for planning: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
 Governing deployment contract: `plans/deployment-roadmap.md`

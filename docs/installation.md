@@ -1,20 +1,9 @@
 # Installation
 
-## Guaranteed installation before the first binary release
+## Install from the published binary release
 
-The currently published `v0.3.8` release predates binary assets. Until the
-first binary-enabled release is published, use the guaranteed Cargo path:
-
-```bash
-cargo install eggsearch --locked
-```
-
-The reviewed binary installers below are qualified before publication of that
-release. They become the supported bootstrap path once its assets are
-available. Each installer downloads a default-feature executable, verifies the
-adjacent SHA-256 file, checks `eggsearch --version`, and installs atomically.
-
-Unix:
+The published `v0.3.9` release is the first binary-enabled release. Install the
+host-matched executable with the reviewed release installer:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
@@ -36,9 +25,16 @@ curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/instal
 $installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Version 0.3.9
 ```
 
+Each installer downloads a default-feature executable, verifies the adjacent
+SHA-256 file, checks `eggsearch --version`, and installs atomically. For a
+source installation or an unsupported target, use:
+
+```bash
+cargo install eggsearch --locked
+```
+
 The pinned Unix installer requests assets from the exact `vX.Y.Z` release. The
-unpinned form uses `releases/latest/download` for convenience after the first
-binary-enabled release exists.
+unpinned form uses `releases/latest/download` for convenience.
 
 ## Release targets
 
@@ -104,7 +100,7 @@ Cargo fallback, permission, and lifecycle behavior.
 
 ## Fleet one-liners
 
-Binary-only installation is the default after the first binary-enabled release.
+Binary-only installation is the default.
 Add `--service` only when the host should run the persistent loopback endpoint:
 
 ```bash
