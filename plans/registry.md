@@ -111,7 +111,25 @@ The closure criteria were:
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 17 | eggfetch 0.1.7 HTTP transport consolidation | planned | phase 16 implemented; eggfetch-core 0.1.7 | `phase-17-eggfetch-0.1.7-http-transport-consolidation.md` |
+| 17 | eggfetch 0.1.7 HTTP transport consolidation | implemented | phase 16 implemented; eggfetch-core 0.1.7 | `phase-17-eggfetch-0.1.7-http-transport-consolidation.md` |
+
+Phase 17 migrated eggsearch-owned outbound HTTP from direct reqwest 0.12 to eggfetch-core 0.1.7 while preserving the rmcp-owned reqwest Streamable HTTP client boundary. The phase specifically adopts eggfetch's resolved-target connection reuse, corrected total-deadline body lifecycle, typed failures, and selective feature split without moving eggsearch SSRF/retry/truncation policy into the transport library.
+
+### Phase 17 closure evidence
+
+Implementation commit `5a739a3cc6cdd060911eeefad7b004661f4b5c94`
+(+1945/-1448 across 76 files): Rust 1.89 declared in Cargo/CI/docs;
+`eggfetch-core 0.1.7` with the bounded feature budget carries all
+eggsearch-owned HTTP; direct reqwest 0.12 is removed (remaining normal-graph
+reqwest 0.13.4 is rmcp-transitive by design, guarded); `FetchClient` owns one
+shared client with per-hop pinned resolved snapshots and manual redirect
+authorization; total deadlines cover body streaming; `OriginController`
+remains the sole retry/circuit authority with typed failure evidence;
+updater/provider redirects stay bounded with downgrade denial; `make check`
+passes with zero test failures. HTML scrape engines request identity encoding
+pending an upstream fix for chunked compressed-response decoding. The manual
+seven-target release qualification remains required before publishing the
+first release containing this migration.
 
 Phase 17 migrates eggsearch-owned outbound HTTP from direct reqwest 0.12 to eggfetch-core 0.1.7 while preserving the rmcp-owned reqwest Streamable HTTP client boundary. The phase specifically adopts eggfetch's resolved-target connection reuse, corrected total-deadline body lifecycle, typed failures, and selective feature split without moving eggsearch SSRF/retry/truncation policy into the transport library.
 

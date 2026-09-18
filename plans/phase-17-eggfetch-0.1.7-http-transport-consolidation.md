@@ -1,6 +1,6 @@
 # Phase 17 — eggfetch 0.1.7 HTTP Transport Consolidation
 
-Status: planned
+Status: implemented
 Depends on: phase 16 implemented; `eggfetch-core 0.1.7` published
 Baseline for planning: `ac394031793cf5e37c49b790794e845ef0ab3650` (`eggsearch` 0.3.9 on `main`)
 Upstream release reviewed: `eggstack/eggfetch` 0.1.7, release commit `43c3b312f2def887d0f0b7ce539faa626adf2cc8`
@@ -578,3 +578,69 @@ The second important change is the repaired total-deadline body lifecycle. Prefe
 The new lean feature split should be used selectively. Pure `standard-http1` cannot satisfy eggsearch because it deliberately excludes `resolved_addresses()`; full `http1` is broader than eggsearch needs because it re-enables retry and Basic-auth policy. The intended middle ground is `standard-http1 + advanced-routing + redirects` plus the exact TLS/JSON/compression capabilities above.
 
 If implementation discovers a generally useful missing eggfetch primitive, stop and make that upstream request generic. Do not solve it by adding an eggsearch-specific API to eggfetch or by reconstructing a reqwest compatibility layer locally.
+
+## Implementation record
+
+Implementation SHA: `5a739a3cc6cdd060911eeefad7b004661f4b5c94` (76 files,
++1945/-1448).
+
+- eggfetch version and resolved feature set: `eggfetch-core 0.1.7` with
+  `default-features = false` and exactly `standard-http1`,
+  `advanced-routing`, `redirects`, `tls-rustls`, `json`,
+  `compression-gzip`, `compression-brotli`. A new `static_guards.rs`
+  feature-budget test fails the tree if `logical-retry`, `basic-auth`,
+  `proxy`, `tls-native-roots`, `http2`, `http3`, `cookies`, or `multipart`
+  ever enter the declared budget; `cargo tree -e features` confirms none
+  of them is enabled.
+- Pre/post normal dependency graph summary: normal graph went from 631 to
+  624 entries. Direct `reqwest 0.12` is gone from `[dependencies]` and from
+  the normal graph. The only remaining normal-graph reqwest is `0.13.4`
+  via `rmcp 3.2.0` (`transport-streamable-http-client-reqwest`), which is
+  the documented intentional boundary. `eggfetch-core 0.1.7` is a direct
+  dependency. A new `static_guards.rs` test fails on any `reqwest::` use
+  in non-test production source.
+- Pre/post representative release-binary sizes: post-migration stripped
+  Linux-equivalent local release binary (`target/release/eggsearch`,
+  `strip = true`) is 18M. No pre-migration local release artifact was
+  recorded, so no footprint claim is made; the migration is recorded as a
+  maintenance consolidation.
+- Transport/reuse characterization: `FetchClient::client_for_url()` (per
+  destination client construction) is deleted. One shared eggfetch client
+  serves every validated hop with the approved ordered snapshot pinned via
+  `resolved_addresses()`; manual redirect re-validation, truncation
+  reporting, single-stream PDF magic detection, and wire-length early
+  checks are preserved. Reuse is structural (no per-destination
+  construction remains) and covered by the existing loopback fetch suites;
+  no nondeterministic pool-counter assertion was added.
+- Test/gate results on the implementation SHA: `make check` passes
+  (fmt, clippy zero warnings, no-default check, full `--all-features`
+  suite with 0 failures, hygiene, packaging contract). `make
+  release-check` passes modulo the pre-commit dirty-tree publish guard,
+  which clears once committed.
+- Seven-target qualification run: not run on this commit. The
+  seven-target matrix runs only on tags or manual `workflow_dispatch`
+  (`release-binaries.yml`), so pushing this change burns no release
+  runners. Qualification of the exact candidate remains required before
+  publishing the first release containing this migration, per the plan.
+- Any retained reqwest path and why: `rmcp -> reqwest 0.13.4`
+  (Streamable HTTP MCP client transport) is retained deliberately; no
+  eggfetch adapter for rmcp's session/SSE/reconnect surface was added.
+  Dev-only `httpmock` brings its own async crates; no production path
+  uses them.
+- Deviations from this plan:
+  - HTML scrape engines (`brave`, `duckduckgo`, `mojeek`, `searxng`,
+    `startpage`, `yahoo`) send identity encoding per request
+    (`.decompress(false)`). Live chunked compressed responses from at
+    least DuckDuckGo (br) and Startpage (gzip) carry valid payloads that
+    decode with stock decoders and with eggfetch when served with
+    `Content-Length`, but fail inside eggfetch's streaming decoder when
+    served chunked (minimal reproducer: same br bytes served chunked fail
+    with `brotli error`, served with length decode to the identical
+    31047 bytes). JSON APIs keep automatic decompression. Recorded as an
+    upstream follow-up for `eggstack/eggfetch`; no eggsearch-local
+    decompression stack was added.
+  - `http = "1"` was added as a direct dependency for the shared
+    header/status types (`fetch/cache.rs`, forge status mapping).
+  - No separate `cargo bloat` linked-code view was captured
+    (`cargo-bloat` not installed); footprint evidence is the stripped
+    binary size plus the before/after `cargo tree` summaries above.
