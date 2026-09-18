@@ -30,7 +30,7 @@
 | `evidence_bundle.rs` | `build_evidence_bundle()` — pure logic for constructing evidence bundles |
 | `fetch_ranking.rs` | Deterministic ranking pipeline for suggested fetch candidates, plus shared `FetchCandidateBuilder` (`from_card`/`new` with `group`, `structured_repo_fetch`, `recommended_extract_mode`) used by repo, research, and security paths |
 | `suggested_fetches.rs` | Generic suggested fetch generation (via shared builder) |
-| `forge_adapter.rs` | Forge API client for Gitea/Forgejo (with `Policy::none()`, `read_bounded_body()`, `ForgeReadBudget`) |
+| `forge_adapter.rs` | Forge API client for Gitea/Forgejo (eggfetch transport with redirects disabled, bounded reads, `ForgeReadBudget`) |
 | `local/` | Local subsystem facade (`mod`): ownership map for the `local_*` modules; future implementation moves land here with stable paths via re-exports |
 | `local_backend.rs` | `LocalWorkspaceBackend` — bounded file walking, scoring, SourceCard conversion |
 | `local_inventory.rs` | `discover_local_repos()`, `LocalRepoIdentity` — Git worktree discovery, remote URL normalization |
@@ -177,7 +177,7 @@ Tracks provider health in real-time:
 
 API client for Gitea/Forgejo instances:
 
-- `Policy::none()` — redirects rejected
+- Redirects disabled at the transport (manual handling would re-validate first)
 - `read_bounded_body()` — hard byte cap on responses
 - `ForgeReadBudget` — aggregate byte tracking across requests
 

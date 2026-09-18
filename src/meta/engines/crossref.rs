@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -85,28 +85,29 @@ pub async fn search(
         max_results,
     );
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(&url)
-            .header("User-Agent", format!("eggsearch/1.0 (mailto:{EMAIL})"))
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .get(url.as_str())
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .header(
+            "User-Agent",
+            format!("eggsearch/1.0 (mailto:{EMAIL})").as_str(),
+        )
+        .header("Accept", "application/json")
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: CrossrefResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

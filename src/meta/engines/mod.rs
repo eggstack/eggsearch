@@ -51,8 +51,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use eggfetch_core::Client;
 use futures::StreamExt;
-use reqwest::Client;
 
 use self::error::EngineError;
 use self::models::SearchResult;
@@ -1013,7 +1013,7 @@ const DEFAULT_USER_AGENT: &str =
 /// bytes, aborting when the cap is crossed. Returns the buffered body
 /// on success or `EngineError::ParseFailed` on overflow.
 pub async fn read_bounded_body(
-    response: reqwest::Response,
+    mut response: eggfetch_core::Response,
     engine: &'static str,
     max_bytes: usize,
 ) -> Result<Vec<u8>, EngineError> {
@@ -1028,7 +1028,9 @@ pub async fn read_bounded_body(
         }
     }
     let mut body = Vec::with_capacity(max_bytes.min(64 * 1024));
-    let mut stream = response.bytes_stream();
+    let mut stream = response
+        .bytes_stream()
+        .map_err(|e| EngineError::Http { engine, source: e })?;
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| EngineError::Http { engine, source: e })?;
         push_bounded_chunk(&mut body, &chunk, max_bytes, engine)?;
@@ -1069,7 +1071,7 @@ pub fn is_http_url(url: &str) -> bool {
         .is_some_and(|u| matches!(u.scheme(), "http" | "https"))
 }
 
-/// Build the reqwest client used by the vendored search engines.
+/// Build the eggfetch client used by the vendored search engines.
 ///
 /// We intentionally do **not** enable a cookie store on this client:
 /// a long-lived MCP server should not persist cookies across requests
@@ -1077,17 +1079,50 @@ pub fn is_http_url(url: &str) -> bool {
 /// certain HTML providers but are no longer required for any of the
 /// vendored engines.
 pub fn build_http_client(user_agent: Option<&str>) -> anyhow::Result<Client> {
-    let ua = resolve_user_agent(user_agent);
-
-    let builder = Client::builder()
-        .user_agent(ua)
-        .gzip(true)
-        .brotli(true)
-        .timeout(Duration::from_secs(20));
-
-    let client = builder.build()?;
-
+    let ua = resolve_user_agent(user_agent).to_string();
+    let timeout = eggfetch_core::Timeout {
+        pool: Some(Duration::from_secs(20)),
+        connect: Some(Duration::from_secs(20)),
+        write: Some(Duration::from_secs(20)),
+        read: Some(Duration::from_secs(20)),
+        total: Some(Duration::from_secs(20)),
+    };
+    let client = Client::builder()
+        .user_agent(&ua)
+        .timeout(timeout)
+        .follow_redirects(true)
+        .max_redirects(10)
+        .redirect_policy(eggfetch_core::RedirectPolicy::strict(10))
+        .build();
     Ok(client)
+}
+
+pub fn engine_timeout(timeout: Duration) -> eggfetch_core::Timeout {
+    eggfetch_core::Timeout {
+        pool: Some(timeout),
+        connect: Some(timeout),
+        write: Some(timeout),
+        read: Some(timeout),
+        total: Some(timeout),
+    }
+}
+
+pub fn is_timeout_error(error: &eggfetch_core::Error) -> bool {
+    matches!(
+        error,
+        eggfetch_core::Error::Timeout { .. } | eggfetch_core::Error::TransportIoTimeout { .. }
+    )
+}
+
+pub fn map_request_error(engine: &'static str, error: eggfetch_core::Error) -> EngineError {
+    if is_timeout_error(&error) {
+        EngineError::Timeout { engine }
+    } else {
+        EngineError::Http {
+            engine,
+            source: error,
+        }
+    }
 }
 
 // Pick the UA the client will actually send: the operator's configured value

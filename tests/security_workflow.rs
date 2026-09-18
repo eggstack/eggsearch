@@ -811,7 +811,7 @@ mod security_context_safety {
             origin_controller: None,
             fetch_cache: None,
             kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
-                reqwest::Client::new(),
+                eggfetch_core::Client::new(),
             )),
             local_backend: Some(Arc::new(backend)),
             local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
@@ -874,7 +874,7 @@ mod security_context_safety {
             origin_controller: None,
             fetch_cache: None,
             kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
-                reqwest::Client::new(),
+                eggfetch_core::Client::new(),
             )),
             local_backend: Some(Arc::new(backend)),
             local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),

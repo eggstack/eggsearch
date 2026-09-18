@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use eggfetch_core::Client;
 use regex::Regex;
-use reqwest::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -159,32 +159,30 @@ impl super::SearchEngine for RustSecEngine {
 }
 
 async fn fetch_json(client: &Client, url: &str, timeout: Duration) -> Result<Vec<u8>, EngineError> {
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if status.as_u16() == 404 {
-            return Err(EngineError::ParseFailed {
-                engine: ENGINE,
-                reason: "not found".to_string(),
-            });
-        }
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .get(url)
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if status.as_u16() == 404 {
+        return Err(EngineError::ParseFailed {
+            engine: ENGINE,
+            reason: "not found".to_string(),
+        });
+    }
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     Ok(bytes)
 }

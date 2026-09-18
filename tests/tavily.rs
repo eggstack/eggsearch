@@ -161,7 +161,7 @@ fn telemetry_reports_native_constraints() {
 
 #[test]
 fn api_key_never_rendered_in_diagnostics() {
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(eggfetch_core::Client::new());
     let engine = TavilyEngine {
         client,
         api_key: "super-secret-tavily-key".to_string(),
@@ -189,7 +189,7 @@ async fn configured_key_sends_bearer_header() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let results = eggsearch::meta::engines::tavily::search(
         &client,
         "test-tavily-key-123",
@@ -225,7 +225,7 @@ async fn default_request_disables_answer_raw_content_and_auto_parameters() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     eggsearch::meta::engines::tavily::search(
         &client,
         "k",
@@ -248,7 +248,7 @@ async fn forbidden_response_fields_never_requested() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.excerpt_count = 2;
     req.include_domains = vec!["example.com".to_string()];
@@ -288,7 +288,7 @@ async fn exact_date_range_maps_to_start_end_dates() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.date_range = Some(SearchDateRange::new("2024-01-01", "2024-01-31"));
     eggsearch::meta::engines::tavily::search(&client, "k", Some(&server.url("/search")), &req)
@@ -321,7 +321,7 @@ async fn relative_freshness_sends_time_range_without_dates() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.freshness = Freshness::Week;
     eggsearch::meta::engines::tavily::search(&client, "k", Some(&server.url("/search")), &req)
@@ -356,7 +356,7 @@ async fn include_exclude_domains_use_strict_filter_mode() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.include_domains = vec!["example.com".to_string()];
     req.exclude_domains = vec!["spam.example".to_string()];
@@ -389,7 +389,7 @@ async fn news_intent_routes_to_news_topic() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("election", 5);
     req.intent = eggsearch::core::query::SearchIntent::News;
     eggsearch::meta::engines::tavily::search(&client, "k", Some(&server.url("/search")), &req)
@@ -428,7 +428,7 @@ async fn safe_search_maps_off_false_and_moderate_strict_true() {
                 .header("content-type", "application/json")
                 .body(r#"{"results": []}"#);
         });
-        let client = reqwest::Client::new();
+        let client = eggfetch_core::Client::new();
         let mut req = engine_req("test", 5);
         req.safe_search = Some(mode);
         eggsearch::meta::engines::tavily::search(&client, "k", Some(&server.url("/search")), &req)
@@ -464,7 +464,7 @@ async fn language_region_mapped_only_when_representable() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("test", 5);
     req.language = Some("en".to_string());
     req.region = Some("US".to_string());
@@ -524,7 +524,7 @@ async fn country_omitted_for_news_topic() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("election", 5);
     req.intent = eggsearch::core::query::SearchIntent::News;
     req.region = Some("US".to_string());
@@ -547,7 +547,7 @@ async fn chunks_bounded_and_converted_to_excerpts() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.excerpt_count = 2;
     eggsearch::meta::engines::tavily::search(&client, "k", Some(&server.url("/search")), &req)
@@ -623,7 +623,7 @@ async fn chunk_conversion_is_deterministic() {
             }"#,
             );
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("test", 5);
     req.excerpt_count = 3;
     let first =
@@ -654,7 +654,7 @@ async fn error_statuses_map_to_provider_failures() {
             when.method(POST).path("/search");
             then.status(status).body("error envelope");
         });
-        let client = reqwest::Client::new();
+        let client = eggfetch_core::Client::new();
         let err = eggsearch::meta::engines::tavily::search(
             &client,
             "k",
@@ -692,7 +692,7 @@ async fn oversized_body_rejected_by_shared_cap() {
             .header("content-type", "application/json")
             .body(body.clone());
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let err = eggsearch::meta::engines::tavily::search(
         &client,
         "k",

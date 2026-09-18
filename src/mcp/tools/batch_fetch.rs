@@ -1209,13 +1209,13 @@ fn make_batch_fetch_future(
                             let (mut cache_freshness, validators) = if let Some(ref headers) =
                                 resp.response_headers
                             {
-                                let header_map: reqwest::header::HeaderMap = headers
+                                let header_map: http::header::HeaderMap = headers
                                     .iter()
                                     .filter_map(|(k, v)| {
                                         let name =
-                                            reqwest::header::HeaderName::from_bytes(k.as_bytes())
+                                            http::header::HeaderName::from_bytes(k.as_bytes())
                                                 .ok()?;
-                                        let val = reqwest::header::HeaderValue::from_str(v).ok()?;
+                                        let val = http::header::HeaderValue::from_str(v).ok()?;
                                         Some((name, val))
                                     })
                                     .collect();

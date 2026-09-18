@@ -2,7 +2,7 @@
 
 **eggsearch** is a lightweight MCP (Model Context Protocol) metasearch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. MCP transport is client-owned stdio or explicit loopback-only Streamable HTTP.
 
-Single library + binary crate (not a workspace). All application source under `src/`. Version `0.3.9`, edition 2021, MSRV 1.88. Release packaging lives under `packaging/`; source/runtime qualification remains Unix-focused while the release workflow explicitly qualifies Windows targets.
+Single library + binary crate (not a workspace). All application source under `src/`. Version `0.3.9`, edition 2021, MSRV 1.89. Release packaging lives under `packaging/`; source/runtime qualification remains Unix-focused while the release workflow explicitly qualifies Windows targets.
 
 This document is the bird's-eye view: what each module is for, how they connect, and where to go for depth. Each component links to a dedicated deep dive in this directory. Use it as the entry point when focusing review on one discrete aspect of the codebase.
 
@@ -62,7 +62,7 @@ fetch ↗
 ```
 
 1. **core** is the foundation — pure types, no external service calls
-2. **meta** builds on `core` — engines use `reqwest`, adapter orchestrates everything
+2. **meta** builds on `core` — engines use `eggfetch-core`, adapter orchestrates everything
 3. **fetch** is independent of `meta` — HTTP client, extraction, caching, browser rendering
 4. **mcp** wires `core` + `meta` + `fetch` into 10 tool endpoints
 5. **commands** (binary-only `src/commands/`) wires everything for CLI subcommands

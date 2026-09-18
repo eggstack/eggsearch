@@ -4,7 +4,7 @@ This guide walks through installing eggsearch, configuring it, and using it from
 
 ## Prerequisites
 
-- Rust 1.88 or later installed when building from source
+- Rust 1.89 or later installed when building from source
 - An MCP-compatible client (CodeGG, Claude Code, or any client supporting MCP over stdio or Streamable HTTP)
 
 ## Installation

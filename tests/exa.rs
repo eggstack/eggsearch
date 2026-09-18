@@ -166,7 +166,7 @@ async fn configured_key_sends_x_api_key_header() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let results = eggsearch::meta::engines::exa::search(
         &client,
         "test-exa-key-123",
@@ -181,7 +181,7 @@ async fn configured_key_sends_x_api_key_header() {
 
 #[test]
 fn api_key_never_rendered_in_diagnostics() {
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(eggfetch_core::Client::new());
     let engine = ExaEngine {
         client,
         api_key: "super-secret-exa-key".to_string(),
@@ -213,7 +213,7 @@ async fn default_request_has_no_summary_or_fetch_fields() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     eggsearch::meta::engines::exa::search(
         &client,
         "k",
@@ -244,7 +244,7 @@ async fn exact_date_range_maps_to_published_dates() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.date_range = Some(SearchDateRange::new("2024-01-01", "2024-01-31"));
     eggsearch::meta::engines::exa::search(&client, "k", Some(&server.url("/search")), &req)
@@ -274,7 +274,7 @@ async fn relative_freshness_sends_utc_start_without_end() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.freshness = Freshness::Week;
     eggsearch::meta::engines::exa::search(&client, "k", Some(&server.url("/search")), &req)
@@ -307,7 +307,7 @@ async fn include_exclude_domains_map_natively() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.include_domains = vec!["example.com".to_string()];
     req.exclude_domains = vec!["spam.example".to_string()];
@@ -335,7 +335,7 @@ async fn published_date_maps_to_generic_timestamp() {
             }"#,
             );
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let results = eggsearch::meta::engines::exa::search(
         &client,
         "k",
@@ -369,7 +369,7 @@ async fn invalid_published_date_keeps_valid_result() {
             }"#,
             );
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let results = eggsearch::meta::engines::exa::search(
         &client,
         "k",
@@ -408,7 +408,7 @@ async fn highlights_absent_without_demand_then_bounded() {
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("rust", 5);
     req.excerpt_count = 2;
     eggsearch::meta::engines::exa::search(&client, "k", Some(&server.url("/search")), &req)
@@ -480,7 +480,7 @@ async fn highlight_scores_are_provider_local_and_deterministic() {
             }"#,
             );
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("test", 5);
     req.excerpt_count = 3;
     let first =
@@ -511,7 +511,7 @@ async fn error_statuses_map_to_provider_failures() {
             when.method(POST).path("/search");
             then.status(status).body("error envelope");
         });
-        let client = reqwest::Client::new();
+        let client = eggfetch_core::Client::new();
         let err = eggsearch::meta::engines::exa::search(
             &client,
             "k",
@@ -549,7 +549,7 @@ async fn oversized_body_rejected_by_shared_cap() {
             .header("content-type", "application/json")
             .body(body.clone());
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let err = eggsearch::meta::engines::exa::search(
         &client,
         "k",

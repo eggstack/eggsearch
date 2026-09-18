@@ -161,7 +161,7 @@ Forge API base URLs (GitHub, GitLab, Gitea, Forgejo, Codeberg) are validated by 
 
 This prevents forge adapters from being redirected to internal services or leaking API keys over plaintext connections.
 
-Primary forge tree and paginated responses are read through `read_bounded_response()` with a hard byte cap (10MB per response, cumulative aggregate cap). `ForgeReadBudget` tracks aggregate bytes across all requests within a single tool invocation (operation-wide, not per-response); pagination stops when the aggregate budget is exhausted. Error-body previews (rate-limit detection, permission-denied diagnostics) are read through `read_error_preview()` with an 8KB cap and control-character sanitization. Default-branch metadata lookups use bounded response reading. Forge API clients use `Policy::none()`, rejecting all redirects; the fetch client also uses `Policy::none()` for outbound HTTP requests.
+Primary forge tree and paginated responses are read through `read_bounded_response()` with a hard byte cap (10MB per response, cumulative aggregate cap). `ForgeReadBudget` tracks aggregate bytes across all requests within a single tool invocation (operation-wide, not per-response); pagination stops when the aggregate budget is exhausted. Error-body previews (rate-limit detection, permission-denied diagnostics) are read through `read_error_preview()` with an 8KB cap and control-character sanitization. Default-branch metadata lookups use bounded response reading. Forge API clients disable automatic redirects at the eggfetch transport, rejecting all redirects; the fetch client also disables automatic redirects for outbound HTTP requests and re-validates every manually followed hop.
 
 ## Browser Rendering Safety
 

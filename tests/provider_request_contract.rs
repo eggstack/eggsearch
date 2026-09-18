@@ -214,7 +214,7 @@ async fn brave_web_params_present() {
             .header("content-type", "application/json")
             .body(r#"{"web": {"results": []}}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = EngineSearchRequest::simple("rust", 5, Duration::from_secs(5));
     req.safe_search = Some(eggsearch::core::query::SafeSearch::Strict);
     req.freshness = Freshness::Week;
@@ -236,7 +236,7 @@ async fn unsupported_constraints_omitted() {
             .header("content-type", "application/json")
             .body(r#"{"web": {"results": []}}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = EngineSearchRequest::simple("rust", 5, Duration::from_secs(5));
     req.language = Some("not-a-locale!!!".to_string());
     req.region = Some("TOOLONGREGIONNAME".to_string());

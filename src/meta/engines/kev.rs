@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use eggfetch_core::Client;
 use futures::StreamExt;
-use reqwest::Client;
 use serde::Deserialize;
 
 use crate::core::security::KevMetadata;
@@ -122,41 +122,51 @@ impl KevClient {
 
     /// Fetch the entire KEV catalog and populate the cache.
     async fn fetch_catalog(&self) -> Result<(), anyhow::Error> {
-        let bytes = tokio::time::timeout(KEV_TIMEOUT, async {
-            let resp = self.client.get(KEV_CATALOG_URL).send().await?;
-            let status = resp.status();
-            if !status.is_success() {
+        let mut resp = self
+            .client
+            .get(KEV_CATALOG_URL)
+            .map_err(|e| anyhow::anyhow!("KEV catalog fetch error: {e}"))?
+            .timeout(super::engine_timeout(KEV_TIMEOUT))
+            .send()
+            .await
+            .map_err(|e| {
+                if super::is_timeout_error(&e) {
+                    anyhow::anyhow!("KEV catalog fetch timed out")
+                } else {
+                    anyhow::anyhow!("KEV catalog fetch error: {e}")
+                }
+            })?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(anyhow::anyhow!(
+                "KEV catalog fetch failed with status: {status}"
+            ));
+        }
+        if let Some(content_length) = resp.content_length() {
+            if content_length > MAX_BODY_BYTES as u64 {
                 return Err(anyhow::anyhow!(
-                    "KEV catalog fetch failed with status: {status}"
+                    "KEV catalog too large (Content-Length: {content_length} bytes)",
                 ));
             }
-            if let Some(content_length) = resp.content_length() {
-                if content_length > MAX_BODY_BYTES as u64 {
-                    return Err(anyhow::anyhow!(
-                        "KEV catalog too large (Content-Length: {content_length} bytes)",
-                    ));
-                }
+        }
+        let mut body = Vec::with_capacity(MAX_BODY_BYTES.min(64 * 1024));
+        let mut stream = resp
+            .bytes_stream()
+            .map_err(|e| anyhow::anyhow!("KEV catalog stream read error: {e}"))?;
+        while let Some(chunk_result) = stream.next().await {
+            let chunk =
+                chunk_result.map_err(|e| anyhow::anyhow!("KEV catalog stream read error: {e}"))?;
+            let remaining = MAX_BODY_BYTES.saturating_sub(body.len());
+            if chunk.len() > remaining {
+                return Err(anyhow::anyhow!(
+                    "KEV catalog too large: read {} bytes, limit is {MAX_BODY_BYTES} bytes",
+                    body.len().max(chunk.len())
+                ));
             }
-            let mut body = Vec::with_capacity(MAX_BODY_BYTES.min(64 * 1024));
-            let mut stream = resp.bytes_stream();
-            while let Some(chunk_result) = stream.next().await {
-                let chunk = chunk_result
-                    .map_err(|e| anyhow::anyhow!("KEV catalog stream read error: {e}"))?;
-                let remaining = MAX_BODY_BYTES.saturating_sub(body.len());
-                if chunk.len() > remaining {
-                    return Err(anyhow::anyhow!(
-                        "KEV catalog too large: read {} bytes, limit is {MAX_BODY_BYTES} bytes",
-                        body.len().max(chunk.len())
-                    ));
-                }
-                body.extend_from_slice(&chunk);
-            }
-            Ok::<Vec<u8>, anyhow::Error>(body)
-        })
-        .await
-        .map_err(|_| anyhow::anyhow!("KEV catalog fetch timed out"))??;
+            body.extend_from_slice(&chunk);
+        }
 
-        let catalog: KeCatalog = serde_json::from_slice(&bytes)
+        let catalog: KeCatalog = serde_json::from_slice(&body)
             .map_err(|e| anyhow::anyhow!("Failed to parse KEV catalog: {e}"))?;
 
         let mut entries = HashMap::new();
@@ -220,21 +230,21 @@ mod tests {
 
     #[test]
     fn kev_client_creation() {
-        let client = Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let kev = KevClient::new(client);
         assert_eq!(kev.cache_ttl, DEFAULT_CACHE_TTL);
     }
 
     #[test]
     fn kev_client_custom_ttl() {
-        let client = Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let kev = KevClient::with_cache_ttl(client, Duration::from_secs(300));
         assert_eq!(kev.cache_ttl, Duration::from_secs(300));
     }
 
     #[tokio::test]
     async fn kev_cache_starts_stale() {
-        let client = Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let kev = KevClient::new(client);
         assert!(!kev.is_cache_fresh().await);
     }

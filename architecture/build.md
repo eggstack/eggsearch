@@ -14,7 +14,7 @@
 name = "eggsearch"
 version = "0.3.9"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.89"
 authors = ["eggstack"]
 license = "MIT"
 ```
@@ -52,7 +52,8 @@ license = "MIT"
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| `reqwest` | 0.12 (rustls-tls, gzip, brotli, stream, json) | HTTP client |
+| `eggfetch-core` | 0.1.7 (`standard-http1`, `advanced-routing`, `redirects`, `tls-rustls`, `json`, `compression-gzip`, `compression-brotli`; no `logical-retry`/`basic-auth`/`proxy`/`tls-native-roots`/`http2`/`http3`/`cookies`/`multipart`) | HTTP client for all eggsearch-owned outbound requests |
+| `http` | 1 | Shared header/status types |
 | `scraper` | 0.20 | HTML parsing |
 | `ego-tree` | 0.6.2 | DOM tree traversal |
 | `pulldown-cmark` | 0.12 | Markdown parsing |
@@ -163,7 +164,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.88"
+          toolchain: "1.89"
       - run: make ci
 ```
 

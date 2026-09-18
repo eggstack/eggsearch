@@ -206,7 +206,9 @@ impl ServerState {
             None
         };
 
-        let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
+        let kev_client = Arc::new(KevClient::new(
+            crate::meta::engines::build_http_client(None).expect("kev HTTP client builds"),
+        ));
 
         #[cfg(feature = "browser")]
         let profile_manager = {
@@ -340,7 +342,9 @@ impl ServerState {
         } else {
             None
         };
-        let kev_client = Arc::new(KevClient::new(reqwest::Client::new()));
+        let kev_client = Arc::new(KevClient::new(
+            crate::meta::engines::build_http_client(None).expect("kev HTTP client builds"),
+        ));
         Self {
             config,
             adapter,

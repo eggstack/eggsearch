@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use eggfetch_core::Client;
 use regex::Regex;
-use reqwest::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -278,35 +278,27 @@ pub async fn lookup_by_id(
 ) -> Result<Option<VulnerabilityMetadata>, EngineError> {
     let url = format!("{DEFAULT_BASE_URL}/vulns/{vuln_id}");
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if status.as_u16() == 404 {
-            return Ok(None);
-        }
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        Ok(Some(
-            super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?,
-        ))
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
-
-    let Some(bytes) = bytes else {
+    let resp = client
+        .get(url.as_str())
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if status.as_u16() == 404 {
         return Ok(None);
-    };
+    }
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let vuln: OsvVulnerability =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
@@ -347,28 +339,30 @@ pub async fn query_package(
         body["version"] = serde_json::Value::String(v.to_string());
     }
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .post(url.as_str())
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .map_err(|e| EngineError::ParseFailed {
+            engine: ENGINE,
+            reason: format!("serialize: {e}"),
+        })?
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: OsvQueryResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

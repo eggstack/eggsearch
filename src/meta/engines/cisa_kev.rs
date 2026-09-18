@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 
 use super::error::EngineError;
 use super::kev::KevClient;
@@ -216,7 +216,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kev_client_creation() {
-        let client = Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let engine = CisaKevEngine::new(client);
         assert_eq!(engine.name(), "cisa_kev");
     }

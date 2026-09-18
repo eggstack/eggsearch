@@ -1,4 +1,4 @@
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::{Deserialize, Serialize};
 
 use super::error::EngineError;
@@ -597,29 +597,31 @@ pub async fn search(
     let excerpt_count = request
         .excerpt_count
         .min(crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT);
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .post(url)
-            .json(&body)
-            .header("Accept", "application/json")
-            .header("Authorization", format!("Bearer {api_key}"))
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .post(url.as_str())
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .json(&body)
+        .map_err(|e| EngineError::ParseFailed {
+            engine: ENGINE,
+            reason: format!("serialize: {e}"),
+        })?
+        .header("Accept", "application/json")
+        .header("Authorization", format!("Bearer {api_key}").as_str())
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: TavilySearchResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

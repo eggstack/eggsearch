@@ -403,7 +403,7 @@ async fn github_code_adapter_dispatches_provider_specific_query() {
             );
     });
 
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let engine = eggsearch::meta::engines::GithubCodeEngine {
         client: Arc::new(client),
         api_key: "test-token".to_string(),
@@ -475,7 +475,7 @@ async fn github_code_result_card_has_source_file_metadata() {
             );
     });
 
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let engine = eggsearch::meta::engines::GithubCodeEngine {
         client: Arc::new(client),
         api_key: "test-token".to_string(),
@@ -544,7 +544,7 @@ async fn github_code_respects_max_results() {
             );
     });
 
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let engine = eggsearch::meta::engines::GithubCodeEngine {
         client: Arc::new(client),
         api_key: "test-token".to_string(),
@@ -595,7 +595,7 @@ async fn github_code_empty_results_returned() {
             .body(r#"{"items": []}"#);
     });
 
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let engine = eggsearch::meta::engines::GithubCodeEngine {
         client: Arc::new(client),
         api_key: "test-token".to_string(),
@@ -644,7 +644,7 @@ async fn github_code_auth_error_returns_failure() {
         then.status(401).body("Bad credentials");
     });
 
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let engine = eggsearch::meta::engines::GithubCodeEngine {
         client: Arc::new(client),
         api_key: "bad-token".to_string(),

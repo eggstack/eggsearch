@@ -627,11 +627,21 @@ async fn verify_stdio(executable: &str) -> Result<()> {
 async fn verify_http() -> Result<()> {
     use rmcp::{transport::StreamableHttpClientTransport, ServiceExt};
 
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()?;
-    let health = http
+    let http_timeout = Duration::from_secs(5);
+    let http = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .timeout(eggfetch_core::Timeout {
+            pool: Some(http_timeout),
+            connect: Some(http_timeout),
+            write: Some(http_timeout),
+            read: Some(http_timeout),
+            total: Some(http_timeout),
+        })
+        .max_decoded_body_size(64 * 1024)
+        .build();
+    let mut health = http
         .get("http://127.0.0.1:11320/healthz")
+        .context("HTTP health check failed")?
         .send()
         .await
         .context("HTTP health check failed")?;

@@ -1,4 +1,4 @@
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::{Deserialize, Serialize};
 
 use super::error::EngineError;
@@ -340,29 +340,34 @@ pub async fn search(
     };
     let timeout = request.timeout;
     let max_results = request.max_results;
-    let bytes = tokio::time::timeout(timeout, async {
-        let mut req = client
-            .post(&url)
-            .json(&body)
-            .header("Accept", "application/json");
-        if let Some(key) = api_key.filter(|k| !k.is_empty()) {
-            req = req.header("Authorization", format!("Bearer {key}"));
-        }
-        let resp = req.send().await.map_err(|e| EngineError::Http {
+    let mut req = client
+        .post(url.as_str())
+        .map_err(|e| EngineError::Http {
             engine: ENGINE,
             source: e,
-        })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+        })?
+        .json(&body)
+        .map_err(|e| EngineError::ParseFailed {
+            engine: ENGINE,
+            reason: format!("serialize: {e}"),
+        })?
+        .header("Accept", "application/json")
+        .timeout(super::engine_timeout(timeout));
+    if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+        req = req.header("Authorization", format!("Bearer {key}").as_str());
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: DeveloperResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

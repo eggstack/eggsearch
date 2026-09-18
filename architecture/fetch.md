@@ -38,6 +38,15 @@ The HTTP fetch client. Handles:
 - **Response classification** — success, redirect, error
 - **Bounded body reading** — never reads unbounded responses
 
+Transport is `eggfetch-core`: `FetchClient` owns one shared client with
+automatic redirects disabled, and each validated hop is pinned to its approved
+ordered address snapshot via `resolved_addresses()`. DNS validation and SSRF
+authorization stay in `limits.rs`; eggfetch's resolved-route cache is a
+transport reuse optimization, never authorization. Redirects are followed
+manually (every hop re-validated), truncation at `max_bytes` reports
+`truncated` rather than a hard body-limit error, and per-hop total deadlines
+cover body streaming.
+
 ### Key Methods
 
 ```rust

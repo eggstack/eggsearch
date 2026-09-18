@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -31,40 +31,37 @@ pub async fn search(
 ) -> Result<Vec<SearchResult>, EngineError> {
     let endpoint = build_endpoint(base_url);
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(&endpoint)
-            .query(&[
-                ("q", query),
-                ("format", "json"),
-                ("categories", "general"),
-                ("language", "en-US"),
-            ])
-            .header("Accept", "application/json")
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if status.as_u16() == 403 || status.as_u16() == 400 {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .get(endpoint.as_str())
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .query("q", query)
+        .query("format", "json")
+        .query("categories", "general")
+        .query("language", "en-US")
+        .header("Accept", "application/json")
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .decompress(false)
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if status.as_u16() == 403 || status.as_u16() == 400 {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: SearxngResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

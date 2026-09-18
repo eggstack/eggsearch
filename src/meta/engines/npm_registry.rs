@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 
 use super::error::EngineError;
 use super::models::{ResultMetadata, SearchResult};

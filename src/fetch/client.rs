@@ -2,9 +2,8 @@
 
 use std::time::Duration;
 
+use eggfetch_core::{Client, Timeout};
 use futures::StreamExt;
-use reqwest::Client;
-use std::net::SocketAddr;
 
 use super::detect;
 use super::extract::{extract_links_from_html, LinkExtractionResult};
@@ -103,10 +102,10 @@ impl FetchClient {
         sanitize_output: bool,
     ) -> anyhow::Result<Self> {
         let client = Client::builder()
-            .timeout(Duration::from_millis(limits.timeout_ms))
-            .redirect(reqwest::redirect::Policy::none())
             .user_agent(&user_agent)
-            .build()?;
+            .timeout(client_timeout(limits.timeout_ms))
+            .follow_redirects(false)
+            .build();
         Ok(Self {
             client,
             limits,
@@ -118,13 +117,13 @@ impl FetchClient {
     /// Clone this client with a different request timeout.
     ///
     /// All other settings (limits, user agent, sanitize flag) are
-    /// preserved. Only the `reqwest::Client` timeout is changed.
+    /// preserved. Only the shared client timeout is changed.
     pub fn with_timeout_ms(&self, timeout_ms: u64) -> anyhow::Result<Self> {
         let client = Client::builder()
-            .timeout(Duration::from_millis(timeout_ms))
-            .redirect(reqwest::redirect::Policy::none())
             .user_agent(&self.user_agent)
-            .build()?;
+            .timeout(client_timeout(timeout_ms))
+            .follow_redirects(false)
+            .build();
         let mut limits = self.limits.clone();
         limits.timeout_ms = timeout_ms;
         Ok(Self {
@@ -133,25 +132,6 @@ impl FetchClient {
             user_agent: self.user_agent.clone(),
             sanitize_output: self.sanitize_output,
         })
-    }
-
-    fn client_for_url(
-        &self,
-        url: &url::Url,
-        addrs: Option<&[SocketAddr]>,
-    ) -> Result<Client, FetchError> {
-        if let (Some(host), Some(addrs)) = (url.host_str(), addrs) {
-            if !addrs.is_empty() {
-                return Client::builder()
-                    .timeout(Duration::from_millis(self.limits.timeout_ms))
-                    .redirect(reqwest::redirect::Policy::none())
-                    .user_agent(&self.user_agent)
-                    .resolve_to_addrs(host, addrs)
-                    .build()
-                    .map_err(|e| FetchError::NetworkError(e.to_string()));
-            }
-        }
-        Ok(self.client.clone())
     }
 
     /// Fetches a URL and extracts content.
@@ -215,19 +195,20 @@ impl FetchClient {
                 validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?;
             // Reuse the validated address set so the connect path
             // cannot drift to a different DNS answer for this attempt.
-            let request_client = self.client_for_url(&current_url, resolved_addrs.as_deref())?;
+            let builder = self
+                .client
+                .get(current_url.as_str())
+                .map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
+            let builder = builder.timeout(client_timeout(self.limits.timeout_ms));
+            let builder = match resolved_addrs {
+                Some(addrs) if !addrs.is_empty() => builder.resolved_addresses(addrs),
+                _ => builder,
+            };
 
-            let resp = request_client
-                .get(current_url.clone())
+            let resp = builder
                 .send()
                 .await
-                .map_err(|e| {
-                    if e.is_timeout() {
-                        FetchError::Timeout(self.limits.timeout_ms)
-                    } else {
-                        FetchError::NetworkError(e.to_string())
-                    }
-                })?;
+                .map_err(|e| map_send_error(e, self.limits.timeout_ms))?;
 
             let status = resp.status().as_u16();
 
@@ -299,24 +280,26 @@ impl FetchClient {
         // body cap below remains the authoritative upper bound for
         // chunked/encoded responses; this is an early bailout.
         let mut content_length_header: Option<usize> = None;
-        if let Some(cl_header) = response.headers().get("content-length") {
-            if let Some(content_length_u64) =
-                cl_header.to_str().ok().and_then(|s| s.parse::<u64>().ok())
-            {
-                if content_length_u64 > self.limits.max_bytes as u64 {
-                    return Err(FetchError::ContentTooLarge(
-                        usize::try_from(content_length_u64).unwrap_or(usize::MAX),
-                        self.limits.max_bytes,
-                    ));
-                }
-                let content_length = usize::try_from(content_length_u64).unwrap_or(usize::MAX);
-                content_length_header = Some(content_length);
-            } else {
-                tracing::warn!(
-                    header = ?cl_header,
-                    "unparseable content-length header; proceeding to streaming cap"
-                );
+        let declared_len: Option<u64> = response
+            .wire_content_length()
+            .and_then(|s| s.parse::<u64>().ok())
+            .or_else(|| response.content_length());
+        if let Some(content_length_u64) = declared_len {
+            if content_length_u64 > self.limits.max_bytes as u64 {
+                return Err(FetchError::ContentTooLarge(
+                    usize::try_from(content_length_u64).unwrap_or(usize::MAX),
+                    self.limits.max_bytes,
+                ));
             }
+            let content_length = usize::try_from(content_length_u64).unwrap_or(usize::MAX);
+            content_length_header = Some(content_length);
+        } else if response.wire_content_length().is_some()
+            || response.headers().contains_key("content-length")
+        {
+            tracing::warn!(
+                header = ?response.wire_content_length(),
+                "unparseable content-length header; proceeding to streaming cap"
+            );
         }
 
         if !(200..300).contains(&status) {
@@ -329,19 +312,22 @@ impl FetchClient {
         // peek at the first 5 bytes of the body for the `%PDF-` magic.
         // This catches misconfigured servers that serve PDFs as
         // application/octet-stream or text/plain.
+        let mut stream = response
+            .bytes_stream()
+            .map_err(|e| FetchError::NetworkError(e.to_string()))?;
         let mut pdf_magic_chunk = None;
         if !kind.is_pdf {
-            match response.chunk().await {
-                Ok(Some(first_chunk)) => {
+            match stream.next().await {
+                Some(Ok(first_chunk)) => {
                     if first_chunk.len() >= 5 && &first_chunk[..5] == b"%PDF-" {
                         kind.is_pdf = true;
                     }
                     pdf_magic_chunk = Some(first_chunk);
                 }
-                Ok(None) => {}
-                Err(e) => {
+                Some(Err(e)) => {
                     return Err(FetchError::NetworkError(e.to_string()));
                 }
+                None => {}
             }
         }
 
@@ -362,7 +348,6 @@ impl FetchClient {
         // Read the full body now, incorporating any magic-chunk we
         // peeked for PDF detection.
         let mut body = Vec::new();
-        let mut stream = response.bytes_stream();
         let mut truncated = false;
 
         if let Some(chunk) = pdf_magic_chunk {
@@ -1133,20 +1118,24 @@ impl FetchClient {
         let response = loop {
             let resolved_addrs =
                 validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?;
-            let request_client = self.client_for_url(&current_url, resolved_addrs.as_deref())?;
-
-            let mut req = request_client.get(current_url.clone());
+            let builder = self
+                .client
+                .get(current_url.as_str())
+                .map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
+            let builder = builder.timeout(client_timeout(self.limits.timeout_ms));
+            let builder = match resolved_addrs {
+                Some(addrs) if !addrs.is_empty() => builder.resolved_addresses(addrs),
+                _ => builder,
+            };
+            let mut req = builder;
             for (name, value) in conditional_headers {
                 req = req.header(name.as_str(), value.as_str());
             }
 
-            let resp = req.send().await.map_err(|e| {
-                if e.is_timeout() {
-                    FetchError::Timeout(self.limits.timeout_ms)
-                } else {
-                    FetchError::NetworkError(e.to_string())
-                }
-            })?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| map_send_error(e, self.limits.timeout_ms))?;
 
             let status = resp.status().as_u16();
             if status == 304 {
@@ -1205,26 +1194,31 @@ impl FetchClient {
             return Ok((304, headers, Vec::new(), false));
         }
 
-        if let Some(cl_header) = response.headers().get("content-length") {
-            if let Some(content_length_u64) =
-                cl_header.to_str().ok().and_then(|s| s.parse::<u64>().ok())
-            {
-                if content_length_u64 > self.limits.max_bytes as u64 {
-                    return Err(FetchError::ContentTooLarge(
-                        usize::try_from(content_length_u64).unwrap_or(usize::MAX),
-                        self.limits.max_bytes,
-                    ));
-                }
-            } else {
-                tracing::warn!(
-                    header = ?cl_header,
-                    "unparseable content-length header; proceeding to streaming cap"
-                );
+        if let Some(content_length_u64) = response
+            .wire_content_length()
+            .and_then(|s| s.parse::<u64>().ok())
+            .or_else(|| response.content_length())
+        {
+            if content_length_u64 > self.limits.max_bytes as u64 {
+                return Err(FetchError::ContentTooLarge(
+                    usize::try_from(content_length_u64).unwrap_or(usize::MAX),
+                    self.limits.max_bytes,
+                ));
             }
+        } else if response.wire_content_length().is_some()
+            || response.headers().contains_key("content-length")
+        {
+            tracing::warn!(
+                header = ?response.wire_content_length(),
+                "unparseable content-length header; proceeding to streaming cap"
+            );
         }
 
         let mut body = Vec::new();
-        let mut stream = response.bytes_stream();
+        let mut response = response;
+        let mut stream = response
+            .bytes_stream()
+            .map_err(|e| FetchError::NetworkError(e.to_string()))?;
         let mut truncated = false;
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
@@ -1320,6 +1314,28 @@ fn append_bounded(buf: &mut Vec<u8>, data: &[u8], max_bytes: usize) -> bool {
     }
     buf.extend_from_slice(data);
     false
+}
+
+fn client_timeout(timeout_ms: u64) -> Timeout {
+    let timeout = Duration::from_millis(timeout_ms);
+    Timeout {
+        pool: Some(timeout),
+        connect: Some(timeout),
+        write: Some(timeout),
+        read: Some(timeout),
+        total: Some(timeout),
+    }
+}
+
+fn map_send_error(error: eggfetch_core::Error, timeout_ms: u64) -> FetchError {
+    if matches!(
+        error,
+        eggfetch_core::Error::Timeout { .. } | eggfetch_core::Error::TransportIoTimeout { .. }
+    ) {
+        FetchError::Timeout(timeout_ms)
+    } else {
+        FetchError::NetworkError(error.to_string())
+    }
 }
 
 fn map_redirect_validation_error(error: FetchError) -> FetchError {

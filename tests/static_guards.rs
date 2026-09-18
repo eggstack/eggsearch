@@ -946,3 +946,92 @@ fn compatibility_dead_code_inventory() {
         "dead_code annotation count grew to {total}, ceiling is 45; classify into required-compatibility/test-only/feature-gated/removable or remove (007-H)"
     );
 }
+
+#[test]
+fn no_direct_reqwest_in_production_source() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut offenders = Vec::new();
+    let mut walker = vec![std::path::PathBuf::from(format!("{manifest}/src"))];
+    while let Some(dir) = walker.pop() {
+        let entries = std::fs::read_dir(&dir).expect("src dir readable");
+        for entry in entries {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                walker.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let content = std::fs::read_to_string(&path).expect("readable");
+                let non_test = strip_test_code(&content);
+                for (i, line) in non_test.lines().enumerate() {
+                    let trimmed = line.trim_start();
+                    if trimmed.starts_with("//") {
+                        continue;
+                    }
+                    if line.contains("reqwest::") || line.contains("extern crate reqwest") {
+                        let rel = path
+                            .strip_prefix(manifest)
+                            .expect("under manifest")
+                            .to_string_lossy()
+                            .to_string();
+                        offenders.push(format!("{rel}:{}: {trimmed}", i + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "direct reqwest usage in production source requires an explicit architecture decision (phase 17 boundary: eggsearch-owned HTTP -> eggfetch-core; MCP Streamable HTTP -> rmcp -> reqwest transitive only): {offenders:?}"
+    );
+}
+
+#[test]
+fn eggfetch_feature_budget_stays_bounded() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let cargo = fs::read_to_string(format!("{manifest}/Cargo.toml")).expect("Cargo.toml readable");
+    let section = cargo
+        .lines()
+        .skip_while(|l| !l.contains("eggfetch-core"))
+        .take_while(|l| !l.trim_start().starts_with(']') || l.contains("eggfetch-core"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        section.contains("eggfetch-core"),
+        "Cargo.toml must declare eggfetch-core"
+    );
+    assert!(
+        !cargo.lines().any(|l| {
+            let t = l.trim_start();
+            t.starts_with("reqwest =") || t.starts_with("reqwest=")
+        }),
+        "Cargo.toml must not declare a direct reqwest dependency (phase 17: rmcp owns its reqwest transitively)"
+    );
+    for required in [
+        "standard-http1",
+        "advanced-routing",
+        "redirects",
+        "tls-rustls",
+        "json",
+        "compression-gzip",
+        "compression-brotli",
+    ] {
+        assert!(
+            section.contains(required),
+            "eggfetch-core feature budget must include `{required}`: {section}"
+        );
+    }
+    for forbidden in [
+        "logical-retry",
+        "basic-auth",
+        "proxy",
+        "tls-native-roots",
+        "http2",
+        "http3",
+        "cookies",
+        "multipart",
+    ] {
+        assert!(
+            !section.contains(forbidden),
+            "eggfetch-core feature budget must not enable `{forbidden}` (phase 17 selective split): {section}"
+        );
+    }
+}

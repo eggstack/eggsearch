@@ -10,11 +10,21 @@
 //! only (no semver range).
 
 use crate::core::package::{PackageCoordinate, PackageEcosystem, PackageResolution};
-use reqwest::Client;
+use eggfetch_core::Client;
 use std::time::Duration;
 
 /// Default timeout for registry API lookups.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn resolver_timeout(timeout: Duration) -> eggfetch_core::Timeout {
+    eggfetch_core::Timeout {
+        pool: Some(timeout),
+        connect: Some(timeout),
+        write: Some(timeout),
+        read: Some(timeout),
+        total: Some(timeout),
+    }
+}
 
 /// Resolve package metadata from a registry API.
 ///
@@ -52,11 +62,17 @@ async fn resolve_crates_io(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::CratesIo.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_crates_io_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("crates.io JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("crates.io API error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_crates_io_response(coord, &val),
+                Err(e) => fallback_with_warning(coord, &format!("crates.io JSON parse error: {e}")),
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("crates.io API returned status {}", resp.status()),
@@ -137,11 +153,17 @@ async fn resolve_pypi(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::Pypi.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_pypi_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("PyPI JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("PyPI API error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_pypi_response(coord, &val),
+                Err(e) => fallback_with_warning(coord, &format!("PyPI JSON parse error: {e}")),
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("PyPI API returned status {}", resp.status()),
@@ -255,11 +277,17 @@ async fn resolve_npm(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::Npm.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_npm_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("npm JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("npm API error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_npm_response(coord, &val),
+                Err(e) => fallback_with_warning(coord, &format!("npm JSON parse error: {e}")),
+            }
+        }
         Ok(resp) => {
             fallback_with_warning(coord, &format!("npm API returned status {}", resp.status()))
         }
@@ -359,11 +387,17 @@ async fn resolve_go(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::Go.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_go_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("Go proxy JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("Go proxy error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_go_response(coord, &val),
+                Err(e) => fallback_with_warning(coord, &format!("Go proxy JSON parse error: {e}")),
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Go proxy returned status {}", resp.status()),
@@ -422,11 +456,19 @@ async fn resolve_maven(
     let query = format!("g:\"{group}\"+AND+a:\"{artifact}\"");
     let api_url = format!("https://search.maven.org/solrsearch/select?q={query}&rows=1&wt=json");
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_maven_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("Maven search JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("Maven search error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_maven_response(coord, &val),
+                Err(e) => {
+                    fallback_with_warning(coord, &format!("Maven search JSON parse error: {e}"))
+                }
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Maven search returned status {}", resp.status()),
@@ -488,11 +530,17 @@ async fn resolve_nuget(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::Nuget.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_nuget_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("NuGet JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("NuGet API error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_nuget_response(coord, &val),
+                Err(e) => fallback_with_warning(coord, &format!("NuGet JSON parse error: {e}")),
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("NuGet API returned status {}", resp.status()),
@@ -544,11 +592,17 @@ async fn resolve_rubygems(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::Rubygems.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_rubygems_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("RubyGems JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("RubyGems API error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_rubygems_response(coord, &val),
+                Err(e) => fallback_with_warning(coord, &format!("RubyGems JSON parse error: {e}")),
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("RubyGems API returned status {}", resp.status()),
@@ -623,11 +677,17 @@ async fn resolve_packagist(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::Packagist.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_packagist_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("Packagist JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("Packagist API error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_packagist_response(coord, &val),
+                Err(e) => fallback_with_warning(coord, &format!("Packagist JSON parse error: {e}")),
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Packagist API returned status {}", resp.status()),
@@ -696,11 +756,19 @@ async fn resolve_oci(
 ) -> PackageResolution {
     let api_url = PackageEcosystem::Oci.registry_api_url(&coord.name);
 
-    match client.get(&api_url).timeout(timeout).send().await {
-        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(val) => parse_oci_response(coord, &val),
-            Err(e) => fallback_with_warning(coord, &format!("Docker Hub JSON parse error: {e}")),
-        },
+    let builder = match client.get(api_url.as_str()) {
+        Ok(builder) => builder.timeout(resolver_timeout(timeout)),
+        Err(e) => return fallback_with_warning(coord, &format!("Docker Hub API error: {e}")),
+    };
+    match builder.send().await {
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(val) => parse_oci_response(coord, &val),
+                Err(e) => {
+                    fallback_with_warning(coord, &format!("Docker Hub JSON parse error: {e}"))
+                }
+            }
+        }
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Docker Hub API returned status {}", resp.status()),
@@ -838,9 +906,8 @@ mod tests {
 
     fn test_client() -> Client {
         Client::builder()
-            .timeout(Duration::from_secs(5))
+            .timeout(resolver_timeout(Duration::from_secs(5)))
             .build()
-            .unwrap()
     }
 
     #[test]

@@ -31,11 +31,13 @@ and preserves all unrelated lines.
 
 ## Health and ownership
 
-`probe_health` first performs a bounded loopback TCP connect and then validates
-the bounded JSON `/healthz` response. Only `service=eggsearch` and
+`probe_health` issues one bounded eggfetch request (redirects disabled, explicit
+total deadline, 256-byte decoded-body cap) and validates the JSON `/healthz`
+response. Only `service=eggsearch` and
 `status=ready` is healthy. Refused means definitely absent; timeout, malformed
 JSON, wrong service, non-ready status, and other errors are ambiguous and never
-authorize a spawn.
+authorize a spawn. Typed transport failures (`ConnectionRefused`, timeout
+phase) map to the existing outcomes without a separate TCP preflight.
 
 `croncheck` takes a create-once startup lock, rechecks health, launches the
 canonical command detached, and polls health. The persistent process writes an

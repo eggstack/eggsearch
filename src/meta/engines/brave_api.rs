@@ -3,7 +3,7 @@
 //! Uses the official Brave Search API (JSON) with an API key passed via
 //! the `X-Subscription-Token` header.
 
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -167,29 +167,28 @@ pub async fn search(
     let excerpt_count = request
         .excerpt_count
         .min(crate::core::source_card::MAX_EXCERPT_REQUEST_COUNT);
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(url)
-            .query(&params)
-            .header("Accept", "application/json")
-            .header("X-Subscription-Token", api_key)
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let mut req = client.get(url.as_str()).map_err(|e| EngineError::Http {
+        engine: ENGINE,
+        source: e,
+    })?;
+    for (k, v) in &params {
+        req = req.query(k.as_str(), v.as_str());
+    }
+    let resp = req
+        .header("Accept", "application/json")
+        .header("X-Subscription-Token", api_key)
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: BraveApiResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
@@ -597,7 +596,7 @@ mod tests {
                 }"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-api-key",
@@ -627,7 +626,7 @@ mod tests {
                 .body(r#"{"web": {"results": []}}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-api-key",
@@ -652,7 +651,7 @@ mod tests {
                 .body(r#"{}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-api-key",
@@ -675,7 +674,7 @@ mod tests {
             then.status(401).body("Unauthorized");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "bad-key",
@@ -704,7 +703,7 @@ mod tests {
             then.status(403).body("Forbidden");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "bad-key",
@@ -733,7 +732,7 @@ mod tests {
             then.status(429).body("Too Many Requests");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-api-key",
@@ -764,7 +763,7 @@ mod tests {
                 .body("this is not json");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-api-key",
@@ -793,7 +792,7 @@ mod tests {
             then.status(500).body("Internal Server Error");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "bad-key",
@@ -834,7 +833,7 @@ mod tests {
                 );
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-api-key",
@@ -863,7 +862,7 @@ mod tests {
                 .body(r#"{"web": {"results": []}}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         search(
             &client,
             "my-secret-key",
@@ -893,7 +892,7 @@ mod tests {
                 .body(r#"{"web": {"results": []}}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let mut req = simple_req("rust", 5);
         req.safe_search = Some(SafeSearch::Strict);
         req.freshness = Freshness::Week;
@@ -919,7 +918,7 @@ mod tests {
                 .body(r#"{"web": {"results": []}}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let mut req = simple_req("rust", 5);
         req.date_range = Some(crate::core::query::SearchDateRange::new(
             "2024-01-01",
@@ -946,7 +945,7 @@ mod tests {
                 .body(r#"{"web": {"results": []}}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let mut req = simple_req("rust", 5);
         req.language = Some("not-a-locale!!!".to_string());
         req.region = Some("USA".to_string());
@@ -979,7 +978,7 @@ mod tests {
                 );
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let web_base = server.url("/web/search");
         let mut news_req = simple_req("election", 5);
         news_req.intent = SearchIntent::News;
@@ -1019,7 +1018,7 @@ mod tests {
                 .body(r#"{"web": {"results": []}}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let mut req = simple_req("rust", 5);
         req.excerpt_count = 2;
         search(&client, "k", Some(&server.url("/search")), &req)

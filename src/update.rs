@@ -140,18 +140,39 @@ struct UpdateEndpoints {
 }
 
 struct UpdateClient {
-    http: reqwest::Client,
+    http: eggfetch_core::Client,
     endpoints: UpdateEndpoints,
     current: Version,
 }
 
+fn request_timeout() -> eggfetch_core::Timeout {
+    eggfetch_core::Timeout {
+        pool: Some(REQUEST_TIMEOUT),
+        connect: Some(REQUEST_TIMEOUT),
+        write: Some(REQUEST_TIMEOUT),
+        read: Some(REQUEST_TIMEOUT),
+        total: Some(REQUEST_TIMEOUT),
+    }
+}
+
+fn bounded_fetch_error(
+    error: eggfetch_core::Error,
+    resource: &'static str,
+    limit: usize,
+) -> UpdateError {
+    if matches!(error, eggfetch_core::Error::DecodedBodyTooLarge) {
+        return UpdateError::ResponseTooLarge { resource, limit };
+    }
+    UpdateError::Download(error.to_string())
+}
+
 impl UpdateClient {
     fn new() -> Result<Self, UpdateError> {
-        let http = reqwest::Client::builder()
-            .user_agent(format!("eggsearch/{CURRENT_VERSION} self-update"))
-            .timeout(REQUEST_TIMEOUT)
-            .build()
-            .map_err(|error| UpdateError::Client(error.to_string()))?;
+        let http = eggfetch_core::Client::builder()
+            .user_agent(&format!("eggsearch/{CURRENT_VERSION} self-update"))
+            .timeout(request_timeout())
+            .redirect_policy(eggfetch_core::RedirectPolicy::strict(10))
+            .build();
         let current = Version::parse(CURRENT_VERSION).map_err(|error| {
             UpdateError::VersionLookup(format!("installed version is malformed: {error}"))
         })?;
@@ -324,9 +345,11 @@ impl UpdateClient {
             &version.to_string(),
             target.asset,
         );
-        let response = self
+        let mut response = self
             .http
             .get(&url)
+            .map_err(|error| UpdateError::Download(error.to_string()))?
+            .timeout(request_timeout())
             .send()
             .await
             .map_err(|error| UpdateError::Download(error.to_string()))?;
@@ -355,7 +378,9 @@ impl UpdateClient {
                 });
             }
         }
-        let mut body = response.bytes_stream();
+        let mut body = response
+            .bytes_stream()
+            .map_err(|error| UpdateError::Download(error.to_string()))?;
         let mut total = 0usize;
         while let Some(chunk) = body.next().await {
             let chunk = chunk.map_err(|error| UpdateError::Download(error.to_string()))?;
@@ -461,16 +486,19 @@ fn parse_stable_version(raw: &str) -> Result<Version, String> {
 }
 
 async fn bounded_get(
-    client: &reqwest::Client,
+    client: &eggfetch_core::Client,
     url: &str,
     limit: usize,
     resource: &'static str,
 ) -> Result<Vec<u8>, UpdateError> {
-    let response = client
+    let mut response = client
         .get(url)
+        .map_err(|error| UpdateError::Download(error.to_string()))?
+        .timeout(request_timeout())
+        .max_decoded_body_size(limit)
         .send()
         .await
-        .map_err(|error| UpdateError::Download(error.to_string()))?;
+        .map_err(|error| bounded_fetch_error(error, resource, limit))?;
     if !response.status().is_success() {
         return Err(UpdateError::HttpStatus {
             resource,
@@ -484,23 +512,18 @@ async fn bounded_get(
     {
         return Err(UpdateError::ResponseTooLarge { resource, limit });
     }
-    let mut body = Vec::with_capacity(limit.min(64 * 1024));
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| UpdateError::Download(error.to_string()))?;
-        if chunk.len() > limit.saturating_sub(body.len()) {
-            return Err(UpdateError::ResponseTooLarge { resource, limit });
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
+    response
+        .bytes()
+        .await
+        .map(|body| body.to_vec())
+        .map_err(|error| bounded_fetch_error(error, resource, limit))
 }
 
 async fn verify_candidate_file(
     candidate: &Path,
     asset: &str,
     version: &Version,
-    client: &reqwest::Client,
+    client: &eggfetch_core::Client,
     github_base_url: &str,
 ) -> Result<(), UpdateError> {
     let checksum_url = platform::checksum_url(github_base_url, &version.to_string(), asset);
@@ -800,7 +823,7 @@ mod tests {
 
     fn test_client(server: &MockServer, current: &str) -> UpdateClient {
         UpdateClient {
-            http: reqwest::Client::builder().build().unwrap(),
+            http: eggfetch_core::Client::builder().build(),
             endpoints: UpdateEndpoints {
                 registry_base_url: server.base_url(),
                 github_base_url: server.base_url(),

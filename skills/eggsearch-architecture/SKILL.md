@@ -62,6 +62,20 @@ Package registries (crates.io, PyPI, npm, Go, Maven Central, NuGet, RubyGems, Pa
 
 Profiles are advisory; unavailable providers are skipped with warnings.
 
+## HTTP Transport Ownership
+
+All eggsearch-owned outbound HTTP goes through `eggfetch-core` (MSRV 1.89):
+shared provider client in `src/meta/engines/mod.rs` (bounded library redirects,
+strict HTTPS-downgrade policy, explicit total deadlines, hard decoded-body
+caps), single shared `FetchClient` in `src/fetch/client.rs` (redirects
+disabled, manual per-hop SSRF re-validation, approved resolved-address
+snapshots pinned via `resolved_addresses()`, truncation preserved), updater
+client in `src/update.rs` (redirects enabled, downgrade denied), and
+single-request health probes near `startup.rs`/`integrations/common.rs`.
+`OriginController` remains the only retry/circuit authority. rmcp transitively
+owns only its Streamable HTTP client transport. Never add eggsearch-local
+reqwest clients or compatibility facades.
+
 ## Deterministic Identity System
 
 All stable output types use FNV-1a 64-bit content-derived hashes (`src/core/identity.rs`), never random UUIDs. Key prefixes: `src_`, `fetch_`, `suggested_`, `batch_`, `bundle_`, `loc_`, `doc_`, `chunk_`, `span_`.

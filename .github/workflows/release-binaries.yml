@@ -156,7 +156,7 @@ jobs:
           version: ${{ env.ZIG_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.88'
+          toolchain: '1.89'
           targets: ${{ matrix.target }}
       - name: Install pinned cargo-zigbuild
         run: cargo install cargo-zigbuild --version "$CARGO_ZIGBUILD_VERSION" --locked
@@ -203,7 +203,7 @@ jobs:
           version: ${{ env.ZIG_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.88'
+          toolchain: '1.89'
           targets: armv7-unknown-linux-gnueabihf
       - name: Install pinned cargo-zigbuild
         run: cargo install cargo-zigbuild --version "$CARGO_ZIGBUILD_VERSION" --locked
@@ -254,7 +254,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.88'
+          toolchain: '1.89'
           targets: ${{ matrix.target }}
       - name: Build, smoke, and checksum
         shell: bash
@@ -300,7 +300,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.88'
+          toolchain: '1.89'
           targets: ${{ matrix.target }}
       - name: Build, smoke, and checksum
         run: |

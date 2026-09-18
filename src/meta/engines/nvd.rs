@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -181,29 +181,29 @@ async fn fetch_json(
     url: &str,
     timeout: Duration,
 ) -> Result<Vec<u8>, EngineError> {
-    let mut builder = client.get(url);
+    let mut builder = client.get(url).map_err(|e| EngineError::Http {
+        engine: ENGINE,
+        source: e,
+    })?;
     if let Some(key) = api_key {
         if !key.is_empty() {
             builder = builder.header("apiKey", key);
         }
     }
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = builder.send().await.map_err(|e| EngineError::Http {
+    let resp = builder
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
             engine: ENGINE,
-            source: e,
-        })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     Ok(bytes)
 }

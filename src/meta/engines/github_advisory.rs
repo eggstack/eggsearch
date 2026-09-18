@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use eggfetch_core::Client;
 use regex::Regex;
-use reqwest::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -322,36 +322,32 @@ async fn fetch_json(
     url: &str,
     timeout: Duration,
 ) -> Result<Option<Vec<u8>>, EngineError> {
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(url)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if status.as_u16() == 404 {
-            return Ok(None);
-        }
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        Ok(Some(
-            super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?,
-        ))
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .get(url)
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .header("Authorization", format!("Bearer {api_key}").as_str())
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if status.as_u16() == 404 {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
-    Ok(bytes)
+    Ok(Some(bytes))
 }
 
 fn convert_to_result(advisory: GhAdvisory) -> SearchResult {

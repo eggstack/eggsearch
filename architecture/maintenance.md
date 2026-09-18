@@ -26,6 +26,7 @@ detail for the binary, integration tests, and fuzz harnesses.
 | Evidence packaging | `src/meta/evidence_bundle.rs` (`build_evidence_bundle`: dedup, linking, caps, trust/provider summaries, gaps) | Ranking math and candidate ordering (owned by `fetch_ranking.rs`) |
 | Fetch ranking | `src/meta/fetch_ranking.rs` (`FetchCandidateBuilder`, `rank_and_select`, scoring) | Domain source semantics and bundle packaging |
 | Fetch execution | `src/fetch/` (client, limits, cache, origin, browser) | Search ranking, evidence roles |
+| Outbound HTTP transport | `eggfetch-core` (transport, pooling, TLS, decompression, total deadlines, bounded hard-error reads, pinned routing, redirect mechanics, typed failures); rmcp transitively owns only its Streamable HTTP client transport | eggsearch-local reqwest clients or compatibility facades (enforced by `static_guards.rs`); SSRF/retry/truncation policy stays in eggsearch |
 | Release/deploy surface | `src/platform.rs`, `src/update.rs`, `src/startup.rs`, `packaging/` | Search/fetch policy |
 
 Module size ratchet (enforced by `static_guards.rs`

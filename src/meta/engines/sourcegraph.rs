@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -88,26 +88,29 @@ pub async fn search(
         count,
     );
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let mut req = client.get(&url).header("Accept", "application/json");
-        if let Some(key) = api_key {
-            req = req.header("Authorization", format!("token {key}"));
-        }
-        let resp = req.send().await.map_err(|e| EngineError::Http {
+    let mut req = client
+        .get(url.as_str())
+        .map_err(|e| EngineError::Http {
             engine: ENGINE,
             source: e,
-        })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+        })?
+        .header("Accept", "application/json")
+        .timeout(super::engine_timeout(timeout));
+    if let Some(key) = api_key {
+        req = req.header("Authorization", format!("token {key}").as_str());
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: SourcegraphResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {

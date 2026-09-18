@@ -109,7 +109,7 @@ impl CacheFreshness {
         false
     }
 
-    pub fn from_headers(headers: &reqwest::header::HeaderMap) -> (Self, CacheValidators) {
+    pub fn from_headers(headers: &http::HeaderMap) -> (Self, CacheValidators) {
         let mut freshness = CacheFreshness {
             max_age: None,
             expires: None,
@@ -671,11 +671,11 @@ pub fn apply_304_headers(
     if headers_304.is_empty() {
         return;
     }
-    let mut map = reqwest::header::HeaderMap::new();
+    let mut map = http::HeaderMap::new();
     for (name, value) in headers_304 {
         if let (Ok(name), Ok(value)) = (
-            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
-            reqwest::header::HeaderValue::from_str(value),
+            http::header::HeaderName::from_bytes(name.as_bytes()),
+            http::header::HeaderValue::from_str(value),
         ) {
             map.insert(name, value);
         }
@@ -718,7 +718,7 @@ pub fn apply_304_headers(
 mod tests {
     use super::*;
     use crate::core::fetch::ExtractMode;
-    use reqwest::header::HeaderMap;
+    use http::header::HeaderMap;
 
     #[test]
     fn cache_scope_anonymous() {

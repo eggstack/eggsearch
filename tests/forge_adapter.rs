@@ -2021,12 +2021,12 @@ async fn test_error_body_preview_caps_at_8kb() {
         then.status(500).body(large_body);
     });
 
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
+    let client = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .build();
     let resp = client
-        .get(format!("{}/test", server.base_url()))
+        .get(&format!("{}/test", server.base_url()))
+        .unwrap()
         .send()
         .await
         .unwrap();
@@ -2053,12 +2053,12 @@ async fn test_valid_utf8_split_across_chunks() {
         then.status(200).body("placeholder");
     });
 
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
+    let client = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .build();
     let _resp = client
-        .get(format!("{}/test", server.base_url()))
+        .get(&format!("{}/test", server.base_url()))
+        .unwrap()
         .send()
         .await
         .unwrap();
@@ -2090,12 +2090,12 @@ async fn test_invalid_utf8_rejected_deterministically() {
         then.status(200).body("placeholder");
     });
 
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
+    let client = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .build();
     let _resp = client
-        .get(format!("{}/test", server.base_url()))
+        .get(&format!("{}/test", server.base_url()))
+        .unwrap()
         .send()
         .await
         .unwrap();
@@ -2244,12 +2244,12 @@ async fn test_redirect_from_public_to_loopback_rejected() {
         then.status(200).body("ok");
     });
 
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
+    let client = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .build();
     let resp = client
-        .get(format!("{}/redirect", server.base_url()))
+        .get(&format!("{}/redirect", server.base_url()))
+        .unwrap()
         .send()
         .await
         .unwrap();
@@ -2278,12 +2278,12 @@ async fn test_cross_origin_redirect_rejected() {
             .header("Location", "https://evil.example.com/stolen");
     });
 
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
+    let client = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .build();
     let resp = client
-        .get(format!("{}/redirect", server.base_url()))
+        .get(&format!("{}/redirect", server.base_url()))
+        .unwrap()
         .send()
         .await
         .unwrap();
@@ -2311,12 +2311,12 @@ async fn test_same_origin_redirect_rejected() {
         then.status(200).body("new content");
     });
 
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
+    let client = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .build();
     let resp = client
-        .get(format!("{}/old", server.base_url()))
+        .get(&format!("{}/old", server.base_url()))
+        .unwrap()
         .send()
         .await
         .unwrap();

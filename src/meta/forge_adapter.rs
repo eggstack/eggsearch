@@ -9,8 +9,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use reqwest::redirect::Policy;
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 use tokio::sync::Semaphore;
 
@@ -199,7 +198,7 @@ impl ForgeReadBudget {
 }
 
 pub(crate) async fn read_with_budget(
-    resp: reqwest::Response,
+    mut resp: eggfetch_core::Response,
     budget: &mut ForgeReadBudget,
     kind: ForgeRequestKind,
 ) -> Result<Vec<u8>, ForgeReadError> {
@@ -223,7 +222,9 @@ pub(crate) async fn read_with_budget(
     }
     let mut body = Vec::with_capacity(effective_cap.min(64 * 1024));
     let mut observed = 0usize;
-    let mut stream = resp.bytes_stream();
+    let mut stream = resp
+        .bytes_stream()
+        .map_err(|_| ForgeReadError::StreamReadFailure)?;
     use futures::StreamExt;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| ForgeReadError::StreamReadFailure)?;
@@ -251,7 +252,7 @@ const ERROR_BODY_CAP: usize = 8 * 1024;
 /// and truncates at the byte cap. Charges the observed bytes against
 /// the aggregate budget.
 pub async fn read_error_body_preview(
-    resp: reqwest::Response,
+    mut resp: eggfetch_core::Response,
     budget: &mut ForgeReadBudget,
 ) -> String {
     let cap = ERROR_BODY_CAP.min(budget.remaining());
@@ -259,7 +260,14 @@ pub async fn read_error_body_preview(
         return String::new();
     }
     let mut body = Vec::with_capacity(cap.min(8192));
-    let mut stream = resp.bytes_stream();
+    let mut stream = match resp.bytes_stream() {
+        Ok(stream) => stream,
+        Err(error) => {
+            tracing::warn!(error = ?error, "failed to read forge error response body");
+            budget.consume(0, ForgeRequestKind::ErrorBody);
+            return "[error reading response body]".to_string();
+        }
+    };
     let mut observed = 0usize;
     let mut stream_read_failed = false;
     use futures::StreamExt;
@@ -392,13 +400,22 @@ pub enum EntryKind {
     Submodule,
 }
 
+fn forge_timeout(duration: Duration) -> eggfetch_core::Timeout {
+    eggfetch_core::Timeout {
+        pool: Some(duration),
+        connect: Some(duration),
+        write: Some(duration),
+        read: Some(duration),
+        total: Some(duration),
+    }
+}
+
 fn build_client() -> Result<Client, String> {
-    Client::builder()
-        .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+    Ok(Client::builder()
+        .timeout(forge_timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS)))
         .user_agent("eggsearch/1.0")
-        .redirect(Policy::none())
-        .build()
-        .map_err(|e| format!("failed to build HTTP client: {e}"))
+        .follow_redirects(false)
+        .build())
 }
 
 fn timeout_duration(req: &RepoMapRequest) -> Duration {
@@ -528,18 +545,20 @@ async fn fetch_github_tree(
 
     let tree_ref = tree_sha.as_deref().unwrap_or(ref_name);
 
+    let tree_url = format!(
+        "{base}/repos/{}/{}/git/trees/{}",
+        encode_url_component(owner),
+        encode_url_component(repo),
+        encode_url_component(tree_ref)
+    );
     let mut builder = client
-        .get(format!(
-            "{base}/repos/{}/{}/git/trees/{}",
-            encode_url_component(owner),
-            encode_url_component(repo),
-            encode_url_component(tree_ref)
-        ))
-        .query(&[("recursive", if max_d > 1 { "1" } else { "0" })])
-        .timeout(timeout);
+        .get(tree_url.as_str())
+        .map_err(|e| format!("GitHub API request failed: {e}"))?
+        .query("recursive", if max_d > 1 { "1" } else { "0" })
+        .timeout(forge_timeout(timeout));
 
     if let Some(ref key) = config.api_key {
-        builder = builder.header("Authorization", format!("Bearer {key}"));
+        builder = builder.header("Authorization", &format!("Bearer {key}"));
     }
 
     let resp = builder
@@ -548,13 +567,13 @@ async fn fetch_github_tree(
         .map_err(|e| format!("GitHub API request failed: {e}"))?;
 
     let status = resp.status();
-    if status == reqwest::StatusCode::NOT_FOUND {
+    if status.as_u16() == 404 {
         return Err("repository_not_found".into());
     }
-    if status == reqwest::StatusCode::UNAUTHORIZED {
+    if status.as_u16() == 401 {
         return Err("authentication_required".into());
     }
-    if status == reqwest::StatusCode::FORBIDDEN {
+    if status.as_u16() == 403 {
         let msg = read_error_body_preview(resp, &mut budget).await;
         if msg.contains("rate limit") || msg.contains("Rate limit") {
             return Err("rate_limited".into());
@@ -685,15 +704,26 @@ async fn resolve_github_default_branch(
     budget: &mut ForgeReadBudget,
 ) -> Option<String> {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
-    let mut builder = client
-        .get(format!(
-            "{base}/repos/{}/{}",
-            encode_url_component(owner),
-            encode_url_component(repo)
-        ))
-        .timeout(timeout);
+    let repo_url = format!(
+        "{base}/repos/{}/{}",
+        encode_url_component(owner),
+        encode_url_component(repo)
+    );
+    let mut builder = match client.get(repo_url.as_str()) {
+        Ok(builder) => builder.timeout(forge_timeout(timeout)),
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve request failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     if let Some(ref key) = config.api_key {
-        builder = builder.header("Authorization", format!("Bearer {key}"));
+        builder = builder.header("Authorization", &format!("Bearer {key}"));
     }
     let resp = match builder.send().await {
         Ok(r) => r,
@@ -776,16 +806,27 @@ async fn resolve_github_commit(
     budget: &mut ForgeReadBudget,
 ) -> (Option<String>, Option<String>) {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
-    let mut builder = client
-        .get(format!(
-            "{base}/repos/{}/{}/commits/{}",
-            encode_url_component(owner),
-            encode_url_component(repo),
-            encode_url_component(ref_name)
-        ))
-        .timeout(timeout);
+    let commit_url = format!(
+        "{base}/repos/{}/{}/commits/{}",
+        encode_url_component(owner),
+        encode_url_component(repo),
+        encode_url_component(ref_name)
+    );
+    let mut builder = match client.get(commit_url.as_str()) {
+        Ok(builder) => builder.timeout(forge_timeout(timeout)),
+        Err(e) => {
+            tracing::warn!(
+                forge = "github",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve request failed"
+            );
+            return (None, None);
+        }
+    };
     if let Some(ref key) = config.api_key {
-        builder = builder.header("Authorization", format!("Bearer {key}"));
+        builder = builder.header("Authorization", &format!("Bearer {key}"));
     }
     let resp = match builder.send().await {
         Ok(r) => r,
@@ -864,16 +905,18 @@ async fn fetch_github_contents_root(
     budget: &mut ForgeReadBudget,
 ) -> Result<Vec<ForgeRawEntry>, String> {
     let base = config.base_url.as_deref().unwrap_or(GITHUB_API_BASE);
+    let contents_url = format!(
+        "{base}/repos/{}/{}/contents/",
+        encode_url_component(owner),
+        encode_url_component(repo)
+    );
     let mut builder = client
-        .get(format!(
-            "{base}/repos/{}/{}/contents/",
-            encode_url_component(owner),
-            encode_url_component(repo)
-        ))
-        .query(&[("ref", tree_ref)])
-        .timeout(timeout);
+        .get(contents_url.as_str())
+        .map_err(|e| format!("GitHub Contents API request failed: {e}"))?
+        .query("ref", tree_ref)
+        .timeout(forge_timeout(timeout));
     if let Some(ref key) = config.api_key {
-        builder = builder.header("Authorization", format!("Bearer {key}"));
+        builder = builder.header("Authorization", &format!("Bearer {key}"));
     }
     let resp = builder
         .send()
@@ -1018,15 +1061,15 @@ async fn fetch_gitlab_tree(
             break;
         }
 
+        let tree_url = format!("{base}/projects/{project_path}/repository/tree");
         let mut builder = client
-            .get(format!("{base}/projects/{project_path}/repository/tree"))
-            .query(&[
-                ("ref", ref_name),
-                ("recursive", if max_d > 1 { "true" } else { "false" }),
-                ("per_page", &per_page.to_string()),
-                ("page", &page.to_string()),
-            ])
-            .timeout(timeout);
+            .get(tree_url.as_str())
+            .map_err(|e| format!("GitLab API request failed: {e}"))?
+            .query("ref", ref_name)
+            .query("recursive", if max_d > 1 { "true" } else { "false" })
+            .query("per_page", &per_page.to_string())
+            .query("page", &page.to_string())
+            .timeout(forge_timeout(timeout));
 
         if let Some(ref key) = config.api_key {
             builder = builder.header("PRIVATE-TOKEN", key.as_str());
@@ -1038,19 +1081,19 @@ async fn fetch_gitlab_tree(
             .map_err(|e| format!("GitLab API request failed: {e}"))?;
 
         let status = resp.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
+        if status.as_u16() == 404 {
             if all_entries.is_empty() {
                 return Err("repository_not_found".into());
             }
             break;
         }
-        if status == reqwest::StatusCode::UNAUTHORIZED {
+        if status.as_u16() == 401 {
             return Err("authentication_required".into());
         }
-        if status == reqwest::StatusCode::FORBIDDEN {
+        if status.as_u16() == 403 {
             return Err("permission_denied".into());
         }
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        if status.as_u16() == 429 {
             if all_entries.is_empty() {
                 return Err("rate_limited".into());
             }
@@ -1139,9 +1182,20 @@ async fn resolve_gitlab_default_branch(
     let base = config.base_url.as_deref().unwrap_or(GITLAB_API_BASE);
     let project_path_raw = format!("{owner}/{repo}");
     let project_path = urlencoding::encode(&project_path_raw);
-    let mut builder = client
-        .get(format!("{base}/projects/{project_path}"))
-        .timeout(timeout);
+    let project_url = format!("{base}/projects/{project_path}");
+    let mut builder = match client.get(project_url.as_str()) {
+        Ok(builder) => builder.timeout(forge_timeout(timeout)),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve request failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     if let Some(ref key) = config.api_key {
         builder = builder.header("PRIVATE-TOKEN", key.as_str());
     }
@@ -1234,11 +1288,20 @@ async fn resolve_gitlab_commit(
     let project_path_raw = format!("{owner}/{repo}");
     let project_path = urlencoding::encode(&project_path_raw);
     let encoded_ref = encode_url_component(ref_name);
-    let mut builder = client
-        .get(format!(
-            "{base}/projects/{project_path}/repository/commits/{encoded_ref}"
-        ))
-        .timeout(timeout);
+    let commit_url = format!("{base}/projects/{project_path}/repository/commits/{encoded_ref}");
+    let mut builder = match client.get(commit_url.as_str()) {
+        Ok(builder) => builder.timeout(forge_timeout(timeout)),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitlab",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve request failed"
+            );
+            return (None, None);
+        }
+    };
     if let Some(ref key) = config.api_key {
         builder = builder.header("PRIVATE-TOKEN", key.as_str());
     }
@@ -1413,22 +1476,22 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             break;
         }
 
+        let tree_url = format!(
+            "{api_base}/repos/{}/{}/git/trees/{}",
+            encode_url_component(owner),
+            encode_url_component(repo),
+            encode_url_component(tree_ref)
+        );
         let mut builder = client
-            .get(format!(
-                "{api_base}/repos/{}/{}/git/trees/{}",
-                encode_url_component(owner),
-                encode_url_component(repo),
-                encode_url_component(tree_ref)
-            ))
-            .query(&[
-                ("recursive", if max_d > 1 { "1" } else { "0" }),
-                ("per_page", &per_page.to_string()),
-                ("page", &page.to_string()),
-            ])
-            .timeout(timeout);
+            .get(tree_url.as_str())
+            .map_err(|e| format!("forge API request failed: {e}"))?
+            .query("recursive", if max_d > 1 { "1" } else { "0" })
+            .query("per_page", &per_page.to_string())
+            .query("page", &page.to_string())
+            .timeout(forge_timeout(timeout));
 
         if let Some(ref key) = config.api_key {
-            builder = builder.header("Authorization", format!("token {key}"));
+            builder = builder.header("Authorization", &format!("token {key}"));
         }
 
         let resp = builder
@@ -1437,19 +1500,19 @@ async fn fetch_forge_tree(params: ForgeTreeParams<'_>) -> Result<ForgeTreeRespon
             .map_err(|e| format!("forge API request failed: {e}"))?;
 
         let status = resp.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
+        if status.as_u16() == 404 {
             if all_entries.is_empty() {
                 return Err("repository_not_found".into());
             }
             break;
         }
-        if status == reqwest::StatusCode::UNAUTHORIZED {
+        if status.as_u16() == 401 {
             return Err("authentication_required".into());
         }
-        if status == reqwest::StatusCode::FORBIDDEN {
+        if status.as_u16() == 403 {
             return Err("permission_denied".into());
         }
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        if status.as_u16() == 429 {
             if all_entries.is_empty() {
                 return Err("rate_limited".into());
             }
@@ -1562,15 +1625,26 @@ async fn resolve_forge_default_branch(
     api_base: &str,
     budget: &mut ForgeReadBudget,
 ) -> Option<String> {
-    let mut builder = client
-        .get(format!(
-            "{api_base}/repos/{}/{}",
-            encode_url_component(owner),
-            encode_url_component(repo)
-        ))
-        .timeout(timeout);
+    let repo_url = format!(
+        "{api_base}/repos/{}/{}",
+        encode_url_component(owner),
+        encode_url_component(repo)
+    );
+    let mut builder = match client.get(repo_url.as_str()) {
+        Ok(builder) => builder.timeout(forge_timeout(timeout)),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "default-branch resolve request failed; identity.default_branch will be None"
+            );
+            return None;
+        }
+    };
     if let Some(ref key) = config.api_key {
-        builder = builder.header("Authorization", format!("token {key}"));
+        builder = builder.header("Authorization", &format!("token {key}"));
     }
     let resp = match builder.send().await {
         Ok(r) => r,
@@ -1654,16 +1728,27 @@ async fn resolve_forge_commit(
     api_base: &str,
     budget: &mut ForgeReadBudget,
 ) -> (Option<String>, Option<String>) {
-    let mut builder = client
-        .get(format!(
-            "{api_base}/repos/{}/{}/commits/{}",
-            encode_url_component(owner),
-            encode_url_component(repo),
-            encode_url_component(ref_name)
-        ))
-        .timeout(timeout);
+    let commit_url = format!(
+        "{api_base}/repos/{}/{}/commits/{}",
+        encode_url_component(owner),
+        encode_url_component(repo),
+        encode_url_component(ref_name)
+    );
+    let mut builder = match client.get(commit_url.as_str()) {
+        Ok(builder) => builder.timeout(forge_timeout(timeout)),
+        Err(e) => {
+            tracing::warn!(
+                forge = "gitea-like",
+                owner = owner,
+                repo = repo,
+                error = %e,
+                "commit resolve request failed"
+            );
+            return (None, None);
+        }
+    };
     if let Some(ref key) = config.api_key {
-        builder = builder.header("Authorization", format!("token {key}"));
+        builder = builder.header("Authorization", &format!("token {key}"));
     }
     let resp = match builder.send().await {
         Ok(r) => r,
@@ -1913,7 +1998,7 @@ fn validate_base_url_common(
     policy: &ForgeEndpointPolicy,
 ) -> Result<Option<String>, String> {
     let parsed = url
-        .parse::<reqwest::Url>()
+        .parse::<url::Url>()
         .map_err(|e| format!("invalid base URL: {e}"))?;
     if parsed.scheme() != "https" && parsed.scheme() != "http" {
         return Err(format!(
@@ -2146,13 +2231,13 @@ fn ipv4_mapped_from_v6_forge(v6: Ipv6Addr) -> Option<Ipv4Addr> {
 }
 
 fn extract_host(url: &str) -> Option<String> {
-    url.parse::<reqwest::Url>()
+    url.parse::<url::Url>()
         .ok()
         .and_then(|u| u.host_str().map(String::from))
 }
 
 async fn classify_host_from_url(url: &str) -> Option<String> {
-    let parsed = url.parse::<reqwest::Url>().ok()?;
+    let parsed = url.parse::<url::Url>().ok()?;
     let host = parsed.host_str()?;
     if let Some(ip) = parse_literal_ip(host) {
         let class = match ip {
@@ -2903,8 +2988,9 @@ mod forge_budget_property_tests {
             then.status(200).body("x".repeat(2048));
         });
 
-        let response = reqwest::Client::new()
-            .get(server.url("/large"))
+        let response = eggfetch_core::Client::new()
+            .get(server.url("/large").as_str())
+            .unwrap()
             .send()
             .await
             .unwrap();

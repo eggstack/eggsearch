@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -72,30 +72,29 @@ pub async fn search(
 
     let per_page = max_results.clamp(1, 100);
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(&url)
-            .query(&[("q", query), ("per_page", &per_page.to_string())])
-            .header("Accept", "application/vnd.github.text-match+json")
-            .header("Authorization", format!("Bearer {api_key}"))
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .get(url.as_str())
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .query("q", query)
+        .query("per_page", per_page.to_string().as_str())
+        .header("Accept", "application/vnd.github.text-match+json")
+        .header("Authorization", format!("Bearer {api_key}").as_str())
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: GithubCodeResponse =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
@@ -499,7 +498,7 @@ mod tests {
                 );
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-token",
@@ -533,7 +532,7 @@ mod tests {
                 .body(r#"{"items": []}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-token",
@@ -558,7 +557,7 @@ mod tests {
             then.status(401).body("Bad credentials");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "bad-token",
@@ -589,7 +588,7 @@ mod tests {
             then.status(403).body("rate limit exceeded");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -620,7 +619,7 @@ mod tests {
             then.status(422).body("Validation Failed");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -653,7 +652,7 @@ mod tests {
                 .body("this is not json");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -684,7 +683,7 @@ mod tests {
             then.status(500).body("Internal Server Error");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -727,7 +726,7 @@ mod tests {
                 );
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-token",
@@ -758,7 +757,7 @@ mod tests {
                 .body(r#"{"items": []}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         search(
             &client,
             "my-secret-token",
@@ -784,7 +783,7 @@ mod tests {
                 .body(r#"{"items": []}"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",

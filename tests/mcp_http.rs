@@ -1,11 +1,11 @@
 use std::{net::SocketAddr, time::Duration};
 
 use axum::Router;
+use eggfetch_core::{Client, Response};
 use eggsearch::{
     core::config::AppConfig,
     mcp::{build_server, http, McpPath, ServeOptions},
 };
-use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_util::sync::CancellationToken;
@@ -51,7 +51,7 @@ impl TestServer {
     async fn wait_until_ready(&self) {
         let url = format!("http://{}{}", self.address, http::HEALTH_PATH);
         for _ in 0..50 {
-            if self.client.get(&url).send().await.is_ok() {
+            if self.client.get(url.as_str()).unwrap().send().await.is_ok() {
                 return;
             }
             sleep(Duration::from_millis(10)).await;
@@ -72,7 +72,8 @@ impl TestServer {
 async fn initialize_legacy(server: &TestServer) -> (String, Value) {
     let response = server
         .client
-        .post(server.url())
+        .post(server.url().as_str())
+        .unwrap()
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .body(
@@ -91,7 +92,7 @@ async fn initialize_legacy(server: &TestServer) -> (String, Value) {
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), 200);
+    assert_eq!(response.status().as_u16(), 200);
     let session_id = response
         .headers()
         .get("Mcp-Session-Id")
@@ -102,7 +103,7 @@ async fn initialize_legacy(server: &TestServer) -> (String, Value) {
     (session_id, sse_payload(response).await)
 }
 
-async fn sse_payload(response: Response) -> Value {
+async fn sse_payload(mut response: Response) -> Value {
     let body = response.text().await.unwrap();
     let data = body
         .lines()
@@ -115,7 +116,8 @@ async fn sse_payload(response: Response) -> Value {
 async fn legacy_request(server: &TestServer, session_id: &str, message: Value) -> Response {
     server
         .client
-        .post(server.url())
+        .post(server.url().as_str())
+        .unwrap()
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .header("MCP-Protocol-Version", "2025-06-18")
@@ -129,13 +131,14 @@ async fn legacy_request(server: &TestServer, session_id: &str, message: Value) -
 #[tokio::test]
 async fn health_is_bounded_identified_and_does_not_use_mcp_state() {
     let server = TestServer::start().await;
-    let response = server
+    let mut response = server
         .client
-        .get(format!("http://{}{}", server.address, http::HEALTH_PATH))
+        .get(format!("http://{}{}", server.address, http::HEALTH_PATH).as_str())
+        .unwrap()
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), 200);
+    assert_eq!(response.status().as_u16(), 200);
     assert_eq!(response.headers()["content-type"], "application/json");
     let body = response.bytes().await.unwrap();
     assert!(body.len() <= 256);
@@ -164,7 +167,7 @@ async fn legacy_http_lifecycle_lists_tools_and_calls_local_tool() {
         json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
     )
     .await;
-    assert_eq!(initialized.status(), 202);
+    assert_eq!(initialized.status().as_u16(), 202);
 
     let tools = sse_payload(
         legacy_request(
@@ -213,7 +216,8 @@ async fn current_http_protocol_uses_request_metadata_without_a_session() {
     });
     let discover = server
         .client
-        .post(server.url())
+        .post(server.url().as_str())
+        .unwrap()
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .header("MCP-Protocol-Version", "2026-07-28")
@@ -230,7 +234,7 @@ async fn current_http_protocol_uses_request_metadata_without_a_session() {
         .send()
         .await
         .unwrap();
-    assert_eq!(discover.status(), 200);
+    assert_eq!(discover.status().as_u16(), 200);
     assert!(discover.headers().get("Mcp-Session-Id").is_none());
     let discover = sse_payload(discover).await;
     assert_eq!(
@@ -243,7 +247,8 @@ async fn current_http_protocol_uses_request_metadata_without_a_session() {
 
     let tools = server
         .client
-        .post(server.url())
+        .post(server.url().as_str())
+        .unwrap()
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .header("MCP-Protocol-Version", "2026-07-28")
@@ -255,7 +260,7 @@ async fn current_http_protocol_uses_request_metadata_without_a_session() {
         .send()
         .await
         .unwrap();
-    assert_eq!(tools.status(), 200);
+    assert_eq!(tools.status().as_u16(), 200);
     let tools = sse_payload(tools).await;
     assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 10);
     server.stop().await;
@@ -269,7 +274,8 @@ async fn modern_call(server: &TestServer, id: u64, name: &str, arguments: Value)
     });
     let response = server
         .client
-        .post(server.url())
+        .post(server.url().as_str())
+        .unwrap()
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .header("MCP-Protocol-Version", "2026-07-28")
@@ -287,7 +293,7 @@ async fn modern_call(server: &TestServer, id: u64, name: &str, arguments: Value)
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), 200);
+    assert_eq!(response.status().as_u16(), 200);
     sse_payload(response).await
 }
 
@@ -299,7 +305,8 @@ async fn modern_list(server: &TestServer, id: u64) -> Value {
     });
     let response = server
         .client
-        .post(server.url())
+        .post(server.url().as_str())
+        .unwrap()
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .header("MCP-Protocol-Version", "2026-07-28")
@@ -311,7 +318,7 @@ async fn modern_list(server: &TestServer, id: u64) -> Value {
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), 200);
+    assert_eq!(response.status().as_u16(), 200);
     sse_payload(response).await
 }
 
@@ -429,66 +436,71 @@ async fn invalid_host_origin_content_type_session_and_body_are_rejected() {
         }
     })
     .to_string();
-    let base = server
-        .client
-        .post(server.url())
-        .header("Accept", "application/json, text/event-stream")
-        .body(initialize_body.clone());
-    assert_eq!(
-        base.try_clone()
+    let build_base = || {
+        server
+            .client
+            .post(server.url().as_str())
             .unwrap()
+            .header("Accept", "application/json, text/event-stream")
+            .body(initialize_body.clone())
+    };
+    assert_eq!(
+        build_base()
             .header("Content-Type", "application/json")
             .header("Host", "evil.example")
             .send()
             .await
             .unwrap()
-            .status(),
+            .status()
+            .as_u16(),
         403
     );
     assert_eq!(
-        base.try_clone()
-            .unwrap()
+        build_base()
             .header("Content-Type", "application/json")
             .header("Origin", "http://evil.example")
             .send()
             .await
             .unwrap()
-            .status(),
+            .status()
+            .as_u16(),
         403
     );
     assert_eq!(
-        base.try_clone()
-            .unwrap()
+        build_base()
             .header("Content-Type", "text/plain")
             .send()
             .await
             .unwrap()
-            .status(),
+            .status()
+            .as_u16(),
         415
     );
     assert_eq!(
-        base.try_clone()
-            .unwrap()
+        build_base()
             .header("Content-Type", "application/json")
             .header("Mcp-Session-Id", "missing-session")
             .send()
             .await
             .unwrap()
-            .status(),
+            .status()
+            .as_u16(),
         404
     );
     let oversized = "x".repeat(http::MAX_REQUEST_BODY_BYTES + 1);
     assert_eq!(
         server
             .client
-            .post(server.url())
+            .post(server.url().as_str())
+            .unwrap()
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
             .body(oversized)
             .send()
             .await
             .unwrap()
-            .status(),
+            .status()
+            .as_u16(),
         413
     );
     server.stop().await;
@@ -502,14 +514,15 @@ async fn repeated_sessions_can_be_terminated_and_do_not_affect_new_sessions() {
         assert_eq!(initialize["id"], 1);
         let response = server
             .client
-            .request(reqwest::Method::DELETE, server.url())
+            .request(eggfetch_core::Method::DELETE, server.url().as_str())
+            .unwrap()
             .header("Accept", "application/json, text/event-stream")
             .header("MCP-Protocol-Version", "2025-06-18")
-            .header("Mcp-Session-Id", session_id)
+            .header("Mcp-Session-Id", session_id.as_str())
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), 202);
+        assert_eq!(response.status().as_u16(), 202);
     }
     let (_, initialize) = initialize_legacy(&server).await;
     assert_eq!(initialize["result"]["serverInfo"]["name"], "eggsearch");

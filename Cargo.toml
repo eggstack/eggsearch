@@ -2,7 +2,7 @@
 name = "eggsearch"
 version = "0.3.9"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.89"
 authors = ["eggstack"]
 license = "MIT"
 description = "Lightweight MCP metasearch server for AI agents"
@@ -48,6 +48,7 @@ live-smoke = ["mock"]
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 futures = "0.3"
+http = "1"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
@@ -59,7 +60,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rmcp = { version = "3.2.0", features = ["server", "client", "transport-io", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "macros"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 url = { version = "2", features = ["serde"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "stream", "json"] }
+eggfetch-core = { version = "0.1.7", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli"] }
 semver = "1"
 scraper = "0.20"
 ego-tree = "0.6.2"

@@ -9,9 +9,7 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::Duration;
 
-use reqwest::redirect::Policy;
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
 
 use crate::core::config::default_config_path;
 use crate::mcp::http::{McpPath, DEFAULT_BIND, DEFAULT_PATH, HEALTH_PATH};
@@ -345,48 +343,45 @@ pub fn select_method(requested: StartupMethod, info: PlatformInfo) -> io::Result
 
 /// Probe the configured loopback health endpoint without following redirects.
 pub async fn probe_health(spec: &RuntimeSpec) -> HealthState {
-    let connect = tokio::time::timeout(HEALTH_TIMEOUT, TcpStream::connect(spec.bind)).await;
-    match connect {
-        Ok(Ok(_)) => {}
-        Ok(Err(error)) if error.kind() == io::ErrorKind::ConnectionRefused => {
-            return HealthState::Refused
-        }
-        Ok(Err(error)) => return HealthState::Error(error.to_string()),
-        Err(_) => return HealthState::Timeout,
-    }
-    let client = match reqwest::Client::builder()
-        .redirect(Policy::none())
-        .timeout(HEALTH_TIMEOUT)
-        .build()
-    {
-        Ok(client) => client,
+    let client = eggfetch_core::Client::builder()
+        .follow_redirects(false)
+        .timeout(eggfetch_core::Timeout {
+            pool: Some(HEALTH_TIMEOUT),
+            connect: Some(HEALTH_TIMEOUT),
+            write: Some(HEALTH_TIMEOUT),
+            read: Some(HEALTH_TIMEOUT),
+            total: Some(HEALTH_TIMEOUT),
+        })
+        .max_decoded_body_size(256)
+        .build();
+    let url = spec.health_url();
+    let builder = match client.get(url.as_str()) {
+        Ok(builder) => builder,
         Err(error) => return HealthState::Error(error.to_string()),
     };
-    let mut response = match client.get(spec.health_url()).send().await {
+    let mut response = match builder.send_detailed().await {
         Ok(response) => response,
-        Err(error) if error.is_timeout() => return HealthState::Timeout,
-        Err(error) => return HealthState::Error(error.to_string()),
+        Err(failure)
+            if failure.network_failure_kind()
+                == Some(eggfetch_core::NetworkFailureKind::ConnectionRefused) =>
+        {
+            return HealthState::Refused
+        }
+        Err(failure) if failure.is_timeout() => return HealthState::Timeout,
+        Err(failure) => return HealthState::Error(failure.to_string()),
     };
     if !response.status().is_success() {
         return HealthState::NonReady;
     }
-    if let Some(len) = response.content_length() {
-        if len > 256 {
-            return HealthState::Malformed;
-        }
+    if response.content_length().is_some_and(|length| length > 256) {
+        return HealthState::Malformed;
     }
-    let mut body = Vec::new();
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) => {
-                if body.len() + chunk.len() > 256 {
-                    return HealthState::Malformed;
-                }
-                body.extend_from_slice(&chunk);
-            }
-            Ok(None) => break,
-            Err(_) => return HealthState::Malformed,
-        }
+    let body = match response.bytes().await {
+        Ok(body) => body,
+        Err(_) => return HealthState::Malformed,
+    };
+    if body.len() > 256 {
+        return HealthState::Malformed;
     }
     let health: HealthPayload = match serde_json::from_slice(&body) {
         Ok(health) => health,
@@ -1377,6 +1372,87 @@ mod tests {
                 "--pid-file",
                 "/run/egg.pid"
             ]
+        );
+    }
+
+    fn loopback_spec(bind: SocketAddr) -> RuntimeSpec {
+        let mut spec = RuntimeSpec::new(
+            PathBuf::from("/opt/eggsearch"),
+            PathBuf::from("/etc/eggsearch/config.toml"),
+            None,
+        );
+        spec.bind = bind;
+        spec
+    }
+
+    #[tokio::test]
+    async fn probe_health_reports_refused_for_closed_port() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        assert_eq!(
+            probe_health(&loopback_spec(addr)).await,
+            HealthState::Refused
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_health_reports_malformed_for_non_json_body() {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\nhello",
+                    )
+                    .await;
+            }
+        });
+        assert_eq!(
+            probe_health(&loopback_spec(addr)).await,
+            HealthState::Malformed
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_health_reports_healthy_for_ready_service() {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let body = r#"{"service":"eggsearch","status":"ready"}"#;
+                let _ = stream
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .await;
+            }
+        });
+        assert_eq!(
+            probe_health(&loopback_spec(addr)).await,
+            HealthState::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_health_times_out_on_stalled_headers() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((_stream, _)) = listener.accept().await {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        });
+        assert_eq!(
+            probe_health(&loopback_spec(addr)).await,
+            HealthState::Timeout
         );
     }
 }

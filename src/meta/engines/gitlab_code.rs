@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use reqwest::Client;
+use eggfetch_core::Client;
 use serde::Deserialize;
 
 use super::error::EngineError;
@@ -79,28 +79,27 @@ pub async fn search_with_project(
         None => format!("{base}/api/v4/search?scope=blobs"),
     };
 
-    let bytes = tokio::time::timeout(timeout, async {
-        let resp = client
-            .get(&url)
-            .query(&[("search", query), ("per_page", &per_page.to_string())])
-            .header("PRIVATE-TOKEN", api_key)
-            .send()
-            .await
-            .map_err(|e| EngineError::Http {
-                engine: ENGINE,
-                source: e,
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(EngineError::BadStatus {
-                engine: ENGINE,
-                status: status.as_u16(),
-            });
-        }
-        super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await
-    })
-    .await
-    .map_err(|_| EngineError::Timeout { engine: ENGINE })??;
+    let resp = client
+        .get(url.as_str())
+        .map_err(|e| EngineError::Http {
+            engine: ENGINE,
+            source: e,
+        })?
+        .query("search", query)
+        .query("per_page", per_page.to_string().as_str())
+        .header("PRIVATE-TOKEN", api_key)
+        .timeout(super::engine_timeout(timeout))
+        .send()
+        .await
+        .map_err(|e| super::map_request_error(ENGINE, e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::BadStatus {
+            engine: ENGINE,
+            status: status.as_u16(),
+        });
+    }
+    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
 
     let parsed: Vec<GitlabCodeBlob> =
         serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
@@ -440,7 +439,7 @@ mod tests {
                 );
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-token",
@@ -477,7 +476,7 @@ mod tests {
                 .body(r#"[]"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-token",
@@ -502,7 +501,7 @@ mod tests {
             then.status(401).body("401 Unauthorized");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "bad-token",
@@ -533,7 +532,7 @@ mod tests {
             then.status(403).body("rate limit exceeded");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -564,7 +563,7 @@ mod tests {
             then.status(500).body("Internal Server Error");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -597,7 +596,7 @@ mod tests {
                 .body("this is not json");
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -638,7 +637,7 @@ mod tests {
                 );
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search(
             &client,
             "test-token",
@@ -669,7 +668,7 @@ mod tests {
                 .body(r#"[]"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         search(
             &client,
             "my-secret-token",
@@ -695,7 +694,7 @@ mod tests {
                 .body(r#"[]"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let err = search(
             &client,
             "test-token",
@@ -733,7 +732,7 @@ mod tests {
                 );
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         let results = search_with_project(
             &client,
             "test-token",
@@ -764,7 +763,7 @@ mod tests {
                 .body(r#"[]"#);
         });
 
-        let client = reqwest::Client::new();
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
         search_with_project(
             &client,
             "test-token",

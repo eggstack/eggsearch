@@ -340,6 +340,31 @@ pub fn classify_network_error(err: &str) -> OriginFailureClass {
     }
 }
 
+pub fn classify_eggfetch_error(error: &eggfetch_core::Error) -> OriginFailureClass {
+    if matches!(
+        error,
+        eggfetch_core::Error::Timeout { .. } | eggfetch_core::Error::TransportIoTimeout { .. }
+    ) {
+        OriginFailureClass::Retryable
+    } else {
+        classify_network_error(&error.to_string())
+    }
+}
+
+pub fn classify_request_failure(failure: &eggfetch_core::RequestFailure) -> OriginFailureClass {
+    use eggfetch_core::NetworkFailureKind::*;
+    match failure.network_failure_kind() {
+        Some(Dns) | Some(ConnectionRefused) | Some(Connect) => OriginFailureClass::Retryable,
+        _ => {
+            if failure.is_timeout() {
+                OriginFailureClass::Retryable
+            } else {
+                classify_network_error(&failure.to_string())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,5 +585,132 @@ mod tests {
         assert_eq!(d, OriginBackoffDecision::NoBackoff);
 
         assert!(controller.circuit_is_open(&key).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn typed_timeout_drives_retryable_backoff() {
+        let error = eggfetch_core::Error::Timeout {
+            phase: eggfetch_core::TimeoutPhase::Connect,
+            elapsed: Duration::from_millis(500),
+        };
+        let typed = classify_eggfetch_error(&error);
+        assert_eq!(typed, OriginFailureClass::Retryable);
+        let controller = OriginController::new(OriginPolicy::default(), 100);
+        let key = OriginKey {
+            scheme: "https".into(),
+            host: "timeout.example".into(),
+            port: 443,
+        };
+        let decision = controller.record_failure(&key, typed).await;
+        assert!(matches!(decision, OriginBackoffDecision::Backoff { .. }));
+    }
+
+    #[test]
+    fn typed_transport_io_timeout_is_retryable() {
+        let error = eggfetch_core::Error::TransportIoTimeout {
+            direction: eggfetch_core::TransportIoDirection::Read,
+            elapsed: Duration::from_millis(500),
+        };
+        assert_eq!(
+            classify_eggfetch_error(&error),
+            OriginFailureClass::Retryable
+        );
+    }
+
+    #[test]
+    fn typed_refused_matches_string_classification() {
+        let error = eggfetch_core::Error::Connect("connection refused".into());
+        let typed = classify_eggfetch_error(&error);
+        assert_eq!(typed, OriginFailureClass::Retryable);
+        assert_eq!(typed, classify_network_error(&error.to_string()));
+    }
+
+    #[test]
+    fn typed_tls_matches_string_classification() {
+        let error = eggfetch_core::Error::Tls("tls handshake failed".into());
+        let typed = classify_eggfetch_error(&error);
+        assert_eq!(typed, OriginFailureClass::NonRetryable);
+        assert_eq!(typed, classify_network_error(&error.to_string()));
+    }
+
+    #[tokio::test]
+    async fn typed_refused_drives_retryable_backoff() {
+        let controller = OriginController::new(OriginPolicy::default(), 100);
+        let key = OriginKey {
+            scheme: "https".into(),
+            host: "refused.example".into(),
+            port: 443,
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let client = eggfetch_core::Client::builder().build();
+        let failure = client
+            .get(&format!("http://{addr}/"))
+            .unwrap()
+            .send_detailed()
+            .await
+            .expect_err("expected connection refused");
+        let typed = classify_request_failure(&failure);
+        assert_eq!(typed, OriginFailureClass::Retryable);
+        assert!(failure.network_failure_kind().is_some());
+        let decision = controller.record_failure(&key, typed).await;
+        assert!(matches!(decision, OriginBackoffDecision::Backoff { .. }));
+    }
+
+    #[tokio::test]
+    async fn typed_dns_failure_is_retryable() {
+        let client = eggfetch_core::Client::builder().build();
+        let timeout = eggfetch_core::Timeout {
+            pool: Some(Duration::from_secs(2)),
+            connect: Some(Duration::from_secs(2)),
+            write: Some(Duration::from_secs(2)),
+            read: Some(Duration::from_secs(2)),
+            total: Some(Duration::from_secs(5)),
+        };
+        let failure = client
+            .get("http://eggsearch-nonexistent.invalid/")
+            .unwrap()
+            .timeout(timeout)
+            .send_detailed()
+            .await
+            .expect_err("expected DNS failure");
+        assert_eq!(
+            classify_request_failure(&failure),
+            OriginFailureClass::Retryable
+        );
+    }
+
+    #[tokio::test]
+    async fn typed_timeout_failure_is_retryable() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((socket, _)) = listener.accept().await {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                drop(socket);
+            }
+        });
+        let client = eggfetch_core::Client::builder().build();
+        let stall = Duration::from_millis(300);
+        let timeout = eggfetch_core::Timeout {
+            pool: Some(stall),
+            connect: Some(stall),
+            write: Some(stall),
+            read: Some(stall),
+            total: Some(stall),
+        };
+        let failure = client
+            .get(&format!("http://{addr}/"))
+            .unwrap()
+            .timeout(timeout)
+            .send_detailed()
+            .await
+            .expect_err("expected timeout");
+        assert!(failure.is_timeout());
+        assert_eq!(
+            classify_request_failure(&failure),
+            OriginFailureClass::Retryable
+        );
     }
 }

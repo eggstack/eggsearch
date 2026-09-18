@@ -143,7 +143,7 @@ fn explicitly_empty_optional_credential_falls_back_keyless() {
 
 #[test]
 fn capability_partitioning_skips_for_unsupported_roles() {
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(eggfetch_core::Client::new());
     let engine = FirecrawlDeveloperEngine {
         client,
         api_key: None,
@@ -171,7 +171,7 @@ async fn optional_key_adds_authorization_header() {
             .header("content-type", "application/json")
             .body(r#"{"success": true, "results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("how do I configure retries", 5);
     req.excerpt_count = 2;
     let batch = eggsearch::meta::engines::firecrawl_developer::search(
@@ -205,7 +205,7 @@ async fn keyless_request_omits_authorization_header() {
             .header("content-type", "application/json")
             .body(r#"{"success": true, "results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let req = engine_req("keyless query", 5);
     eggsearch::meta::engines::firecrawl_developer::search(
         &client,
@@ -232,7 +232,7 @@ async fn owner_repo_scope_maps_to_repos_filter() {
             .header("content-type", "application/json")
             .body(r#"{"success": true, "results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("retry behavior", 5);
     req.repo_scope = RepoScope::new("tokio-rs", "axum");
     eggsearch::meta::engines::firecrawl_developer::search(
@@ -259,7 +259,7 @@ async fn issue_intent_restricts_types() {
             .header("content-type", "application/json")
             .body(r#"{"success": true, "results": []}"#);
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("panic in router", 5);
     req.intent = eggsearch::core::query::SearchIntent::Issues;
     eggsearch::meta::engines::firecrawl_developer::search(
@@ -322,7 +322,7 @@ async fn result_parsing_handles_all_four_prefixes_and_title_fallback() {
             }"#,
             );
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("test", 10);
     req.excerpt_count = 2;
     let batch = eggsearch::meta::engines::firecrawl_developer::search(
@@ -362,7 +362,7 @@ async fn passages_respect_bounds() {
             }"#,
             );
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let mut req = engine_req("test", 5);
     req.excerpt_count = 3;
     let batch = eggsearch::meta::engines::firecrawl_developer::search(
@@ -398,7 +398,7 @@ async fn unindexed_scope_preserved_distinctly_from_zero_matches() {
             }"#,
             );
     });
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(eggfetch_core::Client::new());
     let engine: Arc<dyn SearchEngine> = Arc::new(FirecrawlDeveloperEngine {
         client,
         api_key: None,
@@ -424,7 +424,7 @@ async fn rate_limit_enters_normal_failure_path() {
         when.method(POST).path("/developer");
         then.status(429).body("Too Many Requests");
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let req = engine_req("test", 5);
     let err = eggsearch::meta::engines::firecrawl_developer::search(
         &client,
@@ -457,7 +457,7 @@ async fn oversized_body_rejected_by_shared_cap() {
             .header("content-type", "application/json")
             .body(body.clone());
     });
-    let client = reqwest::Client::new();
+    let client = eggfetch_core::Client::new();
     let req = engine_req("test", 5);
     let err = eggsearch::meta::engines::firecrawl_developer::search(
         &client,
@@ -477,7 +477,7 @@ async fn oversized_body_rejected_by_shared_cap() {
 
 #[test]
 fn api_key_never_rendered_in_debug_or_error() {
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(eggfetch_core::Client::new());
     let engine = FirecrawlDeveloperEngine {
         client,
         api_key: Some("super-secret-key".to_string()),
@@ -509,7 +509,7 @@ async fn repo_search_emits_unindexed_warning() {
             }"#,
             );
     });
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(eggfetch_core::Client::new());
     let engine: Arc<dyn SearchEngine> = Arc::new(FirecrawlDeveloperEngine {
         client,
         api_key: None,

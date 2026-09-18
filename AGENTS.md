@@ -6,7 +6,7 @@ Single library + binary crate, not a workspace. Stable contract is MCP tools (10
 
 ## Build & verification
 
-From project root. CI pins Rust 1.88 (`rust-version` in `Cargo.toml`); edition 2021.
+From project root. CI pins Rust 1.89 (`rust-version` in `Cargo.toml`); edition 2021.
 
 ```bash
 make check  # canonical gate: fmt + clippy + no-default check + all-features tests + hygiene + packaging-check
@@ -72,4 +72,4 @@ Canonical sources in `skills/` (mirrored via `.opencode/skills/` and `.agents/sk
 
 ## Plans
 
-`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-16 are implemented; phase 17 is the active eggfetch 0.1.7 transport-consolidation handoff. Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.
+`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-17 are implemented, including the eggfetch 0.1.7 transport-consolidation handoff. Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.

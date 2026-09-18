@@ -151,7 +151,7 @@ build_default_engines(
 ) -> Result<(EngineList, Vec<SkippedProvider>)>
 ```
 
-- All keyless engines share one `Arc<reqwest::Client>` built once (shared connection pool, UA override).
+- All keyless engines share one `Arc<eggfetch_core::Client>` built once (shared connection pool, UA override).
 - Keyed engines receive their key at construction; keys are read from env at startup and never logged.
 - Firecrawl Developer is keyless-optional: `[search.providers].firecrawl_developer = true` builds keyless; an enabled `[search.api.firecrawl_developer]` entry with a resolvable non-empty `api_key_env` attaches the bearer header. Missing/empty optional credentials fall back keyless with a startup warning, never `missing_api_key`.
 - Every enabled provider ID resolves to exactly one outcome: a constructed engine or a `SkippedProvider` carrying a typed reason code (`missing_searxng_config`, `missing_api_key`, `missing_base_url`, `unknown_provider`, …). Skips surface later as provider-scoped warnings — never global failures.

@@ -9,7 +9,7 @@ pub enum EngineError {
     Http {
         engine: &'static str,
         #[source]
-        source: reqwest::Error,
+        source: eggfetch_core::Error,
     },
 
     #[error("engine '{engine}' returned status {status}")]
