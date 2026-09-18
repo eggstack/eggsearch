@@ -72,4 +72,4 @@ Canonical sources in `skills/` (mirrored via `.opencode/skills/` and `.agents/sk
 
 ## Plans
 
-`plans/` is a closed historical record: all 15 phases are implemented (see `plans/registry.md`). Do not open new work there; plan new work from the architecture docs above and the extension rules in `architecture/maintenance.md`.
+`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-16 are implemented; phase 17 is the active eggfetch 0.1.7 transport-consolidation handoff. Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.
