@@ -1,9 +1,10 @@
 # Planning Registry
 
-Updated: 2026-09-12
+Updated: 2026-09-18
 Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
+Current baseline for eggfetch transport consolidation: `ac394031793cf5e37c49b790794e845ef0ab3650` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -104,6 +105,32 @@ The closure criteria were:
 - the new GitHub Release contains seven executables, seven checksums, `install.sh`, and `install.ps1`;
 - external Unix and Windows bootstrap smoke proves the published installer downloads a release binary rather than silently taking the Cargo fallback path;
 - `eggsearch update --check` resolves the same released version/asset contract.
+
+
+## Active maintenance workstream — HTTP transport consolidation
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 17 | eggfetch 0.1.7 HTTP transport consolidation | planned | phase 16 implemented; eggfetch-core 0.1.7 | `phase-17-eggfetch-0.1.7-http-transport-consolidation.md` |
+
+Phase 17 migrates eggsearch-owned outbound HTTP from direct reqwest 0.12 to eggfetch-core 0.1.7 while preserving the rmcp-owned reqwest Streamable HTTP client boundary. The phase specifically adopts eggfetch's resolved-target connection reuse, corrected total-deadline body lifecycle, typed failures, and selective feature split without moving eggsearch SSRF/retry/truncation policy into the transport library.
+
+### Phase 17 stop conditions
+
+Do not mark phase 17 implemented until:
+
+- Rust 1.89 is declared and exercised consistently because eggfetch 0.1.7 requires it;
+- every eggsearch-owned HTTP path uses eggfetch and direct reqwest 0.12 is absent from production dependencies;
+- the eggfetch feature graph is explicitly bounded and does not accidentally enable retry/Basic/proxy/H2/H3 capabilities not required by eggsearch;
+- `web_fetch` still validates every redirect hop, pins the exact approved resolved-address snapshot, and preserves bounded truncation semantics;
+- the fetch path uses one shared eggfetch client rather than constructing one transport client per destination;
+- startup probes, provider requests, and updater requests use the corrected body-lifecycle total deadline with regression coverage;
+- OriginController remains the sole application retry/circuit authority and consumes typed transport evidence where available;
+- updater/provider redirect behavior remains bounded and secure, including updater downgrade denial;
+- rmcp's reqwest-backed Streamable HTTP client remains an intentional, documented boundary rather than being replaced by an eggsearch-local adapter;
+- before/after normal dependency graphs and representative linked release-binary sizes are recorded;
+- `make check`, `make packaging-check`, `make release-check`, and the complete seven-target release qualification pass on the exact closure candidate.
+
 
 ## Deferred by design
 
