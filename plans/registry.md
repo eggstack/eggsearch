@@ -1,10 +1,11 @@
 # Planning Registry
 
-Updated: 2026-09-18
+Updated: 2026-09-19
 Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
 Current baseline for eggfetch transport consolidation: `ac394031793cf5e37c49b790794e845ef0ab3650` (`eggsearch` 0.3.9 on `main`)
+Current baseline for transport migration qualification closure: `eb014eb92ff06ad1653eb31518ae612d7de4dec1` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -149,6 +150,33 @@ Do not mark phase 17 implemented until:
 - before/after normal dependency graphs and representative linked release-binary sizes are recorded;
 - `make check`, `make packaging-check`, `make release-check`, and the complete seven-target release qualification pass on the exact closure candidate.
 
+
+
+## Active corrective workstream — Transport migration qualification closure
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 18 | Transport migration qualification and upstream compression closure | planned | phase 17 implementation/closure | `phase-18-transport-migration-qualification-and-upstream-compression-closure.md` |
+
+Phase 18 corrects the remaining closure-evidence gap from phase 17 without reopening its transport architecture. It must run the existing seven-target release workflow in non-publishing qualification mode against an explicit immutable candidate SHA, inspect the assembled 16-file qualification artifact, and bind the result back into the phase 17 closure record.
+
+The phase also owns downstream closure of the chunked gzip/Brotli decompression finding discovered during the migration. eggsearch keeps the narrow identity-encoding workaround for affected HTML scrape engines; the decoder defect must be reproduced and durably tracked in eggfetch rather than solved with an eggsearch-local decompression stack or unpublished dependency pin.
+
+### Phase 18 stop conditions
+
+Do not mark phase 18 implemented until:
+
+- a clean exact candidate containing the phase 17 implementation passes the normal local/release gates;
+- `release-binaries.yml` runs with `mode=qualify` and `ref=<exact SHA>`;
+- all seven target jobs and the final assembly job pass;
+- the qualification artifact is inspected and contains exactly seven binaries, seven checksums, and two installers with valid checksums;
+- the workflow run ID, `QUALIFIED_SHA`, artifact name, target results, and per-target sizes are recorded;
+- affected HTML scrape engines retain deterministic regression coverage for the identity-encoding workaround;
+- a deterministic upstream eggfetch reproducer/tracking record exists for the chunked compressed-response defect, or an upstream fixing commit plus regression test is identified;
+- no eggsearch decompression compatibility layer, direct reqwest dependency, or unpublished eggfetch pin is introduced;
+- phase 17 closure evidence is reconciled with the exact qualification run;
+- the record explicitly states that qualification is SHA-specific and must be rerun before release if the eventual release candidate differs;
+- phase 18's implementation record and registry status are updated together with exact evidence.
 
 ## Deferred by design
 
