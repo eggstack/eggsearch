@@ -1035,3 +1035,65 @@ fn eggfetch_feature_budget_stays_bounded() {
         );
     }
 }
+
+#[test]
+fn html_scrape_engines_request_identity_encoding() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let affected = [
+        "src/meta/engines/brave.rs",
+        "src/meta/engines/duckduckgo.rs",
+        "src/meta/engines/mojeek.rs",
+        "src/meta/engines/searxng.rs",
+        "src/meta/engines/startpage.rs",
+        "src/meta/engines/yahoo.rs",
+    ];
+    for rel in affected {
+        let source = fs::read_to_string(format!("{manifest}/{rel}")).expect("readable");
+        let non_test = strip_test_code(&source);
+        assert!(
+            non_test.contains(".decompress(false)"),
+            "{rel} must disable eggfetch automatic decompression pending upstream chunked gzip/Brotli fix"
+        );
+        assert!(
+            non_test.contains("engine_timeout("),
+            "{rel} must retain explicit total deadline alongside identity encoding"
+        );
+        assert!(
+            non_test.contains("read_bounded_body("),
+            "{rel} must retain streaming byte cap alongside identity encoding"
+        );
+    }
+    let json_api = [
+        "src/meta/engines/brave_api.rs",
+        "src/meta/engines/exa.rs",
+        "src/meta/engines/tavily.rs",
+        "src/meta/engines/firecrawl_developer.rs",
+        "src/meta/engines/osv.rs",
+        "src/meta/engines/openalex.rs",
+        "src/meta/engines/crossref.rs",
+        "src/meta/engines/semantic_scholar.rs",
+        "src/meta/engines/sourcegraph.rs",
+    ];
+    for rel in json_api {
+        let source = fs::read_to_string(format!("{manifest}/{rel}")).expect("readable");
+        let non_test = strip_test_code(&source);
+        assert!(
+            !non_test.contains(".decompress(false)"),
+            "{rel} must retain automatic decompression; identity workaround is HTML-scrape only"
+        );
+    }
+    let unrelated = [
+        "src/fetch/client.rs",
+        "src/update.rs",
+        "src/startup.rs",
+        "src/integrations/common.rs",
+    ];
+    for rel in unrelated {
+        let source = fs::read_to_string(format!("{manifest}/{rel}")).expect("readable");
+        let non_test = strip_test_code(&source);
+        assert!(
+            !non_test.contains(".decompress(false)"),
+            "{rel} must not adopt the HTML-scrape identity workaround without a deterministic regression"
+        );
+    }
+}

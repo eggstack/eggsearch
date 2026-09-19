@@ -74,7 +74,10 @@ client in `src/update.rs` (redirects enabled, downgrade denied), and
 single-request health probes near `startup.rs`/`integrations/common.rs`.
 `OriginController` remains the only retry/circuit authority. rmcp transitively
 owns only its Streamable HTTP client transport. Never add eggsearch-local
-reqwest clients or compatibility facades.
+reqwest clients or compatibility facades. HTML scrape engines (`brave` HTML,
+`duckduckgo`, `mojeek`, `searxng`, `startpage`, `yahoo`) request identity
+encoding (`.decompress(false)`) pending upstream `eggstack/eggfetch#24`;
+JSON APIs, fetch, updater, and probes retain automatic decompression.
 
 ## Deterministic Identity System
 

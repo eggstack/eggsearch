@@ -65,11 +65,27 @@ Key semantics:
 
 | Provider ID | Engine | Notes |
 |-------------|--------|-------|
-| `duckduckgo` | `DuckDuckGoEngine` | HTML parsing |
-| `brave` | `BraveEngine` | HTML parsing (distinct from `brave_api`) |
-| `startpage` | `StartpageEngine` | HTML parsing |
-| `yahoo` | `YahooEngine` | HTML parsing |
-| `mojeek` | `MojeekEngine` | HTML parsing |
+| `duckduckgo` | `DuckDuckGoEngine` | HTML parsing; identity encoding (see below) |
+| `brave` | `BraveEngine` | HTML parsing (distinct from `brave_api`); identity encoding (see below) |
+| `startpage` | `StartpageEngine` | HTML parsing; identity encoding (see below) |
+| `yahoo` | `YahooEngine` | HTML parsing; identity encoding (see below) |
+| `mojeek` | `MojeekEngine` | HTML parsing; identity encoding (see below) |
+
+The five HTML scrape engines above plus `searxng` (JSON API section, self-hosted)
+request identity encoding via `.decompress(false)` on every search request.
+This disables eggfetch automatic `Accept-Encoding: gzip, br` advertisement and
+transparent decompression for those paths only. It is a narrow temporary
+workaround for an upstream eggfetch 0.1.7 defect where valid chunked
+gzip/Brotli bodies fail streaming decode (`brotli error` / CRC mismatch)
+while the identical bytes served with `Content-Length` decode correctly;
+tracked at `eggstack/eggfetch#24`. The workaround reduces capability rather
+than adding an eggsearch-local decompression stack, and it preserves the
+existing per-request total deadline (`engine_timeout`), streaming byte cap
+(`read_bounded_body`), bounded library redirects, and sanitization. JSON API
+engines (`brave_api`, `exa`, `tavily`, `firecrawl_developer`, and all forge /
+registry / scholarly engines) retain normal automatic decompression. The
+fetch client (`src/fetch/client.rs`), updater (`src/update.rs`), and health
+probes (`startup.rs`, `integrations/common.rs`) never use `.decompress(false)`.
 
 ### Generic web — JSON API
 

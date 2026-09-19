@@ -320,3 +320,111 @@ async fn server_state_web_search_with_new_fields() {
     assert!(v.get("results").is_some());
     assert!(v.get("capability_enforcement").is_some());
 }
+
+async fn capture_accept_encoding(decompress: Option<bool>) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut buf = vec![0u8; 8192];
+        let mut seen = Vec::new();
+        loop {
+            let n = stream.read(&mut buf).await.expect("read");
+            if n == 0 {
+                break;
+            }
+            seen.extend_from_slice(&buf[..n]);
+            if seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if seen.len() > 16384 {
+                break;
+            }
+        }
+        let request = String::from_utf8_lossy(&seen).into_owned();
+        let encoding = request
+            .lines()
+            .find_map(|line| {
+                let mut parts = line.splitn(2, ':');
+                let name = parts.next().unwrap_or("").trim();
+                let value = parts.next().unwrap_or("").trim();
+                if name.eq_ignore_ascii_case("accept-encoding") {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        let body = b"ok";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .expect("write head");
+        stream.write_all(body).await.expect("write body");
+        encoding
+    });
+    let client = eggfetch_core::Client::new();
+    let url = format!("http://{addr}/");
+    let timeout = eggfetch_core::Timeout {
+        pool: Some(Duration::from_secs(5)),
+        connect: Some(Duration::from_secs(5)),
+        write: Some(Duration::from_secs(5)),
+        read: Some(Duration::from_secs(5)),
+        total: Some(Duration::from_secs(5)),
+    };
+    let mut builder = client.get(&url).expect("url");
+    if let Some(flag) = decompress {
+        builder = builder.decompress(flag);
+    }
+    let resp = builder
+        .timeout(timeout)
+        .send()
+        .await
+        .expect("request succeeds");
+    assert!(resp.status().is_success());
+    let encoding = server.await.expect("server task");
+    encoding
+}
+
+#[tokio::test]
+async fn automatic_decompression_advertises_gzip_and_brotli() {
+    let encoding = capture_accept_encoding(None).await;
+    let lowered = encoding.to_ascii_lowercase();
+    assert!(
+        lowered.contains("gzip"),
+        "default request must advertise gzip, got: {encoding}"
+    );
+    assert!(
+        lowered.contains("br"),
+        "default request must advertise br, got: {encoding}"
+    );
+}
+
+#[tokio::test]
+async fn identity_workaround_omits_compressed_encodings() {
+    let encoding = capture_accept_encoding(Some(false)).await;
+    let lowered = encoding.to_ascii_lowercase();
+    assert!(
+        !lowered.contains("gzip"),
+        "decompress(false) must not advertise gzip, got: {encoding}"
+    );
+    assert!(
+        !lowered.contains("br"),
+        "decompress(false) must not advertise br, got: {encoding}"
+    );
+    assert!(
+        !lowered.contains("zstd"),
+        "decompress(false) must not advertise zstd, got: {encoding}"
+    );
+    assert!(
+        !lowered.contains("deflate"),
+        "decompress(false) must not advertise deflate, got: {encoding}"
+    );
+}
