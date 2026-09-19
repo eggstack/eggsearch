@@ -1,9 +1,9 @@
 # Phase 18 — Transport Migration Qualification and Upstream Compression Closure
 
-Status: planned
+Status: implemented
 Depends on: phase 17 implementation `5a739a3cc6cdd060911eeefad7b004661f4b5c94`; phase 17 closure record `eb014eb92ff06ad1653eb31518ae612d7de4dec1`
 Baseline for planning: `eb014eb92ff06ad1653eb31518ae612d7de4dec1` (`eggsearch` 0.3.9 on `main`)
-Related upstream: `eggstack/eggfetch` 0.1.7
+Related upstream: `eggstack/eggfetch` 0.1.7 (`v0.1.7`, commit `43c3b312f2def887d0f0b7ce539faa626adf2cc8`); tracking `eggstack/eggfetch#24`
 
 ## Why this corrective phase exists
 
@@ -332,3 +332,23 @@ The important distinction is between implementation completeness and release qua
 Likewise, the chunked-compression defect should remain upstream. The current identity-encoding workaround is acceptable because it reduces capability rather than creating a second decompression implementation. The closure criterion is durable upstream ownership plus regression protection, not forcing an eggfetch release on the same day.
 
 If the seven-target matrix is green and the upstream reproducer is durably tracked, this phase should be small. If either exposes a real defect, stop treating it as closure-only and register the resulting corrective work explicitly.
+
+## Implementation record
+
+Candidate SHA: `f9a661886376dd20c1539e20f990c43115ffdb90` (clean tree, contains phase 17 implementation `5a739a3cc6cdd060911eeefad7b004661f4b5c94`).
+
+Local gates on the candidate: `cargo fmt --check` clean; `cargo clippy --locked --all-targets --all-features -- -D warnings` zero warnings; `cargo check --locked --no-default-features` passes; `cargo test --locked --all-features` passes with 0 failures; `make hygiene` and `make packaging-check` pass; `packaging/release-validate.sh candidate` passes; `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps` passes; `cargo build --locked --release` produces a stripped 18M local binary; `cargo publish --dry-run --locked` passes once committed. Rust 1.89.0; `eggfetch-core 0.1.7` with exactly `standard-http1`, `advanced-routing`, `redirects`, `tls-rustls`, `json`, `compression-gzip`, `compression-brotli`. Direct production `reqwest` remains absent; the only normal-graph `reqwest` is `0.13.4` via `rmcp 3.2.0` (`transport-streamable-http-client-reqwest`); the static feature-budget guards pass.
+
+Qualification workflow: `release-binaries.yml` dispatched with `mode=qualify`, `ref=f9a661886376dd20c1539e20f990c43115ffdb90`. Run ID `35427685324` (`https://github.com/eggstack/eggsearch/actions/runs/35427685324`). Preflight reported `QUALIFIED_SHA=f9a661886376dd20c1539e20f990c43115ffdb90` and package version `0.3.9`, matching the intended candidate. All seven targets passed: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `armv7-unknown-linux-gnueabihf`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`. Final `assemble` passed with exact 16-file validation and no GitHub Release change.
+
+Qualification artifact: `qualification-0.3.9-f9a661886376dd20c1539e20f990c43115ffdb90-complete` (16 files: seven executables, seven `.sha256` checksums, `install.sh`, `install.ps1`). All seven checksums validate. `--version` reports `0.3.9` on the host-compatible artifact. Unix executable bits preserved. Linux glibc floor enforced by the workflow (2.17). No artifact was built from a different SHA.
+
+Per-target artifact sizes (post-migration baseline, characterization only; no pre/post win claimed): `x86_64-unknown-linux-gnu` 23198016, `aarch64-unknown-linux-gnu` 20059976, `armv7-unknown-linux-gnueabihf` 19106788, `x86_64-apple-darwin` 21322280, `aarch64-apple-darwin` 19304336, `x86_64-pc-windows-msvc.exe` 27873280, `aarch64-pc-windows-msvc.exe` 23604224.
+
+Upstream tracking: `https://github.com/eggstack/eggfetch/issues/24` (eggfetch 0.1.7, commit `43c3b312f2def887d0f0b7ce539faa626adf2cc8`). Deterministic loopback reproducer serves identical gzip/Brotli bytes with `Content-Length` vs chunked: Brotli (DuckDuckGo capture, 5168 compressed / 31922 plain, stock decoder OK) decodes with length and fails chunked with `brotli error`; gzip (Startpage capture, 7468 compressed / 22099 plain, stock decoder OK) decodes with length and fails chunked with CRC mismatch. Both codecs covered; transfer-shape-sensitive, payload-valid. No eggsearch decompression stack, no reqwest return, no unpublished pin.
+
+Engines retaining identity encoding (`.decompress(false)`, regression-guarded by `html_scrape_engines_request_identity_encoding` plus wire `Accept-Encoding` tests in `provider_request_contract`): `brave` HTML, `duckduckgo`, `mojeek`, `searxng`, `startpage`, `yahoo`. JSON APIs, fetch client, updater, and health probes retain automatic decompression.
+
+Deviations: none in product code. Qualification ran on `f9a6618`, which adds only tests (`static_guards`, `provider_request_contract`) and docs (`architecture/engines.md`, `skills/eggsearch-architecture/SKILL.md`, `docs/test-inventory.md`) on top of the migration; `src/`, `Cargo.toml`/`Cargo.lock`, build profiles, workflow, packaging, installers, and feature graph are unchanged from the migration line.
+
+Qualification is SHA-specific. If the first published release containing the migration is tagged at a SHA different from `f9a661886376dd20c1539e20f990c43115ffdb90`, run the seven-target qualification again against the exact release candidate before publication.

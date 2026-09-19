@@ -128,9 +128,13 @@ authorization; total deadlines cover body streaming; `OriginController`
 remains the sole retry/circuit authority with typed failure evidence;
 updater/provider redirects stay bounded with downgrade denial; `make check`
 passes with zero test failures. HTML scrape engines request identity encoding
-pending an upstream fix for chunked compressed-response decoding. The manual
-seven-target release qualification remains required before publishing the
-first release containing this migration.
+pending upstream `eggstack/eggfetch#24` for chunked compressed-response
+decoding. Seven-target qualification is supplied by phase 18: run
+`35427685324` (`mode=qualify`,
+`ref=f9a661886376dd20c1539e20f990c43115ffdb90`) passed all seven targets and
+exact 16-asset assembly on descendant candidate `f9a6618` containing this
+implementation (see phase 18 implementation record). Qualification is
+SHA-specific; re-qualify if the eventual release candidate differs.
 
 Phase 17 migrates eggsearch-owned outbound HTTP from direct reqwest 0.12 to eggfetch-core 0.1.7 while preserving the rmcp-owned reqwest Streamable HTTP client boundary. The phase specifically adopts eggfetch's resolved-target connection reuse, corrected total-deadline body lifecycle, typed failures, and selective feature split without moving eggsearch SSRF/retry/truncation policy into the transport library.
 
@@ -156,11 +160,9 @@ Do not mark phase 17 implemented until:
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 18 | Transport migration qualification and upstream compression closure | planned | phase 17 implementation/closure | `phase-18-transport-migration-qualification-and-upstream-compression-closure.md` |
+| 18 | Transport migration qualification and upstream compression closure | implemented | phase 17 implementation/closure | `phase-18-transport-migration-qualification-and-upstream-compression-closure.md` |
 
-Phase 18 corrects the remaining closure-evidence gap from phase 17 without reopening its transport architecture. It must run the existing seven-target release workflow in non-publishing qualification mode against an explicit immutable candidate SHA, inspect the assembled 16-file qualification artifact, and bind the result back into the phase 17 closure record.
-
-The phase also owns downstream closure of the chunked gzip/Brotli decompression finding discovered during the migration. eggsearch keeps the narrow identity-encoding workaround for affected HTML scrape engines; the decoder defect must be reproduced and durably tracked in eggfetch rather than solved with an eggsearch-local decompression stack or unpublished dependency pin.
+Phase 18 closed the phase 17 qualification gap without reopening transport architecture. Candidate `f9a661886376dd20c1539e20f990c43115ffdb90` passed local gates and qualification run `35427685324` (`mode=qualify`, `QUALIFIED_SHA=f9a661886376dd20c1539e20f990c43115ffdb90`, package `0.3.9`): all seven targets plus exact 16-file assembly with valid checksums and `0.3.9` version. Per-target sizes recorded as post-migration baseline. HTML scrape engines (`brave`, `duckduckgo`, `mojeek`, `searxng`, `startpage`, `yahoo`) retain `.decompress(false)` with static-guard and wire `Accept-Encoding` regression coverage; JSON APIs, fetch, updater, and probes retain automatic decompression. Upstream chunked gzip/Brotli defect reproducibly tracked at `eggstack/eggfetch#24` with deterministic loopback reproducer covering both codecs. No eggsearch decompression stack, direct reqwest, or unpublished pin. Qualification is SHA-specific; re-qualify a different eventual release candidate before publication.
 
 ### Phase 18 stop conditions
 

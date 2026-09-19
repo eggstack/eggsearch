@@ -617,11 +617,17 @@ Implementation SHA: `5a739a3cc6cdd060911eeefad7b004661f4b5c94` (76 files,
   suite with 0 failures, hygiene, packaging contract). `make
   release-check` passes modulo the pre-commit dirty-tree publish guard,
   which clears once committed.
-- Seven-target qualification run: not run on this commit. The
-  seven-target matrix runs only on tags or manual `workflow_dispatch`
-  (`release-binaries.yml`), so pushing this change burns no release
-  runners. Qualification of the exact candidate remains required before
-  publishing the first release containing this migration, per the plan.
+- Seven-target qualification run: supplied by phase 18. Qualification run
+  `35427685324` (`mode=qualify`,
+  `ref=f9a661886376dd20c1539e20f990c43115ffdb90`) passed all seven targets
+  and exact 16-asset assembly on descendant candidate `f9a6618`, which
+  contains implementation `5a739a3` plus only test/docs additions (no
+  `src/`, dependency, build, packaging, or workflow changes). Artifact
+  `qualification-0.3.9-f9a661886376dd20c1539e20f990c43115ffdb90-complete`
+  validated (seven binaries, seven checksums, two installers; checksums OK;
+  `--version` 0.3.9). See phase 18 implementation record for per-target
+  sizes and upstream tracking `eggstack/eggfetch#24`. Qualification is
+  SHA-specific; re-qualify if the eventual release candidate differs.
 - Any retained reqwest path and why: `rmcp -> reqwest 0.13.4`
   (Streamable HTTP MCP client transport) is retained deliberately; no
   eggfetch adapter for rmcp's session/SSE/reconnect surface was added.
