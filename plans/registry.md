@@ -207,6 +207,18 @@ phase 19
 
 Phases 20 and 21 may proceed in parallel after Phase 19 establishes production-shaped benchmark conventions. Phase 22 is the closure and dependency-footprint qualification pass.
 
+### Performance workstream closure evidence
+
+Implementation candidate `5a8822ba538e89f9b8f441a328925fab78300754` contains
+the sequential phases 19-22 changes. The candidate passed `make check`,
+`make packaging-check`, `make bench-check`, and the clean-tree release gate.
+Rust 1.98.1 on `x86_64-apple-darwin` produced a default release binary of
+18,744,624 bytes, compared with the 18,727,936-byte baseline. Tokio's direct
+`full` feature was replaced with the qualified explicit set; rmcp's client,
+child-process, and Streamable HTTP client features remain because integration
+verification uses them. The final documentation-only closure follow-up is the
+descendant commit on `main`.
+
 ### Performance workstream stop conditions
 
 Do not mark this workstream complete until:

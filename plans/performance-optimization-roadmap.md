@@ -123,9 +123,9 @@ projection contracts, bounded fetch/security policy, browser/PDF support,
 integration verification, and Phase 18 compression boundaries. Local search,
 fetch/cache ownership, MCP projection/discovery, and direct Tokio feature
 activation were qualified by focused tests, Criterion characterization, and
-the full local release gates. The exact final SHA, dependency-tree summaries,
-binary sizes, and gate outputs are recorded in the phase-22 implementation
-record and registry entry.
+the full local release gates. The exact implementation candidate SHA,
+dependency-tree summaries, binary sizes, and gate outputs are recorded in the
+phase-22 implementation record and registry entry.
 
 ## Workstream stop conditions
 
