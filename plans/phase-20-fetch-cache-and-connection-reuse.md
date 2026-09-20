@@ -256,3 +256,12 @@ Likewise, do not pursue a fully borrowed cache-response architecture. One output
 ## Implementation record
 
 Implemented in performance candidate `5a8822ba538e89f9b8f441a328925fab78300754`. Timeout-only `FetchClient` clones now reuse the eggfetch client, batch web fetches share one adjusted handle, and derived cache values are stored/read internally through `Arc` while the public owned getter remains compatible. Exact byte accounting, eviction, invalidation, cache-hit response tests, and a static guard against transport reconstruction remain in place. Cache stats were reviewed and deliberately left as an integrity-checking O(cache-size) path because they are not on the request hot path. The existing loopback fetch suites and cache tests passed; no new transport or cache dependency was introduced.
+
+
+### Post-closure corrective note
+
+A post-closure audit identified that the shared-client implementation does not
+fully preserve widened timeout semantics on eggfetch's advanced/resolved
+routing path: physical connector `timeout.connect` remains client-scoped.
+Phase 23 owns the correction. The derived-cache Arc work and one-adjusted-client
+per batch behavior remain valid and should not be reverted.
