@@ -1,11 +1,12 @@
 # Planning Registry
 
-Updated: 2026-09-19
+Updated: 2026-09-20
 Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
 Current baseline for eggfetch transport consolidation: `ac394031793cf5e37c49b790794e845ef0ab3650` (`eggsearch` 0.3.9 on `main`)
 Current baseline for transport migration qualification closure: `eb014eb92ff06ad1653eb31518ae612d7de4dec1` (`eggsearch` 0.3.9 on `main`)
+Current baseline for performance optimization: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -179,6 +180,50 @@ Do not mark phase 18 implemented until:
 - phase 17 closure evidence is reconciled with the exact qualification run;
 - the record explicitly states that qualification is SHA-specific and must be rerun before release if the eventual release candidate differs;
 - phase 18's implementation record and registry status are updated together with exact evidence.
+
+
+## Active performance workstream — Hot-path optimization and footprint qualification
+
+Governing rationale and cross-phase invariants: `performance-optimization-roadmap.md`.
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 19 | Performance baseline and local-search hot paths | planned | phases 17-18 implemented | `phase-19-performance-baseline-and-local-search-hot-paths.md` |
+| 20 | Fetch/cache sharing and timeout connection reuse | planned | phase 19 benchmark conventions preferred | `phase-20-fetch-cache-and-connection-reuse.md` |
+| 21 | MCP response shaping, focus projection, and discovery caching | planned | phase 19 benchmark conventions preferred | `phase-21-mcp-response-shaping-and-discovery-caching.md` |
+| 22 | Dependency-footprint qualification and performance closure | planned | phases 19-21 | `phase-22-dependency-footprint-and-performance-closure.md` |
+
+### Intended implementation order
+
+~~~text
+phase 19
+   |
+   +----> phase 20
+   |
+   +----> phase 21
+              \
+               -> phase 22 closure
+~~~
+
+Phases 20 and 21 may proceed in parallel after Phase 19 establishes production-shaped benchmark conventions. Phase 22 is the closure and dependency-footprint qualification pass.
+
+### Performance workstream stop conditions
+
+Do not mark this workstream complete until:
+
+- warm local search uses shared cached inventory snapshots rather than deep-cloning the complete `WorkspaceInventory`;
+- candidate selection computes each candidate score once and preserves deterministic legacy tie ordering;
+- timeout-only fetch overrides preserve the shared eggfetch client/connection pool;
+- batch timeout setup is shared across item futures rather than rebuilt per item;
+- internal derived-cache hits avoid one complete cached-document copy while retaining public compatibility and exact cache accounting;
+- MCP projection/focus removes the audited JSON clone/deserialization round trips without changing compact/standard/diagnostic contracts;
+- static advertised tool metadata/fingerprint construction is cached or measurement proves it negligible;
+- direct Tokio feature activation is mechanically qualified and narrowed if safe;
+- rmcp client transports used by `integrate --apply` verification are retained unless an equivalent supported path proves they can be narrowed without capability loss;
+- targeted before/after performance evidence is recorded against comparable environments;
+- normal correctness, packaging, and release gates pass on the exact closure candidate.
+
+The workstream is explicitly optimization-with-equivalence. It must not change the ten-tool MCP surface, ranking weights, trust/SSRF semantics, cache policy, batch budget semantics, public Rust compatibility, browser/PDF availability, provider coverage, integration verification, or the Phase 18 compression workaround merely to improve benchmark or binary-size numbers.
 
 ## Deferred by design
 
