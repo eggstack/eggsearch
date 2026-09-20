@@ -279,7 +279,7 @@ fn saturating_sub_counter(counter: &AtomicUsize, n: usize) {
 pub struct FetchCache {
     operation_gate: RwLock<()>,
     raw: Mutex<LruCache<RawCacheKey, RawFetchCacheEntry>>,
-    derived: Mutex<LruCache<DerivedCacheKey, DerivedDocumentCacheEntry>>,
+    derived: Mutex<LruCache<DerivedCacheKey, Arc<DerivedDocumentCacheEntry>>>,
     raw_max_bytes: usize,
     derived_max_bytes: usize,
     // Byte counters live outside the per-tier Mutex but are only mutated
@@ -353,6 +353,15 @@ impl FetchCache {
     }
 
     pub async fn get_derived(&self, key: &DerivedCacheKey) -> Option<DerivedDocumentCacheEntry> {
+        self.get_derived_shared(key)
+            .await
+            .map(|entry| (*entry).clone())
+    }
+
+    pub(crate) async fn get_derived_shared(
+        &self,
+        key: &DerivedCacheKey,
+    ) -> Option<Arc<DerivedDocumentCacheEntry>> {
         let _operation = self.operation_gate.read().await;
         let mut derived = self.derived.lock().await;
         derived.get(key).cloned()
@@ -384,7 +393,7 @@ impl FetchCache {
             }
         }
 
-        if let Some((_, evicted)) = derived.push(key, entry) {
+        if let Some((_, evicted)) = derived.push(key, Arc::new(entry)) {
             saturating_sub_counter(&self.current_derived_bytes, derived_entry_bytes(&evicted));
         }
         self.current_derived_bytes

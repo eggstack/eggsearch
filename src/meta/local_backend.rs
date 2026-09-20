@@ -80,6 +80,69 @@ pub trait SymbolBackend: Send + Sync {
     }
 }
 
+/// Select and deterministically order a bounded set of inventory candidates.
+pub fn select_inventory_candidates<'a>(
+    entries: &'a [InventoryEntry],
+    query_lower: &str,
+    query_tokens: &[&str],
+    path_hint_lower: Option<&str>,
+    lang_hint: Option<&str>,
+    file_hint: Option<&str>,
+    max_results: usize,
+) -> Vec<&'a InventoryEntry> {
+    let budget = max_results.saturating_mul(2);
+    if budget == 0 {
+        return Vec::new();
+    }
+
+    let mut candidates: Vec<(f64, &InventoryEntry)> = entries
+        .iter()
+        .filter(|entry| {
+            if let Some(lang) = lang_hint {
+                if entry.language.as_deref() != Some(lang) {
+                    return false;
+                }
+            }
+            if let Some(file_hint) = file_hint {
+                if !Path::new(&entry.relative_path)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
+                    .contains(file_hint)
+                {
+                    return false;
+                }
+            }
+            if let Some(path_hint_lower) = path_hint_lower {
+                if !entry.relative_path.to_lowercase().contains(path_hint_lower) {
+                    return false;
+                }
+            }
+            true
+        })
+        .map(|entry| {
+            (
+                score_inventory_entry(entry, query_lower, query_tokens),
+                entry,
+            )
+        })
+        .collect();
+
+    let compare = |left: &(f64, &InventoryEntry), right: &(f64, &InventoryEntry)| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.1.relative_path.cmp(&right.1.relative_path))
+    };
+    if candidates.len() > budget {
+        candidates.select_nth_unstable_by(budget, compare);
+        candidates.truncate(budget);
+    }
+    candidates.sort_unstable_by(compare);
+    candidates.into_iter().map(|(_, entry)| entry).collect()
+}
+
 /// Regex-based symbol backend using compiled pattern matching.
 pub struct RegexSymbolBackend;
 
@@ -385,24 +448,30 @@ impl LocalWorkspaceBackend {
 
     /// Return the cached workspace inventory, rebuilding if stale or absent.
     pub fn get_or_build_inventory(&self) -> Option<WorkspaceInventory> {
+        self.get_or_build_inventory_shared()
+            .map(|inventory| (*inventory).clone())
+    }
+
+    pub(crate) fn get_or_build_inventory_shared(&self) -> Option<Arc<WorkspaceInventory>> {
         {
             let cache = self.inventory_cache.read().ok()?;
             if let Some(ref inv) = *cache {
                 let age = inv.built_at.elapsed();
                 if age < FRESHNESS_PROBE_INTERVAL {
-                    return Some(inv.as_ref().clone());
+                    return Some(Arc::clone(inv));
                 }
                 if age < INVENTORY_REBUILD_TTL && !probe_needs_rebuild(inv) {
-                    return Some(inv.as_ref().clone());
+                    return Some(Arc::clone(inv));
                 }
                 if !needs_rebuild(inv, &self.config, INVENTORY_REBUILD_TTL) {
-                    return Some(inv.as_ref().clone());
+                    return Some(Arc::clone(inv));
                 }
             }
         }
         let inventory = build_inventory(&self.config, &self.roots);
+        let inventory = Arc::new(inventory);
         let mut cache = self.inventory_cache.write().ok()?;
-        *cache = Some(Arc::new(inventory.clone()));
+        *cache = Some(Arc::clone(&inventory));
         Some(inventory)
     }
 
@@ -517,10 +586,11 @@ impl LocalWorkspaceBackend {
 
         let query_lower = query.to_lowercase();
         let query_tokens: Vec<&str> = query_lower.split_whitespace().collect();
+        let path_hint_lower = path_hint.map(str::to_lowercase);
 
         let inventory = {
             let cache = inventory_cache.read().ok();
-            cache.and_then(|c| c.as_deref().cloned())
+            cache.and_then(|c| c.as_ref().map(Arc::clone))
         };
 
         if let Some(inv) = inventory
@@ -546,41 +616,15 @@ impl LocalWorkspaceBackend {
                     break;
                 }
 
-                let mut candidates: Vec<&InventoryEntry> = root_inv
-                    .entries
-                    .iter()
-                    .filter(|e| {
-                        if let Some(lang) = lang_hint {
-                            if e.language.as_deref() != Some(lang) {
-                                return false;
-                            }
-                        }
-                        if let Some(fh) = file_hint {
-                            if !Path::new(&e.relative_path)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("")
-                                .contains(fh)
-                            {
-                                return false;
-                            }
-                        }
-                        if let Some(ph) = path_hint {
-                            if !e.relative_path.to_lowercase().contains(&ph.to_lowercase()) {
-                                return false;
-                            }
-                        }
-                        true
-                    })
-                    .collect();
-
-                candidates.sort_by(|a, b| {
-                    let sa = score_inventory_entry(a, &query_lower, &query_tokens);
-                    let sb = score_inventory_entry(b, &query_lower, &query_tokens);
-                    sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
-                });
-
-                candidates.truncate(max_results * 2);
+                let candidates = select_inventory_candidates(
+                    &root_inv.entries,
+                    &query_lower,
+                    &query_tokens,
+                    path_hint_lower.as_deref(),
+                    lang_hint,
+                    file_hint,
+                    max_results,
+                );
                 telemetry.candidates_filtered += candidates.len();
 
                 for entry in candidates {
@@ -759,7 +803,7 @@ impl LocalWorkspaceBackend {
             let is_cold = inventory.is_none();
 
             let build_start = Instant::now();
-            let new_inventory = build_inventory(config, roots);
+            let new_inventory = Arc::new(build_inventory(config, roots));
             let build_time = build_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
 
             let total_entries: usize = new_inventory.roots.iter().map(|r| r.entry_count).sum();
@@ -807,7 +851,7 @@ impl LocalWorkspaceBackend {
             } else {
                 {
                     if let Ok(mut cache) = inventory_cache.write() {
-                        *cache = Some(Arc::new(new_inventory.clone()));
+                        *cache = Some(Arc::clone(&new_inventory));
                     }
                 }
 
@@ -831,41 +875,15 @@ impl LocalWorkspaceBackend {
                         break;
                     }
 
-                    let mut candidates: Vec<&InventoryEntry> = root_inv
-                        .entries
-                        .iter()
-                        .filter(|e| {
-                            if let Some(lang) = lang_hint {
-                                if e.language.as_deref() != Some(lang) {
-                                    return false;
-                                }
-                            }
-                            if let Some(fh) = file_hint {
-                                if !Path::new(&e.relative_path)
-                                    .file_name()
-                                    .and_then(|n| n.to_str())
-                                    .unwrap_or("")
-                                    .contains(fh)
-                                {
-                                    return false;
-                                }
-                            }
-                            if let Some(ph) = path_hint {
-                                if !e.relative_path.to_lowercase().contains(&ph.to_lowercase()) {
-                                    return false;
-                                }
-                            }
-                            true
-                        })
-                        .collect();
-
-                    candidates.sort_by(|a, b| {
-                        let sa = score_inventory_entry(a, &query_lower, &query_tokens);
-                        let sb = score_inventory_entry(b, &query_lower, &query_tokens);
-                        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
-                    });
-
-                    candidates.truncate(max_results * 2);
+                    let candidates = select_inventory_candidates(
+                        &root_inv.entries,
+                        &query_lower,
+                        &query_tokens,
+                        path_hint_lower.as_deref(),
+                        lang_hint,
+                        file_hint,
+                        max_results,
+                    );
                     telemetry.candidates_filtered += candidates.len();
 
                     for entry in candidates {
@@ -1834,6 +1852,27 @@ mod tests {
         fs::write(root.join("data.bin"), vec![0u8; 100]).unwrap();
 
         dir
+    }
+
+    #[test]
+    fn warm_inventory_acquisitions_share_and_rebuild_replaces_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
+        let config = LocalConfig {
+            enabled: true,
+            roots: vec![dir.path().to_path_buf()],
+            respect_gitignore: false,
+            ..Default::default()
+        };
+        let backend = LocalWorkspaceBackend::new(config).unwrap();
+        let first = backend.get_or_build_inventory_shared().unwrap();
+        let second = backend.get_or_build_inventory_shared().unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(backend.get_or_build_inventory().is_some());
+
+        *backend.inventory_cache.write().unwrap() = None;
+        let rebuilt = backend.get_or_build_inventory_shared().unwrap();
+        assert!(!Arc::ptr_eq(&first, &rebuilt));
     }
 
     #[test]

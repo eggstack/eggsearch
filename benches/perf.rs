@@ -271,6 +271,73 @@ fn make_source_cards(n: usize) -> Vec<SourceCard> {
         .collect()
 }
 
+fn bench_projection_shapes(c: &mut Criterion) {
+    let cards = make_source_cards(50);
+    let web_search = serde_json::json!({
+        "query": "router middleware",
+        "results": serde_json::to_value(&cards).unwrap(),
+        "retrieval_summary": {"has_failures": false, "has_absences": false, "has_truncation": false},
+        "conflict_metadata": [],
+        "routing_decision": {"selected_providers": ["one"], "skipped_providers": [], "degraded": false, "partial": false},
+        "workflow_coverage": {},
+        "evidence_role_summary": {}
+    });
+    c.bench_function("project_web_search_compact_50_cards", |b| {
+        b.iter(|| {
+            black_box(eggsearch::mcp::projection::project(
+                "web_search",
+                black_box(web_search.clone()),
+                eggsearch::mcp::projection::ResponseDetail::Compact,
+            ));
+        });
+    });
+
+    for tool in ["repo_search", "research_search", "security_search"] {
+        let payload = serde_json::json!({
+            "groups": (0..6).map(|group| serde_json::json!({
+                "label": format!("group_{group}"),
+                "results": serde_json::to_value(&cards[..8]).unwrap()
+            })).collect::<Vec<_>>(),
+            "retrieval_summary": {"has_failures": false, "has_absences": false, "has_truncation": false},
+            "conflict_metadata": [],
+            "telemetry": {},
+            "workflow_coverage": {},
+            "evidence_role_summary": {}
+        });
+        let name = format!("project_{tool}_compact");
+        c.bench_function(&name, |b| {
+            b.iter(|| {
+                black_box(eggsearch::mcp::projection::project(
+                    tool,
+                    black_box(payload.clone()),
+                    eggsearch::mcp::projection::ResponseDetail::Compact,
+                ));
+            });
+        });
+    }
+
+    let links: Vec<serde_json::Value> = (0..100)
+        .map(|i| serde_json::json!({"url": format!("https://example.test/{i}"), "text": "link"}))
+        .collect();
+    let web_fetch = serde_json::json!({
+        "text": "document text",
+        "links": links,
+        "links_seen": 100,
+        "document": {"blocks": [], "outline": [], "chunks": []},
+        "raw_text": "raw",
+        "response_headers": {}
+    });
+    c.bench_function("project_web_fetch_compact_links", |b| {
+        b.iter(|| {
+            black_box(eggsearch::mcp::projection::project(
+                "web_fetch",
+                black_box(web_fetch.clone()),
+                eggsearch::mcp::projection::ResponseDetail::Compact,
+            ));
+        });
+    });
+}
+
 fn bench_materialize_evidence_roles(c: &mut Criterion) {
     c.bench_function("materialize_evidence_roles_10_cards", |b| {
         b.iter_batched(
@@ -557,6 +624,66 @@ fn bench_inventory_search_1000_entries(c: &mut Criterion) {
                 ));
             }
         });
+    });
+}
+
+fn bench_inventory_candidate_selection(c: &mut Criterion) {
+    use eggsearch::core::code_evidence::SourceRole;
+    use eggsearch::meta::local_backend::select_inventory_candidates;
+    use eggsearch::meta::local_inventory_cache::InventoryEntry;
+    use std::path::PathBuf;
+
+    for count in [1000usize, 4096] {
+        let entries: Vec<InventoryEntry> = (0..count)
+            .map(|i| InventoryEntry {
+                root_index: 0,
+                relative_path: format!("src/module_{i:04}/handler_{i:04}.rs"),
+                absolute_path: PathBuf::from(format!("/fake/src/module_{i:04}/handler_{i:04}.rs")),
+                size: 1024,
+                language: Some("rust".to_string()),
+                role: if i % 2 == 0 {
+                    SourceRole::Implementation
+                } else {
+                    SourceRole::Test
+                },
+                is_binary: false,
+                mtime_secs: 1700000000,
+                fingerprint: 0,
+            })
+            .collect();
+        let query = "handler module";
+        let query_lower = query.to_lowercase();
+        let query_tokens: Vec<&str> = query_lower.split_whitespace().collect();
+        let name = format!("inventory_candidate_selection_{count}");
+        c.bench_function(&name, |b| {
+            b.iter(|| {
+                black_box(select_inventory_candidates(
+                    black_box(&entries),
+                    black_box(&query_lower),
+                    black_box(&query_tokens),
+                    Some("src/module"),
+                    Some("rust"),
+                    None,
+                    10,
+                ));
+            });
+        });
+    }
+}
+
+fn bench_warm_inventory_handle(c: &mut Criterion) {
+    use eggsearch::meta::local_inventory_cache::WorkspaceInventory;
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    let inventory = Arc::new(WorkspaceInventory {
+        roots: Vec::new(),
+        total_entries: 0,
+        built_at: Instant::now(),
+        config_fingerprint: 0,
+    });
+    c.bench_function("warm_inventory_shared_handle", |b| {
+        b.iter(|| black_box(Arc::clone(black_box(&inventory))));
     });
 }
 
@@ -1055,6 +1182,7 @@ criterion_group!(
     bench_identity_hash,
     bench_metadata_construction,
     bench_materialize_evidence_roles,
+    bench_projection_shapes,
     bench_resolve_workflow_model,
     bench_detect_entity_scoped_conflicts,
     bench_summarize_retrieval,
@@ -1063,6 +1191,8 @@ criterion_group!(
     bench_build_inventory_100_entries,
     bench_inventory_search_100_entries,
     bench_inventory_search_1000_entries,
+    bench_inventory_candidate_selection,
+    bench_warm_inventory_handle,
     bench_repo_map_50_entries,
     bench_retrieval_summary_50_attempts,
     bench_conflict_detection_20_vuln_cards,

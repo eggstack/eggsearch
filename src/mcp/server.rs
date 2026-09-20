@@ -23,6 +23,8 @@ use crate::mcp::tools::{
 pub struct EggsearchServer {
     state: Arc<ServerState>,
     tool_router: ToolRouter<Self>,
+    advertised_tools: Arc<Vec<rmcp::model::Tool>>,
+    advertised_fingerprint: Arc<str>,
 }
 
 impl std::fmt::Debug for EggsearchServer {
@@ -33,14 +35,19 @@ impl std::fmt::Debug for EggsearchServer {
 
 impl EggsearchServer {
     pub fn new(state: Arc<ServerState>) -> Self {
+        let tool_router = Self::tool_router();
+        let advertised_tools = Arc::new(apply_contract_metadata(tool_router.list_all()));
+        let advertised_fingerprint: Arc<str> = contract_fingerprint(&advertised_tools).into();
         Self {
             state,
-            tool_router: Self::tool_router(),
+            tool_router,
+            advertised_tools,
+            advertised_fingerprint,
         }
     }
 
     pub fn tool_definitions(&self) -> Vec<rmcp::model::Tool> {
-        apply_contract_metadata(self.tool_router.list_all())
+        self.advertised_tools.as_ref().clone()
     }
 
     /// Deterministic content fingerprint of the public tool contract.
@@ -49,7 +56,7 @@ impl EggsearchServer {
     /// input/output schemas. Suitable for client-side caching of
     /// `tools/list` by content rather than by count.
     pub fn tool_fingerprint(&self) -> String {
-        contract_fingerprint(&self.tool_definitions())
+        self.advertised_fingerprint.to_string()
     }
 }
 
@@ -200,7 +207,8 @@ impl ServerHandler for EggsearchServer {
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        let tools = apply_contract_metadata(self.tool_router.list_all());
+        let _ = &self.tool_router;
+        let tools = self.tool_definitions();
         Ok(ListToolsResult {
             tools,
             ..Default::default()

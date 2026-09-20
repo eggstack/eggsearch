@@ -1037,6 +1037,56 @@ fn eggfetch_feature_budget_stays_bounded() {
 }
 
 #[test]
+fn tokio_feature_policy_stays_explicit() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let cargo = fs::read_to_string(format!("{manifest}/Cargo.toml")).expect("Cargo.toml readable");
+    let tokio_line = cargo
+        .lines()
+        .find(|line| line.trim_start().starts_with("tokio ="))
+        .expect("Cargo.toml must declare tokio");
+    assert!(
+        !tokio_line.contains("\"full\""),
+        "direct tokio features must stay explicitly qualified rather than returning to full"
+    );
+    for required in [
+        "fs",
+        "io-std",
+        "io-util",
+        "macros",
+        "net",
+        "process",
+        "rt-multi-thread",
+        "signal",
+        "sync",
+        "time",
+    ] {
+        assert!(
+            tokio_line.contains(&format!("\"{required}\"")),
+            "direct tokio feature policy must retain `{required}`: {tokio_line}"
+        );
+    }
+}
+
+#[test]
+fn timeout_overrides_retain_the_shared_fetch_client() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let source = fs::read_to_string(format!("{manifest}/src/fetch/client.rs"))
+        .expect("fetch client source readable");
+    let method = source
+        .split_once("pub fn with_timeout_ms")
+        .and_then(|(_, rest)| rest.split_once("    /// Fetches").map(|(method, _)| method))
+        .expect("with_timeout_ms method present");
+    assert!(
+        method.contains("self.client.clone()"),
+        "timeout-only fetch clients must clone the shared transport"
+    );
+    assert!(
+        !method.contains("Client::builder()"),
+        "timeout-only fetch clients must not rebuild transport state"
+    );
+}
+
+#[test]
 fn html_scrape_engines_request_identity_encoding() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let affected = [

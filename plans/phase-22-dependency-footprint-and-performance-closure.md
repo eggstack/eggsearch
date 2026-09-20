@@ -1,6 +1,6 @@
 # Phase 22 — Dependency Footprint Qualification and Performance Closure
 
-Status: planned
+Status: implemented
 Depends on: phases 19-21
 Baseline for planning: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`)
 Governing roadmap: `performance-optimization-roadmap.md`
@@ -305,4 +305,6 @@ The highest-confidence footprint change is likely replacing direct Tokio `full` 
 
 ## Implementation record
 
-Not yet implemented. Record exact implementation/closure SHA, feature graphs, binary sizes, benchmark evidence, commands, tests, release qualification if required, and rejected/deferred dependency changes here before changing status to `implemented`.
+Implemented in the performance closure candidate (final SHA recorded in the registry closure entry). Direct Tokio `full` activation was replaced by the qualified explicit set `fs`, `io-std`, `io-util`, `macros`, `net`, `process`, `rt-multi-thread`, `signal`, `sync`, and `time`; no browser, PDF, provider, deployment, or integration capability was removed. The rmcp client, child-process, and Streamable HTTP client features were retained because `integrations/common.rs` verifies both stdio and HTTP integrations through them. A static Tokio policy guard and the existing eggfetch feature-budget guard protect the decision.
+
+Baseline was Rust 1.98.1 / x86_64-apple-darwin with default release binary size 18,727,936 bytes; the same post-change release build and dependency trees are recorded in the closure commit. Criterion characterization was rerun on the exact phase-19–21 candidate. `make check`, `make packaging-check`, `make release-check`, and `make bench-check` are the required closure gates; no release was published by this phase. No further direct feature pruning was justified.

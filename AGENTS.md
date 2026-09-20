@@ -11,6 +11,7 @@ From project root. CI pins Rust 1.89 (`rust-version` in `Cargo.toml`); edition 2
 ```bash
 make check  # canonical gate: fmt + clippy + no-default check + all-features tests + hygiene + packaging-check
 make release-check  # check + docs + release build + publish dry-run
+make bench-check  # compile-check the Criterion performance harness
 
 cargo clippy --locked --all-targets --all-features -- -D warnings  # zero warnings required
 cargo check --locked --no-default-features
@@ -36,6 +37,8 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-
 - `CacheScope::Profile` uses the opaque profile ID, never the display name. Invalid explicit browser path is `ExplicitPathInvalid` — do not fall back to auto-discovery.
 - `integrate` prints by default; mutate only with `--apply` (atomic, backed up, `eggsearch` entry only). Never register `target/debug` binaries — require an installed executable or explicit `--executable`.
 - Tool/probe inventories are code-derived (`tests/docs_tool_names.rs` from `src/mcp/server.rs`, `tests/docs_provider_inventory.rs` from `KNOWN_PROVIDER_IDS`): never invent tool-like or provider names in docs; keep prose in agreement with the code.
+- Performance hot paths use shared immutable inventory/cache ownership and score/select candidates once; preserve deterministic tie ordering when changing selectors.
+- Direct Tokio features are explicitly qualified in `Cargo.toml`; rmcp client, child-process, and Streamable HTTP client features remain required for `integrate --apply` verification.
 
 ## Where things go
 

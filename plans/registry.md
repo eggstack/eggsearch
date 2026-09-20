@@ -188,10 +188,10 @@ Governing rationale and cross-phase invariants: `performance-optimization-roadma
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 19 | Performance baseline and local-search hot paths | planned | phases 17-18 implemented | `phase-19-performance-baseline-and-local-search-hot-paths.md` |
-| 20 | Fetch/cache sharing and timeout connection reuse | planned | phase 19 benchmark conventions preferred | `phase-20-fetch-cache-and-connection-reuse.md` |
-| 21 | MCP response shaping, focus projection, and discovery caching | planned | phase 19 benchmark conventions preferred | `phase-21-mcp-response-shaping-and-discovery-caching.md` |
-| 22 | Dependency-footprint qualification and performance closure | planned | phases 19-21 | `phase-22-dependency-footprint-and-performance-closure.md` |
+| 19 | Performance baseline and local-search hot paths | implemented | phases 17-18 implemented | `phase-19-performance-baseline-and-local-search-hot-paths.md` |
+| 20 | Fetch/cache sharing and timeout connection reuse | implemented | phase 19 benchmark conventions preferred | `phase-20-fetch-cache-and-connection-reuse.md` |
+| 21 | MCP response shaping, focus projection, and discovery caching | implemented | phase 19 benchmark conventions preferred | `phase-21-mcp-response-shaping-and-discovery-caching.md` |
+| 22 | Dependency-footprint qualification and performance closure | implemented | phases 19-21 | `phase-22-dependency-footprint-and-performance-closure.md` |
 
 ### Intended implementation order
 

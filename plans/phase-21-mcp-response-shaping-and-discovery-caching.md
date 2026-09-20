@@ -1,6 +1,6 @@
 # Phase 21 — MCP Response Shaping and Discovery Caching
 
-Status: planned
+Status: implemented
 Depends on: phase 19 benchmark conventions preferred
 Baseline for planning: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`)
 Governing roadmap: `performance-optimization-roadmap.md`
@@ -279,4 +279,6 @@ Do not use the campaign as a reason to redesign MCP envelopes or create a custom
 
 ## Implementation record
 
-Not yet implemented. Record exact implementation SHA, commands, contract-test results, benchmark results, and any rejected micro-optimizations here before changing status to `implemented`.
+Implemented in the performance closure candidate (final SHA recorded in the registry closure entry). Owned projection paths now move metadata before removal, trim arrays in place, and omit compact links without cloning the link array. Batch web focus uses the typed cached/fetched `FetchDocument` when available and retains a narrow JSON fallback for compatibility-only inputs. `EggsearchServer` constructs and fingerprints its sorted decorated tool contract once per instance; repeated `tools/list` and fingerprint access reuse it.
+
+Post-change Criterion characterization on Rust 1.98.1 / x86_64-apple-darwin: compact projection medians were 32.6 µs for 50 web cards, 33.3/33.1/33.9 µs for repo/research/security grouped payloads, and 12.6 µs for a 100-link compact fetch. Projection contract tests, focus/batch tests, tool-surface contract tests, and full gates passed. A separate output-schema cache was rejected because the decorated contract cache removes the repeated construction path.

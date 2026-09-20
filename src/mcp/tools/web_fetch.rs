@@ -366,7 +366,7 @@ pub async fn run_web_fetch(
                     if locally_fresh && !force_revalidation {
                         metadata.cache_status = CacheStatus::Hit;
                         cached_response =
-                            if let Some(derived) = cache.get_derived(&derived_key).await {
+                            if let Some(derived) = cache.get_derived_shared(&derived_key).await {
                                 Some(cached_document_response(
                                     trimmed_url,
                                     &raw_entry,
@@ -419,7 +419,7 @@ pub async fn run_web_fetch(
                                             )
                                             .await;
                                         cached_response = if let Some(derived) =
-                                            cache.get_derived(&derived_key).await
+                                            cache.get_derived_shared(&derived_key).await
                                         {
                                             let mut resp = cached_document_response(
                                                 trimmed_url,

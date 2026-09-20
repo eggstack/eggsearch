@@ -1,6 +1,6 @@
 # Phase 20 — Fetch Cache Sharing and Connection Reuse
 
-Status: planned
+Status: implemented
 Depends on: phase 19 benchmark conventions preferred; phases 17-18 implemented
 Baseline for planning: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`)
 Governing roadmap: `performance-optimization-roadmap.md`
@@ -255,4 +255,4 @@ Likewise, do not pursue a fully borrowed cache-response architecture. One output
 
 ## Implementation record
 
-Not yet implemented. Record exact implementation SHA, loopback evidence, commands, tests, benchmark results, and any deviations here before changing status to `implemented`.
+Implemented in the performance closure candidate (final SHA recorded in the registry closure entry). Timeout-only `FetchClient` clones now reuse the eggfetch client, batch web fetches share one adjusted handle, and derived cache values are stored/read internally through `Arc` while the public owned getter remains compatible. Exact byte accounting, eviction, invalidation, cache-hit response tests, and a static guard against transport reconstruction remain in place. Cache stats were reviewed and deliberately left as an integrity-checking O(cache-size) path because they are not on the request hot path. The existing loopback fetch suites and cache tests passed; no new transport or cache dependency was introduced.

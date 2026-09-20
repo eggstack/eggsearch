@@ -119,15 +119,10 @@ impl FetchClient {
     /// All other settings (limits, user agent, sanitize flag) are
     /// preserved. Only the shared client timeout is changed.
     pub fn with_timeout_ms(&self, timeout_ms: u64) -> anyhow::Result<Self> {
-        let client = Client::builder()
-            .user_agent(&self.user_agent)
-            .timeout(client_timeout(timeout_ms))
-            .follow_redirects(false)
-            .build();
         let mut limits = self.limits.clone();
         limits.timeout_ms = timeout_ms;
         Ok(Self {
-            client,
+            client: self.client.clone(),
             limits,
             user_agent: self.user_agent.clone(),
             sanitize_output: self.sanitize_output,

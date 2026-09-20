@@ -35,7 +35,7 @@ license = "MIT"
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| `tokio` | 1 (full) | Async runtime |
+| `tokio` | 1 (`fs`, `io-std`, `io-util`, `macros`, `net`, `process`, `rt-multi-thread`, `signal`, `sync`, `time`) | Async runtime; direct features are explicitly qualified from production API use |
 | `clap` | 4 (derive) | CLI argument parsing |
 | `anyhow` | 1 | Error context (CLI) |
 | `serde` | 1 (derive) | Serialization |
@@ -44,7 +44,7 @@ license = "MIT"
 | `thiserror` | 1 | Error derive macros |
 | `tracing` | 0.1 | Structured logging |
 | `tracing-subscriber` | 0.3 | Log formatting |
-| `rmcp` | 3.2.0 (server/client, stdio, child process, Streamable HTTP client/server, macros) | MCP protocol, server transports, client verification |
+| `rmcp` | 3.2.0 (server/client, stdio, child process, Streamable HTTP client/server, macros) | MCP protocol, server transports, client verification; client features are required by `integrate --apply` verification |
 | `axum` | 0.8 (http1, tokio) | Persistent HTTP listener and health routing |
 | `tokio-util` | 0.7 | Cancellation tokens shared with rmcp HTTP transport |
 

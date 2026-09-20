@@ -45,7 +45,7 @@ browser = ["dep:chromiumoxide"]
 live-smoke = ["mock"]
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = "0.7"
 futures = "0.3"
 http = "1"

@@ -160,11 +160,9 @@ fn trim_groups_excerpts(groups: &mut [serde_json::Value], keep: usize) -> bool {
     let mut trimmed = false;
     for group in groups.iter_mut() {
         if let Some(results) = group.get_mut("results").and_then(|v| v.as_array_mut()) {
-            let mut owned: Vec<serde_json::Value> = std::mem::take(results);
-            if trim_results_excerpts(&mut owned, keep) {
+            if trim_results_excerpts(results, keep) {
                 trimmed = true;
             }
-            *results = owned;
         }
     }
     trimmed
@@ -193,35 +191,28 @@ fn project_web_search(mut value: serde_json::Value, compact: bool) -> serde_json
     let mut excerpts_trimmed = false;
     if compact {
         if let Some(results) = value.get_mut("results").and_then(|v| v.as_array_mut()) {
-            let mut owned: Vec<serde_json::Value> = std::mem::take(results);
-            excerpts_trimmed = trim_results_excerpts(&mut owned, 1);
-            *results = owned;
+            excerpts_trimmed = trim_results_excerpts(results, 1);
         }
     }
-    let retrieval = value.get("retrieval_summary").cloned();
-    let conflicts = value
-        .get("conflict_metadata")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
-    let routing = value.get("routing_decision").cloned();
-    let capability = value.get("capability_enforcement").cloned();
     if let Some(obj) = value.as_object_mut() {
-        obj.remove("routing_decision");
+        let routing = obj.remove("routing_decision");
         if compact {
+            let retrieval = obj.remove("retrieval_summary");
+            let conflicts = obj
+                .remove("conflict_metadata")
+                .unwrap_or(serde_json::Value::Null);
+            let capability = obj.remove("capability_enforcement");
             obj.remove("workflow_coverage");
             obj.remove("evidence_role_summary");
-            obj.remove("capability_enforcement");
             if let Some(r) = retrieval {
                 obj.insert("retrieval_status".to_string(), retrieval_status_minimal(&r));
             }
-            obj.remove("retrieval_summary");
             obj.insert(
                 "conflict_indicator".to_string(),
                 conflict_indicator(&conflicts),
             );
-            obj.remove("conflict_metadata");
-            if let Some(r) = routing {
-                obj.insert("routing_summary".to_string(), routing_summary(&r));
+            if let Some(r) = routing.as_ref() {
+                obj.insert("routing_summary".to_string(), routing_summary(r));
             }
             if let Some(c) = capability {
                 if !c.is_null() {
@@ -230,7 +221,6 @@ fn project_web_search(mut value: serde_json::Value, compact: bool) -> serde_json
             }
         } else if let Some(r) = routing {
             obj.insert("routing_summary".to_string(), routing_summary(&r));
-            obj.remove("routing_decision");
         }
     }
     let mode = if compact { "compact" } else { "standard" };
@@ -245,18 +235,15 @@ fn project_repo_search(mut value: serde_json::Value, compact: bool) -> serde_jso
     let mut excerpts_trimmed = false;
     if compact {
         if let Some(groups) = value.get_mut("groups").and_then(|v| v.as_array_mut()) {
-            let mut owned: Vec<serde_json::Value> = std::mem::take(groups);
-            excerpts_trimmed = trim_groups_excerpts(&mut owned, 1);
-            *groups = owned;
+            excerpts_trimmed = trim_groups_excerpts(groups, 1);
         }
     }
-    let retrieval = value.get("retrieval_summary").cloned();
-    let conflicts = value
-        .get("conflict_metadata")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
     if let Some(obj) = value.as_object_mut() {
         if compact {
+            let retrieval = obj.remove("retrieval_summary");
+            let conflicts = obj
+                .remove("conflict_metadata")
+                .unwrap_or(serde_json::Value::Null);
             obj.remove("resolved_hints");
             obj.remove("telemetry");
             obj.remove("package_resolution");
@@ -267,12 +254,10 @@ fn project_repo_search(mut value: serde_json::Value, compact: bool) -> serde_jso
             if let Some(r) = retrieval {
                 obj.insert("retrieval_status".to_string(), retrieval_status_minimal(&r));
             }
-            obj.remove("retrieval_summary");
             obj.insert(
                 "conflict_indicator".to_string(),
                 conflict_indicator(&conflicts),
             );
-            obj.remove("conflict_metadata");
         } else if let Some(telem) = obj.get_mut("telemetry").and_then(|v| v.as_object_mut()) {
             telem.remove("routing_decision");
         }
@@ -289,16 +274,9 @@ fn project_research_search(mut value: serde_json::Value, compact: bool) -> serde
     let mut excerpts_trimmed = false;
     if compact {
         if let Some(groups) = value.get_mut("groups").and_then(|v| v.as_array_mut()) {
-            let mut owned: Vec<serde_json::Value> = std::mem::take(groups);
-            excerpts_trimmed = trim_groups_excerpts(&mut owned, 1);
-            *groups = owned;
+            excerpts_trimmed = trim_groups_excerpts(groups, 1);
         }
     }
-    let retrieval = value.get("retrieval_summary").cloned();
-    let conflicts = value
-        .get("conflict_metadata")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
     let conflicts2_count = value
         .get("conflicts")
         .and_then(|v| v.as_array())
@@ -306,6 +284,10 @@ fn project_research_search(mut value: serde_json::Value, compact: bool) -> serde
         .unwrap_or(0);
     if let Some(obj) = value.as_object_mut() {
         if compact {
+            let retrieval = obj.remove("retrieval_summary");
+            let conflicts = obj
+                .remove("conflict_metadata")
+                .unwrap_or(serde_json::Value::Null);
             obj.remove("subqueries");
             obj.remove("telemetry");
             obj.remove("workflow_context");
@@ -315,7 +297,6 @@ fn project_research_search(mut value: serde_json::Value, compact: bool) -> serde
             if let Some(r) = retrieval {
                 obj.insert("retrieval_status".to_string(), retrieval_status_minimal(&r));
             }
-            obj.remove("retrieval_summary");
             let mut indicator = conflict_indicator(&conflicts);
             if conflicts2_count > 0 {
                 indicator["has_conflicts"] = serde_json::Value::Bool(true);
@@ -327,7 +308,6 @@ fn project_research_search(mut value: serde_json::Value, compact: bool) -> serde
                     serde_json::Value::from(prev + conflicts2_count as u64);
             }
             obj.insert("conflict_indicator".to_string(), indicator);
-            obj.remove("conflict_metadata");
         } else if let Some(telem) = obj.get_mut("telemetry").and_then(|v| v.as_object_mut()) {
             telem.remove("routing_decision");
         }
@@ -344,9 +324,7 @@ fn project_security_search(mut value: serde_json::Value, compact: bool) -> serde
     let mut excerpts_trimmed = false;
     if compact {
         if let Some(groups) = value.get_mut("groups").and_then(|v| v.as_array_mut()) {
-            let mut owned: Vec<serde_json::Value> = std::mem::take(groups);
-            excerpts_trimmed = trim_groups_excerpts(&mut owned, 1);
-            *groups = owned;
+            excerpts_trimmed = trim_groups_excerpts(groups, 1);
         }
     }
     if let Some(vulns) = value
@@ -362,29 +340,24 @@ fn project_security_search(mut value: serde_json::Value, compact: bool) -> serde
             }
         }
     }
-    let retrieval = value.get("retrieval_summary").cloned();
-    let conflicts = value
-        .get("conflict_metadata")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
-    let routing = value.get("routing_decision").cloned();
-    let capability = value.get("capability_enforcement").cloned();
     if let Some(obj) = value.as_object_mut() {
         if compact {
-            obj.remove("routing_decision");
-            obj.remove("capability_enforcement");
+            let routing = obj.remove("routing_decision");
+            let capability = obj.remove("capability_enforcement");
+            let retrieval = obj.remove("retrieval_summary");
+            let conflicts = obj
+                .remove("conflict_metadata")
+                .unwrap_or(serde_json::Value::Null);
             obj.remove("workflow_coverage");
             obj.remove("evidence_role_summary");
             obj.remove("security_evidence_summary");
             if let Some(r) = retrieval {
                 obj.insert("retrieval_status".to_string(), retrieval_status_minimal(&r));
             }
-            obj.remove("retrieval_summary");
             obj.insert(
                 "conflict_indicator".to_string(),
                 conflict_indicator(&conflicts),
             );
-            obj.remove("conflict_metadata");
             if let Some(r) = routing {
                 obj.insert("routing_summary".to_string(), routing_summary(&r));
             }
@@ -393,9 +366,8 @@ fn project_security_search(mut value: serde_json::Value, compact: bool) -> serde
                     obj.insert("capability_summary".to_string(), capability_summary(&c));
                 }
             }
-        } else if let Some(r) = routing {
+        } else if let Some(r) = obj.remove("routing_decision") {
             obj.insert("routing_summary".to_string(), routing_summary(&r));
-            obj.remove("routing_decision");
         }
     }
     let mode = if compact { "compact" } else { "standard" };
@@ -418,12 +390,11 @@ fn project_web_fetch(mut value: serde_json::Value, compact: bool) -> serde_json:
         if compact {
             obj.remove("document");
             obj.remove("description");
-            if let Some(links) = obj.get("links").and_then(|v| v.as_array()).cloned() {
+            if let Some(links) = obj.remove("links") {
                 let seen = obj
                     .get("links_seen")
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(links.len() as u64);
-                obj.remove("links");
+                    .unwrap_or_else(|| links.as_array().map_or(0, |links| links.len()) as u64);
                 obj.insert("links_seen".to_string(), serde_json::Value::from(seen));
                 obj.insert(
                     "links_omitted_in_compact".to_string(),

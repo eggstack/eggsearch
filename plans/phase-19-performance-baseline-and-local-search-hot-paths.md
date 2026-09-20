@@ -1,6 +1,6 @@
 # Phase 19 — Performance Baseline and Local Search Hot Paths
 
-Status: planned
+Status: implemented
 Depends on: phases 17-18 implemented
 Baseline for planning: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`)
 Governing roadmap: `performance-optimization-roadmap.md`
@@ -249,4 +249,6 @@ The selector must protect tie ordering explicitly. Performance is not a reason t
 
 ## Implementation record
 
-Not yet implemented. Record exact implementation SHA, commands, tests, benchmark environment/results, and any deviations here before changing status to `implemented`.
+Implemented in the performance closure candidate (final SHA recorded in the registry closure entry). The warm search path now clones cached inventory handles rather than snapshots, rebuilds one `Arc<WorkspaceInventory>` shared by cache and search, normalizes path hints once, and uses a deterministic score-once bounded selector shared by warm and rebuilt inventory paths. Public `get_or_build_inventory()` remains owned-return compatible.
+
+Evidence on Rust 1.98.1 / x86_64-apple-darwin: baseline inventory microbenchmarks were 72.7 µs at 1,000 entries and 292.7 µs at 4,096 entries; production-shaped post-change selector benchmarks were 120.2 µs and 503.7 µs respectively, with the latter exercising filtering, equal-role ties, and top-K selection. The selector reference-equivalence test, local backend regression tests, static guards, and full gates passed. Warm shared-handle characterization measured 4.45 ns. No lowercase path storage or config/root Arc refactor was added; both were reviewed and deferred as unnecessary after score-once selection.

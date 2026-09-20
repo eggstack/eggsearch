@@ -99,6 +99,11 @@ WorkspaceInventory
 | < 300s | Unchanged | `Medium` |
 | >= 300s | Any | `Low` |
 
+Warm searches acquire the cached `WorkspaceInventory` through shared `Arc`
+ownership; the public owned-return helper remains a compatibility wrapper.
+Candidate filtering normalizes path hints once, scores each viable entry once,
+and selects a bounded deterministic top-K set before reading files.
+
 ### Bounded Command Runner
 
 `run_bounded_command()` enforces:

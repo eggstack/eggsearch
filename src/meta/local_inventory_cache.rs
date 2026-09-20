@@ -1163,6 +1163,46 @@ mod tests {
     }
 
     #[test]
+    fn bounded_candidate_selection_matches_reference_order() {
+        let workspace = make_temp_workspace();
+        let config = default_config();
+        let roots = vec![(0, workspace.path().to_path_buf())];
+        let inventory = build_inventory(&config, &roots);
+        let entries = &inventory.roots[0].entries;
+        let query = "engine";
+        let query_lower = query.to_lowercase();
+        let query_tokens: Vec<&str> = query_lower.split_whitespace().collect();
+
+        let mut expected: Vec<&InventoryEntry> = entries.iter().collect();
+        expected.sort_by(|left, right| {
+            score_inventory_entry(right, &query_lower, &query_tokens)
+                .partial_cmp(&score_inventory_entry(left, &query_lower, &query_tokens))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.relative_path.cmp(&right.relative_path))
+        });
+        expected.truncate(4);
+
+        let actual = crate::meta::local_backend::select_inventory_candidates(
+            entries,
+            &query_lower,
+            &query_tokens,
+            None,
+            None,
+            None,
+            2,
+        );
+        let expected_paths: Vec<&str> = expected
+            .iter()
+            .map(|entry| entry.relative_path.as_str())
+            .collect();
+        let actual_paths: Vec<&str> = actual
+            .iter()
+            .map(|entry| entry.relative_path.as_str())
+            .collect();
+        assert_eq!(actual_paths, expected_paths);
+    }
+
+    #[test]
     fn score_inventory_entry_does_not_penalize_non_lock_filenames() {
         let entry = InventoryEntry {
             root_index: 0,

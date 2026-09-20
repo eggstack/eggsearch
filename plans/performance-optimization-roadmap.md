@@ -1,6 +1,6 @@
 # Performance Optimization and Footprint Roadmap
 
-Status: planned
+Status: implemented
 Baseline audited: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`, 2026-09-19)
 Primary downstream consumer: `dbowm91/codegg`
 Depends on: phases 17-18 implemented
@@ -114,6 +114,18 @@ Each phase should record:
 - before/after medians or distributions when the environment is stable enough for comparison;
 - release-binary/dependency measurements when the phase changes manifest features;
 - any optimization considered but rejected because the evidence did not justify complexity.
+
+## Workstream closure evidence
+
+Phases 19–22 are implemented together on the final closure candidate. The
+workstream preserves the ten-tool MCP surface, deterministic ranking and
+projection contracts, bounded fetch/security policy, browser/PDF support,
+integration verification, and Phase 18 compression boundaries. Local search,
+fetch/cache ownership, MCP projection/discovery, and direct Tokio feature
+activation were qualified by focused tests, Criterion characterization, and
+the full local release gates. The exact final SHA, dependency-tree summaries,
+binary sizes, and gate outputs are recorded in the phase-22 implementation
+record and registry entry.
 
 ## Workstream stop conditions
 

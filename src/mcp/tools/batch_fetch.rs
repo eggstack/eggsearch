@@ -37,6 +37,7 @@ pub(crate) fn inject_web_focus_into_payload(
     focus_query: Option<&str>,
     focus_max_chunks: Option<usize>,
     focus_max_chars: Option<usize>,
+    typed_document: Option<&crate::core::document::FetchDocument>,
     effective_max_chars: usize,
     max_chars_cap: usize,
 ) -> serde_json::Value {
@@ -46,15 +47,20 @@ pub(crate) fn inject_web_focus_into_payload(
         }
         return payload;
     };
-    let document: Option<crate::core::document::FetchDocument> = payload
-        .get("document")
-        .and_then(|d| serde_json::from_value(d.clone()).ok());
+    let document_from_payload = if typed_document.is_none() {
+        payload
+            .get("document")
+            .and_then(|d| serde_json::from_value(d.clone()).ok())
+    } else {
+        None
+    };
+    let document = typed_document.or(document_from_payload.as_ref());
     let fetched = payload
         .get("fetched")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     let selection = crate::core::fetch_policy::apply_focus_to_document(
-        document.as_ref(),
+        document,
         fetched,
         Some(query),
         focus_max_chunks,
@@ -301,6 +307,14 @@ pub async fn run_batch_fetch(
     let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
         ToolError::internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
+    let client =
+        if let Some(timeout_ms) = args.timeout_ms {
+            Arc::new(client.with_timeout_ms(timeout_ms).map_err(|e| {
+                ToolError::internal(format!("failed to create timeout override: {e}"))
+            })?)
+        } else {
+            client
+        };
 
     let concurrency = state.config.fetch.batch_concurrency;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
@@ -800,13 +814,7 @@ fn make_batch_fetch_future(
                     .acquire_owned()
                     .await
                     .map_err(|e| ToolError::internal(format!("semaphore closed: {e}")))?;
-                let web_client: Arc<FetchClient> = if let Some(ms) = timeout_ms {
-                    Arc::new(client.with_timeout_ms(ms).map_err(|e| {
-                        ToolError::internal(format!("failed to create timeout override: {e}"))
-                    })?)
-                } else {
-                    client
-                };
+                let web_client = client;
 
                 use crate::fetch::cache::{
                     build_raw_cache_key, build_raw_response_hash, should_cache_response, CacheScope,
@@ -866,7 +874,8 @@ fn make_batch_fetch_future(
                                     false,
                                     state.config.fetch.sanitize_output,
                                 );
-                                if let Some(derived) = cache.get_derived(&derived_key).await {
+                                if let Some(derived) = cache.get_derived_shared(&derived_key).await
+                                {
                                     let raw_payload = serde_json::json!({
                                         "url": url,
                                         "final_url": raw_entry.final_url,
@@ -902,6 +911,7 @@ fn make_batch_fetch_future(
                                         focus_query.as_deref(),
                                         focus_chunks,
                                         focus_chars,
+                                        derived.response.document.as_ref(),
                                         em,
                                         max_chars_cap,
                                     );
@@ -982,7 +992,7 @@ fn make_batch_fetch_future(
                                                         state.config.fetch.sanitize_output,
                                                     );
                                                 if let Some(derived) =
-                                                    cache.get_derived(&derived_key).await
+                                                    cache.get_derived_shared(&derived_key).await
                                                 {
                                                     let mut updated_freshness =
                                                         raw_entry.freshness.clone();
@@ -1030,6 +1040,7 @@ fn make_batch_fetch_future(
                                                         focus_query.as_deref(),
                                                         focus_chunks,
                                                         focus_chars,
+                                                        derived.response.document.as_ref(),
                                                         em,
                                                         max_chars_cap,
                                                     );
@@ -1338,6 +1349,7 @@ fn make_batch_fetch_future(
                             focus_query.as_deref(),
                             focus_chunks,
                             focus_chars,
+                            resp.document.as_ref(),
                             em,
                             max_chars_cap,
                         );

@@ -95,6 +95,7 @@ HTML→text/markdown extraction pipeline:
 - Stores extracted/sanitized content including the structured `FetchDocument` with stable chunks
 - Keyed by scope + raw hash + extraction params
 - Avoids re-extraction for same content
+- Internal hits use shared immutable `Arc` entries; the public owned-return getter remains a compatibility wrapper. Timeout-only `FetchClient` clones reuse the shared eggfetch transport, and batch web fetches create one adjusted handle per batch.
 
 ### Cache Scopes
 

@@ -159,7 +159,7 @@ The binary is written to `target/release/eggsearch`.
 make check
 ```
 
-Runs formatting, clippy, feature compilation, and the deterministic test suite. Native forge smoke tests exercise the adapter path directly with configured API tokens — these are **maintainer-only** diagnostics, not user-facing. See [release.md](docs/release.md) for the full release process.
+Runs formatting, clippy, feature compilation, the deterministic test suite, repository hygiene, and packaging contract checks. Native forge smoke tests exercise the adapter path directly with configured API tokens — these are **maintainer-only** diagnostics, not user-facing. See [release.md](docs/release.md) for the full release process. Performance characterization uses the Criterion `perf` bench and is intentionally not a CI threshold.
 
 ```bash
 make eval-tool-surface
