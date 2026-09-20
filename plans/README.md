@@ -8,7 +8,7 @@ The active planning control surface is:
 - `roadmap.md` — completed search-capability workstream rationale, research evidence, invariants, and phases 1-5.
 - `deployment-roadmap.md` — completed binary distribution, install/update, persistent MCP deployment, startup supervision, and agent/IDE integration rationale for phases 6-10.
 - `maintenance-codegg-quality-roadmap.md` — completed architecture consolidation, provider diagnostics, CodeGG retrieval quality, public API, and maintenance rationale for phases 11-15.
-- `performance-optimization-roadmap.md` — active runtime/allocation, cache/transport reuse, MCP response-shaping, and dependency-footprint rationale for phases 19-22.
+- `performance-optimization-roadmap.md` — phases 19-22 performance work plus active Phase 23 timeout-semantics/evidence requalification closure.
 - `phase-*.md` — bounded implementation plans that should be independently executable and verifiable.
 
 ## Status vocabulary
@@ -27,4 +27,4 @@ For phases 6-10, preserve the public release target/asset contract across GitHub
 
 For phases 11-15, preserve the ten stable MCP tools and existing trust/safety/identity semantics while consolidating internal workflow machinery. Do not add new general-purpose providers during this workstream unless they introduce a materially new evidence class. CodeGG-facing improvements should use the existing MCP contract rather than inventing a second downstream-specific protocol.
 
-For phases 19-22, preserve public MCP/Rust compatibility, deterministic ordering, cache/security semantics, and the phase-17/18 transport boundaries. Performance evidence must model production-shaped hot paths; do not trade capability or maintainability for speculative micro-optimizations. Feature-footprint work must exercise no-default/default/all-feature builds and retain rmcp client transports used by integration verification unless equivalent supported behavior is proven.
+For phases 19-23, preserve public MCP/Rust compatibility, deterministic ordering, cache/security semantics, and the phase-17/18 transport boundaries. Performance evidence must model production-shaped hot paths; do not trade capability or maintainability for speculative micro-optimizations. Feature-footprint work must exercise no-default/default/all-feature builds and retain rmcp client transports used by integration verification unless equivalent supported behavior is proven. Phase 23 is the corrective closure gate for widened timeout semantics, missing benchmark evidence, and exact-candidate seven-target qualification.
