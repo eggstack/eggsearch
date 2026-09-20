@@ -319,3 +319,8 @@ timing presentation, and no fresh seven-target qualification after the
 production/Cargo changes. Phase 23 owns those evidence corrections plus the
 widened-timeout semantic fix and must close before the performance campaign is
 treated as fully requalified.
+
+Phase 23 preserves the Phase 22 explicit Tokio feature set and rmcp client
+feature rationale. The corrected candidate's clean release gate and fresh
+seven-target qualification are recorded in the Phase 23 implementation record;
+the Phase 22 local gates remain historical evidence for its own candidate.

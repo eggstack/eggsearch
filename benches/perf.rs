@@ -631,7 +631,65 @@ fn bench_inventory_candidate_selection(c: &mut Criterion) {
     use eggsearch::core::code_evidence::SourceRole;
     use eggsearch::meta::local_backend::select_inventory_candidates;
     use eggsearch::meta::local_inventory_cache::InventoryEntry;
+    use std::cmp::Ordering;
+    use std::path::Path;
     use std::path::PathBuf;
+
+    fn legacy_select_inventory_candidates<'a>(
+        entries: &'a [InventoryEntry],
+        query_lower: &str,
+        query_tokens: &[&str],
+        path_hint_lower: Option<&str>,
+        lang_hint: Option<&str>,
+        file_hint: Option<&str>,
+        max_results: usize,
+    ) -> Vec<&'a InventoryEntry> {
+        let budget = max_results.saturating_mul(2);
+        let mut candidates: Vec<&InventoryEntry> = entries
+            .iter()
+            .filter(|entry| {
+                if let Some(lang) = lang_hint {
+                    if entry.language.as_deref() != Some(lang) {
+                        return false;
+                    }
+                }
+                if let Some(file_hint) = file_hint {
+                    if !Path::new(&entry.relative_path)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("")
+                        .contains(file_hint)
+                    {
+                        return false;
+                    }
+                }
+                if let Some(path_hint_lower) = path_hint_lower {
+                    if !entry.relative_path.to_lowercase().contains(path_hint_lower) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
+        candidates.sort_by(|left, right| {
+            let right_score = eggsearch::meta::local_inventory_cache::score_inventory_entry(
+                right,
+                query_lower,
+                query_tokens,
+            );
+            let left_score = eggsearch::meta::local_inventory_cache::score_inventory_entry(
+                left,
+                query_lower,
+                query_tokens,
+            );
+            right_score
+                .partial_cmp(&left_score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| left.relative_path.cmp(&right.relative_path))
+        });
+        candidates.truncate(budget);
+        candidates
+    }
 
     for count in [1000usize, 4096] {
         let entries: Vec<InventoryEntry> = (0..count)
@@ -668,7 +726,143 @@ fn bench_inventory_candidate_selection(c: &mut Criterion) {
                 ));
             });
         });
+        let legacy_name = format!("inventory_candidate_selection_legacy_{count}");
+        c.bench_function(&legacy_name, |b| {
+            b.iter(|| {
+                black_box(legacy_select_inventory_candidates(
+                    black_box(&entries),
+                    black_box(&query_lower),
+                    black_box(&query_tokens),
+                    Some("src/module"),
+                    Some("rust"),
+                    None,
+                    10,
+                ));
+            });
+        });
     }
+}
+
+fn bench_timeout_client_adjustment(c: &mut Criterion) {
+    use eggsearch::fetch::{FetchClient, FetchLimits};
+
+    let client = FetchClient::new(
+        FetchLimits {
+            timeout_ms: 5_000,
+            ..FetchLimits::default()
+        },
+        "eggsearch/bench".to_string(),
+        false,
+    )
+    .expect("benchmark client builds");
+    let mut group = c.benchmark_group("timeout_client_adjustment");
+    for (name, timeout_ms) in [("equal", 5_000), ("shorter", 2_000), ("longer", 8_000)] {
+        group.bench_function(name, |b| {
+            b.iter(|| black_box(client.with_timeout_ms(black_box(timeout_ms)).unwrap()));
+        });
+    }
+    group.finish();
+}
+
+fn bench_derived_cache_hits(c: &mut Criterion) {
+    use eggsearch::core::fetch::ExtractMode;
+    use eggsearch::fetch::cache::{
+        CacheScope, CachedExtractedDocument, DerivedCacheKey, DerivedDocumentCacheEntry,
+        ExtractionCacheKey, FetchCache,
+    };
+    use std::time::SystemTime;
+    use tokio::runtime::Runtime;
+
+    fn key() -> DerivedCacheKey {
+        DerivedCacheKey {
+            scope: CacheScope::Anonymous,
+            raw_content_hash: 42,
+            extraction_key: ExtractionCacheKey {
+                extract_mode: ExtractMode::Text,
+                max_chars_class: 50_000,
+                include_links: false,
+                pdf_pages: None,
+                pdf_ocr: None,
+                include_media: false,
+                renderer_version: 1,
+                sanitize_output: true,
+            },
+        }
+    }
+
+    fn entry(key: &DerivedCacheKey, text_len: usize) -> DerivedDocumentCacheEntry {
+        DerivedDocumentCacheEntry {
+            raw_content_hash: key.raw_content_hash,
+            extraction_key: key.extraction_key.clone(),
+            response: CachedExtractedDocument {
+                title: Some("benchmark document".to_string()),
+                description: Some("benchmark description".to_string()),
+                text: Some("x".repeat(text_len)),
+                raw_text: Some("y".repeat(text_len)),
+                links: Vec::new(),
+                links_seen: None,
+                links_truncated: false,
+                truncated: false,
+                document: None,
+                trust_markers: Default::default(),
+                transport: Some("http".to_string()),
+                browser_escalated: false,
+            },
+            created_at: SystemTime::now(),
+        }
+    }
+
+    let runtime = Runtime::new().expect("benchmark runtime builds");
+    let mut group = c.benchmark_group("derived_cache_hits");
+    for text_len in [128usize, 12_000, 50_000] {
+        let cache = FetchCache::new(1, 2, 1_000_000, 2_000_000);
+        let cache_key = key();
+        runtime.block_on(cache.insert_derived(cache_key.clone(), entry(&cache_key, text_len)));
+        let shared_name = format!("shared_{text_len}");
+        group.bench_function(&shared_name, |b| {
+            b.iter(|| {
+                let hit = runtime.block_on(cache.get_derived_shared(black_box(&cache_key)));
+                black_box(hit.map(|entry| entry.response.text.as_deref().unwrap_or("").len()))
+            });
+        });
+        let owned_name = format!("owned_{text_len}");
+        group.bench_function(&owned_name, |b| {
+            b.iter(|| {
+                let hit = runtime.block_on(cache.get_derived(black_box(&cache_key)));
+                black_box(hit.map(|entry| entry.response.text.as_deref().unwrap_or("").len()))
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_batch_timeout_setup(c: &mut Criterion) {
+    use eggsearch::fetch::{FetchClient, FetchLimits};
+
+    let client = FetchClient::new(FetchLimits::default(), "eggsearch/bench".to_string(), false)
+        .expect("benchmark client builds");
+    let mut group = c.benchmark_group("batch_timeout_setup");
+    for item_count in [1usize, 8, 32] {
+        let name = format!("one_adjustment_for_{item_count}_items");
+        group.bench_function(&name, |b| {
+            b.iter(|| {
+                let adjusted = client.with_timeout_ms(12_000).unwrap();
+                black_box((adjusted, item_count));
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_tool_contract_cache_access(c: &mut Criterion) {
+    let server = eggsearch::mcp::build_server(eggsearch::core::config::AppConfig::default())
+        .expect("benchmark server builds");
+    c.bench_function("tool_definitions_cached_access", |b| {
+        b.iter(|| black_box(server.tool_definitions()));
+    });
+    c.bench_function("tool_fingerprint_cached_access", |b| {
+        b.iter(|| black_box(server.tool_fingerprint()));
+    });
 }
 
 fn bench_warm_inventory_handle(c: &mut Criterion) {
@@ -1193,6 +1387,10 @@ criterion_group!(
     bench_inventory_search_1000_entries,
     bench_inventory_candidate_selection,
     bench_warm_inventory_handle,
+    bench_timeout_client_adjustment,
+    bench_derived_cache_hits,
+    bench_batch_timeout_setup,
+    bench_tool_contract_cache_access,
     bench_repo_map_50_entries,
     bench_retrieval_summary_50_attempts,
     bench_conflict_detection_20_vuln_cards,

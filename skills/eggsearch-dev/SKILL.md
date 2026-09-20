@@ -25,7 +25,7 @@ cargo publish --dry-run --locked
 ./packaging/check-contract.sh
 ./packaging/release-validate.sh candidate
 make bench-check        # compile-check benches without running
-rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_selection|project_' -- --noplot  # characterization only
+rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_selection|timeout_client_adjustment|derived_cache_hits|batch_timeout_setup|tool_.*cached_access|project_' -- --noplot  # characterization only
 ```
 
 ## Critical: Feature Flags
@@ -129,6 +129,7 @@ eggsearch integrate opencode --transport stdio --apply --executable /usr/local/b
 - **Changing deterministic IDs** — breaks regression corpus tests and cross-tool deduplication
 - **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`
 - **Treating Criterion as a CI threshold** — performance results are recorded on exact candidates; `make bench-check` is the deterministic compile gate.
+- **Always rebuilding timeout transports** — equal/shorter `FetchClient` overrides reuse the shared eggfetch client, while longer overrides intentionally build one widened client so resolved-route connect policy matches the requested timeout.
 - **Reintroducing deep hot-path copies** — local inventory and derived fetch cache internals use shared immutable ownership; keep public owned-return compatibility wrappers at the boundary.
 - **Bypassing forge response bounds** — all forge API responses must use `read_bounded_response()`; no `.text().await` or `.bytes().await` without a prior hard bound
 - **Changing commit_sha semantics** — `commit_sha` must come from `resolved_ref` (actual commit SHA), not from entry object SHA

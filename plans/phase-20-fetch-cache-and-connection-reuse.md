@@ -257,6 +257,8 @@ Likewise, do not pursue a fully borrowed cache-response architecture. One output
 
 Implemented in performance candidate `5a8822ba538e89f9b8f441a328925fab78300754`. Timeout-only `FetchClient` clones now reuse the eggfetch client, batch web fetches share one adjusted handle, and derived cache values are stored/read internally through `Arc` while the public owned getter remains compatible. Exact byte accounting, eviction, invalidation, cache-hit response tests, and a static guard against transport reconstruction remain in place. Cache stats were reviewed and deliberately left as an integrity-checking O(cache-size) path because they are not on the request hot path. The existing loopback fetch suites and cache tests passed; no new transport or cache dependency was introduced.
 
+Phase 23 corrected the timeout boundary: equal/shorter overrides retain the shared client, while longer overrides build one widened client through the centralized constructor so eggfetch's client-scoped resolved-route connect timeout is widened too. Rust 1.98.1 / x86_64-apple-darwin characterization measured 20.8–21.5 ns for equal/shorter adjustment and 1.86 µs for widening. Shared derived hits measured 63.8–70.5 ns at 128, 12,000, and 50,000 characters; owned compatibility hits measured 178 ns, 636 ns, and 1.34 µs. One-adjustment batch setup measured 1.78–2.21 µs across labels for 1, 8, and 32 items. These are local characterization measurements, not CI thresholds.
+
 
 ### Post-closure corrective note
 

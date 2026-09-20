@@ -89,6 +89,28 @@ pub struct FetchClient {
     sanitize_output: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TimeoutOverrideMode {
+    Shared,
+    Widened,
+}
+
+fn timeout_override_mode(base_timeout_ms: u64, requested_timeout_ms: u64) -> TimeoutOverrideMode {
+    if requested_timeout_ms <= base_timeout_ms {
+        TimeoutOverrideMode::Shared
+    } else {
+        TimeoutOverrideMode::Widened
+    }
+}
+
+fn build_transport_client(timeout_ms: u64, user_agent: &str) -> Client {
+    Client::builder()
+        .user_agent(user_agent)
+        .timeout(client_timeout(timeout_ms))
+        .follow_redirects(false)
+        .build()
+}
+
 impl FetchClient {
     /// Creates a new FetchClient with the given limits, user agent,
     /// and sanitize-output flag.
@@ -101,11 +123,7 @@ impl FetchClient {
         user_agent: String,
         sanitize_output: bool,
     ) -> anyhow::Result<Self> {
-        let client = Client::builder()
-            .user_agent(&user_agent)
-            .timeout(client_timeout(limits.timeout_ms))
-            .follow_redirects(false)
-            .build();
+        let client = build_transport_client(limits.timeout_ms, &user_agent);
         Ok(Self {
             client,
             limits,
@@ -115,14 +133,15 @@ impl FetchClient {
     }
 
     /// Clone this client with a different request timeout.
-    ///
-    /// All other settings (limits, user agent, sanitize flag) are
-    /// preserved. Only the shared client timeout is changed.
     pub fn with_timeout_ms(&self, timeout_ms: u64) -> anyhow::Result<Self> {
         let mut limits = self.limits.clone();
         limits.timeout_ms = timeout_ms;
+        let client = match timeout_override_mode(self.limits.timeout_ms, timeout_ms) {
+            TimeoutOverrideMode::Shared => self.client.clone(),
+            TimeoutOverrideMode::Widened => build_transport_client(timeout_ms, &self.user_agent),
+        };
         Ok(Self {
-            client: self.client.clone(),
+            client,
             limits,
             user_agent: self.user_agent.clone(),
             sanitize_output: self.sanitize_output,
@@ -1372,6 +1391,51 @@ mod tests {
 
     fn test_client() -> FetchClient {
         FetchClient::new(test_limits(), "eggsearch/test".to_string(), true).expect("client builds")
+    }
+
+    #[test]
+    fn timeout_override_mode_uses_shared_transport_until_widened() {
+        assert_eq!(
+            timeout_override_mode(5_000, 5_000),
+            TimeoutOverrideMode::Shared
+        );
+        assert_eq!(
+            timeout_override_mode(5_000, 2_000),
+            TimeoutOverrideMode::Shared
+        );
+        assert_eq!(
+            timeout_override_mode(5_000, 8_000),
+            TimeoutOverrideMode::Widened
+        );
+    }
+
+    #[test]
+    fn timeout_overrides_update_limits_and_preserve_transport_policy() {
+        let client = test_client();
+        for timeout_ms in [5_000, 2_000, 8_000] {
+            let override_client = client
+                .with_timeout_ms(timeout_ms)
+                .expect("timeout override builds");
+            assert_eq!(override_client.limits.timeout_ms, timeout_ms);
+            assert_eq!(
+                timeout_override_mode(client.limits.timeout_ms, timeout_ms),
+                if timeout_ms > client.limits.timeout_ms {
+                    TimeoutOverrideMode::Widened
+                } else {
+                    TimeoutOverrideMode::Shared
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn effective_timeout_populates_all_transport_deadlines() {
+        let timeout = client_timeout(2_000);
+        assert_eq!(timeout.pool, Some(Duration::from_secs(2)));
+        assert_eq!(timeout.connect, Some(Duration::from_secs(2)));
+        assert_eq!(timeout.write, Some(Duration::from_secs(2)));
+        assert_eq!(timeout.read, Some(Duration::from_secs(2)));
+        assert_eq!(timeout.total, Some(Duration::from_secs(2)));
     }
 
     #[test]

@@ -358,7 +358,9 @@ impl FetchCache {
             .map(|entry| (*entry).clone())
     }
 
-    pub(crate) async fn get_derived_shared(
+    /// Return a shared immutable derived entry for internal hot paths.
+    #[doc(hidden)]
+    pub async fn get_derived_shared(
         &self,
         key: &DerivedCacheKey,
     ) -> Option<Arc<DerivedDocumentCacheEntry>> {

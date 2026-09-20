@@ -37,7 +37,7 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-
 - `CacheScope::Profile` uses the opaque profile ID, never the display name. Invalid explicit browser path is `ExplicitPathInvalid` — do not fall back to auto-discovery.
 - `integrate` prints by default; mutate only with `--apply` (atomic, backed up, `eggsearch` entry only). Never register `target/debug` binaries — require an installed executable or explicit `--executable`.
 - Tool/probe inventories are code-derived (`tests/docs_tool_names.rs` from `src/mcp/server.rs`, `tests/docs_provider_inventory.rs` from `KNOWN_PROVIDER_IDS`): never invent tool-like or provider names in docs; keep prose in agreement with the code.
-- Performance hot paths use shared immutable inventory/cache ownership and score/select candidates once; preserve deterministic tie ordering when changing selectors.
+- Performance hot paths use shared immutable inventory/cache ownership and score/select candidates once; preserve deterministic tie ordering when changing selectors. Fetch timeout overrides reuse the shared transport for equal/shorter values and build one widened client for longer values; batch setup remains one adjustment per call.
 - Direct Tokio features are explicitly qualified in `Cargo.toml`; rmcp client, child-process, and Streamable HTTP client features remain required for `integrate --apply` verification.
 
 ## Where things go

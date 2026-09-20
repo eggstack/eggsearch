@@ -320,8 +320,9 @@ CI fails on formatting violations.
 - Sanitization pipeline
 - HTML extraction
 - FNV-1a hashing
-- local inventory candidate selection at 1,000 and 4,096 entries plus shared warm-handle acquisition
-- representative compact MCP projections for search/fetch response shapes
+- local inventory candidate selection at 1,000 and 4,096 entries, with an apples-to-apples legacy full-sort reference and shared warm-handle acquisition
+- timeout-client equal/shorter/longer adjustment, one-adjustment batch setup, and shared-versus-owned derived-cache hits at 128, 12,000, and 50,000 characters
+- representative compact MCP projections for search/fetch response shapes plus repeated cached tool-definition and fingerprint access
 
 Performance runs are characterization evidence, not CI thresholds. Use
 `make bench-check` for the deterministic compile gate and record Criterion

@@ -1,11 +1,27 @@
-use super::batch_fetch::{batch_payload_chars, truncate_batch_result_to_budget};
+use super::batch_fetch::{
+    batch_payload_chars, prepare_batch_fetch_client, truncate_batch_result_to_budget,
+};
 use super::repo_fetch::workspace_relative_path_arg;
 use super::*;
 use crate::core::config::AppConfig;
 use crate::core::fetch::ExtractMode;
 use crate::core::sanitize::TrustMarkers;
+use crate::fetch::{FetchClient, FetchLimits};
 use crate::mcp::state::ServerState;
 use std::sync::Arc;
+
+#[test]
+fn batch_timeout_client_is_prepared_at_batch_scope() {
+    let client = Arc::new(
+        FetchClient::new(FetchLimits::default(), "eggsearch/test".to_string(), false)
+            .expect("client builds"),
+    );
+    let shared = prepare_batch_fetch_client(client.clone(), None).expect("shared client");
+    assert!(Arc::ptr_eq(&shared, &client));
+
+    let adjusted = prepare_batch_fetch_client(client, Some(12_000)).expect("adjusted client");
+    assert!(!Arc::ptr_eq(&adjusted, &shared));
+}
 
 #[test]
 fn evidence_bundle_limits_reject_values_above_caps() {

@@ -47,6 +47,16 @@ manually (every hop re-validated), truncation at `max_bytes` reports
 `truncated` rather than a hard body-limit error, and per-hop total deadlines
 cover body streaming.
 
+Timeout overrides use a hybrid transport policy. Equal or shorter overrides
+clone the shared eggfetch client and tighten `FetchLimits.timeout_ms`, relying
+on the request-level `client_timeout()` for the stricter logical deadline.
+Longer overrides construct one client through the same centralized helper as
+normal startup, with the widened client-scoped connect timeout required by
+eggfetch's resolved-route transport. `batch_fetch` resolves this adjusted
+client once before spawning item futures. Both normal and conditional fetches
+derive DNS validation, request timeouts, redirect validation, and timeout error
+mapping from the same effective limits.
+
 ### Key Methods
 
 ```rust

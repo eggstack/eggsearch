@@ -31,6 +31,18 @@ pub struct BatchFetchArgs {
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
+pub(crate) fn prepare_batch_fetch_client(
+    client: Arc<FetchClient>,
+    timeout_ms: Option<u64>,
+) -> Result<Arc<FetchClient>, ToolError> {
+    match timeout_ms {
+        Some(timeout_ms) => Ok(Arc::new(client.with_timeout_ms(timeout_ms).map_err(
+            |e| ToolError::internal(format!("failed to create timeout override: {e}")),
+        )?)),
+        None => Ok(client),
+    }
+}
+
 /// Inject deterministic web focus projection into a batch payload.
 pub(crate) fn inject_web_focus_into_payload(
     mut payload: serde_json::Value,
@@ -307,14 +319,7 @@ pub async fn run_batch_fetch(
     let client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
         ToolError::internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
     })?;
-    let client =
-        if let Some(timeout_ms) = args.timeout_ms {
-            Arc::new(client.with_timeout_ms(timeout_ms).map_err(|e| {
-                ToolError::internal(format!("failed to create timeout override: {e}"))
-            })?)
-        } else {
-            client
-        };
+    let client = prepare_batch_fetch_client(client, args.timeout_ms)?;
 
     let concurrency = state.config.fetch.batch_concurrency;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));

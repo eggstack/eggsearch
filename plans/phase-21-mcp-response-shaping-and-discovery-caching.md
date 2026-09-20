@@ -282,3 +282,9 @@ Do not use the campaign as a reason to redesign MCP envelopes or create a custom
 Implemented in performance candidate `5a8822ba538e89f9b8f441a328925fab78300754`. Owned projection paths now move metadata before removal, trim arrays in place, and omit compact links without cloning the link array. Batch web focus uses the typed cached/fetched `FetchDocument` when available and retains a narrow JSON fallback for compatibility-only inputs. `EggsearchServer` constructs and fingerprints its sorted decorated tool contract once per instance; repeated `tools/list` and fingerprint access reuse it.
 
 Post-change Criterion characterization on Rust 1.98.1 / x86_64-apple-darwin: compact projection medians were 32.6 µs for 50 web cards, 33.3/33.1/33.9 µs for repo/research/security grouped payloads, and 12.6 µs for a 100-link compact fetch. Projection contract tests, focus/batch tests, tool-surface contract tests, and full gates passed. A separate output-schema cache was rejected because the decorated contract cache removes the repeated construction path.
+
+Phase 23 added repeated cached contract access characterization on the same
+environment: `tool_definitions()` measured 135.2 ns and
+`tool_fingerprint()` measured 19.9 ns. These calls still return owned values;
+the evidence covers reuse of decoration, sorting, and fingerprint construction,
+not allocation-free response delivery.

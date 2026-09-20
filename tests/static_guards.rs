@@ -1084,6 +1084,47 @@ fn timeout_overrides_retain_the_shared_fetch_client() {
         !method.contains("Client::builder()"),
         "timeout-only fetch clients must not rebuild transport state"
     );
+    assert!(
+        source.contains("TimeoutOverrideMode::Widened => build_transport_client"),
+        "longer timeout overrides must use the widened transport construction path"
+    );
+    assert!(
+        source.contains("requested_timeout_ms <= base_timeout_ms"),
+        "timeout reuse boundary must include equal and shorter overrides"
+    );
+}
+
+#[test]
+fn fetch_timeout_paths_use_effective_limits_for_request_and_validation() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let source = fs::read_to_string(format!("{manifest}/src/fetch/client.rs"))
+        .expect("fetch client source readable");
+    let fetch = source
+        .split_once("pub async fn fetch(")
+        .and_then(|(_, rest)| {
+            rest.split_once("pub async fn fetch_conditional(")
+                .map(|(body, _)| body)
+        })
+        .expect("fetch method present");
+    let conditional = source
+        .split_once("pub async fn fetch_conditional(")
+        .map(|(_, body)| body)
+        .expect("conditional fetch method present");
+    for (name, method) in [("fetch", fetch), ("fetch_conditional", conditional)] {
+        assert!(
+            method
+                .contains("validate_fetch_target_with_resolved_addrs(&current_url, &self.limits)"),
+            "{name} must validate using effective fetch limits"
+        );
+        assert!(
+            method.contains("timeout(client_timeout(self.limits.timeout_ms))"),
+            "{name} must apply the effective request timeout"
+        );
+        assert!(
+            method.contains("validate_fetch_target(&redirect_url, &self.limits)"),
+            "{name} must revalidate redirects with effective fetch limits"
+        );
+    }
 }
 
 #[test]
