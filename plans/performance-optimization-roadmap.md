@@ -1,6 +1,6 @@
 # Performance Optimization and Footprint Roadmap
 
-Status: implemented; corrective phase 23 planned
+Status: implemented; corrective phase 23 implemented
 Baseline audited: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`, 2026-09-19)
 Primary downstream consumer: `dbowm91/codegg`
 Depends on: phases 17-18 implemented
@@ -128,12 +128,13 @@ Phase 20/21 benchmark evidence is incomplete; the Phase 19 timing pairs are
 not apples-to-apples; and the seven-target release qualification predates the
 production/Cargo changes.
 
-Phase 23 owns those corrective items. Preserve the valid local-search,
-derived-cache, MCP projection/discovery, and Tokio-feature improvements from
-phases 19–22; do not reopen them without new evidence. The workstream may be
-called fully closed only after Phase 23 records corrected timeout semantics,
-comparable benchmark evidence, local gates, and a fresh exact-candidate
-seven-target non-publishing qualification.
+Phase 23 closed those corrective items on candidate
+`0af540b8c4f7ec27678d83a74ba82aad45556f00`. It records corrected timeout
+semantics, comparable benchmark evidence, local gates, and fresh exact-candidate
+seven-target non-publishing qualification `35542118569` with exact 16-file
+assembly. The implementation candidate remains the SHA-specific release
+qualification reference; later documentation-only closure commits do not
+change its production behavior.
 
 ## Workstream stop conditions
 
@@ -141,7 +142,7 @@ Do not mark this workstream complete until:
 
 - warm local search no longer deep-clones the complete cached workspace inventory;
 - local candidate scoring is computed O(N), not repeatedly from a full-sort comparator, while preserving deterministic ordering;
-- timeout overrides no longer rebuild an eggfetch connection pool solely to change request limits;
+- equal/shorter timeout overrides do not rebuild an eggfetch connection pool solely to change request limits, while longer overrides intentionally build one widened client for connector semantics;
 - batch fetch does not construct one timeout-adjusted transport client per item;
 - derived-cache hot paths avoid one full deep copy of cached extracted documents without changing public compatibility;
 - MCP projection/focus paths no longer perform avoidable JSON clone/deserialization round trips identified in the audit;

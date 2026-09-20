@@ -1,6 +1,6 @@
 # Phase 23 — Timeout Override Semantics and Performance Evidence Requalification
 
-Status: planned
+Status: implemented
 Depends on: phases 19-22 implementation candidate `5a8822ba538e89f9b8f441a328925fab78300754`; documentation closure `a09a35019d4e6ba75a5787b6552fe4e6161ae1c9`
 Baseline for corrective planning: `a09a35019d4e6ba75a5787b6552fe4e6161ae1c9` (`main`)
 Governing roadmap: `performance-optimization-roadmap.md`
@@ -583,7 +583,66 @@ the benchmark and release matrices.
 
 ## Implementation record
 
-Not yet implemented. Record the exact corrective implementation SHA,
-qualification SHA/run, timeout-mode evidence, benchmark results, local gates,
-artifact checksums, and any deviations here before changing status to
-`implemented`.
+Implemented in corrective candidate
+`0af540b8c4f7ec27678d83a74ba82aad45556f00`; the documentation-only closure
+commit is recorded separately in the registry. `FetchClient` now centralizes
+eggfetch construction and uses a hybrid override policy: equal/shorter values
+clone the shared transport, while longer values build one client with the
+widened client-scoped connect timeout. The effective timeout remains in
+`FetchLimits` for normal and conditional requests, DNS validation, redirects,
+and timeout error mapping. `batch_fetch` resolves one adjusted client before
+item futures are created. No eggfetch internals or unpublished dependency was
+used.
+
+Focused timeout and batch tests passed, including equal (`5,000 ms`), shorter
+(`2,000 ms`), and longer (`8,000 ms`) overrides. The portable test seam
+verifies transport mode and effective limits; the existing loopback fetch,
+conditional revalidation, redirect, timeout mapping, and SSRF suites provide
+behavioral coverage. A portable delayed connect fixture was not added because
+platform-specific physical-connect timing would be flaky; the widened client
+construction is covered structurally and by the resolved-route transport
+qualification.
+
+Criterion characterization used Rust 1.98.1 on `x86_64-apple-darwin` with:
+
+```text
+rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_selection(_legacy)?_|timeout_client_adjustment|derived_cache_hits|batch_timeout_setup|tool_(definitions|fingerprint)_cached_access' -- --noplot
+```
+
+The identical-workload local selector medians were:
+
+| Entries | Legacy full sort | Optimized bounded selector |
+|---:|---:|---:|
+| 1,000 | 1.315 ms | 101.45 µs |
+| 4,096 | 6.452 ms | 419.26 µs |
+
+The historical score-only measurements remain characterization only and are
+not presented as direct before/after selector timings. Timeout adjustment was
+20.8–21.5 ns for equal/shorter values and 1.86 µs for widening. Shared derived
+cache hits were 63.8–70.5 ns at 128, 12,000, and 50,000 characters; owned
+compatibility hits were 178 ns, 636 ns, and 1.34 µs. One-adjustment batch setup
+was 1.78–2.21 µs across the 1/8/32-item labels. Cached contract access was
+135.2 ns for `tool_definitions()` and 19.9 ns for `tool_fingerprint()`.
+
+Local gates passed on the committed candidate: `make check`,
+`make packaging-check`, `make bench-check`, and clean-tree `make release-check`
+(including docs, release build, and `cargo publish --dry-run --locked`). The
+release dry-run emitted only the existing `eggsearch 0.3.9 already exists`,
+package include/exclude, ignored-test, and yanked `chacha20 0.10.1` warnings;
+it did not publish.
+
+The exact seven-target non-publishing qualification passed in workflow
+`35542118569`:
+
+- `QUALIFIED_SHA=0af540b8c4f7ec27678d83a74ba82aad45556f00`
+- package version: `0.3.9`
+- artifact: `qualification-0.3.9-0af540b8c4f7ec27678d83a74ba82aad45556f00-complete`
+- target results: all seven jobs passed — Linux x86_64, Linux aarch64, Linux armv7, macOS x86_64, macOS aarch64, Windows x86_64, and Windows aarch64
+- exact assembly: 16 files — seven binaries, seven `.sha256` files, `install.sh`, and `install.ps1`
+- checksum validation: all seven `sha256sum -c` checks passed
+- representative binary sizes: Linux x86_64 `23,205,024`; Linux aarch64 `20,062,016`; Linux armv7 `19,095,652`; macOS x86_64 `21,354,984`; macOS aarch64 `19,320,704`; Windows x86_64 `27,860,992`; Windows aarch64 `23,599,104` bytes
+
+The qualification artifact was downloaded and independently inspected locally;
+the final assembly job verified the same exact asset-set contract. The only
+workflow annotations were the repository's existing Node.js 20 action
+deprecation and Ubuntu 26 migration notices. No release was published.

@@ -7,6 +7,7 @@ Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1
 Current baseline for eggfetch transport consolidation: `ac394031793cf5e37c49b790794e845ef0ab3650` (`eggsearch` 0.3.9 on `main`)
 Current baseline for transport migration qualification closure: `eb014eb92ff06ad1653eb31518ae612d7de4dec1` (`eggsearch` 0.3.9 on `main`)
 Current baseline for performance optimization: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`eggsearch` 0.3.9 on `main`)
+Current baseline for performance timeout requalification: `0af540b8c4f7ec27678d83a74ba82aad45556f00` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -241,15 +242,16 @@ The workstream is explicitly optimization-with-equivalence. It must not change t
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 23 | Timeout override semantics and performance evidence requalification | planned | phases 19-22 implementation/closure | `phase-23-timeout-semantics-and-performance-requalification.md` |
+| 23 | Timeout override semantics and performance evidence requalification | implemented | phases 19-22 implementation/closure | `phase-23-timeout-semantics-and-performance-requalification.md` |
 
-Phase 23 is a bounded corrective closure pass. Phases 19-22 remain historically
-implemented, but the performance workstream is not considered fully closed
-until Phase 23 resolves the widened-timeout connector-policy regression,
-fills the missing Phase 20/21 benchmark evidence, replaces the Phase 19
-unlike-workload timing comparison with an apples-to-apples selector
-comparison, and reruns the seven-target non-publishing release qualification
-against the exact corrective candidate.
+Phase 23 is implemented on corrective candidate
+`0af540b8c4f7ec27678d83a74ba82aad45556f00`. It restores widened-timeout
+connector semantics, adds the missing Phase 20/21 benchmark evidence, replaces
+the Phase 19 unlike-workload timing comparison with an apples-to-apples
+selector comparison, and passes seven-target non-publishing qualification
+`35542118569` with exact 16-file assembly. The phase record retains the
+historical Phase 19-22 measurements and explicitly reconciles their evidence
+limits.
 
 The intended timeout correction is hybrid under eggfetch 0.1.7/current
 resolved-route semantics: equal/shorter overrides retain the shared client and
