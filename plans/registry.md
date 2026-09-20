@@ -237,6 +237,27 @@ Do not mark this workstream complete until:
 
 The workstream is explicitly optimization-with-equivalence. It must not change the ten-tool MCP surface, ranking weights, trust/SSRF semantics, cache policy, batch budget semantics, public Rust compatibility, browser/PDF availability, provider coverage, integration verification, or the Phase 18 compression workaround merely to improve benchmark or binary-size numbers.
 
+## Active corrective workstream — Performance timeout semantics and requalification
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 23 | Timeout override semantics and performance evidence requalification | planned | phases 19-22 implementation/closure | `phase-23-timeout-semantics-and-performance-requalification.md` |
+
+Phase 23 is a bounded corrective closure pass. Phases 19-22 remain historically
+implemented, but the performance workstream is not considered fully closed
+until Phase 23 resolves the widened-timeout connector-policy regression,
+fills the missing Phase 20/21 benchmark evidence, replaces the Phase 19
+unlike-workload timing comparison with an apples-to-apples selector
+comparison, and reruns the seven-target non-publishing release qualification
+against the exact corrective candidate.
+
+The intended timeout correction is hybrid under eggfetch 0.1.7/current
+resolved-route semantics: equal/shorter overrides retain the shared client and
+request-level deadline, while longer overrides build one widened client per
+top-level fetch/batch so physical connect policy is actually widened. Do not
+return to one client per batch item and do not consume unpublished eggfetch
+code.
+
 ## Deferred by design
 
 ### Search/research extensions
