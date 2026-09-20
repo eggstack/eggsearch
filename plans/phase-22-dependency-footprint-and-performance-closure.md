@@ -308,3 +308,14 @@ The highest-confidence footprint change is likely replacing direct Tokio `full` 
 Implemented in performance candidate `5a8822ba538e89f9b8f441a328925fab78300754`. Direct Tokio `full` activation was replaced by the qualified explicit set `fs`, `io-std`, `io-util`, `macros`, `net`, `process`, `rt-multi-thread`, `signal`, `sync`, and `time`; no browser, PDF, provider, deployment, or integration capability was removed. The rmcp client, child-process, and Streamable HTTP client features were retained because `integrations/common.rs` verifies both stdio and HTTP integrations through them. A static Tokio policy guard and the existing eggfetch feature-budget guard protect the decision.
 
 Baseline was Rust 1.98.1 / x86_64-apple-darwin with default release binary size 18,727,936 bytes; the post-change default release binary was 18,744,624 bytes (+16,688 bytes). The post-change feature tree removes direct Tokio `parking_lot` activation while retaining transitive Tokio features required by `eggfetch-core`, rmcp, reqwest, and test infrastructure; rmcp's reqwest-backed Streamable HTTP client remains intentional for integration verification. Criterion characterization was rerun on the exact phase-19–21 candidate. `make check`, `make packaging-check`, and `make bench-check` passed; the pre-commit `make release-check` reached the clean-candidate publish check but correctly refused the dirty tree, then the same release gate was rerun after the commit. No release was published by this phase. No further direct feature pruning was justified.
+
+
+### Post-closure corrective note
+
+Phase 22 remains the historical implementation/footprint pass, but its closure
+is not the final release-readiness evidence for this workstream. A later audit
+found missing registered performance benchmarks, a non-comparable Phase 19
+timing presentation, and no fresh seven-target qualification after the
+production/Cargo changes. Phase 23 owns those evidence corrections plus the
+widened-timeout semantic fix and must close before the performance campaign is
+treated as fully requalified.
