@@ -1,6 +1,6 @@
 # Performance Optimization and Footprint Roadmap
 
-Status: implemented
+Status: implemented; corrective phase 23 planned
 Baseline audited: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`, 2026-09-19)
 Primary downstream consumer: `dbowm91/codegg`
 Depends on: phases 17-18 implemented
@@ -65,6 +65,7 @@ The rmcp client/child-process/Streamable-HTTP-client features are not currently 
 | 20 | Fetch/cache sharing and timeout connection reuse | phase 19 benchmark conventions preferred |
 | 21 | MCP response shaping, focus projection, and discovery caching | phase 19 benchmark conventions preferred |
 | 22 | Dependency-footprint qualification and performance closure | phases 19-21 |
+| 23 | Timeout override semantics and performance evidence requalification | phases 19-22 implementation/closure |
 
 ## Intended implementation order
 
@@ -78,7 +79,7 @@ phase 19
                -> phase 22 closure
 ~~~
 
-Phases 20 and 21 may proceed in parallel after Phase 19 establishes the performance-evidence conventions. Phase 22 is the closure/footprint pass.
+Phases 20 and 21 may proceed in parallel after Phase 19 establishes the performance-evidence conventions. Phase 22 was the original closure/footprint pass. Post-closure audit identified a timeout-semantic regression plus benchmark/release-qualification evidence gaps; Phase 23 is the bounded corrective closure pass and must complete before this workstream is treated as fully closed.
 
 ## Cross-phase invariants
 
@@ -117,15 +118,22 @@ Each phase should record:
 
 ## Workstream closure evidence
 
-Phases 19–22 are implemented together on the final closure candidate. The
-workstream preserves the ten-tool MCP surface, deterministic ranking and
-projection contracts, bounded fetch/security policy, browser/PDF support,
-integration verification, and Phase 18 compression boundaries. Local search,
-fetch/cache ownership, MCP projection/discovery, and direct Tokio feature
-activation were qualified by focused tests, Criterion characterization, and
-the full local release gates. The exact implementation candidate SHA,
-dependency-tree summaries, binary sizes, and gate outputs are recorded in the
-phase-22 implementation record and registry entry.
+Phases 19–22 were implemented on candidate
+`5a8822ba538e89f9b8f441a328925fab78300754` and documented closed at
+`a09a35019d4e6ba75a5787b6552fe4e6161ae1c9`. A post-closure audit found that
+the runtime improvements are mostly sound but the closure is not final:
+widened `FetchClient` timeout overrides can retain the shorter client-scoped
+resolved-route connect timeout under eggfetch 0.1.7 semantics; registered
+Phase 20/21 benchmark evidence is incomplete; the Phase 19 timing pairs are
+not apples-to-apples; and the seven-target release qualification predates the
+production/Cargo changes.
+
+Phase 23 owns those corrective items. Preserve the valid local-search,
+derived-cache, MCP projection/discovery, and Tokio-feature improvements from
+phases 19–22; do not reopen them without new evidence. The workstream may be
+called fully closed only after Phase 23 records corrected timeout semantics,
+comparable benchmark evidence, local gates, and a fresh exact-candidate
+seven-target non-publishing qualification.
 
 ## Workstream stop conditions
 
