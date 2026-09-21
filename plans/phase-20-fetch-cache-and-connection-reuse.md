@@ -249,7 +249,7 @@ Phase 20 is complete only when:
 
 ## Handoff notes
 
-The primary optimization is not changing eggfetch itself. Eggfetch already provides a cloneable shared client and request-level timeouts. The downstream issue is that eggsearch currently discards that sharing in its timeout convenience method.
+The primary optimization did not require changing eggfetch itself. Eggfetch provides a cloneable shared client and request-level timeouts. Phase 20 removed unnecessary transport reconstruction for the common equal/shorter timeout cases; Phase 23 later refined the boundary so longer overrides intentionally build one widened client to preserve client-scoped resolved-route connect semantics.
 
 Likewise, do not pursue a fully borrowed cache-response architecture. One output copy into an owned MCP response is acceptable. The goal is to remove the extra full copy performed simply to get an LRU hit out from under the mutex.
 
@@ -260,10 +260,12 @@ Implemented in performance candidate `5a8822ba538e89f9b8f441a328925fab78300754`.
 Phase 23 corrected the timeout boundary: the original unqualified clone-only statement applies to equal/shorter overrides, while longer overrides build one widened client through the centralized constructor so eggfetch's client-scoped resolved-route connect timeout is widened too. Rust 1.98.1 / x86_64-apple-darwin characterization measured 20.8–21.5 ns for equal/shorter adjustment and 1.86 µs for widening. Shared derived hits measured 63.8–70.5 ns at 128, 12,000, and 50,000 characters; owned compatibility hits measured 178 ns, 636 ns, and 1.34 µs. One-adjustment batch setup measured 1.78–2.21 µs across labels for 1, 8, and 32 items. These are local characterization measurements, not CI thresholds.
 
 
-### Post-closure corrective note
+### Corrective closure note
 
-A post-closure audit identified that the shared-client implementation does not
-fully preserve widened timeout semantics on eggfetch's advanced/resolved
-routing path: physical connector `timeout.connect` remains client-scoped.
-Phase 23 owns the correction. The derived-cache Arc work and one-adjusted-client
-per batch behavior remain valid and should not be reverted.
+A post-closure audit identified that the original shared-client implementation
+did not fully preserve widened timeout semantics on eggfetch's
+advanced/resolved routing path because physical connector `timeout.connect`
+remains client-scoped. Phase 23 corrected that boundary: equal/shorter
+overrides share transport, while longer overrides build one widened client.
+The derived-cache Arc work and one-adjusted-client-per-batch behavior remained
+valid and were retained.
