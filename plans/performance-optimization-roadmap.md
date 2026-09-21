@@ -1,6 +1,6 @@
 # Performance Optimization and Footprint Roadmap
 
-Status: implemented; corrective phase 23 implemented
+Status: implemented (phases 19-23 closed)
 Baseline audited: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`main`, 2026-09-19)
 Primary downstream consumer: `dbowm91/codegg`
 Depends on: phases 17-18 implemented
@@ -13,37 +13,62 @@ This is a hot-path consolidation workstream, not a redesign. The audited reposit
 
 The intended outcome is lower warm-path latency and allocation volume for CodeGG-style repeated repository/search/fetch workloads while keeping behavior observably equivalent.
 
-## Current evidence
+## Audit baseline and implemented outcome
 
-The audit identified four concrete optimization classes.
+The original audit identified four concrete optimization classes. Phases 19-23
+have now addressed and qualified them; the descriptions below distinguish the
+audited baseline from the current implementation.
 
 ### Local workspace search
 
-`LocalWorkspaceBackend` stores its inventory as `Arc<RwLock<Option<Arc<WorkspaceInventory>>>>`, but the warm search path currently dereferences the Arc and clones the complete `WorkspaceInventory`. That recursively copies root inventories, file-entry strings, and paths before each search.
+At the audit baseline, warm local search dereferenced the cached
+`Arc<WorkspaceInventory>` and cloned the complete inventory, and candidate
+selection repeatedly recomputed allocation-bearing scores inside a full-sort
+comparator.
 
-Candidate selection also sorts all filtered candidates while calling `score_inventory_entry` from the comparator. The score function lowercases paths and filenames, so the current sort can perform allocation-bearing scoring O(N log N) times even though only approximately `max_results * 2` candidates survive.
-
-The existing inventory Criterion cases exercise one score evaluation per entry. They do not benchmark the actual full candidate-selection path and therefore do not expose comparator recomputation.
+The current implementation keeps shared inventory snapshots behind `Arc`,
+computes candidate scores once, and uses bounded selection before deterministic
+final ordering. Phase 23 added an apples-to-apples legacy full-sort versus
+optimized-selector benchmark on identical 1,000- and 4,096-entry workloads.
 
 ### Fetch and cache hot paths
 
-`FetchClient::with_timeout_ms` currently constructs a new `eggfetch_core::Client`. Eggfetch clients are cloneable shared handles around an inner client/connection pool, and fetch requests already apply request-level timeout overrides. Rebuilding the client for a timeout-only override therefore discards reusable transport state.
+At the audit baseline, timeout adjustment rebuilt an `eggfetch_core::Client`
+and `batch_fetch` could amplify that cost per web item. Derived-cache hits
+also returned cloned owned entries, deep-copying extracted content on the
+internal hot path.
 
-`batch_fetch` amplifies this when a timeout override is present because each web item can create a separate timeout-adjusted client.
-
-The raw fetch cache already stores body bytes behind `Arc<[u8]>`, but the derived document cache returns a cloned owned `DerivedDocumentCacheEntry`. Cache hits can therefore deep-copy extracted text, links, and structured documents while the cache mutex is held, followed by additional cloning while constructing the response.
+The current implementation stores derived entries behind `Arc` internally
+and prepares one adjusted fetch client per top-level batch. Timeout handling is
+hybrid under eggfetch 0.1.7 resolved-route semantics: equal/shorter overrides
+reuse the shared transport, while longer overrides build one client with the
+widened client-scoped connect timeout. Phase 23 added timeout-adjustment,
+derived-cache-hit, and batch-setup characterization.
 
 ### MCP response shaping
 
-Compact/standard projection operates on owned `serde_json::Value` trees but frequently clones subtrees before immediately removing the originals. Batch focus injection also clones an already-serialized `document` JSON value and deserializes it back into `FetchDocument` before computing focus.
+At the audit baseline, compact/standard projection cloned owned JSON subtrees
+before removal, batch focus could serialize and deserialize a document that was
+already available in typed form, and repeated tool discovery rebuilt static
+contract metadata/fingerprint work.
 
-The MCP tool contract is static for a running binary, but `tools/list` currently reapplies contract metadata, recreates output schemas, sorts tools, and recomputes the contract fingerprint on demand.
+The current implementation removes the audited avoidable projection clones,
+passes typed web documents into batch focus where available, and caches the
+advertised tool contract and fingerprint on the server. Phase 23 added repeated
+`tool_definitions()` and `tool_fingerprint()` characterization. The repo
+focus path retains its JSON fallback where no typed document is available.
 
 ### Build/dependency footprint
 
-The direct Tokio dependency currently uses `features = ["full"]`. A narrower explicit feature set may reduce build graph and linked footprint, but it must be derived from the all-feature/default/no-default build matrix rather than guessed.
+At the audit baseline, the direct Tokio dependency enabled
+`features = ["full"]`. Phase 22 replaced that with the mechanically qualified
+explicit feature set while retaining rmcp client/child-process/Streamable HTTP
+client features required by `integrate --apply` verification.
 
-The rmcp client/child-process/Streamable-HTTP-client features are not currently dead: `integrations/common.rs` uses them to verify both stdio and HTTP integrations after `integrate --apply`. They must not be removed merely because the primary runtime role is an MCP server. Any future reduction there would require preserving the same verification capability through a supported path and is not assumed by this workstream.
+The change is dependency/feature hygiene rather than a binary-size win: the
+recorded default x86_64-apple-darwin release binary increased by 16,688 bytes
+on the measured candidate. Phase 23 subsequently reran the exact-candidate
+seven-target non-publishing qualification after all production/Cargo changes.
 
 ## Workstream principles
 
@@ -79,7 +104,7 @@ phase 19
                -> phase 22 closure
 ~~~
 
-Phases 20 and 21 may proceed in parallel after Phase 19 establishes the performance-evidence conventions. Phase 22 was the original closure/footprint pass. Post-closure audit identified a timeout-semantic regression plus benchmark/release-qualification evidence gaps; Phase 23 is the bounded corrective closure pass and must complete before this workstream is treated as fully closed.
+Phases 20 and 21 proceeded from the Phase 19 performance-evidence conventions. Phase 22 was the original closure/footprint pass. The post-closure audit identified a timeout-semantic regression plus benchmark/release-qualification evidence gaps; Phase 23 subsequently corrected and requalified those items, completing the workstream.
 
 ## Cross-phase invariants
 
