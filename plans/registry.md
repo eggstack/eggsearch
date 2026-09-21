@@ -183,7 +183,7 @@ Do not mark phase 18 implemented until:
 - phase 18's implementation record and registry status are updated together with exact evidence.
 
 
-## Active performance workstream — Hot-path optimization and footprint qualification
+## Completed performance workstream — Hot-path optimization and footprint qualification
 
 Governing rationale and cross-phase invariants: `performance-optimization-roadmap.md`.
 
@@ -193,6 +193,7 @@ Governing rationale and cross-phase invariants: `performance-optimization-roadma
 | 20 | Fetch/cache sharing and timeout connection reuse | implemented | phase 19 benchmark conventions preferred | `phase-20-fetch-cache-and-connection-reuse.md` |
 | 21 | MCP response shaping, focus projection, and discovery caching | implemented | phase 19 benchmark conventions preferred | `phase-21-mcp-response-shaping-and-discovery-caching.md` |
 | 22 | Dependency-footprint qualification and performance closure | implemented | phases 19-21 | `phase-22-dependency-footprint-and-performance-closure.md` |
+| 23 | Timeout override semantics and performance evidence requalification | implemented | phases 19-22 implementation/closure | `phase-23-timeout-semantics-and-performance-requalification.md` |
 
 ### Intended implementation order
 
@@ -203,22 +204,30 @@ phase 19
    |
    +----> phase 21
               \
-               -> phase 22 closure
+               -> phase 22 original closure
+                          |
+                          -> phase 23 corrective requalification
 ~~~
 
-Phases 20 and 21 may proceed in parallel after Phase 19 establishes production-shaped benchmark conventions. Phase 22 is the closure and dependency-footprint qualification pass.
+Phases 20 and 21 proceeded from the Phase 19 production-shaped benchmark conventions. Phase 22 was the original closure and dependency-footprint qualification pass; Phase 23 subsequently corrected the widened-timeout semantic defect, completed the missing benchmark evidence, and reran exact-candidate release qualification.
 
 ### Performance workstream closure evidence
 
 Implementation candidate `5a8822ba538e89f9b8f441a328925fab78300754` contains
-the sequential phases 19-22 changes. The candidate passed `make check`,
+the original phases 19-22 changes. It passed `make check`,
 `make packaging-check`, `make bench-check`, and the clean-tree release gate.
 Rust 1.98.1 on `x86_64-apple-darwin` produced a default release binary of
 18,744,624 bytes, compared with the 18,727,936-byte baseline. Tokio's direct
 `full` feature was replaced with the qualified explicit set; rmcp's client,
 child-process, and Streamable HTTP client features remain because integration
-verification uses them. The final documentation-only closure follow-up is the
-descendant commit on `main`.
+verification uses them.
+
+Phase 23 closed the post-audit gaps on corrective candidate
+`0af540b8c4f7ec27678d83a74ba82aad45556f00`: widened timeout overrides now
+receive a widened client-scoped connect policy, the missing Phase 19-21
+benchmark evidence was added, and release qualification run `35542118569`
+passed all seven targets plus exact 16-file assembly. Current `main` is a
+documentation-only descendant of that qualified production candidate.
 
 ### Performance workstream stop conditions
 
@@ -226,7 +235,7 @@ Do not mark this workstream complete until:
 
 - warm local search uses shared cached inventory snapshots rather than deep-cloning the complete `WorkspaceInventory`;
 - candidate selection computes each candidate score once and preserves deterministic legacy tie ordering;
-- timeout-only fetch overrides preserve the shared eggfetch client/connection pool;
+- equal/shorter timeout overrides preserve the shared eggfetch client/connection pool, while longer overrides build one widened client so client-scoped connect semantics remain correct;
 - batch timeout setup is shared across item futures rather than rebuilt per item;
 - internal derived-cache hits avoid one complete cached-document copy while retaining public compatibility and exact cache accounting;
 - MCP projection/focus removes the audited JSON clone/deserialization round trips without changing compact/standard/diagnostic contracts;
@@ -238,11 +247,7 @@ Do not mark this workstream complete until:
 
 The workstream is explicitly optimization-with-equivalence. It must not change the ten-tool MCP surface, ranking weights, trust/SSRF semantics, cache policy, batch budget semantics, public Rust compatibility, browser/PDF availability, provider coverage, integration verification, or the Phase 18 compression workaround merely to improve benchmark or binary-size numbers.
 
-## Active corrective workstream — Performance timeout semantics and requalification
-
-| Phase | Workstream | Status | Depends on | Plan |
-|---|---|---|---|---|
-| 23 | Timeout override semantics and performance evidence requalification | implemented | phases 19-22 implementation/closure | `phase-23-timeout-semantics-and-performance-requalification.md` |
+## Corrective closure evidence — Phase 23
 
 Phase 23 is implemented on corrective candidate
 `0af540b8c4f7ec27678d83a74ba82aad45556f00`. It restores widened-timeout
@@ -253,12 +258,13 @@ selector comparison, and passes seven-target non-publishing qualification
 historical Phase 19-22 measurements and explicitly reconciles their evidence
 limits.
 
-The intended timeout correction is hybrid under eggfetch 0.1.7/current
-resolved-route semantics: equal/shorter overrides retain the shared client and
-request-level deadline, while longer overrides build one widened client per
-top-level fetch/batch so physical connect policy is actually widened. Do not
-return to one client per batch item and do not consume unpublished eggfetch
-code.
+The qualified timeout policy is hybrid under eggfetch 0.1.7 resolved-route
+semantics: equal/shorter overrides retain the shared client and request-level
+deadline, while longer overrides build one widened client per top-level
+fetch/batch so physical connect policy is widened as well. The performance
+workstream is closed; any later production or dependency change that
+invalidates the exact candidate must be separately qualified under the normal
+release rules.
 
 ## Deferred by design
 
