@@ -46,7 +46,7 @@ The governing rationale, target matrix, installer/update contract, lifecycle spl
 
 The governing rationale, scope boundaries, cross-phase invariants, and stop conditions are in `maintenance-codegg-quality-roadmap.md`.
 
-### Intended implementation order
+### Historical implementation order
 
 ```text
 phase 11 -> phase 12
@@ -229,9 +229,9 @@ benchmark evidence was added, and release qualification run `35542118569`
 passed all seven targets plus exact 16-file assembly. Current `main` is a
 documentation-only descendant of that qualified production candidate.
 
-### Performance workstream stop conditions
+### Performance workstream closure criteria
 
-Do not mark this workstream complete until:
+The workstream was closed only after:
 
 - warm local search uses shared cached inventory snapshots rather than deep-cloning the complete `WorkspaceInventory`;
 - candidate selection computes each candidate score once and preserves deterministic legacy tie ordering;
