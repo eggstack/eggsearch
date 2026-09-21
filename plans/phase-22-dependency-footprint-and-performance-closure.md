@@ -9,7 +9,7 @@ Governing roadmap: `performance-optimization-roadmap.md`
 
 The preceding phases target high-confidence runtime inefficiencies. This final phase qualifies dependency/build footprint opportunities and closes the campaign with reproducible evidence.
 
-The direct Tokio dependency currently enables `features = ["full"]`. That is convenient but broader than eggsearch's visibly used runtime surface. Narrowing it may reduce compile/link footprint and dependency activation, but only if every supported build mode continues to compile and all runtime features remain available.
+At the Phase 22 baseline, the direct Tokio dependency enabled `features = ["full"]`. That was convenient but broader than eggsearch's visibly used runtime surface. Phase 22 therefore qualified a narrower explicit feature set against every supported build mode before adopting it.
 
 The rmcp client-related features are different. The audit initially made them look removable from the server binary, but `src/integrations/common.rs` actively uses:
 
@@ -310,17 +310,16 @@ Implemented in performance candidate `5a8822ba538e89f9b8f441a328925fab78300754`.
 Baseline was Rust 1.98.1 / x86_64-apple-darwin with default release binary size 18,727,936 bytes; the post-change default release binary was 18,744,624 bytes (+16,688 bytes). The post-change feature tree removes direct Tokio `parking_lot` activation while retaining transitive Tokio features required by `eggfetch-core`, rmcp, reqwest, and test infrastructure; rmcp's reqwest-backed Streamable HTTP client remains intentional for integration verification. Criterion characterization was rerun on the exact phase-19–21 candidate. `make check`, `make packaging-check`, and `make bench-check` passed; the pre-commit `make release-check` reached the clean-candidate publish check but correctly refused the dirty tree, then the same release gate was rerun after the commit. No release was published by this phase. No further direct feature pruning was justified.
 
 
-### Post-closure corrective note
+### Corrective closure note
 
-Phase 22 remains the historical implementation/footprint pass, but its closure
-is not the final release-readiness evidence for this workstream. A later audit
+Phase 22 remains the historical implementation/footprint pass. A later audit
 found missing registered performance benchmarks, a non-comparable Phase 19
-timing presentation, and no fresh seven-target qualification after the
-production/Cargo changes. Phase 23 owns those evidence corrections plus the
-widened-timeout semantic fix and must close before the performance campaign is
-treated as fully requalified.
+timing presentation, no fresh seven-target qualification after the
+production/Cargo changes, and the widened-timeout semantic defect introduced
+in Phase 20. Phase 23 subsequently corrected and requalified those items.
 
-Phase 23 preserves the Phase 22 explicit Tokio feature set and rmcp client
-feature rationale. The corrected candidate's clean release gate and fresh
-seven-target qualification are recorded in the Phase 23 implementation record;
-the Phase 22 local gates remain historical evidence for its own candidate.
+Phase 23 preserved the Phase 22 explicit Tokio feature set and rmcp client
+feature rationale. Its corrected candidate passed the clean release gate and
+fresh seven-target qualification recorded in the Phase 23 implementation
+record; the Phase 22 local gates remain historical evidence for their own
+candidate.
