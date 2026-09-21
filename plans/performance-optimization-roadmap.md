@@ -9,9 +9,9 @@ Depends on: phases 17-18 implemented
 
 Reduce CPU work, allocation pressure, memory copying, connection churn, and avoidable binary/dependency footprint in eggsearch without changing the stable MCP surface, public response contracts, provider capability, trust/safety semantics, deterministic ordering, or supported deployment/integration behavior.
 
-This is a hot-path consolidation workstream, not a redesign. The audited repository already has bounded provider fan-out, byte-bounded caches, shared provider HTTP clients, a mature Criterion suite, deterministic response projection, and the phase-17 eggfetch transport consolidation. The remaining opportunities are concentrated in data movement and repeated work inside already-correct pipelines.
+This was a hot-path consolidation workstream, not a redesign. The audited repository already had bounded provider fan-out, byte-bounded caches, shared provider HTTP clients, a mature Criterion suite, deterministic response projection, and the phase-17 eggfetch transport consolidation. The campaign therefore concentrated on data movement and repeated work inside already-correct pipelines.
 
-The intended outcome is lower warm-path latency and allocation volume for CodeGG-style repeated repository/search/fetch workloads while keeping behavior observably equivalent.
+The implemented outcome is lower warm-path latency and allocation volume for CodeGG-style repeated repository/search/fetch workloads while keeping behavior observably equivalent.
 
 ## Audit baseline and implemented outcome
 
@@ -92,7 +92,7 @@ seven-target non-publishing qualification after all production/Cargo changes.
 | 22 | Dependency-footprint qualification and performance closure | phases 19-21 |
 | 23 | Timeout override semantics and performance evidence requalification | phases 19-22 implementation/closure |
 
-## Intended implementation order
+## Historical implementation order
 
 ~~~text
 phase 19
@@ -161,9 +161,9 @@ assembly. The implementation candidate remains the SHA-specific release
 qualification reference; later documentation-only closure commits do not
 change its production behavior.
 
-## Workstream stop conditions
+## Closure criteria
 
-Do not mark this workstream complete until:
+The workstream was closed only after:
 
 - warm local search no longer deep-clones the complete cached workspace inventory;
 - local candidate scoring is computed O(N), not repeatedly from a full-sort comparator, while preserving deterministic ordering;
