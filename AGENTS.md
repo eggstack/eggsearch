@@ -75,4 +75,4 @@ Canonical sources in `skills/` (mirrored via `.opencode/skills/` and `.agents/sk
 
 ## Plans
 
-`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-18 are implemented; no corrective phase is currently active. Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.
+`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-24 are implemented; Phase 25 is the active maintenance handoff for optional Eggress 1.0.8 outbound proxy-chain integration. Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.
