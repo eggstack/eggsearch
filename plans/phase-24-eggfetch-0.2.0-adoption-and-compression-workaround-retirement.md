@@ -491,3 +491,65 @@ because the release notes say the bug is fixed without adding a downstream
 integration proof. The second is retaining the workaround indefinitely after
 the published fix is proven. The correct endpoint is normal automatic
 compression with deterministic seam coverage and no duplicate decoder logic.
+
+## Implementation record
+
+Status: implemented.
+
+- Actual starting SHA: `ef0b28dc1a8d0e8aa0e94060ca0ecce7c669e13a` (main had
+  advanced two plan-registration commits past the `0c33d576` planning
+  baseline; no production code changed between them).
+- Implementation / qualified candidate SHA: `bac6f49fc046a93d7c094a8f96e1027631f390f1`
+  (single clean commit, 14 files, +372/-46).
+- Resolved `eggfetch-core`: `0.2.0` from crates.io (no Git/path pin),
+  `default-features = false`, feature set exactly `standard-http1`,
+  `advanced-routing`, `redirects`, `tls-rustls`, `json`, `compression-gzip`,
+  `compression-brotli` (identical graph to the 0.1.7 selection; MSRV
+  unchanged at 1.89).
+- Lock/dependency graph delta: only `eggfetch-core 0.1.7 -> 0.2.0`
+  (checksum change) in the production graph, plus test-only `brotli`/`flate2`
+  dev-deps with patch-level solver churn (`flate2` 1.1.9 -> 1.1.10,
+  `miniz_oxide` 0.8.9 -> 0.9.1, new `zlib-rs` 0.6.8). `cargo tree --invert
+  reqwest` confirms rmcp 3.2.0 remains the sole normal-graph reqwest owner.
+- Removed workaround call sites (6): `.decompress(false)` deleted from
+  `src/meta/engines/brave.rs`, `duckduckgo.rs`, `mojeek.rs`, `searxng.rs`,
+  `startpage.rs`, `yahoo.rs`. No other production `decompress(false)` remains.
+- Deterministic regression results (`provider_request_contract`, mock):
+  21/21 pass, including chunked gzip and chunked Brotli decode through the
+  production `build_http_client` + `read_bounded_body()` path with 7-byte
+  wire chunks, a `Content-Length` vs chunked parity control for both codecs,
+  and a searxng wire test proving automatic gzip/br advertisement.
+- Decoded-size-limit and timeout results: tiny-limit rejection, wire-small /
+  decoded-large rejection (bound applies to decoded bytes), and a stalled
+  compressed-chunked total-deadline test all pass; Phase 23
+  equal/shorter-shared vs longer-widened timeout semantics re-proved by the
+  existing fetch-client unit tests and static guards (unchanged, passing).
+- Live smoke (2026-09-22, bounded curl with `Accept-Encoding: gzip, br`):
+  DuckDuckGo returned HTTP/2 202 (bot challenge, 14188 decoded bytes) and
+  Startpage returned HTTP/2 200 with `content-encoding: gzip` (7470 decoded
+  bytes). Both providers now serve HTTP/2 rather than the historical
+  HTTP/1.1 chunked shape; no eggfetch decompression error observed. The
+  DuckDuckGo 202 is an environmental challenge response, classified, not a
+  regression.
+- Local gates on the candidate: `cargo fmt --check` clean; `cargo clippy
+  --locked --all-targets --all-features -- -D warnings` zero warnings;
+  `cargo check --locked --no-default-features` passes; `cargo test --locked
+  --all-features` passes (3235 unit + all integration suites, 0 failures);
+  `RUSTDOCFLAGS="-D warnings" cargo doc` clean; `make hygiene` and `make
+  packaging-check` pass; `cargo publish --dry-run` passes (pre-commit with
+  `--allow-dirty`; clean-tree run equivalent post-commit).
+- Binary characterization: default release binary 18,744,464 bytes
+  (rustc 1.98.1, x86_64-apple-darwin) vs the Phase 23 baseline 18,744,624
+  bytes (-160 bytes, negligible explained delta).
+- Seven-target qualification: workflow run `35692096012`
+  (`mode=qualify`, `ref=bac6f49fc046a93d7c094a8f96e1027631f390f1`,
+  package 0.3.9) at
+  <https://github.com/eggstack/eggsearch/actions/runs/35692096012>:
+  preflight plus all seven targets plus `Assemble qualify release output`
+  (exact asset-set validation) passed; complete qualification artifact
+  `qualification-0.3.9-bac6f49fc046a93d7c094a8f96e1027631f390f1-complete`
+  (65,525,073 bytes) alongside seven per-target artifacts.
+- CI on main for the candidate: run `35692064078` (push) passed.
+- Deviations/blockers: none. Upstream issue state recorded per the planning
+  baseline (fixed by `37ab02b`, released in eggfetch 0.2.0); no upstream
+  mutation was made or required.

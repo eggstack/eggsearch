@@ -271,7 +271,7 @@ release rules.
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 24 | eggfetch 0.2.0 adoption and compression-workaround retirement | planned | phases 17-18 and phase 23 implemented; published eggfetch-core 0.2.0 | `phase-24-eggfetch-0.2.0-adoption-and-compression-workaround-retirement.md` |
+| 24 | eggfetch 0.2.0 adoption and compression-workaround retirement | implemented | phases 17-18 and phase 23 implemented; published eggfetch-core 0.2.0 | `phase-24-eggfetch-0.2.0-adoption-and-compression-workaround-retirement.md` |
 
 Phase 24 consumes the published upstream correction for
 `eggstack/eggfetch#24`. It bumps the direct transport dependency from
@@ -287,6 +287,20 @@ production-equivalent `bytes_stream()` / `read_bounded_body()` path, retain
 decoded-body limits and deadlines, keep the bounded eggfetch feature graph,
 and run the full seven-target non-publishing release qualification on the exact
 candidate before closure.
+
+### Phase 24 closure evidence
+
+Implemented on candidate `bac6f49fc046a93d7c094a8f96e1027631f390f1`:
+crates.io-resolved `eggfetch-core 0.2.0` with the unchanged bounded feature
+selection; six issue-#24 `.decompress(false)` call sites removed (Brave HTML,
+DuckDuckGo, Mojeek, SearXNG, Startpage, Yahoo); deterministic chunked
+gzip/Brotli + transfer-shape + decoded-limit + deadline regression coverage in
+`provider_request_contract` (21/21); Phase 23 timeout semantics intact; local
+correctness/clippy/docs/packaging/publish-dry-run gates pass; release binary
+18,744,464 bytes (negligible delta); DuckDuckGo/Startpage live smoke
+classified (H2 responses, no decompression errors); seven-target
+qualification run `35692096012` passed all targets plus exact assembly; CI on
+main passed. Full evidence in the Phase 24 implementation record.
 
 ### Phase 24 stop conditions
 
