@@ -9,6 +9,7 @@ Current baseline for transport migration qualification closure: `eb014eb92ff06ad
 Current baseline for performance optimization: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`eggsearch` 0.3.9 on `main`)
 Current baseline for performance timeout requalification: `0af540b8c4f7ec27678d83a74ba82aad45556f00` (`eggsearch` 0.3.9 on `main`)
 Current baseline for eggfetch 0.2.0 adoption: `0c33d576a802b84ffdae5b8b52364a50646d111c` (`eggsearch` 0.3.9 on `main`)
+Current baseline for Eggress 1.0.8 outbound routing integration: `dfa90e050c5434f3346902aeb4074901c58e90d1` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -328,6 +329,33 @@ Do not mark Phase 24 implemented until:
   workaround as active while Phase 17/18 historical evidence remains truthful;
 - the Phase 24 implementation record and registry status are closed together
   with exact evidence.
+
+## Active maintenance workstream — Eggress 1.0.8 optional outbound routing
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 25 | Eggress 1.0.8 optional outbound proxy-chain integration | planned / ready for handoff | Phase 24 implemented; published eggfetch-core 0.2.0; published eggress-outbound/eggress-uri 1.0.8 | `phase-25-eggress-1.0.8-optional-outbound-proxy-chain-integration.md` |
+
+Phase 25 adds Eggress only beneath eggfetch's custom-Dialer boundary. Eggfetch
+remains the HTTP, pooling, destination-TLS, decompression, redirect-mechanics,
+and deadline owner; Eggress is limited to listener-free physical TCP
+proxy-chain establishment. The initial feature budget is ordinary HTTP/SOCKS
+TCP routing only, with no eggress-embed, pproxy compatibility, SSH, QUIC/H3,
+UDP, legacy crypto, insecure TLS, service listener, or direct-fallback behavior.
+
+The primary acceptance gate is the existing resolved-address/SSRF contract.
+Untrusted dynamic fetch targets may use Eggress only if the implementation can
+prove that the physical route remains bound to the address snapshot authorized
+by eggsearch while preserving the logical hostname for HTTP/TLS. If the
+eggfetch 0.2.0 custom-Dialer seam cannot express that safely, those paths remain
+on the existing pinned direct route and Eggress is constrained to explicitly
+qualified fixed/operator-owned consumers. A process-global hostname-to-IP
+side-channel is not an acceptable substitute.
+
+The phase also requires an explicit dependency/packaging decision after
+measurement: either one canonical default/release binary includes the feature,
+or Eggress remains a documented source-build opt-in. Multiple binary SKUs are
+not authorized.
 
 ## Deferred by design
 
