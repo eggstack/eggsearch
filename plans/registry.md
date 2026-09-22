@@ -1,6 +1,6 @@
 # Planning Registry
 
-Updated: 2026-09-20
+Updated: 2026-09-22
 Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
@@ -8,6 +8,7 @@ Current baseline for eggfetch transport consolidation: `ac394031793cf5e37c49b790
 Current baseline for transport migration qualification closure: `eb014eb92ff06ad1653eb31518ae612d7de4dec1` (`eggsearch` 0.3.9 on `main`)
 Current baseline for performance optimization: `205ab26fb03c6769035a1c05bb9b1f41c2a9ead1` (`eggsearch` 0.3.9 on `main`)
 Current baseline for performance timeout requalification: `0af540b8c4f7ec27678d83a74ba82aad45556f00` (`eggsearch` 0.3.9 on `main`)
+Current baseline for eggfetch 0.2.0 adoption: `0c33d576a802b84ffdae5b8b52364a50646d111c` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -265,6 +266,54 @@ fetch/batch so physical connect policy is widened as well. The performance
 workstream is closed; any later production or dependency change that
 invalidates the exact candidate must be separately qualified under the normal
 release rules.
+
+## Active corrective workstream — eggfetch 0.2.0 adoption and compression-workaround retirement
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 24 | eggfetch 0.2.0 adoption and compression-workaround retirement | planned | phases 17-18 and phase 23 implemented; published eggfetch-core 0.2.0 | `phase-24-eggfetch-0.2.0-adoption-and-compression-workaround-retirement.md` |
+
+Phase 24 consumes the published upstream correction for
+`eggstack/eggfetch#24`. It bumps the direct transport dependency from
+`eggfetch-core 0.1.7` to published `0.2.0`, removes the six temporary
+HTML-engine `.decompress(false)` workarounds only after deterministic
+downstream proof, restores normal gzip/Brotli negotiation, and requalifies the
+resulting dependency/production-policy change. The pass must preserve the
+Phase 17 ownership boundary and the Phase 23 timeout/client-reuse semantics.
+
+The required downstream proof is not limited to upstream release notes:
+eggsearch must exercise chunked gzip and Brotli through its own
+production-equivalent `bytes_stream()` / `read_bounded_body()` path, retain
+decoded-body limits and deadlines, keep the bounded eggfetch feature graph,
+and run the full seven-target non-publishing release qualification on the exact
+candidate before closure.
+
+### Phase 24 stop conditions
+
+Do not mark Phase 24 implemented until:
+
+- crates.io-resolved `eggfetch-core 0.2.0` is in `Cargo.toml`/`Cargo.lock`
+  with the existing bounded feature selection;
+- the Brave HTML, DuckDuckGo, Mojeek, SearXNG, Startpage, and Yahoo
+  issue-#24 `.decompress(false)` call sites are removed;
+- deterministic downstream integration tests prove chunked gzip and Brotli
+  decode correctly through the same bounded-body path used in production;
+- decoded-body size limits and compressed-response deadline behavior remain
+  enforced;
+- the Phase 23 equal/shorter shared-client and longer-timeout widened-client
+  behavior remains intact;
+- no local decompression stack, direct eggsearch reqwest dependency, or
+  additional retry layer is introduced;
+- local correctness/API/security/package gates pass;
+- dependency/feature and representative binary-size deltas are recorded;
+- DuckDuckGo/Startpage live smoke is attempted when reachable and any failure
+  is classified;
+- a clean immutable candidate passes all seven targets plus exact asset
+  assembly in `release-binaries.yml` `mode=qualify`;
+- current-state documentation no longer describes the identity-encoding
+  workaround as active while Phase 17/18 historical evidence remains truthful;
+- the Phase 24 implementation record and registry status are closed together
+  with exact evidence.
 
 ## Deferred by design
 
