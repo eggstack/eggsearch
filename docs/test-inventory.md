@@ -39,7 +39,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `dispatch_fault_injection` | `mock` | 32 | Provider failure, timeout, hang, health transitions, concurrency, panic |
 | `provider_probe_conformance` | `mock` | 20 | Shared probe service: success/skip/timeout/HTTP/parse/network/panic, cooldown, explicit-after-degraded, bounded messages, descriptor source-of-truth |
 | `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
-| `provider_request_contract` | `mock` | 14 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, Accept-Encoding identity vs gzip/br |
+| `provider_request_contract` | `mock` | 21 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines |
 | `extract_fetch_contract` | `mock` (1 test) | 13 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls |
 | `batch_fetch_retrieval` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
 | `provider_capability_contract` | None | 8 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl), HTML-scraper none, domain-filter exclusivity, AGENTS.md prose agreement |

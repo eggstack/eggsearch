@@ -1128,7 +1128,7 @@ fn fetch_timeout_paths_use_effective_limits_for_request_and_validation() {
 }
 
 #[test]
-fn html_scrape_engines_request_identity_encoding() {
+fn html_scrape_engines_use_automatic_decompression() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let affected = [
         "src/meta/engines/brave.rs",
@@ -1142,16 +1142,16 @@ fn html_scrape_engines_request_identity_encoding() {
         let source = fs::read_to_string(format!("{manifest}/{rel}")).expect("readable");
         let non_test = strip_test_code(&source);
         assert!(
-            non_test.contains(".decompress(false)"),
-            "{rel} must disable eggfetch automatic decompression pending upstream chunked gzip/Brotli fix"
+            !non_test.contains(".decompress(false)"),
+            "{rel} must use eggfetch automatic gzip/Brotli decompression; the issue-#24 identity workaround was retired with eggfetch-core 0.2.0"
         );
         assert!(
             non_test.contains("engine_timeout("),
-            "{rel} must retain explicit total deadline alongside identity encoding"
+            "{rel} must retain explicit total deadline alongside automatic decompression"
         );
         assert!(
             non_test.contains("read_bounded_body("),
-            "{rel} must retain streaming byte cap alongside identity encoding"
+            "{rel} must retain streaming byte cap alongside automatic decompression"
         );
     }
     let json_api = [
@@ -1170,7 +1170,7 @@ fn html_scrape_engines_request_identity_encoding() {
         let non_test = strip_test_code(&source);
         assert!(
             !non_test.contains(".decompress(false)"),
-            "{rel} must retain automatic decompression; identity workaround is HTML-scrape only"
+            "{rel} must retain automatic decompression"
         );
     }
     let unrelated = [
@@ -1184,7 +1184,7 @@ fn html_scrape_engines_request_identity_encoding() {
         let non_test = strip_test_code(&source);
         assert!(
             !non_test.contains(".decompress(false)"),
-            "{rel} must not adopt the HTML-scrape identity workaround without a deterministic regression"
+            "{rel} must not disable automatic decompression without a deterministic regression"
         );
     }
 }

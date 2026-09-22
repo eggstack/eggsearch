@@ -60,7 +60,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rmcp = { version = "3.2.0", features = ["server", "client", "transport-io", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-client-reqwest", "macros"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 url = { version = "2", features = ["serde"] }
-eggfetch-core = { version = "0.1.7", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli"] }
+eggfetch-core = { version = "0.2.0", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli"] }
 semver = "1"
 scraper = "0.20"
 ego-tree = "0.6.2"
@@ -84,6 +84,8 @@ pretty_assertions = "1"
 httpmock = "0.7"
 criterion = { version = "0.5", default-features = false }
 proptest = { version = "1", default-features = false, features = ["std"] }
+flate2 = "1"
+brotli = "8"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"

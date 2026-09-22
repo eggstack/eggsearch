@@ -23,7 +23,6 @@ pub async fn search(
             source: e,
         })?
         .query("q", query)
-        .decompress(false)
         .timeout(super::engine_timeout(timeout))
         .send()
         .await

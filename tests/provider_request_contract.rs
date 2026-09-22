@@ -408,7 +408,7 @@ async fn automatic_decompression_advertises_gzip_and_brotli() {
 }
 
 #[tokio::test]
-async fn identity_workaround_omits_compressed_encodings() {
+async fn decompress_flag_controls_advertisement() {
     let encoding = capture_accept_encoding(Some(false)).await;
     let lowered = encoding.to_ascii_lowercase();
     assert!(
@@ -427,4 +427,323 @@ async fn identity_workaround_omits_compressed_encodings() {
         !lowered.contains("deflate"),
         "decompress(false) must not advertise deflate, got: {encoding}"
     );
+}
+
+#[tokio::test]
+async fn searxng_engine_advertises_compressed_encodings() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut buf = vec![0u8; 8192];
+        let mut seen = Vec::new();
+        loop {
+            let n = stream.read(&mut buf).await.expect("read");
+            if n == 0 {
+                break;
+            }
+            seen.extend_from_slice(&buf[..n]);
+            if seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if seen.len() > 16384 {
+                break;
+            }
+        }
+        let request = String::from_utf8_lossy(&seen).into_owned();
+        let encoding = request
+            .lines()
+            .find_map(|line| {
+                let mut parts = line.splitn(2, ':');
+                let name = parts.next().unwrap_or("").trim();
+                let value = parts.next().unwrap_or("").trim();
+                if name.eq_ignore_ascii_case("accept-encoding") {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        let body = br#"{"results": []}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .expect("write head");
+        stream.write_all(body).await.expect("write body");
+        encoding
+    });
+    let client = eggsearch::meta::engines::build_http_client(None).expect("client");
+    let base = format!("http://{addr}");
+    let results = eggsearch::meta::engines::searxng::search(
+        &client,
+        &base,
+        "rust",
+        5,
+        Duration::from_secs(5),
+    )
+    .await
+    .expect("searxng search succeeds");
+    assert!(results.is_empty());
+    let encoding = server.await.expect("server task");
+    let lowered = encoding.to_ascii_lowercase();
+    assert!(
+        lowered.contains("gzip"),
+        "searxng engine must advertise gzip via automatic decompression, got: {encoding}"
+    );
+    assert!(
+        lowered.contains("br"),
+        "searxng engine must advertise br via automatic decompression, got: {encoding}"
+    );
+}
+
+fn deterministic_compression_payload() -> Vec<u8> {
+    let line = "eggsearch phase-24 chunked compression regression payload 0123456789 abcdefghijklmnopqrstuvwxyz ";
+    line.repeat(512).into_bytes()
+}
+
+fn gzip_compress(plain: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(plain).expect("gzip encode");
+    encoder.finish().expect("gzip finish")
+}
+
+fn brotli_compress(plain: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut writer = brotli::CompressorWriter::new(Vec::new(), 4096, 5, 22);
+    writer.write_all(plain).expect("brotli encode");
+    writer.into_inner()
+}
+
+async fn serve_compressed_once(
+    compressed: Vec<u8>,
+    content_encoding: &'static str,
+    use_chunked: bool,
+) -> (String, tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut buf = vec![0u8; 8192];
+        let mut seen = Vec::new();
+        loop {
+            let n = stream.read(&mut buf).await.expect("read");
+            if n == 0 {
+                break;
+            }
+            seen.extend_from_slice(&buf[..n]);
+            if seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if seen.len() > 16384 {
+                break;
+            }
+        }
+        if use_chunked {
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: {content_encoding}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            );
+            stream.write_all(head.as_bytes()).await.expect("head");
+            for wire in compressed.chunks(7) {
+                let size_line = format!("{:X}\r\n", wire.len());
+                stream
+                    .write_all(size_line.as_bytes())
+                    .await
+                    .expect("chunk size");
+                stream.write_all(wire).await.expect("chunk body");
+                stream.write_all(b"\r\n").await.expect("chunk end");
+            }
+            stream.write_all(b"0\r\n\r\n").await.expect("terminator");
+        } else {
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: {content_encoding}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                compressed.len()
+            );
+            stream.write_all(head.as_bytes()).await.expect("head");
+            stream.write_all(&compressed).await.expect("body");
+        }
+    });
+    (format!("http://{addr}/"), server)
+}
+
+async fn fetch_via_production_body_path(url: &str, max_bytes: usize) -> Vec<u8> {
+    let client = eggsearch::meta::engines::build_http_client(None).expect("client");
+    let resp = client
+        .get(url)
+        .expect("url")
+        .timeout(eggsearch::meta::engines::engine_timeout(
+            Duration::from_secs(10),
+        ))
+        .send()
+        .await
+        .expect("request succeeds");
+    assert!(resp.status().is_success());
+    eggsearch::meta::engines::read_bounded_body(resp, "phase24", max_bytes)
+        .await
+        .expect("bounded body succeeds")
+}
+
+#[tokio::test]
+async fn chunked_gzip_decodes_through_bounded_body_path() {
+    let plain = deterministic_compression_payload();
+    let compressed = gzip_compress(&plain);
+    assert!(compressed.len() > 64);
+    let (url, server) = serve_compressed_once(compressed, "gzip", true).await;
+    let decoded = fetch_via_production_body_path(&url, 2 * 1024 * 1024).await;
+    server.await.expect("server task");
+    assert_eq!(decoded, plain);
+}
+
+#[tokio::test]
+async fn chunked_brotli_decodes_through_bounded_body_path() {
+    let plain = deterministic_compression_payload();
+    let compressed = brotli_compress(&plain);
+    assert!(compressed.len() > 64);
+    let (url, server) = serve_compressed_once(compressed, "br", true).await;
+    let decoded = fetch_via_production_body_path(&url, 2 * 1024 * 1024).await;
+    server.await.expect("server task");
+    assert_eq!(decoded, plain);
+}
+
+#[tokio::test]
+async fn transfer_shape_does_not_change_decoded_bytes() {
+    let plain = deterministic_compression_payload();
+    let gzip_bytes = gzip_compress(&plain);
+    let brotli_bytes = brotli_compress(&plain);
+    let (chunked_gzip_url, chunked_gzip_server) =
+        serve_compressed_once(gzip_bytes.clone(), "gzip", true).await;
+    let chunked_gzip = fetch_via_production_body_path(&chunked_gzip_url, 2 * 1024 * 1024).await;
+    chunked_gzip_server.await.expect("server task");
+    let (length_gzip_url, length_gzip_server) =
+        serve_compressed_once(gzip_bytes, "gzip", false).await;
+    let length_gzip = fetch_via_production_body_path(&length_gzip_url, 2 * 1024 * 1024).await;
+    length_gzip_server.await.expect("server task");
+    let (chunked_br_url, chunked_br_server) =
+        serve_compressed_once(brotli_bytes.clone(), "br", true).await;
+    let chunked_br = fetch_via_production_body_path(&chunked_br_url, 2 * 1024 * 1024).await;
+    chunked_br_server.await.expect("server task");
+    let (length_br_url, length_br_server) = serve_compressed_once(brotli_bytes, "br", false).await;
+    let length_br = fetch_via_production_body_path(&length_br_url, 2 * 1024 * 1024).await;
+    length_br_server.await.expect("server task");
+    assert_eq!(chunked_gzip, plain);
+    assert_eq!(length_gzip, plain);
+    assert_eq!(chunked_br, plain);
+    assert_eq!(length_br, plain);
+}
+
+#[tokio::test]
+async fn decoded_body_limit_applies_to_decompressed_bytes() {
+    let plain = deterministic_compression_payload();
+    let gzip_bytes = gzip_compress(&plain);
+    let (url, server) = serve_compressed_once(gzip_bytes, "gzip", true).await;
+    let client = eggsearch::meta::engines::build_http_client(None).expect("client");
+    let resp = client
+        .get(&url)
+        .expect("url")
+        .timeout(eggsearch::meta::engines::engine_timeout(
+            Duration::from_secs(10),
+        ))
+        .send()
+        .await
+        .expect("request succeeds");
+    let err = eggsearch::meta::engines::read_bounded_body(resp, "phase24", 16)
+        .await
+        .expect_err("tiny decoded limit must reject chunked gzip");
+    assert!(
+        err.to_string().contains("too large"),
+        "decoded overflow must report too large, got: {err}"
+    );
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn decoded_body_limit_is_not_wire_only() {
+    let plain = vec![b'A'; 64 * 1024];
+    let gzip_bytes = gzip_compress(&plain);
+    assert!(
+        gzip_bytes.len() < 1024,
+        "highly compressible fixture must keep wire bytes small, got {}",
+        gzip_bytes.len()
+    );
+    let (url, server) = serve_compressed_once(gzip_bytes, "gzip", true).await;
+    let client = eggsearch::meta::engines::build_http_client(None).expect("client");
+    let resp = client
+        .get(&url)
+        .expect("url")
+        .timeout(eggsearch::meta::engines::engine_timeout(
+            Duration::from_secs(10),
+        ))
+        .send()
+        .await
+        .expect("request succeeds");
+    let err = eggsearch::meta::engines::read_bounded_body(resp, "phase24", 4096)
+        .await
+        .expect_err("decoded overflow must be rejected even when wire bytes fit");
+    assert!(
+        err.to_string().contains("too large"),
+        "wire-small decoded-large must report too large, got: {err}"
+    );
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn compressed_chunked_response_respects_total_deadline() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut buf = vec![0u8; 8192];
+        let mut seen = Vec::new();
+        loop {
+            let n = stream.read(&mut buf).await.expect("read");
+            if n == 0 {
+                break;
+            }
+            seen.extend_from_slice(&buf[..n]);
+            if seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if seen.len() > 16384 {
+                break;
+            }
+        }
+        let head = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        stream.write_all(head.as_bytes()).await.expect("head");
+        stream.write_all(b"8\r\n12345678\r\n").await.expect("chunk");
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    });
+    let client = eggsearch::meta::engines::build_http_client(None).expect("client");
+    let url = format!("http://{addr}/");
+    let start = tokio::time::Instant::now();
+    let result = client
+        .get(&url)
+        .expect("url")
+        .timeout(eggsearch::meta::engines::engine_timeout(
+            Duration::from_millis(800),
+        ))
+        .send()
+        .await;
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "compressed chunked stall must stay bounded, elapsed: {elapsed:?}"
+    );
+    if let Ok(resp) = result {
+        let body = eggsearch::meta::engines::read_bounded_body(resp, "phase24", 65536).await;
+        assert!(body.is_err(), "stalled compressed body must not succeed");
+    }
+    server.abort();
 }

@@ -43,7 +43,6 @@ pub async fn search(
         .query("language", "en-US")
         .header("Accept", "application/json")
         .header("Accept-Language", "en-US,en;q=0.9")
-        .decompress(false)
         .timeout(super::engine_timeout(timeout))
         .send()
         .await

@@ -64,7 +64,7 @@ Profiles are advisory; unavailable providers are skipped with warnings.
 
 ## HTTP Transport Ownership
 
-All eggsearch-owned outbound HTTP goes through `eggfetch-core` (MSRV 1.89):
+All eggsearch-owned outbound HTTP goes through `eggfetch-core` 0.2.0 (MSRV 1.89):
 shared provider client in `src/meta/engines/mod.rs` (bounded library redirects,
 strict HTTPS-downgrade policy, explicit total deadlines, hard decoded-body
 caps), single shared `FetchClient` in `src/fetch/client.rs` (redirects
@@ -74,10 +74,11 @@ client in `src/update.rs` (redirects enabled, downgrade denied), and
 single-request health probes near `startup.rs`/`integrations/common.rs`.
 `OriginController` remains the only retry/circuit authority. rmcp transitively
 owns only its Streamable HTTP client transport. Never add eggsearch-local
-reqwest clients or compatibility facades. HTML scrape engines (`brave` HTML,
-`duckduckgo`, `mojeek`, `searxng`, `startpage`, `yahoo`) request identity
-encoding (`.decompress(false)`) pending upstream `eggstack/eggfetch#24`;
-JSON APIs, fetch, updater, and probes retain automatic decompression.
+reqwest clients or compatibility facades. All engines, including the HTML scrape
+engines (`brave` HTML, `duckduckgo`, `mojeek`, `searxng`, `startpage`, `yahoo`),
+use automatic gzip/Brotli decompression via `eggfetch-core` 0.2.0 (the former
+`.decompress(false)` identity workaround for upstream `eggstack/eggfetch#24`
+was retired in Phase 24).
 
 ## Deterministic Identity System
 

@@ -24,7 +24,6 @@ pub async fn search(
         })?
         .query("p", query)
         .header("Cookie", "sB=v=1&vm=p&fl=1&vl=lang_en&pn=10")
-        .decompress(false)
         .timeout(super::engine_timeout(timeout))
         .send()
         .await

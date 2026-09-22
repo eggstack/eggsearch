@@ -52,7 +52,7 @@ license = "MIT"
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| `eggfetch-core` | 0.1.7 (`standard-http1`, `advanced-routing`, `redirects`, `tls-rustls`, `json`, `compression-gzip`, `compression-brotli`; no `logical-retry`/`basic-auth`/`proxy`/`tls-native-roots`/`http2`/`http3`/`cookies`/`multipart`) | HTTP client for all eggsearch-owned outbound requests |
+| `eggfetch-core` | 0.2.0 (`standard-http1`, `advanced-routing`, `redirects`, `tls-rustls`, `json`, `compression-gzip`, `compression-brotli`; no `logical-retry`/`basic-auth`/`proxy`/`tls-native-roots`/`http2`/`http3`/`cookies`/`multipart`) | HTTP client for all eggsearch-owned outbound requests |
 | `http` | 1 | Shared header/status types |
 | `scraper` | 0.20 | HTML parsing |
 | `ego-tree` | 0.6.2 | DOM tree traversal |
