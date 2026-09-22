@@ -1,6 +1,6 @@
 # HTTP Fetch & Extraction Deep Dive
 
-**Location:** `src/fetch/` (10 top-level files + 2 subdirectories)
+**Location:** `src/fetch/` (11 top-level files + 2 subdirectories)
 **Purpose:** Fetch HTTP(S) URLs, enforce limits, extract readable content, and render HTML. Independent of the metasearch adapter.
 
 ---
@@ -11,6 +11,7 @@
 |------|---------------|
 | `mod.rs` | Module declarations and re-exports |
 | `client.rs` | `FetchClient` — HTTP fetch client with limits enforcement |
+| `egress.rs` | `EggressDialer` — optional listener-free proxy-chain route beneath eggfetch |
 | `extract.rs` | `HtmlExtractor`, `extract_content()` — HTML→text/markdown extraction |
 | `detect.rs` | Content type detection |
 | `limits.rs` | `FetchLimits`, `validate_fetch_target()` — URL/size validation |
@@ -71,6 +72,25 @@ impl FetchClient {
     ) -> Result<WebFetchResponse, FetchError>;
 }
 ```
+
+---
+
+## Optional Egress Route (`egress.rs`)
+
+`EggressDialer` implements eggfetch's `Dialer` seam with
+`OutboundConnector::connect_tcp_detailed` and typed error mapping
+(Timeout→Timeout, Authentication→Authentication, Policy→Rejected,
+DNS/refused/unreachable→Connection, TLS/protocol/other→Other). Passwords
+resolve from `password_env` at build time; `Debug`/diagnostics stay
+redacted. `apply_route()` leaves direct builders untouched when no route is
+configured and fails closed when a route is configured without the `egress`
+feature.
+
+Route scope is Outcome B: provider search-engine upstreams may use the
+chain via `build_http_client_with_egress`. `FetchClient` dynamic targets
+keep resolved-address pinning on the direct route because eggfetch 0.2.0
+rejects custom-dialer plus `resolved_addresses`. Forge, updater, loopback
+health, rmcp, and browser traffic remain direct in this phase.
 
 ---
 

@@ -1079,6 +1079,14 @@ pub fn is_http_url(url: &str) -> bool {
 /// certain HTML providers but are no longer required for any of the
 /// vendored engines.
 pub fn build_http_client(user_agent: Option<&str>) -> anyhow::Result<Client> {
+    build_http_client_with_egress(user_agent, &crate::core::config::EgressSection::default())
+}
+
+/// Build the shared provider HTTP client, optionally routed through egress.
+pub fn build_http_client_with_egress(
+    user_agent: Option<&str>,
+    egress: &crate::core::config::EgressSection,
+) -> anyhow::Result<Client> {
     let ua = resolve_user_agent(user_agent).to_string();
     let timeout = eggfetch_core::Timeout {
         pool: Some(Duration::from_secs(20)),
@@ -1087,14 +1095,14 @@ pub fn build_http_client(user_agent: Option<&str>) -> anyhow::Result<Client> {
         read: Some(Duration::from_secs(20)),
         total: Some(Duration::from_secs(20)),
     };
-    let client = Client::builder()
+    let builder = Client::builder()
         .user_agent(&ua)
         .timeout(timeout)
         .follow_redirects(true)
         .max_redirects(10)
-        .redirect_policy(eggfetch_core::RedirectPolicy::strict(10))
-        .build();
-    Ok(client)
+        .redirect_policy(eggfetch_core::RedirectPolicy::strict(10));
+    let builder = crate::fetch::egress::apply_route(builder, egress)?;
+    Ok(builder.build())
 }
 
 pub fn engine_timeout(timeout: Duration) -> eggfetch_core::Timeout {

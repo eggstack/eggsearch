@@ -19,7 +19,7 @@ cargo test --locked --all-features
 make hygiene packaging-check bench-check  # hygiene/contract/bench-compile; fuzz: make fuzz-smoke
 ```
 
-Feature flags: `mock` (test-only engine harness — **required for integration/corpus tests**; plain `cargo test` misses most of them), `pdf`, `browser`, `live-smoke` (implies `mock`, ignored by default, network). Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
+Feature flags: `mock` (test-only engine harness — **required for integration/corpus tests**; plain `cargo test` misses most of them), `pdf`, `browser`, `egress` (opt-in listener-free HTTP/SOCKS proxy-chain route for provider upstreams only; prebuilt/default binaries exclude it), `live-smoke` (implies `mock`, ignored by default, network). Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
 
 ```bash
 cargo test --locked --features mock --test web_search_integration  # single suite
@@ -75,4 +75,4 @@ Canonical sources in `skills/` (mirrored via `.opencode/skills/` and `.agents/sk
 
 ## Plans
 
-`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-24 are implemented; Phase 25 is the active maintenance handoff for optional Eggress 1.0.8 outbound proxy-chain integration. Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.
+`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-25 are implemented, including Phase 25's optional Eggress 1.0.8 outbound proxy-chain integration (source-build `egress` opt-in for provider upstreams only). Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.

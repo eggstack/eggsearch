@@ -1188,3 +1188,96 @@ fn html_scrape_engines_use_automatic_decompression() {
         );
     }
 }
+
+#[test]
+fn egress_route_stays_out_of_dynamic_fetch() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let source = fs::read_to_string(format!("{manifest}/src/fetch/client.rs")).expect("readable");
+    let non_test = strip_test_code(&source);
+    for forbidden in [
+        "egress",
+        "EggressDialer",
+        "apply_route",
+        "OutboundConnector",
+        ".dialer(",
+        "resolved_addresses",
+    ] {
+        if forbidden == "resolved_addresses" {
+            assert!(
+                non_test.contains(forbidden),
+                "fetch/client.rs must retain resolved-address pinning for dynamic targets"
+            );
+            continue;
+        }
+        assert!(
+            !non_test.contains(forbidden),
+            "fetch/client.rs must not use egress routing `{forbidden}`; dynamic SSRF-pinned targets stay direct (phase 25 outcome B)"
+        );
+    }
+}
+
+#[test]
+fn egress_route_stays_out_of_loopback_paths() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    for rel in ["src/startup.rs", "src/integrations/common.rs"] {
+        let source = fs::read_to_string(format!("{manifest}/{rel}")).expect("readable");
+        let non_test = strip_test_code(&source);
+        for forbidden in ["egress", "EggressDialer", "OutboundConnector", ".dialer("] {
+            assert!(
+                !non_test.contains(forbidden),
+                "{rel} must not use egress routing `{forbidden}`; loopback health stays direct"
+            );
+        }
+    }
+}
+
+#[test]
+fn egress_feature_budget_stays_bounded() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let cargo = fs::read_to_string(format!("{manifest}/Cargo.toml")).expect("readable");
+    assert!(
+        cargo.contains("egress = [\"dep:eggress-outbound\", \"dep:eggress-uri\", \"dep:eggress-core\"]")
+            || cargo.contains("egress = [\"dep:eggress-outbound\", \"dep:eggress-uri\"]")
+            || cargo.contains("egress = [\"dep:eggress-uri\", \"dep:eggress-outbound\"]"),
+        "Cargo.toml must declare a single `egress` feature over eggress-outbound + eggress-uri (+ eggress-core for the stream type)"
+    );
+    assert!(
+        cargo.contains("eggress-outbound = { version = \"=1.0.8\""),
+        "egress must pin published eggress-outbound 1.0.8"
+    );
+    assert!(
+        cargo.contains("eggress-uri = { version = \"=1.0.8\""),
+        "egress must pin published eggress-uri 1.0.8"
+    );
+    assert!(
+        cargo.contains("eggress-core = { version = \"=1.0.8\""),
+        "egress must pin published eggress-core 1.0.8"
+    );
+    assert!(
+        cargo.contains("eggress-outbound = { version = \"=1.0.8\", default-features = false"),
+        "eggress-outbound must use default-features = false"
+    );
+    for forbidden in [
+        "eggress-embed",
+        "eggress-runtime",
+        "eggress-server",
+        "eggress-admin",
+        "pproxy-compat",
+        "pproxy-legacy",
+        "legacy-crypto",
+        "insecure-tls",
+    ] {
+        assert!(
+            !cargo.contains(forbidden),
+            "Cargo.toml must not enable eggress `{forbidden}` in the phase 25 base profile"
+        );
+    }
+    let default_line = cargo
+        .lines()
+        .find(|l| l.trim_start().starts_with("default ="))
+        .expect("default features present");
+    assert!(
+        !default_line.contains("egress"),
+        "default build must not enable egress: {default_line}"
+    );
+}

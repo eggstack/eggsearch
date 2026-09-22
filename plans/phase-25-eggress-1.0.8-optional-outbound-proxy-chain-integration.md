@@ -1,6 +1,6 @@
 # Phase 25 — Eggress 1.0.8 optional outbound proxy-chain integration
 
-Status: planned / ready for handoff
+Status: implemented
 
 Planning baseline: dfa90e050c5434f3346902aeb4074901c58e90d1 (eggsearch 0.3.9 on main)
 
@@ -557,3 +557,22 @@ The most important risk is not protocol compatibility; it is accidentally
 bypassing eggsearch's existing DNS-resolution pinning on untrusted fetch
 targets. Resolve that first. A narrower route that preserves security is better
 than a global route that weakens the current SSRF contract.
+
+## Implementation record
+
+Status: implemented.
+
+- Starting SHA: `8f8bd9de9264bf9b9a52fc935512ed3d200c8459` (docs descendant of planning baseline `dfa90e050c5434f3346902aeb4074901c58e90d1`, eggsearch 0.3.9 on main).
+- Implementation: this closure change (code in `src/fetch/egress.rs`, `src/core/config.rs`, provider seam, `tests/egress_routing.rs`, guards, docs).
+- SSRF outcome: Outcome B. Eggfetch-core 0.2.0 `pipeline/prepare.rs` rejects custom-dialer plus caller-supplied resolved destinations (`custom dialing is incompatible with caller-supplied resolved destinations`), proven by `custom_dialer_rejects_resolved_addresses`. `FetchClient` keeps `resolved_addresses` pinning and contains no dialer/egress path (guarded). No process-global hostname-to-IP cache was added.
+- Packaging outcome: Outcome B (source-build opt-in). Single `egress` feature (`eggress-outbound` + `eggress-uri` + `eggress-core`, all `=1.0.8`, `default-features = false`); default graph contains no Eggress; no second SKU. Prebuilt/default binaries reject an enabled route instead of silently ignoring it.
+- Resolved versions/features: `eggress-outbound =1.0.8`, `eggress-uri =1.0.8`, `eggress-core =1.0.8`, no `toml`/`pproxy-compat`/`udp`/`extended`/`ssh`/`quic`/`legacy-crypto`/`insecure-tls`. Base protocols only: `http`/`httponly`/`socks4`/`socks5`.
+- Configuration schema: top-level `[egress]` with `enabled` plus ordered `[[egress.hops]]` entries (`scheme`, `host`, `port`, optional `username`, `password_env` env-var reference). No raw passwords persisted; diagnostics use the redacted route form.
+- Eligible consumers: vendored provider search engines via `build_http_client_with_egress` / `build_default_engines_with_egress` / `MetadataSearchAdapter::new_with_egress` (wired in `ServerState::build`). Excluded and direct by design (guarded): `FetchClient` dynamic targets, forge tree APIs, updater, startup/integration loopback probes, rmcp transport, browser subprocess traffic.
+- Deterministic tests: `tests/egress_routing.rs` (17 tests: config validation, redaction, SSRF gate, direct smoke, HTTP/SOCKS5/mixed two-hop composition, auth rejection, unavailable hop, gzip decode, malformed config, missing credential env, typed mapping) plus unit tests in `src/fetch/egress.rs` and three new `static_guards` (dynamic-fetch exclusion, loopback exclusion, egress feature budget). Full `cargo test --locked --all-features` passes (78 suites ok, 4 doc-tests ok).
+- Dependency/binary deltas: default normal graph unchanged vs baseline; egress graph adds only `eggress-core/outbound/uri/protocol-http/protocol-socks/relay/transport-tls 1.0.8` with no ssh/quic/udp/pproxy/legacy/insecure-tls and no new OpenSSL/native-tls. Release binary 18,777,728 bytes default vs 19,617,984 bytes with `egress` (+840,256, ~4.5%); default drift vs Phase 24 baseline (18,744,464) is config/seam code only.
+- MSRV: `cargo +1.89.0 check --locked --all-features` passes.
+- Local gates: `cargo fmt --check`, `cargo clippy --locked --all-targets --all-features -- -D warnings`, `cargo check --locked --no-default-features`, `cargo check --features egress`, `cargo test --locked --all-features`, `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps`, `make hygiene`, `make packaging-check`, `cargo publish --dry-run --locked --allow-dirty`, `make bench-check` all pass.
+- Release qualification: not rerun. Canonical default/release binary graph is unchanged (Outcome B, no default-feature change), so the Phase 23/24 seven-target qualification remains the release evidence; the next production/dependency change that alters the canonical graph must still requalify under normal release rules. Egress-feature host + MSRV compile verified.
+- Documentation: `docs/features.md` (operator contract), `docs/config.md`, `docs/test-inventory.md`, `architecture/config.md`, `architecture/fetch.md`, `architecture/maintenance.md`, `architecture/testing.md`, `skills/eggsearch-dev/SKILL.md`, `skills/eggsearch-architecture/SKILL.md`, `README.md`, `AGENTS.md`.
+- Deviations: forge/updater remain direct in this phase (narrower than the maximal Outcome B scope) to avoid touching update-path and owner/repo-adjacent policy; they reuse no egress path and are documented as excluded. No `eggress-uri`-only construction path was needed beyond chain translation. No live TLS-through-CONNECT test with public PKI; HTTPS semantics rest on eggfetch owning destination TLS above the dialer stream plus loopback CONNECT tunneling proof.

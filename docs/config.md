@@ -419,6 +419,27 @@ When `allow_private_network = false` (the default), eggsearch blocks fetches to 
 
 `[search].live.user_agent` and `[search].live.respect_robots_txt` are parsed for compatibility but are no-ops in the current build.
 
+## Outbound Proxy-Chain Routing
+
+Optional `[egress]` section for listener-free HTTP/SOCKS proxy-chain routing
+of fixed provider upstreams. Disabled by default and direct unless enabled.
+Requires a source build with `--features egress`; prebuilt/default binaries
+reject an enabled route instead of silently ignoring it. Raw proxy passwords
+are never stored: each hop references a credential environment variable.
+
+```toml eggsearch-config-parse-only
+[egress]
+enabled = false
+
+[[egress.hops]]
+scheme = "http"
+host = "127.0.0.1"
+port = 8080
+```
+
+See [features.md](features.md#outbound-proxy-chain-routing) for the full
+operator contract, traffic scope, and troubleshooting.
+
 ## Local Workspace Defaults
 
 Local workspace search is disabled by default.

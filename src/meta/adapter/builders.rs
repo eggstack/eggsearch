@@ -1,6 +1,6 @@
 use crate::core::config::ApiProviderConfig;
 use crate::core::provider::ProviderSkipCode;
-use crate::meta::engines::build_http_client;
+use crate::meta::engines::build_http_client_with_egress;
 use std::sync::Arc;
 use tracing::warn;
 
@@ -24,6 +24,23 @@ pub fn build_default_engines(
     searxng_base_url: Option<String>,
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
 ) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
+    build_default_engines_with_egress(
+        enabled_providers,
+        user_agent,
+        searxng_base_url,
+        api_providers,
+        &crate::core::config::EgressSection::default(),
+    )
+}
+
+/// Build the default engine set with an optional egress route for eligible fixed upstreams.
+pub fn build_default_engines_with_egress(
+    enabled_providers: &[String],
+    user_agent: Option<String>,
+    searxng_base_url: Option<String>,
+    api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
+    egress: &crate::core::config::EgressSection,
+) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
     use crate::meta::engines::{
         BraveApiEngine, BraveEngine, CisaKevEngine, CratesIoRegistryEngine, CrossRefEngine,
         DuckDuckGoEngine, ExaEngine, FirecrawlDeveloperEngine, GiteaCodeEngine, GiteaIssuesEngine,
@@ -35,7 +52,10 @@ pub fn build_default_engines(
         SemanticScholarEngine, SourcegraphCodeEngine, StartpageEngine, TavilyEngine, YahooEngine,
     };
 
-    let client = Arc::new(build_http_client(user_agent.as_deref())?);
+    let client = Arc::new(build_http_client_with_egress(
+        user_agent.as_deref(),
+        egress,
+    )?);
     let mut engines: EngineList = Vec::new();
     let mut skipped: Vec<SkippedProvider> = Vec::new();
 

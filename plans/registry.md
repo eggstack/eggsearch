@@ -334,7 +334,18 @@ Do not mark Phase 24 implemented until:
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 25 | Eggress 1.0.8 optional outbound proxy-chain integration | planned / ready for handoff | Phase 24 implemented; published eggfetch-core 0.2.0; published eggress-outbound/eggress-uri 1.0.8 | `phase-25-eggress-1.0.8-optional-outbound-proxy-chain-integration.md` |
+| 25 | Eggress 1.0.8 optional outbound proxy-chain integration | implemented | Phase 24 implemented; published eggfetch-core 0.2.0; published eggress-outbound/eggress-uri 1.0.8 | `phase-25-eggress-1.0.8-optional-outbound-proxy-chain-integration.md` |
+
+Phase 25 is implemented on this closure change: Outcome B (SSRF-safe narrow
+route) with Outcome B packaging (source-build `egress` opt-in, no second
+SKU). Eggfetch remains the HTTP/TLS/pooling/deadline owner; Eggress owns
+only listener-free TCP hop establishment via `EggressDialer`. Provider
+search engines route through `build_http_client_with_egress`; dynamic
+`FetchClient` targets keep resolved-address pinning direct (eggfetch 0.2.0
+rejects dialer plus resolved destinations); forge, updater, loopback, rmcp,
+and browser paths remain direct. Base protocols `http`/`socks4`/`socks5`
+only; credentials are env-indirected and redacted. Full evidence is in the
+Phase 25 implementation record.
 
 Phase 25 adds Eggress only beneath eggfetch's custom-Dialer boundary. Eggfetch
 remains the HTTP, pooling, destination-TLS, decompression, redirect-mechanics,

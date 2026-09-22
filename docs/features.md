@@ -189,3 +189,84 @@ enabled = true
 - `browser-login` and profile-scoped MCP fetches use the same Eggsearch-owned `chrome-data` directory
 - Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies
 - Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped)
+
+---
+
+## Outbound Proxy-Chain Routing
+
+Optional listener-free HTTP/SOCKS proxy-chain route beneath eggfetch for
+fixed operator-owned provider upstreams. Source-build opt-in only: prebuilt
+and default binaries do not include it. Build with the `egress` feature:
+
+```bash
+cargo build --features egress
+```
+
+Eggfetch remains the HTTP, pooling, destination-TLS, decompression,
+redirect-mechanics, and deadline owner. Eggress owns only physical TCP
+proxy-hop establishment. No listener, service lifecycle, admin endpoint,
+system-proxy mutation, or full embed runtime is introduced. Direct behavior
+is unchanged when no route is configured. Chain failures fail closed and
+never fall back to direct. Retry policy stays with `OriginController`;
+request/total timeouts stay with eggfetch/eggsearch with no second outer
+Eggress deadline.
+
+Supported base protocols are ordinary TCP `http`, `socks4`, and `socks5`
+(`httponly` accepted as an HTTP variant). Shadowsocks, Trojan, WebSocket,
+SSH, QUIC/H3, UDP, legacy crypto, pproxy compatibility, and insecure TLS
+remain excluded.
+
+### Enabling
+
+```toml eggsearch-config-parse-only
+[egress]
+enabled = true
+
+[[egress.hops]]
+scheme = "http"
+host = "127.0.0.1"
+port = 8080
+
+[[egress.hops]]
+scheme = "socks5"
+host = "127.0.0.1"
+port = 1080
+username = "alice"
+password_env = "EGRESS_PROXY_PASS"
+```
+
+Proxy passwords are never stored in configuration. Each hop names the
+environment variable holding its password via `password_env`; the value is
+resolved at connector-build time and a missing or empty variable fails the
+request closed. `AppConfig::save` never writes raw secrets because only
+variable names are persisted. Diagnostics and `Debug` output use the
+redacted route form (`****:****@host:port`) and never log full proxy URIs
+or credentials. Proxy authentication is a hop handshake and is never
+forwarded to the destination as a normal header.
+
+### Traffic scope
+
+When routed, only vendored provider search-engine upstreams use the
+configured chain. The following remain direct by design and are guarded by
+static tests:
+
+- `web_fetch`, `batch_fetch`, and `repo_fetch` dynamic targets keep
+  resolved-address pinning on the direct route. Eggfetch 0.2.0 rejects the
+  custom-dialer plus `resolved_addresses` combination, so these SSRF-sensitive
+  paths cannot silently migrate to proxy DNS.
+- Forge tree APIs, the self-updater, startup/integration loopback health
+  probes, rmcp Streamable HTTP transport, and browser subprocess traffic
+  remain direct in this phase.
+
+### Troubleshooting
+
+- `egress route is configured but this binary was built without the
+  egress feature` — rebuild with `--features egress` or set
+  `[egress].enabled = false`.
+- `unsupported egress scheme` — only `http`, `socks4`, `socks5`
+  (`httponly`) are accepted in this phase.
+- `credential env ... is missing or empty` — export the named variable
+  before starting the server; unset secrets fail closed.
+- `authentication` / `connection` / `timeout` dial errors carry
+  kind/stage/hop/protocol facts without credentials; a failed chain never
+  retries direct.

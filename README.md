@@ -153,6 +153,11 @@ cargo build --release
 
 The binary is written to `target/release/eggsearch`.
 
+An optional listener-free HTTP/SOCKS proxy-chain route for provider
+upstreams is available only as a source-build opt-in (`cargo build
+--features egress`); prebuilt and default binaries exclude it. See
+[Optional Features](docs/features.md#outbound-proxy-chain-routing).
+
 ## Development
 
 ```bash

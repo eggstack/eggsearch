@@ -655,6 +655,142 @@ impl Default for FetchSection {
     }
 }
 
+/// Single ordered egress proxy hop with secret-indirected credentials.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EgressHopConfig {
+    /// Hop scheme: `http`, `socks4`, or `socks5` (`httponly` accepted as an HTTP variant).
+    pub scheme: String,
+    /// Bare hostname or IP literal without userinfo, path, or port suffix.
+    pub host: String,
+    /// TCP port of the proxy hop.
+    pub port: u16,
+    /// Optional proxy username; when set, `password_env` is required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// Environment variable holding the proxy password; raw passwords are never persisted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_env: Option<String>,
+}
+
+/// Optional `[egress]` section for listener-free outbound proxy-chain routing.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct EgressSection {
+    /// Whether the configured chain is used for eligible fixed-upstream paths.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Ordered proxy hops traversed before reaching the destination.
+    #[serde(default)]
+    pub hops: Vec<EgressHopConfig>,
+}
+
+impl EgressSection {
+    /// Whether a proxy chain is configured and enabled.
+    pub fn is_routed(&self) -> bool {
+        self.enabled && !self.hops.is_empty()
+    }
+
+    /// Credential-safe one-line route description.
+    pub fn redacted_route(&self) -> String {
+        if !self.is_routed() {
+            return "direct".to_string();
+        }
+        self.hops
+            .iter()
+            .map(|hop| {
+                let creds = if hop.username.is_some() || hop.password_env.is_some() {
+                    "****:****@"
+                } else {
+                    ""
+                };
+                format!("{}://{}{}:{}", hop.scheme, creds, hop.host, hop.port)
+            })
+            .collect::<Vec<_>>()
+            .join("__")
+    }
+
+    fn validate(&self) -> CoreResult<()> {
+        if !self.enabled {
+            if self.hops.is_empty() {
+                return Ok(());
+            }
+            for hop in &self.hops {
+                validate_egress_hop(hop)?;
+            }
+            return Ok(());
+        }
+        if self.hops.is_empty() {
+            return Err(CoreError::Config(
+                "[egress].enabled is true but [egress].hops is empty; configure at least one http/socks hop or disable egress".to_string(),
+            ));
+        }
+        for hop in &self.hops {
+            validate_egress_hop(hop)?;
+        }
+        #[cfg(not(feature = "egress"))]
+        {
+            return Err(CoreError::Config(
+                "egress route is configured but this binary was built without the `egress` feature; rebuild with --features egress or set [egress].enabled = false".to_string(),
+            ));
+        }
+        #[cfg(feature = "egress")]
+        {
+            Ok(())
+        }
+    }
+}
+
+fn validate_egress_hop(hop: &EgressHopConfig) -> CoreResult<()> {
+    match hop.scheme.as_str() {
+        "http" | "httponly" | "socks4" | "socks5" => {}
+        other => {
+            return Err(CoreError::Config(format!(
+                "[egress].hops scheme '{other}' is unsupported; expected one of: http, socks4, socks5 (httponly accepted as http variant)"
+            )));
+        }
+    }
+    if hop.host.is_empty() {
+        return Err(CoreError::Config(
+            "[egress].hops host must be non-empty".to_string(),
+        ));
+    }
+    if hop.host.contains('@') || hop.host.contains('/') || hop.host.contains(':') {
+        return Err(CoreError::Config(format!(
+            "[egress].hops host '{}' must be a bare hostname or IP literal without userinfo, path, or port suffix",
+            hop.host
+        )));
+    }
+    if hop.port == 0 {
+        return Err(CoreError::Config(
+            "[egress].hops port must be non-zero".to_string(),
+        ));
+    }
+    if let Some(ref username) = hop.username {
+        if username.is_empty() {
+            return Err(CoreError::Config(
+                "[egress].hops username must be non-empty when present".to_string(),
+            ));
+        }
+        if username.contains(':') || username.contains('@') {
+            return Err(CoreError::Config(
+                "[egress].hops username must not contain ':' or '@'".to_string(),
+            ));
+        }
+    }
+    if let Some(ref env) = hop.password_env {
+        if env.is_empty() {
+            return Err(CoreError::Config(
+                "[egress].hops password_env must be non-empty when present".to_string(),
+            ));
+        }
+        if hop.username.as_deref().is_none_or(|u| u.is_empty()) {
+            return Err(CoreError::Config(
+                "[egress].hops password_env requires a non-empty username".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Root configuration type. Mirrors the structure of the TOML file
 /// loaded from [`default_config_path`] or a user-supplied path.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -668,6 +804,9 @@ pub struct AppConfig {
     /// Optional `[local]` section for local workspace search.
     #[serde(default)]
     pub local: crate::core::local::LocalConfig,
+    /// Optional `[egress]` section for listener-free outbound proxy-chain routing.
+    #[serde(default)]
+    pub egress: EgressSection,
 }
 
 impl AppConfig {
@@ -1256,6 +1395,7 @@ impl AppConfig {
                 ));
             }
         }
+        self.egress.validate()?;
         Ok(())
     }
 

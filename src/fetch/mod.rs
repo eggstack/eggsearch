@@ -10,6 +10,7 @@ pub mod browser;
 pub mod cache;
 pub mod client;
 pub mod detect;
+pub mod egress;
 pub mod extract;
 pub mod limits;
 #[allow(missing_docs)]

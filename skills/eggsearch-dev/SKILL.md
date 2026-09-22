@@ -35,6 +35,7 @@ rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_select
 | `mock` | Test-only mock engine (`src/meta/mock.rs`) | Integration/corpus tests |
 | `pdf` | PDF text extraction via `lopdf` | PDF tests |
 | `browser` | Headless Chrome/Chromium rendering via `chromiumoxide` | Browser rendering tests |
+| `egress` | Optional listener-free HTTP/SOCKS proxy-chain route beneath eggfetch (provider upstreams only, source-build opt-in) | Egress routing tests |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Manual only |
 
 **Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most tests.
@@ -45,6 +46,7 @@ rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_select
 |----------|-------------|---------|
 | `src/*/mod.rs` | Varies | Unit tests |
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
+| `tests/egress_routing.rs` | None (proxy composition under `egress`) | Egress config validation, SSRF gate, deterministic HTTP/SOCKS/multi-hop composition |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
@@ -138,6 +140,8 @@ eggsearch integrate opencode --transport stdio --apply --executable /usr/local/b
 - **Using fallback smoke results as native release evidence** — native smoke requires credentials and fixture configuration; these are maintainer-only diagnostics, not release evidence
 - **Running no-default full test suite in routine gate** — the routine gate runs `cargo check --locked --no-default-features` (compile-only); full test pass uses `--all-features` only
 - **Using anonymous browser state for a selected profile** — profile-scoped browser fetches must use the profile manager's opaque-ID-resolved `chrome-data` directory and the configured browser runtime values
+- **Routing dynamic fetch targets through egress** — `web_fetch`/`batch_fetch`/`repo_fetch` stay direct with resolved-address pinning; only provider upstreams may use the `egress` route, and chain failures never fall back to direct
+- **Storing proxy secrets in config** — egress hops reference credential env vars via `password_env`; raw passwords never appear in config, logs, or diagnostics
 - **Making the updater trust GitHub `latest`** — crates.io `crate.max_stable_version` is the stable authority; request only the exact `vX.Y.Z` release asset and checksum
 - **Broadening updater Cargo fallback** — only unsupported hosts or confirmed exact-asset HTTP 404 may compile; network, status, checksum, and candidate identity failures are hard stops
 - **Replacing before verification** — checksum and exact `eggsearch --version` identity must pass before any candidate replacement

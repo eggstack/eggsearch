@@ -15,6 +15,7 @@ MCP tool input validation, provider failures, tool response shape, partitioned b
 - `web_search_integration.rs` — web search validation, sanitization, intent reranking
 - `web_fetch_integration.rs` — fetch extraction, truncation, safety
 - `provider_routing.rs` — provider routing, code-host rewrites, diagnostics
+- `egress_routing.rs` — optional proxy-chain route: config validation, credential redaction, dialer/SSRF gate, deterministic HTTP/SOCKS/multi-hop composition
 - `repo_workflow.rs` — repository evidence discovery
 - `research_workflow.rs` — multi-source research discovery
 - `security_workflow.rs` — advisory retrieval and safety
@@ -166,6 +167,7 @@ comparison entry point (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`).
 | File | Purpose |
 |------|---------|
 | `forge_adapter.rs` | Forge API client |
+| `egress_routing.rs` | Egress route validation, SSRF gate, and proxy-chain composition |
 | `bounded_command.rs` | Bounded command execution |
 | `conflict_source_attribution.rs` | Conflict source attribution |
 | `inventory_freshness.rs` | Inventory freshness |

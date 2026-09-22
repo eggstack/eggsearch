@@ -22,7 +22,7 @@ Single library + binary crate (not a workspace). All source under `src/`. The cr
 - `startup.rs` — canonical persistent runtime, manager detection/rendering, croncheck, restart, and lifecycle state
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
 - `meta/` — MetadataSearchAdapter (`adapter/` modules) + 37 vendored engine structs (+ local workspace backend) covering 37 registered provider IDs, forge adapter, inventory cache, structured symbol parser (`local_symbols.rs`), shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
-- `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, and optional anonymous or request-scoped persistent browser execution
+- `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, optional egress proxy-chain dialer, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), canonical tool contract (`tool_contract.rs` with purpose/use-when/not-for, domain/disclosure, keywords/aliases, related/next, `discovery_text()`, `is_known_tool()`), 10 tool definitions (`tools/` per-tool modules), deterministic result projection (`projection.rs`, `ResponseDetail` compact/standard/diagnostic), server state, policy
 - `integrations/` — safe render/apply/verify adapters for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode
 
@@ -32,7 +32,7 @@ Single library + binary crate (not a workspace). All source under `src/`. The cr
 |--------|-----------|---------|
 | `core` | `identity.rs`, `sanitize.rs`, `warning.rs`, `evidence_role.rs`, `workflow_coverage.rs`, `conflict.rs`, `retrieval_status.rs`, `evidence_postprocess.rs`, `local.rs` | Canonical data model with zero external dependencies beyond serialization |
 | `meta` | `adapter/` (invocation, advisory, status, web/repo/research/security execution, normalization, builders), `dispatch/` (`types` + `execution`), `dependency_parse/` (normalized dispatch + one ecosystem per submodule), `local/` (subsystem facade) + `local_backend.rs`/`local_inventory.rs`/`local_inventory_cache.rs`/`local_symbols.rs` (deterministic structured Rust/Python/JS-TS/Go parsing with regex fallback, budgets, symbol cache, test hints), `probe.rs` (shared liveness service), `workflow.rs`, `fetch_ranking.rs` (plus `FetchCandidateBuilder`), `forge_adapter.rs`, `planner.rs` | Search orchestration, shared workflow mechanics without domain policy flattening, RRF aggregation, provider health and liveness probing, forge API client, local workspace |
-| `fetch` | `client.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, SSRF protection, content extraction, cache, and browser transport |
+| `fetch` | `client.rs`, `egress.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, optional egress proxy-chain dialer, SSRF protection, content extraction, cache, and browser transport |
 | `mcp` | `server.rs`, `tool_contract.rs`, `projection.rs`, `http.rs`, `state.rs`, `tools/` (per-tool modules plus shared `common`), `policy.rs` | MCP protocol, canonical tool contract and discovery metadata, deterministic compact/standard/diagnostic result projection after canonical capture, shared tool service, stdio/HTTP transports, health and shutdown |
 | `integrations` | `common.rs`, client adapters, `commands/integrate.rs` | Client-specific MCP configuration rendering, atomic apply, native CLI registration, and protocol verification |
 | `packaging` | `packaging/`, `.github/workflows/release-binaries.yml`, `packaging/release-validate.sh` | Release target contract, qualification/release modes, checksums, installers, artifact smoke, draft assembly |
@@ -78,7 +78,10 @@ reqwest clients or compatibility facades. All engines, including the HTML scrape
 engines (`brave` HTML, `duckduckgo`, `mojeek`, `searxng`, `startpage`, `yahoo`),
 use automatic gzip/Brotli decompression via `eggfetch-core` 0.2.0 (the former
 `.decompress(false)` identity workaround for upstream `eggstack/eggfetch#24`
-was retired in Phase 24).
+was retired in Phase 24). The optional `egress` feature adds a listener-free
+Eggress proxy-chain `Dialer` beneath eggfetch for provider upstreams only;
+dynamic `FetchClient` targets keep resolved-address pinning on the direct
+route, and chain failures never fall back to direct.
 
 ## Deterministic Identity System
 
@@ -103,6 +106,7 @@ Production defaults `sanitize_output = true`.
 `$XDG_CONFIG_HOME/eggsearch/config.toml`. Root type is `AppConfig` with:
 - `SearchSection` — mode, defaults, profiles, provider map, API config
 - `FetchSection` — enabled, timeout, byte/char caps, redirect limit, network policy
+- `EgressSection` — optional disabled-by-default proxy-chain route (`enabled`, ordered `http`/`socks4`/`socks5` hops, secret-indirected credentials)
 - `LocalConfig` — enabled, roots, file size/index limits, gitignore/symlink policy, structured symbol budgets (`structured_symbols`, `max_parse_bytes`, `max_symbols_per_file`, `max_structured_files`, `max_total_symbols`, `repo_map_structure_cap`)
 
 ## Evidence Postprocessing

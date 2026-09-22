@@ -113,12 +113,41 @@ impl MetadataSearchAdapter {
         multiquery_concurrency: usize,
         multiquery_provider_concurrency: usize,
     ) -> anyhow::Result<Self> {
+        Self::new_with_egress(
+            enabled_providers,
+            global_timeout,
+            user_agent,
+            searxng_base_url,
+            sanitize_output,
+            default_providers,
+            api_providers,
+            multiquery_concurrency,
+            multiquery_provider_concurrency,
+            &crate::core::config::EgressSection::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Build an adapter with an optional egress route for eligible fixed upstreams.
+    pub fn new_with_egress(
+        enabled_providers: Vec<String>,
+        global_timeout: Duration,
+        user_agent: Option<String>,
+        searxng_base_url: Option<String>,
+        sanitize_output: bool,
+        default_providers: Vec<String>,
+        api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
+        multiquery_concurrency: usize,
+        multiquery_provider_concurrency: usize,
+        egress: &crate::core::config::EgressSection,
+    ) -> anyhow::Result<Self> {
         let searxng_configured = searxng_base_url.as_deref().is_some_and(|s| !s.is_empty());
-        let (engines, skipped) = build_default_engines(
+        let (engines, skipped) = builders::build_default_engines_with_egress(
             &enabled_providers,
             user_agent,
             searxng_base_url,
             api_providers,
+            egress,
         )?;
         if !skipped.is_empty() {
             let skipped_ids: Vec<String> = skipped.iter().map(|s| s.id.clone()).collect();
@@ -287,7 +316,7 @@ mod status;
 mod web;
 
 pub use advisory::{NativeAdvisoryOperation, ProviderAdvisoryOutcome, ProviderAdvisoryStatus};
-pub use builders::build_default_engines;
+pub use builders::{build_default_engines, build_default_engines_with_egress};
 pub(crate) use error::classify;
 pub use error::ErrorClass;
 pub(crate) use normalization::build_retrieval_failures;

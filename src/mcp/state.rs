@@ -131,7 +131,7 @@ impl ServerState {
             None
         };
 
-        let adapter = MetadataSearchAdapter::new(
+        let adapter = MetadataSearchAdapter::new_with_egress(
             enabled,
             global_timeout,
             user_agent,
@@ -141,6 +141,7 @@ impl ServerState {
             &config.search.api,
             config.search.multiquery_concurrency,
             config.search.multiquery_provider_concurrency,
+            &config.egress,
         )?;
 
         let misconfigured = config.misconfigured_default_providers();
