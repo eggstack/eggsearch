@@ -1,6 +1,6 @@
 # Phase 26 — Eggress corrective closure and qualification
 
-Status: planned / ready for handoff
+Status: implemented
 
 Planning baseline: `30d597f6b9eadff20e5569a1034312004c248de8` (`eggsearch` 0.3.9 on `main`)
 
@@ -551,3 +551,174 @@ The two most important closure proofs are:
 If satisfying a test appears to require broadening the transport architecture,
 stop and classify the missing capability rather than expanding scope inside this
 corrective phase.
+
+## Implementation record
+
+Status: implemented.
+
+- Starting SHA: `68ae2fa5457c3fb8fa335851d60d0dce3e98aa08` (main tip at
+  freeze, docs descendant of the Phase 25 planning baseline
+  `30d597f6b9eadff20e5569a1034312004c248de8`, eggsearch 0.3.9).
+- Implementation SHA: `8cfe9d873b55c1cda176c9c8f2af0182714ae431`
+  (`phase 26: implement egress corrective closure and qualification`).
+  Pre-corrective baseline verified on the starting SHA: `egress` non-default,
+  default normal graph contains zero Eggress crates, Phase 25 static guards
+  intact, existing 17-test `egress_routing` suite green.
+- Exact files changed (13 files, +1502/-16 vs the starting SHA):
+  `src/core/config.rs` (IPv6 host validation), `tests/egress_routing.rs`
+  (+1066 lines: 18 new regressions), `tests/static_guards.rs` (browser-path
+  and feature-budget strengthening), `Cargo.toml`/`Cargo.lock` (dev-only
+  TLS test tooling), `.github/workflows/egress-feature-qualify.yml` (new
+  opt-in compile lane), `docs/features.md`, `docs/config.md`,
+  `docs/test-inventory.md`, `architecture/config.md`,
+  `architecture/fetch.md`, `architecture/testing.md`,
+  `skills/eggsearch-dev/SKILL.md` (mirrored via symlinks).
+- IPv6 validation behavior: new `is_valid_egress_host()` parses
+  `std::net::IpAddr` first (accepts `127.0.0.1`, `::1`, `2001:db8::1`),
+  then applies hostname label rules to non-IP values (alphanumeric edges,
+  interior `-`, per-label and total length bounds) while still rejecting
+  `@`, `/`, `:` (hence `proxy.example:8080`, `http://proxy.example`,
+  userinfo/path forms, and bracketed `[::1]`). Port stays the sole port
+  source; credential validation untouched. No normalization translation was
+  needed: Eggress accepts the bare literals as configured. Deterministic
+  tests: `egress_host_validation_accepts_dns_ipv4_and_ipv6_literals` and
+  `egress_host_validation_rejects_scheme_userinfo_path_and_port_suffix`.
+- Pool-reuse dial/CONNECT counts: `routed_client_reuses_destination_connection`
+  issues two fully-consumed requests through one shared routed Eggfetch
+  client against a counting CONNECT proxy and asserts exactly 1 proxy
+  accept, proving Hyper/Eggfetch pools the destination connection above
+  `EggressDialer`.
+- Cancellation/deadline result: `stalled_proxy_handshake_is_bounded_by_timeout`
+  holds a CONNECT handshake open and proves the 500 ms Eggfetch
+  pool/connect/write/read/total deadline surfaces an error within a 3 s
+  bound; `dropped_routed_future_cancels_proxy_handshake` proves dropping the
+  in-flight request future releases the stalled route within a 3 s bound.
+  No second application timeout policy was added; no direct fallback occurs.
+- HTTPS-through-CONNECT TLS/SNI: loopback TLS origin (rcgen self-signed
+  cert, tokio-rustls server) behind the loopback CONNECT proxy, exercised as
+  `eggsearch provider client -> eggfetch -> EggressDialer -> HTTP CONNECT
+  proxy -> TLS destination`. `https_destination_tls_works_through_http_connect`
+  succeeds with a test CA installed via eggfetch `ca_certificate_pem`,
+  proving destination TLS/SNI happens above the Dialer against the logical
+  `127.0.0.1` name; `https_hostname_mismatch_fails_through_connect` serves a
+  cert valid only for `10.0.0.1` and proves the `127.0.0.1` request fails
+  rather than letting the proxy replace verification. Test-only certificate
+  tooling (`rcgen`, `rustls`, `tokio-rustls`) lives in `[dev-dependencies]`
+  with ring-only crypto (no aws-lc); no production insecure-TLS switch was
+  added. No public-network TLS smoke was needed.
+- Gzip/Brotli results: Phase 25 gzip coverage retained;
+  `brotli_decodes_through_proxy` serves a Brotli response through the real
+  proxy route and asserts byte-equal decode of the original payload through
+  the production Eggfetch body path. Decompression stays in Eggfetch.
+- Routed body-limit result: `gzip_decoded_body_limit_enforced_through_proxy`
+  and `brotli_decoded_body_limit_enforced_through_proxy` set
+  `max_decoded_body_size(64)` with a 4096-byte decoded payload and prove the
+  provider-route body budget rejects on body consumption with a
+  body/limit/decompression-classified error through the route.
+- Authenticated HTTP/SOCKS success and non-forwarding:
+  `authenticated_http_connect_succeeds_and_does_not_forward_creds` uses
+  unique sentinel credentials from `password_env`, proves the CONNECT proxy
+  observes `Proxy-Authorization: Basic <user:pass>`, decodes it back to the
+  exact sentinel pair, and proves the destination's recorded request bytes
+  contain neither `proxy-authorization` nor the raw password.
+  `authenticated_socks5_succeeds_and_does_not_forward_creds` proves the
+  SOCKS5 username/password subnegotiation path succeeds from `password_env`.
+  `wrong_proxy_credentials_fail_closed` proves mismatched credentials fail
+  without direct bypass and without the secret in the formatted error.
+  `route_summary_and_debug_redact_password` proves redacted diagnostics.
+  Missing/empty credential env behavior from Phase 25 is retained.
+- Malformed-proxy cases: `malformed_connect_status_fails_closed` (garbage
+  framing), `truncated_connect_response_fails_closed` (premature EOF
+  mid-status), `malformed_socks5_greeting_fails_closed` (non-negotiable
+  method reply). Each proves bounded failure (5 s harness bound), no panic,
+  no direct fallback, no credential material in errors, surfacing through
+  the existing typed dial-error mapping.
+- Redirect-route result: `routed_redirect_stays_on_proxy_route` serves a 302
+  from origin A to origin B through a counting proxy with
+  `follow_redirects(true)`; the final 200 succeeds and proxy accepts stay
+  within 1..=2, proving Eggfetch redirect policy owns the hop above the
+  Dialer with no direct-route bypass. Dynamic `FetchClient` redirect/SSRF
+  behavior is untouched.
+- Final dependency/feature graph: `egress = ["dep:eggress-outbound",
+  "dep:eggress-uri", "dep:eggress-core"]` unchanged; all three pinned
+  `=1.0.8` with `default-features = false`; egress graph adds only
+  `eggress-core/outbound/uri/protocol-http/protocol-socks/relay/transport-tls
+  1.0.8`. Default normal graph contains zero Eggress crates. New normal-graph
+  entries: none (rcgen/rustls/tokio-rustls/pem/time are dev-only, guarded).
+  Static budget guard extended to forbid russh/SSH transport, QUIC
+  transport, UDP, native-tls/OpenSSL, pproxy, legacy-crypto, insecure-tls.
+- Default and egress-enabled binary sizes (reproduced in the same
+  environment, `aarch64-apple-darwin` release): default 18,777,728 bytes,
+  `--features egress` 19,617,984 bytes (+840,256, ~4.5%). Identical to the
+  Phase 25 measurement: this corrective pass adds zero binary-size delta.
+- Exact Rust 1.89 result: `cargo +1.89.0 check --locked --all-features`
+  passes on the implementation candidate; the egress-feature-qualify lane
+  additionally runs it as `msrv-all-features` (passed, job 107007244056).
+- Complete local gate results on the implementation candidate (all pass):
+  `cargo fmt --check`; `cargo clippy --locked --all-targets --all-features
+  -- -D warnings` on both 1.89 and default 1.98.1 toolchains (the latter
+  caught one newer `chunks_exact_to_as_chunks` lint, fixed by rewriting the
+  test base64 helper index-based); `cargo check --locked
+  --no-default-features`; `cargo check --locked --features egress`;
+  `cargo test --locked --all-features` (5289 passed, 0 failed, incl. 35/35
+  `egress_routing` and 44/44 `static_guards`); `RUSTDOCFLAGS="-D warnings"
+  cargo doc --locked --all-features --no-deps`; `make hygiene`;
+  `make packaging-check`; `make bench-check`; `cargo build --locked
+  --release`; `cargo publish --dry-run --locked --allow-dirty` (packaging
+  sound; the strict `--locked` dry-run without `--allow-dirty` refuses only
+  on the dirty-tree guard, which clears on commit). Direct `make
+  release-check` was run end-to-end: every constituent gate passed; the
+  final publish-check step will be re-run on the clean closure tree below.
+- Per-target egress-feature compile results (workflow
+  `egress-feature-qualify.yml`, run `35806105807`,
+  <https://github.com/eggstack/eggsearch/actions/runs/35806105807>,
+  `QUALIFIED_SHA=8cfe9d873b55c1cda176c9c8f2af0182714ae431`): preflight
+  (matrix-vs-`release-targets.txt` drift check) passed;
+  `x86_64-unknown-linux-gnu` passed; `aarch64-unknown-linux-gnu` passed;
+  `armv7-unknown-linux-gnueabihf` passed (apt cross C toolchain);
+  `x86_64-apple-darwin` passed; `aarch64-apple-darwin` passed;
+  `x86_64-pc-windows-msvc` passed; `aarch64-pc-windows-msvc` passed;
+  `msrv-all-features` (1.89) passed. Local cross-check note: direct
+  `cargo check --target` for Linux/Windows from the macOS implementation
+  host fails at ring's build script (missing `x86_64-linux-gnu-gcc`) and
+  local zig 0.16 mismatches the pinned release zig 0.13 + cargo-zigbuild
+  0.20.1, so non-Darwin targets are proven by the CI lane above rather than
+  claimed locally; both Darwin targets also pass locally.
+- Default release qualification result: the IPv6 validation fix changes
+  default-compiled configuration code, so under the conservative default a
+  fresh `release-binaries.yml mode=qualify` run was executed on the exact
+  implementation SHA (run `35806121182`,
+  <https://github.com/eggstack/eggsearch/actions/runs/35806121182>,
+  `ref=8cfe9d873b55c1cda176c9c8f2af0182714ae431`,
+  `QUALIFIED_SHA=8cfe9d873b55c1cda176c9c8f2af0182714ae431`): completed
+  success. All seven targets passed (Linux x86_64 5m11s, Linux aarch64
+  5m55s, Linux armv7 6m26s, macOS aarch64 7m26s, macOS x86_64 10m57s,
+  Windows aarch64 8m50s, Windows x86_64 8m0s) plus exact 16-file assembly
+  (Assemble job 107009620565). The qualification-only artifact
+  `qualification-0.3.9-8cfe9d873b55c1cda176c9c8f2af0182714ae431-complete`
+  was downloaded and independently inspected: exactly seven binaries, seven
+  `.sha256` files, `install.sh`, `install.ps1` (16 files); all seven
+  checksums verify (`sha256sum -c` OK); the sampled binary reports
+  `eggsearch 0.3.9`. Per-target default binary sizes from the artifact
+  (post-corrective baseline): x86_64-unknown-linux-gnu 23,252,032;
+  aarch64-unknown-linux-gnu 20,098,352; armv7-unknown-linux-gnueabihf
+  19,133,508; x86_64-apple-darwin 21,392,232; aarch64-apple-darwin
+  19,370,608; x86_64-pc-windows-msvc.exe 27,952,640;
+  aarch64-pc-windows-msvc.exe 23,667,712. No crate or GitHub Release was
+  published. Routine CI on the pushed implementation commit (run
+  `35806105835`) also completed success.
+- Documentation/registry reconciliation: `docs/features.md` (IPv6 host
+  contract, package-resolver exclusion, build-qualification lane),
+  `docs/config.md` (IPv6 host contract), `architecture/config.md`,
+  `architecture/fetch.md`, `architecture/testing.md`,
+  `docs/test-inventory.md` (17 -> 35), `skills/eggsearch-dev/SKILL.md`
+  (canonical; mirrors follow via symlink). Phase 25 already carries a
+  corrective-follow-up note pointing at Phase 26 and was not rewritten.
+  `plans/registry.md` and `AGENTS.md` are updated together with this record
+  at closure.
+- Deviations and blockers: none. No route-scope, protocol, packaging, or
+  retry/deadline architecture change was required; every acceptance item
+  has direct deterministic evidence on the exact candidate. Test-only
+  `rcgen`/`rustls`/`tokio-rustls` dev-dependencies are the single
+  dependency-graph addition, confined to `[dev-dependencies]` with a new
+  static guard pinning them there.

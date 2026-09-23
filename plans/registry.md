@@ -1,6 +1,6 @@
 # Planning Registry
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 Current maintenance/CodeGG-quality baseline: `4a713ff82cec701534e285bbe3d330ae121f352c`
 Current baseline audited for deployment work: `f595683b8ebdec0afb13363ec9e8ad7654f9824b` (`eggsearch` 0.3.8)
 Current baseline for first-binary-release hardening: `34b36d1004121ba9891bac17b1033b150e8f1a3d` (`eggsearch` 0.3.8 on `main`)
@@ -10,7 +10,7 @@ Current baseline for performance optimization: `205ab26fb03c6769035a1c05bb9b1f41
 Current baseline for performance timeout requalification: `0af540b8c4f7ec27678d83a74ba82aad45556f00` (`eggsearch` 0.3.9 on `main`)
 Current baseline for eggfetch 0.2.0 adoption: `0c33d576a802b84ffdae5b8b52364a50646d111c` (`eggsearch` 0.3.9 on `main`)
 Current baseline for Eggress 1.0.8 outbound routing integration: `dfa90e050c5434f3346902aeb4074901c58e90d1` (`eggsearch` 0.3.9 on `main`)
-Current baseline for Eggress corrective closure: `30d597f6b9eadff20e5569a1034312004c248de8` (`eggsearch` 0.3.9 on `main`)
+Current baseline for Eggress corrective closure: `8cfe9d873b55c1cda176c9c8f2af0182714ae431` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -369,27 +369,31 @@ measurement: either one canonical default/release binary includes the feature,
 or Eggress remains a documented source-build opt-in. Multiple binary SKUs are
 not authorized.
 
-## Active corrective workstream — Eggress closure qualification
+## Completed corrective workstream — Eggress closure qualification
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 26 | Eggress corrective closure and qualification | planned / ready for handoff | Phase 25 implementation at `30d597f` | `phase-26-egress-corrective-closure-and-qualification.md` |
+| 26 | Eggress corrective closure and qualification | implemented | Phase 25 implementation at `30d597f` | `phase-26-egress-corrective-closure-and-qualification.md` |
 
-Phase 26 preserves the Phase 25 Outcome B architecture and closes the remaining
-evidence/configuration gaps before the Eggress workstream is treated as fully
-qualified. Scope is deliberately narrow: IPv6 proxy-hop host validation;
-connection-pool reuse proof above `EggressDialer`; stalled-handshake
-cancellation/deadline behavior; deterministic HTTPS destination TLS/SNI through
-HTTP CONNECT; Brotli and applicable decoded-body bounds; positive authenticated
-HTTP/SOCKS paths with credential non-forwarding; malformed-proxy and routed
-redirect regressions; maintained-target `--features egress` compile evidence;
-and an explicit canonical `make release-check` result.
-
-Phase 26 must not broaden routing to dynamic SSRF-pinned fetch targets, make
-`egress` a default feature, create another binary SKU, or expand the Eggress
-protocol/dependency budget. A fresh default seven-target release qualification
-is required if the corrective production change falls under the repository's
-exact-candidate qualification policy.
+Phase 26 is implemented on `8cfe9d873b55c1cda176c9c8f2af0182714ae431` and
+closes the Phase 25 evidence/configuration gaps while preserving the Outcome B
+architecture: IPv6 proxy-hop host validation; connection-pool reuse proof
+above `EggressDialer` (1 proxy accept for 2 requests); stalled-handshake
+cancellation/deadline bounds; deterministic HTTPS destination TLS/SNI through
+HTTP CONNECT with mismatch failure; Brotli decode plus gzip/Brotli
+decoded-body limits; positive authenticated HTTP/SOCKS paths with credential
+non-forwarding and redaction; malformed-proxy fail-closed regressions; routed
+redirect ownership; strengthened excluded-path/feature-budget guards; the new
+`egress-feature-qualify` CI lane (run `35806105807`, all seven maintained
+targets plus MSRV green on the exact candidate); and a direct
+`make release-check` result. Because the IPv6 fix changes default-compiled
+configuration code, a fresh default seven-target release qualification was
+run on the exact candidate (run `35806121182`, all seven targets plus exact
+16-file assembly green, artifact independently inspected). No egress-enabled
+binary is published. Full evidence is in the Phase 26 implementation record,
+which is the authoritative closure evidence for the combined Eggress
+workstream. Qualification is SHA-specific; re-qualify a different eventual
+release candidate before publication.
 
 ## Deferred by design
 
