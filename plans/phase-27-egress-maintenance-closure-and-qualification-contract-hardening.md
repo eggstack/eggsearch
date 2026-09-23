@@ -501,3 +501,15 @@ Status: implemented.
   `cargo test --locked --all-features` gate (35/35 egress_routing)
   passes. No runtime or packaging defect was found; Phase 27 never
   exceeded its non-functional scope.
+
+## Hygiene follow-up
+
+Phase 27 remains implemented and its runtime/qualification conclusions are
+unchanged. A later review found only two cleanup items: the planning registry
+still labels the Phase 27 section active, and the host-syntax regression in
+`tests/egress_routing.rs` is coupled to the optional Cargo feature gate when
+run under `--features mock`.
+
+Phase 28 (`phase-28-egress-documentation-and-test-hygiene-cleanup.md`) owns
+that documentation/test-only cleanup. It must not reopen the Phase 27
+qualification contract or change Eggress runtime behavior.
