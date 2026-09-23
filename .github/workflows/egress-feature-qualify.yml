@@ -1,0 +1,221 @@
+name: Egress feature qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/fetch/egress.rs'
+      - 'src/core/config.rs'
+      - 'tests/egress_routing.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'packaging/release-targets.txt'
+      - '.github/workflows/egress-feature-qualify.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/fetch/egress.rs'
+      - 'src/core/config.rs'
+      - 'tests/egress_routing.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'packaging/release-targets.txt'
+      - '.github/workflows/egress-feature-qualify.yml'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit SHA to qualify
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Resolve exact candidate and verify target matrix
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "QUALIFIED_SHA=$commit" >> "$GITHUB_STEP_SUMMARY"
+          expected=(
+            "x86_64-unknown-linux-gnu"
+            "aarch64-unknown-linux-gnu"
+            "armv7-unknown-linux-gnueabihf"
+            "x86_64-apple-darwin"
+            "aarch64-apple-darwin"
+            "x86_64-pc-windows-msvc"
+            "aarch64-pc-windows-msvc"
+          )
+          missing=0
+          for target in "${expected[@]}"; do
+            if ! grep -q "^${target}|" packaging/release-targets.txt; then
+              echo "release-targets.txt is missing maintained target: $target" >&2
+              missing=1
+            fi
+          done
+          if ((missing)); then
+            exit 1
+          fi
+          echo "target matrix agrees with packaging/release-targets.txt"
+
+  linux:
+    name: Linux ${{ matrix.target }} (--features egress check)
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.89'
+          targets: ${{ matrix.target }}
+      - name: Compile-check egress feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --features egress --target "${{ matrix.target }}"
+      - name: Record target result
+        if: always()
+        shell: bash
+        run: echo "| ${{ matrix.target }} | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  linux-armv7:
+    name: Linux armv7 (--features egress check)
+    needs: preflight
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.89'
+          targets: armv7-unknown-linux-gnueabihf
+      - name: Install armv7 cross C toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf
+      - name: Compile-check egress feature
+        shell: bash
+        env:
+          CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
+          AR_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-ar
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+        run: |
+          set -euo pipefail
+          cargo check --locked --features egress --target armv7-unknown-linux-gnueabihf
+      - name: Record target result
+        if: always()
+        shell: bash
+        run: echo "| armv7-unknown-linux-gnueabihf | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  macos:
+    name: macOS ${{ matrix.target }} (--features egress check)
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.89'
+          targets: ${{ matrix.target }}
+      - name: Compile-check egress feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --features egress --target "${{ matrix.target }}"
+      - name: Record target result
+        if: always()
+        shell: bash
+        run: echo "| ${{ matrix.target }} | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows ${{ matrix.target }} (--features egress check)
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.89'
+          targets: ${{ matrix.target }}
+      - name: Compile-check egress feature
+        shell: pwsh
+        run: |
+          cargo check --locked --features egress --target ${{ matrix.target }}
+      - name: Record target result
+        if: always()
+        run: Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| ${{ matrix.target }} | ${{ job.status }} |"
+
+  msrv-all-features:
+    name: MSRV all-features check (1.89)
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.89'
+      - name: Check all features on MSRV
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.89.0 check --locked --all-features
+      - name: Record result
+        if: always()
+        shell: bash
+        run: echo "| msrv-all-features | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"

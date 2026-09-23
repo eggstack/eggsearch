@@ -62,11 +62,14 @@ AppConfig
 | `enabled` | `bool` | `false` | Use the configured chain for eligible fixed upstreams |
 | `hops` | `Vec<EgressHopConfig>` | empty | Ordered `http`/`socks4`/`socks5` hops (`httponly` accepted) |
 
-Each hop carries `scheme`, `host` (bare hostname/IP), `port`, optional
-`username`, and optional `password_env` naming the credential environment
-variable. Raw passwords are never a config field. Unsupported schemes fail
-validation. An enabled route on a binary built without the `egress` feature
-fails validation instead of being silently ignored.
+Each hop carries `scheme`, `host` (bare hostname, IPv4 literal, or bare
+IPv6 literal such as `::1`), `port`, optional `username`, and optional
+`password_env` naming the credential environment variable. Raw passwords
+are never a config field. The `host` field rejects schemes, userinfo,
+paths, bracket wrapping, and appended ports; `port` is the sole port
+source. Unsupported schemes fail validation. An enabled route on a binary
+built without the `egress` feature fails validation instead of being
+silently ignored.
 
 ---
 

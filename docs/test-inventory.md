@@ -44,7 +44,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `batch_fetch_retrieval` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
 | `provider_capability_contract` | None | 8 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl), HTML-scraper none, domain-filter exclusivity, AGENTS.md prose agreement |
 | `provider_workstream_regression` | `mock` | 7 | Provider inventory (37 IDs), capability descriptors, constraint enforcement matrix, URL dedup with stable IDs, Tavily sanitization, CodeGG backward-compatible deserialization |
-| `egress_routing` | None (proxy composition under `egress`) | 17 | Egress config validation, credential redaction, custom-dialer SSRF gate, deterministic HTTP/SOCKS/multi-hop composition |
+| `egress_routing` | None (proxy composition under `egress`) | 35 | Egress config validation (incl. IPv6 literals), credential redaction, custom-dialer SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, handshake cancellation/deadline, HTTPS TLS/SNI through CONNECT, gzip/Brotli decode with decoded-body limits, authenticated HTTP/SOCKS with credential non-forwarding, malformed-proxy fail-closed, routed redirects |
 
 ## Forge Adapter Tests (`tests/forge_adapter.rs`)
 

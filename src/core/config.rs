@@ -739,6 +739,43 @@ impl EgressSection {
     }
 }
 
+fn is_valid_egress_host(host: &str) -> bool {
+    if host.is_empty() {
+        return false;
+    }
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+    if host.contains('@') || host.contains('/') || host.contains(':') {
+        return false;
+    }
+    if host.len() > 253 {
+        return false;
+    }
+    let mut saw_label = false;
+    for label in host.split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return false;
+        }
+        let mut chars = label.chars();
+        let first = chars.next().expect("non-empty label");
+        if !first.is_ascii_alphanumeric() {
+            return false;
+        }
+        for ch in chars {
+            if !(ch.is_ascii_alphanumeric() || ch == '-') {
+                return false;
+            }
+        }
+        let last = label.chars().last().expect("non-empty label");
+        if !last.is_ascii_alphanumeric() {
+            return false;
+        }
+        saw_label = true;
+    }
+    saw_label
+}
+
 fn validate_egress_hop(hop: &EgressHopConfig) -> CoreResult<()> {
     match hop.scheme.as_str() {
         "http" | "httponly" | "socks4" | "socks5" => {}
@@ -753,7 +790,7 @@ fn validate_egress_hop(hop: &EgressHopConfig) -> CoreResult<()> {
             "[egress].hops host must be non-empty".to_string(),
         ));
     }
-    if hop.host.contains('@') || hop.host.contains('/') || hop.host.contains(':') {
+    if !is_valid_egress_host(&hop.host) {
         return Err(CoreError::Config(format!(
             "[egress].hops host '{}' must be a bare hostname or IP literal without userinfo, path, or port suffix",
             hop.host

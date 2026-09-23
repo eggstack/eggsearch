@@ -426,6 +426,9 @@ of fixed provider upstreams. Disabled by default and direct unless enabled.
 Requires a source build with `--features egress`; prebuilt/default binaries
 reject an enabled route instead of silently ignoring it. Raw proxy passwords
 are never stored: each hop references a credential environment variable.
+Hop `host` accepts a bare hostname, IPv4 literal, or bare IPv6 literal
+(`::1`, `2001:db8::1`); schemes, userinfo, paths, brackets, and appended
+ports are rejected, and `port` remains the sole port source.
 
 ```toml eggsearch-config-parse-only
 [egress]

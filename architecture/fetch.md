@@ -89,8 +89,13 @@ feature.
 Route scope is Outcome B: provider search-engine upstreams may use the
 chain via `build_http_client_with_egress`. `FetchClient` dynamic targets
 keep resolved-address pinning on the direct route because eggfetch 0.2.0
-rejects custom-dialer plus `resolved_addresses`. Forge, updater, loopback
-health, rmcp, and browser traffic remain direct in this phase.
+rejects custom-dialer plus `resolved_addresses`. Forge, package-resolver,
+updater, loopback health, rmcp, and browser traffic remain direct in this
+phase. Eggfetch owns pooling, destination TLS/SNI, decompression,
+redirects, and deadlines above the dialer; the opt-in feature is
+compile-qualified across the seven maintained targets by the
+`egress-feature-qualify` workflow without publishing egress-enabled
+binaries.
 
 ---
 

@@ -1219,13 +1219,43 @@ fn egress_route_stays_out_of_dynamic_fetch() {
 #[test]
 fn egress_route_stays_out_of_loopback_paths() {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    for rel in ["src/startup.rs", "src/integrations/common.rs"] {
+    for rel in [
+        "src/startup.rs",
+        "src/integrations/common.rs",
+        "src/update.rs",
+        "src/meta/forge_adapter.rs",
+        "src/meta/package_resolver.rs",
+        "src/mcp/http.rs",
+    ] {
         let source = fs::read_to_string(format!("{manifest}/{rel}")).expect("readable");
         let non_test = strip_test_code(&source);
         for forbidden in ["egress", "EggressDialer", "OutboundConnector", ".dialer("] {
             assert!(
                 !non_test.contains(forbidden),
                 "{rel} must not use egress routing `{forbidden}`; loopback health stays direct"
+            );
+        }
+    }
+}
+
+#[test]
+fn egress_route_stays_out_of_browser_paths() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let browser_dir = format!("{manifest}/src/fetch/browser");
+    let entries = fs::read_dir(&browser_dir).expect("browser dir readable");
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("readable");
+        let non_test = strip_test_code(&source);
+        for forbidden in ["egress", "EggressDialer", "OutboundConnector", ".dialer("] {
+            assert!(
+                !non_test.contains(forbidden),
+                "{} must not use egress routing `{forbidden}`; browser traffic stays direct",
+                path.display()
             );
         }
     }
@@ -1266,11 +1296,43 @@ fn egress_feature_budget_stays_bounded() {
         "pproxy-legacy",
         "legacy-crypto",
         "insecure-tls",
+        "russh",
+        "eggress-transport-ssh",
+        "eggress-transport-quic",
+        "eggress-udp",
+        "native-tls",
+        "openssl",
     ] {
         assert!(
             !cargo.contains(forbidden),
             "Cargo.toml must not enable eggress `{forbidden}` in the phase 25 base profile"
         );
+    }
+    let dev_start = cargo
+        .find("[dev-dependencies]")
+        .expect("dev-dependencies section present");
+    let (normal_section, dev_section) = cargo.split_at(dev_start);
+    for tool in ["rustls", "tokio-rustls", "rcgen"] {
+        assert!(
+            !normal_section.lines().any(|l| {
+                let t = l.trim_start();
+                t.starts_with(&format!("{tool} ")) || t.starts_with(&format!("{tool}="))
+            }),
+            "test-only TLS tooling `{tool}` must live under [dev-dependencies], never in normal dependencies"
+        );
+        assert!(
+            dev_section.contains(tool),
+            "test-only TLS tooling `{tool}` must be declared under [dev-dependencies]"
+        );
+    }
+    for line in normal_section.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("eggress-") {
+            assert!(
+                line.contains("optional = true"),
+                "eggress crate `{line}` must be optional in normal dependencies"
+            );
+        }
     }
     let default_line = cargo
         .lines()

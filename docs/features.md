@@ -216,6 +216,11 @@ Supported base protocols are ordinary TCP `http`, `socks4`, and `socks5`
 SSH, QUIC/H3, UDP, legacy crypto, pproxy compatibility, and insecure TLS
 remain excluded.
 
+Each hop `host` accepts a bare DNS hostname, an IPv4 literal, or a bare
+IPv6 literal such as `::1` or `2001:db8::1`. The `host` field never takes a
+scheme, userinfo, path, bracket wrapping, or an appended port; `port`
+remains the sole port source.
+
 ### Enabling
 
 ```toml eggsearch-config-parse-only
@@ -254,9 +259,18 @@ static tests:
   resolved-address pinning on the direct route. Eggfetch 0.2.0 rejects the
   custom-dialer plus `resolved_addresses` combination, so these SSRF-sensitive
   paths cannot silently migrate to proxy DNS.
-- Forge tree APIs, the self-updater, startup/integration loopback health
-  probes, rmcp Streamable HTTP transport, and browser subprocess traffic
-  remain direct in this phase.
+- Forge tree APIs, package-resolver fetches, the self-updater,
+  startup/integration loopback health probes, rmcp Streamable HTTP transport,
+  and browser subprocess traffic remain direct in this phase.
+
+### Build qualification
+
+`egress` stays a non-default source-build feature; prebuilt release binaries
+never include it. The opt-in feature is compile-qualified across the seven
+maintained release targets by the `egress-feature-qualify` workflow, which
+derives its target list from `packaging/release-targets.txt` so the matrix
+cannot drift from the release contract. No egress-enabled binary is ever
+published.
 
 ### Troubleshooting
 

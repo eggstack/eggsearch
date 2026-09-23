@@ -46,7 +46,7 @@ rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_select
 |----------|-------------|---------|
 | `src/*/mod.rs` | Varies | Unit tests |
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
-| `tests/egress_routing.rs` | None (proxy composition under `egress`) | Egress config validation, SSRF gate, deterministic HTTP/SOCKS/multi-hop composition |
+| `tests/egress_routing.rs` | None (proxy composition under `egress`) | Egress config validation (incl. IPv6), SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, TLS/SNI, compression/body limits, auth isolation, malformed-proxy and redirect regressions |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
