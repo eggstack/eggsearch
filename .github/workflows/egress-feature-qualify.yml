@@ -76,7 +76,7 @@ jobs:
             "x86_64-pc-windows-msvc"
             "aarch64-pc-windows-msvc"
           )
-          release_set="$(cut -d'|' -f1 packaging/release-targets.txt | sort -u)"
+          release_set="$(cut -d'|' -f1 packaging/release-targets.txt | grep -v '^$' | sort -u)"
           expected_set="$(printf '%s\n' "${expected[@]}" | sort -u)"
           release_file="$(mktemp)"
           expected_file="$(mktemp)"
