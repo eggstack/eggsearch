@@ -12,6 +12,7 @@ Current baseline for eggfetch 0.2.0 adoption: `0c33d576a802b84ffdae5b8b52364a506
 Current baseline for Eggress 1.0.8 outbound routing integration: `dfa90e050c5434f3346902aeb4074901c58e90d1` (`eggsearch` 0.3.9 on `main`)
 Current baseline for Eggress corrective closure: `8cfe9d873b55c1cda176c9c8f2af0182714ae431` (`eggsearch` 0.3.9 on `main`)
 Current baseline for Eggress maintenance closure: `88110778a5f92350f7da41dc9729dd68ab41bcc9` (`eggsearch` 0.3.9 on `main`)
+Current baseline for Eggress documentation/test hygiene: `307036c2799d619dbb572ed8322021e4197facb8` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -421,6 +422,24 @@ budget, default-feature policy, release SKU policy, or the Phase 25/26
 security architecture. Phase 26's successful runtime, seven-target egress
 compile, and default release qualification evidence remains valid
 historical evidence.
+
+## Active hygiene workstream — Eggress documentation and targeted-test cleanup
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 28 | Eggress documentation and test-hygiene cleanup | planned / ready for handoff | Phase 27 implemented and closed | `phase-28-egress-documentation-and-test-hygiene-cleanup.md` |
+
+Phase 28 is a hygiene-only terminal cleanup. It corrects stale current-state
+planning language that still labels the implemented Phase 27 workstream active
+and decouples the IPv4/IPv6/DNS host-syntax regressions from the optional
+`egress` Cargo feature gate. The preferred test fix uses an
+`EgressSection { enabled: false, hops: ... }`, which still exercises hop/host
+validation through `AppConfig::validate()` while intentionally skipping the
+feature-enabled route requirement.
+
+Phase 28 must not change production config/transport behavior, feature policy,
+dependencies, packaging, workflows, release targets, or the Phase 25–27
+qualification evidence.
 
 ## Deferred by design
 
