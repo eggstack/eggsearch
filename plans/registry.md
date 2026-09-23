@@ -11,6 +11,7 @@ Current baseline for performance timeout requalification: `0af540b8c4f7ec27678d8
 Current baseline for eggfetch 0.2.0 adoption: `0c33d576a802b84ffdae5b8b52364a50646d111c` (`eggsearch` 0.3.9 on `main`)
 Current baseline for Eggress 1.0.8 outbound routing integration: `dfa90e050c5434f3346902aeb4074901c58e90d1` (`eggsearch` 0.3.9 on `main`)
 Current baseline for Eggress corrective closure: `8cfe9d873b55c1cda176c9c8f2af0182714ae431` (`eggsearch` 0.3.9 on `main`)
+Current baseline for Eggress maintenance closure: `88110778a5f92350f7da41dc9729dd68ab41bcc9` (`eggsearch` 0.3.9 on `main`)
 Previous search-workstream baseline: `e645a3fe42090fb7b7e1ce8639681fe69878f57b` (`eggsearch` 0.3.7)
 
 ## Completed workstream — Search capability expansion
@@ -394,6 +395,24 @@ binary is published. Full evidence is in the Phase 26 implementation record,
 which is the authoritative closure evidence for the combined Eggress
 workstream. Qualification is SHA-specific; re-qualify a different eventual
 release candidate before publication.
+
+## Active maintenance workstream — Eggress closure evidence and qualification contract
+
+| Phase | Workstream | Status | Depends on | Plan |
+|---|---|---|---|---|
+| 27 | Eggress maintenance closure and qualification-contract hardening | planned / ready for handoff | Phase 26 implemented and qualified | `phase-27-egress-maintenance-closure-and-qualification-contract-hardening.md` |
+
+Phase 27 is a non-functional terminal housekeeping pass for the Eggress
+workstream. It supplies an unambiguous clean-tree canonical
+`make release-check` result, hardens the egress feature qualification matrix
+to exact set equality with `packaging/release-targets.txt`, expands workflow
+path triggers to cover the provider-route construction seam, and adds
+deterministic contract coverage against future CI drift.
+
+Phase 27 must not change Eggress runtime behavior, route scope, dependency
+budget, default-feature policy, release SKU policy, or the Phase 25/26 security
+architecture. Phase 26's successful runtime, seven-target egress compile, and
+default release qualification evidence remains valid historical evidence.
 
 ## Deferred by design
 
