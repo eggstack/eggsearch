@@ -14,6 +14,12 @@ use serde::{Deserialize, Serialize};
 use crate::core::config::default_config_path;
 use crate::mcp::http::{McpPath, DEFAULT_BIND, DEFAULT_PATH, HEALTH_PATH};
 
+use eggup_service::{
+    CronManager, LaunchdDomain, LaunchdInstall, LaunchdManager, LifecycleState, Ownership,
+    ServiceId, ServiceManager, ServiceSpec, SystemExecutor, SystemdInstall, SystemdManager,
+    SystemdScope,
+};
+
 const SERVICE_LABEL: &str = "com.eggstack.eggsearch";
 const SERVICE_NAME: &str = "Eggsearch";
 const CRON_MARKER: &str = "# eggsearch-managed";
@@ -413,7 +419,27 @@ pub async fn startup_state(config: Option<&Path>) -> io::Result<StartupState> {
         });
     }
     let method = registrations[0];
-    let running = manager_running(method)?;
+    let manager_spec = runtime_spec(
+        config,
+        method,
+        (method == StartupMethod::Cron)
+            .then(cron_pid_path)
+            .transpose()?,
+    )?;
+    let desired = service_spec(&manager_spec, service_id(method))?;
+    let (ownership, state) = manager_observation(method, &manager_spec, &desired)?;
+    if ownership != Ownership::Owned {
+        return Ok(StartupState {
+            method: Some(method),
+            registered: true,
+            conflict: true,
+            detail: format!(
+                "{method} registration ownership is {ownership:?}; no manager action is safe"
+            ),
+            ..StartupState::default()
+        });
+    }
+    let running = state == LifecycleState::Running;
     let health = probe_health(&spec).await;
     Ok(StartupState {
         method: Some(method),
@@ -520,8 +546,8 @@ pub async fn uninstall(config: Option<&Path>, requested: StartupMethod) -> io::R
         .transpose()?;
     let spec = runtime_spec(config, method, pid_file)?;
     match method {
-        StartupMethod::Systemd => uninstall_systemd().await?,
-        StartupMethod::Launchd => uninstall_launchd().await?,
+        StartupMethod::Systemd => uninstall_systemd(&spec).await?,
+        StartupMethod::Launchd => uninstall_launchd(&spec).await?,
         StartupMethod::Cron => uninstall_cron(&spec).await?,
         StartupMethod::Windows => uninstall_windows().await?,
         StartupMethod::Auto => unreachable!(),
@@ -546,14 +572,20 @@ pub async fn restart(config: Option<&Path>) -> io::Result<String> {
         .transpose()?;
     let spec = runtime_spec(config, method, pid_file)?;
     match method {
-        StartupMethod::Systemd => command_ok("systemctl", &["restart", "eggsearch.service"])?,
-        StartupMethod::Launchd => {
-            let domain = launchd_domain()?;
-            command_ok(
-                "launchctl",
-                &["kickstart", "-k", &format!("{domain}/{SERVICE_LABEL}")],
-            )?;
-        }
+        StartupMethod::Systemd => systemd_manager(&spec)?
+            .restart(
+                &service_spec(&spec, "eggsearch.service")?,
+                Duration::from_secs(30),
+            )
+            .map_err(service_io_error)
+            .and_then(require_completed)?,
+        StartupMethod::Launchd => launchd_manager(&spec)?
+            .restart(
+                &service_spec(&spec, SERVICE_LABEL)?,
+                Duration::from_secs(30),
+            )
+            .map_err(service_io_error)
+            .and_then(require_completed)?,
         StartupMethod::Cron => restart_cron(&spec).await?,
         StartupMethod::Windows => restart_windows().await?,
         StartupMethod::Auto => unreachable!(),
@@ -654,6 +686,154 @@ async fn wait_for_health(spec: &RuntimeSpec, ready: bool) -> Result<(), String> 
     ))
 }
 
+fn service_spec(spec: &RuntimeSpec, id: &str) -> io::Result<ServiceSpec> {
+    ServiceSpec::new(
+        ServiceId::new(id).map_err(service_io_error)?,
+        spec.executable.clone(),
+        spec.args(),
+        Some(spec.config.clone()),
+    )
+    .map_err(service_io_error)
+}
+
+fn service_id(method: StartupMethod) -> &'static str {
+    match method {
+        StartupMethod::Systemd => "eggsearch.service",
+        StartupMethod::Launchd => SERVICE_LABEL,
+        StartupMethod::Cron => "cron:eggsearch-managed",
+        StartupMethod::Windows => SERVICE_NAME,
+        StartupMethod::Auto => "eggsearch",
+    }
+}
+
+fn manager_observation(
+    method: StartupMethod,
+    spec: &RuntimeSpec,
+    desired: &ServiceSpec,
+) -> io::Result<(Ownership, LifecycleState)> {
+    let snapshot = match method {
+        StartupMethod::Systemd => systemd_manager(spec)?.inspect(desired),
+        StartupMethod::Launchd => launchd_manager(spec)?.inspect(desired),
+        StartupMethod::Cron => cron_manager(spec)?.inspect(desired),
+        StartupMethod::Windows | StartupMethod::Auto => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "not a Unix Eggup manager",
+            ));
+        }
+    }
+    .map_err(service_io_error)?;
+    if method == StartupMethod::Cron && snapshot.ownership == Ownership::Absent {
+        let legacy = legacy_cron_ownership(spec)?;
+        if legacy != Ownership::Absent {
+            return Ok((legacy, LifecycleState::Stopped));
+        }
+    }
+    Ok((snapshot.ownership, snapshot.state))
+}
+
+fn legacy_cron_ownership(spec: &RuntimeSpec) -> io::Result<Ownership> {
+    let current = read_crontab()?;
+    let entries = current
+        .lines()
+        .filter(|line| line.contains(CRON_MARKER))
+        .collect::<Vec<_>>();
+    match entries.as_slice() {
+        [] => Ok(Ownership::Absent),
+        [line] if *line == cron_line(spec) => Ok(Ownership::Owned),
+        [_] => Ok(Ownership::Foreign),
+        _ => Ok(Ownership::Unknown),
+    }
+}
+
+fn migrate_legacy_cron(spec: &RuntimeSpec) -> io::Result<()> {
+    let current = read_crontab()?;
+    match legacy_cron_ownership(spec)? {
+        Ownership::Absent => return Ok(()),
+        Ownership::Owned => {}
+        Ownership::Foreign => {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "legacy eggsearch cron entry belongs to a different command",
+            ))
+        }
+        Ownership::Unknown => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "multiple legacy eggsearch cron entries are ambiguous",
+            ))
+        }
+    }
+    let without_legacy = update_crontab(&current, None)?;
+    let line = cron_line(spec);
+    let block = line.strip_suffix(CRON_MARKER).unwrap_or(&line).trim_end();
+    let (converted, _) = eggup_service::cron_merge(&without_legacy, "eggsearch-managed", block)
+        .map_err(service_io_error)?;
+    if read_crontab()? != current {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "crontab changed during legacy migration",
+        ));
+    }
+    write_crontab(&converted)
+}
+
+fn systemd_manager(spec: &RuntimeSpec) -> io::Result<SystemdManager> {
+    let install = SystemdInstall::new(
+        "eggsearch.service".to_string(),
+        SystemdScope::System,
+        PathBuf::from(SYSTEMD_UNIT),
+        render_systemd(spec).into_bytes(),
+        true,
+        true,
+        Duration::from_secs(30),
+    )
+    .map_err(service_io_error)?;
+    Ok(SystemdManager::new(SystemExecutor::new(), install))
+}
+
+fn launchd_manager(spec: &RuntimeSpec) -> io::Result<LaunchdManager> {
+    let install = LaunchdInstall::new(
+        SERVICE_LABEL.to_string(),
+        LaunchdDomain::UserAgent,
+        launchd_domain()?,
+        launchd_plist_path()?,
+        render_launchd(spec).into_bytes(),
+        true,
+        Duration::from_secs(30),
+    )
+    .map_err(service_io_error)?;
+    Ok(LaunchdManager::new(SystemExecutor::new(), install))
+}
+
+fn cron_manager(spec: &RuntimeSpec) -> io::Result<CronManager> {
+    let line = cron_line(spec);
+    let desired = line
+        .strip_suffix(CRON_MARKER)
+        .unwrap_or(&line)
+        .trim_end()
+        .to_string();
+    CronManager::new(
+        SystemExecutor::new(),
+        "eggsearch-managed".into(),
+        desired,
+        Duration::from_secs(30),
+    )
+    .map_err(service_io_error)
+}
+
+fn service_io_error(error: impl std::fmt::Display) -> io::Error {
+    io::Error::other(error.to_string())
+}
+
+fn require_completed(result: eggup_service::TransitionResult) -> io::Result<()> {
+    if result.completed {
+        Ok(())
+    } else {
+        Err(io::Error::other(result.detail))
+    }
+}
+
 async fn install_systemd(spec: &RuntimeSpec) -> io::Result<()> {
     if !is_privileged() {
         return Err(io::Error::new(
@@ -661,63 +841,53 @@ async fn install_systemd(spec: &RuntimeSpec) -> io::Result<()> {
             format!("systemd requires Administrator/root; rerun: sudo {} startup install --method systemd", spec.executable.display()),
         ));
     }
-    let rendered = render_systemd(spec);
-    atomic_write(Path::new(SYSTEMD_UNIT), rendered.as_bytes())?;
-    command_ok("systemctl", &["daemon-reload"])?;
-    command_ok("systemctl", &["enable", "--now", "eggsearch.service"])
+    let desired = service_spec(spec, "eggsearch.service")?;
+    let mut manager = systemd_manager(spec)?;
+    manager.install(&desired).map_err(service_io_error)?;
+    manager
+        .start(&desired, Duration::from_secs(30))
+        .map_err(service_io_error)
+        .and_then(require_completed)
 }
 
-async fn uninstall_systemd() -> io::Result<()> {
+async fn uninstall_systemd(spec: &RuntimeSpec) -> io::Result<()> {
     if !is_privileged() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "systemd uninstall requires root; rerun with sudo",
         ));
     }
-    let _ = command_ok("systemctl", &["disable", "--now", "eggsearch.service"]);
-    if Path::new(SYSTEMD_UNIT).exists() {
-        fs::remove_file(SYSTEMD_UNIT)?;
-    }
-    command_ok("systemctl", &["daemon-reload"])
+    let desired = service_spec(spec, "eggsearch.service")?;
+    systemd_manager(spec)?
+        .uninstall(&desired)
+        .map_err(service_io_error)
+        .and_then(require_completed)
 }
 
 async fn install_launchd(spec: &RuntimeSpec) -> io::Result<()> {
-    let plist = launchd_plist_path()?;
-    atomic_write(&plist, render_launchd(spec).as_bytes())?;
-    let domain = launchd_domain()?;
-    let _ = command_ok(
-        "launchctl",
-        &["bootout", &format!("{domain}/{SERVICE_LABEL}")],
-    );
-    command_ok(
-        "launchctl",
-        &["bootstrap", &domain, plist.to_str().unwrap_or_default()],
-    )?;
-    command_ok(
-        "launchctl",
-        &["kickstart", "-k", &format!("{domain}/{SERVICE_LABEL}")],
-    )
+    let desired = service_spec(spec, SERVICE_LABEL)?;
+    let mut manager = launchd_manager(spec)?;
+    manager.install(&desired).map_err(service_io_error)?;
+    manager
+        .start(&desired, Duration::from_secs(30))
+        .map_err(service_io_error)
+        .and_then(require_completed)
 }
 
-async fn uninstall_launchd() -> io::Result<()> {
-    let plist = launchd_plist_path()?;
-    let domain = launchd_domain()?;
-    let _ = command_ok(
-        "launchctl",
-        &["bootout", &format!("{domain}/{SERVICE_LABEL}")],
-    );
-    if plist.exists() {
-        fs::remove_file(plist)?;
-    }
-    Ok(())
+async fn uninstall_launchd(spec: &RuntimeSpec) -> io::Result<()> {
+    let desired = service_spec(spec, SERVICE_LABEL)?;
+    launchd_manager(spec)?
+        .uninstall(&desired)
+        .map_err(service_io_error)
+        .and_then(require_completed)
 }
 
 async fn install_cron(spec: &RuntimeSpec) -> io::Result<()> {
-    let current = read_crontab()?;
-    let updated = update_crontab(&current, Some(&cron_line(spec)))?;
-    if updated != current {
-        write_crontab(&updated)?;
-    }
+    migrate_legacy_cron(spec)?;
+    let desired = service_spec(spec, "cron:eggsearch-managed")?;
+    cron_manager(spec)?
+        .install(&desired)
+        .map_err(service_io_error)?;
     if probe_health(spec).await == HealthState::Refused {
         spawn_detached(spec)?;
         wait_for_health(spec, true)
@@ -728,11 +898,25 @@ async fn install_cron(spec: &RuntimeSpec) -> io::Result<()> {
 }
 
 async fn uninstall_cron(spec: &RuntimeSpec) -> io::Result<()> {
-    let current = read_crontab()?;
-    let updated = update_crontab(&current, None)?;
-    if updated != current {
+    if legacy_cron_ownership(spec)? == Ownership::Owned {
+        let current = read_crontab()?;
+        let updated = update_crontab(&current, None)?;
+        if read_crontab()? != current {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "crontab changed during legacy removal",
+            ));
+        }
         write_crontab(&updated)?;
+        if let Some(pid_file) = &spec.pid_file {
+            stop_owned_process(pid_file)?;
+        }
+        return Ok(());
     }
+    let desired = service_spec(spec, "cron:eggsearch-managed")?;
+    cron_manager(spec)?
+        .uninstall(&desired)
+        .map_err(service_io_error)?;
     if let Some(pid_file) = &spec.pid_file {
         stop_owned_process(pid_file)?;
     }
@@ -829,23 +1013,6 @@ fn registered_methods() -> io::Result<Vec<StartupMethod>> {
         methods.push(StartupMethod::Windows);
     }
     Ok(methods)
-}
-
-fn manager_running(method: StartupMethod) -> io::Result<bool> {
-    match method {
-        StartupMethod::Systemd => {
-            Ok(command_ok("systemctl", &["is-active", "--quiet", "eggsearch.service"]).is_ok())
-        }
-        StartupMethod::Launchd => Ok(command_ok(
-            "launchctl",
-            &["print", &format!("{}/{}", launchd_domain()?, SERVICE_LABEL)],
-        )
-        .is_ok()),
-        StartupMethod::Cron => Ok(false),
-        StartupMethod::Windows => Ok(capture_command("sc.exe", &["query", SERVICE_NAME])
-            .is_some_and(|output| output.contains("RUNNING"))),
-        StartupMethod::Auto => Ok(false),
-    }
 }
 
 fn validate_method(method: StartupMethod, info: PlatformInfo) -> io::Result<()> {
@@ -1171,22 +1338,6 @@ fn command_ok(program: &str, args: &[&str]) -> io::Result<()> {
             "{program} {args:?} exited with {status}"
         )))
     }
-}
-
-fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::other("atomic target has no parent directory"))?;
-    let mut staged = tempfile::NamedTempFile::new_in(parent)?;
-    staged.write_all(contents)?;
-    staged.as_file().sync_all()?;
-    staged
-        .persist(path)
-        .map(|_| ())
-        .map_err(|error| io::Error::other(error.error.to_string()))
 }
 
 fn launchd_plist_path() -> io::Result<PathBuf> {

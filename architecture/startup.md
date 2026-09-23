@@ -13,6 +13,11 @@ loopback bind `127.0.0.1:11320`, MCP path `/mcp`, and the health URL
 Service definitions are embedded with `include_str!` and mirrored under
 `packaging/`, so installed binaries do not require a checkout.
 
+Unix registration ownership and manager transitions use `eggup-service`.
+Eggsearch supplies the exact executable/config argv, unit/plist bytes, manager
+scope, cron marker, and health policy. Windows SCM remains consumer-owned
+until the Eggup Windows adapter is separately qualified.
+
 ## Manager policy
 
 `PlatformInfo` isolates host detection from policy. Auto selection is Windows
@@ -26,8 +31,9 @@ alone is insufficient. Explicit manager selection is platform-gated.
 Systemd owns `/etc/systemd/system/eggsearch.service` and uses a dynamic service
 identity, bounded failure restart, and filesystem/network hardening. macOS owns
 the per-user LaunchAgent `com.eggstack.eggsearch`. Windows owns the SCM service
-`Eggsearch` and its service entry point. Cron owns one marked user-crontab line
-and preserves all unrelated lines.
+`Eggsearch` and its service entry point. Cron owns an `eggsearch-managed`
+BEGIN/END block and preserves unrelated crontab bytes. A compatibility path
+converts the old `# eggsearch-managed` line only on one exact command match.
 
 ## Health and ownership
 

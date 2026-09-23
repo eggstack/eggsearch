@@ -65,6 +65,10 @@ eggress-outbound = { version = "=1.0.8", default-features = false, optional = tr
 eggress-uri = { version = "=1.0.8", default-features = false, optional = true }
 eggress-core = { version = "=1.0.8", default-features = false, optional = true }
 eggfetch-core = { version = "0.2.0", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli"] }
+eggup-core = { git = "https://github.com/eggstack/eggup", rev = "cf5b3d3819c168eb2dbf841daa8332f3eb28c915" }
+eggup-acquisition = { git = "https://github.com/eggstack/eggup", rev = "cf5b3d3819c168eb2dbf841daa8332f3eb28c915" }
+eggup-eggfetch = { git = "https://github.com/eggstack/eggup", rev = "cf5b3d3819c168eb2dbf841daa8332f3eb28c915" }
+eggup-service = { git = "https://github.com/eggstack/eggup", rev = "cf5b3d3819c168eb2dbf841daa8332f3eb28c915" }
 semver = "1"
 scraper = "0.20"
 ego-tree = "0.6.2"
@@ -79,8 +83,6 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 libc = "0.2"
 lru = "0.18"
-self-replace = "1"
-sha2 = "0.10"
 tempfile = "3"
 
 [dev-dependencies]
@@ -88,11 +90,13 @@ pretty_assertions = "1"
 httpmock = "0.7"
 criterion = { version = "0.5", default-features = false }
 proptest = { version = "1", default-features = false, features = ["std"] }
+sha2 = "0.10"
 flate2 = "1"
 brotli = "8"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"
+self-replace = "1"
 
 [[bench]]
 name = "perf"

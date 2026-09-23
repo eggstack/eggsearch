@@ -1,19 +1,29 @@
 //! Binary-first self-update orchestration.
 
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs::{self, OpenOptions};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use futures::StreamExt;
 use semver::Version;
+#[cfg(test)]
 use sha2::{Digest, Sha256};
+#[cfg(test)]
 use tempfile::NamedTempFile;
+use tempfile::TempDir;
 use thiserror::Error;
-use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::process::Command;
+
+use eggup_acquisition::{
+    AcquisitionRequest, AcquisitionTransport, CancelFlag, FetchLimits, FetchOutcome,
+};
+use eggup_core::{
+    AbsentPolicy, ArtifactMember, ArtifactSet, CommitOwnership, ExactIdentityValidator,
+    InstallPlan, IntegrityRequirement, MemberId, Ownership, OwnershipVerifier, PermissionsIntent,
+    ProductId, ReleaseId, TransactionDisposition,
+};
+use eggup_eggfetch::{EggfetchConfig, EggfetchTransport, ProxyDecision};
 
 use crate::platform::{self, ReleaseTarget};
 
@@ -231,17 +241,17 @@ impl UpdateClient {
                 };
                 ensure_replacement_permission(&destination)?;
                 if let Some(target) = platform::current_target() {
-                    match self.download_release(&latest, target, &destination).await {
-                        Ok(candidate) => {
-                            verify_candidate_file(
-                                candidate.as_ref(),
+                    match self.download_release(&latest, target).await {
+                        Ok((candidate_root, candidate)) => {
+                            let digest = verify_candidate_file(
+                                &candidate,
                                 target.asset,
                                 &latest,
-                                &self.http,
                                 &self.endpoints.github_base_url,
                             )
                             .await?;
-                            replace_candidate(candidate.as_ref(), &destination)?;
+                            commit_candidate(&candidate, &destination, &latest, digest)?;
+                            drop(candidate_root);
                             self.finish_lifecycle(
                                 UpdateOutcome::UpdatedBinary {
                                     from: self.current.clone(),
@@ -338,73 +348,56 @@ impl UpdateClient {
         &self,
         version: &Version,
         target: ReleaseTarget,
-        destination: &Path,
-    ) -> Result<tempfile::TempPath, UpdateError> {
+    ) -> Result<(TempDir, PathBuf), UpdateError> {
         let url = platform::asset_url(
             &self.endpoints.github_base_url,
             &version.to_string(),
             target.asset,
         );
-        let mut response = self
-            .http
-            .get(&url)
-            .map_err(|error| UpdateError::Download(error.to_string()))?
-            .timeout(request_timeout())
-            .send()
-            .await
+        let root = tempfile::tempdir().map_err(UpdateError::Filesystem)?;
+        let candidate = root.path().join(target.asset);
+        let request = AcquisitionRequest::new(url.clone())
             .map_err(|error| UpdateError::Download(error.to_string()))?;
-        if response.status().as_u16() == 404 {
-            return Err(UpdateError::AssetUnavailable { url });
-        }
-        if !response.status().is_success() {
-            return Err(UpdateError::HttpStatus {
-                resource: "release asset",
-                status: response.status().as_u16(),
-                url,
-            });
-        }
-        let parent = destination
-            .parent()
-            .ok_or_else(|| UpdateError::Replacement {
-                path: destination.to_path_buf(),
-                detail: "destination has no parent directory".to_string(),
-            })?;
-        let mut candidate = NamedTempFile::new_in(parent).map_err(UpdateError::Filesystem)?;
-        if let Some(content_length) = response.content_length() {
-            if content_length > MAX_ASSET_BYTES as u64 {
-                return Err(UpdateError::ResponseTooLarge {
+        let limits = FetchLimits::new(
+            MAX_CHECKSUM_BODY_BYTES,
+            Some(MAX_ASSET_BYTES as u64),
+            REQUEST_TIMEOUT,
+            REQUEST_TIMEOUT,
+        )
+        .map_err(|error| UpdateError::Download(error.to_string()))?;
+        let transport = EggfetchTransport::strict(
+            EggfetchConfig::strict()
+                .user_agent(format!("eggsearch/{CURRENT_VERSION} self-update"))
+                .timeouts(REQUEST_TIMEOUT, REQUEST_TIMEOUT)
+                .max_redirects(10)
+                .proxy(ProxyDecision::FromEnvironment),
+        )
+        .map_err(|error| UpdateError::Client(error.to_string()))?;
+        let request_for_task = request.clone();
+        let candidate_for_task = candidate.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            transport.fetch_artifact(
+                &request_for_task,
+                &candidate_for_task,
+                limits,
+                &CancelFlag::new(),
+            )
+        })
+        .await
+        .map_err(|error| UpdateError::Download(error.to_string()))?
+        .map_err(|error| match error {
+            eggup_acquisition::AcquisitionError::TooLarge { limit } => {
+                UpdateError::ResponseTooLarge {
                     resource: "release asset",
-                    limit: MAX_ASSET_BYTES,
-                });
+                    limit: limit as usize,
+                }
             }
+            error => UpdateError::Download(error.to_string()),
+        })?;
+        match outcome {
+            FetchOutcome::Success(_) => Ok((root, candidate)),
+            FetchOutcome::NotFound => Err(UpdateError::AssetUnavailable { url }),
         }
-        let mut body = response
-            .bytes_stream()
-            .map_err(|error| UpdateError::Download(error.to_string()))?;
-        let mut total = 0usize;
-        while let Some(chunk) = body.next().await {
-            let chunk = chunk.map_err(|error| UpdateError::Download(error.to_string()))?;
-            total = total.saturating_add(chunk.len());
-            if total > MAX_ASSET_BYTES {
-                return Err(UpdateError::ResponseTooLarge {
-                    resource: "release asset",
-                    limit: MAX_ASSET_BYTES,
-                });
-            }
-            candidate
-                .as_file_mut()
-                .write_all(&chunk)
-                .map_err(UpdateError::Filesystem)?;
-        }
-        candidate
-            .as_file_mut()
-            .flush()
-            .map_err(UpdateError::Filesystem)?;
-        candidate
-            .as_file()
-            .sync_all()
-            .map_err(UpdateError::Filesystem)?;
-        Ok(candidate.into_temp_path())
     }
 
     async fn update_from_cargo(
@@ -453,8 +446,9 @@ impl UpdateClient {
                 detail: format!("Cargo completed without producing {}", candidate.display()),
             });
         }
-        verify_candidate(&candidate, version).await?;
-        replace_candidate_path(&candidate, destination)?;
+        let digest = eggup_core::hash_file(&candidate)
+            .map_err(|error| UpdateError::Checksum(error.to_string()))?;
+        commit_candidate(&candidate, destination, version, digest)?;
         Ok(UpdateOutcome::UpdatedFromCargo {
             from: self.current.clone(),
             to: version.clone(),
@@ -523,177 +517,208 @@ async fn verify_candidate_file(
     candidate: &Path,
     asset: &str,
     version: &Version,
-    client: &eggfetch_core::Client,
     github_base_url: &str,
-) -> Result<(), UpdateError> {
+) -> Result<[u8; 32], UpdateError> {
     let checksum_url = platform::checksum_url(github_base_url, &version.to_string(), asset);
-    let checksum = bounded_get(client, &checksum_url, MAX_CHECKSUM_BODY_BYTES, "checksum")
-        .await
-        .map_err(|error| match error {
-            UpdateError::Download(detail) => UpdateError::Checksum(detail),
-            UpdateError::HttpStatus { status, url, .. } => {
-                UpdateError::Checksum(format!("HTTP {status}: {url}"))
-            }
-            UpdateError::ResponseTooLarge { limit, .. } => {
-                UpdateError::Checksum(format!("response body exceeds {limit} bytes"))
-            }
-            error => error,
-        })?;
-    let expected = parse_checksum(&checksum, asset)?;
-    let actual = sha256_file(candidate)?;
-    if actual != expected {
-        return Err(UpdateError::Checksum(format!(
-            "digest mismatch for {asset}"
-        )));
-    }
-    set_executable(candidate)?;
-    verify_candidate(candidate, version).await
-}
-
-fn parse_checksum(body: &[u8], asset: &str) -> Result<String, UpdateError> {
+    let request = AcquisitionRequest::new(checksum_url)
+        .map_err(|error| UpdateError::Checksum(error.to_string()))?;
+    let limits = FetchLimits::new(
+        MAX_CHECKSUM_BODY_BYTES,
+        None,
+        REQUEST_TIMEOUT,
+        REQUEST_TIMEOUT,
+    )
+    .map_err(|error| UpdateError::Checksum(error.to_string()))?;
+    let transport = EggfetchTransport::strict(
+        EggfetchConfig::strict()
+            .user_agent(format!("eggsearch/{CURRENT_VERSION} self-update"))
+            .timeouts(REQUEST_TIMEOUT, REQUEST_TIMEOUT)
+            .max_redirects(10)
+            .proxy(ProxyDecision::FromEnvironment),
+    )
+    .map_err(|error| UpdateError::Client(error.to_string()))?;
+    let request_for_task = request.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        transport.fetch_metadata(&request_for_task, limits, &CancelFlag::new())
+    })
+    .await
+    .map_err(|error| UpdateError::Checksum(error.to_string()))?
+    .map_err(|error| UpdateError::Checksum(error.to_string()))?;
+    let checksum = match outcome {
+        FetchOutcome::Success(bytes) => bytes.bytes().to_vec(),
+        FetchOutcome::NotFound => {
+            return Err(UpdateError::Checksum(format!(
+                "checksum sidecar not found: {}",
+                request.redacted()
+            )))
+        }
+    };
     let text =
-        std::str::from_utf8(body).map_err(|error| UpdateError::Checksum(error.to_string()))?;
-    let mut lines = text.lines();
-    let line = lines
-        .next()
-        .ok_or_else(|| UpdateError::Checksum("checksum file is empty".to_string()))?;
-    if lines.next().is_some() {
-        return Err(UpdateError::Checksum(
-            "checksum file must contain exactly one line".to_string(),
-        ));
-    }
-    let fields: Vec<_> = line.split_whitespace().collect();
-    if fields.is_empty()
-        || fields.len() > 2
-        || fields[0].len() != 64
-        || !fields[0].bytes().all(|byte| byte.is_ascii_hexdigit())
+        std::str::from_utf8(&checksum).map_err(|error| UpdateError::Checksum(error.to_string()))?;
+    let manifest = eggup_core::parse_sha256_sidecar(text)
+        .map_err(|error| UpdateError::Checksum(error.to_string()))?;
+    if manifest
+        .filename()
+        .is_some_and(|filename| filename != asset)
     {
-        return Err(UpdateError::Checksum(format!(
-            "invalid checksum file for {asset}"
-        )));
-    }
-    if fields.get(1).is_some_and(|name| *name != asset) {
         return Err(UpdateError::Checksum(format!(
             "checksum filename does not match {asset}"
         )));
     }
-    Ok(fields[0].to_ascii_lowercase())
+    eggup_core::verify_file(candidate, &manifest)
+        .map_err(|error| UpdateError::Checksum(error.to_string()))
 }
 
-fn sha256_file(path: &Path) -> Result<String, UpdateError> {
-    let mut file = File::open(path).map_err(UpdateError::Filesystem)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer).map_err(UpdateError::Filesystem)?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
+fn commit_candidate(
+    candidate: &Path,
+    destination: &Path,
+    version: &Version,
+    digest: [u8; 32],
+) -> Result<(), UpdateError> {
+    let verifier =
+        CurrentExecutableVerifier::new().map_err(|error| replacement_error(destination, error))?;
+    commit_candidate_with_verifier(candidate, destination, version, digest, &verifier)
 }
 
-async fn verify_candidate(path: &Path, expected: &Version) -> Result<(), UpdateError> {
-    let mut child = Command::new(path)
-        .arg("--version")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|error| UpdateError::CandidateExecution(error.to_string()))?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        UpdateError::CandidateExecution("candidate stdout unavailable".to_string())
-    })?;
-    let stderr = child.stderr.take().ok_or_else(|| {
-        UpdateError::CandidateExecution("candidate stderr unavailable".to_string())
-    })?;
-    let result = tokio::time::timeout(CANDIDATE_TIMEOUT, async move {
-        let (stdout, stderr, status) =
-            tokio::join!(read_bounded(stdout), read_bounded(stderr), child.wait());
-        let status = status.map_err(|error| UpdateError::CandidateExecution(error.to_string()))?;
-        Ok::<_, UpdateError>((stdout?, stderr?, status))
-    })
-    .await
-    .map_err(|_| UpdateError::CandidateExecution("candidate --version timed out".to_string()))??;
-    let (stdout, stderr, status) = result;
-    let output = String::from_utf8_lossy(&stdout);
-    if !status.success() {
-        return Err(UpdateError::CandidateExecution(format!(
-            "exit status {status}: {}",
-            String::from_utf8_lossy(&stderr)
-        )));
-    }
-    let reported = output
-        .lines()
-        .find_map(|line| {
-            let mut fields = line.split_whitespace();
-            (fields.next() == Some(platform::CRATE_NAME))
-                .then(|| fields.next().map(str::to_string))
-                .flatten()
-        })
-        .ok_or_else(|| {
-            UpdateError::CandidateIdentity(format!(
-                "output did not identify {}: {output}",
-                platform::CRATE_NAME
-            ))
+fn commit_candidate_with_verifier(
+    candidate: &Path,
+    destination: &Path,
+    version: &Version,
+    digest: [u8; 32],
+    verifier: &dyn OwnershipVerifier,
+) -> Result<(), UpdateError> {
+    let root = destination
+        .parent()
+        .ok_or_else(|| UpdateError::Replacement {
+            path: destination.to_path_buf(),
+            detail: "destination has no parent directory".into(),
         })?;
-    let reported = Version::parse(&reported)
+    let name = destination
+        .file_name()
+        .ok_or_else(|| UpdateError::Replacement {
+            path: destination.to_path_buf(),
+            detail: "destination has no filename".into(),
+        })?;
+    let member =
+        MemberId::new("eggsearch").map_err(|error| replacement_error(destination, error))?;
+    let artifact = ArtifactMember::new(member.clone(), candidate, Path::new(name))
+        .map_err(|error| replacement_error(destination, error))?
+        .with_permissions(if cfg!(unix) {
+            PermissionsIntent::Executable
+        } else {
+            PermissionsIntent::Preserve
+        })
+        .with_integrity(IntegrityRequirement::Sha256(digest));
+    let plan = InstallPlan::new(
+        ProductId::new("eggsearch").map_err(|error| replacement_error(destination, error))?,
+        ReleaseId::new(version.to_string())
+            .map_err(|error| replacement_error(destination, error))?,
+        root,
+        ArtifactSet::single(artifact).map_err(|error| replacement_error(destination, error))?,
+    )
+    .map_err(|error| replacement_error(destination, error))?;
+    let prepared = plan
+        .prepare()
+        .and_then(|prepared| prepared.verify_integrity())
+        .map_err(|error| replacement_error(destination, error))?;
+    let validator = ExactIdentityValidator::new(member.clone(), format!("eggsearch {version}\n"))
+        .args(["--version"])
+        .timeout(CANDIDATE_TIMEOUT)
+        .max_output_bytes(MAX_CANDIDATE_OUTPUT_BYTES);
+    let validated = prepared
+        .validate(&validator)
         .map_err(|error| UpdateError::CandidateIdentity(error.to_string()))?;
-    if &reported != expected {
-        return Err(UpdateError::CandidateIdentity(format!(
-            "expected {expected}, got {reported}"
-        )));
+
+    #[cfg(windows)]
+    if current_executable_matches(destination) {
+        let staged = validated
+            .staged_path(&member)
+            .map_err(|error| replacement_error(destination, error))?;
+        self_replace::self_replace(staged).map_err(|error| UpdateError::Replacement {
+            path: destination.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+        return Ok(());
     }
-    Ok(())
+
+    let receipt = validated
+        .commit(CommitOwnership::new(verifier, AbsentPolicy::DenyCreate))
+        .map_err(|error| replacement_error(destination, error))?;
+    match receipt.disposition() {
+        TransactionDisposition::Committed => Ok(()),
+        TransactionDisposition::RolledBack => Err(UpdateError::Replacement {
+            path: destination.to_path_buf(),
+            detail: format!(
+                "replacement rolled back: {}",
+                receipt
+                    .failure()
+                    .map_or("unknown", |failure| failure.detail())
+            ),
+        }),
+        TransactionDisposition::RecoveryRequired => Err(UpdateError::Replacement {
+            path: destination.to_path_buf(),
+            detail: format!(
+                "recovery required at {}: {}",
+                receipt
+                    .recovery_path()
+                    .map_or_else(|| "unknown path".into(), |path| path.display().to_string()),
+                receipt
+                    .failure()
+                    .map_or("unknown failure", |failure| failure.detail())
+            ),
+        }),
+    }
 }
 
-async fn read_bounded<R>(mut reader: R) -> Result<Vec<u8>, UpdateError>
-where
-    R: AsyncRead + Unpin,
-{
-    let mut output = Vec::new();
-    let mut buffer = [0u8; 4096];
-    let mut overflow = false;
-    loop {
-        let read = reader
-            .read(&mut buffer)
-            .await
-            .map_err(|error| UpdateError::CandidateExecution(error.to_string()))?;
-        if read == 0 {
-            break;
-        }
-        if output.len() >= MAX_CANDIDATE_OUTPUT_BYTES {
-            overflow = true;
-        } else {
-            let remaining = MAX_CANDIDATE_OUTPUT_BYTES - output.len();
-            if read > remaining {
-                output.extend_from_slice(&buffer[..remaining]);
-                overflow = true;
-            } else {
-                output.extend_from_slice(&buffer[..read]);
+fn replacement_error(path: &Path, error: impl fmt::Display) -> UpdateError {
+    UpdateError::Replacement {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    }
+}
+
+#[cfg(windows)]
+fn current_executable_matches(path: &Path) -> bool {
+    std::env::current_exe()
+        .and_then(fs::canonicalize)
+        .ok()
+        .zip(fs::canonicalize(path).ok())
+        .is_some_and(|(current, destination)| current == destination)
+}
+
+struct CurrentExecutableVerifier {
+    expected: PathBuf,
+}
+
+impl CurrentExecutableVerifier {
+    fn new() -> io::Result<Self> {
+        Ok(Self {
+            expected: fs::canonicalize(std::env::current_exe()?)?,
+        })
+    }
+}
+
+impl OwnershipVerifier for CurrentExecutableVerifier {
+    fn verify(&self, _member: &MemberId, destination: &Path) -> Ownership {
+        let metadata = match fs::symlink_metadata(destination) {
+            Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => metadata,
+            Ok(_) => return Ownership::Foreign,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ownership::Absent,
+            Err(_) => return Ownership::Unknown,
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 {
+                return Ownership::Foreign;
             }
         }
+        match fs::canonicalize(destination) {
+            Ok(path) if path == self.expected => Ownership::Owned,
+            Ok(_) => Ownership::Foreign,
+            Err(_) => Ownership::Unknown,
+        }
     }
-    if overflow {
-        return Err(UpdateError::CandidateExecution(format!(
-            "candidate output exceeds {MAX_CANDIDATE_OUTPUT_BYTES} bytes"
-        )));
-    }
-    Ok(output)
-}
-
-fn set_executable(path: &Path) -> Result<(), UpdateError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(path)
-            .map_err(UpdateError::Filesystem)?
-            .permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).map_err(UpdateError::Filesystem)?;
-    }
-    Ok(())
 }
 
 fn ensure_replacement_permission(path: &Path) -> Result<(), UpdateError> {
@@ -726,52 +751,6 @@ fn rerun_command(path: &Path) -> String {
             path.display()
         )
     }
-}
-
-fn replace_candidate(candidate: &Path, destination: &Path) -> Result<(), UpdateError> {
-    if std::env::current_exe().ok().as_deref() == Some(destination) {
-        self_replace::self_replace(candidate).map_err(|error| UpdateError::Replacement {
-            path: destination.to_path_buf(),
-            detail: error.to_string(),
-        })?;
-        return Ok(());
-    }
-    replace_candidate_path(candidate, destination)
-}
-
-fn replace_candidate_path(candidate: &Path, destination: &Path) -> Result<(), UpdateError> {
-    if std::env::current_exe().ok().as_deref() == Some(destination) {
-        self_replace::self_replace(candidate).map_err(|error| UpdateError::Replacement {
-            path: destination.to_path_buf(),
-            detail: error.to_string(),
-        })?;
-        return Ok(());
-    }
-    let parent = destination
-        .parent()
-        .ok_or_else(|| UpdateError::Replacement {
-            path: destination.to_path_buf(),
-            detail: "destination has no parent directory".to_string(),
-        })?;
-    let mut staged = NamedTempFile::new_in(parent).map_err(UpdateError::Filesystem)?;
-    let mut source = File::open(candidate).map_err(UpdateError::Filesystem)?;
-    io::copy(&mut source, staged.as_file_mut()).map_err(UpdateError::Filesystem)?;
-    staged
-        .as_file_mut()
-        .flush()
-        .map_err(UpdateError::Filesystem)?;
-    staged
-        .as_file()
-        .sync_all()
-        .map_err(UpdateError::Filesystem)?;
-    set_executable(staged.path())?;
-    staged
-        .persist(destination)
-        .map_err(|error| UpdateError::Replacement {
-            path: destination.to_path_buf(),
-            detail: error.error.to_string(),
-        })?;
-    Ok(())
 }
 
 fn find_on_path(program: &str) -> Option<PathBuf> {
@@ -862,19 +841,18 @@ mod tests {
         assert!(parse_stable_version("not-semver").is_err());
     }
 
-    #[tokio::test]
-    async fn read_bounded_accepts_exact_cap_size() {
-        let exact = vec![b'x'; MAX_CANDIDATE_OUTPUT_BYTES];
-        let out = read_bounded(&exact[..])
-            .await
-            .expect("exact-size output is clean");
-        assert_eq!(out.len(), MAX_CANDIDATE_OUTPUT_BYTES);
-    }
-
-    #[tokio::test]
-    async fn read_bounded_rejects_output_beyond_cap() {
-        let over = vec![b'x'; MAX_CANDIDATE_OUTPUT_BYTES + 1];
-        assert!(read_bounded(&over[..]).await.is_err());
+    #[cfg(unix)]
+    #[test]
+    fn eggup_candidate_runner_enforces_output_bound() {
+        let output = eggup_core::run_bounded(
+            &eggup_core::CommandSpec::new("/bin/sh")
+                .args(["-c", "printf ab"])
+                .timeout(CANDIDATE_TIMEOUT)
+                .max_output_bytes(1),
+        )
+        .unwrap();
+        assert!(output.output_limited());
+        assert!(!output.success());
     }
 
     #[tokio::test]
@@ -938,21 +916,12 @@ mod tests {
     }
 
     #[test]
-    fn checksum_parser_accepts_documented_forms_only() {
-        assert_eq!(
-            parse_checksum(&[b'a'; 63], "asset")
-                .unwrap_err()
-                .to_string(),
-            "checksum verification failed: invalid checksum file for asset"
-        );
+    fn eggup_sidecar_parser_binds_the_selected_filename() {
         let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        assert_eq!(parse_checksum(digest.as_bytes(), "asset").unwrap(), digest);
-        assert_eq!(
-            parse_checksum(format!("{digest}  asset\n").as_bytes(), "asset").unwrap(),
-            digest
-        );
-        assert!(parse_checksum(format!("{digest}  other\n").as_bytes(), "asset").is_err());
-        assert!(parse_checksum(format!("{digest}\nextra\n").as_bytes(), "asset").is_err());
+        let manifest = eggup_core::parse_sha256_sidecar(&format!("{digest}  asset\n")).unwrap();
+        assert_eq!(manifest.filename(), Some("asset"));
+        assert!(eggup_core::parse_sha256_sidecar(&format!("{digest}  other\n")).is_ok());
+        assert!(eggup_core::parse_sha256_sidecar(&format!("{digest}\nextra\n")).is_err());
     }
 
     #[test]
@@ -1010,20 +979,28 @@ mod tests {
             os: "linux",
             arch: "x86_64",
         };
-        let candidate = client
-            .download_release(&Version::new(0, 3, 9), target, &destination)
+        let (candidate_root, candidate) = client
+            .download_release(&Version::new(0, 3, 9), target)
             .await
             .unwrap();
-        verify_candidate_file(
-            candidate.as_ref(),
+        let digest = verify_candidate_file(
+            &candidate,
             asset,
             &Version::new(0, 3, 9),
-            &client.http,
             &client.endpoints.github_base_url,
         )
         .await
         .unwrap();
-        replace_candidate(candidate.as_ref(), &destination).unwrap();
+        assert_eq!(digest, eggup_core::hash_file(&candidate).unwrap());
+        commit_candidate_with_verifier(
+            &candidate,
+            &destination,
+            &Version::new(0, 3, 9),
+            digest,
+            &eggup_core::ExistingAsOwnedVerifier,
+        )
+        .unwrap();
+        drop(candidate_root);
         assert_eq!(
             fs::read_to_string(&destination).unwrap(),
             "#!/bin/sh\nprintf 'eggsearch 0.3.9\\n'\n"
@@ -1057,15 +1034,14 @@ mod tests {
             os: "linux",
             arch: "x86_64",
         };
-        let candidate = client
-            .download_release(&Version::new(0, 3, 9), target, &destination)
+        let (_candidate_root, candidate) = client
+            .download_release(&Version::new(0, 3, 9), target)
             .await
             .unwrap();
         let error = verify_candidate_file(
             &candidate,
             asset,
             &Version::new(0, 3, 9),
-            &client.http,
             &client.endpoints.github_base_url,
         )
         .await
@@ -1073,15 +1049,23 @@ mod tests {
         assert!(matches!(error, UpdateError::Checksum(_)));
         assert_eq!(fs::read(&destination).unwrap(), b"old");
 
-        let candidate = NamedTempFile::new_in(directory.path()).unwrap();
+        let candidate_directory = tempdir().unwrap();
+        let candidate = NamedTempFile::new_in(candidate_directory.path()).unwrap();
         fs::write(candidate.path(), candidate_bytes("0.3.8")).unwrap();
         candidate.as_file().sync_all().unwrap();
         let candidate = candidate.into_temp_path();
-        set_executable(candidate.as_ref()).unwrap();
-        assert!(matches!(
-            verify_candidate(candidate.as_ref(), &Version::new(0, 3, 9)).await,
-            Err(UpdateError::CandidateIdentity(_))
-        ));
+        let digest = eggup_core::hash_file(candidate.as_ref()).unwrap();
+        let result = commit_candidate_with_verifier(
+            candidate.as_ref(),
+            &destination,
+            &Version::new(0, 3, 9),
+            digest,
+            &eggup_core::ExistingAsOwnedVerifier,
+        );
+        assert!(
+            matches!(result, Err(UpdateError::CandidateIdentity(_))),
+            "wrong candidate should fail identity validation, got {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -1093,7 +1077,6 @@ mod tests {
                 .path("/releases/download/v0.3.9/eggsearch-x86_64-unknown-linux-gnu");
             then.status(404);
         });
-        let directory = tempdir().unwrap();
         let result = test_client(&server, "0.3.8")
             .download_release(
                 &Version::new(0, 3, 9),
@@ -1103,7 +1086,6 @@ mod tests {
                     os: "linux",
                     arch: "x86_64",
                 },
-                &directory.path().join("eggsearch"),
             )
             .await;
         assert!(matches!(result, Err(UpdateError::AssetUnavailable { .. })));
@@ -1124,13 +1106,9 @@ mod tests {
                     os: "linux",
                     arch: "x86_64",
                 },
-                &directory.path().join("eggsearch"),
             )
             .await;
-        assert!(matches!(
-            result,
-            Err(UpdateError::HttpStatus { status: 500, .. })
-        ));
+        assert!(matches!(result, Err(UpdateError::Download(_))));
     }
 
     #[test]

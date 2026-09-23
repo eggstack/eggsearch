@@ -32,6 +32,14 @@ running Linux systemd host, and the user's crontab on other Unix/Linux hosts.
 The CLI never invokes `sudo` or requests UAC. A privilege failure prints the
 exact elevated command and never creates a cron duplicate.
 
+On Unix, `eggup-service` owns systemd, launchd, and managed crontab registration,
+ownership checks, transitions, and deletion. Eggsearch keeps service-definition
+rendering, manager selection, health policy, and cron process supervision. The
+first update from the legacy cron line converts it only when exactly one entry
+matches the current eggsearch command; changed or duplicate entries remain
+untouched and return a conflict. The new registration uses an
+`eggsearch-managed` BEGIN/END block.
+
 ## systemd
 
 The system backend owns `/etc/systemd/system/eggsearch.service`, uses an
@@ -68,6 +76,9 @@ Windows uses the Service Control Manager service named `Eggsearch`, with
 automatic start and bounded SCM failure actions. Run the installer or CLI from
 an elevated PowerShell prompt; the binary and service command use absolute
 paths.
+
+Windows service registration and lifecycle remain eggsearch-owned until the
+Eggup Windows SCM adapter is separately qualified.
 
 ```powershell
 & 'C:\Program Files\Eggsearch\eggsearch.exe' startup install --method windows

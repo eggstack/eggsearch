@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Adopted Eggup's acquisition, integrity, candidate-validation, and Unix
+  service-manager contracts at immutable revision
+  `cf5b3d3819c168eb2dbf841daa8332f3eb28c915`. Windows service management and
+  running-image replacement remain consumer-owned pending their separate
+  Eggup qualification; legacy cron entries migrate only on an exact unique
+  command match.
 - Raised the minimum supported Rust version from 1.88 to 1.89.
 - Consolidated all eggsearch-owned outbound HTTP behind `eggfetch-core`
   0.1.7 (`standard-http1` + `advanced-routing` + `redirects` + `tls-rustls`

@@ -20,10 +20,13 @@ https://github.com/eggstack/eggsearch/releases/download/vX.Y.Z/eggsearch-<target
 ```
 
 The target and filename are shared with the [release contract](../architecture/packaging.md).
-The downloaded bytes are bounded, SHA-256 verified, made executable where
-needed, and run with `--version`. The candidate must identify as `eggsearch` and
-report exactly `X.Y.Z` before replacement. Network, status, checksum, execution,
-identity, and replacement failures never trigger a source build.
+Eggup acquisition streams the asset within the current byte/deadline bounds;
+Eggup verifies the filename-bound SHA-256 sidecar, validates exact
+`eggsearch X.Y.Z` output, and commits through its ownership-checked transaction
+with rollback receipts. On Windows, acquisition, integrity, and identity use
+Eggup while the final running-image replacement remains eggsearch-owned through
+`self-replace` until Eggup qualifies that operation. Network, status, checksum,
+execution, identity, and replacement failures never trigger a source build.
 
 ## Cargo fallback
 
