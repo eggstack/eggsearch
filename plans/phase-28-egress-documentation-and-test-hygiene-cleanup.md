@@ -312,10 +312,13 @@ Starting SHA: `eed02a885c30ce0194a8af1bfa568d6ed5db64b0`.
 Implementation SHA: this closure commit (verify with `git log -1 --format=%H`).
 Planning baseline: `307036c2799d619dbb572ed8322021e4197facb8` (`eggsearch` 0.3.9 on `main`).
 
-Exact files changed (4 files, tests/planning/docs only):
+Exact files changed (5 files, tests/planning/docs only):
 
 - `tests/egress_routing.rs` (`enabled: true` -> `enabled: false` in the two
   host-grammar fixtures);
+- `tests/property_fetch_redirects.rs` (correct the `validate_url_deep_subdomain_accepted`
+  proptest guard to skip private-TLD collisions on the generated TLD instead of
+  the middle label);
 - `plans/registry.md` (Phase 27 heading `Active` -> `Completed`; Phase 28
   workstream `planned / ready for handoff` -> `implemented` with closure
   evidence);
@@ -376,8 +379,15 @@ labeled completed and Phase 28 is marked implemented/completed; `AGENTS.md`
 states phases 1-28 are implemented with the Eggress workstream closed. No
 Eggress-specific workstream remains labeled active. Test-inventory docs
 (`docs/test-inventory.md`, `architecture/testing.md`,
-`skills/eggsearch-dev/SKILL.md`) were reconciled with no churn: no tests were
-added, removed, or renamed, and suite counts/semantics are unchanged. README
-required no changes (no phase-status prose).
+`skills/eggsearch-dev/SKILL.md`) required no count churn: no suites were
+added, removed, or renamed.
 
-Deviations/blockers: none.
+Deviations/blockers: one out-of-scope CI-driven test correction. Remote CI on
+the pre-hygiene baseline (`35860035602`) failed
+`validate_url_deep_subdomain_accepted` in `tests/property_fetch_redirects.rs`
+when proptest generated `https://aa.aa.lan/`: the guard skipped only
+`sub2 == "lan"` while `is_private_hostname()` rejects the `.lan` TLD, so the
+`name == "lan"` (plus other private TLDs and the `home.arpa` composite) case
+was not excluded. The guard now skips generated private-TLD collisions. No
+production code changed; the fix was stress-checked locally with
+`PROPTEST_CASES=2000`.
