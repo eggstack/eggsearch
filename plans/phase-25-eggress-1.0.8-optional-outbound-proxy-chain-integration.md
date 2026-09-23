@@ -576,3 +576,15 @@ Status: implemented.
 - Release qualification: not rerun. Canonical default/release binary graph is unchanged (Outcome B, no default-feature change), so the Phase 23/24 seven-target qualification remains the release evidence; the next production/dependency change that alters the canonical graph must still requalify under normal release rules. Egress-feature host + MSRV compile verified.
 - Documentation: `docs/features.md` (operator contract), `docs/config.md`, `docs/test-inventory.md`, `architecture/config.md`, `architecture/fetch.md`, `architecture/maintenance.md`, `architecture/testing.md`, `skills/eggsearch-dev/SKILL.md`, `skills/eggsearch-architecture/SKILL.md`, `README.md`, `AGENTS.md`.
 - Deviations: forge/updater remain direct in this phase (narrower than the maximal Outcome B scope) to avoid touching update-path and owner/repo-adjacent policy; they reuse no egress path and are documented as excluded. No `eggress-uri`-only construction path was needed beyond chain translation. No live TLS-through-CONNECT test with public PKI; HTTPS semantics rest on eggfetch owning destination TLS above the dialer stream plus loopback CONNECT tunneling proof.
+
+## Corrective follow-up
+
+Phase 25's architecture and Outcome B scope remain the accepted implementation
+baseline, but the final audit found several acceptance items that need direct
+regression/qualification evidence plus one IPv6 host-validation correction.
+Those items are tracked in
+`phase-26-egress-corrective-closure-and-qualification.md`.
+
+Do not reinterpret this Phase 25 implementation record as proof of the Phase 26
+items; Phase 26 is the authoritative closure evidence for the combined Eggress
+workstream.
