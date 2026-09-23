@@ -722,3 +722,21 @@ Status: implemented.
   `rcgen`/`rustls`/`tokio-rustls` dev-dependencies are the single
   dependency-graph addition, confined to `[dev-dependencies]` with a new
   static guard pinning them there.
+
+## Maintenance follow-up
+
+Phase 26's runtime and qualification results remain valid, including the exact
+implementation candidate `8cfe9d873b55c1cda176c9c8f2af0182714ae431`, the
+seven-target egress feature qualification run `35806105807`, and the default
+release qualification run `35806121182`.
+
+A later audit found one evidence-precision issue in this record: the local
+release-check bullet documents that strict `cargo publish --dry-run --locked`
+was blocked by a dirty working tree before commit while
+`--allow-dirty` succeeded, so that bullet is not by itself unambiguous proof of
+a fully clean-tree canonical `make release-check`.
+
+Phase 27 (`phase-27-egress-maintenance-closure-and-qualification-contract-hardening.md`)
+is the maintenance follow-up that supplies that clean-tree proof and hardens the
+egress qualification workflow against target-matrix and trigger drift. It does
+not reopen or change the Phase 26 runtime implementation.
