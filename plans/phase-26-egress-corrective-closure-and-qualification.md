@@ -740,3 +740,14 @@ Phase 27 (`phase-27-egress-maintenance-closure-and-qualification-contract-harden
 is the maintenance follow-up that supplies that clean-tree proof and hardens the
 egress qualification workflow against target-matrix and trigger drift. It does
 not reopen or change the Phase 26 runtime implementation.
+
+Phase 27 closure note: the clean-tree canonical `make release-check` (including
+strict `cargo publish --dry-run --locked` without `--allow-dirty`) passed on
+Phase 27 candidate `6414a72ead3d059e53205892f8200afacee2f5e4`, and the hardened
+egress qualification lane passed all seven maintained targets plus MSRV 1.89 on
+that same SHA (run `35810222447`). This confirms the evidence gap above is
+closed. All Phase 26 runtime, seven-target egress compile, and default release
+qualification claims remain valid historical evidence; Phase 27 changes CI
+validation, trigger coverage, contract tests, and documentation only, with no
+Eggress runtime, route-scope, security, dependency, or packaging behavior
+change.

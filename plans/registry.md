@@ -400,19 +400,27 @@ release candidate before publication.
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 27 | Eggress maintenance closure and qualification-contract hardening | planned / ready for handoff | Phase 26 implemented and qualified | `phase-27-egress-maintenance-closure-and-qualification-contract-hardening.md` |
+| 27 | Eggress maintenance closure and qualification-contract hardening | implemented | Phase 26 implemented and qualified | `phase-27-egress-maintenance-closure-and-qualification-contract-hardening.md` |
 
-Phase 27 is a non-functional terminal housekeeping pass for the Eggress
-workstream. It supplies an unambiguous clean-tree canonical
-`make release-check` result, hardens the egress feature qualification matrix
-to exact set equality with `packaging/release-targets.txt`, expands workflow
-path triggers to cover the provider-route construction seam, and adds
-deterministic contract coverage against future CI drift.
+Phase 27 is implemented on `6414a72ead3d059e53205892f8200afacee2f5e4`
+as the non-functional terminal housekeeping pass for the Eggress workstream.
+It records a clean-tree canonical `make release-check` result (including
+strict `cargo publish --dry-run --locked`), enforces exact target-set
+equality between the egress qualification matrix and
+`packaging/release-targets.txt`, expands workflow path triggers across the
+provider-route construction seam, and adds deterministic
+`packaging/check-egress-qualify-contract.sh` plus
+`tests/egress_qualify_contract.rs` coverage. Hardened qualification run
+`35810222447` passed all seven maintained targets plus MSRV 1.89 on the
+exact candidate; default release qualification run `35806121182` is reused
+by explicit validation-only rationale. Full evidence is in the Phase 27
+implementation record.
 
-Phase 27 must not change Eggress runtime behavior, route scope, dependency
-budget, default-feature policy, release SKU policy, or the Phase 25/26 security
-architecture. Phase 26's successful runtime, seven-target egress compile, and
-default release qualification evidence remains valid historical evidence.
+Phase 27 did not change Eggress runtime behavior, route scope, dependency
+budget, default-feature policy, release SKU policy, or the Phase 25/26
+security architecture. Phase 26's successful runtime, seven-target egress
+compile, and default release qualification evidence remains valid
+historical evidence.
 
 ## Deferred by design
 

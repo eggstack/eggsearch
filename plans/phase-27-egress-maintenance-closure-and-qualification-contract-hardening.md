@@ -1,6 +1,6 @@
 # Phase 27 — Eggress maintenance closure and qualification-contract hardening
 
-Status: planned / ready for handoff
+Status: implemented
 
 Planning baseline: `88110778a5f92350f7da41dc9729dd68ab41bcc9` (`eggsearch` 0.3.9 on `main`)
 
@@ -366,3 +366,138 @@ code starts changing, the pass has exceeded its scope.
 The clean-tree release gate is the most important evidence correction. The
 exact target-set comparison is the most important forward-maintenance
 correction.
+
+## Implementation record
+
+Status: implemented.
+
+- Starting SHA: `1e4721890931c0acfbc6bb9285e6f98d057c33d7` (main tip at
+  freeze, clean tree, `eggsearch` 0.3.9). Baseline verified: seven rows in
+  `packaging/release-targets.txt`; egress workflow preflight checked only
+  one direction (hard-coded targets present in `release-targets.txt`) with
+  no extra-target detection; workflow path filters covered
+  `src/fetch/egress.rs`, `src/core/config.rs`, `tests/egress_routing.rs`,
+  Cargo files, the release-target contract, and the workflow itself.
+- Implementation SHAs: `fbc1964e79d6b77d75f990a5b06b4f48be9013c6`
+  (exact target-set comparison, trigger hardening, contract
+  tests/checks, doc sync) followed by
+  `6414a72ead3d059e53205892f8200afacee2f5e4` (preflight blank-line
+  fix; exact gated and qualified candidate). Two commits because the first
+  hardened preflight failed its own new contract in CI on the trailing
+  newline of `release-targets.txt`; the fix filters blank lines before
+  sorting.
+- Exact files changed vs the starting SHA (14 files, +407/-16):
+  `.github/workflows/egress-feature-qualify.yml` (exact-set preflight,
+  expanded path filters),
+  `packaging/check-egress-qualify-contract.sh` (new shared contract),
+  `packaging/check-contract.sh` (invoke the egress contract),
+  `tests/egress_qualify_contract.rs` (new 7-test contract suite),
+  `docs/features.md`, `architecture/fetch.md`, `architecture/packaging.md`,
+  `architecture/testing.md`, `architecture/maintenance.md`,
+  `docs/test-inventory.md` (5296 all-features count, 14 schema/contract
+  suites), `packaging/README.md`, `skills/eggsearch-dev/SKILL.md`,
+  `skills/eggsearch-release/SKILL.md`, `AGENTS.md` (egress-matrix sync
+  wording).
+- Runtime Eggress behavior did not change. No edits to `src/fetch/egress.rs`,
+  provider HTTP construction, engine builders, adapter construction, server
+  wiring, retry/timeout/TLS/redirect/decompression/SSRF ownership,
+  dependencies, features, release targets, installers, updater, or release
+  build logic. `egress` remains non-default; no second binary SKU; Eggress
+  1.0.8 budget unchanged; no protocol expansion; nothing published.
+- Before/after workflow trigger list. Before (push and pull_request):
+  `src/fetch/egress.rs`, `src/core/config.rs`, `tests/egress_routing.rs`,
+  `Cargo.toml`, `Cargo.lock`, `packaging/release-targets.txt`, workflow
+  itself. After (both events): the before set plus
+  `src/meta/engines/mod.rs` (`build_http_client_with_egress`),
+  `src/meta/adapter/builders.rs`
+  (`build_default_engines_with_egress`),
+  `src/meta/adapter/mod.rs` (`new_with_egress`), `src/mcp/state.rs`
+  (`config.egress` wiring), `tests/static_guards.rs`,
+  `tests/egress_qualify_contract.rs`,
+  `packaging/check-egress-qualify-contract.sh`, keeping the workflow
+  self-change entry. Precise file paths; no broad `src/**`.
+- Exact-set validation implementation and negative-test evidence. The
+  workflow preflight keeps one canonical explicit seven-target list,
+  parses the first pipe-delimited column of `release-targets.txt` with
+  blank-line filtering, sorts both sets, and compares with `comm`,
+  printing missing (`comm -23`) and extra (`comm -13`) diagnostics. The
+  shared `packaging/check-egress-qualify-contract.sh` (bash plus embedded
+  python3, no new dependencies) parses release first-column sets and
+  workflow matrix targets (`target:` singular, `targets:` plural,
+  `--target` args filtered to triple-like tokens), requires exact
+  equality with missing/extra diagnostics, requires
+  `cargo check --locked --features egress` per maintained target,
+  forbids publishing markers (`upload-artifact`, `upload-release`,
+  `cargo publish`, `softprops/`, `svenstaro/`, `gh release`), requires
+  the `msrv-all-features` job with
+  `cargo +1.89.0 check --locked --all-features`, requires all
+  route-seam trigger paths, and verifies each route-construction symbol
+  lives in its owner file and that the owner is trigger-covered.
+  `tests/egress_qualify_contract.rs` enforces the same seven properties
+  under `cargo test` (7 tests). Negative evidence: workflow fixture with
+  `aarch64-pc-windows-msvc` removed fails reporting exactly that missing
+  target; fixture with `riscv64-unknown-linux-gnu` added fails reporting
+  exactly that extra; Rust fixtures for omitted/extra targets fail as
+  specified; the real seven-target sets compare equal locally, in
+  `make packaging-check`, and in CI preflight.
+- Clean-tree `make release-check` result on the exact candidate
+  `6414a72ead3d059e53205892f8200afacee2f5e4` (rustc 1.98.1 local,
+  Rust 1.89 pinned in CI jobs): `cargo fmt --check`, clippy
+  `--locked --all-targets --all-features -- -D warnings`,
+  `cargo check --locked --no-default-features`,
+  `cargo test --locked --all-features` (5296 passed, 0 failed,
+  23 ignored, including 7/7 `egress_qualify_contract` and 35/35
+  `egress_routing`), `RUSTDOCFLAGS="-D warnings" cargo doc --locked
+  --all-features --no-deps`, `make hygiene`, `make packaging-check`
+  (including the new egress contract), `make bench-check`,
+  `cargo build --locked --release`, and strict
+  `cargo publish --dry-run --locked` without `--allow-dirty`
+  (263 files packaged, dry-run upload aborted as expected) all pass
+  from a committed tree with no tracked or untracked modifications.
+  The earlier `fbc1964` candidate passed the same gate; the
+  `6414a72` delta is one workflow preflight line, so the gate was
+  re-run on the exact qualified SHA and the tree was still clean
+  afterward.
+- Hardened egress qualification workflow result on the exact candidate:
+  run `35810222447`
+  (<https://github.com/eggstack/eggsearch/actions/runs/35810222447>,
+  `headSha=6414a72ead3d059e53205892f8200afacee2f5e4`): Preflight
+  (exact-set) success; `x86_64-unknown-linux-gnu` success;
+  `aarch64-unknown-linux-gnu` success; `armv7-unknown-linux-gnueabihf`
+  success; `x86_64-apple-darwin` success; `aarch64-apple-darwin`
+  success; `x86_64-pc-windows-msvc` success;
+  `aarch64-pc-windows-msvc` success; MSRV all-features (1.89) success.
+  The workflow remains non-publishing and creates no egress release SKU.
+  A superseded run `35810028117` on `fbc1964` failed preflight only on
+  the blank-line artifact described above, confirming the new contract
+  fails closed; no target or trigger content differed.
+- Rust 1.89 result: the `msrv-all-features` job
+  (`cargo +1.89.0 check --locked --all-features`) passed in run
+  `35810222447`; local `cargo +1.89.0 check` conformance is covered by
+  that lane.
+- Default release qualification rerun decision: not rerun. The Phase 27
+  diff touches CI validation preflight, workflow path filters, contract
+  tests/checks, and documentation only. No production source, Cargo
+  dependency/feature, release-target asset contract, installer, updater,
+  or release build logic changed, so Phase 26 default qualification run
+  `35806121182` (all seven targets plus exact 16-file assembly on
+  `8cfe9d8`) remains valid for production runtime contents.
+- Phase 26 maintenance clarification: appended to
+  `phase-26-egress-corrective-closure-and-qualification.md` without
+  rewriting history, stating the dirty-tree strict dry-run was not
+  complete clean-tree evidence, Phase 27 supplies that proof, and all
+  Phase 26 runtime and qualification claims remain valid.
+- Final planning/AGENTS registry reconciliation: this record,
+  `plans/registry.md` (Phase 27 marked implemented with the exact
+  candidate and run IDs), and `AGENTS.md` (Phase 27 implemented;
+  egress-matrix sync wording) are updated together in the closure
+  commit.
+- Deviations/blockers: one in-scope CI fix (blank-line filtering in the
+  new preflight, committed as `6414a72` with the gate re-run on that
+  exact SHA). One pre-existing non-blocker:
+  `cargo test --locked --features mock --test egress_routing
+  egress_host_validation_accepts_dns_ipv4_and_ipv6_literals` fails on
+  the clean starting SHA as well as on this candidate; the canonical
+  `cargo test --locked --all-features` gate (35/35 egress_routing)
+  passes. No runtime or packaging defect was found; Phase 27 never
+  exceeded its non-functional scope.
