@@ -125,6 +125,7 @@ Mock-backed deterministic coverage for the shared probe service:
 | `docs_tool_names.rs` | Tool name documentation (code-derived from `src/mcp/server.rs`) |
 | `docs_safety_vocabulary.rs` | Safety vocabulary documentation |
 | `provider_capability_contract.rs` | Provider native-capability enforcement contract (brave_api/exa/tavily/firecrawl, domain-filter exclusivity) |
+| `egress_qualify_contract.rs` | Egress qualification CI contract (exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage) |
 
 ### Behavioral Regression Contracts (historical phase suites, renamed)
 
@@ -168,6 +169,7 @@ comparison entry point (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`).
 |------|---------|
 | `forge_adapter.rs` | Forge API client |
 | `egress_routing.rs` | Egress route validation (incl. IPv6), SSRF gate, proxy-chain composition, pool reuse, TLS/SNI, compression/body limits, auth isolation, malformed-proxy and redirect regressions |
+| `egress_qualify_contract.rs` | Egress qualification workflow contract |
 | `bounded_command.rs` | Bounded command execution |
 | `conflict_source_attribution.rs` | Conflict source attribution |
 | `inventory_freshness.rs` | Inventory freshness |

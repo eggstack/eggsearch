@@ -84,6 +84,7 @@ for target, asset, os_name, arch in rows:
 PY
 
 bash -n "$unix_installer" "$root/packaging/release-smoke.sh" "$root/packaging/release-validate.sh"
+"$root/packaging/check-egress-qualify-contract.sh"
 "$unix_installer" --help >/dev/null
 "$root/packaging/test-install.sh"
 

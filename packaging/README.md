@@ -7,7 +7,9 @@ version. Each executable has an adjacent SHA-256 file in the standard
 
 The public target contract is in `release-targets.txt` and is mirrored in the
 workflow and installers. `install.sh` and `install.ps1` are attached to each
-draft release as reviewed source bytes.
+draft release as reviewed source bytes. `check-egress-qualify-contract.sh`
+holds the non-default `egress` compile lane to exact set equality with the
+same contract.
 
 `release-smoke.sh` and `release-smoke.ps1` verify version/help startup and a
 keyless MCP initialize plus `tools/list` handshake. ARMv7 release jobs run the

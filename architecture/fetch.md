@@ -95,7 +95,11 @@ phase. Eggfetch owns pooling, destination TLS/SNI, decompression,
 redirects, and deadlines above the dialer; the opt-in feature is
 compile-qualified across the seven maintained targets by the
 `egress-feature-qualify` workflow without publishing egress-enabled
-binaries.
+binaries. The workflow preflight requires exact set equality with
+`packaging/release-targets.txt`, its path filters cover the
+provider-route construction seam, and the same contract is enforced
+locally by `packaging/check-egress-qualify-contract.sh` and
+`tests/egress_qualify_contract.rs`.
 
 ---
 

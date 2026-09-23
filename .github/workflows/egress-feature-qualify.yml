@@ -6,20 +6,34 @@ on:
     paths:
       - 'src/fetch/egress.rs'
       - 'src/core/config.rs'
+      - 'src/meta/engines/mod.rs'
+      - 'src/meta/adapter/builders.rs'
+      - 'src/meta/adapter/mod.rs'
+      - 'src/mcp/state.rs'
       - 'tests/egress_routing.rs'
+      - 'tests/static_guards.rs'
+      - 'tests/egress_qualify_contract.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'packaging/release-targets.txt'
+      - 'packaging/check-egress-qualify-contract.sh'
       - '.github/workflows/egress-feature-qualify.yml'
   pull_request:
     branches: [main]
     paths:
       - 'src/fetch/egress.rs'
       - 'src/core/config.rs'
+      - 'src/meta/engines/mod.rs'
+      - 'src/meta/adapter/builders.rs'
+      - 'src/meta/adapter/mod.rs'
+      - 'src/mcp/state.rs'
       - 'tests/egress_routing.rs'
+      - 'tests/static_guards.rs'
+      - 'tests/egress_qualify_contract.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'packaging/release-targets.txt'
+      - 'packaging/check-egress-qualify-contract.sh'
       - '.github/workflows/egress-feature-qualify.yml'
   workflow_dispatch:
     inputs:
@@ -62,16 +76,29 @@ jobs:
             "x86_64-pc-windows-msvc"
             "aarch64-pc-windows-msvc"
           )
-          missing=0
-          for target in "${expected[@]}"; do
-            if ! grep -q "^${target}|" packaging/release-targets.txt; then
-              echo "release-targets.txt is missing maintained target: $target" >&2
-              missing=1
+          release_set="$(cut -d'|' -f1 packaging/release-targets.txt | sort -u)"
+          expected_set="$(printf '%s\n' "${expected[@]}" | sort -u)"
+          release_file="$(mktemp)"
+          expected_file="$(mktemp)"
+          missing_file="$(mktemp)"
+          extra_file="$(mktemp)"
+          trap 'rm -f "$release_file" "$expected_file" "$missing_file" "$extra_file"' RETURN
+          printf '%s\n' "$release_set" > "$release_file"
+          printf '%s\n' "$expected_set" > "$expected_file"
+          comm -23 "$release_file" "$expected_file" > "$missing_file"
+          comm -13 "$release_file" "$expected_file" > "$extra_file"
+          if [[ -s "$missing_file" || -s "$extra_file" ]]; then
+            if [[ -s "$missing_file" ]]; then
+              echo "release targets absent from the egress matrix:" >&2
+              sed 's/^/  missing: /' "$missing_file" >&2
             fi
-          done
-          if ((missing)); then
+            if [[ -s "$extra_file" ]]; then
+              echo "egress matrix targets absent from release-targets.txt:" >&2
+              sed 's/^/  extra: /' "$extra_file" >&2
+            fi
             exit 1
           fi
+          bash packaging/check-egress-qualify-contract.sh
           echo "target matrix agrees with packaging/release-targets.txt"
 
   linux:

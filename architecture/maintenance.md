@@ -154,6 +154,10 @@ through them; the guard fails closed on duplicates.
   and never matched.
 - Keep `packaging/release-targets.txt`, the release workflow, installers,
   and installation docs synchronized; `make packaging-check` catches drift.
+  Keep the `egress-feature-qualify` matrix in exact set equality with
+  `packaging/release-targets.txt` and its path filters on the
+  provider-route construction seam; `packaging/check-egress-qualify-contract.sh`
+  and `tests/egress_qualify_contract.rs` catch drift.
 - Keep `docs/test-inventory.md`, `architecture/testing.md`, and
   `skills/eggsearch-dev/SKILL.md` synchronized when adding or renaming
   suites. `CHANGELOG.md` entries are historical and are never rewritten.

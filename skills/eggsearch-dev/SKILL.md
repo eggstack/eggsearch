@@ -47,6 +47,7 @@ rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_select
 | `src/*/mod.rs` | Varies | Unit tests |
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
 | `tests/egress_routing.rs` | None (proxy composition under `egress`) | Egress config validation (incl. IPv6), SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, TLS/SNI, compression/body limits, auth isolation, malformed-proxy and redirect regressions |
+| `tests/egress_qualify_contract.rs` | None | Egress qualification CI contract: exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage (`packaging/check-egress-qualify-contract.sh` enforces the same in `make packaging-check`) |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
@@ -146,7 +147,7 @@ eggsearch integrate opencode --transport stdio --apply --executable /usr/local/b
 - **Broadening updater Cargo fallback** — only unsupported hosts or confirmed exact-asset HTTP 404 may compile; network, status, checksum, and candidate identity failures are hard stops
 - **Replacing before verification** — checksum and exact `eggsearch --version` identity must pass before any candidate replacement
 - **Skipping raw-cache re-derivation** — a fresh raw hit with a derived miss must run the shared extraction pipeline locally rather than issuing another network request
-- **Editing only one release target table** — keep `packaging/release-targets.txt`, `packaging/release-inputs.txt`, the release workflow, installers, updater, and installation docs synchronized; `make packaging-check` catches exact contract drift
+- **Editing only one release target table** — keep `packaging/release-targets.txt`, `packaging/release-inputs.txt`, the release workflow, the egress qualification matrix, installers, updater, and installation docs synchronized; `make packaging-check` catches exact contract drift
 - **Broadening installer fallback** — Cargo is allowed only for unsupported targets or a confirmed binary HTTP 404; checksum, transport, identity, and version failures are hard stops
 - **Supervising stdio** — startup managers, `croncheck`, and restart apply only to persistent `mcp serve`; never kill or register a client-owned stdio process
 - **Creating duplicate managers** — inspect `startup status`; auto detection does not fall back to cron after a preferred manager permission failure

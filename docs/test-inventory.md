@@ -6,7 +6,7 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5207 | 23 |
+| `--all-features` | 5296 | 23 |
 | `--features mock` | 4958 | 1 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
@@ -116,7 +116,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `workflow_resolution` | Workflow resolution |
 | `research_role_mapping` | Research role mapping |
 
-## Schema/Contract Tests (13 suites)
+## Schema/Contract Tests (14 suites)
 
 | Suite | Focus |
 |-------|-------|
@@ -133,6 +133,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `evidence_integration` | Evidence integration pipeline |
 | `structured_local_code_intelligence` | Structured local code intelligence (4-language fixtures, ranking, fallback, budgets, repo-map enrichment) |
 | `provider_capability_contract` | Provider native-capability enforcement contract |
+| `egress_qualify_contract` | Egress qualification CI contract (exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage) |
 
 ## Tool Consolidation Contracts (4 suites)
 

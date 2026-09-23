@@ -268,9 +268,16 @@ static tests:
 `egress` stays a non-default source-build feature; prebuilt release binaries
 never include it. The opt-in feature is compile-qualified across the seven
 maintained release targets by the `egress-feature-qualify` workflow, which
-derives its target list from `packaging/release-targets.txt` so the matrix
-cannot drift from the release contract. No egress-enabled binary is ever
-published.
+requires exact set equality with the first column of
+`packaging/release-targets.txt` so a missing or extra matrix target fails.
+Path filters cover the provider-route construction seam
+(`src/fetch/egress.rs`, `src/core/config.rs`, `src/meta/engines/mod.rs`,
+`src/meta/adapter/builders.rs`, `src/meta/adapter/mod.rs`,
+`src/mcp/state.rs`, egress tests, Cargo files, the release-target contract,
+and the workflow itself). The same contract is enforced locally by
+`packaging/check-egress-qualify-contract.sh` (`make packaging-check`) and
+`tests/egress_qualify_contract.rs` (`cargo test`). No egress-enabled binary
+is ever published.
 
 ### Troubleshooting
 

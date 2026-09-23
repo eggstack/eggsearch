@@ -59,6 +59,13 @@ run, attaches the reviewed installer bytes, and creates or updates a draft
 release only in release mode. A published release is never overwritten. No
 GitHub job publishes the crate or silently publishes a partial matrix.
 
+The separate `egress-feature-qualify` workflow compile-checks the non-default
+`egress` feature across the same seven targets plus a Rust 1.89 all-features
+job. Its preflight requires exact target-set equality with
+`packaging/release-targets.txt`, and `packaging/check-egress-qualify-contract.sh`
+plus `tests/egress_qualify_contract.rs` enforce the same non-publishing,
+per-target check, MSRV, and route-seam trigger contract locally.
+
 ## Bootstrap policy
 
 The Unix and PowerShell installers:

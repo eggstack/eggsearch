@@ -53,6 +53,7 @@ all target jobs and checksums pass; publish that draft manually after review.
 |-----|-------------|
 | `ci` | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
 | `Release binaries` | Qualification or tagged release workflow — preflight, seven-target build/smoke/checksum, exact assembly |
+| `Egress feature qualification` | Non-publishing `egress` compile lane — exact target-set preflight against `packaging/release-targets.txt`, seven-target `cargo check --features egress`, Rust 1.89 all-features |
 
 ## Binary release workflow
 
