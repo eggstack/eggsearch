@@ -96,7 +96,7 @@ fn egress_host_validation_accepts_dns_ipv4_and_ipv6_literals() {
     for host in ["127.0.0.1", "proxy.example", "::1", "2001:db8::1"] {
         let cfg = AppConfig {
             egress: EgressSection {
-                enabled: true,
+                enabled: false,
                 hops: vec![EgressHopConfig {
                     scheme: "http".to_string(),
                     host: host.to_string(),
@@ -127,7 +127,7 @@ fn egress_host_validation_rejects_scheme_userinfo_path_and_port_suffix() {
     ] {
         let cfg = AppConfig {
             egress: EgressSection {
-                enabled: true,
+                enabled: false,
                 hops: vec![EgressHopConfig {
                     scheme: "http".to_string(),
                     host: host.to_string(),

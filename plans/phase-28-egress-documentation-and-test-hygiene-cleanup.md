@@ -1,6 +1,6 @@
 # Phase 28 — Eggress documentation and test-hygiene cleanup
 
-Status: planned / ready for handoff
+Status: implemented
 
 Planning baseline: `307036c2799d619dbb572ed8322021e4197facb8` (`eggsearch` 0.3.9 on `main`)
 
@@ -305,3 +305,79 @@ Use the existing behavior of disabled `[egress]` sections: configured hops are
 still syntax-validated, while the compile-feature gate applies only when the
 route is enabled. That gives the host grammar tests exactly the isolation they
 need without changing production code.
+
+## Implementation record
+
+Starting SHA: `eed02a885c30ce0194a8af1bfa568d6ed5db64b0`.
+Implementation SHA: this closure commit (verify with `git log -1 --format=%H`).
+Planning baseline: `307036c2799d619dbb572ed8322021e4197facb8` (`eggsearch` 0.3.9 on `main`).
+
+Exact files changed (4 files, tests/planning/docs only):
+
+- `tests/egress_routing.rs` (`enabled: true` -> `enabled: false` in the two
+  host-grammar fixtures);
+- `plans/registry.md` (Phase 27 heading `Active` -> `Completed`; Phase 28
+  workstream `planned / ready for handoff` -> `implemented` with closure
+  evidence);
+- `plans/phase-28-egress-documentation-and-test-hygiene-cleanup.md`
+  (`planned` -> `implemented` plus this record);
+- `AGENTS.md` (phases 1-27 plus active Phase 28 -> phases 1-28 implemented,
+  Eggress workstream closed).
+
+Before/after targeted test behavior:
+
+- Before, under `--features mock`:
+  `egress_host_validation_accepts_dns_ipv4_and_ipv6_literals` FAILED at
+  `tests/egress_routing.rs:110` (`host '127.0.0.1' must be accepted`), because
+  `AppConfig::validate()` correctly reached the compile-feature gate for
+  `enabled = true` without the `egress` feature;
+  `egress_host_validation_rejects_scheme_userinfo_path_and_port_suffix` passed
+  only incidentally (feature-gate error masked host-grammar rejection).
+- After, with `enabled = false` fixtures exercising `validate_egress_hop()`
+  through the public `AppConfig::validate()` path:
+  - `cargo test --locked --features mock --test egress_routing egress_host_validation`
+    2/2 pass;
+  - `cargo test --locked --all-features --test egress_routing egress_host_validation`
+    2/2 pass.
+
+`EgressSection::validate()` production logic was not changed; `git diff`
+touches no `src/` files, no `Cargo.toml`/`Cargo.lock`, no packaging, workflow,
+or release-contract files.
+
+Feature-gate regression result:
+
+- `egress_explicit_route_without_feature_fails_closed` passes under both
+  `--features mock` (fail-closed without the feature) and `--all-features`
+  (route applies with the feature). Enabled routing still fails closed in
+  feature-disabled builds.
+
+Normal repository gate results on the exact candidate (committed tree):
+
+- `cargo fmt --check` pass;
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` pass;
+- `cargo check --locked --no-default-features` pass;
+- `cargo test --locked --all-features` 79/79 suites ok, 0 failures;
+- `make hygiene` ok;
+- `make packaging-check` ok (egress qualification contract agrees with
+  `packaging/release-targets.txt`).
+- Targeted `--features mock` host-validation commands pass as above, so a full
+  `make release-check` was not rerun per Work Item 7 (strictly
+  tests/planning/docs diff, no build/package semantics).
+
+Release/qualification reuse rationale: no production source, Cargo
+metadata/feature, workflow, release-target, packaging, installer, updater, or
+dependency change. Phase 27 hardened qualification run `35810222447` and
+Phase 26 default release qualification run `35806121182` remain valid; no new
+seven-target egress or default release qualification was run, and nothing was
+published.
+
+Final registry/AGENTS reconciliation: `plans/registry.md` Phase 27 section is
+labeled completed and Phase 28 is marked implemented/completed; `AGENTS.md`
+states phases 1-28 are implemented with the Eggress workstream closed. No
+Eggress-specific workstream remains labeled active. Test-inventory docs
+(`docs/test-inventory.md`, `architecture/testing.md`,
+`skills/eggsearch-dev/SKILL.md`) were reconciled with no churn: no tests were
+added, removed, or renamed, and suite counts/semantics are unchanged. README
+required no changes (no phase-status prose).
+
+Deviations/blockers: none.

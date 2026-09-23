@@ -397,7 +397,7 @@ which is the authoritative closure evidence for the combined Eggress
 workstream. Qualification is SHA-specific; re-qualify a different eventual
 release candidate before publication.
 
-## Active maintenance workstream — Eggress closure evidence and qualification contract
+## Completed maintenance workstream — Eggress closure evidence and qualification contract
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
@@ -423,11 +423,11 @@ security architecture. Phase 26's successful runtime, seven-target egress
 compile, and default release qualification evidence remains valid
 historical evidence.
 
-## Active hygiene workstream — Eggress documentation and targeted-test cleanup
+## Completed hygiene workstream — Eggress documentation and targeted-test cleanup
 
 | Phase | Workstream | Status | Depends on | Plan |
 |---|---|---|---|---|
-| 28 | Eggress documentation and test-hygiene cleanup | planned / ready for handoff | Phase 27 implemented and closed | `phase-28-egress-documentation-and-test-hygiene-cleanup.md` |
+| 28 | Eggress documentation and test-hygiene cleanup | implemented | Phase 27 implemented and closed | `phase-28-egress-documentation-and-test-hygiene-cleanup.md` |
 
 Phase 28 is a hygiene-only terminal cleanup. It corrects stale current-state
 planning language that still labels the implemented Phase 27 workstream active
@@ -440,6 +440,14 @@ feature-enabled route requirement.
 Phase 28 must not change production config/transport behavior, feature policy,
 dependencies, packaging, workflows, release targets, or the Phase 25–27
 qualification evidence.
+
+Phase 28 is implemented as a tests/planning/docs-only cleanup. The Phase 27
+section is now labeled completed, both host-grammar regressions pass under
+`--features mock` and `--all-features` via `enabled = false` fixtures through
+the public `AppConfig::validate()` path, and the enabled-route feature gate
+remains fail-closed with explicit regression coverage. No production logic,
+Cargo metadata, packaging, workflow, or qualification contract changed. Full
+evidence is in the Phase 28 implementation record.
 
 ## Deferred by design
 
