@@ -75,4 +75,4 @@ Canonical sources in `skills/` (mirrored via `.opencode/skills/` and `.agents/sk
 
 ## Plans
 
-`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-25 are implemented, including Phase 25's optional Eggress 1.0.8 outbound proxy-chain integration (source-build `egress` opt-in for provider upstreams only). Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.
+`plans/` contains the historical phases plus any explicitly registered active corrective/maintenance work (see `plans/registry.md`). Phases 1-25 are implemented; Phase 26 is the active corrective closure/qualification pass for the optional Eggress 1.0.8 integration. Phase 25's Outcome B architecture remains the baseline: source-build `egress` opt-in for provider upstreams only, with dynamic SSRF-pinned fetch paths direct. Do not create unregistered phase work; new plans must follow the registry/closure convention and the extension rules in `architecture/maintenance.md`.
