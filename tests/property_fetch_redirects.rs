@@ -183,7 +183,7 @@ proptest! {
         name in "[a-z]{2,8}"
     ) {
         prop_assume!(
-            ![
+            !([
                 "internal",
                 "private",
                 "local",
@@ -195,7 +195,7 @@ proptest! {
                 "localhost"
             ]
             .contains(&name.as_str())
-                && !(sub2 == "home" && name == "arpa"),
+                || sub2 == "home" && name == "arpa"),
             "skip private-TLD collision"
         );
         let limits = FetchLimits::default();
