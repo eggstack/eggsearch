@@ -2,7 +2,10 @@
 
 use crate::core::package::PackageEcosystem;
 use crate::core::security::VulnerabilityMetadata;
-use crate::core::security_applicability::{AdvisoryRange, ApplicabilityStatus, RangeMatch};
+use crate::core::security_applicability::{
+    advisory_confidence_for_ranges, compose_confidence, AdvisoryRange, ApplicabilityAssessment,
+    ApplicabilityConfidence, ApplicabilityStatus, DependencyFinding, DependencySource, RangeMatch,
+};
 use crate::meta::version_compare::{compare_versions_for_ecosystem, version_satisfies_range};
 
 /// Extract advisory ranges from vulnerability metadata.
@@ -326,6 +329,158 @@ pub fn evaluate_range_expression(
         Some(true)
     } else {
         None
+    }
+}
+
+pub fn primary_advisory_id(vuln: &VulnerabilityMetadata) -> String {
+    vuln.cve_ids
+        .first()
+        .or(vuln.ghsa_ids.first())
+        .or(vuln.osv_ids.first())
+        .or(vuln.rustsec_ids.first())
+        .cloned()
+        .unwrap_or_default()
+}
+
+pub fn request_version_assessment(
+    package: &str,
+    version: &str,
+    ecosystem: PackageEcosystem,
+    advisory_id: String,
+    outcome: &ApplicabilityOutcome,
+    range_count: usize,
+    evidence_urls: Vec<String>,
+) -> ApplicabilityAssessment {
+    let confidence = compose_confidence(
+        Some(ApplicabilityConfidence::High),
+        advisory_confidence_for_ranges(range_count),
+    );
+    let mut reasons = outcome.reasons.clone();
+    match outcome.status {
+        ApplicabilityStatus::Affected => reasons.push(format!(
+            "version {version} appears affected by advisory {advisory_id}"
+        )),
+        ApplicabilityStatus::NotAffected => reasons.push(format!(
+            "version {version} does not appear affected by advisory {advisory_id}"
+        )),
+        ApplicabilityStatus::Unknown => reasons.push(format!(
+            "could not determine applicability of version {version} for advisory {advisory_id}"
+        )),
+        ApplicabilityStatus::InsufficientEvidence => {
+            reasons.push("insufficient package/version data to assess applicability".to_string());
+        }
+    }
+    ApplicabilityAssessment {
+        status: outcome.status,
+        confidence,
+        ecosystem,
+        package: package.to_string(),
+        version: Some(version.to_string()),
+        advisory_ids: vec![advisory_id],
+        matched_ranges: outcome.matched_ranges.clone(),
+        fixed_versions: outcome
+            .matched_ranges
+            .iter()
+            .flat_map(|r| r.fixed_versions.iter().cloned())
+            .collect(),
+        reasons,
+        evidence_urls,
+        warnings: Vec::new(),
+        version_source: Some(DependencySource::RequestField),
+        dependency_relation: None,
+        source_ids: Vec::new(),
+        fetch_ids: Vec::new(),
+    }
+}
+
+pub fn resolved_finding_assessment(
+    finding: &DependencyFinding,
+    version: &str,
+    advisory_id: String,
+    outcome: &ApplicabilityOutcome,
+    range_count: usize,
+    evidence_urls: Vec<String>,
+) -> ApplicabilityAssessment {
+    let confidence = compose_confidence(
+        finding.confidence,
+        advisory_confidence_for_ranges(range_count),
+    );
+    let mut reasons = outcome.reasons.clone();
+    reasons.push(format!(
+        "dependency '{}' resolved version '{}' found in {}",
+        finding.package,
+        version,
+        finding.source_file.as_deref().unwrap_or("unknown")
+    ));
+    ApplicabilityAssessment {
+        status: outcome.status,
+        confidence,
+        ecosystem: finding.ecosystem.clone(),
+        package: finding.package.clone(),
+        version: Some(version.to_string()),
+        advisory_ids: vec![advisory_id],
+        matched_ranges: outcome.matched_ranges.clone(),
+        fixed_versions: outcome
+            .matched_ranges
+            .iter()
+            .flat_map(|r| r.fixed_versions.iter().cloned())
+            .collect(),
+        reasons,
+        evidence_urls,
+        warnings: Vec::new(),
+        version_source: Some(finding.source_kind),
+        dependency_relation: finding.relation,
+        source_ids: Vec::new(),
+        fetch_ids: Vec::new(),
+    }
+}
+
+pub fn weak_evidence_reason(finding: &DependencyFinding) -> String {
+    let location = finding.source_file.as_deref().unwrap_or("unknown");
+    if finding.integrity_hash.is_some() {
+        format!(
+            "dependency '{}' has only integrity/checksum evidence in {}; checksums do not prove an installed version",
+            finding.package, location
+        )
+    } else if let Some(req) = finding.version_requirement.as_deref() {
+        format!(
+            "dependency '{}' has only a version requirement ({}) in {}; requirements do not prove an installed version",
+            finding.package, req, location
+        )
+    } else if finding.reference_value.is_some() {
+        format!(
+            "dependency '{}' has only a source reference in {}; references do not prove a resolved package version",
+            finding.package, location
+        )
+    } else {
+        format!(
+            "dependency '{}' in {} has no resolved version evidence",
+            finding.package, location
+        )
+    }
+}
+
+pub fn weak_evidence_assessment(
+    finding: &DependencyFinding,
+    advisory_id: String,
+    evidence_urls: Vec<String>,
+) -> ApplicabilityAssessment {
+    ApplicabilityAssessment {
+        status: ApplicabilityStatus::Unknown,
+        confidence: compose_confidence(finding.confidence, ApplicabilityConfidence::Low),
+        ecosystem: finding.ecosystem.clone(),
+        package: finding.package.clone(),
+        version: finding.version.clone(),
+        advisory_ids: vec![advisory_id],
+        matched_ranges: Vec::new(),
+        fixed_versions: Vec::new(),
+        reasons: vec![weak_evidence_reason(finding)],
+        evidence_urls,
+        warnings: vec!["weak_evidence_ignored_for_exact_applicability".to_string()],
+        version_source: Some(finding.source_kind),
+        dependency_relation: finding.relation,
+        source_ids: Vec::new(),
+        fetch_ids: Vec::new(),
     }
 }
 

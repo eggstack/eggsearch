@@ -219,6 +219,13 @@ fn lockfile_transitive_dependency_is_classified() {
         source_kind: DependencySource::LockFile,
         confidence: Some(ApplicabilityConfidence::Medium),
         relation: Some(DependencyRelation::Transitive),
+        resolved_version: Some("6.5.3".to_string()),
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
     };
 
     assert_eq!(
@@ -243,6 +250,13 @@ fn manifest_direct_dependency_is_classified() {
         source_kind: DependencySource::Manifest,
         confidence: Some(ApplicabilityConfidence::High),
         relation: Some(DependencyRelation::Direct),
+        resolved_version: None,
+        version_requirement: Some("4.18.0".to_string()),
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
     };
 
     assert_eq!(

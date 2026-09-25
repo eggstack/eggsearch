@@ -1,6 +1,7 @@
 use crate::core::package::PackageEcosystem;
 use crate::core::security_applicability::{
-    ApplicabilityConfidence, DependencyFinding, DependencyRelation, DependencySource,
+    ApplicabilityConfidence, DependencyFinding, DependencyReferenceKind, DependencyRelation,
+    DependencySource,
 };
 
 /// Parse Dockerfile and docker-compose for image references
@@ -22,6 +23,13 @@ pub(crate) fn parse_dockerfile(content: &str, path: &str) -> Vec<DependencyFindi
                         ecosystem: PackageEcosystem::Oci,
                         package: name.to_string(),
                         version: Some(tag.to_string()),
+                        resolved_version: None,
+                        version_requirement: None,
+                        reference_kind: Some(DependencyReferenceKind::Tag),
+                        reference_value: Some(image.to_string()),
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: Some(line_num),
                         source_kind: DependencySource::LockFile,
@@ -41,6 +49,13 @@ pub(crate) fn parse_dockerfile(content: &str, path: &str) -> Vec<DependencyFindi
                         ecosystem: PackageEcosystem::Oci,
                         package: name.to_string(),
                         version: Some(tag.to_string()),
+                        resolved_version: None,
+                        version_requirement: None,
+                        reference_kind: Some(DependencyReferenceKind::Tag),
+                        reference_value: Some(image.to_string()),
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: Some(line_num),
                         source_kind: DependencySource::LockFile,

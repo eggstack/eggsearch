@@ -31,6 +31,13 @@ pub(crate) fn parse_package_lock(content: &str, path: &str) -> Vec<DependencyFin
                     ecosystem: PackageEcosystem::Npm,
                     package: pkg_name.to_string(),
                     version: Some(name.to_string()),
+                    resolved_version: Some(name.to_string()),
+                    version_requirement: None,
+                    reference_kind: None,
+                    reference_value: None,
+                    provenance: None,
+                    target_context: None,
+                    integrity_hash: None,
                     source_file: Some(path.to_string()),
                     source_line: None,
                     source_kind: DependencySource::LockFile,
@@ -48,6 +55,13 @@ pub(crate) fn parse_package_lock(content: &str, path: &str) -> Vec<DependencyFin
                     ecosystem: PackageEcosystem::Npm,
                     package: name.to_string(),
                     version: Some(version.to_string()),
+                    resolved_version: Some(version.to_string()),
+                    version_requirement: None,
+                    reference_kind: None,
+                    reference_value: None,
+                    provenance: None,
+                    target_context: None,
+                    integrity_hash: None,
                     source_file: Some(path.to_string()),
                     source_line: None,
                     source_kind: DependencySource::LockFile,
@@ -111,8 +125,19 @@ pub(crate) fn parse_yarn_lock(content: &str, path: &str) -> Vec<DependencyFindin
                     version: if version.is_empty() {
                         None
                     } else {
+                        Some(version.clone())
+                    },
+                    resolved_version: if version.is_empty() {
+                        None
+                    } else {
                         Some(version)
                     },
+                    version_requirement: None,
+                    reference_kind: None,
+                    reference_value: None,
+                    provenance: None,
+                    target_context: None,
+                    integrity_hash: None,
                     source_file: Some(path.to_string()),
                     source_line: Some(line_num),
                     source_kind: DependencySource::LockFile,
@@ -159,6 +184,13 @@ pub(crate) fn parse_pnpm_lock(content: &str, path: &str) -> Vec<DependencyFindin
                                 ecosystem: PackageEcosystem::Npm,
                                 package: name.to_string(),
                                 version: Some(version.to_string()),
+                                resolved_version: Some(version.to_string()),
+                                version_requirement: None,
+                                reference_kind: None,
+                                reference_value: None,
+                                provenance: None,
+                                target_context: None,
+                                integrity_hash: None,
                                 source_file: Some(path.to_string()),
                                 source_line: Some(line_num),
                                 source_kind: DependencySource::LockFile,

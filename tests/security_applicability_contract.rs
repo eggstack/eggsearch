@@ -23,10 +23,13 @@ use eggsearch::core::security::{
     SeverityLevel, VulnerabilityMetadata, VulnerabilitySource,
 };
 use eggsearch::core::security_applicability::{
+    advisory_confidence_for_ranges, canonical_package_name, compose_confidence, packages_match,
     AdvisoryRange, ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
-    DependencyFinding, DependencyRelation, DependencySource,
+    DependencyFinding, DependencyParseReport, DependencyReferenceKind, DependencyRelation,
+    DependencySource, ParseStatus,
 };
 use eggsearch::meta::advisory_range::assess_version_applicability;
+use eggsearch::meta::dependency_parse::{parse_dependency_file, parse_dependency_file_report};
 
 fn make_range(
     ecosystem: PackageEcosystem,
@@ -530,6 +533,13 @@ fn dependency_finding_from_manifest_is_direct() {
         source_kind: DependencySource::Manifest,
         confidence: Some(ApplicabilityConfidence::High),
         relation: Some(DependencyRelation::Direct),
+        resolved_version: None,
+        version_requirement: Some("4.18.0".to_string()),
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
     };
 
     assert_eq!(
@@ -550,6 +560,13 @@ fn dependency_finding_from_lockfile_is_transitive() {
         source_kind: DependencySource::LockFile,
         confidence: Some(ApplicabilityConfidence::Medium),
         relation: Some(DependencyRelation::Transitive),
+        resolved_version: Some("6.5.3".to_string()),
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
     };
 
     assert_eq!(
@@ -570,6 +587,13 @@ fn dependency_finding_from_advisory_metadata_has_unknown_relation() {
         source_kind: DependencySource::AdvisoryMetadata,
         confidence: Some(ApplicabilityConfidence::Low),
         relation: Some(DependencyRelation::Unknown),
+        resolved_version: None,
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
     };
 
     assert_eq!(
@@ -590,6 +614,13 @@ fn dependency_finding_optional_relation_omitted_when_none() {
         source_kind: DependencySource::RequestField,
         confidence: None,
         relation: None,
+        resolved_version: None,
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
     };
 
     assert!(finding.relation.is_none());
@@ -1093,4 +1124,231 @@ fn all_remediation_categories_can_be_validated() {
             "safe remediation for category {category:?} must pass validation"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// 12. M001 typed dependency evidence and applicability trust boundary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolved_lock_finding_carries_exact_evidence() {
+    let content = "[[package]]\nname = \"serde\"\nversion = \"1.0.193\"\n";
+    let findings = parse_dependency_file("Cargo.lock", content);
+    assert_eq!(findings.len(), 1);
+    let finding = &findings[0];
+    assert_eq!(finding.exact_version(), Some("1.0.193"));
+    assert!(finding.has_resolved_evidence());
+    assert_eq!(finding.version.as_deref(), Some("1.0.193"));
+}
+
+#[test]
+fn manifest_requirement_shaped_like_exact_number_is_not_resolved() {
+    let content = "[dependencies]\nserde = \"1.0.193\"\n";
+    let findings = parse_dependency_file("Cargo.toml", content);
+    assert_eq!(findings.len(), 1);
+    let finding = &findings[0];
+    assert_eq!(finding.exact_version(), None);
+    assert!(!finding.has_resolved_evidence());
+    assert_eq!(finding.version_requirement.as_deref(), Some("1.0.193"));
+}
+
+#[test]
+fn checksum_observation_is_not_resolved_evidence() {
+    let content = "github.com/gin-gonic/gin v1.9.0 h1:abc123\n";
+    let findings = parse_dependency_file("go.sum", content);
+    assert_eq!(findings.len(), 1);
+    let finding = &findings[0];
+    assert_eq!(finding.exact_version(), None);
+    assert!(!finding.has_resolved_evidence());
+    assert!(finding.integrity_hash.is_some());
+}
+
+#[test]
+fn go_mod_requirement_is_not_resolved_evidence() {
+    let content = "module example.com/x\n\nrequire github.com/gin-gonic/gin v1.9.1\n";
+    let findings = parse_dependency_file("go.mod", content);
+    assert_eq!(findings.len(), 1);
+    assert!(!findings[0].has_resolved_evidence());
+    assert_eq!(findings[0].version_requirement.as_deref(), Some("1.9.1"));
+}
+
+#[test]
+fn high_advisory_plus_medium_dependency_caps_at_medium() {
+    assert_eq!(
+        compose_confidence(
+            Some(ApplicabilityConfidence::Medium),
+            ApplicabilityConfidence::High
+        ),
+        ApplicabilityConfidence::Medium
+    );
+    assert_eq!(
+        compose_confidence(
+            Some(ApplicabilityConfidence::High),
+            ApplicabilityConfidence::High
+        ),
+        ApplicabilityConfidence::High
+    );
+    assert_eq!(
+        compose_confidence(None, ApplicabilityConfidence::High),
+        ApplicabilityConfidence::Low
+    );
+    assert_eq!(
+        compose_confidence(
+            Some(ApplicabilityConfidence::High),
+            ApplicabilityConfidence::Low
+        ),
+        ApplicabilityConfidence::Low
+    );
+}
+
+#[test]
+fn advisory_confidence_requires_structured_ranges() {
+    assert_eq!(
+        advisory_confidence_for_ranges(2),
+        ApplicabilityConfidence::High
+    );
+    assert_eq!(
+        advisory_confidence_for_ranges(0),
+        ApplicabilityConfidence::Low
+    );
+}
+
+#[test]
+fn finding_source_kind_and_relation_are_preserved() {
+    let content = "[[package]]\nname = \"serde\"\nversion = \"1.0.193\"\n";
+    let findings = parse_dependency_file("Cargo.lock", content);
+    assert_eq!(findings[0].source_kind, DependencySource::LockFile);
+    assert_eq!(findings[0].relation, Some(DependencyRelation::Transitive));
+}
+
+#[test]
+fn package_mismatch_remains_unmatched() {
+    assert!(!packages_match(
+        &PackageEcosystem::Npm,
+        "lodash",
+        "underscore"
+    ));
+    assert!(packages_match(&PackageEcosystem::Npm, "Lodash", "lodash"));
+}
+
+#[test]
+fn pypi_names_canonicalize_for_comparison_but_preserve_display() {
+    assert_eq!(
+        canonical_package_name(&PackageEcosystem::Pypi, "My_Package.Name"),
+        "my-package-name"
+    );
+    assert_eq!(
+        canonical_package_name(&PackageEcosystem::Pypi, "requests"),
+        "requests"
+    );
+    assert!(packages_match(
+        &PackageEcosystem::Pypi,
+        "my_package",
+        "my-package"
+    ));
+    assert!(packages_match(&PackageEcosystem::Pypi, "Django", "django"));
+    assert_eq!(
+        canonical_package_name(&PackageEcosystem::Npm, "My_Package"),
+        "My_Package"
+    );
+}
+
+#[test]
+fn legacy_json_still_contains_existing_fields() {
+    let finding = DependencyFinding {
+        ecosystem: PackageEcosystem::CratesIo,
+        package: "serde".to_string(),
+        version: Some("1.0.193".to_string()),
+        source_file: Some("Cargo.lock".to_string()),
+        source_line: Some(3),
+        source_kind: DependencySource::LockFile,
+        confidence: Some(ApplicabilityConfidence::High),
+        relation: Some(DependencyRelation::Transitive),
+        resolved_version: Some("1.0.193".to_string()),
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
+    };
+    let json = serde_json::to_value(&finding).unwrap();
+    assert_eq!(json["ecosystem"], "crates_io");
+    assert_eq!(json["package"], "serde");
+    assert_eq!(json["version"], "1.0.193");
+    assert_eq!(json["source_kind"], "lock_file");
+    assert_eq!(json["resolved_version"], "1.0.193");
+}
+
+#[test]
+fn typed_fields_round_trip_through_serde() {
+    let finding = DependencyFinding {
+        ecosystem: PackageEcosystem::GithubActions,
+        package: "actions/checkout".to_string(),
+        version: Some("v4".to_string()),
+        source_file: Some(".github/workflows/ci.yml".to_string()),
+        source_line: Some(7),
+        source_kind: DependencySource::WorkflowFile,
+        confidence: Some(ApplicabilityConfidence::Medium),
+        relation: Some(DependencyRelation::Unknown),
+        resolved_version: None,
+        version_requirement: None,
+        reference_kind: Some(DependencyReferenceKind::Tag),
+        reference_value: Some("v4".to_string()),
+        provenance: Some("github".to_string()),
+        target_context: None,
+        integrity_hash: None,
+    };
+    let json = serde_json::to_string(&finding).unwrap();
+    let parsed: DependencyFinding = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.reference_kind, Some(DependencyReferenceKind::Tag));
+    assert_eq!(parsed.reference_value.as_deref(), Some("v4"));
+    assert_eq!(parsed.exact_version(), None);
+    assert!(!parsed.has_resolved_evidence());
+}
+
+#[test]
+fn parse_report_distinguishes_completeness_states() {
+    let complete = DependencyParseReport::complete(Vec::new());
+    assert_eq!(complete.status, ParseStatus::Complete);
+    assert!(complete.findings.is_empty());
+    assert!(complete.diagnostics.is_empty());
+
+    let partial = DependencyParseReport::partial(
+        Vec::new(),
+        vec![eggsearch::core::security_applicability::ParseDiagnostic {
+            code: "dependency_parse_partial".to_string(),
+            message: "truncated".to_string(),
+            line: None,
+        }],
+    );
+    assert_eq!(partial.status, ParseStatus::Partial);
+    assert_eq!(partial.diagnostics.len(), 1);
+
+    let unsupported = DependencyParseReport::unsupported("nope");
+    assert_eq!(unsupported.status, ParseStatus::Unsupported);
+    assert_eq!(
+        unsupported.diagnostics[0].code,
+        "dependency_format_unsupported"
+    );
+
+    let malformed = DependencyParseReport::malformed("bad");
+    assert_eq!(malformed.status, ParseStatus::Malformed);
+    assert_eq!(malformed.diagnostics[0].code, "dependency_parse_malformed");
+}
+
+#[test]
+fn dispatch_reports_unsupported_for_unknown_files() {
+    let report = parse_dependency_file_report("README.md", "some content");
+    assert_eq!(report.status, ParseStatus::Unsupported);
+    assert!(report.findings.is_empty());
+}
+
+#[test]
+fn dispatch_handles_windows_paths_for_known_files() {
+    let content = "[[package]]\nname = \"serde\"\nversion = \"1.0.193\"\n";
+    let report = parse_dependency_file_report("C:\\proj\\Cargo.lock", content);
+    assert_eq!(report.status, ParseStatus::Complete);
+    assert_eq!(report.findings.len(), 1);
+    assert_eq!(report.findings[0].exact_version(), Some("1.0.193"));
 }

@@ -56,7 +56,14 @@ pub(crate) fn parse_requirements_txt(content: &str, path: &str) -> Vec<Dependenc
         findings.push(DependencyFinding {
             ecosystem: PackageEcosystem::Pypi,
             package: pkg.to_string(),
-            version,
+            version: version.clone(),
+            resolved_version: None,
+            version_requirement: version,
+            reference_kind: None,
+            reference_value: None,
+            provenance: None,
+            target_context: None,
+            integrity_hash: None,
             source_file: Some(path.to_string()),
             source_line: Some(line_num),
             source_kind: DependencySource::Manifest,
@@ -90,6 +97,17 @@ pub(crate) fn parse_poetry_lock(content: &str, path: &str) -> Vec<DependencyFind
                     } else {
                         Some(version.clone())
                     },
+                    resolved_version: if version.is_empty() {
+                        None
+                    } else {
+                        Some(version.clone())
+                    },
+                    version_requirement: None,
+                    reference_kind: None,
+                    reference_value: None,
+                    provenance: None,
+                    target_context: None,
+                    integrity_hash: None,
                     source_file: Some(path.to_string()),
                     source_line: Some(line_num.saturating_sub(2)),
                     source_kind: DependencySource::LockFile,
@@ -118,8 +136,19 @@ pub(crate) fn parse_poetry_lock(content: &str, path: &str) -> Vec<DependencyFind
             version: if version.is_empty() {
                 None
             } else {
+                Some(version.clone())
+            },
+            resolved_version: if version.is_empty() {
+                None
+            } else {
                 Some(version)
             },
+            version_requirement: None,
+            reference_kind: None,
+            reference_value: None,
+            provenance: None,
+            target_context: None,
+            integrity_hash: None,
             source_file: Some(path.to_string()),
             source_line: Some(line_num),
             source_kind: DependencySource::LockFile,
@@ -146,7 +175,14 @@ pub(crate) fn parse_pipfile_lock(content: &str, path: &str) -> Vec<DependencyFin
                     findings.push(DependencyFinding {
                         ecosystem: PackageEcosystem::Pypi,
                         package: name.clone(),
-                        version,
+                        version: version.clone(),
+                        resolved_version: version,
+                        version_requirement: None,
+                        reference_kind: None,
+                        reference_value: None,
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: None,
                         source_kind: DependencySource::LockFile,
@@ -183,6 +219,17 @@ pub(crate) fn parse_uv_lock(content: &str, path: &str) -> Vec<DependencyFinding>
                     } else {
                         Some(version.clone())
                     },
+                    resolved_version: if version.is_empty() {
+                        None
+                    } else {
+                        Some(version.clone())
+                    },
+                    version_requirement: None,
+                    reference_kind: None,
+                    reference_value: None,
+                    provenance: None,
+                    target_context: None,
+                    integrity_hash: None,
                     source_file: Some(path.to_string()),
                     source_line: Some(line_num.saturating_sub(2)),
                     source_kind: DependencySource::LockFile,
@@ -211,8 +258,19 @@ pub(crate) fn parse_uv_lock(content: &str, path: &str) -> Vec<DependencyFinding>
             version: if version.is_empty() {
                 None
             } else {
+                Some(version.clone())
+            },
+            resolved_version: if version.is_empty() {
+                None
+            } else {
                 Some(version)
             },
+            version_requirement: None,
+            reference_kind: None,
+            reference_value: None,
+            provenance: None,
+            target_context: None,
+            integrity_hash: None,
             source_file: Some(path.to_string()),
             source_line: Some(line_num),
             source_kind: DependencySource::LockFile,

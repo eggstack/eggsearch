@@ -716,6 +716,13 @@ mod tests {
             source_kind: crate::core::security_applicability::DependencySource::LockFile,
             confidence: Some(crate::core::security_applicability::ApplicabilityConfidence::Medium),
             relation: Some(crate::core::security_applicability::DependencyRelation::Transitive),
+            resolved_version: Some("6.5.3".to_string()),
+            version_requirement: None,
+            reference_kind: None,
+            reference_value: None,
+            provenance: None,
+            target_context: None,
+            integrity_hash: None,
         };
         let ids = SecurityIdentifiers::default();
         let fetches = generate_security_suggested_fetches(

@@ -1,4 +1,4 @@
-use crate::core::security_applicability::DependencyFinding;
+use crate::core::security_applicability::{DependencyFinding, DependencyParseReport};
 
 pub(crate) mod cargo;
 pub(crate) mod composer;
@@ -11,45 +11,88 @@ pub(crate) mod npm;
 pub(crate) mod python;
 pub(crate) mod ruby;
 
+/// Parse a dependency file and extract dependency findings plus
+/// completeness/diagnostic information without panicking.
+///
+/// Unknown filenames yield an `Unsupported` report; malformed or partially
+/// supported inputs are reported by the format parsers as they gain
+/// structured detection in later milestones.
+pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyParseReport {
+    let filename = dispatch_basename(path);
+
+    match filename {
+        "Cargo.lock" => DependencyParseReport::complete(cargo::parse_cargo_lock(content, path)),
+        "Cargo.toml" => DependencyParseReport::complete(cargo::parse_cargo_toml(content, path)),
+        "package-lock.json" => {
+            DependencyParseReport::complete(npm::parse_package_lock(content, path))
+        }
+        "npm-shrinkwrap.json" => {
+            DependencyParseReport::complete(npm::parse_package_lock(content, path))
+        }
+        "yarn.lock" => DependencyParseReport::complete(npm::parse_yarn_lock(content, path)),
+        "pnpm-lock.yaml" => DependencyParseReport::complete(npm::parse_pnpm_lock(content, path)),
+        "poetry.lock" => DependencyParseReport::complete(python::parse_poetry_lock(content, path)),
+        "Pipfile.lock" => {
+            DependencyParseReport::complete(python::parse_pipfile_lock(content, path))
+        }
+        "uv.lock" => DependencyParseReport::complete(python::parse_uv_lock(content, path)),
+        "go.mod" => DependencyParseReport::complete(go::parse_go_mod(content, path)),
+        "go.sum" => DependencyParseReport::complete(go::parse_go_sum(content, path)),
+        "requirements.txt" | "requirements.in" => {
+            DependencyParseReport::complete(python::parse_requirements_txt(content, path))
+        }
+        "Gemfile.lock" => DependencyParseReport::complete(ruby::parse_gemfile_lock(content, path)),
+        "composer.lock" => {
+            DependencyParseReport::complete(composer::parse_composer_lock(content, path))
+        }
+        "pom.xml" => DependencyParseReport::complete(maven::parse_pom_xml(content, path)),
+        "gradle.lockfile" => {
+            DependencyParseReport::complete(maven::parse_gradle_lockfile(content, path))
+        }
+        name if name.ends_with(".csproj") => {
+            DependencyParseReport::complete(dotnet::parse_csproj(content, path))
+        }
+        "packages.lock.json" => {
+            DependencyParseReport::complete(dotnet::parse_packages_lock_json(content, path))
+        }
+        name if name.ends_with(".yml") || name.ends_with(".yaml") => {
+            parse_yaml_routed_file(path, content)
+        }
+        "Dockerfile" | "docker-compose.yml" | "docker-compose.yaml" => {
+            DependencyParseReport::complete(containers::parse_dockerfile(content, path))
+        }
+        name if name.starts_with("build.gradle") => {
+            DependencyParseReport::complete(maven::parse_build_gradle(content, path))
+        }
+        _ => DependencyParseReport::unsupported(format!(
+            "unrecognized dependency filename for '{filename}'"
+        )),
+    }
+}
+
+/// Path-aware basename extraction for dependency dispatch.
+///
+/// Handles native paths on the current host plus a conservative fallback
+/// for backslash-separated path strings received on non-Windows hosts.
+pub(crate) fn dispatch_basename(path: &str) -> &str {
+    let after_slash = path.rsplit('/').next().unwrap_or(path);
+    after_slash.rsplit('\\').next().unwrap_or(after_slash)
+}
+
+fn parse_yaml_routed_file(path: &str, content: &str) -> DependencyParseReport {
+    if path.contains(".github/workflows/") || path.contains(".github\\workflows\\") {
+        DependencyParseReport::complete(github_actions::parse_workflow_yml(content, path))
+    } else if path.contains("docker-compose") {
+        DependencyParseReport::complete(containers::parse_dockerfile(content, path))
+    } else {
+        DependencyParseReport::unsupported(format!("unrecognized YAML dependency file '{path}'"))
+    }
+}
+
 /// Parse a dependency file and extract dependency findings.
 /// Returns empty vec with no panics for malformed files.
 pub fn parse_dependency_file(path: &str, content: &str) -> Vec<DependencyFinding> {
-    let filename = path.rsplit('/').next().unwrap_or(path);
-
-    match filename {
-        "Cargo.lock" => cargo::parse_cargo_lock(content, path),
-        "Cargo.toml" => cargo::parse_cargo_toml(content, path),
-        "package-lock.json" => npm::parse_package_lock(content, path),
-        "npm-shrinkwrap.json" => npm::parse_package_lock(content, path),
-        "yarn.lock" => npm::parse_yarn_lock(content, path),
-        "pnpm-lock.yaml" => npm::parse_pnpm_lock(content, path),
-        "poetry.lock" => python::parse_poetry_lock(content, path),
-        "Pipfile.lock" => python::parse_pipfile_lock(content, path),
-        "uv.lock" => python::parse_uv_lock(content, path),
-        "go.mod" => go::parse_go_mod(content, path),
-        "go.sum" => go::parse_go_sum(content, path),
-        "requirements.txt" | "requirements.in" => python::parse_requirements_txt(content, path),
-        "Gemfile.lock" => ruby::parse_gemfile_lock(content, path),
-        "composer.lock" => composer::parse_composer_lock(content, path),
-        "pom.xml" => maven::parse_pom_xml(content, path),
-        "gradle.lockfile" => maven::parse_gradle_lockfile(content, path),
-        name if name.ends_with(".csproj") => dotnet::parse_csproj(content, path),
-        "packages.lock.json" => dotnet::parse_packages_lock_json(content, path),
-        name if name.ends_with(".yml") || name.ends_with(".yaml") => {
-            if path.contains(".github/workflows/") || path.contains(".github\\workflows\\") {
-                github_actions::parse_workflow_yml(content, path)
-            } else if path.contains("docker-compose") {
-                containers::parse_dockerfile(content, path)
-            } else {
-                Vec::new()
-            }
-        }
-        "Dockerfile" | "docker-compose.yml" | "docker-compose.yaml" => {
-            containers::parse_dockerfile(content, path)
-        }
-        name if name.starts_with("build.gradle") => maven::parse_build_gradle(content, path),
-        _ => Vec::new(),
-    }
+    parse_dependency_file_report(path, content).findings
 }
 
 pub(crate) fn extract_xml_tag(line: &str, tag: &str) -> Option<String> {

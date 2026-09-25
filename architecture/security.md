@@ -164,10 +164,42 @@ package/version data); `ApplicabilityConfidence` is `High` (structured
 ranges + exact match) / `Medium` / `Low` (default).
 
 Dependency parsing yields `DependencyFinding { ecosystem, package, version,
-source_file, source_line, source_kind, confidence, relation }` with
+source_file, source_line, source_kind, confidence, relation,
+resolved_version, version_requirement, reference_kind, reference_value,
+provenance, target_context, integrity_hash }` with
 `DependencySource` (`LockFile`, `Manifest`, `Dockerfile`, `WorkflowFile`,
 `AdvisoryMetadata`, `RequestField`) and `DependencyRelation` (`Direct`,
 `Transitive`, `Unknown`).
+
+Typed evidence semantics (ADR-0004): `version` is a legacy
+display/compatibility projection and never proves resolution.
+`resolved_version` carries exact selected versions from lock evidence;
+`version_requirement` carries manifest constraints (including strings shaped
+like exact numbers, e.g. Cargo `serde = "1.0.193"`); `reference_kind` /
+`reference_value` carry source references (tags, SHAs, digests, paths);
+`provenance` carries the source locator or class; `target_context` carries
+framework/environment scoping; `integrity_hash` carries checksum-only
+observations such as `go.sum` entries. Requirement, reference, and integrity
+evidence can never produce `Affected` / `NotAffected`; the orchestrator
+emits an explicit `Unknown` assessment with a
+`weak_evidence_ignored_for_exact_applicability` warning instead of silently
+skipping (which would look like negative evidence). Unknown or unresolved
+evidence never becomes `NotAffected`.
+
+`compose_confidence()` bounds every assessment by both sides: High requires
+High dependency evidence and High advisory/range confidence. `packages_match()`
+compares package identity with ecosystem rules (PyPI canonicalization:
+lowercase, collapse runs of `-`, `_`, `.` to `-`; all other ecosystems use
+conservative case-insensitive comparison, never global punctuation
+rewriting). Dependency-driven assessments populate `version_source` and
+`dependency_relation` from the matching finding; caller-supplied
+package+version uses `version_source: RequestField` as exact request
+evidence.
+
+`parse_dependency_file_report()` returns a `DependencyParseReport {
+findings, status, diagnostics }` with `ParseStatus` (`Complete`, `Partial`,
+`Unsupported`, `Malformed`). Unrecognized filenames yield `Unsupported`;
+per-format malformed/partial detection lands with the format milestones.
 
 ---
 

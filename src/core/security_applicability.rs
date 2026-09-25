@@ -113,16 +113,110 @@ pub struct AdvisoryRange {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum DependencyRelation {
-    /// Direct dependency listed in the manifest.
     Direct,
-    /// Transitive dependency resolved via a lockfile.
     Transitive,
     #[default]
-    /// Dependency relation could not be determined.
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+/// Kind of a dependency source reference when the finding records a
+/// reference (VCS ref, tag, digest, local path, expression) rather than a
+/// resolved package version.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyReferenceKind {
+    Git,
+    Path,
+    Url,
+    Tag,
+    Branch,
+    Commit,
+    Digest,
+    Local,
+    Workspace,
+    Registry,
+    Expression,
+    #[default]
+    Unknown,
+}
+
+/// Completeness of a single dependency-file parse.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ParseStatus {
+    Complete,
+    Partial,
+    Unsupported,
+    #[default]
+    Malformed,
+}
+
+/// Machine-readable diagnostic attached to a dependency parse report.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ParseDiagnostic {
+    pub code: String,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// Findings plus completeness information for one dependency file.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DependencyParseReport {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub findings: Vec<DependencyFinding>,
+    pub status: ParseStatus,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<ParseDiagnostic>,
+}
+
+impl DependencyParseReport {
+    pub fn complete(findings: Vec<DependencyFinding>) -> Self {
+        Self {
+            findings,
+            status: ParseStatus::Complete,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    pub fn partial(findings: Vec<DependencyFinding>, diagnostics: Vec<ParseDiagnostic>) -> Self {
+        Self {
+            findings,
+            status: ParseStatus::Partial,
+            diagnostics,
+        }
+    }
+
+    pub fn unsupported(message: impl Into<String>) -> Self {
+        Self {
+            findings: Vec::new(),
+            status: ParseStatus::Unsupported,
+            diagnostics: vec![ParseDiagnostic {
+                code: "dependency_format_unsupported".to_string(),
+                message: message.into(),
+                line: None,
+            }],
+        }
+    }
+
+    pub fn malformed(message: impl Into<String>) -> Self {
+        Self {
+            findings: Vec::new(),
+            status: ParseStatus::Malformed,
+            diagnostics: vec![ParseDiagnostic {
+                code: "dependency_parse_malformed".to_string(),
+                message: message.into(),
+                line: None,
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DependencyFinding {
     pub ecosystem: PackageEcosystem,
     pub package: String,
@@ -138,6 +232,112 @@ pub struct DependencyFinding {
     /// Whether this is a direct or transitive dependency.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation: Option<DependencyRelation>,
+    /// Exact resolved/selected version. Only this field (never the legacy
+    /// `version` projection) authorizes range-based applicability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_version: Option<String>,
+    /// Declared version requirement/request text (manifest constraint).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_requirement: Option<String>,
+    /// Kind of source reference when the finding records a reference
+    /// rather than a version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_kind: Option<DependencyReferenceKind>,
+    /// Reference value (commit SHA, tag, digest, URL, path, expression).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_value: Option<String>,
+    /// Provenance/source locator or source class (registry name, VCS URL,
+    /// path scope, custom source marker).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
+    /// Target/environment context (framework, runtime identifier, marker).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_context: Option<String>,
+    /// Integrity/checksum observation. Never resolved-version evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integrity_hash: Option<String>,
+}
+
+impl DependencyFinding {
+    /// Exact resolved version eligible for range-based applicability.
+    pub fn exact_version(&self) -> Option<&str> {
+        self.resolved_version.as_deref()
+    }
+
+    /// Whether this finding carries evidence that actually proves a
+    /// resolved version (as opposed to a requirement, reference, or
+    /// integrity observation).
+    pub fn has_resolved_evidence(&self) -> bool {
+        self.resolved_version
+            .as_deref()
+            .is_some_and(|v| !v.is_empty())
+    }
+}
+
+/// Combine dependency-evidence confidence with advisory/range confidence.
+///
+/// The result never exceeds either side: High requires High on both.
+pub fn compose_confidence(
+    dependency: Option<ApplicabilityConfidence>,
+    advisory: ApplicabilityConfidence,
+) -> ApplicabilityConfidence {
+    fn rank(c: ApplicabilityConfidence) -> u8 {
+        match c {
+            ApplicabilityConfidence::High => 3,
+            ApplicabilityConfidence::Medium => 2,
+            ApplicabilityConfidence::Low => 1,
+        }
+    }
+    let dep = dependency.unwrap_or(ApplicabilityConfidence::Low);
+    if rank(dep) <= rank(advisory) {
+        dep
+    } else {
+        advisory
+    }
+}
+
+/// Advisory-side confidence for a set of extracted ranges.
+pub fn advisory_confidence_for_ranges(range_count: usize) -> ApplicabilityConfidence {
+    if range_count > 0 {
+        ApplicabilityConfidence::High
+    } else {
+        ApplicabilityConfidence::Low
+    }
+}
+
+/// Canonicalize a package name for comparison using ecosystem rules.
+///
+/// PyPI names are lowercased with runs of `-`, `_`, `.` collapsed to `-`.
+/// All other ecosystems use a conservative case-insensitive comparison
+/// with the display name preserved in findings.
+pub fn canonical_package_name(ecosystem: &PackageEcosystem, name: &str) -> String {
+    if *ecosystem == PackageEcosystem::Pypi {
+        let mut out = String::with_capacity(name.len());
+        let mut prev_dash = false;
+        for c in name.chars() {
+            if c == '-' || c == '_' || c == '.' {
+                if !prev_dash {
+                    out.push('-');
+                    prev_dash = true;
+                }
+            } else {
+                prev_dash = false;
+                out.extend(c.to_lowercase());
+            }
+        }
+        out
+    } else {
+        name.to_string()
+    }
+}
+
+/// Conservative ecosystem-aware package identity comparison.
+pub fn packages_match(ecosystem: &PackageEcosystem, a: &str, b: &str) -> bool {
+    if *ecosystem == PackageEcosystem::Pypi {
+        canonical_package_name(ecosystem, a) == canonical_package_name(ecosystem, b)
+    } else {
+        a.eq_ignore_ascii_case(b)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]

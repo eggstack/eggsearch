@@ -350,3 +350,69 @@ fn known_true_then_unknown_collapses_to_unknown() {
         "known-true then unknown clause must collapse to Unknown"
     );
 }
+
+// ---------------------------------------------------------------------------
+// M001: typed evidence must gate resolved-version applicability
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stale_go_sum_version_is_never_resolved_evidence() {
+    let content = "example.com/stale v9.9.9 h1:stalehash\n";
+    let findings = eggsearch::meta::dependency_parse::parse_dependency_file("go.sum", content);
+    assert_eq!(findings.len(), 1);
+    assert!(
+        !findings[0].has_resolved_evidence(),
+        "a stale version present only in go.sum must not be eligible for \
+         Affected/NotAffected assessment"
+    );
+    assert!(findings[0].integrity_hash.is_some());
+}
+
+#[test]
+fn manifest_exact_looking_string_is_never_resolved_evidence() {
+    let content = "[dependencies]\nserde = \"1.0.193\"\n";
+    let findings = eggsearch::meta::dependency_parse::parse_dependency_file("Cargo.toml", content);
+    assert_eq!(findings.len(), 1);
+    assert!(
+        !findings[0].has_resolved_evidence(),
+        "a manifest requirement shaped like an exact number must not be \
+         treated as an installed resolved version"
+    );
+}
+
+#[test]
+fn requirements_exact_pin_is_never_resolved_evidence() {
+    let content = "flask==2.3.2\n";
+    let findings =
+        eggsearch::meta::dependency_parse::parse_dependency_file("requirements.txt", content);
+    assert_eq!(findings.len(), 1);
+    assert!(!findings[0].has_resolved_evidence());
+    assert_eq!(findings[0].version_requirement.as_deref(), Some("2.3.2"));
+}
+
+#[test]
+fn medium_dependency_evidence_caps_high_advisory_confidence() {
+    use eggsearch::core::security_applicability::{compose_confidence, ApplicabilityConfidence};
+    assert_eq!(
+        compose_confidence(
+            Some(ApplicabilityConfidence::Medium),
+            ApplicabilityConfidence::High
+        ),
+        ApplicabilityConfidence::Medium,
+        "Medium dependency evidence must never be promoted to High"
+    );
+}
+
+#[test]
+fn unknown_reference_finding_has_no_exact_version() {
+    let content = "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n";
+    let findings = eggsearch::meta::dependency_parse::parse_dependency_file(
+        ".github/workflows/ci.yml",
+        content,
+    );
+    assert_eq!(findings.len(), 1);
+    assert!(
+        !findings[0].has_resolved_evidence(),
+        "a mutable action ref must not become exact resolved-version evidence"
+    );
+}

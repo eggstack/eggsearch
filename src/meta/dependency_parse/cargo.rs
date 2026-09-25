@@ -18,14 +18,22 @@ pub(crate) fn parse_cargo_lock(content: &str, path: &str) -> Vec<DependencyFindi
         if trimmed == "[[package]]" {
             // Flush previous entry
             if !name.is_empty() {
+                let version = if version.is_empty() {
+                    None
+                } else {
+                    Some(version.clone())
+                };
                 findings.push(DependencyFinding {
                     ecosystem: PackageEcosystem::CratesIo,
                     package: name.clone(),
-                    version: if version.is_empty() {
-                        None
-                    } else {
-                        Some(version.clone())
-                    },
+                    version: version.clone(),
+                    resolved_version: version,
+                    version_requirement: None,
+                    reference_kind: None,
+                    reference_value: None,
+                    provenance: None,
+                    target_context: None,
+                    integrity_hash: None,
                     source_file: Some(path.to_string()),
                     source_line: Some(line_num.saturating_sub(2)),
                     source_kind: DependencySource::LockFile,
@@ -49,14 +57,22 @@ pub(crate) fn parse_cargo_lock(content: &str, path: &str) -> Vec<DependencyFindi
 
     // Flush last entry
     if !name.is_empty() {
+        let version = if version.is_empty() {
+            None
+        } else {
+            Some(version)
+        };
         findings.push(DependencyFinding {
             ecosystem: PackageEcosystem::CratesIo,
             package: name,
-            version: if version.is_empty() {
-                None
-            } else {
-                Some(version)
-            },
+            version: version.clone(),
+            resolved_version: version,
+            version_requirement: None,
+            reference_kind: None,
+            reference_value: None,
+            provenance: None,
+            target_context: None,
+            integrity_hash: None,
             source_file: Some(path.to_string()),
             source_line: Some(line_num.saturating_sub(1)),
             source_kind: DependencySource::LockFile,
@@ -94,6 +110,13 @@ pub(crate) fn parse_cargo_toml(content: &str, path: &str) -> Vec<DependencyFindi
                         ecosystem: PackageEcosystem::CratesIo,
                         package: name.to_string(),
                         version: None,
+                        resolved_version: None,
+                        version_requirement: None,
+                        reference_kind: None,
+                        reference_value: None,
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: Some(line_num),
                         source_kind: DependencySource::Manifest,
@@ -113,7 +136,9 @@ pub(crate) fn parse_cargo_toml(content: &str, path: &str) -> Vec<DependencyFindi
                         .map(|v| v.to_string())
                 } else {
                     rest.trim()
-                        .strip_prefix('"')
+                        .strip_prefix('=')
+                        .map(str::trim)
+                        .and_then(|v| v.strip_prefix('"'))
                         .and_then(|v| v.strip_suffix('"'))
                         .map(|v| v.to_string())
                 };
@@ -122,7 +147,14 @@ pub(crate) fn parse_cargo_toml(content: &str, path: &str) -> Vec<DependencyFindi
                     findings.push(DependencyFinding {
                         ecosystem: PackageEcosystem::CratesIo,
                         package: name.to_string(),
-                        version,
+                        version: version.clone(),
+                        resolved_version: None,
+                        version_requirement: version,
+                        reference_kind: None,
+                        reference_value: None,
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: Some(line_num),
                         source_kind: DependencySource::Manifest,

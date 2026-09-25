@@ -881,10 +881,11 @@ pub async fn run_security_search_plan(
     let mut dependency_findings = Vec::new();
 
     if req.assess_applicability == Some(true) {
-        use crate::core::security_applicability::{
-            ApplicabilityAssessment, ApplicabilityConfidence, ApplicabilityStatus,
+        use crate::core::security_applicability::packages_match;
+        use crate::meta::advisory_range::{
+            assess_version_applicability, extract_advisory_ranges, primary_advisory_id,
+            request_version_assessment, resolved_finding_assessment, weak_evidence_assessment,
         };
-        use crate::meta::advisory_range::{assess_version_applicability, extract_advisory_ranges};
         use crate::meta::dependency_parse::parse_dependency_file;
 
         // Track (advisory_id, package, version) to deduplicate assessments
@@ -923,15 +924,7 @@ pub async fn run_security_search_plan(
                     .unwrap_or(true);
 
                 if pkg_matches && eco_matches {
-                    let advisory_id = vuln
-                        .cve_ids
-                        .first()
-                        .or(vuln.ghsa_ids.first())
-                        .or(vuln.osv_ids.first())
-                        .or(vuln.rustsec_ids.first())
-                        .cloned()
-                        .unwrap_or_default();
-
+                    let advisory_id = primary_advisory_id(vuln);
                     let outcome = assess_version_applicability(
                         ver,
                         &ranges,
@@ -940,57 +933,28 @@ pub async fn run_security_search_plan(
                             .map(|r| r.ecosystem.clone())
                             .unwrap_or(crate::core::package::PackageEcosystem::CratesIo),
                     );
-                    let status = outcome.status;
-                    let confidence = if !ranges.is_empty() {
-                        ApplicabilityConfidence::High
-                    } else {
-                        ApplicabilityConfidence::Low
-                    };
-
-                    let mut assessment_reasons = outcome.reasons;
-                    match status {
-                        ApplicabilityStatus::Affected => assessment_reasons.push(format!(
-                            "version {ver} appears affected by advisory {advisory_id}"
-                        )),
-                        ApplicabilityStatus::NotAffected => assessment_reasons.push(format!(
-                            "version {ver} does not appear affected by advisory {advisory_id}"
-                        )),
-                        ApplicabilityStatus::Unknown => assessment_reasons.push(format!(
-                            "could not determine applicability of version {ver} for advisory {advisory_id}"
-                        )),
-                        ApplicabilityStatus::InsufficientEvidence => assessment_reasons.push(
-                            "insufficient package/version data to assess applicability"
-                                .to_string(),
-                        ),
-                    }
-
-                    let key = (advisory_id.clone(), pkg.to_string(), ver.to_string());
+                    let ecosystem = vuln
+                        .ecosystem
+                        .as_deref()
+                        .and_then(crate::core::package::PackageEcosystem::parse)
+                        .unwrap_or(crate::core::package::PackageEcosystem::CratesIo);
+                    let evidence_urls = vuln
+                        .references
+                        .iter()
+                        .map(|r| r.url.clone())
+                        .collect::<Vec<_>>();
+                    let assessment = request_version_assessment(
+                        pkg,
+                        ver,
+                        ecosystem,
+                        advisory_id.clone(),
+                        &outcome,
+                        ranges.len(),
+                        evidence_urls,
+                    );
+                    let key = (advisory_id, pkg.to_string(), ver.to_string());
                     if seen_assessments.insert(key) {
-                        applicability_assessments.push(ApplicabilityAssessment {
-                            status,
-                            confidence,
-                            ecosystem: vuln
-                                .ecosystem
-                                .as_deref()
-                                .and_then(crate::core::package::PackageEcosystem::parse)
-                                .unwrap_or(crate::core::package::PackageEcosystem::CratesIo),
-                            package: pkg.to_string(),
-                            version: Some(ver.to_string()),
-                            advisory_ids: vec![advisory_id],
-                            matched_ranges: outcome.matched_ranges.clone(),
-                            fixed_versions: outcome
-                                .matched_ranges
-                                .iter()
-                                .flat_map(|r| r.fixed_versions.iter().cloned())
-                                .collect(),
-                            reasons: assessment_reasons,
-                            evidence_urls: vuln.references.iter().map(|r| r.url.clone()).collect(),
-                            warnings: Vec::new(),
-                            version_source: None,
-                            dependency_relation: None,
-                            source_ids: Vec::new(),
-                            fetch_ids: Vec::new(),
-                        });
+                        applicability_assessments.push(assessment);
                     }
                 }
             }
@@ -999,63 +963,36 @@ pub async fn run_security_search_plan(
                 let vuln_pkg = vuln.package.as_deref().unwrap_or("");
                 let vuln_eco = vuln.ecosystem.as_deref().unwrap_or("");
 
-                if finding.package.eq_ignore_ascii_case(vuln_pkg)
+                if packages_match(&finding.ecosystem, &finding.package, vuln_pkg)
                     && finding.ecosystem.as_str().eq_ignore_ascii_case(vuln_eco)
                 {
-                    if let Some(ref ver) = finding.version {
-                        let advisory_id = vuln
-                            .cve_ids
-                            .first()
-                            .or(vuln.ghsa_ids.first())
-                            .or(vuln.osv_ids.first())
-                            .or(vuln.rustsec_ids.first())
-                            .cloned()
-                            .unwrap_or_default();
-
+                    let advisory_id = primary_advisory_id(vuln);
+                    let evidence_urls = vuln
+                        .references
+                        .iter()
+                        .map(|r| r.url.clone())
+                        .collect::<Vec<_>>();
+                    if let Some(ver) = finding.exact_version() {
                         let outcome =
                             assess_version_applicability(ver, &ranges, &finding.ecosystem);
-                        let status = outcome.status;
-                        let confidence = if !ranges.is_empty() {
-                            ApplicabilityConfidence::High
-                        } else {
-                            ApplicabilityConfidence::Low
-                        };
-
-                        let mut reasons = outcome.reasons;
-                        reasons.push(format!(
-                            "dependency '{}' version '{}' found in {}",
-                            finding.package,
+                        let assessment = resolved_finding_assessment(
+                            finding,
                             ver,
-                            finding.source_file.as_deref().unwrap_or("unknown")
-                        ));
-
-                        let key = (advisory_id.clone(), finding.package.clone(), ver.clone());
+                            advisory_id.clone(),
+                            &outcome,
+                            ranges.len(),
+                            evidence_urls,
+                        );
+                        let key = (advisory_id, finding.package.clone(), ver.to_string());
                         if seen_assessments.insert(key) {
-                            applicability_assessments.push(ApplicabilityAssessment {
-                                status,
-                                confidence,
-                                ecosystem: finding.ecosystem.clone(),
-                                package: finding.package.clone(),
-                                version: Some(ver.clone()),
-                                advisory_ids: vec![advisory_id],
-                                matched_ranges: outcome.matched_ranges.clone(),
-                                fixed_versions: outcome
-                                    .matched_ranges
-                                    .iter()
-                                    .flat_map(|r| r.fixed_versions.iter().cloned())
-                                    .collect(),
-                                reasons,
-                                evidence_urls: vuln
-                                    .references
-                                    .iter()
-                                    .map(|r| r.url.clone())
-                                    .collect(),
-                                warnings: Vec::new(),
-                                version_source: None,
-                                dependency_relation: None,
-                                source_ids: Vec::new(),
-                                fetch_ids: Vec::new(),
-                            });
+                            applicability_assessments.push(assessment);
+                        }
+                    } else {
+                        let assessment =
+                            weak_evidence_assessment(finding, advisory_id.clone(), evidence_urls);
+                        let key = (advisory_id, finding.package.clone(), String::new());
+                        if seen_assessments.insert(key) {
+                            applicability_assessments.push(assessment);
                         }
                     }
                 }

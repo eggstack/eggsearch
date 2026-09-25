@@ -36,6 +36,17 @@ pub(crate) fn parse_pom_xml(content: &str, path: &str) -> Vec<DependencyFinding>
                     } else {
                         Some(version.clone())
                     },
+                    resolved_version: None,
+                    version_requirement: if version.is_empty() {
+                        None
+                    } else {
+                        Some(version.clone())
+                    },
+                    reference_kind: None,
+                    reference_value: None,
+                    provenance: None,
+                    target_context: None,
+                    integrity_hash: None,
                     source_file: Some(path.to_string()),
                     source_line: Some(line_num),
                     source_kind: DependencySource::Manifest,
@@ -70,6 +81,17 @@ pub(crate) fn parse_pom_xml(content: &str, path: &str) -> Vec<DependencyFinding>
                         } else {
                             Some(version.clone())
                         },
+                        resolved_version: None,
+                        version_requirement: if version.is_empty() {
+                            None
+                        } else {
+                            Some(version.clone())
+                        },
+                        reference_kind: None,
+                        reference_value: None,
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: Some(line_num),
                         source_kind: DependencySource::Manifest,
@@ -108,6 +130,13 @@ pub(crate) fn parse_gradle_lockfile(content: &str, path: &str) -> Vec<Dependency
                         ecosystem: PackageEcosystem::Maven,
                         package: format!("{group}:{artifact}"),
                         version: Some(version.to_string()),
+                        resolved_version: Some(version.to_string()),
+                        version_requirement: None,
+                        reference_kind: None,
+                        reference_value: None,
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: Some(line_num),
                         source_kind: DependencySource::LockFile,
@@ -162,6 +191,13 @@ pub(crate) fn parse_build_gradle(content: &str, path: &str) -> Vec<DependencyFin
                             ecosystem: PackageEcosystem::Maven,
                             package: format!("{group}:{artifact}"),
                             version: Some(version.to_string()),
+                            resolved_version: None,
+                            version_requirement: Some(version.to_string()),
+                            reference_kind: None,
+                            reference_value: None,
+                            provenance: None,
+                            target_context: None,
+                            integrity_hash: None,
                             source_file: Some(path.to_string()),
                             source_line: Some(line_num),
                             source_kind: DependencySource::Manifest,

@@ -19,10 +19,18 @@ pub(crate) fn parse_composer_lock(content: &str, path: &str) -> Vec<DependencyFi
                 let name = pkg.get("name").and_then(|n| n.as_str()).unwrap_or("");
                 let version = pkg.get("version").and_then(|v| v.as_str()).unwrap_or("");
                 if !name.is_empty() {
+                    let version = version.trim_start_matches('v').to_string();
                     findings.push(DependencyFinding {
                         ecosystem: PackageEcosystem::Packagist,
                         package: name.to_string(),
-                        version: Some(version.trim_start_matches('v').to_string()),
+                        version: Some(version.clone()),
+                        resolved_version: Some(version),
+                        version_requirement: None,
+                        reference_kind: None,
+                        reference_value: None,
+                        provenance: None,
+                        target_context: None,
+                        integrity_hash: None,
                         source_file: Some(path.to_string()),
                         source_line: None,
                         source_kind: DependencySource::LockFile,
