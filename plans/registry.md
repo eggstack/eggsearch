@@ -37,7 +37,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Performance optimization and footprint | closed | `plans/subsystems/performance-optimization-roadmap.md` | M001-M005 closed | None. Corrective candidate `0af540b8`; qualify `35542118569`. |
 | Optional outbound routing (egress) | closed | `plans/subsystems/optional-outbound-routing-roadmap.md` | M001-M004 closed | None. Terminal baseline `6414a72`; hardened qualify `35810222447`. No egress-enabled binary published. Outcome B remains the runtime baseline. |
 | MCP tool-surface consolidation | active | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M005 implementation landed, closure records pending; M006 ready | M001-M005 landed in HEAD (contract, schema slimming, 2026 protocol/errors, projection, CodeGG disclosure); M006 evaluation baseline now exists. |
-| Dependency evidence hardening | active | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M001 ready | ADR-0004 accepted. M002-M006 hard-blocked on M001; M007 hard-blocked on M001-M006. |
+| Dependency evidence hardening | active | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M001 closed; M002-M006 ready | ADR-0004 accepted. M001 closed at `bce32e7` (`plans/closure/dependency-evidence-hardening/001-status.md`). M007 hard-blocked on M002-M006. |
 
 ## Dependency-ready implementation plans
 
@@ -50,7 +50,12 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Tool-surface consolidation | M005 CodeGG progressive-disclosure integration | closing | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | Implementation landed; closure record pending. |
 | Tool-surface consolidation | M006 agentic evaluation | ready | `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | M001-M005 baseline now exists; do not evaluate against pre-consolidation bytes. |
 | Tool-surface consolidation | M007 maintenance decomposition and overlap ratchet | ready | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | Requires M001. |
-| Dependency evidence hardening | M001 typed evidence and applicability trust boundary | ready | `plans/implementation/dependency-evidence-hardening/001-typed-evidence-and-applicability-boundary.md` | ADR-0004 accepted; first hard gate for all parser-format milestones. |
+| Dependency evidence hardening | M001 typed evidence and applicability trust boundary | closed | `plans/implementation/dependency-evidence-hardening/001-typed-evidence-and-applicability-boundary.md` | Closed at `bce32e7`; closure `plans/closure/dependency-evidence-hardening/001-status.md`. |
+| Dependency evidence hardening | M002 Cargo/Go/Python + dispatch | ready | `plans/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md` | M001 closed; may proceed on typed contract. |
+| Dependency evidence hardening | M003 .NET/JVM structured correctness | ready | `plans/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md` | M001 closed; may proceed on typed contract. |
+| Dependency evidence hardening | M004 Ruby/Composer provenance | ready | `plans/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md` | M001 closed; may proceed on typed contract. |
+| Dependency evidence hardening | M005 JavaScript lockfiles | ready | `plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md` | M001 closed; may proceed on typed contract. |
+| Dependency evidence hardening | M006 Actions/OCI references | ready | `plans/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md` | M001 closed; may proceed on typed contract. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist: `plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
@@ -78,12 +83,12 @@ Dependency evidence hardening has intentionally gated follow-on work:
 
 | Milestone | Status | Blocker | Plan |
 |---|---|---|---|
-| M002 Cargo/Go/Python + dispatch | blocked | M001 closure | `plans/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md` |
-| M003 .NET/JVM structured correctness | blocked | M001 closure | `plans/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md` |
-| M004 Ruby/Composer provenance | blocked | M001 closure | `plans/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md` |
-| M005 JavaScript lockfiles | blocked | M001 closure | `plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md` |
-| M006 Actions/OCI references | blocked | M001 closure | `plans/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md` |
-| M007 budgets/diagnostics/qualification | blocked | M001-M006 closure | `plans/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md` |
+| M002 Cargo/Go/Python + dispatch | ready | none (M001 closed) | `plans/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md` |
+| M003 .NET/JVM structured correctness | ready | none (M001 closed) | `plans/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md` |
+| M004 Ruby/Composer provenance | ready | none (M001 closed) | `plans/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md` |
+| M005 JavaScript lockfiles | ready | none (M001 closed) | `plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md` |
+| M006 Actions/OCI references | ready | none (M001 closed) | `plans/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md` |
+| M007 budgets/diagnostics/qualification | blocked | M002-M006 closure | `plans/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md` |
 
 ## Closure work and current control points
 

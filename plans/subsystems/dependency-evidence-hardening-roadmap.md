@@ -423,10 +423,10 @@ security applicability consumer can no longer overstate dependency evidence.
 
 | Milestone | Status | Dependency |
 |---|---|---|
-| M001 typed evidence/applicability | ready | ADR-0004 accepted |
-| M002 core ecosystems/dispatch | blocked | M001 closure |
-| M003 .NET/JVM structured correctness | blocked | M001 closure |
-| M004 Ruby/Composer provenance | blocked | M001 closure |
-| M005 JavaScript lockfiles | blocked | M001 closure |
-| M006 Actions/OCI refs | blocked | M001 closure |
+| M001 typed evidence/applicability | closed | ADR-0004 accepted; closure `plans/closure/dependency-evidence-hardening/001-status.md` at `bce32e7` |
+| M002 core ecosystems/dispatch | ready | M001 closed |
+| M003 .NET/JVM structured correctness | ready | M001 closed |
+| M004 Ruby/Composer provenance | ready | M001 closed |
+| M005 JavaScript lockfiles | ready | M001 closed |
+| M006 Actions/OCI refs | ready | M001 closed |
 | M007 budgets/qualification | blocked | M001-M006 closure |
