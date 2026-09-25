@@ -200,6 +200,29 @@ evidence.
 findings, status, diagnostics }` with `ParseStatus` (`Complete`, `Partial`,
 `Unsupported`, `Malformed`). Unrecognized filenames yield `Unsupported`;
 per-format malformed/partial detection lands with the format milestones.
+Dispatch uses path-aware basename extraction (native separators plus a
+conservative backslash fallback) so Windows and Unix paths route
+identically. `vendor/modules.txt` is recognized only when the immediate
+parent directory is `vendor`; bare `modules.txt` files stay `Unsupported`.
+
+Cargo uses structured TOML: `Cargo.lock` package entries yield exact
+resolved versions with the lock `source` preserved as provenance (git/path
+sources never inherit crates.io provenance); `Cargo.toml` dependency,
+dev/build, and target-specific tables yield requirements, with `package =`
+rename identity, `workspace = true` as unresolved inheritance, and git/path
+provenance retained. `go.mod` requirements are minimum-version requirements
+(`Manifest`, Medium), with `// indirect` mapped to `Transitive` and
+`replace` directives retained as provenance (local replacements also typed
+as path references). `go.sum` is integrity-only evidence and can never
+drive resolved applicability. `vendor/modules.txt` headers yield exact
+vendored versions (`## explicit` maps to `Direct`). Python requirements
+implement the dependency-specifier subset that matters for evidence:
+exact vs wildcard equality, arbitrary equality, ranges, compatible
+release, direct `name @ URL` references, extras, and environment markers
+(markers/extras preserved as target context, never evaluated); a
+requirement is never a resolved version even when pinned. Poetry/uv
+(`toml`) and Pipfile (`serde_json`) locks yield exact resolved versions
+with source/path/git/index provenance preserved.
 
 ---
 

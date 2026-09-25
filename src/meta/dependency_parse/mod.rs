@@ -9,6 +9,7 @@ pub(crate) mod go;
 pub(crate) mod maven;
 pub(crate) mod npm;
 pub(crate) mod python;
+pub(crate) mod python_locks;
 pub(crate) mod ruby;
 
 /// Parse a dependency file and extract dependency findings plus
@@ -31,13 +32,18 @@ pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyPars
         }
         "yarn.lock" => DependencyParseReport::complete(npm::parse_yarn_lock(content, path)),
         "pnpm-lock.yaml" => DependencyParseReport::complete(npm::parse_pnpm_lock(content, path)),
-        "poetry.lock" => DependencyParseReport::complete(python::parse_poetry_lock(content, path)),
-        "Pipfile.lock" => {
-            DependencyParseReport::complete(python::parse_pipfile_lock(content, path))
+        "poetry.lock" => {
+            DependencyParseReport::complete(python_locks::parse_poetry_lock(content, path))
         }
-        "uv.lock" => DependencyParseReport::complete(python::parse_uv_lock(content, path)),
+        "Pipfile.lock" => {
+            DependencyParseReport::complete(python_locks::parse_pipfile_lock(content, path))
+        }
+        "uv.lock" => DependencyParseReport::complete(python_locks::parse_uv_lock(content, path)),
         "go.mod" => DependencyParseReport::complete(go::parse_go_mod(content, path)),
         "go.sum" => DependencyParseReport::complete(go::parse_go_sum(content, path)),
+        "modules.txt" if is_go_vendor_manifest(path) => {
+            DependencyParseReport::complete(go::parse_vendor_modules(content, path))
+        }
         "requirements.txt" | "requirements.in" => {
             DependencyParseReport::complete(python::parse_requirements_txt(content, path))
         }
@@ -77,6 +83,13 @@ pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyPars
 pub(crate) fn dispatch_basename(path: &str) -> &str {
     let after_slash = path.rsplit('/').next().unwrap_or(path);
     after_slash.rsplit('\\').next().unwrap_or(after_slash)
+}
+
+pub(crate) fn is_go_vendor_manifest(path: &str) -> bool {
+    let segments: Vec<&str> = path.split(['/', '\\']).collect();
+    segments.len() >= 2
+        && segments[segments.len() - 1] == "modules.txt"
+        && segments[segments.len() - 2] == "vendor"
 }
 
 fn parse_yaml_routed_file(path: &str, content: &str) -> DependencyParseReport {
@@ -127,7 +140,9 @@ pub(crate) fn extract_xml_attr(line: &str, attr: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::core::package::PackageEcosystem;
-    use crate::core::security_applicability::{ApplicabilityConfidence, DependencySource};
+    use crate::core::security_applicability::{
+        ApplicabilityConfidence, DependencySource, ParseStatus,
+    };
 
     const CARGO_LOCK: &str = r#"
 [[package]]
@@ -698,15 +713,63 @@ tokio = "1.35.1"
     }
 
     #[test]
-    fn lockfile_line_numbers_point_to_entry() {
-        let content = "line1\nline2\n[[package]]\nname = \"foo\"\nversion = \"1.0\"\n";
+    fn lockfile_structured_parse_prefers_no_line_over_wrong_line() {
+        let content = "[[package]]\nname = \"foo\"\nversion = \"1.0\"\n";
         let findings = parse_dependency_file("Cargo.lock", content);
         assert_eq!(findings.len(), 1);
-        // source_line should point near the [[package]] line (line 3)
-        let line = findings[0].source_line.unwrap();
-        assert!(
-            (2..=5).contains(&line),
-            "line number {line} should point near entry"
+        assert_eq!(findings[0].package, "foo");
+        assert_eq!(findings[0].exact_version(), Some("1.0"));
+        assert_eq!(findings[0].source_line, None);
+    }
+
+    #[test]
+    fn line_oriented_parsers_retain_source_lines() {
+        let findings = parse_dependency_file(
+            "go.mod",
+            "module example.com/x\n\nrequire github.com/foo/bar v1.2.3\n",
         );
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].source_line, Some(3));
+    }
+
+    #[test]
+    fn dispatch_is_equivalent_on_windows_and_unix_paths() {
+        let cases = [
+            (
+                "Cargo.lock",
+                "[[package]]\nname = \"a\"\nversion = \"1.0\"\n",
+            ),
+            ("Cargo.toml", "[dependencies]\na = \"1.0\"\n"),
+            ("go.mod", "module x\n\nrequire a/b v1.0.0\n"),
+            ("go.sum", "a/b v1.0.0 h1:x\n"),
+            ("vendor/modules.txt", "# a/b v1.0.0\n"),
+            ("requirements.txt", "a==1.0\n"),
+            (
+                "poetry.lock",
+                "[[package]]\nname = \"a\"\nversion = \"1.0\"\n",
+            ),
+            (
+                "Pipfile.lock",
+                "{\"default\": {\"a\": {\"version\": \"==1.0\"}}}",
+            ),
+            ("uv.lock", "[[package]]\nname = \"a\"\nversion = \"1.0\"\n"),
+        ];
+        for (file, content) in cases {
+            let unix = parse_dependency_file_report(&format!("proj/{file}"), content);
+            let windows = parse_dependency_file_report(&format!("C:\\proj\\{file}"), content);
+            assert_eq!(unix.status, windows.status, "file: {file}");
+            assert_eq!(unix.findings.len(), windows.findings.len(), "file: {file}");
+            assert!(!unix.findings.is_empty(), "file: {file}");
+        }
+    }
+
+    #[test]
+    fn vendor_manifest_requires_vendor_parent() {
+        let content = "# a/b v1.0.0\n";
+        let gated = parse_dependency_file_report("proj/vendor/modules.txt", content);
+        assert_eq!(gated.findings.len(), 1);
+        let bare = parse_dependency_file_report("proj/modules.txt", content);
+        assert_eq!(bare.status, ParseStatus::Unsupported);
+        assert!(bare.findings.is_empty());
     }
 }

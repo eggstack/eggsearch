@@ -387,7 +387,7 @@ fn requirements_exact_pin_is_never_resolved_evidence() {
         eggsearch::meta::dependency_parse::parse_dependency_file("requirements.txt", content);
     assert_eq!(findings.len(), 1);
     assert!(!findings[0].has_resolved_evidence());
-    assert_eq!(findings[0].version_requirement.as_deref(), Some("2.3.2"));
+    assert_eq!(findings[0].version_requirement.as_deref(), Some("==2.3.2"));
 }
 
 #[test]
