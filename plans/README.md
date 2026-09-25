@@ -1,30 +1,119 @@
-# Eggsearch Planning
+# Eggsearch Planning System
 
-This directory contains implementation handoff plans for work that is intentionally not part of the published crate artifact. `Cargo.toml` excludes `plans/` from packaging.
+This directory separates durable architectural direction from temporary
+execution planning.
 
-The active planning control surface is:
+## Canonical long-term documents
 
-- `registry.md` — current workstreams, phase status, dependency order, and closure state.
-- `roadmap.md` — completed search-capability workstream rationale, research evidence, invariants, and phases 1-5.
-- `deployment-roadmap.md` — completed binary distribution, install/update, persistent MCP deployment, startup supervision, and agent/IDE integration rationale for phases 6-10.
-- `maintenance-codegg-quality-roadmap.md` — completed architecture consolidation, provider diagnostics, CodeGG retrieval quality, public API, and maintenance rationale for phases 11-15.
-- `performance-optimization-roadmap.md` — phases 19-22 performance work plus active Phase 23 timeout-semantics/evidence requalification closure.
-- `phase-*.md` — bounded implementation plans that should be independently executable and verifiable.
+The following files define the intended product and architecture and MUST NOT
+be edited as part of ordinary implementation work:
 
-## Status vocabulary
+- `000-long-term-specification.md` — normative end-state specification and invariants.
+- `001-terminology-and-domain-model.md` — normative language and identity model.
+- `002-long-term-roadmap.md` — dependency-ordered long-term capability roadmap.
+- `003-planning-process.md` — rules for deriving and managing interim plans.
 
-Use `planned`, `in_progress`, `blocked`, `implemented`, or `superseded`. Do not mark a phase `implemented` until its acceptance criteria have been exercised against the exact candidate being handed off.
+The first three documents are stable architectural references. Changes to
+them require an explicit long-term architecture decision, not an
+implementation convenience. Interim plans MUST reference them rather than
+copying or silently revising their requirements.
 
-## Implementation discipline
+## Planning hierarchy
 
-Plans in this directory are normative for scope, invariants, and acceptance criteria, but the repository code remains the source of truth for exact symbols and line locations. Re-audit the named files against the current `main` head before editing because eggsearch is under active development.
+```text
+Long-term specification and terminology
+        |
+        v
+Architecture decision records
+        |
+        v
+Master long-term roadmap
+        |
+        v
+Subsystem roadmaps
+        |
+        v
+Milestone implementation plans
+        |
+        v
+Implementation and verification
+        |
+        v
+Closure records and archive
+```
 
-Routine verification follows `AGENTS.md`: `make check` is the broad local gate; normal tests must remain deterministic and network-free. Credentialed or live-provider checks belong behind ignored/live-smoke paths and must never become required CI. Release/deployment phases may add release-only or loopback-only artifact smoke gates in addition to `make check`; those must not turn routine PR CI into the full release matrix.
+## Directory roles
 
-When a phase lands, update `registry.md` and the phase status in the same closure commit. If implementation evidence invalidates a later phase, revise the governing roadmap before starting that phase rather than silently expanding scope.
+- `adrs/` — durable architecture decisions. Accepted decisions are superseded, not rewritten.
+- `subsystems/` — subsystem specifications and dependency-ordered roadmaps.
+- `implementation/` — focused milestone plans handed to implementation agents.
+- `closure/` — verification, evidence, residual-risk, and completion records.
+- `archive/` — completed or superseded interim planning retained for traceability.
+- `registry.md` — compact index of active subsystem roadmaps, implementation plans, closure work, and dependencies.
 
-For phases 6-10, preserve the public release target/asset contract across GitHub Actions, bootstrap installers, Rust updater logic, service deployment docs, and integration examples. Any intentional contract change must update all consumers atomically or be introduced through an explicit compatibility plan.
+## Core rule
 
-For phases 11-15, preserve the ten stable MCP tools and existing trust/safety/identity semantics while consolidating internal workflow machinery. Do not add new general-purpose providers during this workstream unless they introduce a materially new evidence class. CodeGG-facing improvements should use the existing MCP contract rather than inventing a second downstream-specific protocol.
+Long-term documents state **what eggsearch is becoming and what must remain
+true**. Interim documents state **what an agent should implement next against
+a specific repository baseline**.
 
-For phases 19-23, preserve public MCP/Rust compatibility, deterministic ordering, cache/security semantics, and the phase-17/18 transport boundaries. Performance evidence must model production-shaped hot paths; do not trade capability or maintainability for speculative micro-optimizations. Feature-footprint work must exercise no-default/default/all-feature builds and retain rmcp client transports used by integration verification unless equivalent supported behavior is proven. Phase 23 served as the corrective closure gate for widened timeout semantics, missing benchmark evidence, and exact-candidate seven-target qualification; the workstream is now closed.
+Implementation agents MUST NOT add commit-specific steps, transient file
+lists, current test counts, or short-lived corrective work to the canonical
+long-term documents.
+
+## Planning lifecycle
+
+1. Identify the relevant long-term specification sections and invariants.
+2. Record any unresolved architectural decision in `adrs/`.
+3. Create or update a subsystem roadmap in `subsystems/`.
+4. Select one dependency-ready milestone.
+5. Write a bounded handoff plan under `implementation/`.
+6. Implement and verify the milestone.
+7. Write a closure record under `closure/`.
+8. Update `registry.md` and the subsystem roadmap status.
+9. Move completed or superseded interim documents to `archive/` when they no longer represent active work.
+
+No milestone is complete merely because code landed. Completion requires the
+closure evidence defined by its implementation plan and subsystem roadmap.
+
+## Required classification
+
+Every subsystem roadmap and implementation plan MUST distinguish:
+
+- **Invariant** — a property that must always remain true.
+- **Capability** — user- or operator-visible behavior.
+- **Infrastructure** — internal machinery required by capabilities.
+- **Polish** — ergonomics, diagnostics, performance tuning, cleanup, or documentation.
+
+Infrastructure and polish MUST NOT be presented as completed user capability
+unless the user-visible acceptance criteria are actually satisfied.
+
+## Naming conventions
+
+- ADR: `adrs/ADR-NNNN-short-title.md`
+- Subsystem roadmap: `subsystems/<subsystem>-roadmap.md`
+- Milestone implementation plan: `implementation/<subsystem>/NNN-short-title.md`
+- Closure record: `closure/<subsystem>/NNN-status.md`
+- Archived document: retain its original relative structure beneath `archive/`
+
+Use stable subsystem names. Do not encode dates in filenames unless the
+document is inherently time-bound.
+
+## Starting a new workstream
+
+Begin with `subsystems/README.md`, then use the templates and rules in:
+
+- `adrs/README.md`
+- `implementation/README.md`
+- `closure/README.md`
+
+Register active work in `registry.md` before handing implementation plans to agents.
+
+## Historical note
+
+The `phase-*.md` plans and the four pre-migration roadmaps
+(`roadmap.md`, `deployment-roadmap.md`,
+`maintenance-codegg-quality-roadmap.md`,
+`performance-optimization-roadmap.md`) are retained under `archive/` for
+traceability. They are superseded by the canonical documents and subsystem
+roadmaps above and MUST NOT be extended.

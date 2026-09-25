@@ -69,6 +69,14 @@ submodule can reconcentrate complexity.
   `evidence_contract`, plus the `*_contract`/`*_retrieval` regression
   suites). Do not introduce new `phase<N>_*` names; preserve fixture
   provenance in file-level doc comments instead.
+- New planning work follows the CodeGG-derived convention in
+  `plans/003-planning-process.md`: canonical `000`–`003` stay stable,
+  workstreams live in `plans/subsystems/`, handoffs in
+  `plans/implementation/<subsystem>/NNN-*.md`, evidence gates in
+  `plans/closure/<subsystem>/NNN-status.md`, history in `plans/archive/`,
+  control surface in `plans/registry.md`. Corrective work is a new plan
+  referencing the original milestone and closure record, never a silent
+  amendment to an archived `phase-*.md`.
 - Factual inventories must be code-derived where practical:
   `docs_tool_names.rs` derives from `src/mcp/server.rs`,
   `docs_provider_inventory.rs` derives from `KNOWN_PROVIDER_IDS`,
