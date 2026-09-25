@@ -83,10 +83,14 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/evidence_bundle.rs` | 2,150 | 81,920 | Owns packaging + gap analysis, never ranking |
 | `src/meta/dependency_parse/mod.rs` | 800 | 81,920 | Dispatch + shared XML helpers + corpus tests |
 | `src/meta/dependency_parse/cargo.rs` | 400 | 81,920 | One ecosystem per file |
-| `src/meta/dependency_parse/npm.rs` | 400 | 81,920 | One ecosystem per file |
+| `src/meta/dependency_parse/npm.rs` | 400 | 81,920 | npm v1-v3/shrinkwrap |
+| `src/meta/dependency_parse/yarn.rs` | 400 | 81,920 | Yarn Classic + shared selector helpers |
+| `src/meta/dependency_parse/yarn_berry.rs` | 400 | 81,920 | Yarn Berry metadata/resolution |
 | `src/meta/dependency_parse/go.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/python.rs` | 400 | 81,920 | Python requirements (PEP 508 subset) |
 | `src/meta/dependency_parse/python_locks.rs` | 400 | 81,920 | Python poetry/uv/pipfile lock parsers |
+| `src/meta/dependency_parse/pnpm.rs` | 400 | 81,920 | pnpm shared/importers + v6 |
+| `src/meta/dependency_parse/pnpm_v9.rs` | 400 | 81,920 | pnpm v9 package IDs |
 | `src/meta/dependency_parse/ruby.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/composer.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/maven.rs` | 400 | 81,920 | Maven POM structural parsing |

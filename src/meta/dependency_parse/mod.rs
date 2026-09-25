@@ -10,9 +10,13 @@ pub(crate) mod gradle;
 pub(crate) mod maven;
 pub(crate) mod npm;
 pub(crate) mod nuget;
+pub(crate) mod pnpm;
+pub(crate) mod pnpm_v9;
 pub(crate) mod python;
 pub(crate) mod python_locks;
 pub(crate) mod ruby;
+pub(crate) mod yarn;
+pub(crate) mod yarn_berry;
 
 /// Parse a dependency file and extract dependency findings plus
 /// completeness/diagnostic information without panicking.
@@ -26,14 +30,10 @@ pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyPars
     match filename {
         "Cargo.lock" => DependencyParseReport::complete(cargo::parse_cargo_lock(content, path)),
         "Cargo.toml" => DependencyParseReport::complete(cargo::parse_cargo_toml(content, path)),
-        "package-lock.json" => {
-            DependencyParseReport::complete(npm::parse_package_lock(content, path))
-        }
-        "npm-shrinkwrap.json" => {
-            DependencyParseReport::complete(npm::parse_package_lock(content, path))
-        }
-        "yarn.lock" => DependencyParseReport::complete(npm::parse_yarn_lock(content, path)),
-        "pnpm-lock.yaml" => DependencyParseReport::complete(npm::parse_pnpm_lock(content, path)),
+        "package-lock.json" => npm::parse_package_lock(content, path),
+        "npm-shrinkwrap.json" => npm::parse_package_lock(content, path),
+        "yarn.lock" => yarn::parse_yarn_lock(content, path),
+        "pnpm-lock.yaml" => pnpm::parse_pnpm_lock(content, path),
         "poetry.lock" => {
             DependencyParseReport::complete(python_locks::parse_poetry_lock(content, path))
         }

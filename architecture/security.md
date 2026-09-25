@@ -251,6 +251,31 @@ Gradle lockfiles keep exact coordinates with deterministic dedup;
 coordinates (including `platform(...)` wrappers) with dynamic/property
 versions recorded as unresolved requirements, never resolved versions.
 
+JavaScript lockfiles are format/version aware with explicit
+unsupported diagnostics for future lock versions. npm reads
+`lockfileVersion`: v2/v3 `packages` skip the root project entry,
+derive scoped names from nested `node_modules` paths, type
+workspace/link entries as workspace provenance (never registry
+evidence), preserve git/tarball/file sources, and mark root-declared
+dependencies direct; v1 `dependencies` are walked recursively under a
+bounded depth with deterministic dedup. Yarn Classic grouped selectors
+(including scoped packages) yield exact versions with descriptor
+constraints kept as requirements; modern Berry locks are detected via
+`__metadata` (supported versions 5-8, others explicit unsupported)
+with exact `version:` plus `resolution:` identity, so `npm:` stays
+registry evidence while workspace/portal/link/file/git protocols keep
+non-registry provenance. pnpm v6 (`/name@version` keys with peer
+suffixes stripped) and v9 (`name@version` IDs plus `snapshots`
+isolation) use `importers` for direct marking and specifier
+preservation, with workspace/link entries kept as workspace evidence.
+No package identity ever contains YAML quote characters or peer-suffix
+text. YAML-backed formats use narrow bounded generated-format parsers
+rather than a generic YAML crate: the lockfile grammars needed are
+small, machine-generated, and version-pinned in fixtures, so a general
+parser would add alias/anchor attack surface and dependency footprint
+for no maintenance benefit; the decision is revisited only if a future
+lock version outgrows the generated grammar.
+
 Bundler `Gemfile.lock` files are parsed with an explicit section state
 machine: only four-space resolved spec rows under a `GEM`/`GIT`/`PATH`
 `specs:` block become exact findings; six-space child requirements
