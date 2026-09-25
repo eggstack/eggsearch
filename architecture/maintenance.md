@@ -126,7 +126,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 Kept in sync by discipline (not guards) plus `make packaging-check`:
 
 - Packaging set: `packaging/release-targets.txt` + `packaging/release-inputs.txt` + release workflow + egress qualification matrix (`packaging/check-egress-qualify-contract.sh`, `tests/egress_qualify_contract.rs`, exact set equality with the provider-route construction seam) + installers + updater + install docs. Edit one, check them all.
-- Test-inventory set: `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding or renaming suites. The SKILL table is representative (74 suites exist); the full per-suite inventory lives in `docs/test-inventory.md`.
+- Test-inventory set: `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding or renaming suites. The SKILL table is representative (76 suites exist); `architecture/testing.md` is the placement authority and `docs/test-inventory.md` carries per-suite counts.
 - `CHANGELOG.md` entries are append-only history — never rewrite published entries.
 
 Hygiene script (`packaging/check-repo-hygiene.sh`, part of `make check`) rejects tracked transcripts, ANSI dumps at the repo root, tracked build outputs, oversized unexpected root blobs, and editor temp files. Test/corpus fixtures under `tests/` and `docs/` are legitimate and never matched.

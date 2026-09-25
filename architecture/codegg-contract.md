@@ -64,7 +64,9 @@ authority.
 
 ## 2. Deterministic Identity System
 
-All ids are content-derived FNV-1a hex (`src/core/identity.rs`).
+All ids are content-derived FNV-1a hex (mostly `src/core/identity.rs`;
+`bundle_` in `src/core/evidence_bundle.rs`, `conflict_` in
+`src/core/conflict.rs`, `fp_` in `src/core/retrieval_status.rs`).
 Never random UUIDs; never change id semantics (breaks corpus
 regression and cross-tool dedup).
 
@@ -279,6 +281,59 @@ when routable; continue with keyless providers otherwise; never
 label generic web results as native forge evidence. Credential
 suggestions are contextual, optional, and paired with a keyless
 fallback.
+
+### 10.1 Do Not Require Credentialed Providers
+
+Baseline search, fetch, security, and research operations must work
+without API keys. Harnesses must not prompt for keys to perform
+baseline search, require credentials before attempting a tool call,
+or treat missing credentials as a global server failure.
+
+### 10.2 Do Not Prompt for Keys on Baseline Operations
+
+Credential-related prompts are appropriate only when the user
+explicitly requests a capability that requires native adapter
+access (for example private repository access). When a workflow
+would benefit from native adapter access, suggest the optional
+credential contextually, label it an enhancement rather than a
+requirement, and offer the keyless fallback.
+
+---
+
+## 11. Local Workspace Metadata
+
+Local workspace results carry `workspace_id`, checkout state, and
+`dirty_state`; trust is `local_trusted` for provenance only, never
+instruction-trusted.
+
+### 11.1 Dirty State
+
+| State | Meaning | Harness Action |
+|-------|---------|----------------|
+| `clean` | No uncommitted changes | Proceed normally |
+| `dirty` | Uncommitted changes exist | Warn user; content may be stale relative to HEAD |
+| `unknown` | Could not determine dirty state | Treat as dirty (conservative) |
+| `not_git` | Not a git repository | Ignore dirty state |
+
+Check `dirty_state` before treating a checkout as committed state.
+
+### 11.2 File Classification Flags
+
+Local source cards carry flat classification flags on result
+metadata (`is_generated`, `is_vendor`, `is_test`, `is_example`,
+`is_config`, `is_lockfile`): filter by file type, distrust
+generated or vendored content that may be stale, and apply
+language-specific tooling where appropriate.
+
+### 11.3 Workspace ID
+
+Local workspace results include a `workspace_id` string
+(`ws_` plus 16 lowercase hex chars) derived deterministically
+from the canonical workspace root, remote URLs, and HEAD commit.
+Use it to track checkout state across tool invocations,
+deduplicate results from the same workspace, and correlate
+`repo_search`, `repo_fetch`, and `repo_map` calls. It changes only
+when the root, remotes, or commit change.
 
 ---
 

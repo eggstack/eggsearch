@@ -9,14 +9,9 @@ Single library + binary crate, not a workspace. Stable contract is MCP tools (10
 From project root. CI pins Rust 1.89 (`rust-version` in `Cargo.toml`); edition 2021.
 
 ```bash
-make check  # canonical gate: fmt + clippy + no-default check + all-features tests + hygiene + packaging-check
+make check  # canonical gate (= CI): fmt + clippy + no-default check + all-features tests + hygiene + packaging-check
 make release-check  # check + docs + release build + publish dry-run
-make bench-check  # compile-check the Criterion performance harness
-
-cargo clippy --locked --all-targets --all-features -- -D warnings  # zero warnings required
-cargo check --locked --no-default-features
-cargo test --locked --all-features
-make hygiene packaging-check bench-check  # hygiene/contract/bench-compile; fuzz: make fuzz-smoke
+make bench-check  # compile-check the Criterion perf harness (characterization only, never a threshold); fuzz: make fuzz-smoke
 ```
 
 Feature flags: `mock` (test-only engine harness — **required for integration/corpus tests**; plain `cargo test` misses most of them), `pdf`, `browser`, `egress` (opt-in listener-free HTTP/SOCKS proxy-chain route for provider upstreams only; prebuilt/default binaries exclude it), `live-smoke` (implies `mock`, ignored by default, network). Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
@@ -32,7 +27,9 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-
 - **No comments** unless explicitly requested. `cargo fmt` required (CI fails on `cargo fmt --check`).
 - **Stable IDs are content-derived FNV-1a** (`src/core/identity.rs`). Never random UUIDs; never change ID semantics (breaks corpus regression + cross-tool dedup).
 - **Sanitize all untrusted text** through `src/core/sanitize.rs` / `sanitize_field()`.
-- **Bound all untrusted I/O**: forge responses only via `read_bounded_body()` (never bare `.text()`/`.bytes()`); bounded git execution via `run_bounded_command()` (process-group kill on timeout/cap breach).
+- **Bound all untrusted I/O**: forge responses only via `read_bounded_body()` / `read_bounded_response()` / `read_with_budget()` (never bare `.text()`/`.bytes()`/`.json()`); bounded git execution via `run_bounded_command()` (process-group kill on timeout/cap breach).
+- **No `reqwest` in production source** (guard-enforced): outbound HTTP goes through `eggfetch-core`; SSRF/retry/truncation policy stays in eggsearch. `egress` route is provider-upstreams only — dynamic fetch (`web_fetch`/`batch_fetch`/`repo_fetch`) stays direct, never falls back.
+- Hygiene rejects tracked transcripts, ANSI dumps, build outputs, and stray root blobs — keep debug artifacts under `/tmp` or untracked.
 - `commit_sha` comes from `resolved_ref`, not the entry object SHA.
 - `CacheScope::Profile` uses the opaque profile ID, never the display name. Invalid explicit browser path is `ExplicitPathInvalid` — do not fall back to auto-discovery.
 - `integrate` prints by default; mutate only with `--apply` (atomic, backed up, `eggsearch` entry only). Never register `target/debug` binaries — require an installed executable or explicit `--executable`.
@@ -52,7 +49,7 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed; see `architecture/maint
 Conventions (kept in sync by discipline, not guards; see `architecture/maintenance.md`):
 
 - Keep in sync: `packaging/release-targets.txt` + `packaging/release-inputs.txt` + release workflow + egress qualification matrix + installers + updater + install docs (`make packaging-check`); `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding/renaming suites. `CHANGELOG.md` entries are append-only history.
-- New tests extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`); packaging behavior belongs under `packaging/test-install.sh` and `packaging/test-install.ps1`; multi-step regressions go in `corpus_runner.rs`; pure functions get `proptest` files; provider failures go in `dispatch_fault_injection.rs`. Historical phase-suite names are retired; use behavioral suite names.
+- New tests extend behavioral suites (`mcp_tools`, `web_search`/`web_fetch` integration, `provider_routing`, `provider_probe_conformance`, `repo`/`research`/`security` workflow, `evidence_contract`); packaging behavior belongs under `packaging/test-install.sh` and `packaging/test-install.ps1`; multi-step regressions go in `corpus_runner.rs`; pure functions get `proptest` files; provider failures go in `dispatch_fault_injection.rs`. Historical phase-suite names are retired; use behavioral suite names. Placement authority is the table in `architecture/testing.md`; per-suite counts live in `docs/test-inventory.md`.
 
 ## Architecture index
 
@@ -75,4 +72,4 @@ Canonical sources in `skills/` (mirrored via `.opencode/skills/` and `.agents/sk
 
 ## Plans
 
-`plans/` follows the registry convention (`plans/registry.md`, process in `plans/003-planning-process.md`): ADRs in `adrs/`, roadmaps in `subsystems/`, handoffs in `implementation/`, gates in `closure/`, traceability in `archive/`. Do not create unregistered work; corrective work is a new plan, never a silent amendment. Check `plans/registry.md` for the active workstream before planning.
+`plans/` follows the registry convention (`plans/registry.md`, process in `plans/003-planning-process.md`): ADRs in `adrs/`, roadmaps in `subsystems/`, handoffs in `implementation/`, gates in `closure/`, traceability in `archive/`. Do not create unregistered work; corrective work is a new plan, never a silent amendment. Check `plans/registry.md` for the active workstream before planning — tool-surface M001-M005 implementation has landed (closure records pending); remaining work is M006 evaluation and M007 decomposition.

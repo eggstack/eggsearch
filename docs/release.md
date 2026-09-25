@@ -122,9 +122,9 @@ The daily developer command is:
 make check
 ```
 
-This runs formatting, clippy, feature compilation, and the deterministic
-test suite. It does not require a clean tree, does not build release
-artifacts, and does not run packaging checks.
+This runs formatting, clippy, feature compilation, the deterministic
+test suite, repository hygiene, and packaging contract checks. It does
+not require a clean tree and does not build release artifacts.
 
 ## Where the release gate is defined
 

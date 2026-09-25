@@ -75,7 +75,7 @@ fetch ↗
 | Component | Location | One-line Responsibility | Deep Dive |
 |-----------|----------|-------------------------|-----------|
 | Core domain types | `src/core/` (38 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
-| Metasearch adapter | `src/meta/` (34 top-level files plus `adapter/`, `dispatch/`, `dependency_parse/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
+| Metasearch adapter | `src/meta/` (34 top-level files plus `adapter/`, `dispatch/`, `dependency_parse/`, `engines/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
 | Vendored search engines | `src/meta/engines/` (42 files: 37 per-provider files + 5 support modules) | 36 engine structs covering 36 of 37 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (11 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
@@ -313,6 +313,7 @@ extension rules.
 | `mock` | Test-only mock engine harness | Integration/corpus tests (required) |
 | `pdf` | PDF text extraction via `lopdf` | `src/fetch/pdf.rs` |
 | `browser` | Headless Chrome/Chromium via CDP | `src/fetch/browser/` |
+| `egress` | Listener-free HTTP/SOCKS proxy-chain route for provider upstreams only (source-build opt-in) | `src/fetch/egress.rs`; dynamic fetch stays direct |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Ignored by default |
 
 Tests never require network access. Live smoke: `cargo test --features live-smoke --test corpus_runner -- --ignored`.

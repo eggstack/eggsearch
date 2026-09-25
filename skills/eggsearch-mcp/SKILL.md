@@ -54,15 +54,15 @@ The `eggsearch integrate` command renders or applies client-specific MCP registr
 | Evidence handoff | `build_evidence_bundle` | Package sources + fetches from prior steps |
 | Page metadata only | `web_fetch` with `extract_mode: "metadata_only"` | No body text returned |
 
-Tool selection is regression-tested by the deterministic 43-fixture
-corpus in `tests/fixtures/tool_surface/` (`make eval-tool-surface`):
+Tool selection is regression-tested by the deterministic 43-case
+corpus in `tests/fixtures/tool_surface/cases.json` (`make eval-tool-surface`):
 prefer the primary tool above, fall back to documented alternatives, and
 never route ordinary research through `provider_status` or reuse
 `build_evidence_bundle` for new retrieval.
 
 ## Tool Disclosure Hints
 
-Canonical source: `src/mcp/tool_contract.rs` (advisory only, never policy-enforcing).
+Canonical source: `src/mcp/tool_contract.rs` (advisory only, never policy-enforcing). The M001 contract/disclosure model, M002 slimmed schemas, M003 2026 protocol/error contract, M004 `response_detail` projection, and M005 CodeGG progressive disclosure have all landed; `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs`, and `tool_surface_evaluation.rs` pin them in routine CI. Settle tool-selection disputes with `make eval-tool-surface` (opt-in multi-model comparison via `EGGSEARCH_EVAL_MODEL` + `-- --ignored`).
 
 - Core primitives, normally visible first: `web_search`, `web_fetch`, `repo_search`
 - Deferred specialists, used only when their domain semantics are needed: `batch_fetch`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`

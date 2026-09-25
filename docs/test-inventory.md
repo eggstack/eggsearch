@@ -11,6 +11,36 @@ Inventory of all hardening and regression test suites.
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
+## Behavioral & Workflow Contracts
+
+| Suite | Feature Gate | Focus |
+|-------|-------------|-------|
+| `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection |
+| `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds |
+| `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds |
+| `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry |
+| `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end |
+| `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
+| `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling |
+| `evidence_contract` | `mock` (mostly) | Batch fetch isolation, evidence packaging, bundle handoff shape |
+| `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
+| `config_validation` | None | Config rules and validation |
+| `keyless_core` | None | Keyless-core runtime invariant |
+| `local_workspace_integration` | `mock` | Local workspace search backend |
+| `inventory_freshness` | `mock` | Inventory lifecycle and freshness |
+| `retrieval_attempt_ledger` | None | Attempt ledger validation |
+| `conflict_source_attribution` | None | Conflict source attribution |
+| `bounded_command` | `mock` | Bounded git command execution (caps, timeout, termination) |
+| `firecrawl_developer` | None | Developer-index adapter behavior |
+| `native_security_attempts` | None | Native advisory attempt preservation |
+| `codegg_evidence_contract` | None | CodeGG evidence handoff shape |
+| `browser_profiles` | `browser` | Browser profile management |
+| `browser_transport` | `browser` | Browser transport orchestration |
+| `browser_live_smoke` | `browser` (+ `live-smoke`, ignored) | Live browser smoke (opt-in only) |
+| `static_guards` | None | Ownership, layout, and policy guards (fail-closed) |
+
+Placement authority is the table in `architecture/testing.md`.
+
 ## Property Tests (16 suites)
 
 | Suite | Feature Gate | Tests | Focus |
@@ -123,7 +153,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `schema_identity_registry` | Identity function stability |
 | `fetch_safety` | Fetch safety bounds |
 | `security_applicability_corpus` | Security applicability pipeline |
-| `security_applicability_contract` | Security applicability assessment contract (formerly phase-8 suite) |
+| `security_applicability_contract` | Security applicability assessment contract |
 | `mcp_http` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `security_applicability_regression` | Security applicability regression |
 | `research_evidence_corpus` | Research evidence regression |
@@ -151,9 +181,9 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `tool_surface_evaluation` | None | 4 | Labeled 43-fixture discovery corpus (top-1/recall@3/MRR), description/total/instructions/compact byte budgets, fingerprint determinism, forbidden-primary exclusion, synthetic next-action hydration mechanics |
 | `tool_surface_live` | None (comparison `#[ignore]`d) | 1 (+1 ignored) | Layer 3 report contract (fingerprint, config, deltas); opt-in manual multi-model comparison via `EGGSEARCH_EVAL_MODEL` |
 
-Corpus: `tests/fixtures/tool_surface/cases.json` with `README.md` baseline
-(77952 definition bytes, 5275 instruction bytes, 43/43 top-1). Re-run with
-`make eval-tool-surface`.
+Corpus: `tests/fixtures/tool_surface/cases.json` (43 cases) with `README.md`
+post-consolidation baseline (73037 definition bytes, 1614 instruction bytes,
+43/43 top-1). Re-run with `make eval-tool-surface`.
 
 ## Documentation Contract Tests (5 suites)
 
@@ -179,4 +209,4 @@ Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygi
 
 | Job | Duration | Feature Combos |
 |-----|----------|----------------|
-| `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests |
+| `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests + hygiene + packaging-check |

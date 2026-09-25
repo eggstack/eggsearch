@@ -58,16 +58,16 @@ fn config_presents_keyless_examples_before_enhanced() {
 fn codegg_contract_contains_restored_sections() {
     let text = read_file("architecture/codegg-contract.md");
     assert!(
-        text.contains("### 8.3 Dirty State"),
-        "codegg contract must contain section 8.3 Dirty State"
+        text.contains("### 11.1 Dirty State"),
+        "codegg contract must contain Dirty State section"
     );
     assert!(
-        text.contains("### 8.4 File Classification Flags"),
-        "codegg contract must contain section 8.4 File Classification Flags"
+        text.contains("### 11.2 File Classification Flags"),
+        "codegg contract must contain File Classification Flags section"
     );
     assert!(
-        text.contains("### 8.5 Workspace ID"),
-        "codegg contract must contain section 8.5 Workspace ID"
+        text.contains("### 11.3 Workspace ID"),
+        "codegg contract must contain Workspace ID section"
     );
 }
 

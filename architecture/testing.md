@@ -3,7 +3,7 @@
 **Location:** `tests/` (76 `*.rs` suites), `src/**/tests` (module unit tests), `benches/perf.rs`, `fuzz/fuzz_targets/` (22 targets)
 **Purpose:** Behavioral contracts first, property tests for pure functions, fault injection for dispatch, corpus regression for multi-step workflows, fuzz for adversarial input, Criterion for characterization.
 
-Full per-suite counts live in `docs/test-inventory.md`. Suite placement rules live in `skills/eggsearch-dev/SKILL.md`. This document explains how the layers fit together and which commands are canonical.
+Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in `skills/eggsearch-dev/SKILL.md` and the table below is the placement authority. This document explains how the layers fit together and which commands are canonical.
 
 ---
 
@@ -58,6 +58,8 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `research_evidence_corpus`, `research_semantic_roles` | Research evidence regression and role mapping |
 | `conflict_source_attribution`, `recipes_next_actions`, `schema_identity_registry` | Conflict attribution, hint generation, schema and ID fixtures |
 | `keyless_core`, `docs_keyless_contract` | Keyless-core runtime invariant and its doc contract |
+| `codegg_evidence_contract`, `native_security_attempts` | CodeGG evidence handoff shape; native advisory attempt preservation |
+| `native_forge_smoke` | Maintainer-only native forge diagnostics (`live-smoke`-gated, ignored by default; never release evidence) |
 | `egress_routing`, `egress_qualify_contract` | Egress route behavior and egress qualification CI contract |
 | `bounded_command` | Bounded git command execution (caps, timeout, termination) |
 

@@ -53,7 +53,7 @@ all target jobs and checksums pass; publish that draft manually after review.
 |-----|-------------|
 | `ci` | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
 | `Release binaries` | Qualification or tagged release workflow — preflight, seven-target build/smoke/checksum, exact assembly |
-| `Egress feature qualification` | Non-publishing `egress` compile lane — exact target-set preflight against `packaging/release-targets.txt`, seven-target `cargo check --features egress`, Rust 1.89 all-features |
+| `Egress feature qualification` | Non-publishing `egress` compile lane (`.github/workflows/egress-feature-qualify.yml`) — exact target-set preflight against `packaging/release-targets.txt`, per-target `cargo check --locked --features egress` across the 7 release targets, MSRV 1.89 all-features check |
 
 ## Binary release workflow
 
@@ -95,6 +95,7 @@ stdio-only and stopped services remain untouched.
 | `pdf` | PDF extraction | No |
 | `browser` | Headless Chrome/Chromium rendering | No |
 | `mock` | Test-only mock engine | No |
+| `egress` | Listener-free HTTP/SOCKS proxy-chain route for provider upstreams only (source-build opt-in, never in prebuilt/default binaries) | No |
 | `live-smoke` | Live network tests (opt-in) | No |
 
 ## Version Rules
@@ -151,7 +152,7 @@ make native-forge-smoke-all
 
 | Target | Command | Purpose |
 |--------|---------|---------|
-| `check` | `fmt + clippy + feature-check + test` | Local CI gate |
+| `check` | `fmt + clippy + feature-check + test + hygiene + packaging-check` | Local CI gate |
 | `ci` | `check` | Alias for `check` |
 | `release-check` | `check + release-candidate-check + docs-check + release-build + publish-check` | Pre-release gate |
 | `release-candidate-check` | `./packaging/release-validate.sh candidate` | Release tree/version/syntax gate |

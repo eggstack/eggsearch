@@ -501,7 +501,7 @@ Profiles are disabled by default. When disabled, MCP callers cannot use `browser
 
 ## Provider Status
 
-`provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, quality metadata, and workflow recipes. The `probe` field is reserved and currently has no effect.
+`provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, quality metadata, and workflow recipes. Passing `probe: true` runs a bounded live liveness check through the shared probe service (same core as `eggsearch doctor --probe`).
 
 Each provider descriptor includes:
 

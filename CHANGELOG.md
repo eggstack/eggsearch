@@ -11,15 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Raised the minimum supported Rust version from 1.88 to 1.89.
 - Consolidated all eggsearch-owned outbound HTTP behind `eggfetch-core`
-  0.1.7 (`standard-http1` + `advanced-routing` + `redirects` + `tls-rustls`
+  0.2.0 (`standard-http1` + `advanced-routing` + `redirects` + `tls-rustls`
   + `json` + `compression-gzip` + `compression-brotli`) and removed the
   direct `reqwest` dependency. The shared provider client, the single shared
   fetch client with per-hop pinned resolved routing, the updater, and the
   health probes use explicit total deadlines covering body streaming;
   `OriginController` remains the only retry/circuit authority. rmcp keeps
   its transitive reqwest-backed Streamable HTTP client transport.
-  HTML scrape engines request identity encoding pending an upstream fix for
-  chunked compressed-response decoding.
+  HTML scrape engines use automatic gzip/Brotli decompression.
 
 ### Added
 

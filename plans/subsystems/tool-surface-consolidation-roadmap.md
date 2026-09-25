@@ -171,10 +171,10 @@ backward compatibility, and passing routine gates.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 | ready | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | — | — |
-| M002 | ready | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | — | M001 metadata preferred |
-| M003 | ready | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | — | rmcp/CodeGG 2026-07-28 confirmation at handoff |
-| M004 | ready | `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | — | — |
-| M005 | ready | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | — | M001 metadata stable |
-| M006 | blocked | `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | — | M001-M005 baseline |
+| M001 | closing | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | — | Implementation landed; closure record pending |
+| M002 | closing | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | — | Implementation landed; closure record pending |
+| M003 | closing | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | — | Implementation landed; closure record pending |
+| M004 | closing | `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | — | Implementation landed; closure record pending |
+| M005 | closing | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | — | Implementation landed; closure record pending |
+| M006 | ready | `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | — | M001-M005 baseline now exists |
 | M007 | ready | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | — | M001 |

@@ -25,7 +25,7 @@ cargo publish --dry-run --locked
 ./packaging/check-contract.sh
 ./packaging/release-validate.sh candidate
 make bench-check        # compile-check benches without running
-rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_selection|timeout_client_adjustment|derived_cache_hits|batch_timeout_setup|tool_.*cached_access|project_' -- --noplot  # characterization only
+cargo bench --locked --all-features --bench perf --no-run  # characterization only, never a CI threshold
 ```
 
 ## Critical: Feature Flags
@@ -55,7 +55,7 @@ rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_select
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
 | `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
 | `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
-| `tests/tool_surface_evaluation.rs` | None | 43-fixture tool-selection corpus: top-1/recall@3/MRR, byte budgets, fingerprint (`make eval-tool-surface`) |
+| `tests/tool_surface_evaluation.rs` | None | 43-case tool-selection corpus (`tests/fixtures/tool_surface/cases.json`): top-1/recall@3/MRR, byte budgets, fingerprint (`make eval-tool-surface`) |
 | `tests/tool_surface_live.rs` | None (comparison `#[ignore]`d) | Layer 3 report contract + opt-in manual multi-model comparison (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`) |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | None | Tool consolidation contracts: registry parity, schema budgets, structured errors, response projection |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
@@ -67,7 +67,7 @@ rtk cargo bench --locked --all-features --bench perf 'inventory_candidate_select
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 
-This table is representative, not exhaustive — 74 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 76 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
