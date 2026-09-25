@@ -274,7 +274,27 @@ rather than a generic YAML crate: the lockfile grammars needed are
 small, machine-generated, and version-pinned in fixtures, so a general
 parser would add alias/anchor attack surface and dependency footprint
 for no maintenance benefit; the decision is revisited only if a future
-lock version outgrows the generated grammar.
+lock version outgrows the generated grammar. Workflow files reuse the
+same narrow-parser decision with a bounded `uses:` extraction seam
+(quoted scalars and trailing comments handled, expressions never
+evaluated).
+
+GitHub Actions `uses:` values are typed references, never versions:
+full SHAs are immutable commit references (High), tag-like refs stay
+tags (Medium), branch/other mutable refs stay branches (Low), and
+`${{ }}`/interpolated values are explicit unknown expression evidence.
+`owner/repo/path@ref` reusable workflows keep their full path with
+workflow provenance; local `./` and same-repository `$/` actions are
+local findings, never external packages; `docker://` actions feed OCI
+evidence. Docker `FROM [--platform=...] image [AS name]` parsing skips
+internal stage aliases and `scratch`, reads tags, tag+digest pairs
+(digest as immutable provenance plus integrity hash), untagged
+latest, and ARG-interpolated refs distinctly, with registry ports
+split correctly; findings use `Dockerfile` source kind. Compose
+`image:` values share the same reference grammar. Dockerfile variants
+(`Dockerfile`, `Dockerfile.*`, `*.dockerfile`) and compose filenames
+(exact plus `docker-compose.*`/`compose.*` YAML) route under bounded
+explicit basename rules, never bare path substrings.
 
 Bundler `Gemfile.lock` files are parsed with an explicit section state
 machine: only four-space resolved spec rows under a `GEM`/`GIT`/`PATH`

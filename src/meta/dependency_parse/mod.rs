@@ -59,11 +59,11 @@ pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyPars
         }
         "packages.lock.json" => nuget::parse_packages_lock_json(content, path),
         name if name.ends_with(".csproj") => dotnet::parse_csproj(content, path),
+        name if containers::is_dockerfile_name(name) => {
+            DependencyParseReport::complete(containers::parse_dockerfile(content, path))
+        }
         name if name.ends_with(".yml") || name.ends_with(".yaml") => {
             parse_yaml_routed_file(path, content)
-        }
-        "Dockerfile" | "docker-compose.yml" | "docker-compose.yaml" => {
-            DependencyParseReport::complete(containers::parse_dockerfile(content, path))
         }
         name if name.starts_with("build.gradle") => {
             DependencyParseReport::complete(gradle::parse_build_gradle(content, path))
@@ -93,7 +93,7 @@ pub(crate) fn is_go_vendor_manifest(path: &str) -> bool {
 fn parse_yaml_routed_file(path: &str, content: &str) -> DependencyParseReport {
     if path.contains(".github/workflows/") || path.contains(".github\\workflows\\") {
         DependencyParseReport::complete(github_actions::parse_workflow_yml(content, path))
-    } else if path.contains("docker-compose") {
+    } else if containers::is_compose_file(dispatch_basename(path)) {
         DependencyParseReport::complete(containers::parse_dockerfile(content, path))
     } else {
         DependencyParseReport::unsupported(format!("unrecognized YAML dependency file '{path}'"))
@@ -620,17 +620,16 @@ com.google.guava:guava:31.1-jre=runtimeClasspath
 
     #[test]
     fn parse_dockerfile_variable_tag() {
-        // Variable tags like ${TAG} are extracted literally — they
-        // won't match real versions but should not panic.
+        use crate::core::security_applicability::DependencyReferenceKind;
         let content = "FROM ubuntu:${TAG}\n";
         let findings = parse_dependency_file("Dockerfile", content);
-        // The parser splits on ':' so tag = "${TAG}" which is non-empty
-        // and not "latest", so a finding IS produced (literal token).
-        // The important property: no panic.
-        if let Some(f) = findings.first() {
-            assert_eq!(f.ecosystem, PackageEcosystem::Oci);
-            assert!(f.version.is_some());
-        }
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].ecosystem, PackageEcosystem::Oci);
+        assert_eq!(
+            findings[0].reference_kind,
+            Some(DependencyReferenceKind::Expression)
+        );
+        assert_eq!(findings[0].exact_version(), None);
     }
 
     #[test]
