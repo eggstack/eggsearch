@@ -251,6 +251,19 @@ Gradle lockfiles keep exact coordinates with deterministic dedup;
 coordinates (including `platform(...)` wrappers) with dynamic/property
 versions recorded as unresolved requirements, never resolved versions.
 
+Bundler `Gemfile.lock` files are parsed with an explicit section state
+machine: only four-space resolved spec rows under a `GEM`/`GIT`/`PATH`
+`specs:` block become exact findings; six-space child requirements
+never do. `GEM`/`GIT`/`PATH` provenance (remote plus revision/branch
+for git sources) is preserved, top-level `DEPENDENCIES` marks direct
+package identities, and Gemfile Ruby code is never evaluated.
+Composer `composer.lock` keeps `packages` and `packages-dev` exact
+versions as resolved evidence with dev-package context preserved;
+`source`/`dist` metadata (type, URL, commit reference, shasum)
+distinguishes registry archives from VCS/path/custom provenance, dev
+branch aliases stay distinguishable via `dev version` provenance plus
+the commit reference, and empty versions never become exact findings.
+
 ---
 
 ## Version Range and Comparison (`src/meta/version_compare.rs`)
