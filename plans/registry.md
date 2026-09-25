@@ -54,7 +54,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Dependency evidence hardening | M002 Cargo/Go/Python + dispatch | closed | `plans/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md` | Closed at `e1464f6`; closure `plans/closure/dependency-evidence-hardening/002-status.md`. |
 | Dependency evidence hardening | M003 .NET/JVM structured correctness | closed | `plans/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md` | Closed at `0d934f5`; closure `plans/closure/dependency-evidence-hardening/003-status.md`. |
 | Dependency evidence hardening | M004 Ruby/Composer provenance | closed | `plans/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md` | Closed at `fff47bf`; closure `plans/closure/dependency-evidence-hardening/004-status.md`. |
-| Dependency evidence hardening | M005 JavaScript lockfiles | ready | `plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md` | M001 closed; may proceed on typed contract. |
+| Dependency evidence hardening | M005 JavaScript lockfiles | closed | `plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md` | Closed at `be389a0`; closure `plans/closure/dependency-evidence-hardening/005-status.md`. |
 | Dependency evidence hardening | M006 Actions/OCI references | ready | `plans/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md` | M001 closed; may proceed on typed contract. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
