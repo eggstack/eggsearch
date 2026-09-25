@@ -428,5 +428,5 @@ security applicability consumer can no longer overstate dependency evidence.
 | M003 .NET/JVM structured correctness | closed | Closure `plans/closure/dependency-evidence-hardening/003-status.md` at `0d934f5` |
 | M004 Ruby/Composer provenance | closed | Closure `plans/closure/dependency-evidence-hardening/004-status.md` at `fff47bf` |
 | M005 JavaScript lockfiles | closed | Closure `plans/closure/dependency-evidence-hardening/005-status.md` at `be389a0` |
-| M006 Actions/OCI refs | ready | M001 closed |
-| M007 budgets/qualification | blocked | M001-M006 closure |
+| M006 Actions/OCI refs | closed | Closure `plans/closure/dependency-evidence-hardening/006-status.md` at `f0eb6a1` |
+| M007 budgets/qualification | ready | M001-M006 closed |
