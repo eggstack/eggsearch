@@ -23,6 +23,7 @@ transport-consolidation-roadmap.md
 performance-optimization-roadmap.md
 optional-outbound-routing-roadmap.md
 tool-surface-consolidation-roadmap.md
+dependency-evidence-hardening-roadmap.md
 ```
 
 ## Required roadmap structure
